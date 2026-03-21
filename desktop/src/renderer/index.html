@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh" class="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CowAgent</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+    (function() {
+        var theme = localStorage.getItem('cow_theme') || 'dark';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    })();
+    </script>
+    <style>
+      body { margin: 0; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+</body>
+</html>

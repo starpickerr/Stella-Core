@@ -1,0 +1,243 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+body {
+  @apply bg-gray-50 text-slate-800 overflow-hidden;
+  font-family: 'Inter', system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+}
+
+.dark body {
+  @apply bg-[#111111] text-slate-200;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Sidebar */
+.sidebar-item.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.sidebar-item.active .item-icon {
+  color: #4ABE6E;
+}
+
+.menu-group .chevron {
+  transition: transform 0.25s ease;
+}
+
+.menu-group.open .chevron {
+  transform: rotate(90deg);
+}
+
+.menu-group-items {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+
+.menu-group.open .menu-group-items {
+  max-height: 500px;
+  transition: max-height 0.35s ease;
+}
+
+/* Markdown content */
+.msg-content pre {
+  @apply rounded-lg overflow-x-auto my-3;
+  background: #f1f5f9;
+}
+
+.dark .msg-content pre {
+  background: #111111;
+}
+
+.msg-content :not(pre) > code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.875em;
+  background: rgba(74, 190, 110, 0.1);
+  color: #1C6B3B;
+}
+
+.dark .msg-content :not(pre) > code {
+  background: rgba(74, 190, 110, 0.15);
+  color: #74E9A4;
+}
+
+.msg-content p { @apply my-2 leading-relaxed; }
+.msg-content ul, .msg-content ol { @apply pl-6 my-2; }
+.msg-content li { @apply my-1; }
+
+.msg-content a {
+  color: #35A85B;
+}
+
+.msg-content a:hover {
+  color: #228547;
+}
+
+.msg-content table {
+  @apply border-collapse w-full my-3;
+}
+
+.msg-content th, .msg-content td {
+  @apply border px-3 py-2 text-sm;
+  border-color: #e2e8f0;
+}
+
+.dark .msg-content th, .dark .msg-content td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.msg-content th {
+  @apply font-medium;
+  background: #f1f5f9;
+}
+
+.dark .msg-content th {
+  background: #111111;
+}
+
+.msg-content blockquote {
+  @apply pl-4 my-3;
+  border-left: 4px solid #4ABE6E;
+}
+
+.dark .msg-content blockquote {
+  background: rgba(74, 190, 110, 0.08);
+}
+
+.msg-content hr {
+  @apply my-4;
+  border-color: #e2e8f0;
+}
+
+.dark .msg-content hr {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Tool steps */
+.tool-header {
+  @apply cursor-pointer transition-colors duration-150;
+}
+
+.tool-header:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.dark .tool-header:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tool-detail {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.dark .tool-detail {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Config dropdown */
+.cfg-dropdown { @apply relative; }
+
+.cfg-dropdown-selected {
+  @apply flex items-center justify-between px-3 rounded-lg border cursor-pointer transition-colors text-sm;
+  height: 40px;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.dark .cfg-dropdown-selected {
+  border-color: #475569;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f1f5f9;
+}
+
+.cfg-dropdown-menu {
+  @apply absolute left-0 right-0 z-50 rounded-lg border shadow-lg overflow-y-auto hidden;
+  top: calc(100% + 4px);
+  max-height: 240px;
+  padding: 4px;
+  border-color: #e2e8f0;
+  background: #fff;
+}
+
+.dark .cfg-dropdown-menu {
+  border-color: #334155;
+  background: #1e1e1e;
+}
+
+.cfg-dropdown.open .cfg-dropdown-menu {
+  @apply block;
+}
+
+.cfg-dropdown-item {
+  @apply px-3 py-2 rounded-md text-sm cursor-pointer transition-colors;
+  color: #334155;
+}
+
+.cfg-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.dark .cfg-dropdown-item {
+  color: #cbd5e1;
+}
+
+.dark .cfg-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cfg-dropdown-item.active {
+  background: rgba(74, 190, 110, 0.1);
+  color: #4ABE6E;
+}
+
+.dark .cfg-dropdown-item.active {
+  background: rgba(74, 190, 110, 0.15);
+  color: #74E9A4;
+}
+
+/* API Key mask */
+.cfg-key-masked {
+  -webkit-text-security: disc;
+}
+
+/* Chat input */
+#chat-input {
+  height: 42px;
+  max-height: 180px;
+  resize: none;
+}
+
+/* Titlebar drag region for macOS */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
