@@ -445,7 +445,9 @@ class WebChannel(ChatChannel):
 
             directory_files = _ensure_list(file_objs)
 
-            if not directory_files and file_obj and relative_path:
+            # NOTE: cgi.FieldStorage raises TypeError on truthy checks for single-file
+            # uploads (Python 3.9+). Always use `is not None` instead of `if file_obj`.
+            if not directory_files and file_obj is not None and relative_path:
                 directory_files = [file_obj]
 
             directory_rel_paths = _ensure_list(relative_paths)
@@ -453,7 +455,7 @@ class WebChannel(ChatChannel):
             if not directory_rel_paths and relative_path:
                 directory_rel_paths = [relative_path]
 
-            is_directory_upload = bool(directory_files or directory_rel_paths or relative_path or upload_id)
+            is_directory_upload = bool(directory_files) or bool(directory_rel_paths) or bool(relative_path) or bool(upload_id)
 
             upload_dir = _get_upload_dir()
             if is_directory_upload:
