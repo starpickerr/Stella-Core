@@ -5,6 +5,7 @@ Agent Initializer - Handles agent initialization logic
 import os
 import asyncio
 import datetime
+import threading
 import time
 from typing import Optional, List
 
@@ -12,6 +13,9 @@ from agent.protocol import Agent
 from agent.tools import ToolManager
 from common.log import logger
 from common.utils import expand_path
+
+# Module-level lock to serialize scheduler init across concurrent sessions
+_scheduler_init_lock = threading.Lock()
 
 
 class AgentInitializer:
@@ -406,16 +410,23 @@ class AgentInitializer:
         return tools
     
     def _initialize_scheduler(self, tools: List, session_id: Optional[str] = None):
-        """Initialize scheduler service if needed"""
+        """Initialize scheduler service if needed.
+
+        Serialize the check-and-set under a module-level lock so concurrent
+        first-time session inits cannot each create a new SchedulerService
+        (which would leak background scanning threads).
+        """
         if not self.agent_bridge.scheduler_initialized:
-            try:
-                from agent.tools.scheduler.integration import init_scheduler
-                if init_scheduler(self.agent_bridge):
-                    self.agent_bridge.scheduler_initialized = True
-                    if session_id is None:
-                        logger.info("[AgentInitializer] Scheduler service initialized")
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Failed to initialize scheduler: {e}")
+            with _scheduler_init_lock:
+                if not self.agent_bridge.scheduler_initialized:
+                    try:
+                        from agent.tools.scheduler.integration import init_scheduler
+                        if init_scheduler(self.agent_bridge):
+                            self.agent_bridge.scheduler_initialized = True
+                            if session_id is None:
+                                logger.info("[AgentInitializer] Scheduler service initialized")
+                    except Exception as e:
+                        logger.warning(f"[AgentInitializer] Failed to initialize scheduler: {e}")
         
         # Inject scheduler dependencies
         if self.agent_bridge.scheduler_initialized:
