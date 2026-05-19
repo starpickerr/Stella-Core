@@ -377,12 +377,18 @@ class AgentInitializer:
                     tool = tool_manager.create_tool(tool_name)
 
                 if tool:
-                    # Apply workspace config to file operation tools
+                    # Apply workspace config to file operation tools.
+                    # Merge into the existing tool.config (set by ToolManager from
+                    # config.json's `tools.<name>` section) instead of replacing
+                    # it, otherwise per-tool user configs (e.g. browser.cdp_endpoint)
+                    # would be silently dropped.
                     if tool_name in ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls', 'web_fetch', 'send', 'browser']:
-                        tool.config = file_config
-                        tool.cwd = file_config.get("cwd", getattr(tool, 'cwd', None))
-                        if 'memory_manager' in file_config:
-                            tool.memory_manager = file_config['memory_manager']
+                        merged_config = dict(getattr(tool, 'config', None) or {})
+                        merged_config.update(file_config)
+                        tool.config = merged_config
+                        tool.cwd = merged_config.get("cwd", getattr(tool, 'cwd', None))
+                        if 'memory_manager' in merged_config:
+                            tool.memory_manager = merged_config['memory_manager']
                     tools.append(tool)
             except Exception as e:
                 logger.warning(f"[AgentInitializer] Failed to load tool {tool_name}: {e}")
