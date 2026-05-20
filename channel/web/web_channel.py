@@ -1234,7 +1234,7 @@ class ModelsHandler:
     # ids drawn from ConfigHandler.PROVIDER_MODELS where applicable.
     _ASR_PROVIDERS = ["openai", "linkai", "baidu", "ali", "xunfei", "azure", "google"]
     _TTS_PROVIDERS = ["openai", "linkai", "minimax", "baidu", "ali", "xunfei", "azure", "google", "elevenlabs", "edge", "pytts"]
-    _EMBEDDING_PROVIDERS = ["openai", "linkai", "dashscope", "doubao", "zhipu"]
+    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
 
     # Capability-scoped model catalogs. The chat dropdown can reuse the
     # provider's generic model list, but vision and image generation are
@@ -1522,29 +1522,24 @@ class ModelsHandler:
 
     @classmethod
     def _embedding_capability(cls, local_config: dict) -> dict:
+        # Embedding is "pick or empty" — runtime's legacy openai/linkai
+        # fallback is a safety net, not a UX-visible auto mode.
+        # `suggested_provider` is a UI-only hint (NOT persisted) that
+        # preselects the dropdown to whichever configured vendor we'd
+        # recommend, so users don't have to expand the menu to find it.
         explicit = (local_config.get("embedding_provider") or "").strip().lower()
-        # When unset, the legacy auto path in agent_initializer.py picks
-        # openai -> linkai. We surface "auto" + an estimate of what it'd
-        # actually use, but don't probe the runtime here.
+        suggested = ""
         if not explicit:
-            if cls._is_real_key(local_config.get("open_ai_api_key", "")):
-                effective = "openai"
-            elif cls._is_real_key(local_config.get("linkai_api_key", "")):
-                effective = "linkai"
-            else:
-                effective = ""
-            return {
-                "editable": True,
-                "strategy": "auto",
-                "current_provider": effective,
-                "current_model": local_config.get("embedding_model", "") or "",
-                "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
-                "providers": cls._EMBEDDING_PROVIDERS,
-            }
+            for pid in cls._EMBEDDING_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
         return {
             "editable": True,
-            "strategy": "specified",
             "current_provider": explicit,
+            "suggested_provider": suggested,
             "current_model": local_config.get("embedding_model", "") or "",
             "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
             "providers": cls._EMBEDDING_PROVIDERS,
@@ -1931,15 +1926,10 @@ class ModelsHandler:
             file_cfg["embedding_model"] = ""
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
-        # Embedding switches don't go through Bridge bots; the agent's
-        # MemoryManager rebuilds its provider on next process restart, but
-        # the index dim may now mismatch — frontend should warn the user.
-        return json.dumps({
-            "status": "success",
-            "provider": provider_id,
-            "model": model,
-            "warn_rebuild_index": True,
-        })
+        # The agent's MemoryManager picks the new provider on next process
+        # restart; the index dim may now mismatch so a rebuild is needed.
+        # The frontend surfaces this via a confirm + post-save dialog.
+        return json.dumps({"status": "success", "provider": provider_id, "model": model})
 
     @staticmethod
     def _reset_bridge() -> None:

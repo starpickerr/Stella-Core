@@ -50,15 +50,20 @@ const I18N = {
         models_unavailable: '不可用',
         models_set_via_env: '通过环境变量启用',
         models_dim_label: '维度',
-        models_warn_rebuild: '向量配置已更新，建议在聊天框输入 /memory rebuild-index 重建索引',
         models_save_success: '已保存',
         models_save_failed: '保存失败',
         models_cleared: '已清除',
         models_clear_failed: '清除失败',
+        models_embedding_change_title: '更改向量模型',
+        models_embedding_change_msg: '切换向量模型后，已有索引将失效，需要重建。是否继续？',
+        models_embedding_saved_title: '向量模型已更新',
+        models_embedding_saved_msg: '请在聊天框输入 /memory rebuild-index 重建索引。',
+        models_embedding_saved_ok: '去执行',
         models_clear_confirm_title: '清除厂商凭据',
         models_clear_confirm_msg: '确认清除该厂商的 API Key 与 Base URL 吗？相关能力将不再可用。',
         cancel: '取消',
         save: '保存',
+        ok: '确定',
         knowledge_title: '知识库', knowledge_desc: '浏览和探索你的知识库',
         knowledge_tab_docs: '文档', knowledge_tab_graph: '图谱',
         knowledge_loading: '加载知识库中...', knowledge_loading_desc: '知识页面将显示在这里',
@@ -193,15 +198,20 @@ const I18N = {
         models_unavailable: 'unavailable',
         models_set_via_env: 'enable via environment variable',
         models_dim_label: 'dim',
-        models_warn_rebuild: 'Embedding settings changed — run /memory rebuild-index in chat to rebuild',
         models_save_success: 'Saved',
         models_save_failed: 'Save failed',
         models_cleared: 'Cleared',
         models_clear_failed: 'Clear failed',
+        models_embedding_change_title: 'Change embedding model',
+        models_embedding_change_msg: 'Switching the embedding model invalidates the existing index — a rebuild will be needed. Continue?',
+        models_embedding_saved_title: 'Embedding model updated',
+        models_embedding_saved_msg: 'Send /memory rebuild-index in the chat to rebuild the index.',
+        models_embedding_saved_ok: 'Go',
         models_clear_confirm_title: 'Clear vendor credentials',
         models_clear_confirm_msg: 'Remove this vendor\'s API Key and Base URL? Capabilities relying on it will stop working.',
         cancel: 'Cancel',
         save: 'Save',
+        ok: 'OK',
         knowledge_title: 'Knowledge', knowledge_desc: 'Browse and explore your knowledge base',
         knowledge_tab_docs: 'Documents', knowledge_tab_graph: 'Graph',
         knowledge_loading: 'Loading knowledge base...', knowledge_loading_desc: 'Knowledge pages will be displayed here',
@@ -3213,12 +3223,14 @@ function closeMemoryViewer() {
 // =====================================================================
 // Custom Confirm Dialog
 // =====================================================================
-function showConfirmDialog({ title, message, okText, cancelText, onConfirm }) {
+function showConfirmDialog({ title, message, okText, cancelText, onConfirm, hideCancel }) {
     const overlay = document.getElementById('confirm-dialog-overlay');
     document.getElementById('confirm-dialog-title').textContent = title || '';
     document.getElementById('confirm-dialog-message').textContent = message || '';
     document.getElementById('confirm-dialog-ok').textContent = okText || 'OK';
-    document.getElementById('confirm-dialog-cancel').textContent = cancelText || t('channels_cancel');
+    const cancelBtn = document.getElementById('confirm-dialog-cancel');
+    cancelBtn.textContent = cancelText || t('channels_cancel');
+    cancelBtn.classList.toggle('hidden', !!hideCancel);
 
     function cleanup() {
         overlay.classList.add('hidden');
@@ -3231,7 +3243,6 @@ function showConfirmDialog({ title, message, okText, cancelText, onConfirm }) {
     function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
 
     const okBtn = document.getElementById('confirm-dialog-ok');
-    const cancelBtn = document.getElementById('confirm-dialog-cancel');
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onOverlayClick);
@@ -3555,11 +3566,16 @@ function renderCapabilityBody(def, cap, body) {
     // For auto-capable capabilities, an "auto" strategy means the user has
     // not pinned a vendor; we honor that by selecting the empty-string
     // sentinel rather than the resolved fallback provider name.
+    // `suggested_provider` is a UI-only preselect for embedding when nothing
+    // is pinned yet — purely cosmetic, not persisted until the user saves.
     const initialProviderValue = pendingProvider
         ? pendingProvider
         : ((cap.strategy === 'auto' && capabilitySupportsAuto(def.id))
             ? ''
-            : (cap.current_provider || (ddOpts[0] && ddOpts[0].value) || ''));
+            : (cap.current_provider
+                || cap.suggested_provider
+                || (ddOpts[0] && ddOpts[0].value)
+                || ''));
     initDropdown(
         provDd,
         ddOpts,
@@ -3680,7 +3696,9 @@ function buildCapabilityProviderOptions(def, cap) {
 }
 
 function capabilitySupportsAuto(capId) {
-    return capId === 'image' || capId === 'vision' || capId === 'embedding';
+    // Embedding is intentionally NOT here: runtime only auto-falls back to
+    // OpenAI/LinkAI, so dressing it up as "auto" hides reality from users.
+    return capId === 'image' || capId === 'vision';
 }
 
 // After initDropdown renders the capability provider menu, decorate each
@@ -3882,21 +3900,64 @@ function saveCapability(capId) {
     const isAuto = provider === '' && capabilitySupportsAuto(capId);
     const model = isAuto ? '' : getCapabilityModelValue(def);
 
+    // Embedding changes invalidate any pre-existing vector index because
+    // dimensions / vendor differ. Gate the save behind a confirm, and on
+    // success surface a dedicated info dialog telling the user how to
+    // rebuild — both via the in-app custom dialog, not the native alert.
+    if (capId === 'embedding') {
+        const cap = modelsState.capabilities[capId] || {};
+        const before = (cap.current_provider || '').trim();
+        const after = (provider || '').trim();
+        if (before !== after) {
+            showConfirmDialog({
+                title: t('models_embedding_change_title'),
+                message: t('models_embedding_change_msg'),
+                okText: t('save'),
+                cancelText: t('cancel'),
+                onConfirm: () => _persistCapability(capId, provider, model, () => {
+                    showConfirmDialog({
+                        title: t('models_embedding_saved_title'),
+                        message: t('models_embedding_saved_msg'),
+                        okText: t('models_embedding_saved_ok'),
+                        hideCancel: true,
+                        onConfirm: () => {
+                            navigateTo('chat');
+                            // Defer focus + value set: navigateTo may
+                            // re-render the chat panel; setting value before
+                            // the input is mounted would be lost.
+                            setTimeout(() => {
+                                const input = document.getElementById('chat-input');
+                                if (!input) return;
+                                input.value = '/memory rebuild-index';
+                                input.focus();
+                                // Trigger any input listeners (autosize, send-button enable, etc.)
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                            }, 60);
+                        },
+                    });
+                }),
+            });
+            return;
+        }
+    }
+    _persistCapability(capId, provider, model);
+}
+
+function _persistCapability(capId, provider, model, onAfterSuccess) {
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_capability', capability: capId, provider_id: provider, model: model }),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
-            // Show "Saved" first; defer the view refresh so the user can
-            // see the confirmation (loadModelsView rebuilds the card and
-            // would otherwise wipe the status span instantly).
+            // Show "Saved" first, then refresh — loadModelsView would
+            // otherwise rebuild the card and wipe the status span before
+            // the user can register the confirmation.
             showStatus(`cap-${capId}-status`, 'models_save_success', false);
             setTimeout(() => {
-                if (data.warn_rebuild_index) alert(t('models_warn_rebuild'));
-                // Re-pull state so derived fields (e.g. image follows main) refresh.
                 loadModelsView({ preserveScroll: true });
-            }, 900);
+                if (onAfterSuccess) onAfterSuccess();
+            }, 400);
         } else {
             showStatus(`cap-${capId}-status`, 'models_save_failed', true);
         }
@@ -4064,26 +4125,16 @@ function saveVendorModal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
+        btn.disabled = false;
         if (data.status === 'success') {
-            // Show inline confirmation in the modal footer, then close after
-            // a short delay so the user can see the "Saved" feedback.
-            showStatus('vendor-modal-status', 'models_save_success', false);
-            setTimeout(() => {
-                btn.disabled = false;
-                closeVendorModal();
-                const onSaved = vendorModalState.onSaved;
-                // If a caller provided an onSaved hook, it owns the refresh
-                // strategy (e.g. preserveScroll when launched from inside a
-                // capability dropdown). Otherwise fall back to a plain reload
-                // so the standalone "add vendor" entry still updates the grid.
-                if (onSaved) {
-                    try { onSaved(providerId); } catch (e) { /* noop */ }
-                } else {
-                    loadModelsView();
-                }
-            }, 700);
+            closeVendorModal();
+            const onSaved = vendorModalState.onSaved;
+            if (onSaved) {
+                try { onSaved(providerId); } catch (e) { /* noop */ }
+            } else {
+                loadModelsView();
+            }
         } else {
-            btn.disabled = false;
             showStatus('vendor-modal-status', 'models_save_failed', true);
         }
     }).catch(() => {
@@ -4107,11 +4158,8 @@ function clearVendorModal() {
                 body: JSON.stringify({ action: 'delete_provider', provider_id: providerId }),
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
-                    showStatus('vendor-modal-status', 'models_cleared', false);
-                    setTimeout(() => {
-                        closeVendorModal();
-                        loadModelsView();
-                    }, 700);
+                    closeVendorModal();
+                    loadModelsView();
                 } else {
                     showStatus('vendor-modal-status', 'models_clear_failed', true);
                 }
