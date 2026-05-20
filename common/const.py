@@ -108,6 +108,7 @@ QWQ_PLUS = "qwq-plus"
 
 # MiniMax
 MINIMAX_M2_7 = "MiniMax-M2.7"  # MiniMax M2.7 - Latest
+MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax 多模态 (vision)
 MINIMAX_M2_7_HIGHSPEED = "MiniMax-M2.7-highspeed"  # MiniMax M2.7 highspeed
 MINIMAX_M2_5 = "MiniMax-M2.5"  # MiniMax M2.5
 MINIMAX_M2_1 = "MiniMax-M2.1"  # MiniMax M2.1
@@ -119,6 +120,7 @@ MINIMAX_ABAB6_5 = "abab6.5-chat"  # MiniMax abab6.5
 GLM_5_1 = "glm-5.1"  # 智谱 GLM-5.1 - Agent recommended model (default)
 GLM_5_TURBO = "glm-5-turbo"  # 智谱 GLM-5-Turbo
 GLM_5 = "glm-5"  # 智谱 GLM-5
+GLM_5V_TURBO = "glm-5v-turbo"  # 智谱多模态 (vision)
 GLM_4 = "glm-4"
 GLM_4_PLUS = "glm-4-plus"
 GLM_4_flash = "glm-4-flash"

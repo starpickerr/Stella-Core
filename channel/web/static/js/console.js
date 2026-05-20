@@ -14,9 +14,51 @@ const I18N = {
     zh: {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
+        menu_chat: '对话', menu_config: '配置', menu_models: '模型', menu_skills: '技能',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
+        models_title: '模型管理',
+        models_desc: '统一管理对话、视觉、语音、向量、图像、搜索能力',
+        models_section_vendors: '厂商凭据',
+        models_section_vendors_desc: '一处配置，多个能力共享',
+        models_section_capabilities: '模型能力',
+        models_add_vendor: '添加厂商',
+        models_provider: '厂商',
+        models_model: '模型',
+        models_configured: '已配置',
+        models_not_configured: '未配置',
+        models_pick_to_configure: '选择以配置',
+        models_clear_credential: '清除凭据',
+        models_base_default_hint: '留空将使用官方默认地址',
+        models_base_default: '默认',
+        models_capability_chat: '主模型',
+        models_capability_chat_desc: '驱动对话与 Agent 推理',
+        models_capability_vision: '图像理解',
+        models_capability_vision_desc: '识别图片内容；未指定时自动跟随主模型',
+        models_capability_image: '图像生成',
+        models_capability_image_desc: '生成图片，可固定厂商或跟随主模型',
+        models_auto_using: '当前优先使用',
+        models_capability_asr: '语音识别',
+        models_capability_asr_desc: '语音转文字',
+        models_capability_tts: '语音合成',
+        models_capability_tts_desc: '文字转语音',
+        models_capability_embedding: '向量',
+        models_capability_embedding_desc: '记忆与知识的向量化',
+        models_capability_search: '联网搜索',
+        models_capability_search_desc: '实时网页检索能力',
+        models_strategy_auto: '自动',
+        models_unavailable: '不可用',
+        models_set_via_env: '通过环境变量启用',
+        models_dim_label: '维度',
+        models_warn_rebuild: '向量配置已更新，建议在聊天框输入 /memory rebuild-index 重建索引',
+        models_save_success: '已保存',
+        models_save_failed: '保存失败',
+        models_cleared: '已清除',
+        models_clear_failed: '清除失败',
+        models_clear_confirm_title: '清除厂商凭据',
+        models_clear_confirm_msg: '确认清除该厂商的 API Key 与 Base URL 吗？相关能力将不再可用。',
+        cancel: '取消',
+        save: '保存',
         knowledge_title: '知识库', knowledge_desc: '浏览和探索你的知识库',
         knowledge_tab_docs: '文档', knowledge_tab_graph: '图谱',
         knowledge_loading: '加载知识库中...', knowledge_loading_desc: '知识页面将显示在这里',
@@ -115,9 +157,51 @@ const I18N = {
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
+        menu_chat: 'Chat', menu_config: 'Config', menu_models: 'Models', menu_skills: 'Skills',
         menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
         menu_logs: 'Logs',
+        models_title: 'Models',
+        models_desc: 'Manage chat, vision, voice, embedding, image and search capabilities in one place',
+        models_section_vendors: 'Vendor Credentials',
+        models_section_vendors_desc: 'Configured once, shared by every capability',
+        models_section_capabilities: 'Capabilities',
+        models_add_vendor: 'Add Vendor',
+        models_provider: 'Provider',
+        models_model: 'Model',
+        models_configured: 'configured',
+        models_not_configured: 'not configured',
+        models_pick_to_configure: 'pick to configure',
+        models_clear_credential: 'Clear credentials',
+        models_base_default_hint: 'Leave blank to use the official default base URL',
+        models_base_default: 'Default',
+        models_capability_chat: 'Main Model',
+        models_capability_chat_desc: 'Powers chat and agent reasoning',
+        models_capability_vision: 'Image Understanding',
+        models_capability_vision_desc: 'Reads images; auto-follows main model when unspecified',
+        models_capability_image: 'Image Generation',
+        models_capability_image_desc: 'Generate images; pin a vendor or follow the main model',
+        models_auto_using: 'Preferred',
+        models_capability_asr: 'Speech Recognition',
+        models_capability_asr_desc: 'Voice to text',
+        models_capability_tts: 'Speech Synthesis',
+        models_capability_tts_desc: 'Text to voice',
+        models_capability_embedding: 'Embedding',
+        models_capability_embedding_desc: 'Vectorizes memory and knowledge',
+        models_capability_search: 'Web Search',
+        models_capability_search_desc: 'Real-time web retrieval',
+        models_strategy_auto: 'auto',
+        models_unavailable: 'unavailable',
+        models_set_via_env: 'enable via environment variable',
+        models_dim_label: 'dim',
+        models_warn_rebuild: 'Embedding settings changed — run /memory rebuild-index in chat to rebuild',
+        models_save_success: 'Saved',
+        models_save_failed: 'Save failed',
+        models_cleared: 'Cleared',
+        models_clear_failed: 'Clear failed',
+        models_clear_confirm_title: 'Clear vendor credentials',
+        models_clear_confirm_msg: 'Remove this vendor\'s API Key and Base URL? Capabilities relying on it will stop working.',
+        cancel: 'Cancel',
+        save: 'Save',
         knowledge_title: 'Knowledge', knowledge_desc: 'Browse and explore your knowledge base',
         knowledge_tab_docs: 'Documents', knowledge_tab_graph: 'Graph',
         knowledge_loading: 'Loading knowledge base...', knowledge_loading_desc: 'Knowledge pages will be displayed here',
@@ -326,6 +410,7 @@ function toggleTheme() {
 const VIEW_META = {
     chat:     { group: 'nav_chat',    page: 'menu_chat' },
     config:   { group: 'nav_manage',  page: 'menu_config' },
+    models:   { group: 'nav_manage',  page: 'menu_models' },
     skills:   { group: 'nav_manage',  page: 'menu_skills' },
     memory:   { group: 'nav_manage',  page: 'menu_memory' },
     knowledge:{ group: 'nav_manage',  page: 'menu_knowledge' },
@@ -2491,8 +2576,23 @@ function initDropdown(el, options, selectedValue, onChange) {
         options.forEach(opt => {
             const item = document.createElement('div');
             item.className = 'cfg-dropdown-item' + (opt.value === el._ddValue ? ' active' : '');
-            item.textContent = opt.label;
             item.dataset.value = opt.value;
+            // Hint is an optional dim secondary label rendered on the right
+            // side of the row (e.g. friendly brand name next to a technical
+            // model id). When absent the row degrades to the original
+            // single-string layout.
+            if (opt.hint) {
+                const labelEl = document.createElement('span');
+                labelEl.className = 'cfg-dropdown-label';
+                labelEl.textContent = opt.label;
+                const hintEl = document.createElement('span');
+                hintEl.className = 'cfg-dropdown-hint';
+                hintEl.textContent = opt.hint;
+                item.appendChild(labelEl);
+                item.appendChild(hintEl);
+            } else {
+                item.textContent = opt.label;
+            }
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 el._ddValue = opt.value;
@@ -3136,6 +3236,888 @@ function showConfirmDialog({ title, message, okText, cancelText, onConfirm }) {
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onOverlayClick);
     overlay.classList.remove('hidden');
+}
+
+// =====================================================================
+// Models View
+// =====================================================================
+// Capability cards rendered on the Models page. Order matters — main model
+// comes first because it transitively decides defaults for vision and image.
+// Icon palette is grouped by capability family:
+//   - chat                       → primary (brand green; the "main" capability)
+//   - vision + image             → blue    (everything visual)
+//   - asr + tts                  → amber   (everything audio)
+//   - embedding                  → purple  (vectors)
+//   - search                     → orange  (retrieval)
+// Each card uses an explicit `iconClass` string so Tailwind's CDN JIT can
+// see the literal class names — dynamic `bg-${color}-50` strings would not
+// be picked up reliably.
+const MODELS_CAPABILITY_DEFS = [
+    { id: 'chat',      icon: 'fa-microchip',        editable: true,  needsModel: true,  titleKey: 'models_capability_chat',      descKey: 'models_capability_chat_desc',
+      iconChip: 'bg-primary-50 dark:bg-primary-900/30',  iconGlyph: 'text-primary-500' },
+    { id: 'vision',    icon: 'fa-eye',              editable: true,  needsModel: true,  titleKey: 'models_capability_vision',    descKey: 'models_capability_vision_desc',
+      iconChip: 'bg-blue-50 dark:bg-blue-900/30',        iconGlyph: 'text-blue-500' },
+    { id: 'image',     icon: 'fa-image',            editable: true,  needsModel: true,  titleKey: 'models_capability_image',     descKey: 'models_capability_image_desc',
+      iconChip: 'bg-blue-50 dark:bg-blue-900/30',        iconGlyph: 'text-blue-500' },
+    { id: 'asr',       icon: 'fa-microphone',       editable: true,  needsModel: false, titleKey: 'models_capability_asr',       descKey: 'models_capability_asr_desc',
+      iconChip: 'bg-amber-50 dark:bg-amber-900/30',      iconGlyph: 'text-amber-500' },
+    { id: 'tts',       icon: 'fa-volume-high',      editable: true,  needsModel: true,  titleKey: 'models_capability_tts',       descKey: 'models_capability_tts_desc',
+      iconChip: 'bg-amber-50 dark:bg-amber-900/30',      iconGlyph: 'text-amber-500' },
+    { id: 'embedding', icon: 'fa-vector-square',    editable: true,  needsModel: false, titleKey: 'models_capability_embedding', descKey: 'models_capability_embedding_desc',
+      iconChip: 'bg-purple-50 dark:bg-purple-900/30',    iconGlyph: 'text-purple-500' },
+    { id: 'search',    icon: 'fa-magnifying-glass', editable: false, needsModel: false, titleKey: 'models_capability_search',    descKey: 'models_capability_search_desc',
+      iconChip: 'bg-orange-50 dark:bg-orange-900/30',    iconGlyph: 'text-orange-500' },
+];
+
+// Provider logos: when a real SVG exists under static/logos/<id>.svg we use
+// it; otherwise we fall back to a neutral monogram chip. SVGs are fetched
+// via <img> with a hidden onerror so layout stays stable when files are
+// absent. Vendors whose mark is rendered in pure (or near-pure) black are
+// listed in MODELS_PROVIDER_LOGO_DARK_INVERT — for those, we apply a CSS
+// invert filter in dark mode so the glyph stays visible against #1A1A1A.
+const MODELS_PROVIDER_LOGO_PATH = 'assets/logos';
+const MODELS_PROVIDER_LOGO_DARK_INVERT = new Set([
+    'openai',     // black wordmark
+    'moonshot',   // dark monogram
+    'zhipu',      // dark monogram
+    'custom',     // single-color slider glyph
+]);
+
+let modelsState = { providers: [], capabilities: {} };
+
+// One-shot: { capabilityId, providerId } stashed before a Models reload,
+// consumed by renderCapabilityBody to preselect a just-configured vendor.
+let pendingCapabilitySelection = null;
+
+// `opts.preserveScroll` keeps the page's vertical scroll position across the
+// refresh. We capture it before unhiding the loading skeleton (which collapses
+// content height to zero) and restore it after the new content is mounted.
+// This matters when the user configures a vendor from inside a capability
+// card's dropdown — without preservation, the post-save reload bounces them
+// back to the top of the page, away from the card they were configuring.
+function loadModelsView(opts) {
+    const loading = document.getElementById('models-loading');
+    const content = document.getElementById('models-content');
+    if (!loading || !content) return;
+    const preserveScroll = !!(opts && opts.preserveScroll);
+    // The Models pane has its own scrollable container; capture its position
+    // (not window.scrollY) so we can put the user back exactly where they were.
+    const scroller = document.querySelector('#view-models .overflow-y-auto');
+    const savedTop = preserveScroll && scroller ? scroller.scrollTop : null;
+
+    loading.classList.remove('hidden');
+    content.classList.add('hidden');
+
+    fetch('/api/models').then(r => r.json()).then(data => {
+        if (data.status !== 'success') {
+            loading.innerHTML = `<span class="text-sm text-red-400">${escapeHtml(data.message || 'Failed to load')}</span>`;
+            return;
+        }
+        modelsState.providers = data.providers || [];
+        modelsState.capabilities = data.capabilities || {};
+        renderModelsView();
+        loading.classList.add('hidden');
+        content.classList.remove('hidden');
+        if (savedTop !== null && scroller) {
+            // Wait one frame for the new layout to settle, otherwise the
+            // restored scrollTop snaps to the previous (smaller) max.
+            requestAnimationFrame(() => { scroller.scrollTop = savedTop; });
+        }
+    }).catch(err => {
+        loading.innerHTML = `<span class="text-sm text-red-400">${escapeHtml(String(err))}</span>`;
+    });
+}
+
+function renderModelsView() {
+    const container = document.getElementById('models-content');
+    container.innerHTML = '';
+    container.appendChild(renderVendorsSection());
+    MODELS_CAPABILITY_DEFS.forEach(def => container.appendChild(renderCapabilityCard(def)));
+}
+
+// ---------- Vendor section (Layer 1) -----------------------------------
+
+function renderVendorsSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
+
+    const configured = modelsState.providers.filter(p => p.configured);
+
+    const header = `
+        <div class="flex items-start gap-3 mb-5">
+            <div class="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-key text-primary-500 text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_section_vendors')}</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t('models_section_vendors_desc')}</p>
+            </div>
+            <span class="text-xs text-slate-400 dark:text-slate-500 mt-2 flex-shrink-0">${configured.length}/${modelsState.providers.length}</span>
+        </div>`;
+
+    let body;
+    if (configured.length === 0) {
+        body = `
+            <div class="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-slate-200 dark:border-white/10">
+                <p class="text-sm text-slate-500 dark:text-slate-400 text-center">${t('models_not_configured')}</p>
+                <button onclick="openVendorModal('')"
+                        class="mt-3 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer transition-colors">
+                    <i class="fas fa-plus text-[10px] mr-1"></i>${t('models_add_vendor')}
+                </button>
+            </div>`;
+    } else {
+        body = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            ${configured.map(renderVendorChip).join('')}
+        </div>`;
+    }
+
+    wrap.innerHTML = header + body;
+    return wrap;
+}
+
+function renderVendorChip(p) {
+    // The masked API key is intentionally not surfaced here; it is shown
+    // inside the edit modal so the chip stays uncluttered and scannable.
+    return `
+        <button onclick="openVendorModal('${escapeHtml(p.id)}')"
+                class="group flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 dark:border-white/10
+                       bg-slate-50 dark:bg-white/5 hover:border-primary-300 dark:hover:border-primary-500/50
+                       cursor-pointer transition-colors duration-150 text-left">
+            ${renderProviderLogo(p, 28)}
+            <span class="flex-1 min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(p.label)}</span>
+            <i class="fas fa-pen-to-square text-[11px] text-slate-400 dark:text-slate-500 group-hover:text-primary-500 transition-colors"></i>
+        </button>`;
+}
+
+// Render a uniformly-styled logo for a provider. Tries an SVG asset first; if
+// it 404s the <img> swaps itself for a monogram fallback via onerror.
+function renderProviderLogo(p, sizePx) {
+    const initial = (p.label || p.id || '?').slice(0, 1).toUpperCase();
+    const sz = sizePx || 32;
+    const url = `${MODELS_PROVIDER_LOGO_PATH}/${encodeURIComponent(p.id)}.svg`;
+    const fallbackId = `pl-${p.id}-${Math.random().toString(36).slice(2, 8)}`;
+    const imgClass = MODELS_PROVIDER_LOGO_DARK_INVERT.has(p.id)
+        ? 'absolute inset-0 m-auto provider-logo-img provider-logo-invert-dark'
+        : 'absolute inset-0 m-auto provider-logo-img';
+    return `
+        <span class="relative flex items-center justify-center rounded-lg bg-slate-100 dark:bg-white/10
+                     text-slate-600 dark:text-slate-300 flex-shrink-0 overflow-hidden"
+              style="width:${sz}px;height:${sz}px;">
+            <span id="${fallbackId}" class="text-xs font-bold">${escapeHtml(initial)}</span>
+            <img src="${url}" alt="" aria-hidden="true"
+                 class="${imgClass}"
+                 style="width:${Math.round(sz * 0.65)}px;height:${Math.round(sz * 0.65)}px;"
+                 onload="(function(el){var f=document.getElementById('${fallbackId}');if(f)f.style.display='none';})(this)"
+                 onerror="this.remove();">
+        </span>`;
+}
+
+// ---------- Capability cards (Layer 2) ---------------------------------
+
+function renderCapabilityCard(def) {
+    const cap = modelsState.capabilities[def.id] || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
+    wrap.id = `models-card-${def.id}`;
+
+    const headerRight = renderCapabilityHeaderTag(def, cap);
+
+    wrap.innerHTML = `
+        <div class="flex items-start gap-3 mb-5">
+            <div class="w-9 h-9 rounded-lg ${def.iconChip} flex items-center justify-center flex-shrink-0">
+                <i class="fas ${def.icon} ${def.iconGlyph} text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t(def.titleKey)}</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t(def.descKey)}</p>
+            </div>
+            ${headerRight}
+        </div>
+        <div class="space-y-4" data-cap-body="${def.id}"></div>`;
+
+    const body = wrap.querySelector(`[data-cap-body="${def.id}"]`);
+    renderCapabilityBody(def, cap, body);
+    return wrap;
+}
+
+function renderCapabilityHeaderTag(def, cap) {
+    // Only the search card carries a header tag — it reflects a runtime
+    // resolution result (which vendor responds to web_search), so the chip
+    // is informational, not editable. Other cards used to surface "auto"
+    // and "follows main model" badges, but those duplicated information
+    // already shown in the provider dropdown and the fallback hint below,
+    // so we drop them for visual clarity.
+    if (def.id === 'search') {
+        if (cap.available) {
+            return `<span class="px-2 py-0.5 text-[11px] rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 mt-1 flex-shrink-0">${escapeHtml(cap.current_provider || '')}</span>`;
+        }
+        return `<span class="px-2 py-0.5 text-[11px] rounded-md bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 mt-1 flex-shrink-0">${t('models_unavailable')}</span>`;
+    }
+    return '';
+}
+
+function renderCapabilityBody(def, cap, body) {
+    if (def.id === 'search') {
+        if (cap.available) {
+            body.innerHTML = `
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                    <i class="fas fa-circle-check text-[11px] mr-1.5 text-emerald-500"></i>
+                    ${t('models_configured')}: <span class="font-mono text-slate-700 dark:text-slate-300">${escapeHtml(cap.current_provider)}</span>
+                </p>`;
+        } else {
+            body.innerHTML = `
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                    <i class="fas fa-circle-exclamation text-[11px] mr-1.5 text-amber-500"></i>
+                    ${t('models_set_via_env')}: <span class="font-mono text-slate-700 dark:text-slate-300">BOCHA_API_KEY</span>
+                </p>`;
+        }
+        return;
+    }
+
+    // Editable cards: provider dropdown + (optional) model dropdown + save row
+    const providerOpts = buildCapabilityProviderOptions(def, cap);
+    const providerHtml = `
+        <div>
+            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_provider')}</label>
+            <div id="cap-${def.id}-provider" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+        </div>`;
+
+    // The model-picker container is always emitted so the provider-change
+    // handler can show/hide it; for `auto` capabilities it starts hidden and
+    // gets toggled by setCapabilityModelPickerVisible.
+    const modelHtml = def.needsModel ? `
+        <div id="cap-${def.id}-model-wrap">
+            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_model')}</label>
+            <div id="cap-${def.id}-model" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+            <div id="cap-${def.id}-model-custom-wrap" class="mt-2 hidden">
+                <input id="cap-${def.id}-model-custom" type="text"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                              bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                              focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                       placeholder="custom model name">
+            </div>
+        </div>` : '';
+
+    const dimHtml = (def.id === 'embedding' && cap.current_dim) ? `
+        <p class="text-xs text-slate-400 dark:text-slate-500">
+            <i class="fas fa-cube text-[10px] mr-1"></i>${t('models_dim_label')}: <span class="font-mono">${cap.current_dim}</span>
+        </p>` : '';
+
+    // Footer layout: a "hint slot" (filled later by renderCapabilityHints for
+    // auto-mode cards) sits on the left while status + save stay anchored on
+    // the right. Keeping them on the same row means the save button hugs the
+    // inputs above instead of being pushed down by a separate hint line.
+    const footer = `
+        <div class="flex items-center justify-between gap-3 pt-1">
+            <div data-cap-hint="${def.id}" class="flex-1 min-w-0"></div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+                <span id="cap-${def.id}-status" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                <button onclick="saveCapability('${def.id}')"
+                        class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                               cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                    ${t('save')}
+                </button>
+            </div>
+        </div>`;
+
+    body.innerHTML = providerHtml + modelHtml + dimHtml + footer;
+
+    // The body subtree is detached from `document` at this moment (the parent
+    // wrap is not yet appended), so we must scope lookups to `body` rather
+    // than calling document.getElementById, which would return null and crash
+    // initDropdown's internal querySelector.
+    const provDd = body.querySelector(`#cap-${def.id}-provider`);
+    // initDropdown's option shape is {value, label}; we strip our private
+    // _configured/_tracked fields before handing it over so the helper stays
+    // generic, then re-attach status decorations afterwards.
+    const ddOpts = providerOpts.map(o => ({ value: o.value, label: o.label }));
+
+    let pendingProvider = null;
+    if (pendingCapabilitySelection
+            && pendingCapabilitySelection.capabilityId === def.id
+            && providerOpts.some(o => o.value === pendingCapabilitySelection.providerId)) {
+        pendingProvider = pendingCapabilitySelection.providerId;
+        pendingCapabilitySelection = null;
+    }
+
+    // For auto-capable capabilities, an "auto" strategy means the user has
+    // not pinned a vendor; we honor that by selecting the empty-string
+    // sentinel rather than the resolved fallback provider name.
+    const initialProviderValue = pendingProvider
+        ? pendingProvider
+        : ((cap.strategy === 'auto' && capabilitySupportsAuto(def.id))
+            ? ''
+            : (cap.current_provider || (ddOpts[0] && ddOpts[0].value) || ''));
+    initDropdown(
+        provDd,
+        ddOpts,
+        initialProviderValue,
+        (value) => onCapabilityProviderChange(def, value, body)
+    );
+    decorateCapabilityProviderDropdown(def, provDd, providerOpts);
+
+    if (def.needsModel) {
+        rebuildCapabilityModelDropdown(def, initialProviderValue, cap.current_model || '', body);
+        // Hide the model picker entirely while the capability is in `auto`
+        // mode — there is nothing useful to pin, and the fallback hint
+        // below explains what'll actually run.
+        setCapabilityModelPickerVisible(def, initialProviderValue !== '' || !capabilitySupportsAuto(def.id), body);
+    }
+
+    // Inject auto/router-pending hint banners before the action footer.
+    renderCapabilityHints(def, cap, body, initialProviderValue);
+}
+
+// Toggle visibility of the model picker. Used both at first render and
+// whenever the provider dropdown swings between an explicit vendor and the
+// "auto" sentinel. We toggle the wrapper rather than re-rendering so the
+// existing dropdown state survives a round-trip back to a real vendor.
+function setCapabilityModelPickerVisible(def, visible, scope) {
+    const root = scope || document;
+    const wrap = root.querySelector(`#cap-${def.id}-model-wrap`);
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !visible);
+}
+
+function renderCapabilityHints(def, cap, body, currentProvider) {
+    // Capabilities that can be in "auto" mode show a fallback hint right
+    // under the inputs so users always know what'd actually be hit. The
+    // image card additionally surfaces a "router pending" warning until the
+    // standalone dispatcher lands.
+    // The hint slot is co-located with the save button in the footer row
+    // (see renderCapabilityBody) so the save button stays close to the
+    // inputs above. We just rewrite the slot's innerHTML — emptying it
+    // when the card leaves auto mode, or rendering a one-line hint when
+    // it's in auto mode.
+    const slot = body.querySelector(`[data-cap-hint="${def.id}"]`);
+    if (!slot) return;
+    slot.innerHTML = '';
+
+    if (currentProvider !== '' || !capabilitySupportsAuto(def.id)) return;
+
+    // The hint mirrors what the runtime would actually pick when in auto
+    // mode. fallback_provider/model are pre-computed on the backend (see
+    // _predict_vision_auto, _predict_image_auto) so we can trust them
+    // here without re-implementing the provider chain.
+    const fbProv = cap.fallback_provider || '';
+    const fbModel = cap.fallback_model || '';
+    if (!fbProv && !fbModel) return;
+    // Show the vendor's display label (e.g. "LinkAI") instead of the raw
+    // id ("linkai") when we know it. Falls back to the id when the
+    // provider isn't in our vendor table (rare).
+    const provMeta = modelsState.providers.find(p => p.id === fbProv);
+    const fbProvLabel = (provMeta && provMeta.label) || fbProv;
+    const fbText = fbModel ? `${fbProvLabel} / ${fbModel}` : fbProvLabel;
+    slot.innerHTML = `
+        <p class="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 min-w-0">
+            <i class="fas fa-circle-info text-[10px] flex-shrink-0"></i>
+            <span class="flex-shrink-0">${t('models_auto_using')}</span>
+            <span class="font-mono text-slate-500 dark:text-slate-400 truncate">${escapeHtml(fbText)}</span>
+        </p>`;
+}
+
+function buildCapabilityProviderOptions(def, cap) {
+    // Show ALL vendors in capability dropdowns so users can see at a glance
+    // who's configured (green check) and who isn't (gray dot, click to set
+    // up). The list order puts configured vendors first; clicking an
+    // unconfigured row opens the vendor modal in-place. ASR/TTS engines that
+    // aren't tracked by PROVIDER_MODELS (azure/baidu/google etc.) are treated
+    // as "always available" — no credential gate.
+    const knownProviderMap = {};
+    modelsState.providers.forEach(p => { knownProviderMap[p.id] = p; });
+
+    const explicitList = cap.providers && cap.providers.length ? cap.providers : null;
+    let providerIds = explicitList ? explicitList.slice() : modelsState.providers.map(p => p.id);
+    if (cap.current_provider && !providerIds.includes(cap.current_provider)) {
+        providerIds = [cap.current_provider, ...providerIds];
+    }
+
+    const opts = providerIds.map(pid => {
+        const meta = knownProviderMap[pid];
+        const tracked = !!meta;
+        const configured = !tracked || !!meta.configured;
+        return {
+            value: pid,
+            label: (meta && meta.label) || pid,
+            _tracked: tracked,
+            _configured: configured,
+        };
+    });
+
+    opts.sort((a, b) => {
+        if (a._configured === b._configured) return 0;
+        return a._configured ? -1 : 1;
+    });
+
+    // Capabilities with a fallback ("auto") strategy expose it as a sentinel
+    // option pinned to the top of the list. We use empty-string as the auto
+    // value so the existing save handler propagates it untouched to the
+    // backend, which interprets "" as "fall back to the main model".
+    if (cap.strategy === 'auto' || cap.strategy === 'specified') {
+        if (capabilitySupportsAuto(def.id)) {
+            opts.unshift({
+                value: '',
+                label: t('models_strategy_auto'),
+                _tracked: false,
+                _configured: true,
+                _isAuto: true,
+            });
+        }
+    }
+    return opts;
+}
+
+function capabilitySupportsAuto(capId) {
+    return capId === 'image' || capId === 'vision' || capId === 'embedding';
+}
+
+// After initDropdown renders the capability provider menu, decorate each
+// row with the right-aligned configuration cue:
+//   - configured rows: nothing extra — the .active marker (a brand-green ✓)
+//     already comes from initDropdown's selected-state CSS for the row the
+//     user currently picked. Other configured rows show no chrome, mirroring
+//     a plain "switch to this" selector.
+//   - unconfigured rows: a subdued gear icon hints at "click to configure".
+//     The row's whole click handler is swapped to launch the vendor modal
+//     in place rather than selecting an unusable value.
+function decorateCapabilityProviderDropdown(def, ddEl, opts) {
+    if (!ddEl) return;
+    const menu = ddEl.querySelector('.cfg-dropdown-menu');
+    if (!menu) return;
+
+    const optByValue = {};
+    opts.forEach(o => { optByValue[o.value] = o; });
+
+    menu.querySelectorAll('.cfg-dropdown-item').forEach(item => {
+        const value = item.dataset.value;
+        const opt = optByValue[value];
+        if (!opt) return;
+        item.classList.add('cap-provider-item');
+        if (!opt._configured) item.classList.add('cap-provider-unconfigured');
+
+        // Wrap the label so the trailing affordance lines up via flex:auto.
+        const labelText = item.textContent;
+        item.textContent = '';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'cap-provider-label';
+        labelEl.textContent = labelText;
+        item.appendChild(labelEl);
+
+        if (!opt._configured) {
+            // Trailing gear icon as the "configure this vendor" affordance.
+            const gear = document.createElement('i');
+            gear.className = 'fas fa-gear cap-provider-gear';
+            item.appendChild(gear);
+        }
+
+        if (!opt._configured && opt._tracked) {
+            // Hijack the click: open the vendor modal instead of selecting
+            // an unusable value, and remember which capability the user was
+            // configuring so the post-save reload can preselect the vendor.
+            const newItem = item.cloneNode(true);
+            item.replaceWith(newItem);
+            newItem.addEventListener('click', (e) => {
+                e.stopPropagation();
+                ddEl.classList.remove('open');
+                openVendorModal(value, (savedProviderId) => {
+                    pendingCapabilitySelection = {
+                        capabilityId: def.id,
+                        providerId: savedProviderId || value,
+                    };
+                    loadModelsView({ preserveScroll: true });
+                });
+            });
+        }
+    });
+}
+
+// Lightweight decorator for the "add vendor" modal's provider picker:
+// every configured vendor row gets a trailing brand-green ✓ so the user can
+// see at a glance who's already set up, without having to read each row.
+// Unlike decorateCapabilityProviderDropdown we don't hijack clicks here —
+// picking an unconfigured vendor in this modal *is* the intended action.
+function decorateVendorModalPicker(ddEl, opts) {
+    if (!ddEl) return;
+    const menu = ddEl.querySelector('.cfg-dropdown-menu');
+    if (!menu) return;
+
+    const optByValue = {};
+    opts.forEach(o => { optByValue[o.value] = o; });
+
+    menu.querySelectorAll('.cfg-dropdown-item').forEach(item => {
+        const opt = optByValue[item.dataset.value];
+        if (!opt) return;
+        // Tag the row so the global active-row ✓ rule is suppressed in CSS
+        // (otherwise configured AND selected rows would render two checks).
+        item.classList.add('vendor-picker-item');
+        if (!opt._configured) return;
+        const check = document.createElement('i');
+        check.className = 'fas fa-check vendor-picker-configured-mark';
+        item.appendChild(check);
+    });
+}
+
+function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
+    // `scope` lets the caller (renderCapabilityBody) target a still-detached
+    // subtree. After the card is mounted, callers may pass `document` instead.
+    const root = scope || document;
+    const el = root.querySelector(`#cap-${def.id}-model`);
+    if (!el) return;
+
+    // Prefer the capability-scoped model list when the backend provides one
+    // (vision / image). It reflects the models the runtime can actually
+    // dispatch to for this capability, instead of the vendor's full chat-
+    // model catalog. Fall back to the generic provider.models for chat /
+    // embedding / tts where any vendor model is fair game.
+    //
+    // Entries may be plain strings or {value, hint} objects (image catalog
+    // uses the latter to surface brand aliases like "Nano Banana 2" next to
+    // the technical Gemini model id). We normalize to {value, label, hint}
+    // before handing off to initDropdown.
+    const cap = modelsState.capabilities[def.id] || {};
+    const capModelMap = cap.provider_models || {};
+    let rawList;
+    if (capModelMap[providerId]) {
+        rawList = capModelMap[providerId].slice();
+    } else {
+        const provider = modelsState.providers.find(p => p.id === providerId);
+        rawList = (provider && provider.models) ? provider.models.slice() : [];
+    }
+    const modelValues = [];
+    const opts = rawList.map(entry => {
+        if (typeof entry === 'string') {
+            modelValues.push(entry);
+            return { value: entry, label: entry };
+        }
+        modelValues.push(entry.value);
+        return { value: entry.value, label: entry.label || entry.value, hint: entry.hint || '' };
+    });
+    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义...' : 'Custom...' });
+
+    let initialValue = selectedModel || '';
+    if (initialValue && !modelValues.includes(initialValue)) {
+        initialValue = '__custom__';
+    }
+    if (!initialValue && opts.length) initialValue = opts[0].value;
+
+    initDropdown(el, opts, initialValue, (value) => {
+        const customWrap = document.getElementById(`cap-${def.id}-model-custom-wrap`);
+        if (!customWrap) return;
+        if (value === '__custom__') {
+            customWrap.classList.remove('hidden');
+            const input = document.getElementById(`cap-${def.id}-model-custom`);
+            if (input && !input.value) input.value = selectedModel || '';
+        } else {
+            customWrap.classList.add('hidden');
+        }
+    });
+
+    const customWrap = root.querySelector(`#cap-${def.id}-model-custom-wrap`);
+    if (customWrap) {
+        if (initialValue === '__custom__') {
+            customWrap.classList.remove('hidden');
+            const input = root.querySelector(`#cap-${def.id}-model-custom`);
+            if (input) input.value = selectedModel || '';
+        } else {
+            customWrap.classList.add('hidden');
+        }
+    }
+}
+
+function onCapabilityProviderChange(def, providerId, scope) {
+    if (def.needsModel) {
+        // For capabilities that support `auto`, switching to the empty
+        // sentinel hides the model picker entirely so the card reads as
+        // "we'll figure it out"; switching back to a real vendor re-runs
+        // the rebuild against the capability-scoped model list.
+        const isAuto = providerId === '' && capabilitySupportsAuto(def.id);
+        if (!isAuto) {
+            rebuildCapabilityModelDropdown(def, providerId, '', scope);
+        }
+        setCapabilityModelPickerVisible(def, !isAuto, scope);
+    }
+    // Refresh the auto-hint so it disappears once the user pins a vendor
+    // and reappears when they swing back to "auto". renderCapabilityHints
+    // now writes directly into the footer's hint slot, so we just call it
+    // again — no need to clean up stale DOM nodes.
+    const body = scope || document.querySelector(`[data-cap-body="${def.id}"]`);
+    if (body) {
+        const cap = modelsState.capabilities[def.id] || {};
+        renderCapabilityHints(def, cap, body, providerId);
+    }
+}
+
+function getCapabilityModelValue(def) {
+    if (!def.needsModel) return '';
+    const dd = document.getElementById(`cap-${def.id}-model`);
+    if (!dd) return '';
+    const v = getDropdownValue(dd);
+    if (v === '__custom__') {
+        const input = document.getElementById(`cap-${def.id}-model-custom`);
+        return input ? input.value.trim() : '';
+    }
+    return v || '';
+}
+
+function saveCapability(capId) {
+    const def = MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+    if (!def || !def.editable) return;
+    const provDd = document.getElementById(`cap-${capId}-provider`);
+    const provider = provDd ? getDropdownValue(provDd) : '';
+    // When the user is in auto mode (provider == ""), the model picker is
+    // hidden and any value left in it is stale; persist an empty model so
+    // the backend treats this as "fall back to the runtime chain".
+    const isAuto = provider === '' && capabilitySupportsAuto(capId);
+    const model = isAuto ? '' : getCapabilityModelValue(def);
+
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_capability', capability: capId, provider_id: provider, model: model }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            // Show "Saved" first; defer the view refresh so the user can
+            // see the confirmation (loadModelsView rebuilds the card and
+            // would otherwise wipe the status span instantly).
+            showStatus(`cap-${capId}-status`, 'models_save_success', false);
+            setTimeout(() => {
+                if (data.warn_rebuild_index) alert(t('models_warn_rebuild'));
+                // Re-pull state so derived fields (e.g. image follows main) refresh.
+                loadModelsView({ preserveScroll: true });
+            }, 900);
+        } else {
+            showStatus(`cap-${capId}-status`, 'models_save_failed', true);
+        }
+    }).catch(() => showStatus(`cap-${capId}-status`, 'models_save_failed', true));
+}
+
+// ---------- Vendor credential modal ------------------------------------
+
+let vendorModalState = { providerId: '', onSaved: null };
+
+function openVendorModal(providerId, onSaved) {
+    vendorModalState = { providerId: providerId || '', onSaved: onSaved || null };
+
+    const overlay = document.getElementById('vendor-modal-overlay');
+    const titleEl = document.getElementById('vendor-modal-title');
+    const subEl = document.getElementById('vendor-modal-subtitle');
+    const pickerWrap = document.getElementById('vendor-modal-picker-wrap');
+    const baseWrap = document.getElementById('vendor-modal-base-wrap');
+    const baseInput = document.getElementById('vendor-modal-base');
+    const baseHint = document.getElementById('vendor-modal-base-hint');
+    const keyInput = document.getElementById('vendor-modal-key');
+    const clearBtn = document.getElementById('vendor-modal-clear');
+
+    // Reset any leftover status (e.g. previous "Saved" message)
+    const statusEl = document.getElementById('vendor-modal-status');
+    if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.classList.add('opacity-0');
+    }
+
+    if (!providerId) {
+        // Add flow — show provider picker, default to the first unconfigured one.
+        // We render every configured vendor with a trailing green ✓ via the
+        // dropdown decorator, mirroring the visual language used by the
+        // capability provider dropdowns. The .active row already shows the
+        // currently selected vendor via its own background highlight, so we
+        // intentionally suppress the global active-row ✓ for this picker
+        // (see CSS) — otherwise configured + selected rows would show two.
+        const unconfigured = modelsState.providers.filter(p => !p.configured);
+        const defaultId = (unconfigured[0] && unconfigured[0].id) || (modelsState.providers[0] && modelsState.providers[0].id) || '';
+        pickerWrap.classList.remove('hidden');
+        const pickerEl = document.getElementById('vendor-modal-picker');
+        const pickerOpts = modelsState.providers.map(p => ({
+            value: p.id,
+            label: p.label,
+            _configured: !!p.configured,
+        }));
+        initDropdown(pickerEl, pickerOpts, defaultId, (val) => fillVendorModalForProvider(val));
+        decorateVendorModalPicker(pickerEl, pickerOpts);
+        fillVendorModalForProvider(defaultId);
+    } else {
+        pickerWrap.classList.add('hidden');
+        fillVendorModalForProvider(providerId);
+    }
+
+    overlay.classList.remove('hidden');
+
+    document.getElementById('vendor-modal-cancel').onclick = closeVendorModal;
+    document.getElementById('vendor-modal-save').onclick = saveVendorModal;
+    clearBtn.onclick = clearVendorModal;
+
+    // Once the user edits the masked value, drop the "masked sentinel" dataset
+    // so the save handler treats their input as a real new key. We compare on
+    // the next tick because keydown fires before the new char lands in .value.
+    keyInput.oninput = function () {
+        if (keyInput.dataset.masked === '1' && keyInput.value !== keyInput.dataset.maskedVal) {
+            keyInput.dataset.masked = '';
+        }
+    };
+
+    function onOverlayClick(e) {
+        if (e.target === overlay) {
+            closeVendorModal();
+            overlay.removeEventListener('click', onOverlayClick);
+        }
+    }
+    overlay.addEventListener('click', onOverlayClick);
+    keyInput.focus();
+}
+
+function fillVendorModalForProvider(providerId) {
+    const meta = modelsState.providers.find(p => p.id === providerId);
+    if (!meta) return;
+    document.getElementById('vendor-modal-title').textContent = meta.label;
+    document.getElementById('vendor-modal-subtitle').textContent = meta.id;
+
+    // ----- API Base -----
+    // Always reflect the *current effective* base as the input value so the
+    // user can see (and edit) what's in use today. Placeholder is reserved
+    // strictly for the "not yet typed anything" state and shows the official
+    // default — never mixed with the actual value.
+    const baseWrap = document.getElementById('vendor-modal-base-wrap');
+    const baseInput = document.getElementById('vendor-modal-base');
+    const baseHint = document.getElementById('vendor-modal-base-hint');
+    if (meta.api_base_field) {
+        baseWrap.classList.remove('hidden');
+        baseInput.placeholder = meta.api_base_default || meta.api_base_placeholder || '';
+        baseInput.value = meta.api_base || '';
+        if (meta.api_base_default) {
+            baseHint.classList.remove('hidden');
+            baseHint.querySelector('span').textContent = `${t('models_base_default')}: ${meta.api_base_default}`;
+        } else {
+            baseHint.classList.add('hidden');
+        }
+    } else {
+        baseWrap.classList.add('hidden');
+        baseInput.value = '';
+    }
+
+    // ----- API Key -----
+    // For configured vendors, surface the masked key as the input *value* so
+    // it shows up in the same dark text as a real entry — making "configured"
+    // visually unambiguous. The masked form (e.g. "sk-r***zRU") is also a
+    // sentinel: the save handler treats untouched masked input as "no change".
+    const keyInput = document.getElementById('vendor-modal-key');
+    if (meta.configured && meta.api_key_masked) {
+        keyInput.value = meta.api_key_masked;
+        keyInput.dataset.masked = '1';
+        keyInput.dataset.maskedVal = meta.api_key_masked;
+        keyInput.placeholder = '';
+    } else {
+        keyInput.value = '';
+        keyInput.dataset.masked = '';
+        keyInput.dataset.maskedVal = '';
+        keyInput.placeholder = 'sk-...';
+    }
+
+    const clearBtn = document.getElementById('vendor-modal-clear');
+    clearBtn.classList.toggle('hidden', !meta.configured);
+
+    vendorModalState.providerId = providerId;
+}
+
+function closeVendorModal() {
+    document.getElementById('vendor-modal-overlay').classList.add('hidden');
+}
+
+function saveVendorModal() {
+    const providerId = vendorModalState.providerId;
+    if (!providerId) return;
+    const keyInput = document.getElementById('vendor-modal-key');
+    const apiBase = document.getElementById('vendor-modal-base').value.trim();
+
+    // Treat "input still equals the masked value we surfaced on open" as "no
+    // change" — the backend uses missing/empty api_key to skip the field.
+    let apiKey = keyInput.value.trim();
+    const masked = keyInput.dataset.masked === '1';
+    const maskedVal = keyInput.dataset.maskedVal || '';
+    if (masked && apiKey === maskedVal) {
+        apiKey = '';
+    }
+
+    if (!apiKey && !masked) {
+        // First-time setup with no key entered → nudge the user.
+        keyInput.focus();
+        return;
+    }
+
+    const btn = document.getElementById('vendor-modal-save');
+    btn.disabled = true;
+    const payload = { action: 'set_provider', provider_id: providerId, api_base: apiBase };
+    if (apiKey) payload.api_key = apiKey;
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            // Show inline confirmation in the modal footer, then close after
+            // a short delay so the user can see the "Saved" feedback.
+            showStatus('vendor-modal-status', 'models_save_success', false);
+            setTimeout(() => {
+                btn.disabled = false;
+                closeVendorModal();
+                const onSaved = vendorModalState.onSaved;
+                // If a caller provided an onSaved hook, it owns the refresh
+                // strategy (e.g. preserveScroll when launched from inside a
+                // capability dropdown). Otherwise fall back to a plain reload
+                // so the standalone "add vendor" entry still updates the grid.
+                if (onSaved) {
+                    try { onSaved(providerId); } catch (e) { /* noop */ }
+                } else {
+                    loadModelsView();
+                }
+            }, 700);
+        } else {
+            btn.disabled = false;
+            showStatus('vendor-modal-status', 'models_save_failed', true);
+        }
+    }).catch(() => {
+        btn.disabled = false;
+        showStatus('vendor-modal-status', 'models_save_failed', true);
+    });
+}
+
+function clearVendorModal() {
+    const providerId = vendorModalState.providerId;
+    if (!providerId) return;
+    showConfirmDialog({
+        title: t('models_clear_confirm_title'),
+        message: t('models_clear_confirm_msg'),
+        okText: t('models_clear_credential'),
+        cancelText: t('cancel'),
+        onConfirm: () => {
+            fetch('/api/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete_provider', provider_id: providerId }),
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    showStatus('vendor-modal-status', 'models_cleared', false);
+                    setTimeout(() => {
+                        closeVendorModal();
+                        loadModelsView();
+                    }, 700);
+                } else {
+                    showStatus('vendor-modal-status', 'models_clear_failed', true);
+                }
+            }).catch(() => showStatus('vendor-modal-status', 'models_clear_failed', true));
+        }
+    });
 }
 
 // =====================================================================
@@ -4283,6 +5265,7 @@ navigateTo = function(viewId) {
 
     // Lazy-load view data
     if (viewId === 'config') loadConfigView();
+    else if (viewId === 'models') loadModelsView();
     else if (viewId === 'skills') loadSkillsView();
     else if (viewId === 'memory') {
         document.getElementById('memory-panel-viewer').classList.add('hidden');

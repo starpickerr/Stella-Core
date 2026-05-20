@@ -138,6 +138,11 @@
                             <span data-i18n="menu_config">配置</span>
                         </a>
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="models">
+                            <i class="fas fa-microchip item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_models">模型</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="skills">
                             <i class="fas fa-bolt item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_skills">技能</span>
@@ -851,6 +856,41 @@
                 </div>
 
                 <!-- ====================================================== -->
+                <!-- VIEW: Models                                            -->
+                <!-- ====================================================== -->
+                <div id="view-models" class="view">
+                    <!-- Tailwind JIT safelist: capability-card icon colors are
+                         emitted from JS template strings. Listing them here
+                         (display:none) guarantees the CDN-side compiler picks
+                         them up regardless of render timing. -->
+                    <div class="hidden bg-blue-50 dark:bg-blue-900/30 text-blue-500
+                                       bg-orange-50 dark:bg-orange-900/30 text-orange-500
+                                       bg-purple-50 dark:bg-purple-900/30 text-purple-500
+                                       bg-amber-50 dark:bg-amber-900/30 text-amber-500
+                                       bg-primary-50 dark:bg-primary-900/30 text-primary-500"></div>
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-4xl mx-auto">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="models_title">模型管理</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="models_desc">统一管理对话、视觉、语音、向量、图像、搜索能力</p>
+                                </div>
+                                <button id="models-add-vendor-btn" onclick="openVendorModal('')"
+                                        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600
+                                               text-white text-sm font-medium cursor-pointer transition-colors duration-150">
+                                    <i class="fas fa-plus text-xs"></i>
+                                    <span data-i18n="models_add_vendor">添加厂商</span>
+                                </button>
+                            </div>
+                            <div id="models-loading" class="flex items-center gap-2 py-12 justify-center text-slate-400 dark:text-slate-500 text-sm">
+                                <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span>
+                            </div>
+                            <div id="models-content" class="grid gap-6 hidden"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ====================================================== -->
                 <!-- VIEW: Channels                                          -->
                 <!-- ====================================================== -->
                 <div id="view-channels" class="view">
@@ -959,7 +999,7 @@
     </div><!-- /app -->
 
     <!-- Confirm Dialog -->
-    <div id="confirm-dialog-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center">
+    <div id="confirm-dialog-overlay" class="fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center">
         <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl
                     w-full max-w-sm mx-4 overflow-hidden">
             <div class="p-6">
@@ -980,6 +1020,77 @@
                 <button id="confirm-dialog-ok"
                         class="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium
                                cursor-pointer transition-colors duration-150"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vendor Credentials Modal -->
+    <div id="vendor-modal-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center">
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl
+                    w-full max-w-md mx-4 overflow-hidden">
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-key text-primary-500"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 id="vendor-modal-title" class="font-semibold text-slate-800 dark:text-slate-100 text-base"></h3>
+                        <p id="vendor-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono"></p>
+                    </div>
+                </div>
+
+                <!-- Provider selector (only visible when adding via top button) -->
+                <div id="vendor-modal-picker-wrap" class="mb-4 hidden">
+                    <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5" data-i18n="models_provider">厂商</label>
+                    <div id="vendor-modal-picker" class="cfg-dropdown" tabindex="0">
+                        <div class="cfg-dropdown-selected">
+                            <span class="cfg-dropdown-text">--</span>
+                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                        </div>
+                        <div class="cfg-dropdown-menu"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
+                        <input id="vendor-modal-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                      bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                               placeholder="sk-...">
+                    </div>
+                    <div id="vendor-modal-base-wrap">
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Base</label>
+                        <input id="vendor-modal-base" type="text"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                      bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                               placeholder="https://...../v1">
+                        <p id="vendor-modal-base-hint" class="mt-1.5 text-xs text-slate-400 dark:text-slate-500 hidden">
+                            <i class="fas fa-info-circle mr-1"></i><span data-i18n="models_base_default_hint">留空将使用官方默认地址</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 dark:border-white/5">
+                <button id="vendor-modal-clear"
+                        class="px-3 py-2 rounded-lg text-xs font-medium
+                               text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20
+                               cursor-pointer transition-colors duration-150 hidden"
+                        data-i18n="models_clear_credential">清除凭据</button>
+                <span id="vendor-modal-status"
+                      class="flex-1 text-xs text-primary-500 opacity-0 transition-opacity duration-300 text-center"></span>
+                <button id="vendor-modal-cancel"
+                        class="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10
+                               text-slate-600 dark:text-slate-300 text-sm font-medium
+                               hover:bg-slate-50 dark:hover:bg-white/5
+                               cursor-pointer transition-colors duration-150"
+                        data-i18n="cancel">取消</button>
+                <button id="vendor-modal-save"
+                        class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                               cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-i18n="save">保存</button>
             </div>
         </div>
     </div>
