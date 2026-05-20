@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from queue import Queue, Empty
-from typing import Tuple
+from typing import List, Tuple
 
 import web
 
@@ -750,6 +750,7 @@ class WebChannel(ChatChannel):
             '/stream', 'StreamHandler',
             '/chat', 'ChatHandler',
             '/config', 'ConfigHandler',
+            '/api/models', 'ModelsHandler',
             '/api/channels', 'ChannelsHandler',
             '/api/weixin/qrlogin', 'WeixinQrHandler',
             '/api/feishu/register', 'FeishuRegisterHandler',
@@ -1210,6 +1211,744 @@ class ConfigHandler:
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class ModelsHandler:
+    """API for the unified Models console.
+
+    Layered model:
+      Layer 1 (providers): vendor credentials shared across capabilities.
+                            Stored as flat *_api_key / *_api_base fields in
+                            config.json — the same fields ConfigHandler
+                            already manages.
+      Layer 2 (capabilities): which provider/model is used by chat / vision /
+                            asr / tts / embedding / image / search.
+
+    GET  /api/models           -> overview (providers + capabilities)
+    POST /api/models/provider  -> upsert a vendor credential
+    DELETE /api/models/provider -> clear a vendor credential
+    POST /api/models/capability -> set provider/model for a capability
+    """
+
+    # Capability -> editable flag, current-value resolver, and supported provider
+    # ids drawn from ConfigHandler.PROVIDER_MODELS where applicable.
+    _ASR_PROVIDERS = ["openai", "linkai", "baidu", "ali", "xunfei", "azure", "google"]
+    _TTS_PROVIDERS = ["openai", "linkai", "minimax", "baidu", "ali", "xunfei", "azure", "google", "elevenlabs", "edge", "pytts"]
+    _EMBEDDING_PROVIDERS = ["openai", "linkai", "dashscope", "doubao", "zhipu"]
+
+    # Capability-scoped model catalogs. The chat dropdown can reuse the
+    # provider's generic model list, but vision and image generation are
+    # served by a narrower subset that the runtime actually dispatches to —
+    # see agent/tools/vision/vision.py and skills/image-generation/SKILL.md.
+    # Anything not listed here intentionally hides the model dropdown so
+    # users cannot pin a chat-only model and silently get a 4xx at runtime.
+    _VISION_PROVIDER_MODELS = {
+        # OpenAI ordering matches the recommended GPT-5.4 family first, then
+        # GPT-5 and the GPT-4.1/4o backstops.
+        "openai":    [
+            const.GPT_54_MINI,
+            const.GPT_54_NANO,
+            const.GPT_54,
+            const.GPT_5,
+            const.GPT_41,
+            const.GPT_41_MINI,
+            const.GPT_4o,
+        ],
+        "doubao":    [const.DOUBAO_SEED_2_PRO],
+        "moonshot":  [const.KIMI_K2_6],
+        "dashscope": [const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX],
+        "claudeAPI": [const.CLAUDE_4_6_SONNET, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_OPUS],
+        "gemini":    [const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+        "qianfan":   [const.ERNIE_45_TURBO_VL],
+        # Zhipu's bot hard-codes the call to glm-5v-turbo regardless of what
+        # name is passed in (see models/zhipuai/zhipuai_bot.py::call_vision),
+        # so listing the chat models here would silently route to the same
+        # endpoint. Surface only the model the runtime can truly dispatch to.
+        "zhipu":     [const.GLM_5V_TURBO],
+        # MiniMax's vision endpoint is similarly hard-coded to MiniMax-Text-01
+        # (see models/minimax/minimax_bot.py::call_vision); the M2.x chat
+        # family is text-only.
+        "minimax":   [const.MINIMAX_TEXT_01],
+        # LinkAI proxies the underlying vendor; surface a curated set of
+        # multimodal models. Order: gpt-4.1-mini → gpt-5.4-mini as the
+        # cross-vendor baselines, then each vendor's recommended default.
+        "linkai":    [
+            const.GPT_41_MINI,
+            const.GPT_54_MINI,
+            const.QWEN36_PLUS,
+            const.DOUBAO_SEED_2_PRO,
+            const.KIMI_K2_6,
+            const.CLAUDE_4_6_SONNET,
+            const.GEMINI_31_FLASH_LITE_PRE,
+        ],
+    }
+
+    # Image-generation catalog. Source of truth: skills/image-generation/SKILL.md.
+    # Listed verbatim (not via const.*) because these are skill-side names
+    # the script forwards directly to the vendor's image endpoint.
+    #
+    # Two shapes are accepted per model entry:
+    #   - bare string                           → the model id, no hint
+    #   - {"value": ..., "hint": "..."}         → model id + dim secondary
+    #                                             label rendered on the right
+    #                                             of the dropdown row. Useful
+    #                                             for surfacing brand names
+    #                                             (e.g. "Nano Banana 2" next
+    #                                             to gemini-3.1-flash-image-preview).
+    # The skill itself maps either form to the real vendor endpoint, so the
+    # hint is purely cosmetic.
+    _IMAGE_PROVIDER_MODELS = {
+        "openai":    ["gpt-image-2", "gpt-image-1"],
+        "gemini": [
+            {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
+            {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
+            {"value": "gemini-2.5-flash-image",         "hint": "Nano Banana"},
+        ],
+        "doubao":    ["seedream-5.0-lite", "seedream-4.5"],
+        "dashscope": ["qwen-image-2.0-pro", "qwen-image-2.0"],
+        "minimax":   ["image-01"],
+        "linkai":    ["gpt-image-2", "gemini-3-pro-image-preview", "seedream-5.0-lite"],
+    }
+
+    @staticmethod
+    def _config_path() -> str:
+        return os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "config.json",
+        )
+
+    @classmethod
+    def _read_file_config(cls) -> dict:
+        path = cls._config_path()
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @classmethod
+    def _write_file_config(cls, data: dict) -> None:
+        with open(cls._config_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+    @staticmethod
+    def _is_real_key(value: str) -> bool:
+        return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
+
+    @classmethod
+    def _provider_overview(cls) -> List[dict]:
+        """All known providers (configured first, unconfigured after).
+        Re-uses ConfigHandler.PROVIDER_MODELS for the canonical list."""
+        local_config = conf()
+        items = []
+        for pid, p in ConfigHandler.PROVIDER_MODELS.items():
+            key_field = p.get("api_key_field")
+            base_field = p.get("api_base_key")
+            raw_key = local_config.get(key_field, "") if key_field else ""
+            raw_base = local_config.get(base_field, "") if base_field else ""
+            configured = cls._is_real_key(raw_key)
+            items.append({
+                "id": pid,
+                "label": p["label"],
+                "configured": configured,
+                "api_key_field": key_field,
+                "api_base_field": base_field,
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
+                "api_base": raw_base or (p.get("api_base_default") or ""),
+                "api_base_default": p.get("api_base_default") or "",
+                "api_base_placeholder": p.get("api_base_placeholder") or "",
+                "models": list(p.get("models") or []),
+            })
+        items.sort(key=lambda it: (0 if it["configured"] else 1, list(ConfigHandler.PROVIDER_MODELS.keys()).index(it["id"])))
+        return items
+
+    @classmethod
+    def _chat_capability(cls, local_config: dict) -> dict:
+        """Main chat model — drives the agent. bot_type maps to a provider id."""
+        bot_type = local_config.get("bot_type") or ""
+        provider_id = "openai" if bot_type == "chatGPT" else bot_type
+        if provider_id not in ConfigHandler.PROVIDER_MODELS and local_config.get("use_linkai"):
+            provider_id = "linkai"
+        return {
+            "editable": True,
+            "current_provider": provider_id,
+            "current_model": local_config.get("model", ""),
+            "providers": list(ConfigHandler.PROVIDER_MODELS.keys()),
+            "use_linkai": bool(local_config.get("use_linkai", False)),
+        }
+
+    # Auto-fallback order for vision when no explicit model is pinned.
+    # Mirrors agent/tools/vision/vision.py::_resolve_providers — DeepSeek and
+    # other text-only chat bots are intentionally absent, since they cannot
+    # actually serve a vision request. Each entry is
+    #   (provider_id, api_key_field, default_vision_model)
+    # and lookups are case-insensitive on the api_key_field. LinkAI and
+    # OpenAI are handled separately below so use_linkai can promote LinkAI
+    # to the front of the chain.
+    _VISION_AUTO_ORDER = [
+        ("moonshot",  "moonshot_api_key",  const.KIMI_K2_6),
+        ("doubao",    "ark_api_key",       const.DOUBAO_SEED_2_PRO),
+        ("dashscope", "dashscope_api_key", const.QWEN36_PLUS),
+        ("claudeAPI", "claude_api_key",    const.CLAUDE_4_6_SONNET),
+        ("gemini",    "gemini_api_key",    const.GEMINI_31_FLASH_LITE_PRE),
+        ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
+        ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
+        ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
+    ]
+
+    @classmethod
+    def _predict_vision_auto(cls, local_config: dict) -> dict:
+        """Predict which provider vision.py will actually dispatch to when
+        no tool.vision.model is set. Mirrors the fallback order in
+        agent/tools/vision/vision.py::_resolve_providers so the UI hint
+        matches reality."""
+        chat = cls._chat_capability(local_config)
+        main_provider = chat["current_provider"]
+        main_model = chat["current_model"]
+        use_linkai_flag = bool(local_config.get("use_linkai", False))
+        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+
+        def _try(pid: str, model_default: str):
+            # Look up the api_key for this provider via the canonical
+            # provider table so we don't hardcode field names here.
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                return None
+            if not cls._is_real_key(local_config.get(key_field, "")):
+                return None
+            # Pick a model that the vision runtime can actually dispatch to
+            # for this provider. Using `main_model` here is unsafe — for
+            # vendors like Zhipu/MiniMax the bot hard-codes the vision model
+            # name regardless of the chat-model name, so surfacing the chat
+            # model name in the hint is misleading. Trust the curated
+            # _VISION_PROVIDER_MODELS list: prefer the main model only if
+            # it appears there; otherwise show the vendor's first vision-
+            # capable model.
+            allowed = cls._VISION_PROVIDER_MODELS.get(pid, [])
+            if pid == main_provider and main_model and main_model in allowed:
+                return {"provider": pid, "model": main_model}
+            fallback = allowed[0] if allowed else model_default
+            return {"provider": pid, "model": fallback}
+
+        # 1. use_linkai → suppress the hint entirely. LinkAI is a proxy and
+        #    we don't observe which underlying model it picks; surfacing
+        #    "LinkAI" with no model would not tell the user anything useful.
+        if use_linkai_flag and linkai_configured:
+            return {"provider": "", "model": ""}
+
+        # 2. Main bot — only when it natively supports vision. We approximate
+        #    "natively supports" by membership in _VISION_PROVIDER_MODELS,
+        #    which is the same set vision.py's _DISCOVERABLE_MODELS covers
+        #    (minus the chat-only DeepSeek family).
+        if main_provider in cls._VISION_PROVIDER_MODELS:
+            hit = _try(main_provider, main_model)
+            if hit:
+                return hit
+
+        # 3. Other discoverable providers in declared order
+        for pid, _key, default_model in cls._VISION_AUTO_ORDER:
+            hit = _try(pid, default_model)
+            if hit:
+                return hit
+
+        # 4. OpenAI raw HTTP
+        if cls._is_real_key(local_config.get("open_ai_api_key", "")):
+            return {"provider": "openai", "model": const.GPT_41_MINI}
+
+        # 5. LinkAI as last resort (only reached when use_linkai is off)
+        if linkai_configured:
+            return {"provider": "linkai", "model": const.GPT_41_MINI}
+
+        return {"provider": "", "model": ""}
+
+    @classmethod
+    def _vision_capability(cls, local_config: dict) -> dict:
+        """Vision model. tool.vision.model is the explicit override; otherwise
+        the runtime fallback chain in agent/tools/vision/vision.py decides."""
+        tool_conf = local_config.get("tool") or {}
+        if not isinstance(tool_conf, dict):
+            tool_conf = {}
+        vision_conf = tool_conf.get("vision") or {}
+        if not isinstance(vision_conf, dict):
+            vision_conf = {}
+        user_specified = (vision_conf.get("model") or "").strip()
+
+        # When the user pinned a specific model, infer which vendor card to
+        # highlight by scanning the per-provider model lists. Falls back to
+        # an empty provider so the dropdown stays on "auto" if we can't tell.
+        inferred_provider = ""
+        if user_specified:
+            for pid, models in cls._VISION_PROVIDER_MODELS.items():
+                if user_specified in models:
+                    inferred_provider = pid
+                    break
+
+        # In auto mode the hint should reflect what vision.py will actually
+        # dispatch to — surface that prediction via fallback_* so the UI
+        # shows e.g. "openai / gpt-4.1-mini" instead of the chat-model name.
+        predicted = cls._predict_vision_auto(local_config)
+
+        return {
+            "editable": True,
+            "strategy": "specified" if user_specified else "auto",
+            "user_specified_model": user_specified,
+            "current_provider": inferred_provider,
+            "current_model": user_specified,
+            "fallback_provider": predicted["provider"],
+            "fallback_model": predicted["model"],
+            "providers": list(cls._VISION_PROVIDER_MODELS.keys()),
+            "provider_models": cls._VISION_PROVIDER_MODELS,
+        }
+
+    @classmethod
+    def _asr_capability(cls, local_config: dict) -> dict:
+        provider_id = (local_config.get("voice_to_text") or "openai").strip().lower()
+        return {
+            "editable": True,
+            "current_provider": provider_id,
+            "current_model": "",
+            "providers": cls._ASR_PROVIDERS,
+        }
+
+    @classmethod
+    def _tts_capability(cls, local_config: dict) -> dict:
+        provider_id = (local_config.get("text_to_voice") or "openai").strip().lower()
+        return {
+            "editable": True,
+            "current_provider": provider_id,
+            "current_model": local_config.get("text_to_voice_model", "") or "",
+            "providers": cls._TTS_PROVIDERS,
+        }
+
+    @classmethod
+    def _embedding_capability(cls, local_config: dict) -> dict:
+        explicit = (local_config.get("embedding_provider") or "").strip().lower()
+        # When unset, the legacy auto path in agent_initializer.py picks
+        # openai -> linkai. We surface "auto" + an estimate of what it'd
+        # actually use, but don't probe the runtime here.
+        if not explicit:
+            if cls._is_real_key(local_config.get("open_ai_api_key", "")):
+                effective = "openai"
+            elif cls._is_real_key(local_config.get("linkai_api_key", "")):
+                effective = "linkai"
+            else:
+                effective = ""
+            return {
+                "editable": True,
+                "strategy": "auto",
+                "current_provider": effective,
+                "current_model": local_config.get("embedding_model", "") or "",
+                "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
+                "providers": cls._EMBEDDING_PROVIDERS,
+            }
+        return {
+            "editable": True,
+            "strategy": "specified",
+            "current_provider": explicit,
+            "current_model": local_config.get("embedding_model", "") or "",
+            "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
+            "providers": cls._EMBEDDING_PROVIDERS,
+        }
+
+    # Auto-fallback order for image generation. Mirrors the global priority
+    # used inside skills/image-generation/scripts/generate.py
+    # (`_DEFAULT_PROVIDER_ORDER`): OpenAI → Gemini → Seedream(Ark/doubao) →
+    # Qwen(dashscope) → MiniMax → LinkAI. Each entry maps the
+    # provider-card id to the script's per-provider DEFAULT_MODEL so the
+    # hint matches what the runtime would actually request.
+    _IMAGE_AUTO_ORDER = [
+        ("openai",    "gpt-image-2"),
+        ("gemini",    "gemini-3.1-flash-image-preview"),  # nano-banana-2
+        ("doubao",    "seedream-5.0-lite"),
+        ("dashscope", "qwen-image-2.0"),
+        ("minimax",   "image-01"),
+        ("linkai",    "gpt-image-2"),
+    ]
+
+    @classmethod
+    def _predict_image_auto(cls, local_config: dict) -> dict:
+        """Predict which provider/model the image-generation skill will hit
+        when no SKILL_IMAGE_GENERATION_MODEL override is set. Mirrors
+        skills/image-generation/scripts/generate.py::_build_providers so
+        the UI hint matches reality. Chat-only providers (DeepSeek etc.)
+        are absent by design — image generation never falls back to a chat
+        bot regardless of the main model.
+
+        When use_linkai is enabled the hint is suppressed entirely — LinkAI
+        proxies to whichever backend it deems appropriate and surfacing
+        "LinkAI" alone tells the user nothing actionable."""
+        use_linkai_flag = bool(local_config.get("use_linkai", False))
+        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+        if use_linkai_flag and linkai_configured:
+            return {"provider": "", "model": ""}
+
+        for pid, default_model in cls._IMAGE_AUTO_ORDER:
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                continue
+            if cls._is_real_key(local_config.get(key_field, "")):
+                return {"provider": pid, "model": default_model}
+        return {"provider": "", "model": ""}
+
+    @classmethod
+    def _image_capability(cls, local_config: dict) -> dict:
+        """Image generation. Source of truth: config["skill"]["image-generation"]["model"]
+        (mirrors the per-skill config schema documented in skills/image-generation).
+        The runtime resolver in skills/image-generation/scripts/generate.py
+        reads this via the SKILL_IMAGE_GENERATION_MODEL env var that the
+        agent_initializer syncs at startup; provider is inferred from the
+        model name prefix, mirroring vision.py's design.
+        """
+        skill_node = local_config.get("skill") or {}
+        if not isinstance(skill_node, dict):
+            skill_node = {}
+        img_node = skill_node.get("image-generation") or {}
+        if not isinstance(img_node, dict):
+            img_node = {}
+        explicit_model = (img_node.get("model") or "").strip()
+
+        # Infer the provider card to highlight by scanning per-provider
+        # model lists, including alias values inside {value, hint} entries.
+        inferred_provider = ""
+        if explicit_model:
+            for pid, models in cls._IMAGE_PROVIDER_MODELS.items():
+                for entry in models:
+                    val = entry if isinstance(entry, str) else (entry.get("value") or "")
+                    if val == explicit_model:
+                        inferred_provider = pid
+                        break
+                if inferred_provider:
+                    break
+
+        # In auto mode the hint should reflect what generate.py will actually
+        # dispatch to — surface that prediction via fallback_* so the UI
+        # never claims a chat-only bot (e.g. minimax/MiniMax-M2.7) "would
+        # generate the image", which is impossible.
+        predicted = cls._predict_image_auto(local_config)
+
+        return {
+            "editable": True,
+            "strategy": "specified" if explicit_model else "auto",
+            "current_provider": inferred_provider,
+            "current_model": explicit_model,
+            "fallback_provider": predicted["provider"],
+            "fallback_model": predicted["model"],
+            "providers": list(cls._IMAGE_PROVIDER_MODELS.keys()),
+            "provider_models": cls._IMAGE_PROVIDER_MODELS,
+            # The dispatcher that honors a pinned provider isn't wired up
+            # yet; advertise this so the UI can show a "saved but not active"
+            # banner until the runtime catches up.
+            "runtime_active": False,
+            "note": "router_pending",
+        }
+
+    @classmethod
+    def _search_capability(cls, local_config: dict) -> dict:
+        """Web search resolves at runtime via env vars (BOCHA -> LINKAI)."""
+        if cls._is_real_key(os.environ.get("BOCHA_API_KEY", "")):
+            current = "bocha"
+        elif cls._is_real_key(local_config.get("linkai_api_key", "")) or cls._is_real_key(os.environ.get("LINKAI_API_KEY", "")):
+            current = "linkai"
+        else:
+            current = ""
+        return {
+            "editable": False,
+            "current_provider": current,
+            "available": bool(current),
+            "note": "set_BOCHA_API_KEY_env" if not current else "",
+        }
+
+    @classmethod
+    def _capabilities(cls, local_config: dict) -> dict:
+        return {
+            "chat":      cls._chat_capability(local_config),
+            "vision":    cls._vision_capability(local_config),
+            "asr":       cls._asr_capability(local_config),
+            "tts":       cls._tts_capability(local_config),
+            "embedding": cls._embedding_capability(local_config),
+            "image":     cls._image_capability(local_config),
+            "search":    cls._search_capability(local_config),
+        }
+
+    def GET(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            local_config = conf()
+            return json.dumps({
+                "status": "success",
+                "providers": self._provider_overview(),
+                "capabilities": self._capabilities(local_config),
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ModelsHandler] GET failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            data = json.loads(web.data() or b"{}")
+            action = data.get("action") or ""
+            if action == "set_provider":
+                return self._handle_set_provider(data)
+            if action == "delete_provider":
+                return self._handle_delete_provider(data)
+            if action == "set_capability":
+                return self._handle_set_capability(data)
+            return json.dumps({"status": "error", "message": f"unknown action: {action!r}"})
+        except Exception as e:
+            logger.error(f"[ModelsHandler] POST failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def _handle_set_provider(self, data: dict) -> str:
+        provider_id = (data.get("provider_id") or "").strip()
+        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        if not meta:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        # api_key absent / empty / null => leave the existing key untouched
+        # (used by the "edit only base url" flow). To clear the key, callers
+        # must use action=delete_provider explicitly.
+        api_key_raw = data.get("api_key")
+        api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
+
+        # api_base presence is significant: an explicit "" means "reset to
+        # default", whereas a missing key means "no change".
+        api_base_present = "api_base" in data
+        api_base = (data.get("api_base") or "").strip() if api_base_present else None
+
+        applied = {}
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        key_field = meta.get("api_key_field")
+        if key_field and api_key:
+            local_config[key_field] = api_key
+            file_cfg[key_field] = api_key
+            applied[key_field] = True
+        base_field = meta.get("api_base_key")
+        if base_field and api_base_present:
+            local_config[base_field] = api_base
+            file_cfg[base_field] = api_base
+            applied[base_field] = True
+
+        if not applied:
+            # Nothing actually changed (e.g. user opened the modal and hit
+            # save without editing). Treat as a successful no-op so the
+            # frontend can show "Saved" instead of surfacing an error.
+            return json.dumps({"status": "success", "provider": provider_id, "noop": True})
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] provider {provider_id} updated: {sorted(applied.keys())}")
+
+        # Vendor credentials affect bot routing for any capability that uses
+        # them; safest to reset Bridge so the next request rebuilds bots.
+        self._reset_bridge()
+        return json.dumps({"status": "success", "provider": provider_id})
+
+    def _handle_delete_provider(self, data: dict) -> str:
+        provider_id = (data.get("provider_id") or "").strip()
+        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        if not meta:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        cleared = []
+        for field_name in (meta.get("api_key_field"), meta.get("api_base_key")):
+            if not field_name:
+                continue
+            if field_name in local_config:
+                local_config[field_name] = ""
+            file_cfg[field_name] = ""
+            cleared.append(field_name)
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] provider {provider_id} cleared: {cleared}")
+        self._reset_bridge()
+        return json.dumps({"status": "success", "provider": provider_id, "cleared": cleared})
+
+    def _handle_set_capability(self, data: dict) -> str:
+        capability = (data.get("capability") or "").strip()
+        provider_id = (data.get("provider_id") or "").strip()
+        model = (data.get("model") or "").strip()
+
+        if capability == "chat":
+            return self._set_chat(provider_id, model)
+        if capability == "vision":
+            return self._set_vision(provider_id, model)
+        if capability == "asr":
+            return self._set_simple("voice_to_text", provider_id)
+        if capability == "tts":
+            return self._set_tts(provider_id, model)
+        if capability == "embedding":
+            return self._set_embedding(provider_id, model)
+        if capability == "image":
+            return self._set_image(provider_id, model)
+        return json.dumps({"status": "error", "message": f"capability not editable: {capability}"})
+
+    def _set_image(self, provider_id: str, model: str) -> str:
+        # Source of truth: config["skill"]["image-generation"]["model"].
+        # provider_id is informational only (used by the UI to highlight a
+        # vendor card); the runtime resolver infers the provider from the
+        # model name prefix at request time, mirroring vision.py's design.
+        # An empty model means "switch back to auto / let the script pick".
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        def _ensure_skill_node(cfg: dict) -> dict:
+            skill_node = cfg.get("skill") or {}
+            if not isinstance(skill_node, dict):
+                skill_node = {}
+            img_node = skill_node.get("image-generation") or {}
+            if not isinstance(img_node, dict):
+                img_node = {}
+            skill_node["image-generation"] = img_node
+            cfg["skill"] = skill_node
+            return img_node
+
+        _ensure_skill_node(local_config)["model"] = model or ""
+        _ensure_skill_node(file_cfg)["model"] = model or ""
+
+        self._write_file_config(file_cfg)
+
+        # The skill subprocess (skills/image-generation/scripts/generate.py)
+        # reads SKILL_IMAGE_GENERATION_MODEL from its environment, which is
+        # only synced from config["skill"] at startup. Update os.environ live
+        # so changes take effect on the next call without a restart. An empty
+        # model means "clear the override" → drop the env var entirely.
+        env_key = "SKILL_IMAGE_GENERATION_MODEL"
+        if model:
+            os.environ[env_key] = model
+        else:
+            os.environ.pop(env_key, None)
+
+        logger.info(f"[ModelsHandler] image updated: provider_hint={provider_id!r} model={model!r}")
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id,
+            "model": model,
+            "router_pending": True,
+        })
+
+    def _set_chat(self, provider_id: str, model: str) -> str:
+        if provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        applied = {}
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        if provider_id:
+            bot_type_value = "chatGPT" if provider_id == "openai" else provider_id
+            local_config["bot_type"] = bot_type_value
+            file_cfg["bot_type"] = bot_type_value
+            applied["bot_type"] = bot_type_value
+            use_linkai = (provider_id == "linkai")
+            local_config["use_linkai"] = use_linkai
+            file_cfg["use_linkai"] = use_linkai
+            applied["use_linkai"] = use_linkai
+        if model:
+            local_config["model"] = model
+            file_cfg["model"] = model
+            applied["model"] = model
+
+        if not applied:
+            # No-op save (nothing to write). Return success so the UI can
+            # confirm the click without showing a misleading error.
+            return json.dumps({"status": "success", "applied": {}, "noop": True})
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] chat updated: {applied}")
+        self._reset_bridge()
+        return json.dumps({"status": "success", "applied": applied})
+
+    def _set_vision(self, provider_id: str, model: str) -> str:
+        # Vision uses tool.vision.model (nested). provider_id is informational
+        # only; the runtime resolver auto-routes by model name prefix.
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        tool_node = file_cfg.get("tool") or {}
+        if not isinstance(tool_node, dict):
+            tool_node = {}
+        vision_node = tool_node.get("vision") or {}
+        if not isinstance(vision_node, dict):
+            vision_node = {}
+        vision_node["model"] = model
+        tool_node["vision"] = vision_node
+        file_cfg["tool"] = tool_node
+        # Mirror into in-memory config so the live agent sees the change.
+        runtime_tool = local_config.get("tool") or {}
+        if not isinstance(runtime_tool, dict):
+            runtime_tool = {}
+        runtime_vision = runtime_tool.get("vision") or {}
+        if not isinstance(runtime_vision, dict):
+            runtime_vision = {}
+        runtime_vision["model"] = model
+        runtime_tool["vision"] = runtime_vision
+        local_config["tool"] = runtime_tool
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] vision model set: {model!r}")
+        return json.dumps({"status": "success", "model": model})
+
+    def _set_simple(self, key: str, value: str) -> str:
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config[key] = value
+        file_cfg[key] = value
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] {key} set: {value!r}")
+        return json.dumps({"status": "success", key: value})
+
+    def _set_tts(self, provider_id: str, model: str) -> str:
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        if provider_id:
+            local_config["text_to_voice"] = provider_id
+            file_cfg["text_to_voice"] = provider_id
+        if model:
+            local_config["text_to_voice_model"] = model
+            file_cfg["text_to_voice_model"] = model
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] tts updated: provider={provider_id!r} model={model!r}")
+        return json.dumps({"status": "success", "provider": provider_id, "model": model})
+
+    def _set_embedding(self, provider_id: str, model: str) -> str:
+        # provider_id="" + model="" means "switch back to legacy auto mode".
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["embedding_provider"] = provider_id
+        file_cfg["embedding_provider"] = provider_id
+        if model:
+            local_config["embedding_model"] = model
+            file_cfg["embedding_model"] = model
+        else:
+            local_config["embedding_model"] = ""
+            file_cfg["embedding_model"] = ""
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
+        # Embedding switches don't go through Bridge bots; the agent's
+        # MemoryManager rebuilds its provider on next process restart, but
+        # the index dim may now mismatch — frontend should warn the user.
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id,
+            "model": model,
+            "warn_rebuild_index": True,
+        })
+
+    @staticmethod
+    def _reset_bridge() -> None:
+        try:
+            from bridge.bridge import Bridge
+            Bridge().reset_bot()
+            logger.info("[ModelsHandler] Bridge bot routing reset")
+        except Exception as e:
+            logger.warning(f"[ModelsHandler] Bridge reset failed: {e}")
 
 
 class ChannelsHandler:
@@ -2242,7 +2981,12 @@ class AssetsHandler:
                 raise web.notfound()
 
             if not os.path.exists(full_path) or not os.path.isfile(full_path):
-                logger.error(f"File not found: {full_path}")
+                # Browsers routinely probe optional asset variants (e.g. a
+                # .ttf fallback declared alongside .woff2 in @font-face);
+                # logging these as errors floods the console with harmless
+                # noise. Keep it at debug level — real misconfigurations
+                # will still surface via the network panel.
+                logger.debug(f"Static file not found: {full_path}")
                 raise web.notfound()
 
             # 设置正确的Content-Type
@@ -2257,8 +3001,12 @@ class AssetsHandler:
             with open(full_path, 'rb') as f:
                 return f.read()
 
+        except web.HTTPError:
+            # The 404 path above already logged at debug; re-raise as-is so
+            # web.py returns the original status to the client.
+            raise
         except Exception as e:
-            logger.error(f"Error serving static file: {e}", exc_info=True)  # 添加更详细的错误信息
+            logger.error(f"Error serving static file: {e}", exc_info=True)
             raise web.notfound()
 
 
