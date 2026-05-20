@@ -59,6 +59,7 @@ const I18N = {
         models_embedding_saved_title: '向量模型已更新',
         models_embedding_saved_msg: '请在聊天框输入 /memory rebuild-index 重建索引。',
         models_embedding_saved_ok: '去执行',
+        models_pick_provider: '待选择',
         models_clear_confirm_title: '清除厂商凭据',
         models_clear_confirm_msg: '确认清除该厂商的 API Key 与 Base URL 吗？相关能力将不再可用。',
         cancel: '取消',
@@ -153,6 +154,12 @@ const I18N = {
         tip_clear_context: '清除上下文',
         tip_attach: '添加附件',
         attach_menu_file: '上传文件',
+        mic_idle_title: '点击录音 / 再按一次结束',
+        mic_recording_title: '录音中，再次点击结束',
+        mic_busy_title: '识别中…',
+        mic_permission_denied: '无法访问麦克风，请检查浏览器权限',
+        mic_too_short: '录音太短，请重试',
+        mic_error: '语音识别失败',
         attach_menu_folder: '上传文件夹',
         confirm_yes: '确认',
         confirm_cancel: '取消',
@@ -207,6 +214,7 @@ const I18N = {
         models_embedding_saved_title: 'Embedding model updated',
         models_embedding_saved_msg: 'Send /memory rebuild-index in the chat to rebuild the index.',
         models_embedding_saved_ok: 'Go',
+        models_pick_provider: 'Pick a provider',
         models_clear_confirm_title: 'Clear vendor credentials',
         models_clear_confirm_msg: 'Remove this vendor\'s API Key and Base URL? Capabilities relying on it will stop working.',
         cancel: 'Cancel',
@@ -301,6 +309,12 @@ const I18N = {
         tip_clear_context: 'Clear Context',
         tip_attach: 'Add Attachment',
         attach_menu_file: 'Upload File',
+        mic_idle_title: 'Click to record, click again to stop',
+        mic_recording_title: 'Recording, click to stop',
+        mic_busy_title: 'Transcribing…',
+        mic_permission_denied: 'Cannot access microphone — check browser permissions',
+        mic_too_short: 'Recording too short, please retry',
+        mic_error: 'Speech recognition failed',
         attach_menu_folder: 'Upload Folder',
         confirm_yes: 'Confirm',
         confirm_cancel: 'Cancel',
@@ -706,6 +720,191 @@ const supportsDirectoryUpload = !!folderInput && 'webkitdirectory' in folderInpu
 if (!supportsDirectoryUpload && attachFolderOption) {
     attachFolderOption.classList.add('hidden');
 }
+
+// ---------------- Mic button: in-page voice input via the configured ASR provider ----------------
+(function setupMicButton() {
+    const micBtn = document.getElementById('mic-btn');
+    if (!micBtn) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia ||
+        typeof window.MediaRecorder === 'undefined') {
+        micBtn.style.display = 'none';
+        return;
+    }
+
+    let mediaRecorder = null;
+    let stream = null;
+    let chunks = [];
+    let recording = false;
+
+    const setIdle = () => {
+        recording = false;
+        micBtn.classList.remove('text-red-500', 'animate-pulse');
+        micBtn.classList.add('text-slate-400');
+        micBtn.querySelector('i').className = 'fas fa-microphone text-sm';
+        micBtn.title = t('mic_idle_title');
+    };
+    const setRecording = () => {
+        recording = true;
+        micBtn.classList.remove('text-slate-400');
+        micBtn.classList.add('text-red-500', 'animate-pulse');
+        micBtn.querySelector('i').className = 'fas fa-stop text-sm';
+        micBtn.title = t('mic_recording_title');
+    };
+    const setBusy = () => {
+        micBtn.classList.remove('text-red-500', 'animate-pulse', 'text-slate-400');
+        micBtn.classList.add('text-primary-500');
+        micBtn.querySelector('i').className = 'fas fa-spinner fa-spin text-sm';
+        micBtn.title = t('mic_busy_title');
+    };
+
+    const pickMimeType = () => {
+        const candidates = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/mp4',
+        ];
+        for (const m of candidates) {
+            if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+                return m;
+            }
+        }
+        return '';
+    };
+
+    const stopStream = () => {
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            stream = null;
+        }
+    };
+
+    let _micTipTimer = null;
+    const flashError = (msg) => {
+        console.warn('[mic]', msg);
+        // Pop a small bubble above the mic so the user actually notices it.
+        // The mic lives inside a relatively-positioned wrapper around the
+        // textarea (see chat.html), so we hang the tip off that wrapper.
+        const wrapper = micBtn.parentElement;
+        if (!wrapper) return;
+        let tip = wrapper.querySelector('.mic-tip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.className = 'mic-tip absolute right-1 bottom-full mb-2 px-2 py-1 rounded-md '
+                + 'text-xs text-white bg-slate-800/90 dark:bg-slate-700/90 shadow-md '
+                + 'pointer-events-none whitespace-nowrap z-10';
+            wrapper.appendChild(tip);
+        }
+        tip.textContent = msg;
+        tip.style.opacity = '1';
+        if (_micTipTimer) clearTimeout(_micTipTimer);
+        _micTipTimer = setTimeout(() => {
+            tip.style.opacity = '0';
+            tip.style.transition = 'opacity 200ms';
+            setTimeout(() => tip.remove(), 250);
+        }, 2000);
+    };
+
+    const upload = async (blob, ext) => {
+        setBusy();
+        const fd = new FormData();
+        fd.append('file', blob, `recording.${ext}`);
+        try {
+            const resp = await fetch('/api/voice/asr', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (data.status === 'success' && data.text) {
+                // Voice-message UX: drop the recording into the conversation
+                // as a playable bubble with the caption underneath, then
+                // dispatch the recognised text through the regular send path.
+                sendVoiceMessage(data.text, data.audio_url);
+            } else {
+                flashError(data.message || t('mic_error'));
+            }
+        } catch (e) {
+            flashError(t('mic_error') + ': ' + e.message);
+        } finally {
+            setIdle();
+        }
+    };
+
+    const start = async () => {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            flashError(t('mic_permission_denied'));
+            return;
+        }
+        chunks = [];
+        const mimeType = pickMimeType();
+        try {
+            mediaRecorder = mimeType
+                ? new MediaRecorder(stream, { mimeType })
+                : new MediaRecorder(stream);
+        } catch (e) {
+            stopStream();
+            flashError(t('mic_error') + ': ' + e.message);
+            return;
+        }
+        mediaRecorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+        };
+        mediaRecorder.onstop = () => {
+            stopStream();
+            const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            // Map mime -> extension so the server picks the right file suffix.
+            const mt = (mediaRecorder.mimeType || 'audio/webm').split(';')[0];
+            const extMap = {
+                'audio/webm': 'webm', 'audio/ogg': 'ogg',
+                'audio/mp4': 'm4a',   'audio/mpeg': 'mp3',
+            };
+            const ext = extMap[mt] || 'webm';
+            // 256 bytes ~ container header only, no actual audio. Anything
+            // below that we treat as "tapped by mistake".
+            if (blob.size < 256) {
+                setIdle();
+                flashError(t('mic_too_short'));
+                return;
+            }
+            upload(blob, ext);
+        };
+        // timeslice=250ms: force the recorder to flush a chunk every 250ms.
+        // Without it some browsers wait for stop() before producing any data,
+        // which loses the audio on very short taps.
+        mediaRecorder.start(250);
+        recordStartedAt = Date.now();
+        setRecording();
+    };
+
+    let recordStartedAt = 0;
+
+    const stopWithMinDuration = () => {
+        const elapsed = Date.now() - recordStartedAt;
+        const minMs = 350;
+        if (elapsed < minMs) {
+            // Give the recorder a moment to capture at least one chunk
+            // before we tell it to stop.
+            setTimeout(() => stop(), minMs - elapsed);
+        } else {
+            stop();
+        }
+    };
+
+    const stop = () => {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+    };
+
+    micBtn.addEventListener('click', () => {
+        if (recording) {
+            stopWithMinDuration();
+        } else {
+            start();
+        }
+    });
+
+    setIdle();
+})();
 
 // Smart auto-scroll: pause when user scrolls up, resume when near bottom
 let _autoScrollEnabled = true;
@@ -1249,6 +1448,87 @@ document.querySelectorAll('.example-card').forEach(card => {
         }
     });
 });
+
+// Voice-message variant of sendMessage(): renders a playable audio bubble
+// with the ASR caption, then dispatches the recognised text to /message
+// through the same SSE/loading flow as a typed message.
+function sendVoiceMessage(text, audioUrl) {
+    text = (text || '').trim();
+    if (!text) return;
+
+    inputHistory.push(text);
+    historyIdx = -1;
+    historySavedDraft = '';
+
+    const ws = document.getElementById('welcome-screen');
+    const isFirstMessage = !!ws;
+    if (ws) ws.remove();
+
+    const titleInfo = isFirstMessage ? { sid: sessionId, userMsg: text } : null;
+    const timestamp = new Date();
+    addUserVoiceMessage(audioUrl, text, timestamp);
+    const loadingEl = addLoadingIndicator();
+
+    const body = {
+        session_id: sessionId,
+        message: text,
+        stream: true,
+        timestamp: timestamp.toISOString(),
+    };
+
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY_MS = 1000;
+    function postWithRetry(attempt) {
+        fetch('/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                if (data.stream) {
+                    startSSE(data.request_id, loadingEl, timestamp, titleInfo);
+                } else {
+                    loadingContainers[data.request_id] = loadingEl;
+                }
+            } else {
+                loadingEl.remove();
+                addBotMessage(t('error_send'), new Date());
+            }
+        })
+        .catch(err => {
+            if (attempt < MAX_RETRIES) {
+                setTimeout(() => postWithRetry(attempt + 1), RETRY_DELAY_MS * (attempt + 1));
+                return;
+            }
+            loadingEl.remove();
+            addBotMessage(t('error_send'), new Date());
+        });
+    }
+    postWithRetry(0);
+}
+
+function addUserVoiceMessage(audioUrl, caption, timestamp) {
+    const el = document.createElement('div');
+    el.className = 'flex justify-end px-4 sm:px-6 py-3';
+    // Voice-message bubble: playable <audio> on top, ASR caption beneath.
+    // The bubble keeps the same primary tint as a normal user message so
+    // it visually slots into the conversation flow.
+    el.innerHTML = `
+        <div class="max-w-[75%] sm:max-w-[60%]">
+            <div class="bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 rounded-2xl px-3 py-2 msg-content user-bubble">
+                <audio controls preload="metadata" src="${audioUrl}"
+                       class="block w-[260px] max-w-full h-9"></audio>
+                ${caption ? `<div class="text-xs mt-1.5 leading-snug text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words">${escapeHtml(caption)}</div>` : ''}
+            </div>
+            <div class="text-xs text-slate-400 dark:text-slate-500 mt-1.5 text-right">${formatTime(timestamp)}</div>
+        </div>
+    `;
+    messagesDiv.appendChild(el);
+    _autoScrollEnabled = true;
+    scrollChatToBottom(true);
+}
 
 function sendMessage() {
     const text = chatInput.value.trim();
@@ -2573,7 +2853,12 @@ let cfgProviderValue = '';
 let cfgModelValue = '';
 
 // --- Custom dropdown helper ---
-function initDropdown(el, options, selectedValue, onChange) {
+function initDropdown(el, options, selectedValue, onChange, opts) {
+    // opts.placeholder: when set AND selectedValue is empty, render that text
+    // in a dim style instead of auto-selecting options[0]. Useful for
+    // "pick or empty" capabilities (asr / embedding) where we want the
+    // user to make an explicit choice.
+    opts = opts || {};
     const textEl = el.querySelector('.cfg-dropdown-text');
     const menuEl = el.querySelector('.cfg-dropdown-menu');
     const selEl = el.querySelector('.cfg-dropdown-selected');
@@ -2615,8 +2900,20 @@ function initDropdown(el, options, selectedValue, onChange) {
             menuEl.appendChild(item);
         });
         const sel = options.find(o => o.value === el._ddValue);
-        textEl.textContent = sel ? sel.label : (options[0] ? options[0].label : '--');
-        if (!sel && options[0]) el._ddValue = options[0].value;
+        if (sel) {
+            textEl.textContent = sel.label;
+            textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
+        } else if (opts.placeholder && !el._ddValue) {
+            // No selection yet — show the placeholder in muted style.
+            // Do NOT write a fallback value, so the dropdown stays
+            // "unsaved" until the user explicitly picks.
+            textEl.textContent = opts.placeholder;
+            textEl.classList.add('text-slate-400', 'dark:text-slate-500');
+        } else {
+            textEl.textContent = options[0] ? options[0].label : '--';
+            textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
+            if (options[0]) el._ddValue = options[0].value;
+        }
     }
 
     render();
@@ -3566,21 +3863,27 @@ function renderCapabilityBody(def, cap, body) {
     // For auto-capable capabilities, an "auto" strategy means the user has
     // not pinned a vendor; we honor that by selecting the empty-string
     // sentinel rather than the resolved fallback provider name.
-    // `suggested_provider` is a UI-only preselect for embedding when nothing
-    // is pinned yet — purely cosmetic, not persisted until the user saves.
+    // `suggested_provider` is a UI-only preselect (used by embedding & ASR)
+    // when the user has not pinned a vendor yet — purely cosmetic, not
+    // persisted until the user clicks Save.
+    // For "pick or empty" capabilities (no current, no suggestion), we leave
+    // the dropdown unselected and show a muted placeholder so the user is
+    // nudged to pick explicitly.
+    const noSelectionAndNoHint = !cap.current_provider && !cap.suggested_provider;
     const initialProviderValue = pendingProvider
         ? pendingProvider
         : ((cap.strategy === 'auto' && capabilitySupportsAuto(def.id))
             ? ''
             : (cap.current_provider
                 || cap.suggested_provider
-                || (ddOpts[0] && ddOpts[0].value)
+                || (noSelectionAndNoHint ? '' : (ddOpts[0] && ddOpts[0].value))
                 || ''));
     initDropdown(
         provDd,
         ddOpts,
         initialProviderValue,
-        (value) => onCapabilityProviderChange(def, value, body)
+        (value) => onCapabilityProviderChange(def, value, body),
+        noSelectionAndNoHint ? { placeholder: t('models_pick_provider') } : null
     );
     decorateCapabilityProviderDropdown(def, provDd, providerOpts);
 

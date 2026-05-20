@@ -1,10 +1,11 @@
+import datetime
 import hashlib
 import hmac
-import time
 import json
 import logging
 import mimetypes
 import os
+import random
 import threading
 import time
 import uuid
@@ -340,6 +341,10 @@ class WebChannel(ChatChannel):
         # Use a single-element list as a mutable counter accessible from closure.
         reasoning_chars_sent = [0]
         reasoning_capped_notified = [False]
+        # Captures the first error message emitted by agent_stream so the
+        # subsequent agent_end handler can skip its "empty final_response"
+        # fallback (which would otherwise overwrite the real error).
+        streamed_error: List[str] = []
 
         def on_event(event: dict):
             if request_id not in self.sse_queues:
@@ -398,6 +403,25 @@ class WebChannel(ChatChannel):
                 if tool_calls:
                     q.put({"type": "message_end", "has_tool_calls": True})
 
+            elif event_type == "error":
+                # Agent raised an exception (LLM 401/timeout/etc). Surface the
+                # real message instead of letting the empty-response fallback
+                # below hide it as "(模型未返回任何内容)".
+                err_msg = data.get("error") or "unknown error"
+                logger.warning(
+                    f"[WebChannel] agent_stream emitted error for "
+                    f"request {request_id}: {err_msg}"
+                )
+                # Remember it so the agent_end handler below knows not to
+                # rewrite the message into a generic empty-response notice.
+                streamed_error.append(err_msg)
+                q.put({
+                    "type": "done",
+                    "content": f"❌ {err_msg}",
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
             elif event_type == "agent_end":
                 # Safety net: if the agent finishes with an empty final_response,
                 # chat_channel skips _send_reply (because reply.content is empty),
@@ -406,16 +430,21 @@ class WebChannel(ChatChannel):
                 # here so the frontend always gets closure.
                 final_response = data.get("final_response", "")
                 if not final_response or not str(final_response).strip():
-                    logger.warning(
-                        f"[WebChannel] agent_end with empty final_response for "
-                        f"request {request_id}, sending fallback done"
-                    )
-                    q.put({
-                        "type": "done",
-                        "content": "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
-                        "request_id": request_id,
-                        "timestamp": time.time(),
-                    })
+                    if streamed_error:
+                        # Error was already surfaced via the `error` event
+                        # handler above; nothing more to do here.
+                        pass
+                    else:
+                        logger.warning(
+                            f"[WebChannel] agent_end with empty final_response for "
+                            f"request {request_id}, sending fallback done"
+                        )
+                        q.put({
+                            "type": "done",
+                            "content": "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
+                            "request_id": request_id,
+                            "timestamp": time.time(),
+                        })
 
             elif event_type == "file_to_send":
                 file_path = data.get("path", "")
@@ -431,6 +460,39 @@ class WebChannel(ChatChannel):
                 })
 
         return on_event
+
+    @staticmethod
+    def _cleanup_stale_voice_recordings(max_age_seconds: int = 3600) -> None:
+        """Delete voice-input audio files older than `max_age_seconds`.
+
+        Called once at startup. Web mic recordings live in the upload
+        directory so the browser can replay them inside the conversation
+        bubble. We don't persist them to history, so once a process
+        restarts they're useless — but they're never auto-cleaned
+        anywhere else, so without this they accumulate over time.
+        """
+        try:
+            upload_dir = _get_upload_dir()
+            if not os.path.isdir(upload_dir):
+                return
+            now = time.time()
+            removed = 0
+            for name in os.listdir(upload_dir):
+                if not name.startswith("voice_input_"):
+                    continue
+                full = os.path.join(upload_dir, name)
+                try:
+                    if not os.path.isfile(full):
+                        continue
+                    if now - os.path.getmtime(full) > max_age_seconds:
+                        os.remove(full)
+                        removed += 1
+                except OSError:
+                    continue
+            if removed:
+                logger.info(f"[WebChannel] cleaned up {removed} stale voice recording(s) from {upload_dir}")
+        except Exception as e:
+            logger.warning(f"[WebChannel] voice cleanup failed: {e}")
 
     def upload_file(self):
         """Handle file or directory upload via multipart/form-data."""
@@ -703,6 +765,8 @@ class WebChannel(ChatChannel):
         port = conf().get("web_port", 9899)
         is_public_bind = host in ("0.0.0.0", "::")
 
+        self._cleanup_stale_voice_recordings()
+
         # 打印可用渠道类型提示
         logger.info(
             "[WebChannel] 全部可用通道如下，可修改 config.json 配置文件中的 channel_type 字段进行切换，多个通道用逗号分隔：")
@@ -746,6 +810,7 @@ class WebChannel(ChatChannel):
             '/upload', 'UploadHandler',
             '/uploads/(.*)', 'UploadsHandler',
             '/api/file', 'FileServeHandler',
+            '/api/voice/asr', 'VoiceAsrHandler',
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
             '/chat', 'ChatHandler',
@@ -868,6 +933,68 @@ class UploadHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         return WebChannel().upload_file()
+
+
+class VoiceAsrHandler:
+    """
+    Accept a short audio recording from the web console mic button,
+    save it under uploads/ so the browser can replay it, then run it
+    through the currently configured ASR provider.
+
+    Returns {status, text, audio_url} on success — the frontend renders
+    a voice-message bubble with the playable audio and the transcribed
+    caption.
+    """
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+
+        saved_path = None
+        try:
+            params = _raw_web_input()
+            file_obj = params.get("file")
+            if file_obj is None:
+                return json.dumps({"status": "error", "message": "no audio file"})
+
+            filename = getattr(file_obj, "filename", "") or "recording.webm"
+            ext = os.path.splitext(filename)[1].lower() or ".webm"
+            if ext not in (".webm", ".ogg", ".opus", ".mp4", ".m4a", ".mp3", ".wav"):
+                ext = ".webm"
+
+            upload_dir = _get_upload_dir()
+            os.makedirs(upload_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            saved_name = f"voice_input_{ts}_{random.randint(0, 9999)}{ext}"
+            saved_path = os.path.join(upload_dir, saved_name)
+            with open(saved_path, "wb") as f:
+                f.write(file_obj.file.read() if hasattr(file_obj, "file") else file_obj.value)
+
+            audio_url = f"/uploads/{saved_name}"
+
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_voice_to_text(saved_path)
+            if reply is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": "ASR returned no reply",
+                    "audio_url": audio_url,
+                })
+
+            from bridge.reply import ReplyType
+            if reply.type == ReplyType.TEXT:
+                return json.dumps({
+                    "status": "success",
+                    "text": reply.content or "",
+                    "audio_url": audio_url,
+                })
+            return json.dumps({
+                "status": "error",
+                "message": reply.content or "ASR failed",
+                "audio_url": audio_url,
+            })
+        except Exception as e:
+            logger.exception(f"[VoiceAsrHandler] failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
 
 class UploadsHandler:
@@ -1232,7 +1359,7 @@ class ModelsHandler:
 
     # Capability -> editable flag, current-value resolver, and supported provider
     # ids drawn from ConfigHandler.PROVIDER_MODELS where applicable.
-    _ASR_PROVIDERS = ["openai", "linkai", "baidu", "ali", "xunfei", "azure", "google"]
+    _ASR_PROVIDERS = ["openai", "dashscope", "zhipu", "linkai"]
     _TTS_PROVIDERS = ["openai", "linkai", "minimax", "baidu", "ali", "xunfei", "azure", "google", "elevenlabs", "edge", "pytts"]
     _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
 
@@ -1502,10 +1629,23 @@ class ModelsHandler:
 
     @classmethod
     def _asr_capability(cls, local_config: dict) -> dict:
-        provider_id = (local_config.get("voice_to_text") or "openai").strip().lower()
+        # "Pick or empty" — when voice_to_text is unset we don't show a
+        # current selection. `suggested_provider` previews which vendor
+        # the bridge auto-picker would land on (purely a UX hint, NOT
+        # persisted). Once the user saves a vendor, we lock onto it.
+        explicit = (local_config.get("voice_to_text") or "").strip().lower()
+        suggested = ""
+        if not explicit:
+            for pid in cls._ASR_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
         return {
             "editable": True,
-            "current_provider": provider_id,
+            "current_provider": explicit,
+            "suggested_provider": suggested,
             "current_model": "",
             "providers": cls._ASR_PROVIDERS,
         }
@@ -1897,6 +2037,10 @@ class ModelsHandler:
         file_cfg[key] = value
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] {key} set: {value!r}")
+        # Bridge caches voice_to_text routing + bot instance; refresh it
+        # so the change takes effect on the next voice request.
+        if key in ("voice_to_text", "text_to_voice"):
+            self._refresh_voice_routing()
         return json.dumps({"status": "success", key: value})
 
     def _set_tts(self, provider_id: str, model: str) -> str:
@@ -1910,7 +2054,16 @@ class ModelsHandler:
             file_cfg["text_to_voice_model"] = model
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] tts updated: provider={provider_id!r} model={model!r}")
+        self._refresh_voice_routing()
         return json.dumps({"status": "success", "provider": provider_id, "model": model})
+
+    @staticmethod
+    def _refresh_voice_routing() -> None:
+        try:
+            from bridge.bridge import Bridge
+            Bridge().refresh_voice()
+        except Exception as e:
+            logger.warning(f"[ModelsHandler] Bridge voice refresh failed: {e}")
 
     def _set_embedding(self, provider_id: str, model: str) -> str:
         # provider_id="" + model="" means "switch back to legacy auto mode".
@@ -1926,9 +2079,9 @@ class ModelsHandler:
             file_cfg["embedding_model"] = ""
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
-        # The agent's MemoryManager picks the new provider on next process
-        # restart; the index dim may now mismatch so a rebuild is needed.
-        # The frontend surfaces this via a confirm + post-save dialog.
+        # The next /memory rebuild-index command hot-swaps the provider onto
+        # the running MemoryManager (see plugins/cow_cli). The dim may have
+        # changed, so the frontend prompts the user to rebuild.
         return json.dumps({"status": "success", "provider": provider_id, "model": model})
 
     @staticmethod
