@@ -422,15 +422,24 @@
                                     </button>
                                 </div>
                                 <div id="slash-menu" class="slash-menu hidden"></div>
-                                <textarea id="chat-input"
-                                          class="flex-1 min-w-0 px-4 py-[10px] rounded-xl border border-slate-200 dark:border-slate-600
-                                                 bg-slate-50 dark:bg-white/5 text-slate-800 dark:text-slate-100
-                                                 placeholder:text-slate-400 dark:placeholder:text-slate-500
-                                                 focus:outline-none focus:ring-0 focus:border-primary-600
-                                                 text-sm leading-relaxed"
-                                          rows="1"
-                                          data-i18n-placeholder="input_placeholder"
-                                          placeholder="输入消息，或输入 / 使用指令"></textarea>
+                                <div class="flex-1 min-w-0 relative flex items-center">
+                                    <textarea id="chat-input"
+                                              class="w-full pl-4 pr-11 py-[10px] rounded-xl border border-slate-200 dark:border-slate-600
+                                                     bg-slate-50 dark:bg-white/5 text-slate-800 dark:text-slate-100
+                                                     placeholder:text-slate-400 dark:placeholder:text-slate-500
+                                                     focus:outline-none focus:ring-0 focus:border-primary-600
+                                                     text-sm leading-relaxed"
+                                              rows="1"
+                                              data-i18n-placeholder="input_placeholder"
+                                              placeholder="输入消息，或输入 / 使用指令"></textarea>
+                                    <button id="mic-btn" type="button"
+                                            class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg
+                                                   text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20
+                                                   cursor-pointer transition-colors duration-150"
+                                            data-i18n-title="mic_idle_title" title="点击录音 / 再按一次结束">
+                                        <i class="fas fa-microphone text-sm"></i>
+                                    </button>
+                                </div>
                                 <button id="send-btn"
                                         class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg
                                                bg-primary-400 text-white hover:bg-primary-500
