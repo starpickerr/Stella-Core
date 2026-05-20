@@ -264,9 +264,15 @@ class MemoryManager:
 
         if memory_dir.exists():
             for file_path in memory_dir.rglob("*.md"):
-                if any(part.startswith('.') for part in file_path.relative_to(workspace_dir).parts):
-                    continue
                 rel_parts = file_path.relative_to(workspace_dir).parts
+                if any(part.startswith('.') for part in rel_parts):
+                    continue
+                # Dream diaries are narrative reflections produced by Deep
+                # Dream; their factual content has already been distilled
+                # into MEMORY.md. Indexing them adds noisy near-duplicates
+                # that crowd out the authoritative entry in retrieval.
+                if "dreams" in rel_parts:
+                    continue
                 if "daily" in rel_parts:
                     if "users" in rel_parts or len(rel_parts) > 3:
                         user_idx = rel_parts.index("daily") + 1
