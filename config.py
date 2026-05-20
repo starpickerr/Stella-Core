@@ -100,6 +100,10 @@ available_setting = {
     "dashscope_api_key": "",
     # Google Gemini Api Key
     "gemini_api_key": "",
+    # Embedding 模型设置
+    "embedding_provider": "",  # 显式指定厂商：openai / linkai / dashscope / doubao / zhipu (与 bot_type 命名一致)
+    "embedding_model": "",     # 留空使用厂商默认 model
+    "embedding_dimensions": 0, # 留空/0 使用厂商默认维度（推荐统一 1024）
     # 语音设置
     "speech_recognition": True,  # 是否开启语音识别
     "group_speech_recognition": False,  # 是否开启群组语音识别
