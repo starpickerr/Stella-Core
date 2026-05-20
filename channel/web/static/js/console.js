@@ -1728,10 +1728,14 @@ function renderStepsHtml(steps) {
         } else if (step.type === 'tool') {
             const argsStr = formatToolArgs(step.arguments || {});
             const resultStr = step.result ? escapeHtml(String(step.result)) : '';
+            const isErr = step.is_error === true;
+            const iconClass = isErr
+                ? 'fas fa-times text-red-400 flex-shrink-0 tool-icon'
+                : 'fas fa-check text-primary-400 flex-shrink-0 tool-icon';
             html += `
-<div class="agent-step agent-tool-step">
+<div class="agent-step agent-tool-step${isErr ? ' tool-failed' : ''}">
     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
-        <i class="fas fa-check text-primary-400 flex-shrink-0 tool-icon"></i>
+        <i class="${iconClass}"></i>
         <span class="tool-name">${escapeHtml(step.name || '')}</span>
         <i class="fas fa-chevron-right tool-chevron"></i>
     </div>
@@ -1742,8 +1746,8 @@ function renderStepsHtml(steps) {
         </div>
         ${resultStr ? `
         <div class="tool-detail-section tool-output-section">
-            <div class="tool-detail-label">Output</div>
-            <pre class="tool-detail-content">${resultStr}</pre>
+            <div class="tool-detail-label">${isErr ? 'Error' : 'Output'}</div>
+            <pre class="tool-detail-content${isErr ? ' tool-error-text' : ''}">${resultStr}</pre>
         </div>` : ''}
     </div>
 </div>`;

@@ -116,9 +116,10 @@ def _extract_tool_calls(content: Any) -> List[Dict[str, Any]]:
     ]
 
 
-def _extract_tool_results(content: Any) -> Dict[str, str]:
+def _extract_tool_results(content: Any) -> Dict[str, dict]:
     """
     Extract tool_result blocks from a user message, keyed by tool_use_id.
+    Values are {"result": str, "is_error": bool}.
     """
     if not isinstance(content, list):
         return {}
@@ -133,7 +134,7 @@ def _extract_tool_results(content: Any) -> Dict[str, str]:
                 rb.get("text", "") for rb in result_content
                 if isinstance(rb, dict) and rb.get("type") == "text"
             )
-        results[tool_id] = str(result_content)
+        results[tool_id] = {"result": str(result_content), "is_error": bool(b.get("is_error", False))}
     return results
 
 
@@ -242,7 +243,11 @@ def _group_into_display_turns(
         # Attach tool results to tool steps
         for step in steps:
             if step["type"] == "tool":
-                step["result"] = tool_results.get(step.get("id", ""), "")
+                tr = tool_results.get(step.get("id", ""), {})
+                if not isinstance(tr, dict):
+                    tr = {"result": tr}
+                step["result"] = tr.get("result", "")
+                step["is_error"] = tr.get("is_error", False)
 
         if steps or final_text:
             turn = {
