@@ -22,7 +22,7 @@ from typing import Optional
 
 import requests
 import web
-from wechatpy.enterprise import parse_message
+from wechatpy.enterprise import WeChatClient
 from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise.exceptions import InvalidCorpIdException
 from wechatpy.exceptions import InvalidSignatureException, WeChatClientException
@@ -30,7 +30,6 @@ from wechatpy.exceptions import InvalidSignatureException, WeChatClientException
 from bridge.context import Context
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
-from channel.wechatcom.wechatcomapp_client import WechatComAppClient
 from channel.wechatcom_kf.wechatcom_kf_cursor_store import CursorStore
 from channel.wechatcom_kf.wechatcom_kf_message import WechatComKfMessage
 from common.log import logger
@@ -72,14 +71,17 @@ class WechatComKfChannel(ChatChannel):
             )
         )
         self.crypto = WeChatCrypto(self.token, self.aes_key, self.corp_id)
-        self.client = WechatComAppClient(self.corp_id, self.secret)
+        # Use the stock wechatpy WeChatClient so that the access_token is
+        # cached and only refreshed when actually expired (~2h). The local
+        # `WechatComAppClient` subclass has a broken background refresh
+        # loop that re-fetches every 60s and a `fetch_access_token()`
+        # override that may return a dict instead of a string, which
+        # corrupts URLs and triggers errcode 40014.
+        self.client = WeChatClient(self.corp_id, self.secret)
 
         cursor_dir = conf().get("wechatcom_kf_cursor_dir", "tmp")
         cursor_path = os.path.join(cursor_dir, "wechatcom_kf_cursors.json")
         self.cursor_store = CursorStore(cursor_path)
-        self.skip_history_on_first_start = conf().get(
-            "wechatcom_kf_skip_history_on_first_start", True
-        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -87,7 +89,7 @@ class WechatComKfChannel(ChatChannel):
     def startup(self):
         urls = ("/wxkf/?", "channel.wechatcom_kf.wechatcom_kf_channel.Query")
         app = web.application(urls, globals(), autoreload=False)
-        port = conf().get("wechatcom_kf_port", 9899)
+        port = conf().get("wechatcom_kf_port", 9888)
         logger.info("[wechatcom_kf] WeCom customer-service channel started")
         logger.info("[wechatcom_kf] Listening on http://0.0.0.0:{}/wxkf/".format(port))
         func = web.httpserver.StaticMiddleware(app.wsgifunc())
@@ -248,8 +250,10 @@ class WechatComKfChannel(ChatChannel):
         """
         existing_cursor = self.cursor_store.get(open_kfid)
 
-        # First-time bootstrap: avoid replaying up to 14 days of history.
-        if not existing_cursor and self.skip_history_on_first_start:
+        # First-time bootstrap: always skip history, otherwise WeCom would
+        # replay up to 14 days of messages on the very first callback and
+        # flood every user with auto-replies.
+        if not existing_cursor:
             self._initialize_cursor(token, open_kfid)
             return
 
@@ -332,7 +336,10 @@ class WechatComKfChannel(ChatChannel):
         return collected
 
     def _call_sync_msg(self, token: str, open_kfid: str, cursor: str) -> Optional[dict]:
-        url = f"{KF_API_BASE}/sync_msg?access_token={self.client.fetch_access_token()}"
+        # `client.access_token` is the cached string property; do not use
+        # `fetch_access_token()` here — wechatpy returns the raw response
+        # dict from that call, which corrupts the query string.
+        url = f"{KF_API_BASE}/sync_msg?access_token={self.client.access_token}"
         payload = {
             "token": token,
             "open_kfid": open_kfid,
@@ -358,7 +365,7 @@ class WechatComKfChannel(ChatChannel):
     # Outbound HTTP wrappers (kf/send_msg)
     # ------------------------------------------------------------------
     def _post_send_msg(self, payload: dict) -> dict:
-        url = f"{KF_API_BASE}/send_msg?access_token={self.client.fetch_access_token()}"
+        url = f"{KF_API_BASE}/send_msg?access_token={self.client.access_token}"
         try:
             resp = requests.post(url, json=payload, timeout=10).json()
         except Exception as e:
