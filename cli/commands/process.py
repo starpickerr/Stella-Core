@@ -269,7 +269,7 @@ def status():
             channel = ", ".join(channel)
         click.echo(f"  通道: {channel}")
         click.echo(f"  模型: {cfg.get('model', 'unknown')}")
-        mode = "Agent" if cfg.get("agent") else "Chat"
+        mode = "Chat" if cfg.get("agent") is False else "Agent"
         click.echo(f"  模式: {mode}")
 
 
