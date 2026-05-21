@@ -270,6 +270,8 @@ class ChatChannel(Channel):
                 if reply.type == ReplyType.TEXT:
                     reply_text = reply.content
                     if desire_rtype == ReplyType.VOICE and ReplyType.VOICE not in self.NOT_SUPPORT_REPLYTYPE:
+                        # Preserve original text for the "text-then-voice" pattern in _send_reply.
+                        context["voice_reply_text"] = reply.content
                         reply = super().build_text_to_voice(reply.content)
                         return self._decorate_reply(context, reply)
                     if context.get("isgroup", False):
@@ -315,6 +317,15 @@ class ChatChannel(Channel):
                     text_reply = Reply(ReplyType.TEXT, reply.text_content)
                     self._send(text_reply, context)
                     # 短暂延迟后发送图片
+                    time.sleep(0.3)
+                    self._send(reply, context)
+                # Send text bubble before voice, unless channel already streamed
+                # the text (feishu) or natively renders STT under the voice (wechatcom).
+                elif reply.type == ReplyType.VOICE and context.get("voice_reply_text") \
+                        and not context.get("feishu_streamed") \
+                        and context.get("channel_type") not in ("wechatcom_app",):
+                    text_reply = Reply(ReplyType.TEXT, context.get("voice_reply_text"))
+                    self._send(text_reply, context)
                     time.sleep(0.3)
                     self._send(reply, context)
                 else:
