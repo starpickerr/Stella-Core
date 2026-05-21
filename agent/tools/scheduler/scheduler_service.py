@@ -10,6 +10,19 @@ from croniter import croniter
 from common.log import logger
 
 
+def _parse_naive_local(iso_str: str) -> datetime:
+    """Parse an ISO datetime and coerce it to tz-naive local time.
+
+    The scheduler uses ``datetime.now()`` (tz-naive) for all comparisons,
+    so any persisted timestamp must be normalized to the same flavor —
+    otherwise comparing naive vs aware raises TypeError.
+    """
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
 class SchedulerService:
     """
     Background service that executes scheduled tasks
@@ -113,8 +126,8 @@ class SchedulerService:
             return False
         
         try:
-            next_run = datetime.fromisoformat(next_run_str)
-            
+            next_run = _parse_naive_local(next_run_str)
+
             # Check if task is overdue (e.g., service restart)
             if next_run < now:
                 time_diff = (now - next_run).total_seconds()
@@ -140,7 +153,11 @@ class SchedulerService:
                     return False
             
             return now >= next_run
-        except Exception:
+        except Exception as e:
+            logger.error(
+                f"[Scheduler] Failed to evaluate due-state for task "
+                f"{task.get('id')} (next_run_at={next_run_str!r}): {e}"
+            )
             return False
     
     def _calculate_next_run(self, task: dict, from_time: datetime) -> Optional[datetime]:
@@ -184,12 +201,14 @@ class SchedulerService:
                 return None
             
             try:
-                run_at = datetime.fromisoformat(run_at_str)
-                # Only return if in the future
+                run_at = _parse_naive_local(run_at_str)
                 if run_at > from_time:
                     return run_at
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(
+                    f"[Scheduler] Failed to parse once-task run_at "
+                    f"{run_at_str!r}: {e}"
+                )
             return None
         
         return None
