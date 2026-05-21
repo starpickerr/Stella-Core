@@ -2252,6 +2252,7 @@ class ModelsHandler:
         configured_ids = []
         for pid in cls._SEARCH_PROVIDERS:
             ok = cls._is_real_key(cls._search_provider_key(pid, local_config))
+            raw_key = cls._search_provider_key(pid, local_config) if ok else ""
             providers.append({
                 "id": pid,
                 "label": cls._SEARCH_PROVIDER_LABELS.get(pid, pid),
@@ -2260,6 +2261,7 @@ class ModelsHandler:
                 # piggy-back on a model-vendor credential. Frontend uses
                 # this hint to decide which credential editor to surface.
                 "needs_dedicated_key": pid == "bocha",
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if raw_key else "",
             })
             if ok:
                 configured_ids.append(pid)
@@ -2394,8 +2396,11 @@ class ModelsHandler:
         for field_name in (meta.get("api_key_field"), meta.get("api_base_key")):
             if not field_name:
                 continue
-            if field_name in local_config:
-                local_config[field_name] = ""
+            # Always write the key — even if it was absent before — so the
+            # in-memory conf() reflects the cleared state without needing a
+            # restart. (`in local_config` was too strict: provider keys that
+            # were ever set then deleted manually wouldn't get reset.)
+            local_config[field_name] = ""
             file_cfg[field_name] = ""
             cleared.append(field_name)
 

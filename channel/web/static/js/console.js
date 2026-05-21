@@ -58,7 +58,8 @@ const I18N = {
         models_search_add_provider: '添加厂商',
         models_search_add_desc: '选择一个搜索厂商进行配置',
         models_search_bocha_title: '配置博查 API Key',
-        models_search_bocha_desc: '前往博查开放平台创建 API Key：',
+        models_search_bocha_desc: '前往 <a href="https://open.bochaai.com" target="_blank" class="text-primary-500 hover:text-primary-600 underline">博查开放平台</a> 创建 API Key。',
+        models_search_edit_hint: '点击修改配置',
         models_unavailable: '不可用',
         models_set_via_env: '通过环境变量启用',
         models_dim_label: '维度',
@@ -93,6 +94,7 @@ const I18N = {
         input_placeholder: '输入消息，或输入 / 使用指令',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
+        config_model_advanced: '高级配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
         config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '对话中 Agent 能输入的最大 Token 长度，超过后会智能压缩处理',
@@ -230,7 +232,8 @@ const I18N = {
         models_search_add_provider: 'Add provider',
         models_search_add_desc: 'Pick a search provider to configure',
         models_search_bocha_title: 'Configure Bocha API Key',
-        models_search_bocha_desc: 'Create a key at the Bocha open platform: ',
+        models_search_bocha_desc: 'Create a key at the <a href="https://open.bochaai.com" target="_blank" class="text-primary-500 hover:text-primary-600 underline">Bocha open platform</a>.',
+        models_search_edit_hint: 'Click to edit',
         models_unavailable: 'unavailable',
         models_set_via_env: 'enable via environment variable',
         models_dim_label: 'dim',
@@ -265,6 +268,7 @@ const I18N = {
         input_placeholder: 'Type a message, or press / for commands',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
+        config_model_advanced: 'Advanced',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
         config_max_tokens: 'Max Context Tokens', config_max_tokens_hint: 'Max tokens the Agent can input per conversation, auto-compressed when exceeded',
@@ -4094,10 +4098,13 @@ function _renderSearchSummary(body, cap) {
         `;
     } else {
         const chips = configured.map(p => `
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md
-                         bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+            <button type="button" data-search-edit-provider="${p.id}"
+                    title="${t('models_search_edit_hint')}"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md cursor-pointer
+                           bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400
+                           hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
                 <i class="fas fa-check text-[10px]"></i>${escapeHtml(p.label)}
-            </span>
+            </button>
         `).join('');
         host.innerHTML = `
             <div class="flex items-center flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -4108,13 +4115,21 @@ function _renderSearchSummary(body, cap) {
         `;
     }
 
-    const btn = host.querySelector('#cap-search-add-btn');
-    if (btn) {
-        btn.addEventListener('click', (ev) => {
+    const addBtnEl = host.querySelector('#cap-search-add-btn');
+    if (addBtnEl) {
+        addBtnEl.addEventListener('click', (ev) => {
             ev.preventDefault();
             openSearchAddProviderPicker(missing);
         });
     }
+    host.querySelectorAll('[data-search-edit-provider]').forEach(el => {
+        el.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const pid = el.getAttribute('data-search-edit-provider');
+            const meta = (cap.providers || []).find(p => p.id === pid);
+            _launchSearchProviderConfig(pid, meta);
+        });
+    });
 }
 
 // Two-step add flow: click "+ 添加厂商" -> chooser dialog -> per-provider
@@ -4168,9 +4183,9 @@ function openSearchAddProviderPicker(missingProviders) {
     });
 }
 
-function _launchSearchProviderConfig(providerId) {
+function _launchSearchProviderConfig(providerId, providerMeta) {
     if (providerId === 'bocha') {
-        openSearchBochaModal();
+        openSearchBochaModal(providerMeta);
     } else {
         openVendorModal(providerId, () => loadModelsView({ preserveScroll: true }));
     }
@@ -4204,60 +4219,126 @@ function saveSearchCapability() {
 // Minimal bocha API-key modal. Reuses the existing vendor-modal markup
 // helpers would be nice, but bocha isn't in PROVIDER_MODELS (it's not a
 // model vendor), so we render a tiny dedicated dialog.
-function openSearchBochaModal() {
+function openSearchBochaModal(providerMeta) {
     const existing = document.getElementById('search-bocha-modal');
     if (existing) existing.remove();
+
+    let masked = (providerMeta && providerMeta.api_key_masked) || '';
+    if (!masked) {
+        const searchCap = (modelsState && modelsState.capabilities && modelsState.capabilities.search) || {};
+        const bocha = (searchCap.providers || []).find(p => p.id === 'bocha');
+        if (bocha && bocha.api_key_masked) masked = bocha.api_key_masked;
+    }
+    const hasKey = !!masked;
+    const clearBtnHtml = hasKey
+        ? `<button type="button" id="search-bocha-clear"
+                  class="px-3 py-1.5 rounded-md text-xs text-red-500 dark:text-red-400
+                         hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer transition-colors">
+              ${t('models_clear_credential')}
+           </button>`
+        : '';
 
     const modal = document.createElement('div');
     modal.id = 'search-bocha-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
     modal.innerHTML = `
-        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+        <div id="search-bocha-modal-card"
+             class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
                     w-full max-w-md mx-4 p-6 shadow-xl">
             <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_bocha_title')}</h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                ${t('models_search_bocha_desc')}
-                <a href="https://open.bochaai.com" target="_blank"
-                   class="text-primary-500 hover:text-primary-600 underline">open.bochaai.com</a>
-            </p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_bocha_desc')}</p>
             <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
-            <input id="search-bocha-key" type="password" autocomplete="off"
+            <input id="search-bocha-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
                    class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
                           bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
-                          focus:outline-none focus:border-primary-500 font-mono"
+                          focus:outline-none focus:border-primary-500 font-mono ${hasKey ? 'cfg-key-masked' : ''}"
+                   value="${escapeHtml(masked)}"
+                   data-masked="${hasKey ? '1' : ''}"
                    placeholder="sk-..." />
-            <div class="flex items-center justify-end gap-3 mt-5">
-                <button type="button" onclick="document.getElementById('search-bocha-modal').remove()"
-                        class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
-                               hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
-                    ${t('cancel')}
-                </button>
-                <button type="button" onclick="_saveBochaKey()"
-                        class="px-4 py-1.5 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
-                               cursor-pointer transition-colors">
-                    ${t('save')}
-                </button>
+            <div class="flex items-center justify-between gap-3 mt-5">
+                <div>${clearBtnHtml}</div>
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="document.getElementById('search-bocha-modal').remove()"
+                            class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
+                                   hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+                        ${t('cancel')}
+                    </button>
+                    <button type="button" onclick="_saveBochaKey()"
+                            class="px-4 py-1.5 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                                   cursor-pointer transition-colors">
+                        ${t('save')}
+                    </button>
+                </div>
             </div>
         </div>
     `;
     document.body.appendChild(modal);
-    setTimeout(() => {
-        const input = document.getElementById('search-bocha-key');
-        if (input) input.focus();
-    }, 50);
+
+    // Reset masked sentinel as soon as the user starts editing so the save
+    // handler can tell apart "kept the existing key" vs "typed a new one".
+    const input = document.getElementById('search-bocha-key');
+    if (input) {
+        const unmask = () => {
+            if (input.dataset.masked === '1') {
+                input.value = '';
+                input.dataset.masked = '';
+                input.classList.remove('cfg-key-masked');
+            }
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab' || e.key === 'Escape') return;
+            unmask();
+        });
+        input.addEventListener('paste', unmask);
+        if (!hasKey) setTimeout(() => input.focus(), 50);
+    }
+    const clearBtn = document.getElementById('search-bocha-clear');
+    if (clearBtn) clearBtn.addEventListener('click', _clearBochaKey);
+
+    modal.addEventListener('mousedown', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+    const onKey = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+    };
+    document.addEventListener('keydown', onKey);
 }
 
 function _saveBochaKey() {
     const input = document.getElementById('search-bocha-key');
-    const apiKey = input ? input.value.trim() : '';
+    if (!input) return;
+    // Untouched masked value => no change requested; close silently.
+    if (input.dataset.masked === '1') {
+        const modal = document.getElementById('search-bocha-modal');
+        if (modal) modal.remove();
+        return;
+    }
+    const apiKey = input.value.trim();
     if (!apiKey) {
-        if (input) input.focus();
+        input.focus();
         return;
     }
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_search_credential', api_key: apiKey }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            const modal = document.getElementById('search-bocha-modal');
+            if (modal) modal.remove();
+            loadModelsView({ preserveScroll: true });
+        }
+    });
+}
+
+function _clearBochaKey() {
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_search_credential', api_key: '' }),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
             const modal = document.getElementById('search-bocha-modal');
@@ -5042,12 +5123,7 @@ function fillVendorModalForProvider(providerId) {
         baseWrap.classList.remove('hidden');
         baseInput.placeholder = meta.api_base_default || meta.api_base_placeholder || '';
         baseInput.value = meta.api_base || '';
-        if (meta.api_base_default) {
-            baseHint.classList.remove('hidden');
-            baseHint.querySelector('span').textContent = `${t('models_base_default')}: ${meta.api_base_default}`;
-        } else {
-            baseHint.classList.add('hidden');
-        }
+        baseHint.classList.add('hidden');
     } else {
         baseWrap.classList.add('hidden');
         baseInput.value = '';
