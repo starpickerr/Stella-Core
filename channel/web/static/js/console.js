@@ -364,6 +364,18 @@ function toggleLanguage() {
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
+    // Re-render views whose DOM is built in JS (data-i18n alone does not
+    // cover strings interpolated via t() into innerHTML).
+    try { rerenderDynamicViews(); } catch (e) {}
+}
+
+// Refresh JS-rendered views after a language switch. Each branch uses the
+// lightweight in-memory re-render path (no extra network round-trips).
+function rerenderDynamicViews() {
+    if (currentView === 'models' && typeof renderModelsView === 'function'
+            && modelsState && (modelsState.providers || modelsState.capabilities)) {
+        renderModelsView();
+    }
 }
 
 // Floating tooltip portal for [data-tip-key] elements. Tooltip nodes are
