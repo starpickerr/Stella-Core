@@ -1108,7 +1108,7 @@ class ConfigHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             local_config = conf()
-            use_agent = local_config.get("agent", False)
+            use_agent = local_config.get("agent", True)
             title = "CowAgent" if use_agent else "AI Assistant"
 
             api_bases = {}
