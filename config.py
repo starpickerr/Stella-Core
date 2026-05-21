@@ -366,7 +366,7 @@ def load_config():
     logger.info("[INIT] Model: {}".format(config.get("model", "unknown")))
 
     # Agent模式信息
-    if config.get("agent", False):
+    if config.get("agent", True):
         workspace = config.get("agent_workspace", "~/cow")
         logger.info("[INIT] Mode: Agent (workspace: {})".format(workspace))
     else:
