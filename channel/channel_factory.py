@@ -27,6 +27,9 @@ def create_channel(channel_type) -> Channel:
     elif channel_type == "wechatcom_app":
         from channel.wechatcom.wechatcomapp_channel import WechatComAppChannel
         ch = WechatComAppChannel()
+    elif channel_type == const.WECHATCOM_KF:
+        from channel.wechatcom_kf.wechatcom_kf_channel import WechatComKfChannel
+        ch = WechatComKfChannel()
     elif channel_type == const.FEISHU:
         from channel.feishu.feishu_channel import FeiShuChanel
         ch = FeiShuChanel()

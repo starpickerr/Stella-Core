@@ -227,3 +227,4 @@ DINGTALK = "dingtalk"
 WECOM_BOT = "wecom_bot"
 QQ = "qq"
 WEIXIN = "weixin"
+WECHATCOM_KF = "wechatcom_kf"  # WeCom customer service (微信客服) channel
