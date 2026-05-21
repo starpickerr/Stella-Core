@@ -1515,10 +1515,16 @@ class FeiShuChanel(ChatChannel):
             else:
                 context.type = ContextType.TEXT
             context.content = content.strip()
+            # Text input opts into voice replies only when the always-on toggle is set.
+            if "desire_rtype" not in context and conf().get("always_reply_voice"):
+                context["desire_rtype"] = ReplyType.VOICE
 
         elif context.type == ContextType.VOICE:
-            # 2.语音请求
-            if "desire_rtype" not in context and conf().get("voice_reply_voice"):
+            # 2.语音请求: voice input replies with voice if either
+            # voice_reply_voice (mirror reply) or always_reply_voice is on.
+            if "desire_rtype" not in context and (
+                conf().get("voice_reply_voice") or conf().get("always_reply_voice")
+            ):
                 context["desire_rtype"] = ReplyType.VOICE
 
         return context
