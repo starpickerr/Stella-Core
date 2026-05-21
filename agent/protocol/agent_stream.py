@@ -603,15 +603,24 @@ class AgentStreamExecutor:
         except Exception as e:
             logger.debug(f"[Agent] MCP sync skipped: {e}")
 
-        # Prepare tool definitions (OpenAI/Claude format)
+        # Prepare tool definitions. Prefer get_json_schema() when it yields
+        # real properties (lets tools augment schema at runtime), otherwise
+        # fall back to the static `tool.params` (MCP tools rely on this).
         tools_schema = None
         if self.tools:
             tools_schema = []
             for tool in self.tools.values():
+                input_schema = tool.params
+                try:
+                    dynamic = (tool.get_json_schema() or {}).get("parameters") or {}
+                    if dynamic.get("properties"):
+                        input_schema = dynamic
+                except Exception:
+                    pass
                 tools_schema.append({
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.params  # Claude uses input_schema
+                    "input_schema": input_schema,
                 })
 
         # Create request

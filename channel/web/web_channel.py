@@ -1368,14 +1368,6 @@ class ConfigHandler:
             "api_base_placeholder": _PLACEHOLDER_QIANFAN,
             "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
         }),
-        ("modelscope", {
-            "label": "ModelScope",
-            "api_key_field": "modelscope_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.QWEN3_5_27B, const.QWEN3_235B_A22B_INSTRUCT_2507],
-        }),
         ("linkai", {
             "label": "LinkAI",
             "api_key_field": "linkai_api_key",
@@ -2219,20 +2211,81 @@ class ModelsHandler:
             "note": "router_pending",
         }
 
+    # Canonical search provider order. Mirrors PROVIDER_ORDER in
+    # agent/tools/web_search/web_search.py — keep them in sync.
+    _SEARCH_PROVIDERS = ("bocha", "qianfan", "zhipu", "linkai")
+
+    _SEARCH_PROVIDER_LABELS = {
+        "bocha":   "博查",
+        "zhipu":   "智谱",
+        "qianfan": "百度千帆",
+        "linkai":  "LinkAI",
+    }
+
+    @classmethod
+    def _search_provider_key(cls, provider: str, local_config: dict) -> str:
+        """Resolve the (raw) key for a given search provider."""
+        if provider == "bocha":
+            tools_cfg = local_config.get("tools") or {}
+            block = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
+            return (block.get("bocha_api_key") if isinstance(block, dict) else "") or os.environ.get("BOCHA_API_KEY", "")
+        if provider == "zhipu":
+            return local_config.get("zhipu_ai_api_key") or os.environ.get("ZHIPUAI_API_KEY", "")
+        if provider == "qianfan":
+            return local_config.get("qianfan_api_key") or os.environ.get("QIANFAN_API_KEY", "")
+        if provider == "linkai":
+            return local_config.get("linkai_api_key") or os.environ.get("LINKAI_API_KEY", "")
+        return ""
+
     @classmethod
     def _search_capability(cls, local_config: dict) -> dict:
-        """Web search resolves at runtime via env vars (BOCHA -> LINKAI)."""
-        if cls._is_real_key(os.environ.get("BOCHA_API_KEY", "")):
-            current = "bocha"
-        elif cls._is_real_key(local_config.get("linkai_api_key", "")) or cls._is_real_key(os.environ.get("LINKAI_API_KEY", "")):
-            current = "linkai"
+        """Search is editable: pick auto (default) or pin a specific backend.
+        Providers reuse model-vendor keys (zhipu/qianfan/linkai) so they show
+        up as configured once the user adds those vendors; bocha keeps its
+        own key under tools.web_search."""
+        tools_cfg = local_config.get("tools") or {}
+        ws_cfg = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
+        if not isinstance(ws_cfg, dict):
+            ws_cfg = {}
+
+        providers = []
+        configured_ids = []
+        for pid in cls._SEARCH_PROVIDERS:
+            ok = cls._is_real_key(cls._search_provider_key(pid, local_config))
+            providers.append({
+                "id": pid,
+                "label": cls._SEARCH_PROVIDER_LABELS.get(pid, pid),
+                "configured": ok,
+                # bocha owns its key under tools.web_search; the other three
+                # piggy-back on a model-vendor credential. Frontend uses
+                # this hint to decide which credential editor to surface.
+                "needs_dedicated_key": pid == "bocha",
+            })
+            if ok:
+                configured_ids.append(pid)
+
+        strategy = (ws_cfg.get("strategy") or "auto").strip().lower()
+        if strategy not in ("auto", "fixed"):
+            strategy = "auto"
+        fixed_provider = (ws_cfg.get("provider") or "").strip().lower()
+        if fixed_provider and fixed_provider not in configured_ids:
+            fixed_provider = ""
+
+        # current_provider drives the chip in the header — show the actually
+        # active backend (pinned or first auto-picked).
+        if strategy == "fixed" and fixed_provider:
+            current = fixed_provider
         else:
-            current = ""
+            current = configured_ids[0] if configured_ids else ""
+
         return {
-            "editable": False,
+            "editable": True,
+            "strategy": strategy,
+            "providers": providers,
+            "configured_providers": configured_ids,
             "current_provider": current,
+            "fixed_provider": fixed_provider,
             "available": bool(current),
-            "note": "set_BOCHA_API_KEY_env" if not current else "",
         }
 
     @classmethod
@@ -2275,6 +2328,8 @@ class ModelsHandler:
                 return self._handle_set_capability(data)
             if action == "set_voice_reply_mode":
                 return self._handle_set_voice_reply_mode(data)
+            if action == "set_search_credential":
+                return self._handle_set_search_credential(data)
             return json.dumps({"status": "error", "message": f"unknown action: {action!r}"})
         except Exception as e:
             logger.error(f"[ModelsHandler] POST failed: {e}")
@@ -2366,6 +2421,11 @@ class ModelsHandler:
             return self._set_embedding(provider_id, model)
         if capability == "image":
             return self._set_image(provider_id, model)
+        if capability == "search":
+            return self._set_search(
+                (data.get("strategy") or "").strip().lower(),
+                (data.get("provider") or "").strip().lower(),
+            )
         return json.dumps({"status": "error", "message": f"capability not editable: {capability}"})
 
     def _set_image(self, provider_id: str, model: str) -> str:
@@ -2549,6 +2609,47 @@ class ModelsHandler:
         # the running MemoryManager (see plugins/cow_cli). The dim may have
         # changed, so the frontend prompts the user to rebuild.
         return json.dumps({"status": "success", "provider": provider_id, "model": model})
+
+    def _set_search(self, strategy: str, provider: str) -> str:
+        """Persist search routing under tools.web_search.{strategy,provider}.
+
+        strategy 'auto'  -> provider field is cleared (auto picks at call time)
+        strategy 'fixed' -> provider must be in the canonical list; runtime
+                            silently falls back to auto if its key is missing.
+        """
+        if strategy not in ("auto", "fixed"):
+            return json.dumps({"status": "error", "message": f"invalid strategy: {strategy!r}"})
+        if strategy == "fixed":
+            if provider not in self._SEARCH_PROVIDERS:
+                return json.dumps({"status": "error", "message": f"unknown provider: {provider!r}"})
+        else:
+            provider = ""
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "strategy", strategy)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "strategy", strategy)
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "provider", provider)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "provider", provider)
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] search updated: strategy={strategy!r} provider={provider!r}")
+        return json.dumps({"status": "success", "strategy": strategy, "provider": provider})
+
+    def _handle_set_search_credential(self, data: dict) -> str:
+        """Persist the bocha API key under tools.web_search.bocha_api_key.
+
+        The other three providers (zhipu/qianfan/linkai) reuse model-vendor
+        credentials, so they go through set_provider with the standard
+        model-vendor flow.
+        """
+        api_key = (data.get("api_key") or "").strip() if isinstance(data.get("api_key"), str) else ""
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "bocha_api_key", api_key)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "bocha_api_key", api_key)
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] search credential set: bocha_api_key={'***' if api_key else ''}")
+        return json.dumps({"status": "success", "provider": "bocha"})
 
     @staticmethod
     def _reset_bridge() -> None:
