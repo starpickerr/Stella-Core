@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role         TEXT    NOT NULL,
     content      TEXT    NOT NULL,
     created_at   INTEGER NOT NULL,
+    extras       TEXT    NOT NULL DEFAULT '',
     UNIQUE (session_id, seq)
 );
 
@@ -65,6 +66,12 @@ ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT '';
 
 _MIGRATION_ADD_CONTEXT_START_SEQ = """
 ALTER TABLE sessions ADD COLUMN context_start_seq INTEGER NOT NULL DEFAULT 0;
+"""
+
+# Generic JSON sidecar for per-message attachments (TTS audio URL, future use).
+# Always optional — readers must tolerate missing column / empty / invalid JSON.
+_MIGRATION_ADD_MSG_EXTRAS = """
+ALTER TABLE messages ADD COLUMN extras TEXT NOT NULL DEFAULT '';
 """
 
 DEFAULT_MAX_AGE_DAYS: int = 30
@@ -169,20 +176,26 @@ def _group_into_display_turns(
     cur_rest: List[tuple] = []
     started = False
 
-    for role, raw_content, created_at in rows:
+    for role, raw_content, created_at, raw_extras in rows:
         try:
             content = json.loads(raw_content)
         except Exception:
             content = raw_content
+        try:
+            extras = json.loads(raw_extras) if raw_extras else {}
+            if not isinstance(extras, dict):
+                extras = {}
+        except Exception:
+            extras = {}
 
         if role == "user" and _is_visible_user_message(content):
             if started:
                 groups.append((cur_user, cur_rest))
-            cur_user = (content, created_at)
+            cur_user = (content, created_at, extras)
             cur_rest = []
             started = True
         else:
-            cur_rest.append((role, content, created_at))
+            cur_rest.append((role, content, created_at, extras))
 
     if started:
         groups.append((cur_user, cur_rest))
@@ -195,7 +208,7 @@ def _group_into_display_turns(
     for user_row, rest in groups:
         # User turn
         if user_row:
-            content, created_at = user_row
+            content, created_at, _u_extras = user_row
             text = _extract_display_text(content)
             if text:
                 turns.append({"role": "user", "content": text, "created_at": created_at})
@@ -206,8 +219,11 @@ def _group_into_display_turns(
         tool_results: Dict[str, str] = {}
         final_text = ""
         final_ts: Optional[int] = None
+        merged_extras: Dict[str, Any] = {}
 
-        for role, content, created_at in rest:
+        for role, content, created_at, extras in rest:
+            if role == "assistant" and isinstance(extras, dict):
+                merged_extras.update(extras)
             if role == "user":
                 tool_results.update(_extract_tool_results(content))
             elif role == "assistant":
@@ -256,6 +272,8 @@ def _group_into_display_turns(
                 "steps": steps,
                 "created_at": final_ts or (user_row[1] if user_row else 0),
             }
+            if merged_extras:
+                turn["extras"] = merged_extras
             turns.append(turn)
 
     return turns
@@ -411,13 +429,15 @@ class ConversationStore:
                         content = json.dumps(
                             msg.get("content", ""), ensure_ascii=False
                         )
+                        extras_obj = msg.get("extras") or {}
+                        extras = json.dumps(extras_obj, ensure_ascii=False) if extras_obj else ""
                         conn.execute(
                             """
                             INSERT OR IGNORE INTO messages
-                                (session_id, seq, role, content, created_at)
-                            VALUES (?, ?, ?, ?, ?)
+                                (session_id, seq, role, content, created_at, extras)
+                            VALUES (?, ?, ?, ?, ?, ?)
                             """,
-                            (session_id, next_seq, role, content, now),
+                            (session_id, next_seq, role, content, now, extras),
                         )
                         next_seq += 1
 
@@ -651,6 +671,55 @@ class ConversationStore:
             logger.info(f"[ConversationStore] Pruned {deleted} expired sessions")
         return deleted
 
+    def attach_extras_to_last_assistant(
+        self,
+        session_id: str,
+        extras: Dict[str, Any],
+    ) -> Optional[int]:
+        """
+        Merge ``extras`` into the latest assistant message of a session.
+
+        Used by post-processing (e.g. TTS) that needs to annotate an already
+        persisted bot reply with attachments such as audio URLs.
+
+        Returns the message seq that was updated, or ``None`` if no assistant
+        message exists or the update could not be applied.
+        """
+        if not extras:
+            return None
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    """
+                    SELECT seq, extras FROM messages
+                    WHERE session_id = ? AND role = 'assistant'
+                    ORDER BY seq DESC LIMIT 1
+                    """,
+                    (session_id,),
+                ).fetchone()
+                if not row:
+                    return None
+                seq, raw = row
+                try:
+                    cur = json.loads(raw) if raw else {}
+                    if not isinstance(cur, dict):
+                        cur = {}
+                except Exception:
+                    cur = {}
+                cur.update(extras)
+                conn.execute(
+                    "UPDATE messages SET extras = ? WHERE session_id = ? AND seq = ?",
+                    (json.dumps(cur, ensure_ascii=False), session_id, seq),
+                )
+                conn.commit()
+                return seq
+            except Exception as e:
+                logger.warning(f"[ConversationStore] attach_extras failed: {e}")
+                return None
+            finally:
+                conn.close()
+
     def load_history_page(
         self,
         session_id: str,
@@ -698,15 +767,31 @@ class ConversationStore:
                 ).fetchone()
                 ctx_start = ctx_row[0] if ctx_row else 0
 
-                rows = conn.execute(
-                    """
-                    SELECT seq, role, content, created_at
-                    FROM messages
-                    WHERE session_id = ?
-                    ORDER BY seq ASC
-                    """,
-                    (session_id,),
-                ).fetchall()
+                # extras column is added by migration; tolerate older DBs that
+                # might miss it by falling back to a NULL literal.
+                try:
+                    rows = conn.execute(
+                        """
+                        SELECT seq, role, content, created_at, extras
+                        FROM messages
+                        WHERE session_id = ?
+                        ORDER BY seq ASC
+                        """,
+                        (session_id,),
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    rows = [
+                        (seq, role, content, created_at, "")
+                        for (seq, role, content, created_at) in conn.execute(
+                            """
+                            SELECT seq, role, content, created_at
+                            FROM messages
+                            WHERE session_id = ?
+                            ORDER BY seq ASC
+                            """,
+                            (session_id,),
+                        ).fetchall()
+                    ]
             finally:
                 conn.close()
 
@@ -719,13 +804,16 @@ class ConversationStore:
             include_thinking = False
 
         # Strip seq for display grouping, but record max seq per visible user group
-        plain_rows = [(role, content, created_at) for _seq, role, content, created_at in rows]
+        plain_rows = [
+            (role, content, created_at, extras_raw)
+            for _seq, role, content, created_at, extras_raw in rows
+        ]
         visible = _group_into_display_turns(plain_rows, include_thinking=include_thinking)
 
         # Build a mapping: find the seq of each visible user message to annotate context boundary.
         # Walk through rows to find visible user message seqs in order.
         visible_user_seqs: List[int] = []
-        for seq, role, raw_content, _ts in rows:
+        for seq, role, raw_content, _ts, _extras in rows:
             if role != "user":
                 continue
             try:
@@ -910,6 +998,18 @@ class ConversationStore:
                 logger.info("[ConversationStore] Migrated: added context_start_seq column")
             except Exception as e:
                 logger.warning(f"[ConversationStore] Migration (context_start_seq) failed: {e}")
+
+        msg_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "extras" not in msg_cols:
+            try:
+                conn.execute(_MIGRATION_ADD_MSG_EXTRAS)
+                conn.commit()
+                logger.info("[ConversationStore] Migrated: added messages.extras column")
+            except Exception as e:
+                logger.warning(f"[ConversationStore] Migration (extras) failed: {e}")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path), timeout=10)

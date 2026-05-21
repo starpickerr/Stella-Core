@@ -25,6 +25,7 @@ const I18N = {
         models_add_vendor: '添加厂商',
         models_provider: '厂商',
         models_model: '模型',
+        models_voice: '音色',
         models_configured: '已配置',
         models_not_configured: '未配置',
         models_pick_to_configure: '选择以配置',
@@ -160,6 +161,11 @@ const I18N = {
         mic_permission_denied: '无法访问麦克风，请检查浏览器权限',
         mic_too_short: '录音太短，请重试',
         mic_error: '语音识别失败',
+        speak_msg: '朗读这段回复',
+        voice_reply_mode_label: '语音回复策略',
+        voice_reply_off: '关闭',
+        voice_reply_if_voice: '仅语音问/语音答',
+        voice_reply_always: '总是语音回复',
         attach_menu_folder: '上传文件夹',
         confirm_yes: '确认',
         confirm_cancel: '取消',
@@ -180,6 +186,7 @@ const I18N = {
         models_add_vendor: 'Add Vendor',
         models_provider: 'Provider',
         models_model: 'Model',
+        models_voice: 'Voice',
         models_configured: 'configured',
         models_not_configured: 'not configured',
         models_pick_to_configure: 'pick to configure',
@@ -315,6 +322,11 @@ const I18N = {
         mic_permission_denied: 'Cannot access microphone — check browser permissions',
         mic_too_short: 'Recording too short, please retry',
         mic_error: 'Speech recognition failed',
+        speak_msg: 'Read this reply aloud',
+        voice_reply_mode_label: 'Voice reply policy',
+        voice_reply_off: 'Off',
+        voice_reply_if_voice: 'Voice only if voice input',
+        voice_reply_always: 'Always reply with voice',
         attach_menu_folder: 'Upload Folder',
         confirm_yes: 'Confirm',
         confirm_cancel: 'Cancel',
@@ -1474,6 +1486,7 @@ function sendVoiceMessage(text, audioUrl) {
         message: text,
         stream: true,
         timestamp: timestamp.toISOString(),
+        is_voice: true,
     };
 
     const MAX_RETRIES = 2;
@@ -1512,19 +1525,19 @@ function sendVoiceMessage(text, audioUrl) {
 function addUserVoiceMessage(audioUrl, caption, timestamp) {
     const el = document.createElement('div');
     el.className = 'flex justify-end px-4 sm:px-6 py-3';
-    // Voice-message bubble: playable <audio> on top, ASR caption beneath.
+    // Voice-message bubble: compact voice pill on top, ASR caption beneath.
     // The bubble keeps the same primary tint as a normal user message so
     // it visually slots into the conversation flow.
     el.innerHTML = `
         <div class="max-w-[75%] sm:max-w-[60%]">
             <div class="bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 rounded-2xl px-3 py-2 msg-content user-bubble">
-                <audio controls preload="metadata" src="${audioUrl}"
-                       class="block w-[260px] max-w-full h-9"></audio>
+                <div class="user-voice-slot"></div>
                 ${caption ? `<div class="text-xs mt-1.5 leading-snug text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words">${escapeHtml(caption)}</div>` : ''}
             </div>
             <div class="text-xs text-slate-400 dark:text-slate-500 mt-1.5 text-right">${formatTime(timestamp)}</div>
         </div>
     `;
+    el.querySelector('.user-voice-slot').appendChild(renderVoicePill(audioUrl));
     messagesDiv.appendChild(el);
     _autoScrollEnabled = true;
     scrollChatToBottom(true);
@@ -1639,11 +1652,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                     <div class="agent-steps"></div>
                     <div class="answer-content sse-streaming"></div>
                     <div class="media-content"></div>
+                    <div class="bot-audio-slot"></div>
                 </div>
                 <div class="flex items-center gap-2 mt-1.5">
                     <span class="text-xs text-slate-400 dark:text-slate-500">${formatTime(timestamp)}</span>
                     <button class="copy-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${currentLang === 'zh' ? '复制' : 'Copy'}" style="display:none">
                         <i class="fas fa-copy"></i>
+                    </button>
+                    <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
+                        <i class="fas fa-volume-up"></i>
                     </button>
                 </div>
             </div>
@@ -1856,11 +1873,12 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 scrollChatToBottom();
 
             } else if (item.type === 'done') {
+                // Don't close the stream yet: the backend keeps it open
+                // for a short tail to deliver async attachments such as
+                // TTS audio (`voice_attach`). It will close the stream on
+                // its own via onerror once the tail expires.
                 done = true;
-                es.close();
-                delete activeStreams[requestId];
 
-                // item.content may be empty when "done" is only a stream-close signal after media.
                 const finalText = item.content || accumulatedText;
 
                 if (!botEl && finalText) {
@@ -1874,6 +1892,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                     if (copyBtn && finalText) copyBtn.style.display = '';
                     applyHighlighting(botEl);
                 }
+                renderBotSpeakerButton(botEl, finalText);
                 scrollChatToBottom();
 
                 if (titleInfo) {
@@ -1882,6 +1901,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 } else if (sessionPanelOpen) {
                     loadSessionList();
                 }
+
+            } else if (item.type === 'voice_attach') {
+                // TTS finished — attach a playable audio element to the
+                // current bot bubble. The stream closes right after.
+                if (botEl && item.url) {
+                    attachAudioToBotBubble(botEl, item.url, { autoplay: true });
+                }
+                es.close();
+                delete activeStreams[requestId];
 
             } else if (item.type === 'error') {
                 done = true;
@@ -1896,7 +1924,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
             es.close();
             delete activeStreams[requestId];
 
-            if (done) return;
+            if (done) {
+                // Normal close after the post-done tail expired; nothing to do.
+                return;
+            }
 
             if (currentReasoningEl) {
                 finalizeThinking(currentReasoningEl, reasoningStartTime, reasoningText);
@@ -2187,19 +2218,172 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
             <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                 ${stepsHtml ? `<div class="agent-steps">${stepsHtml}</div>` : ''}
                 <div class="answer-content">${renderMarkdown(displayContent)}</div>
+                <div class="bot-audio-slot"></div>
             </div>
             <div class="flex items-center gap-2 mt-1.5">
                 <span class="text-xs text-slate-400 dark:text-slate-500">${formatTime(timestamp)}</span>
                 <button class="copy-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${currentLang === 'zh' ? '复制' : 'Copy'}">
                     <i class="fas fa-copy"></i>
                 </button>
+                <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
+                    <i class="fas fa-volume-up"></i>
+                </button>
             </div>
         </div>
     `;
     el.querySelector('.answer-content').dataset.rawMd = displayContent;
+    // Existing TTS attachment (history replay): mount the player up-front.
+    const existingAudio = msg && msg.extras && msg.extras.audio && msg.extras.audio.url;
+    if (existingAudio) {
+        attachAudioToBotBubble(el, existingAudio, { autoplay: false });
+    }
+    renderBotSpeakerButton(el, displayContent);
     applyHighlighting(el);
     bindChatKnowledgeLinks(el);
     return el;
+}
+
+// Append (or replace) a small audio player inside a bot bubble's
+// dedicated `.bot-audio-slot`. Used by both live TTS pushes and history
+// replay. Silent failures: never throws.
+function attachAudioToBotBubble(botEl, audioUrl, opts) {
+    try {
+        if (!botEl || !audioUrl) return;
+        const slot = botEl.querySelector('.bot-audio-slot');
+        if (!slot) return;
+        slot.innerHTML = '';
+        slot.style.marginTop = '6px';
+        const pill = renderVoicePill(audioUrl, { autoplay: !!(opts && opts.autoplay) });
+        slot.appendChild(pill);
+        const speakBtn = botEl.querySelector('.speak-msg-btn');
+        if (speakBtn) speakBtn.style.display = 'none';
+    } catch (_) { /* silent */ }
+}
+
+// Build a compact play/pause + progress + duration pill that wraps a
+// hidden <audio>. Returns the root element; safe to embed anywhere.
+function renderVoicePill(audioUrl, opts) {
+    opts = opts || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'voice-pill';
+    wrap.innerHTML = `
+        <button type="button" class="voice-pill-btn" data-state="play" aria-label="play">
+            <i class="fas fa-play"></i>
+        </button>
+        <div class="voice-pill-track"><div class="voice-pill-fill"></div></div>
+        <span class="voice-pill-time">0:00</span>
+        <audio preload="metadata" src="${audioUrl}"></audio>
+    `;
+    const btn = wrap.querySelector('.voice-pill-btn');
+    const fill = wrap.querySelector('.voice-pill-fill');
+    const timeEl = wrap.querySelector('.voice-pill-time');
+    const audio = wrap.querySelector('audio');
+
+    const fmt = (s) => {
+        if (!isFinite(s) || s < 0) s = 0;
+        const m = Math.floor(s / 60);
+        const r = Math.floor(s % 60);
+        return `${m}:${r < 10 ? '0' : ''}${r}`;
+    };
+    const setIcon = (state) => {
+        btn.dataset.state = state;
+        btn.querySelector('i').className = state === 'pause' ? 'fas fa-pause' : 'fas fa-play';
+        btn.setAttribute('aria-label', state === 'pause' ? 'pause' : 'play');
+    };
+
+    audio.addEventListener('loadedmetadata', () => {
+        if (audio.duration && isFinite(audio.duration)) timeEl.textContent = fmt(audio.duration);
+    });
+    audio.addEventListener('timeupdate', () => {
+        const dur = audio.duration || 0;
+        if (dur > 0) {
+            fill.style.width = `${Math.min(100, (audio.currentTime / dur) * 100)}%`;
+            timeEl.textContent = fmt(dur - audio.currentTime);
+        }
+    });
+    audio.addEventListener('ended', () => {
+        setIcon('play');
+        fill.style.width = '0%';
+        timeEl.textContent = fmt(audio.duration || 0);
+    });
+    audio.addEventListener('play',  () => setIcon('pause'));
+    audio.addEventListener('pause', () => setIcon('play'));
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (audio.paused) {
+            audio.play().catch(() => {});
+        } else {
+            audio.pause();
+        }
+    });
+
+    if (opts.autoplay) {
+        // Autoplay may be blocked by the browser; fall back silently and
+        // let the user tap the play button.
+        const tryPlay = () => audio.play().catch(() => {});
+        if (audio.readyState >= 2) tryPlay();
+        else audio.addEventListener('canplay', tryPlay, { once: true });
+    }
+    return wrap;
+}
+
+// Show the manual "read aloud" button when TTS is configured but the
+// bubble has no audio yet. Lazily probes capability via /api/models so
+// we don't expose the button when nothing can synthesize speech.
+function renderBotSpeakerButton(botEl, text) {
+    if (!botEl || !text || !text.trim()) return;
+    const btn = botEl.querySelector('.speak-msg-btn');
+    if (!btn) return;
+    if (botEl.querySelector('.bot-audio-slot audio')) return;
+    _isTtsReady().then(ready => {
+        if (!ready) return;
+        btn.style.display = '';
+        btn.onclick = () => _triggerManualTts(btn, botEl, text);
+    });
+}
+
+let _ttsReadyPromise = null;
+let _ttsReadyTs = 0;
+function _isTtsReady() {
+    // Cache for 30s to avoid hammering /api/models on every bubble.
+    if (_ttsReadyPromise && Date.now() - _ttsReadyTs < 30000) {
+        return _ttsReadyPromise;
+    }
+    _ttsReadyTs = Date.now();
+    _ttsReadyPromise = fetch('/api/models')
+        .then(r => r.json())
+        .then(data => {
+            const tts = data && data.capabilities && data.capabilities.tts;
+            if (!tts) return false;
+            return Boolean(tts.current_provider || tts.suggested_provider);
+        })
+        .catch(() => false);
+    return _ttsReadyPromise;
+}
+
+function _triggerManualTts(btn, botEl, text) {
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    const icon = btn.querySelector('i');
+    const prev = icon ? icon.className : '';
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    fetch('/api/voice/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, session_id: sessionId }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.status === 'success' && data.audio_url) {
+                attachAudioToBotBubble(botEl, data.audio_url, { autoplay: true });
+            }
+        })
+        .catch(() => {})
+        .finally(() => {
+            btn.dataset.busy = '0';
+            if (icon) icon.className = prev || 'fas fa-volume-up';
+        });
 }
 
 function addUserMessage(content, timestamp, attachments) {
@@ -3842,14 +4026,39 @@ function renderCapabilityBody(def, cap, body) {
 
     body.innerHTML = providerHtml + modelHtml + dimHtml + footer;
 
-    // The body subtree is detached from `document` at this moment (the parent
-    // wrap is not yet appended), so we must scope lookups to `body` rather
-    // than calling document.getElementById, which would return null and crash
-    // initDropdown's internal querySelector.
+    // TTS: mount reply-mode above provider; defer off-mode toggle to the end.
+    if (def.id === 'tts') {
+        renderVoiceReplyMode(body, cap.reply_mode || 'off', { skipVisibilityToggle: true });
+        // Voice-timbre picker depends on provider+model; rebuilt by callbacks.
+        const modelWrap = body.querySelector(`#cap-${def.id}-model-wrap`);
+        if (modelWrap) {
+            const voiceWrap = document.createElement('div');
+            voiceWrap.id = `cap-${def.id}-voice-wrap`;
+            voiceWrap.innerHTML = `
+                <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_voice')}</label>
+                <div id="cap-${def.id}-voice" class="cfg-dropdown" tabindex="0">
+                    <div class="cfg-dropdown-selected">
+                        <span class="cfg-dropdown-text">--</span>
+                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                    </div>
+                    <div class="cfg-dropdown-menu"></div>
+                </div>
+                <div id="cap-${def.id}-voice-custom-wrap" class="hidden mt-2">
+                    <input id="cap-${def.id}-voice-custom" type="text"
+                           class="w-full px-3 py-2 text-sm rounded-md border border-slate-200 dark:border-slate-700
+                                  bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200
+                                  placeholder:text-slate-400 dark:placeholder:text-slate-500
+                                  focus:outline-none focus:ring-2 focus:ring-primary-500"
+                           placeholder="voice id" />
+                </div>
+            `;
+            modelWrap.parentNode.insertBefore(voiceWrap, modelWrap.nextSibling);
+        }
+    }
+
+    // `body` is still detached from `document`; scope lookups locally.
     const provDd = body.querySelector(`#cap-${def.id}-provider`);
-    // initDropdown's option shape is {value, label}; we strip our private
-    // _configured/_tracked fields before handing it over so the helper stays
-    // generic, then re-attach status decorations afterwards.
+    // Strip private fields before handing to the generic initDropdown helper.
     const ddOpts = providerOpts.map(o => ({ value: o.value, label: o.label }));
 
     let pendingProvider = null;
@@ -3860,15 +4069,9 @@ function renderCapabilityBody(def, cap, body) {
         pendingCapabilitySelection = null;
     }
 
-    // For auto-capable capabilities, an "auto" strategy means the user has
-    // not pinned a vendor; we honor that by selecting the empty-string
-    // sentinel rather than the resolved fallback provider name.
-    // `suggested_provider` is a UI-only preselect (used by embedding & ASR)
-    // when the user has not pinned a vendor yet — purely cosmetic, not
-    // persisted until the user clicks Save.
-    // For "pick or empty" capabilities (no current, no suggestion), we leave
-    // the dropdown unselected and show a muted placeholder so the user is
-    // nudged to pick explicitly.
+    // Auto strategy => leave empty sentinel selected. `suggested_provider`
+    // is a UI-only preselect (not persisted until the user clicks Save).
+    // No current + no suggestion => leave unselected with a placeholder.
     const noSelectionAndNoHint = !cap.current_provider && !cap.suggested_provider;
     const initialProviderValue = pendingProvider
         ? pendingProvider
@@ -3889,20 +4092,82 @@ function renderCapabilityBody(def, cap, body) {
 
     if (def.needsModel) {
         rebuildCapabilityModelDropdown(def, initialProviderValue, cap.current_model || '', body);
-        // Hide the model picker entirely while the capability is in `auto`
-        // mode — there is nothing useful to pin, and the fallback hint
-        // below explains what'll actually run.
+        // Hide model picker in auto mode — fallback hint below covers it.
         setCapabilityModelPickerVisible(def, initialProviderValue !== '' || !capabilitySupportsAuto(def.id), body);
+    }
+
+    if (def.id === 'tts') {
+        rebuildCapabilityVoiceDropdown(
+            initialProviderValue,
+            cap.current_voice || '',
+            body,
+            cap.current_model || ''
+        );
     }
 
     // Inject auto/router-pending hint banners before the action footer.
     renderCapabilityHints(def, cap, body, initialProviderValue);
+
+    if (def.id === 'tts') {
+        _setTtsConfigVisible(body, (cap.reply_mode || 'off') !== 'off');
+    }
 }
 
-// Toggle visibility of the model picker. Used both at first render and
-// whenever the provider dropdown swings between an explicit vendor and the
-// "auto" sentinel. We toggle the wrapper rather than re-rendering so the
-// existing dropdown state survives a round-trip back to a real vendor.
+// TTS reply-policy dropdown (off / voice_if_voice / always). Persists on
+// change. When off, hides the rest of the TTS card.
+function renderVoiceReplyMode(host, currentMode, options) {
+    options = options || {};
+    const opts = [
+        { value: 'off',            label: t('voice_reply_off') },
+        { value: 'voice_if_voice', label: t('voice_reply_if_voice') },
+        { value: 'always',         label: t('voice_reply_always') },
+    ];
+    const wrap = document.createElement('div');
+    wrap.id = 'voice-reply-mode-wrap';
+    wrap.innerHTML = `
+        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('voice_reply_mode_label')}</label>
+        <div id="voice-reply-mode-dd" class="cfg-dropdown" tabindex="0">
+            <div class="cfg-dropdown-selected">
+                <span class="cfg-dropdown-text">--</span>
+                <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+            </div>
+            <div class="cfg-dropdown-menu"></div>
+        </div>
+    `;
+    host.prepend(wrap);
+
+    const dd = wrap.querySelector('#voice-reply-mode-dd');
+    const valid = ['off', 'voice_if_voice', 'always'];
+    const initial = valid.includes(currentMode) ? currentMode : 'off';
+    if (!options.skipVisibilityToggle) _setTtsConfigVisible(host, initial !== 'off');
+    initDropdown(dd, opts, initial, (mode) => {
+        if (!valid.includes(mode)) return;
+        _setTtsConfigVisible(host, mode !== 'off');
+        fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_voice_reply_mode', mode }),
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.status === 'success') {
+                    _ttsReadyPromise = null;  // force re-probe on next bubble
+                }
+            })
+            .catch(() => {});
+    });
+}
+
+// Show/hide everything in the TTS card below the reply-mode dropdown.
+function _setTtsConfigVisible(host, visible) {
+    if (!host) return;
+    Array.from(host.children).forEach((child) => {
+        if (child.id === 'voice-reply-mode-wrap') return;
+        child.classList.toggle('hidden', !visible);
+    });
+}
+
+// Toggle wrapper visibility instead of re-rendering so dropdown state survives.
 function setCapabilityModelPickerVisible(def, visible, scope) {
     const root = scope || document;
     const wrap = root.querySelector(`#cap-${def.id}-model-wrap`);
@@ -4135,13 +4400,21 @@ function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
 
     initDropdown(el, opts, initialValue, (value) => {
         const customWrap = document.getElementById(`cap-${def.id}-model-custom-wrap`);
-        if (!customWrap) return;
-        if (value === '__custom__') {
-            customWrap.classList.remove('hidden');
-            const input = document.getElementById(`cap-${def.id}-model-custom`);
-            if (input && !input.value) input.value = selectedModel || '';
-        } else {
-            customWrap.classList.add('hidden');
+        if (customWrap) {
+            if (value === '__custom__') {
+                customWrap.classList.remove('hidden');
+                const input = document.getElementById(`cap-${def.id}-model-custom`);
+                if (input && !input.value) input.value = selectedModel || '';
+            } else {
+                customWrap.classList.add('hidden');
+            }
+        }
+        // TTS voice catalog may be scoped per engine model (aggregating
+        // gateways). Rebuild the voice picker whenever the model changes.
+        if (def.id === 'tts') {
+            const provDd = document.getElementById('cap-tts-provider');
+            const provId = provDd ? getDropdownValue(provDd) : '';
+            rebuildCapabilityVoiceDropdown(provId, '', null, value);
         }
     });
 
@@ -4157,22 +4430,93 @@ function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
     }
 }
 
+// TTS-only: rebuild the voice timbre picker against the provider's
+// curated voice list. Hidden when no provider is picked.
+//
+// Each voice entry may be:
+//   - a bare string  (code = label)
+//   - {value, label, hint?}   so we can show a friendly Chinese name
+//     while persisting the raw API code that the runtime sends.
+function rebuildCapabilityVoiceDropdown(providerId, selectedVoice, scope, modelId) {
+    const root = scope || document;
+    const wrap = root.querySelector(`#cap-tts-voice-wrap`);
+    const el = root.querySelector(`#cap-tts-voice`);
+    if (!wrap || !el) return;
+    const cap = modelsState.capabilities.tts || {};
+    const voicesByProvider = cap.provider_voices || {};
+    let raw = (providerId && voicesByProvider[providerId]) || [];
+    // Some providers (gateways) scope voices by engine model id.
+    if (raw && !Array.isArray(raw) && typeof raw === 'object') {
+        const activeModel = modelId
+            || (root.querySelector(`#cap-tts-model`) ? getDropdownValue(root.querySelector(`#cap-tts-model`)) : '');
+        raw = (activeModel && raw[activeModel]) || [];
+    }
+    if (!raw || raw.length === 0) {
+        wrap.classList.add('hidden');
+        return;
+    }
+    wrap.classList.remove('hidden');
+    // Voice picker: friendly name on the left, raw API code as right-hand
+    // hint. Persisted/sent value is always the raw code.
+    const codes = [];
+    const opts = raw.map(entry => {
+        if (typeof entry === 'string') {
+            codes.push(entry);
+            return { value: entry, label: entry };
+        }
+        codes.push(entry.value);
+        const code = entry.value;
+        const desc = entry.hint || entry.label || code;
+        return {
+            value: code,
+            label: desc,
+            hint: desc === code ? '' : code,
+        };
+    });
+    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义...' : 'Custom...' });
+
+    // Off-catalog values route through the custom branch.
+    let initial = selectedVoice || '';
+    const isCustom = initial && !codes.includes(initial);
+    if (isCustom) initial = '__custom__';
+    if (!initial) initial = codes[0];
+
+    initDropdown(el, opts, initial, (value) => {
+        const customWrap = root.querySelector(`#cap-tts-voice-custom-wrap`);
+        if (!customWrap) return;
+        if (value === '__custom__') {
+            customWrap.classList.remove('hidden');
+            const input = root.querySelector(`#cap-tts-voice-custom`);
+            if (input && !input.value) input.value = isCustom ? selectedVoice : '';
+        } else {
+            customWrap.classList.add('hidden');
+        }
+    });
+
+    const customWrap = root.querySelector(`#cap-tts-voice-custom-wrap`);
+    if (customWrap) {
+        if (initial === '__custom__') {
+            customWrap.classList.remove('hidden');
+            const input = root.querySelector(`#cap-tts-voice-custom`);
+            if (input) input.value = isCustom ? selectedVoice : '';
+        } else {
+            customWrap.classList.add('hidden');
+        }
+    }
+}
+
 function onCapabilityProviderChange(def, providerId, scope) {
     if (def.needsModel) {
-        // For capabilities that support `auto`, switching to the empty
-        // sentinel hides the model picker entirely so the card reads as
-        // "we'll figure it out"; switching back to a real vendor re-runs
-        // the rebuild against the capability-scoped model list.
+        // Empty sentinel hides the model picker (capability is in auto mode).
         const isAuto = providerId === '' && capabilitySupportsAuto(def.id);
         if (!isAuto) {
             rebuildCapabilityModelDropdown(def, providerId, '', scope);
         }
         setCapabilityModelPickerVisible(def, !isAuto, scope);
     }
-    // Refresh the auto-hint so it disappears once the user pins a vendor
-    // and reappears when they swing back to "auto". renderCapabilityHints
-    // now writes directly into the footer's hint slot, so we just call it
-    // again — no need to clean up stale DOM nodes.
+    if (def.id === 'tts') {
+        rebuildCapabilityVoiceDropdown(providerId, '', scope);
+    }
     const body = scope || document.querySelector(`[data-cap-body="${def.id}"]`);
     if (body) {
         const cap = modelsState.capabilities[def.id] || {};
@@ -4202,6 +4546,16 @@ function saveCapability(capId) {
     // the backend treats this as "fall back to the runtime chain".
     const isAuto = provider === '' && capabilitySupportsAuto(capId);
     const model = isAuto ? '' : getCapabilityModelValue(def);
+    // TTS carries an extra voice timbre (supports free-text custom ids).
+    let voice = '';
+    if (capId === 'tts' && !isAuto) {
+        const voiceDd = document.getElementById(`cap-${capId}-voice`);
+        voice = voiceDd ? getDropdownValue(voiceDd) : '';
+        if (voice === '__custom__') {
+            const input = document.getElementById(`cap-${capId}-voice-custom`);
+            voice = input ? input.value.trim() : '';
+        }
+    }
 
     // Embedding changes invalidate any pre-existing vector index because
     // dimensions / vendor differ. Gate the save behind a confirm, and on
@@ -4243,19 +4597,19 @@ function saveCapability(capId) {
             return;
         }
     }
-    _persistCapability(capId, provider, model);
+    _persistCapability(capId, provider, model, undefined, { voice });
 }
 
-function _persistCapability(capId, provider, model, onAfterSuccess) {
+function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
+    const payload = { action: 'set_capability', capability: capId, provider_id: provider, model: model };
+    if (extras && extras.voice !== undefined) payload.voice = extras.voice;
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set_capability', capability: capId, provider_id: provider, model: model }),
+        body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
-            // Show "Saved" first, then refresh — loadModelsView would
-            // otherwise rebuild the card and wipe the status span before
-            // the user can register the confirmation.
+            // Flash "Saved" before reload so the status survives the rebuild.
             showStatus(`cap-${capId}-status`, 'models_save_success', false);
             setTimeout(() => {
                 loadModelsView({ preserveScroll: true });

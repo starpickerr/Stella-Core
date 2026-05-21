@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import random
+import shutil
 import threading
 import time
 import uuid
@@ -295,6 +296,12 @@ class WebChannel(ChatChannel):
                     "timestamp": time.time()
                 })
                 logger.debug(f"SSE done sent for request {request_id}")
+                # Auto-trigger TTS once the bot finishes its text reply. The
+                # synthesis runs in the background so the chat stream is never
+                # blocked; the resulting audio URL is pushed via a follow-up
+                # `voice_attach` SSE event and persisted to messages.extras.
+                if reply.type == ReplyType.TEXT and content.strip():
+                    self._maybe_dispatch_auto_tts(request_id, session_id, content, context)
                 return
 
             # Fallback: polling mode
@@ -461,16 +468,133 @@ class WebChannel(ChatChannel):
 
         return on_event
 
+    # ------------------------------------------------------------------
+    # TTS auto-dispatch
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _resolve_voice_reply_mode() -> str:
+        """
+        Decide the TTS auto-reply policy.
+
+        Source of truth is the cross-channel pair
+        (`always_reply_voice`, `voice_reply_voice`) which chat_channel
+        also consults. The web UI presents these as a single three-state
+        picker (off / voice_if_voice / always) via a lossless mapping.
+        """
+        if conf().get("always_reply_voice", False):
+            return "always"
+        if conf().get("voice_reply_voice", False):
+            return "voice_if_voice"
+        return "off"
+
+    # Mirror of ModelsHandler._TTS_PROVIDERS. zhipu is intentionally omitted
+    # from the UI (GLM-TTS prelude beep); pinning it in config.json still works.
+    _TTS_PROVIDERS_SUGGEST_ORDER = ["openai", "minimax", "dashscope", "linkai"]
+
+    @classmethod
+    def _tts_provider_ready(cls) -> bool:
+        """True if user picked a provider OR any suggested vendor has an API key."""
+        if (conf().get("text_to_voice") or "").strip():
+            return True
+        for pid in cls._TTS_PROVIDERS_SUGGEST_ORDER:
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                continue
+            val = (conf().get(key_field) or "").strip()
+            if val and val not in ("YOUR API KEY", "YOUR_API_KEY"):
+                return True
+        return False
+
+    def _maybe_dispatch_auto_tts(
+        self,
+        request_id: str,
+        session_id: str,
+        text: str,
+        context: dict,
+    ) -> None:
+        try:
+            mode = self._resolve_voice_reply_mode()
+            if mode == "off":
+                return
+            if mode == "voice_if_voice" and not context.get("is_voice_input"):
+                return
+            if not self._tts_provider_ready():
+                return
+            threading.Thread(
+                target=self._synthesize_tts_async,
+                args=(request_id, session_id, text),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            logger.debug(f"[WebChannel] auto-tts dispatch skipped: {e}")
+
+    def _synthesize_tts_async(
+        self,
+        request_id: str,
+        session_id: str,
+        text: str,
+    ) -> None:
+        try:
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_text_to_voice(text)
+            if reply is None or reply.type != ReplyType.VOICE or not reply.content:
+                logger.warning(
+                    f"[WebChannel] TTS produced no audio for request {request_id}: "
+                    f"reply={reply}"
+                )
+                return
+            url = self._publish_tts_audio(reply.content)
+            if not url:
+                logger.warning(f"[WebChannel] TTS publish failed for request {request_id}")
+                return
+            payload = {"audio": {"url": url, "kind": "tts"}}
+            try:
+                from agent.memory import get_conversation_store
+                get_conversation_store().attach_extras_to_last_assistant(session_id, payload)
+            except Exception as e:
+                logger.debug(f"[WebChannel] tts persist skipped: {e}")
+            q = self.sse_queues.get(request_id)
+            if q is None:
+                logger.warning(
+                    f"[WebChannel] TTS ready but SSE queue already closed "
+                    f"for request {request_id} (url={url})"
+                )
+                return
+            q.put({
+                "type": "voice_attach",
+                "url": url,
+                "request_id": request_id,
+                "timestamp": time.time(),
+            })
+            logger.info(f"[WebChannel] TTS voice_attach pushed for request {request_id}: {url}")
+        except Exception as e:
+            # TTS failures are intentionally silent (no user-facing error).
+            logger.warning(f"[WebChannel] TTS synthesis failed: {e}")
+
+    @staticmethod
+    def _publish_tts_audio(src_path: str) -> str:
+        """Move a TTS file into uploads/ and return its public URL."""
+        try:
+            if not src_path or not os.path.isfile(src_path):
+                logger.warning(f"[WebChannel] publish_tts_audio missing source: {src_path!r}")
+                return ""
+            ext = os.path.splitext(src_path)[1].lower() or ".mp3"
+            upload_dir = _get_upload_dir()
+            os.makedirs(upload_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            dst_name = f"voice_reply_{ts}_{random.randint(0, 9999)}{ext}"
+            dst_path = os.path.join(upload_dir, dst_name)
+            shutil.move(src_path, dst_path)
+            logger.debug(f"[WebChannel] publish_tts_audio moved {src_path} -> {dst_path}")
+            return f"/uploads/{dst_name}"
+        except Exception as e:
+            logger.warning(f"[WebChannel] publish_tts_audio failed: {e}")
+            return ""
+
     @staticmethod
     def _cleanup_stale_voice_recordings(max_age_seconds: int = 3600) -> None:
-        """Delete voice-input audio files older than `max_age_seconds`.
-
-        Called once at startup. Web mic recordings live in the upload
-        directory so the browser can replay them inside the conversation
-        bubble. We don't persist them to history, so once a process
-        restarts they're useless — but they're never auto-cleaned
-        anywhere else, so without this they accumulate over time.
-        """
+        """Drop voice_input_* uploads older than max_age_seconds (run at startup)."""
         try:
             upload_dir = _get_upload_dir()
             if not os.path.isdir(upload_dir):
@@ -619,6 +743,10 @@ class WebChannel(ChatChannel):
             prompt = json_data.get('message', '')
             use_sse = json_data.get('stream', True)
             attachments = json_data.get('attachments', [])
+            # Tag the message as originating from voice input so the post-reply
+            # TTS hook can honour the `voice_if_voice` policy (mirrors the
+            # desire_rtype concept used by other channels).
+            is_voice_input = bool(json_data.get('is_voice', False))
 
             # Append file references to the prompt (same format as QQ channel)
             if attachments:
@@ -669,6 +797,11 @@ class WebChannel(ChatChannel):
             context["session_id"] = session_id
             context["receiver"] = session_id
             context["request_id"] = request_id
+            if is_voice_input:
+                # Web channel runs its own TTS post-pipeline via
+                # _maybe_dispatch_auto_tts; don't set desire_rtype here or
+                # chat_channel would synthesize a duplicate VOICE reply.
+                context["is_voice_input"] = True
 
             if use_sse:
                 context["on_event"] = self._make_sse_callback(request_id)
@@ -696,28 +829,40 @@ class WebChannel(ChatChannel):
         q = self.sse_queues[request_id]
         idle_timeout = 600  # 10 minutes without any real event
         deadline = time.time() + idle_timeout
-        done = False
+        # After the main reply is done we keep the stream open for a short
+        # tail so async post-processing (TTS auto-synthesis) can deliver a
+        # `voice_attach` event before the client disconnects.
+        POST_DONE_TAIL_SECONDS = 60
+        post_done = False
+        post_deadline = 0.0
 
         try:
             while time.time() < deadline:
                 try:
                     item = q.get(timeout=1)
                 except Empty:
+                    if post_done and time.time() >= post_deadline:
+                        break
                     yield b": keepalive\n\n"
                     continue
 
-                # Real event received, reset idle deadline
                 deadline = time.time() + idle_timeout
-
                 payload = json.dumps(item, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
 
-                if item.get("type") == "done":
-                    done = True
-                    break
+                itype = item.get("type")
+                if itype == "done":
+                    post_done = True
+                    post_deadline = time.time() + POST_DONE_TAIL_SECONDS
+                elif itype == "voice_attach":
+                    # WSGI buffers the previous chunk until the next yield;
+                    # shrink the tail so the generator wakes up quickly to
+                    # emit a couple of keepalive comments that push the
+                    # voice_attach payload through to the browser.
+                    post_done = True
+                    post_deadline = time.time() + 2  # 2s post-attach tail
         finally:
-            if done:
-                self.sse_queues.pop(request_id, None)
+            self.sse_queues.pop(request_id, None)
 
     def poll_response(self):
         """
@@ -811,6 +956,7 @@ class WebChannel(ChatChannel):
             '/uploads/(.*)', 'UploadsHandler',
             '/api/file', 'FileServeHandler',
             '/api/voice/asr', 'VoiceAsrHandler',
+            '/api/voice/tts', 'VoiceTtsHandler',
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
             '/chat', 'ChatHandler',
@@ -936,15 +1082,8 @@ class UploadHandler:
 
 
 class VoiceAsrHandler:
-    """
-    Accept a short audio recording from the web console mic button,
-    save it under uploads/ so the browser can replay it, then run it
-    through the currently configured ASR provider.
-
-    Returns {status, text, audio_url} on success — the frontend renders
-    a voice-message bubble with the playable audio and the transcribed
-    caption.
-    """
+    """Receive a mic recording, persist it under uploads/ and run ASR.
+    Returns {status, text, audio_url} so the UI can render a playback bubble."""
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -994,6 +1133,48 @@ class VoiceAsrHandler:
             })
         except Exception as e:
             logger.exception(f"[VoiceAsrHandler] failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class VoiceTtsHandler:
+    """On-demand TTS for the in-chat "read aloud" button. Returns the
+    audio URL and (when session_id is given) persists it onto the message."""
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            data = json.loads(web.data() or b"{}")
+            text = (data.get("text") or "").strip()
+            session_id = (data.get("session_id") or "").strip()
+            if not text:
+                return json.dumps({"status": "error", "message": "empty text"})
+            # `@singleton` makes WebChannel a factory function — go via instance.
+            channel = WebChannel()
+            if not channel._tts_provider_ready():
+                return json.dumps({"status": "error", "message": "tts not configured"})
+
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_text_to_voice(text)
+            if reply is None or reply.type != ReplyType.VOICE or not reply.content:
+                msg = getattr(reply, "content", "") or "tts failed"
+                return json.dumps({"status": "error", "message": str(msg)})
+
+            url = channel._publish_tts_audio(reply.content)
+            if not url:
+                return json.dumps({"status": "error", "message": "publish failed"})
+
+            if session_id:
+                try:
+                    from agent.memory import get_conversation_store
+                    get_conversation_store().attach_extras_to_last_assistant(
+                        session_id, {"audio": {"url": url, "kind": "tts"}},
+                    )
+                except Exception as e:
+                    logger.debug(f"[VoiceTtsHandler] persist skipped: {e}")
+
+            return json.dumps({"status": "success", "audio_url": url})
+        except Exception as e:
+            logger.exception(f"[VoiceTtsHandler] failed: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -1357,10 +1538,243 @@ class ModelsHandler:
     POST /api/models/capability -> set provider/model for a capability
     """
 
-    # Capability -> editable flag, current-value resolver, and supported provider
-    # ids drawn from ConfigHandler.PROVIDER_MODELS where applicable.
+    # Capability -> provider ids drawn from ConfigHandler.PROVIDER_MODELS.
     _ASR_PROVIDERS = ["openai", "dashscope", "zhipu", "linkai"]
-    _TTS_PROVIDERS = ["openai", "linkai", "minimax", "baidu", "ali", "xunfei", "azure", "google", "elevenlabs", "edge", "pytts"]
+    # Web-console white-list. Other vendors stay usable via direct config.
+    _TTS_PROVIDERS = ["openai", "minimax", "dashscope", "linkai"]
+
+    # TTS engine catalog (speech models, not voice timbres). Entries are
+    # either a bare code or {value, hint?} when a friendly label helps.
+    _TTS_PROVIDER_MODELS = {
+        "openai":    ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"],
+        "minimax": [
+            {"value": "speech-2.8-hd",    "hint": "情绪渲染融合语气词,自然听感"},
+            {"value": "speech-2.8-turbo", "hint": "极致生成速度,更自然逼真"},
+            {"value": "speech-2.6-hd",    "hint": "超低延时,归一化升级"},
+            {"value": "speech-2.6-turbo", "hint": "更快更便宜,适合语音聊天/数字人"},
+        ],
+        "dashscope": [
+            {"value": "qwen3-tts-flash", "hint": "覆盖普通话、方言与主流外语"},
+        ],
+        # Aggregating gateway: a single endpoint multiplexes several
+        # underlying TTS engines, selected via the `model` field.
+        # Each engine exposes its own voice catalog (see _TTS_PROVIDER_VOICES).
+        "linkai": [
+            {"value": "tts-1",  "hint": "OpenAI · 多语种通用"},
+            {"value": "doubao", "hint": "字节豆包 · 中文音色丰富"},
+            {"value": "baidu",  "hint": "百度 · 中文主播音色"},
+        ],
+    }
+
+    # Per-provider voice timbres. Entries can be a bare code string
+    # (label = code) or {value, hint?} when a friendly secondary label
+    # helps recognition. We keep `value` as the raw API code so power
+    # users can cross-reference config.json.
+    _TTS_PROVIDER_VOICES = {
+        "openai":    [
+            "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+            "ash", "ballad", "coral", "sage", "verse",
+        ],
+        "minimax": [
+            # Mandarin Chinese (full catalog)
+            {"value": "male-qn-qingse",                           "hint": "中文 · 青涩青年（男）"},
+            {"value": "male-qn-jingying",                         "hint": "中文 · 精英青年（男）"},
+            {"value": "male-qn-badao",                            "hint": "中文 · 霸道青年（男）"},
+            {"value": "male-qn-daxuesheng",                       "hint": "中文 · 青年大学生（男）"},
+            {"value": "female-shaonv",                            "hint": "中文 · 少女（女）"},
+            {"value": "female-yujie",                             "hint": "中文 · 御姐（女）"},
+            {"value": "female-chengshu",                          "hint": "中文 · 成熟女性（女）"},
+            {"value": "female-tianmei",                           "hint": "中文 · 甜美女性（女）"},
+            {"value": "male-qn-qingse-jingpin",                   "hint": "中文 · 青涩青年-beta（男）"},
+            {"value": "male-qn-jingying-jingpin",                 "hint": "中文 · 精英青年-beta（男）"},
+            {"value": "male-qn-badao-jingpin",                    "hint": "中文 · 霸道青年-beta（男）"},
+            {"value": "male-qn-daxuesheng-jingpin",               "hint": "中文 · 青年大学生-beta（男）"},
+            {"value": "female-shaonv-jingpin",                    "hint": "中文 · 少女-beta（女）"},
+            {"value": "female-yujie-jingpin",                     "hint": "中文 · 御姐-beta（女）"},
+            {"value": "female-chengshu-jingpin",                  "hint": "中文 · 成熟女性-beta（女）"},
+            {"value": "female-tianmei-jingpin",                   "hint": "中文 · 甜美女性-beta（女）"},
+            {"value": "clever_boy",                               "hint": "中文 · 聪明男童"},
+            {"value": "cute_boy",                                 "hint": "中文 · 可爱男童"},
+            {"value": "lovely_girl",                              "hint": "中文 · 萌萌女童"},
+            {"value": "cartoon_pig",                              "hint": "中文 · 卡通猪小琪"},
+            {"value": "bingjiao_didi",                            "hint": "中文 · 病娇弟弟"},
+            {"value": "junlang_nanyou",                           "hint": "中文 · 俊朗男友"},
+            {"value": "chunzhen_xuedi",                           "hint": "中文 · 纯真学弟"},
+            {"value": "lengdan_xiongzhang",                       "hint": "中文 · 冷淡学长"},
+            {"value": "badao_shaoye",                             "hint": "中文 · 霸道少爷"},
+            {"value": "tianxin_xiaoling",                         "hint": "中文 · 甜心小玲"},
+            {"value": "qiaopi_mengmei",                           "hint": "中文 · 俏皮萌妹"},
+            {"value": "wumei_yujie",                              "hint": "中文 · 妩媚御姐"},
+            {"value": "diadia_xuemei",                            "hint": "中文 · 嗲嗲学妹"},
+            {"value": "danya_xuejie",                             "hint": "中文 · 淡雅学姐"},
+            {"value": "Chinese (Mandarin)_Reliable_Executive",    "hint": "中文 · 沉稳高管"},
+            {"value": "Chinese (Mandarin)_News_Anchor",           "hint": "中文 · 新闻女声"},
+            {"value": "Chinese (Mandarin)_Mature_Woman",          "hint": "中文 · 傲娇御姐"},
+            {"value": "Chinese (Mandarin)_Unrestrained_Young_Man","hint": "中文 · 不羁青年"},
+            {"value": "Arrogant_Miss",                            "hint": "中文 · 嚣张小姐"},
+            {"value": "Robot_Armor",                              "hint": "中文 · 机械战甲"},
+            {"value": "Chinese (Mandarin)_Kind-hearted_Antie",    "hint": "中文 · 热心大婶"},
+            {"value": "Chinese (Mandarin)_HK_Flight_Attendant",   "hint": "中文 · 港普空姐"},
+            {"value": "Chinese (Mandarin)_Humorous_Elder",        "hint": "中文 · 搞笑大爷"},
+            {"value": "Chinese (Mandarin)_Gentleman",             "hint": "中文 · 温润男声"},
+            {"value": "Chinese (Mandarin)_Warm_Bestie",           "hint": "中文 · 温暖闺蜜"},
+            {"value": "Chinese (Mandarin)_Male_Announcer",        "hint": "中文 · 播报男声"},
+            {"value": "Chinese (Mandarin)_Sweet_Lady",            "hint": "中文 · 甜美女声"},
+            {"value": "Chinese (Mandarin)_Southern_Young_Man",    "hint": "中文 · 南方小哥"},
+            {"value": "Chinese (Mandarin)_Wise_Women",            "hint": "中文 · 阅历姐姐"},
+            {"value": "Chinese (Mandarin)_Gentle_Youth",          "hint": "中文 · 温润青年"},
+            {"value": "Chinese (Mandarin)_Warm_Girl",             "hint": "中文 · 温暖少女"},
+            {"value": "Chinese (Mandarin)_Kind-hearted_Elder",    "hint": "中文 · 花甲奶奶"},
+            {"value": "Chinese (Mandarin)_Cute_Spirit",           "hint": "中文 · 憨憨萌兽"},
+            {"value": "Chinese (Mandarin)_Radio_Host",            "hint": "中文 · 电台男主播"},
+            {"value": "Chinese (Mandarin)_Lyrical_Voice",         "hint": "中文 · 抒情男声"},
+            {"value": "Chinese (Mandarin)_Straightforward_Boy",   "hint": "中文 · 率真弟弟"},
+            {"value": "Chinese (Mandarin)_Sincere_Adult",         "hint": "中文 · 真诚青年"},
+            {"value": "Chinese (Mandarin)_Gentle_Senior",         "hint": "中文 · 温柔学姐"},
+            {"value": "Chinese (Mandarin)_Stubborn_Friend",       "hint": "中文 · 嘴硬竹马"},
+            {"value": "Chinese (Mandarin)_Crisp_Girl",            "hint": "中文 · 清脆少女"},
+            {"value": "Chinese (Mandarin)_Pure-hearted_Boy",      "hint": "中文 · 清澈邻家弟弟"},
+            {"value": "Chinese (Mandarin)_Soft_Girl",             "hint": "中文 · 柔和少女"},
+            # Cantonese (full catalog)
+            {"value": "Cantonese_ProfessionalHost（F)",            "hint": "粤语 · 专业女主持"},
+            {"value": "Cantonese_GentleLady",                     "hint": "粤语 · 温柔女声"},
+            {"value": "Cantonese_ProfessionalHost（M)",            "hint": "粤语 · 专业男主持"},
+            {"value": "Cantonese_PlayfulMan",                     "hint": "粤语 · 活泼男声"},
+            {"value": "Cantonese_CuteGirl",                       "hint": "粤语 · 可爱女孩"},
+            {"value": "Cantonese_KindWoman",                      "hint": "粤语 · 善良女声"},
+            # English (curated: 1F + 1M)
+            {"value": "English_Graceful_Lady",                    "hint": "英文 · Graceful Lady（女）"},
+            {"value": "English_Trustworthy_Man",                  "hint": "英文 · Trustworthy Man（男）"},
+            # Japanese (curated: 1F + 1M)
+            {"value": "Japanese_KindLady",                        "hint": "日文 · Kind Lady（女）"},
+            {"value": "Japanese_LoyalKnight",                     "hint": "日文 · Loyal Knight（男）"},
+            # Korean (curated: 1F + 1M)
+            {"value": "Korean_SweetGirl",                         "hint": "韩文 · Sweet Girl（女）"},
+            {"value": "Korean_CheerfulBoyfriend",                 "hint": "韩文 · Cheerful Boyfriend（男）"},
+        ],
+        "dashscope": [
+            {"value": "Cherry",   "hint": "芊悦 · 阳光女声"},
+            {"value": "Serena",   "hint": "苏瑶 · 温柔女声"},
+            {"value": "Chelsie",  "hint": "千雪 · 二次元少女"},
+            {"value": "Ethan",    "hint": "晨煦 · 阳光男声"},
+            {"value": "Moon",     "hint": "月白 · 率性男声"},
+            {"value": "Kai",      "hint": "凯 · 治愈男声"},
+            {"value": "Nofish",   "hint": "不吃鱼 · 设计师男声"},
+            {"value": "Bella",    "hint": "萌宝 · 小萝莉"},
+            {"value": "Bunny",    "hint": "萌小姬 · 萌系少女"},
+            {"value": "Stella",   "hint": "少女阿月 · 元气少女"},
+            {"value": "Neil",     "hint": "阿闻 · 新闻主播"},
+            {"value": "Seren",    "hint": "小婉 · 助眠女声"},
+            {"value": "Jada",     "hint": "上海话 · 阿珍"},
+            {"value": "Dylan",    "hint": "北京话 · 晓东"},
+            {"value": "Sunny",    "hint": "四川话 · 晴儿"},
+            {"value": "Eric",     "hint": "四川话 · 程川"},
+            {"value": "Rocky",    "hint": "粤语 · 阿强"},
+            {"value": "Kiki",     "hint": "粤语 · 阿清"},
+            {"value": "Peter",    "hint": "天津话 · 李彼得"},
+            {"value": "Marcus",   "hint": "陕西话 · 秦川"},
+            {"value": "Roy",      "hint": "闽南语 · 阿杰"},
+        ],
+        # Aggregating gateway: voices are scoped per engine model. The
+        # frontend picks the correct list based on the selected model so
+        # users don't see incompatible timbres for the active engine.
+        "linkai": {
+            "tts-1": [
+                "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+            ],
+            "doubao": [
+                {"value": "zh_female_wanwanxiaohe_moon_bigtts",       "hint": "湾湾小何"},
+                {"value": "BV007_streaming",                          "hint": "亲切女声"},
+                {"value": "BV001_streaming",                          "hint": "通用女声"},
+                {"value": "BV002_streaming",                          "hint": "通用男声"},
+                {"value": "BV051_streaming",                          "hint": "奶气萌娃"},
+                {"value": "zh_female_linjianvhai_moon_bigtts",        "hint": "邻家女孩"},
+                {"value": "BV700_streaming",                          "hint": "灿灿"},
+                {"value": "BV019_streaming",                          "hint": "重庆小伙"},
+                {"value": "BV524_streaming",                          "hint": "日语男声"},
+                {"value": "BV021_streaming",                          "hint": "东北老铁"},
+                {"value": "BV701_streaming",                          "hint": "擎苍"},
+                {"value": "BV113_streaming",                          "hint": "甜宠少御"},
+                {"value": "BV056_streaming",                          "hint": "阳光男声"},
+                {"value": "BV213_streaming",                          "hint": "广西表哥"},
+                {"value": "BV119_streaming",                          "hint": "通用赘婿"},
+                {"value": "BV705_streaming",                          "hint": "炀炀"},
+                {"value": "BV033_streaming",                          "hint": "温柔小哥"},
+                {"value": "BV102_streaming",                          "hint": "儒雅青年"},
+                {"value": "BV522_streaming",                          "hint": "气质女生"},
+                {"value": "BV034_streaming",                          "hint": "知性姐姐 · 双语"},
+                {"value": "BV005_streaming",                          "hint": "活泼女声"},
+                {"value": "zh_female_wanqudashu_moon_bigtts",         "hint": "湾区大叔"},
+                {"value": "zh_female_daimengchuanmei_moon_bigtts",    "hint": "呆萌川妹"},
+                {"value": "zh_male_guozhoudege_moon_bigtts",          "hint": "广州德哥"},
+                {"value": "zh_male_beijingxiaoye_moon_bigtts",        "hint": "北京小爷"},
+                {"value": "zh_male_shaonianzixin_moon_bigtts",        "hint": "少年梓辛 / Brayan"},
+                {"value": "zh_female_meilinvyou_moon_bigtts",         "hint": "魅力女友"},
+                {"value": "zh_male_shenyeboke_moon_bigtts",           "hint": "深夜播客"},
+                {"value": "zh_female_sajiaonvyou_moon_bigtts",        "hint": "柔美女友"},
+                {"value": "zh_female_yuanqinvyou_moon_bigtts",        "hint": "撒娇学妹"},
+                {"value": "zh_male_haoyuxiaoge_moon_bigtts",          "hint": "浩宇小哥"},
+                {"value": "zh_male_guangxiyuanzhou_moon_bigtts",      "hint": "广西远舟"},
+                {"value": "zh_female_meituojieer_moon_bigtts",        "hint": "妹坨洁儿"},
+                {"value": "zh_male_yuzhouzixuan_moon_bigtts",         "hint": "豫州子轩"},
+                {"value": "BV115_streaming",                          "hint": "古风少御"},
+                {"value": "zh_female_gaolengyujie_moon_bigtts",       "hint": "高冷御姐"},
+                {"value": "zh_male_yuanboxiaoshu_moon_bigtts",        "hint": "渊博小叔"},
+                {"value": "zh_male_yangguangqingnian_moon_bigtts",    "hint": "阳光青年"},
+                {"value": "zh_male_aojiaobazong_moon_bigtts",         "hint": "傲娇霸总"},
+                {"value": "zh_male_jingqiangkanye_moon_bigtts",       "hint": "京腔侃爷 / Harmony"},
+                {"value": "zh_female_shuangkuaisisi_moon_bigtts",     "hint": "爽快思思 / Skye"},
+                {"value": "zh_male_wennuanahu_moon_bigtts",           "hint": "温暖阿虎 / Alvin"},
+                {"value": "multi_female_shuangkuaisisi_moon_bigtts",  "hint": "はるこ / Esmeralda"},
+                {"value": "multi_male_jingqiangkanye_moon_bigtts",    "hint": "かずね / Javier or Álvaro"},
+                {"value": "multi_female_gaolengyujie_moon_bigtts",    "hint": "あけみ"},
+                {"value": "multi_male_wanqudashu_moon_bigtts",        "hint": "ひろし / Roberto"},
+                {"value": "ICL_zh_female_bingruoshaonv_tob",          "hint": "病弱少女"},
+                {"value": "ICL_zh_female_huoponvhai_tob",             "hint": "活泼女孩"},
+                {"value": "ICL_zh_female_heainainai_tob",             "hint": "和蔼奶奶"},
+                {"value": "ICL_zh_female_linjuayi_tob",               "hint": "邻居阿姨"},
+                {"value": "zh_female_wenrouxiaoya_moon_bigtts",       "hint": "温柔小雅"},
+                {"value": "zh_female_tianmeixiaoyuan_moon_bigtts",    "hint": "甜美小源"},
+                {"value": "zh_female_qingchezizi_moon_bigtts",        "hint": "清澈梓梓"},
+                {"value": "zh_male_dongfanghaoran_moon_bigtts",       "hint": "东方浩然"},
+                {"value": "zh_male_jieshuoxiaoming_moon_bigtts",      "hint": "解说小明"},
+                {"value": "zh_female_kailangjiejie_moon_bigtts",      "hint": "开朗姐姐"},
+                {"value": "zh_male_linjiananhai_moon_bigtts",         "hint": "邻家男孩"},
+                {"value": "zh_female_tianmeiyueyue_moon_bigtts",      "hint": "甜美悦悦"},
+                {"value": "zh_female_xinlingjitang_moon_bigtts",      "hint": "心灵鸡汤"},
+            ],
+            "baidu": [
+                {"value": "baidu_0",    "hint": "度小美 · 标准女主播"},
+                {"value": "baidu_1",    "hint": "度小宇 · 亲切男声"},
+                {"value": "baidu_3",    "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_4",    "hint": "度丫丫 · 童声"},
+                {"value": "baidu_5",    "hint": "度小娇 · 成熟女主播"},
+                {"value": "baidu_5003", "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_5118", "hint": "度小鹿 · 甜美女声"},
+                {"value": "baidu_103",  "hint": "度米朵 · 可爱童声"},
+                {"value": "baidu_106",  "hint": "度博文 · 专业男主播"},
+                {"value": "baidu_110",  "hint": "度小童 · 童声主播"},
+                {"value": "baidu_111",  "hint": "度小萌 · 软萌妹子"},
+                {"value": "baidu_4003", "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_4100", "hint": "度小雯 · 活力女主播"},
+                {"value": "baidu_4103", "hint": "度米朵 · 可爱女声"},
+                {"value": "baidu_4105", "hint": "度灵儿 · 清澈女声"},
+                {"value": "baidu_4106", "hint": "度博文 · 专业男主播"},
+                {"value": "baidu_4115", "hint": "度小贤 · 电台男主播"},
+                {"value": "baidu_4117", "hint": "度小乔 · 活泼女声"},
+                {"value": "baidu_4119", "hint": "度小鹿 · 甜美女声"},
+                {"value": "baidu_4129", "hint": "度小彦 · 知识男主播"},
+                {"value": "baidu_4140", "hint": "度小新 · 专业女主播"},
+                {"value": "baidu_4143", "hint": "度清风 · 配音男声"},
+                {"value": "baidu_4144", "hint": "度姗姗 · 娱乐女声"},
+                {"value": "baidu_4149", "hint": "度星河 · 广告男声"},
+                {"value": "baidu_4206", "hint": "度博文 · 综艺男声"},
+                {"value": "baidu_4226", "hint": "南方 · 电台女主播"},
+                {"value": "baidu_4254", "hint": "度小清 · 广告女声"},
+                {"value": "baidu_4278", "hint": "度小贝 · 知识女主播"},
+            ],
+        },
+    }
     _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
 
     # Capability-scoped model catalogs. The chat dropdown can reuse the
@@ -1525,7 +1939,7 @@ class ModelsHandler:
     @classmethod
     def _predict_vision_auto(cls, local_config: dict) -> dict:
         """Predict which provider vision.py will actually dispatch to when
-        no tool.vision.model is set. Mirrors the fallback order in
+        no tools.vision.model is set. Mirrors the fallback order in
         agent/tools/vision/vision.py::_resolve_providers so the UI hint
         matches reality."""
         chat = cls._chat_capability(local_config)
@@ -1590,12 +2004,12 @@ class ModelsHandler:
 
     @classmethod
     def _vision_capability(cls, local_config: dict) -> dict:
-        """Vision model. tool.vision.model is the explicit override; otherwise
+        """Vision model. tools.vision.model is the explicit override; otherwise
         the runtime fallback chain in agent/tools/vision/vision.py decides."""
-        tool_conf = local_config.get("tool") or {}
-        if not isinstance(tool_conf, dict):
-            tool_conf = {}
-        vision_conf = tool_conf.get("vision") or {}
+        tools_conf = local_config.get("tools") or local_config.get("tool") or {}
+        if not isinstance(tools_conf, dict):
+            tools_conf = {}
+        vision_conf = tools_conf.get("vision") or {}
         if not isinstance(vision_conf, dict):
             vision_conf = {}
         user_specified = (vision_conf.get("model") or "").strip()
@@ -1652,13 +2066,37 @@ class ModelsHandler:
 
     @classmethod
     def _tts_capability(cls, local_config: dict) -> dict:
-        provider_id = (local_config.get("text_to_voice") or "openai").strip().lower()
+        explicit = (local_config.get("text_to_voice") or "").strip().lower()
+        # Providers outside the white-list don't drive the picker, but their
+        # underlying runtime config is preserved so bridge still routes them.
+        ui_provider = explicit if explicit in cls._TTS_PROVIDERS else ""
+        suggested = ""
+        if not ui_provider:
+            for pid in cls._TTS_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
         return {
             "editable": True,
-            "current_provider": provider_id,
-            "current_model": local_config.get("text_to_voice_model", "") or "",
+            "current_provider": ui_provider,
+            "suggested_provider": suggested,
+            "current_model": (local_config.get("text_to_voice_model") or "") if ui_provider else "",
+            "current_voice": (local_config.get("tts_voice_id") or "") if ui_provider else "",
             "providers": cls._TTS_PROVIDERS,
+            "provider_models": cls._TTS_PROVIDER_MODELS,
+            "provider_voices": cls._TTS_PROVIDER_VOICES,
+            "reply_mode": cls._tts_reply_mode(local_config),
         }
+
+    @staticmethod
+    def _tts_reply_mode(local_config: dict) -> str:
+        if local_config.get("always_reply_voice", False):
+            return "always"
+        if local_config.get("voice_reply_voice", False):
+            return "voice_if_voice"
+        return "off"
 
     @classmethod
     def _embedding_capability(cls, local_config: dict) -> dict:
@@ -1728,17 +2166,20 @@ class ModelsHandler:
 
     @classmethod
     def _image_capability(cls, local_config: dict) -> dict:
-        """Image generation. Source of truth: config["skill"]["image-generation"]["model"]
+        """Image generation. Source of truth: config["skills"]["image-generation"]["model"]
         (mirrors the per-skill config schema documented in skills/image-generation).
         The runtime resolver in skills/image-generation/scripts/generate.py
         reads this via the SKILL_IMAGE_GENERATION_MODEL env var that the
         agent_initializer syncs at startup; provider is inferred from the
         model name prefix, mirroring vision.py's design.
+
+        ``skill`` (singular) is still tolerated as a legacy fallback —
+        config.load_config() folds it into ``skills`` at startup.
         """
-        skill_node = local_config.get("skill") or {}
-        if not isinstance(skill_node, dict):
-            skill_node = {}
-        img_node = skill_node.get("image-generation") or {}
+        skills_node = local_config.get("skills") or local_config.get("skill") or {}
+        if not isinstance(skills_node, dict):
+            skills_node = {}
+        img_node = skills_node.get("image-generation") or {}
         if not isinstance(img_node, dict):
             img_node = {}
         explicit_model = (img_node.get("model") or "").strip()
@@ -1832,6 +2273,8 @@ class ModelsHandler:
                 return self._handle_delete_provider(data)
             if action == "set_capability":
                 return self._handle_set_capability(data)
+            if action == "set_voice_reply_mode":
+                return self._handle_set_voice_reply_mode(data)
             return json.dumps({"status": "error", "message": f"unknown action: {action!r}"})
         except Exception as e:
             logger.error(f"[ModelsHandler] POST failed: {e}")
@@ -1918,7 +2361,7 @@ class ModelsHandler:
         if capability == "asr":
             return self._set_simple("voice_to_text", provider_id)
         if capability == "tts":
-            return self._set_tts(provider_id, model)
+            return self._set_tts(provider_id, model, (data.get("voice") or "").strip())
         if capability == "embedding":
             return self._set_embedding(provider_id, model)
         if capability == "image":
@@ -1926,35 +2369,20 @@ class ModelsHandler:
         return json.dumps({"status": "error", "message": f"capability not editable: {capability}"})
 
     def _set_image(self, provider_id: str, model: str) -> str:
-        # Source of truth: config["skill"]["image-generation"]["model"].
-        # provider_id is informational only (used by the UI to highlight a
-        # vendor card); the runtime resolver infers the provider from the
-        # model name prefix at request time, mirroring vision.py's design.
-        # An empty model means "switch back to auto / let the script pick".
+        # Source of truth: skills.image-generation.model. provider_id is
+        # informational only; the resolver picks the vendor by model prefix.
         local_config = conf()
         file_cfg = self._read_file_config()
 
-        def _ensure_skill_node(cfg: dict) -> dict:
-            skill_node = cfg.get("skill") or {}
-            if not isinstance(skill_node, dict):
-                skill_node = {}
-            img_node = skill_node.get("image-generation") or {}
-            if not isinstance(img_node, dict):
-                img_node = {}
-            skill_node["image-generation"] = img_node
-            cfg["skill"] = skill_node
-            return img_node
-
-        _ensure_skill_node(local_config)["model"] = model or ""
-        _ensure_skill_node(file_cfg)["model"] = model or ""
+        self._set_nested_namespace_value(local_config, "skills", "image-generation", "model", model or "")
+        self._set_nested_namespace_value(file_cfg, "skills", "image-generation", "model", model or "")
+        self._drop_legacy_namespace(local_config, "skill", "skills", child="image-generation")
+        self._drop_legacy_namespace(file_cfg, "skill", "skills", child="image-generation")
 
         self._write_file_config(file_cfg)
 
-        # The skill subprocess (skills/image-generation/scripts/generate.py)
-        # reads SKILL_IMAGE_GENERATION_MODEL from its environment, which is
-        # only synced from config["skill"] at startup. Update os.environ live
-        # so changes take effect on the next call without a restart. An empty
-        # model means "clear the override" → drop the env var entirely.
+        # The skill subprocess reads SKILL_IMAGE_GENERATION_MODEL from env at
+        # startup; mirror the change so live edits apply without restart.
         env_key = "SKILL_IMAGE_GENERATION_MODEL"
         if model:
             os.environ[env_key] = model
@@ -1992,8 +2420,6 @@ class ModelsHandler:
             applied["model"] = model
 
         if not applied:
-            # No-op save (nothing to write). Return success so the UI can
-            # confirm the click without showing a misleading error.
             return json.dumps({"status": "success", "applied": {}, "noop": True})
 
         self._write_file_config(file_cfg)
@@ -2002,33 +2428,65 @@ class ModelsHandler:
         return json.dumps({"status": "success", "applied": applied})
 
     def _set_vision(self, provider_id: str, model: str) -> str:
-        # Vision uses tool.vision.model (nested). provider_id is informational
-        # only; the runtime resolver auto-routes by model name prefix.
+        # Source of truth: tools.vision.model. provider_id is informational
+        # only; the resolver picks the vendor by model prefix.
         local_config = conf()
         file_cfg = self._read_file_config()
-        tool_node = file_cfg.get("tool") or {}
-        if not isinstance(tool_node, dict):
-            tool_node = {}
-        vision_node = tool_node.get("vision") or {}
-        if not isinstance(vision_node, dict):
-            vision_node = {}
-        vision_node["model"] = model
-        tool_node["vision"] = vision_node
-        file_cfg["tool"] = tool_node
-        # Mirror into in-memory config so the live agent sees the change.
-        runtime_tool = local_config.get("tool") or {}
-        if not isinstance(runtime_tool, dict):
-            runtime_tool = {}
-        runtime_vision = runtime_tool.get("vision") or {}
-        if not isinstance(runtime_vision, dict):
-            runtime_vision = {}
-        runtime_vision["model"] = model
-        runtime_tool["vision"] = runtime_vision
-        local_config["tool"] = runtime_tool
+        self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
+        self._set_nested_namespace_value(local_config, "tools", "vision", "model", model)
+        self._drop_legacy_namespace(file_cfg, "tool", "tools", child="vision")
+        self._drop_legacy_namespace(local_config, "tool", "tools", child="vision")
 
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] vision model set: {model!r}")
         return json.dumps({"status": "success", "model": model})
+
+    @staticmethod
+    def _set_nested_namespace_value(cfg, top: str, name: str, key: str, value):
+        """Set ``cfg[top][name][key] = value``, creating missing dicts."""
+        bucket = cfg.get(top)
+        if not isinstance(bucket, dict):
+            bucket = {}
+        node = bucket.get(name)
+        if not isinstance(node, dict):
+            node = {}
+        node[key] = value
+        bucket[name] = node
+        cfg[top] = bucket
+
+    @staticmethod
+    def _drop_legacy_namespace(cfg, legacy: str, canonical: str, child: str) -> None:
+        """Strip the deprecated singular key so config.json stays single-source."""
+        legacy_section = cfg.get(legacy)
+        if not isinstance(legacy_section, dict):
+            return
+        legacy_section.pop(child, None)
+        if legacy_section:
+            cfg[legacy] = legacy_section
+        else:
+            cfg.pop(legacy, None)
+
+    def _handle_set_voice_reply_mode(self, data: dict) -> str:
+        # UI picker (off / voice_if_voice / always) maps to the legacy
+        # always_reply_voice + voice_reply_voice pair that chat_channel.py
+        # reads, so all channels (web/feishu/wecom/...) share the routing.
+        mode = (data.get("mode") or "").strip().lower()
+        if mode not in ("off", "voice_if_voice", "always"):
+            return json.dumps({"status": "error", "message": f"invalid mode: {mode!r}"})
+        always = (mode == "always")
+        if_voice = (mode == "voice_if_voice")
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["always_reply_voice"] = always
+        local_config["voice_reply_voice"] = if_voice
+        file_cfg["always_reply_voice"] = always
+        file_cfg["voice_reply_voice"] = if_voice
+        self._write_file_config(file_cfg)
+        logger.info(
+            f"[ModelsHandler] voice reply mode set: {mode!r} "
+            f"(always_reply_voice={always}, voice_reply_voice={if_voice})"
+        )
+        return json.dumps({"status": "success", "mode": mode})
 
     def _set_simple(self, key: str, value: str) -> str:
         local_config = conf()
@@ -2037,25 +2495,30 @@ class ModelsHandler:
         file_cfg[key] = value
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] {key} set: {value!r}")
-        # Bridge caches voice_to_text routing + bot instance; refresh it
-        # so the change takes effect on the next voice request.
+        # Hot-swap the cached voice bot so the change takes effect immediately.
         if key in ("voice_to_text", "text_to_voice"):
             self._refresh_voice_routing()
         return json.dumps({"status": "success", key: value})
 
-    def _set_tts(self, provider_id: str, model: str) -> str:
+    def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:
         local_config = conf()
         file_cfg = self._read_file_config()
-        if provider_id:
-            local_config["text_to_voice"] = provider_id
-            file_cfg["text_to_voice"] = provider_id
-        if model:
-            local_config["text_to_voice_model"] = model
-            file_cfg["text_to_voice_model"] = model
+        local_config["text_to_voice"] = provider_id
+        file_cfg["text_to_voice"] = provider_id
+        local_config["text_to_voice_model"] = model
+        file_cfg["text_to_voice_model"] = model
+        local_config["tts_voice_id"] = voice
+        file_cfg["tts_voice_id"] = voice
         self._write_file_config(file_cfg)
-        logger.info(f"[ModelsHandler] tts updated: provider={provider_id!r} model={model!r}")
+        logger.info(
+            f"[ModelsHandler] tts updated: provider={provider_id!r} "
+            f"model={model!r} voice={voice!r}"
+        )
         self._refresh_voice_routing()
-        return json.dumps({"status": "success", "provider": provider_id, "model": model})
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id, "model": model, "voice": voice,
+        })
 
     @staticmethod
     def _refresh_voice_routing() -> None:
@@ -2066,17 +2529,20 @@ class ModelsHandler:
             logger.warning(f"[ModelsHandler] Bridge voice refresh failed: {e}")
 
     def _set_embedding(self, provider_id: str, model: str) -> str:
-        # provider_id="" + model="" means "switch back to legacy auto mode".
+        # Two valid states: both empty (reset to pick-or-empty) OR both set.
+        # A provider without a model leaves the runtime in a broken half-state,
+        # so reject that explicitly instead of silently writing it through.
+        if provider_id and not model:
+            return json.dumps({
+                "status": "error",
+                "message": "embedding model is required when a provider is selected",
+            })
         local_config = conf()
         file_cfg = self._read_file_config()
         local_config["embedding_provider"] = provider_id
         file_cfg["embedding_provider"] = provider_id
-        if model:
-            local_config["embedding_model"] = model
-            file_cfg["embedding_model"] = model
-        else:
-            local_config["embedding_model"] = ""
-            file_cfg["embedding_model"] = ""
+        local_config["embedding_model"] = model
+        file_cfg["embedding_model"] = model
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
         # The next /memory rebuild-index command hot-swaps the provider onto

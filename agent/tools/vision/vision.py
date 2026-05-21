@@ -3,7 +3,7 @@ Vision tool - Analyze images using Vision API.
 Supports local files (auto base64-encoded) and HTTP URLs.
 
 Provider resolution:
-  - tool.vision.model (if set) means "prefer this model first; fall back to
+  - tools.vision.model (if set) means "prefer this model first; fall back to
     other configured providers if it fails". The model name is mapped to its
     native provider (e.g. doubao-* → Doubao, kimi-* → Moonshot, gpt-* →
     OpenAI/LinkAI). That provider is tried first, then the standard auto
@@ -60,7 +60,7 @@ _DISCOVERABLE_MODELS = [
 ]
 
 # Model name prefix → discoverable provider display_name.
-# Used to auto-route tool.vision.model to its native provider.
+# Used to auto-route tools.vision.model to its native provider.
 # Matched case-insensitively; longest prefix wins.
 _MODEL_PREFIX_TO_PROVIDER = [
     ("doubao-", "Doubao"),
@@ -154,7 +154,7 @@ class Vision(BaseTool):
 
         # Default model is only used as a last-resort placeholder for providers
         # whose VisionProvider.model_override is None (e.g. raw OpenAI provider
-        # when the user did not configure tool.vision.model).
+        # when the user did not configure tools.vision.model).
         return self._call_with_fallback(providers, DEFAULT_MODEL, question, image_content)
 
     def _call_with_fallback(self, providers: List[VisionProvider], model: str,
@@ -193,12 +193,12 @@ class Vision(BaseTool):
         """
         Build an ordered list of providers to try.
 
-        Semantics of `tool.vision.model`:
+        Semantics of `tools.vision.model`:
           "Prefer this model first; fall back to other configured providers
            if it fails."
 
         Order:
-          1. The provider that natively serves `tool.vision.model` (if any
+          1. The provider that natively serves `tools.vision.model` (if any
              and its API key is configured) — using the user-specified model
              name verbatim.
           2. Auto-discovery chain as fallback:
@@ -213,7 +213,7 @@ class Vision(BaseTool):
         user_model = self._resolve_user_vision_model()
         providers: List[VisionProvider] = []
 
-        # Step 1: preferred provider derived from tool.vision.model
+        # Step 1: preferred provider derived from tools.vision.model
         if user_model:
             preferred = self._route_by_model_name(user_model)
             if preferred:
@@ -251,11 +251,11 @@ class Vision(BaseTool):
 
     @staticmethod
     def _resolve_user_vision_model() -> Optional[str]:
-        """Read tool.vision.model from config; return None if unset/blank."""
-        tool_conf = conf().get("tool", {})
-        if not isinstance(tool_conf, dict):
+        """Read tools.vision.model (singular ``tool`` kept as runtime fallback)."""
+        tools_conf = conf().get("tools") or conf().get("tool") or {}
+        if not isinstance(tools_conf, dict):
             return None
-        vision_conf = tool_conf.get("vision", {})
+        vision_conf = tools_conf.get("vision", {})
         if not isinstance(vision_conf, dict):
             return None
         m = vision_conf.get("model")
@@ -303,7 +303,7 @@ class Vision(BaseTool):
                 self._append_provider(providers, lambda: self._build_linkai_provider(user_model))
             if providers:
                 return providers
-            logger.warning(f"[Vision] tool.vision.model='{user_model}' looks like an OpenAI "
+            logger.warning(f"[Vision] tools.vision.model='{user_model}' looks like an OpenAI "
                            f"model but neither OPENAI_API_KEY nor LINKAI_API_KEY is configured.")
             return None  # fall through to auto
 
@@ -317,7 +317,7 @@ class Vision(BaseTool):
                 continue
             api_key = conf().get(config_key, "")
             if not api_key or not api_key.strip():
-                logger.warning(f"[Vision] tool.vision.model='{user_model}' routes to "
+                logger.warning(f"[Vision] tools.vision.model='{user_model}' routes to "
                                f"'{display_name}' but '{config_key}' is not configured. "
                                f"Falling back to auto-discovery.")
                 return None  # fall through to auto
@@ -452,8 +452,8 @@ class Vision(BaseTool):
         if not self._main_bot_supports_vision(bot):
             return None
 
-        # Use the configured main model name; do NOT inject tool.vision.model
-        # here, because by the time we reach this branch the tool.vision.model
+        # Use the configured main model name; do NOT inject tools.vision.model
+        # here, because by the time we reach this branch the tools.vision.model
         # routing has already been attempted (and either matched the main bot
         # or failed to find a provider).
         main_model_name = conf().get("model") or None
