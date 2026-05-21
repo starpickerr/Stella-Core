@@ -81,6 +81,8 @@ def _loads_wecom_ws_json(raw):
 @singleton
 class WecomBotChannel(ChatChannel):
 
+    NOT_SUPPORT_REPLYTYPE = []
+
     def __init__(self):
         super().__init__()
         self.bot_id = ""
@@ -472,6 +474,8 @@ class WecomBotChannel(ChatChannel):
             else:
                 context.type = ContextType.TEXT
             context.content = content.strip()
+            if "desire_rtype" not in context and conf().get("always_reply_voice"):
+                context["desire_rtype"] = ReplyType.VOICE
 
         return context
 
@@ -498,6 +502,8 @@ class WecomBotChannel(ChatChannel):
             self._send_file(reply.content, receiver, is_group, req_id)
         elif reply.type == ReplyType.VIDEO or reply.type == ReplyType.VIDEO_URL:
             self._send_file(reply.content, receiver, is_group, req_id, media_type="video")
+        elif reply.type == ReplyType.VOICE:
+            self._send_voice(reply.content, receiver, is_group, req_id)
         else:
             logger.warning(f"[WecomBot] Unsupported reply type: {reply.type}, falling back to text")
             self._send_text(str(reply.content), receiver, is_group, req_id)
@@ -727,6 +733,65 @@ class WecomBotChannel(ChatChannel):
                     "chat_type": 2 if is_group else 1,
                     "msgtype": media_type,
                     media_type: {"media_id": media_id},
+                },
+            })
+
+    def _send_voice(self, voice_path: str, receiver: str, is_group: bool, req_id: str = None):
+        """Send native voice reply. WeCom voice media must be amr."""
+        local_path = voice_path
+        if local_path.startswith("file://"):
+            local_path = local_path[7:]
+
+        if local_path.startswith(("http://", "https://")):
+            try:
+                resp = requests.get(local_path, timeout=60)
+                resp.raise_for_status()
+                ext = os.path.splitext(local_path)[1] or ".mp3"
+                tmp_path = f"/tmp/wecom_voice_{uuid.uuid4().hex[:8]}{ext}"
+                with open(tmp_path, "wb") as f:
+                    f.write(resp.content)
+                local_path = tmp_path
+            except Exception as e:
+                logger.error(f"[WecomBot] Failed to download voice for sending: {e}")
+                return
+
+        if not os.path.exists(local_path):
+            logger.error(f"[WecomBot] Voice file not found: {local_path}")
+            return
+
+        amr_path = local_path
+        if not local_path.lower().endswith(".amr"):
+            try:
+                from voice.audio_convert import any_to_amr
+                amr_path = os.path.splitext(local_path)[0] + ".amr"
+                any_to_amr(local_path, amr_path)
+            except Exception as e:
+                logger.error(f"[WecomBot] Failed to convert voice to amr: {e}")
+                return
+
+        media_id = self._upload_media(amr_path, "voice")
+        if not media_id:
+            logger.error("[WecomBot] Failed to upload voice media")
+            return
+
+        if req_id:
+            self._ws_send({
+                "cmd": "aibot_respond_msg",
+                "headers": {"req_id": req_id},
+                "body": {
+                    "msgtype": "voice",
+                    "voice": {"media_id": media_id},
+                },
+            })
+        else:
+            self._ws_send({
+                "cmd": "aibot_send_msg",
+                "headers": {"req_id": self._gen_req_id()},
+                "body": {
+                    "chatid": receiver,
+                    "chat_type": 2 if is_group else 1,
+                    "msgtype": "voice",
+                    "voice": {"media_id": media_id},
                 },
             })
 

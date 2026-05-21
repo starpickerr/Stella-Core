@@ -60,6 +60,9 @@ def _save_credentials(cred_path: str, data: dict):
 @singleton
 class WeixinChannel(ChatChannel):
 
+    # ilink bot protocol has no outbound voice item; deliver TTS as a file.
+    NOT_SUPPORT_REPLYTYPE = []
+
     LOGIN_STATUS_IDLE = "idle"
     LOGIN_STATUS_WAITING = "waiting_scan"
     LOGIN_STATUS_SCANNED = "scanned"
@@ -464,6 +467,14 @@ class WeixinChannel(ChatChannel):
             else:
                 context.type = ContextType.TEXT
             context.content = content.strip()
+            if "desire_rtype" not in context and conf().get("always_reply_voice"):
+                context["desire_rtype"] = ReplyType.VOICE
+
+        elif ctype == ContextType.VOICE:
+            if "desire_rtype" not in context and (
+                conf().get("voice_reply_voice") or conf().get("always_reply_voice")
+            ):
+                context["desire_rtype"] = ReplyType.VOICE
 
         return context
 
@@ -486,6 +497,9 @@ class WeixinChannel(ChatChannel):
             self._send_file(reply.content, receiver, context_token)
         elif reply.type in (ReplyType.VIDEO, ReplyType.VIDEO_URL):
             self._send_video(reply.content, receiver, context_token)
+        elif reply.type == ReplyType.VOICE:
+            # ilink has no outbound voice item; deliver TTS as a file attachment.
+            self._send_file(reply.content, receiver, context_token)
         else:
             logger.warning(f"[Weixin] Unsupported reply type: {reply.type}, fallback to text")
             self._send_text(str(reply.content), receiver, context_token)
