@@ -154,11 +154,10 @@ available_setting = {
     # 微信客服(wechatcom_kf)的配置
     # 注意: 微信客服与企微自建应用是两套不同的应用,共用 corp_id,但 secret/token/aes_key 各自独立
     "wechatcom_kf_token": "",  # 微信客服回调token
-    "wechatcom_kf_port": 9899,  # 微信客服回调服务端口
+    "wechatcom_kf_port": 9888,  # 微信客服回调服务端口
     "wechatcom_kf_secret": "",  # 微信客服应用的secret
     "wechatcom_kf_aes_key": "",  # 微信客服回调aes_key
     "wechatcom_kf_cursor_dir": "tmp",  # 拉取消息的cursor持久化目录(相对项目根)
-    "wechatcom_kf_skip_history_on_first_start": True,  # 首次启动(无cursor)时跳过历史消息,只拉最新
     # 飞书配置
     "feishu_port": 80,  # 飞书bot监听端口，仅webhook模式需要
     "feishu_app_id": "",  # 飞书机器人应用APP Id
