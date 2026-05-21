@@ -188,6 +188,7 @@
                   "channels/wecom-bot",
                   "channels/qq",
                   "channels/wecom",
+                  "channels/wecom-kf",
                   "channels/wechatmp"
                 ]
               }
@@ -380,6 +381,7 @@
                   "en/channels/wecom-bot",
                   "en/channels/qq",
                   "en/channels/wecom",
+                  "en/channels/wecom-kf",
                   "en/channels/wechatmp"
                 ]
               }
@@ -574,6 +576,7 @@
                   "ja/channels/wecom-bot",
                   "ja/channels/qq",
                   "ja/channels/wecom",
+                  "ja/channels/wecom-kf",
                   "ja/channels/wechatmp"
                 ]
               }
