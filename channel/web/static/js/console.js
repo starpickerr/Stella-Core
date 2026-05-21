@@ -46,8 +46,19 @@ const I18N = {
         models_capability_embedding: '向量',
         models_capability_embedding_desc: '记忆与知识的向量化',
         models_capability_search: '联网搜索',
-        models_capability_search_desc: '实时网页检索能力',
+        models_capability_search_desc: '实时网页检索能力，在搜索工具中使用',
         models_strategy_auto: '自动',
+        models_search_strategy_label: '策略',
+        models_search_strategy_fixed: '指定',
+        models_search_strategy_auto_hint: '从已配置厂商中自动选择',
+        models_search_strategy_fixed_hint: '指定使用搜索厂商',
+        models_pending_config: '待配置',
+        models_search_available_label: '可用搜索厂商：',
+        models_search_none_configured: '暂未启用任何搜索厂商，点击添加',
+        models_search_add_provider: '添加厂商',
+        models_search_add_desc: '选择一个搜索厂商进行配置',
+        models_search_bocha_title: '配置博查 API Key',
+        models_search_bocha_desc: '前往博查开放平台创建 API Key：',
         models_unavailable: '不可用',
         models_set_via_env: '通过环境变量启用',
         models_dim_label: '维度',
@@ -209,6 +220,17 @@ const I18N = {
         models_capability_search: 'Web Search',
         models_capability_search_desc: 'Real-time web retrieval',
         models_strategy_auto: 'auto',
+        models_search_strategy_label: 'Strategy',
+        models_search_strategy_fixed: 'Pinned',
+        models_search_strategy_auto_hint: 'Auto-pick from configured providers',
+        models_search_strategy_fixed_hint: 'Always use a specific provider',
+        models_pending_config: 'Pending setup',
+        models_search_available_label: 'Available:',
+        models_search_none_configured: 'No search provider enabled yet — click add.',
+        models_search_add_provider: 'Add provider',
+        models_search_add_desc: 'Pick a search provider to configure',
+        models_search_bocha_title: 'Configure Bocha API Key',
+        models_search_bocha_desc: 'Create a key at the Bocha open platform: ',
         models_unavailable: 'unavailable',
         models_set_via_env: 'enable via environment variable',
         models_dim_label: 'dim',
@@ -3769,7 +3791,7 @@ const MODELS_CAPABILITY_DEFS = [
       iconChip: 'bg-amber-50 dark:bg-amber-900/30',      iconGlyph: 'text-amber-500' },
     { id: 'embedding', icon: 'fa-vector-square',    editable: true,  needsModel: false, titleKey: 'models_capability_embedding', descKey: 'models_capability_embedding_desc',
       iconChip: 'bg-purple-50 dark:bg-purple-900/30',    iconGlyph: 'text-purple-500' },
-    { id: 'search',    icon: 'fa-magnifying-glass', editable: false, needsModel: false, titleKey: 'models_capability_search',    descKey: 'models_capability_search_desc',
+    { id: 'search',    icon: 'fa-magnifying-glass', editable: true,  needsModel: false, titleKey: 'models_capability_search',    descKey: 'models_capability_search_desc',
       iconChip: 'bg-orange-50 dark:bg-orange-900/30',    iconGlyph: 'text-orange-500' },
 ];
 
@@ -3945,36 +3967,309 @@ function renderCapabilityCard(def) {
 }
 
 function renderCapabilityHeaderTag(def, cap) {
-    // Only the search card carries a header tag — it reflects a runtime
-    // resolution result (which vendor responds to web_search), so the chip
-    // is informational, not editable. Other cards used to surface "auto"
-    // and "follows main model" badges, but those duplicated information
-    // already shown in the provider dropdown and the fallback hint below,
-    // so we drop them for visual clarity.
-    if (def.id === 'search') {
-        if (cap.available) {
-            return `<span class="px-2 py-0.5 text-[11px] rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 mt-1 flex-shrink-0">${escapeHtml(cap.current_provider || '')}</span>`;
-        }
-        return `<span class="px-2 py-0.5 text-[11px] rounded-md bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 mt-1 flex-shrink-0">${t('models_unavailable')}</span>`;
-    }
     return '';
+}
+
+function _searchProviderLabel(cap, providerId) {
+    const list = (cap && cap.providers) || [];
+    const hit = list.find(p => p.id === providerId);
+    return hit ? hit.label : providerId;
+}
+
+// Search card body: strategy picker + (when fixed) provider picker + a
+// status row that surfaces which providers are ready and how to add the
+// missing ones. Three of the four backends piggy-back on model-vendor
+// credentials (zhipu / qianfan / linkai); bocha owns its own key under
+// tools.web_search and gets its own minimal credential modal.
+function renderSearchCapability(def, cap, body) {
+    const providers = cap.providers || [];
+    const configuredIds = cap.configured_providers || [];
+    const hasAny = configuredIds.length > 0;
+    const strategy = cap.strategy || 'auto';
+
+    body.innerHTML = `
+        <div>
+            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_search_strategy_label')}</label>
+            <div id="cap-search-strategy" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+        </div>
+        <div id="cap-search-provider-wrap" class="hidden">
+            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_provider')}</label>
+            <div id="cap-search-provider" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+        </div>
+        <div id="cap-search-summary"></div>
+        <div class="flex items-center justify-end gap-3 pt-1">
+            <span id="cap-search-status" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+            <button onclick="saveSearchCapability()"
+                    class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                           cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                ${t('save')}
+            </button>
+        </div>
+    `;
+
+    // Strategy dropdown — when no provider is configured the strategy
+    // value is meaningless, so we show a "待配置" placeholder instead of
+    // a default selection. Once any provider gets configured the saved
+    // strategy (or "auto") becomes the active value.
+    initDropdown(
+        body.querySelector('#cap-search-strategy'),
+        [
+            { value: 'auto',  label: t('models_strategy_auto'),         hint: t('models_search_strategy_auto_hint') },
+            { value: 'fixed', label: t('models_search_strategy_fixed'), hint: t('models_search_strategy_fixed_hint') },
+        ],
+        hasAny ? strategy : '',
+        (value) => _onSearchStrategyChange(cap, value, body),
+        hasAny ? null : { placeholder: t('models_pending_config') },
+    );
+
+    // Provider dropdown — populated with configured providers only;
+    // unconfigured ones cannot be pinned (they'd silently fall back).
+    const provOpts = configuredIds.map(id => ({
+        value: id,
+        label: _searchProviderLabel(cap, id),
+    }));
+    if (provOpts.length === 0) provOpts.push({ value: '', label: '--' });
+    initDropdown(
+        body.querySelector('#cap-search-provider'),
+        provOpts,
+        cap.fixed_provider || configuredIds[0] || '',
+        () => {},
+    );
+
+    _renderSearchSummary(body, cap);
+    _setSearchProviderPickerVisible(body, strategy === 'fixed' && hasAny);
+}
+
+function _onSearchStrategyChange(cap, value, body) {
+    const configuredIds = cap.configured_providers || [];
+    _setSearchProviderPickerVisible(body, value === 'fixed' && configuredIds.length > 0);
+}
+
+function _setSearchProviderPickerVisible(body, visible) {
+    const wrap = body.querySelector('#cap-search-provider-wrap');
+    if (!wrap) return;
+    if (visible) wrap.classList.remove('hidden');
+    else wrap.classList.add('hidden');
+}
+
+// Search summary line: just lists configured providers + a trailing "+
+// add" button. Unconfigured backends are hidden — the user picks one from
+// a small chooser when they click add. Empty state surfaces the same add
+// button as a primary CTA.
+function _renderSearchSummary(body, cap) {
+    const host = body.querySelector('#cap-search-summary');
+    if (!host) return;
+    const providers = cap.providers || [];
+    const configured = providers.filter(p => p.configured);
+    const missing = providers.filter(p => !p.configured);
+
+    const addBtn = missing.length
+        ? `<button type="button" id="cap-search-add-btn"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md cursor-pointer
+                         bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400
+                         hover:bg-slate-200 dark:hover:bg-white/10 transition-colors">
+              <i class="fas fa-plus text-[10px]"></i>${t('models_search_add_provider')}
+           </button>`
+        : '';
+
+    if (configured.length === 0) {
+        host.innerHTML = `
+            <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <i class="fas fa-circle-info text-[10px] text-amber-500"></i>
+                <span>${t('models_search_none_configured')}</span>
+                ${addBtn}
+            </div>
+        `;
+    } else {
+        const chips = configured.map(p => `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md
+                         bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                <i class="fas fa-check text-[10px]"></i>${escapeHtml(p.label)}
+            </span>
+        `).join('');
+        host.innerHTML = `
+            <div class="flex items-center flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>${t('models_search_available_label')}</span>
+                ${chips}
+                ${addBtn}
+            </div>
+        `;
+    }
+
+    const btn = host.querySelector('#cap-search-add-btn');
+    if (btn) {
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            openSearchAddProviderPicker(missing);
+        });
+    }
+}
+
+// Two-step add flow: click "+ 添加厂商" -> chooser dialog -> per-provider
+// credential editor. Bocha lands on the dedicated key modal; the others
+// piggy-back on the existing vendor credential modal.
+function openSearchAddProviderPicker(missingProviders) {
+    if (!missingProviders || missingProviders.length === 0) return;
+    if (missingProviders.length === 1) {
+        _launchSearchProviderConfig(missingProviders[0].id);
+        return;
+    }
+
+    const existing = document.getElementById('search-add-modal');
+    if (existing) existing.remove();
+
+    const rows = missingProviders.map(p => `
+        <button type="button" data-pid="${p.id}"
+                class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer
+                       bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10
+                       text-sm text-slate-700 dark:text-slate-200 transition-colors">
+            <span>${escapeHtml(p.label)}</span>
+            <i class="fas fa-chevron-right text-[10px] text-slate-400"></i>
+        </button>
+    `).join('');
+
+    const modal = document.createElement('div');
+    modal.id = 'search-add-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+                    w-full max-w-md mx-4 p-6 shadow-xl">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_add_provider')}</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_add_desc')}</p>
+            <div class="space-y-2">${rows}</div>
+            <div class="flex items-center justify-end mt-5">
+                <button type="button" onclick="document.getElementById('search-add-modal').remove()"
+                        class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
+                               hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+                    ${t('cancel')}
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('[data-pid]').forEach(el => {
+        el.addEventListener('click', () => {
+            const pid = el.getAttribute('data-pid');
+            modal.remove();
+            _launchSearchProviderConfig(pid);
+        });
+    });
+}
+
+function _launchSearchProviderConfig(providerId) {
+    if (providerId === 'bocha') {
+        openSearchBochaModal();
+    } else {
+        openVendorModal(providerId, () => loadModelsView({ preserveScroll: true }));
+    }
+}
+
+function saveSearchCapability() {
+    const strategyDd = document.getElementById('cap-search-strategy');
+    const providerDd = document.getElementById('cap-search-provider');
+    const strategy = strategyDd ? getDropdownValue(strategyDd) : 'auto';
+    const provider = (strategy === 'fixed' && providerDd) ? getDropdownValue(providerDd) : '';
+
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'set_capability',
+            capability: 'search',
+            strategy,
+            provider,
+        }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            showStatus('cap-search-status', 'models_save_success', false);
+            setTimeout(() => loadModelsView({ preserveScroll: true }), 400);
+        } else {
+            showStatus('cap-search-status', 'models_save_failed', true);
+        }
+    }).catch(() => showStatus('cap-search-status', 'models_save_failed', true));
+}
+
+// Minimal bocha API-key modal. Reuses the existing vendor-modal markup
+// helpers would be nice, but bocha isn't in PROVIDER_MODELS (it's not a
+// model vendor), so we render a tiny dedicated dialog.
+function openSearchBochaModal() {
+    const existing = document.getElementById('search-bocha-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'search-bocha-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+                    w-full max-w-md mx-4 p-6 shadow-xl">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_bocha_title')}</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                ${t('models_search_bocha_desc')}
+                <a href="https://open.bochaai.com" target="_blank"
+                   class="text-primary-500 hover:text-primary-600 underline">open.bochaai.com</a>
+            </p>
+            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
+            <input id="search-bocha-key" type="password" autocomplete="off"
+                   class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                          bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                          focus:outline-none focus:border-primary-500 font-mono"
+                   placeholder="sk-..." />
+            <div class="flex items-center justify-end gap-3 mt-5">
+                <button type="button" onclick="document.getElementById('search-bocha-modal').remove()"
+                        class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
+                               hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+                    ${t('cancel')}
+                </button>
+                <button type="button" onclick="_saveBochaKey()"
+                        class="px-4 py-1.5 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                               cursor-pointer transition-colors">
+                    ${t('save')}
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    setTimeout(() => {
+        const input = document.getElementById('search-bocha-key');
+        if (input) input.focus();
+    }, 50);
+}
+
+function _saveBochaKey() {
+    const input = document.getElementById('search-bocha-key');
+    const apiKey = input ? input.value.trim() : '';
+    if (!apiKey) {
+        if (input) input.focus();
+        return;
+    }
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_search_credential', api_key: apiKey }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            const modal = document.getElementById('search-bocha-modal');
+            if (modal) modal.remove();
+            loadModelsView({ preserveScroll: true });
+        }
+    });
 }
 
 function renderCapabilityBody(def, cap, body) {
     if (def.id === 'search') {
-        if (cap.available) {
-            body.innerHTML = `
-                <p class="text-sm text-slate-500 dark:text-slate-400">
-                    <i class="fas fa-circle-check text-[11px] mr-1.5 text-emerald-500"></i>
-                    ${t('models_configured')}: <span class="font-mono text-slate-700 dark:text-slate-300">${escapeHtml(cap.current_provider)}</span>
-                </p>`;
-        } else {
-            body.innerHTML = `
-                <p class="text-sm text-slate-500 dark:text-slate-400">
-                    <i class="fas fa-circle-exclamation text-[11px] mr-1.5 text-amber-500"></i>
-                    ${t('models_set_via_env')}: <span class="font-mono text-slate-700 dark:text-slate-300">BOCHA_API_KEY</span>
-                </p>`;
-        }
+        renderSearchCapability(def, cap, body);
         return;
     }
 
@@ -4084,21 +4379,38 @@ function renderCapabilityBody(def, cap, body) {
     // Auto strategy => leave empty sentinel selected. `suggested_provider`
     // is a UI-only preselect (not persisted until the user clicks Save).
     // No current + no suggestion => leave unselected with a placeholder.
+    //
+    // Pending-config takes priority over both "auto" and "pick provider":
+    // when no real (non-sentinel) configured option exists, surfacing
+    // "auto" or "pick" misleads the user — there's nothing to auto-route
+    // to or pick from. Force a "待配置" placeholder instead so all
+    // capabilities behave consistently on a fresh environment.
+    const hasConfiguredOpt = providerOpts.some(o => !o._isAuto && o._configured);
     const noSelectionAndNoHint = !cap.current_provider && !cap.suggested_provider;
-    const initialProviderValue = pendingProvider
-        ? pendingProvider
-        : ((cap.strategy === 'auto' && capabilitySupportsAuto(def.id))
-            ? ''
-            : (cap.current_provider
-                || cap.suggested_provider
-                || (noSelectionAndNoHint ? '' : (ddOpts[0] && ddOpts[0].value))
-                || ''));
+    let initialProviderValue;
+    let dropdownPlaceholder = null;
+    if (!hasConfiguredOpt) {
+        initialProviderValue = '';
+        dropdownPlaceholder = { placeholder: t('models_pending_config') };
+    } else {
+        initialProviderValue = pendingProvider
+            ? pendingProvider
+            : ((cap.strategy === 'auto' && capabilitySupportsAuto(def.id))
+                ? ''
+                : (cap.current_provider
+                    || cap.suggested_provider
+                    || (noSelectionAndNoHint ? '' : (ddOpts[0] && ddOpts[0].value))
+                    || ''));
+        if (noSelectionAndNoHint) {
+            dropdownPlaceholder = { placeholder: t('models_pick_provider') };
+        }
+    }
     initDropdown(
         provDd,
         ddOpts,
         initialProviderValue,
         (value) => onCapabilityProviderChange(def, value, body),
-        noSelectionAndNoHint ? { placeholder: t('models_pick_provider') } : null
+        dropdownPlaceholder,
     );
     decorateCapabilityProviderDropdown(def, provDd, providerOpts);
 
@@ -4261,7 +4573,10 @@ function buildCapabilityProviderOptions(def, cap) {
     // option pinned to the top of the list. We use empty-string as the auto
     // value so the existing save handler propagates it untouched to the
     // backend, which interprets "" as "fall back to the main model".
-    if (cap.strategy === 'auto' || cap.strategy === 'specified') {
+    // Skip the sentinel when no real vendor is configured — "auto" would
+    // route to nothing useful and the renderer will show "待配置" instead.
+    const hasAnyConfigured = opts.some(o => o._configured);
+    if ((cap.strategy === 'auto' || cap.strategy === 'specified') && hasAnyConfigured) {
         if (capabilitySupportsAuto(def.id)) {
             opts.unshift({
                 value: '',
@@ -4551,6 +4866,8 @@ function getCapabilityModelValue(def) {
 function saveCapability(capId) {
     const def = MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
     if (!def || !def.editable) return;
+    // Search has its own form (strategy + provider, no model picker).
+    if (capId === 'search') { saveSearchCapability(); return; }
     const provDd = document.getElementById(`cap-${capId}-provider`);
     const provider = provDd ? getDropdownValue(provDd) : '';
     // When the user is in auto mode (provider == ""), the model picker is
