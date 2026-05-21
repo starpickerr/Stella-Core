@@ -271,7 +271,7 @@ class CowCliPlugin(Plugin):
         model_name = cfg.get("model", "unknown")
         lines.append(f"  模型: {model_name}")
 
-        mode = "Agent" if cfg.get("agent") else "Chat"
+        mode = "Chat" if cfg.get("agent") is False else "Agent"
         lines.append(f"  模式: {mode}")
 
         session_id = self._get_session_id(e_context, fallback=session_id)
