@@ -1840,7 +1840,12 @@ class ModelsHandler:
         "doubao":    ["seedream-5.0-lite", "seedream-4.5"],
         "dashscope": ["qwen-image-2.0-pro", "qwen-image-2.0"],
         "minimax":   ["image-01"],
-        "linkai":    ["gpt-image-2", "gemini-3-pro-image-preview", "seedream-5.0-lite"],
+        "linkai": [
+            "gpt-image-2",
+            {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
+            {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
+            "seedream-5.0-lite",
+        ],
     }
 
     @staticmethod

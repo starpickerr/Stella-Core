@@ -1,0 +1,92 @@
+---
+title: v2.0.9
+description: CowAgent 2.0.9 - MCP 工具生态接入、模型管理页重构、语音系统升级、浏览器持久登录
+---
+
+## 🧩 MCP 工具生态接入
+
+新增 **MCP（Model Context Protocol）** 工具集成，CowAgent 从固定工具集扩展为开放可插拔的工具生态。任何兼容 MCP 协议的服务（高德地图、Chrome DevTools、Filesystem、Playwright 等）都可作为工具直接接入 Agent。
+
+- **零额外依赖**：原生 JSON-RPC 实现，同时支持 `stdio`（本地进程）和 `sse`（远程 URL）两种传输
+- **兼容主流配置**：兼容 Claude Desktop / Cursor 风格的 `mcpServers` 配置，优先读取 `~/cow/mcp.json`，未配置则回退 `config.json`
+- **异步启动**：MCP 服务在后台线程启动，不阻塞 Agent 初始化；单个服务失败不影响整体
+
+相关文档：[MCP 工具](https://docs.cowagent.ai/tools/mcp) · 社区贡献 #2801 Thanks @yangluxin613
+
+## 🖥️ 模型管理页面重构
+
+「模型」页面整体重新设计，从原来按 LLM 厂商堆叠的列表，重构为 **厂商凭据 + 能力调度** 两层结构：一处配置厂商凭据，对话、图像、语音、向量、搜索等多个能力共享。
+
+- **厂商凭据集中管理**：所有支持厂商（OpenAI / Claude / Gemini / DeepSeek / Qwen / 豆包 / Kimi / 智谱 / MiniMax / 千帆 / LinkAI / Custom 等）的 API Key / API Base 在顶部统一维护，编辑后下方所有能力立即生效
+- **能力卡片**：按主模型、图像理解、图像生成、语音识别、语音合成、向量、联网搜索分卡，每个能力可独立选择厂商和模型，未配置时自动跟随主模型或按默认顺序回退
+
+### 多厂商联网搜索
+
+联网搜索升级为多厂商架构，**输出格式统一**：
+
+- 四家可选：博查（bocha）、百度千帆（qianfan）、智谱（zhipu）、LinkAI
+- 两种调度策略：`auto`（按 bocha > qianfan > zhipu > linkai 顺序自动选第一个已配置的厂商）/ `fixed`（固定指定厂商）
+- 配置 ≥2 家且为 `auto` 时，Agent 可在单次调用中临时指定 `provider` 切换搜索源
+
+### 向量厂商热切换
+
+向量（Embedding）支持多厂商，告别对 OpenAI 的单一依赖：
+
+- 原生支持 `openai` / `dashscope` / `doubao` / `zhipu` / `linkai`
+- **在线重建索引**：切换厂商后执行 `/memory rebuild-index`，无需重启、不会中断当前对话
+- 梦境日记默认排除在向量索引之外，避免反复出现在检索结果中干扰对话
+
+## 🎙️ 语音系统升级
+
+- **TTS 适配更多通道**：个人微信（ilink）、钉钉、企微智能机器人现已原生支持语音回复，开关沿用 `always_reply_voice` / `voice_reply_voice`；触发 TTS 时先发文本气泡再发语音消息，方便对照阅读
+- **新增 ASR 厂商**：百炼（DashScope）、智谱
+- **TTS 多厂商重构**：MiniMax / LinkAI / DashScope / 智谱 TTS 在流式合成、长文本切分、错误回退上更稳
+- **网页麦克风输入**：Web 控制台聊天框新增麦克风按钮，可直接录音发送，自动走 ASR 转文本
+
+## 🌐 浏览器工具
+
+浏览器工具支持三种启动模式，告别"每次开会话都得重新登录"：
+
+- **持久化用户配置（默认）**：复用 `~/.cow/browser_profile`，登录一次后下次自动复用登录态
+- **CDP 模式**：通过 `cdp_endpoint` 附加到手动启动的真实 Chrome，享有完整指纹，适合反爬严格的站点
+- **Fresh 模式**：每次清空环境，适合做隔离任务
+
+此外，浏览器被用户中途关闭后下次调用会自动重新拉起，CDP 模式下不会误杀用户的 Chrome 进程。相关文档：[浏览器工具](https://docs.cowagent.ai/tools/browser) #2809
+
+## 🤖 新模型与模型增强
+
+- **百度 ERNIE 5.1**：新增 `ernie-5.1` 模型
+- **DeepSeek V4 reasoning_effort**：DeepSeek V4 系列支持 `reasoning_effort` 配置思考深度
+- **OpenRouter / Vercel AI Gateway 归因**：调用这两个平台时自动注入归因 Header，平台可正确识别 CowAgent 用量
+- 修复 MiMo 等思考模型在多轮对话中 `reasoning_content` 丢失的问题
+
+## 🚀 启动与运行体验
+
+来自社区的多项体验改进 Thanks @yangluxin613
+
+- **自动选端口 + 自动开浏览器**：默认端口被占用时自动切换，启动成功后默认打开控制台
+- **Ctrl+C 干净退出**：不再打印一长串堆栈
+- **日志面板**：差异化级别配色、多行日志继承级别、新增级别筛选 Checkbox
+
+## 🔒 部署与安全
+
+- **默认仅本机访问**：Web 控制台 `web_host` 默认 `127.0.0.1`，避免无密码情况下被外网直接访问；显式 `0.0.0.0` 且未设密码时给出提示
+- **前端资源完全本地化**：第三方 CSS / JS 全部本地分发，离线 / 内网环境也能正常加载控制台 #2816 Thanks @TryToMakeUsBetter
+- **支持文件夹上传**：上传区支持整目录一次性上传，路径校验适配 Windows #2815 Thanks @TryToMakeUsBetter
+
+## 🛠 其他改进与修复
+
+- **定时任务防重复执行**：调度器初始化做幂等处理
+- **工具失败状态持久化**：刷新页面或重载历史时失败的工具调用正确显示失败状态 #2822 Thanks @a1094174619
+- **企微机器人非法字符**：修复消息中包含非法控制字符导致投递失败的问题 #2810 Thanks @Jacques-Zhao
+- **飞书文件消息**：飞书通道支持文件消息接收
+- **工具配置合并**：修复用户自定义工具配置（如 `tools.browser`）被工作区默认值整体覆盖的问题，现按字段合并
+- 修复单文件上传偶发 TypeError、切换语言后 JS 动态视图未重渲染等问题
+
+## 📦 升级方式
+
+源码部署可执行 `cow update` 或 `./run.sh update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
+
+> ⚠️ 切换向量厂商后，建议执行一次 `/memory rebuild-index`，让历史记忆按新的向量维度重新入库。
+
+**发布日期**：2026.05.21 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.0.8...2.0.9)
