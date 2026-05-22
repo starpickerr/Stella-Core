@@ -1,0 +1,39 @@
+---
+title: 通道概览
+description: CowAgent 支持的通道及能力矩阵
+---
+
+CowAgent 支持接入多种聊天通道，启动时通过 `channel_type` 切换。Web 控制台默认开启，可与其他接入通道并行运行。
+
+## 能力矩阵
+
+下表汇总各通道支持的入站消息类型、机器人回复类型与群聊能力，方便按场景选择。
+
+| 通道 | 文本 | 图片 | 文件 | 语音 | 群聊 |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| [微信](/channels/weixin) | ✅ | ✅ | ✅ | ✅ |  |
+| [Web 控制台](/channels/web) | ✅ | ✅ | ✅ | ✅ | |
+| [飞书](/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [钉钉](/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [企微智能机器人](/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [QQ](/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
+| [企业微信应用](/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
+| [公众号](/channels/wechatmp) | ✅ | ✅ | | ✅ | |
+
+- **图片 / 文件 / 语音**列表示通道支持收发对应消息类型，具体细节详见各通道文档
+- **群聊**列指可识别并响应群消息
+
+<Tip>
+  每个通道的语音 / 图像能力依赖对应模型厂商的配置，详见 [模型概览](/models)。
+</Tip>
+
+## 通道一览
+
+- [Web 控制台](/channels/web) — 内置浏览器对话和管理面板，默认开启
+- [微信](/channels/weixin) — 通过个人微信扫码登录
+- [飞书](/channels/feishu) — 飞书自建机器人
+- [钉钉](/channels/dingtalk) — 钉钉自建机器人
+- [企微智能机器人](/channels/wecom-bot) — 企业微信智能机器人
+- [QQ](/channels/qq) — QQ 官方机器人开放平台
+- [企业微信应用](/channels/wecom) — 企业微信自建应用接入
+- [公众号](/channels/wechatmp) — 微信公众号（订阅号 / 服务号）
