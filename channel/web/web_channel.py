@@ -1270,7 +1270,7 @@ class ConfigHandler:
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX,
+        const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX,
         const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
@@ -1342,7 +1342,7 @@ class ConfigHandler:
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX],
+            "models": [const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX],
         }),
         ("doubao", {
             "label": "豆包",
