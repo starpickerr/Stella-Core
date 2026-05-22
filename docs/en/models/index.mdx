@@ -1,58 +1,45 @@
 ---
 title: Models Overview
-description: Supported models and recommended choices for CowAgent
+description: Model vendors supported by CowAgent and their capability matrix
 ---
 
-CowAgent supports mainstream LLMs from domestic and international providers. Model interfaces are implemented in the project's `models/` directory.
+CowAgent supports mainstream large language models from both Chinese and overseas vendors. Model interfaces are implemented under the project's `models/` directory. In addition to text chat, some vendors also provide vision understanding, image generation, speech-to-text, text-to-speech, and embedding capabilities, which can be invoked on demand in the Agent flow.
 
 <Note>
-  For Agent mode, the following models are recommended based on quality and cost: deepseek-v4-flash, MiniMax-M2.7, claude-sonnet-4-6, gemini-3.1-pro-preview, glm-5.1, qwen3.6-plus, kimi-k2.6, ernie-5.1
+  The following models are recommended in Agent mode; choose based on quality and cost: deepseek-v4-flash, MiniMax-M2.7, claude-sonnet-4-6, gemini-3.5-flash, glm-5.1, qwen3.6-plus, kimi-k2.6, ernie-5.1.
+
+  [LinkAI](https://link-ai.tech) is also supported, letting you switch between multiple vendors with a single key while gaining knowledge bases, workflows, and plugins.
 </Note>
 
-## Configuration
 
-Configure the model name and API key in `config.json` according to your chosen model. Each model also supports OpenAI-compatible access by setting `bot_type` to `openai` and configuring `open_ai_api_base` and `open_ai_api_key`.
+## Capability Matrix
 
-You can also use the [LinkAI](https://link-ai.tech) platform interface to flexibly switch between multiple models with support for knowledge base, workflows, and other Agent capabilities.
+A snapshot of each vendor's capabilities. "Text" refers to the main chat model; the remaining columns indicate which Agent capabilities the vendor can handle.
 
-## Supported Models
-
-<CardGroup cols={2}>
-  <Card title="DeepSeek" href="/en/models/deepseek">
-    deepseek-v4-flash, deepseek-v4-pro, and more
-  </Card>
-  <Card title="Baidu Qianfan / ERNIE" href="/en/models/qianfan">
-    ernie-5.1, ernie-5.0, ernie-4.5-turbo-128k, and more
-  </Card>
-  <Card title="MiniMax" href="/en/models/minimax">
-    MiniMax-M2.7 and other series models
-  </Card>
-  <Card title="Claude" href="/en/models/claude">
-    claude-sonnet-4-6 and more
-  </Card>
-  <Card title="Gemini" href="/en/models/gemini">
-    gemini-3.1-pro-preview and more
-  </Card>
-  <Card title="OpenAI" href="/en/models/openai">
-    gpt-5.4, gpt-4.1, o-series and more
-  </Card>
-  <Card title="GLM (Zhipu AI)" href="/en/models/glm">
-    glm-5.1, glm-5-turbo, glm-5 and other series models
-  </Card>
-  <Card title="Qwen (Tongyi Qianwen)" href="/en/models/qwen">
-    qwen3.6-plus, qwen3-max and more
-  </Card>
-  <Card title="Doubao (ByteDance)" href="/en/models/doubao">
-    doubao-seed series models
-  </Card>
-  <Card title="Kimi" href="/en/models/kimi">
-    kimi-k2.6, kimi-k2.5, kimi-k2 and more
-  </Card>
-  <Card title="LinkAI" href="/en/models/linkai">
-    Unified multi-model interface + knowledge base
-  </Card>
-</CardGroup>
+| Vendor | Representative Models | Text | Image Understanding | Image Generation | Speech-to-Text | Text-to-Speech | Embedding |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| [DeepSeek](/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [MiniMax](/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
+| [Claude](/models/claude) | claude-opus-4-7 | ✅ | ✅ | | | | |
+| [Gemini](/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
+| [OpenAI](/models/openai) | gpt-5.5, o-series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Zhipu GLM](/models/glm) | glm-5.1, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [Tongyi Qwen](/models/qwen) | qwen3.7-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Doubao](/models/doubao) | doubao-seed-2.0 series | ✅ | ✅ | ✅ | | | ✅ |
+| [Kimi](/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
+| [Baidu Qianfan](/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
+| [LinkAI](/models/linkai) | 100+ models from multiple vendors | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Custom](/models/custom) | Local models / third-party proxies | ✅ | | | | | |
 
 <Tip>
-  For a full list of model names, refer to the project's [`common/const.py`](https://github.com/zhayujie/CowAgent/blob/master/common/const.py) file.
+  Every capability in the Web Console (Vision / Image / Speech-to-Text / Text-to-Speech / Embedding / Web Search) can be configured independently with its own vendor and model; they are not forced to be bound together.
 </Tip>
+
+
+## How to Configure
+
+**Option 1 (recommended):** Manage models and capabilities online via the [Web Console](/channels/web), with no need to edit the configuration file:
+
+<img width="900" src="https://cdn.link-ai.tech/doc/20260521212527.png" />
+
+**Option 2:** Manually edit `config.json` and fill in the model name and API key according to the selected model. Every model also supports OpenAI-compatible access: set `bot_type` to `openai` and configure `open_ai_api_base` and `open_ai_api_key`.
