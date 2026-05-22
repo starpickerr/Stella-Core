@@ -1268,7 +1268,7 @@ class ConfigHandler:
         const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7, const.MINIMAX_M2_5, const.MINIMAX_M2_1, const.MINIMAX_M2_1_LIGHTNING,
         const.CLAUDE_4_6_SONNET, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_OPUS, const.CLAUDE_4_5_SONNET,
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
+        const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
         const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX,
         const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE,
@@ -1326,7 +1326,7 @@ class ConfigHandler:
             "api_base_key": "open_ai_api_base",
             "api_base_default": "https://api.openai.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
+            "models": [const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
         ("zhipu", {
             "label": "智谱AI",
@@ -1779,9 +1779,10 @@ class ModelsHandler:
         # OpenAI ordering matches the recommended GPT-5.4 family first, then
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
+            const.GPT_55,
+            const.GPT_54,
             const.GPT_54_MINI,
             const.GPT_54_NANO,
-            const.GPT_54,
             const.GPT_5,
             const.GPT_41,
             const.GPT_41_MINI,
@@ -1991,7 +1992,7 @@ class ModelsHandler:
 
         # 4. OpenAI raw HTTP
         if cls._is_real_key(local_config.get("open_ai_api_key", "")):
-            return {"provider": "openai", "model": const.GPT_41_MINI}
+            return {"provider": "openai", "model": const.GPT_55}
 
         # 5. LinkAI as last resort (only reached when use_linkai is off)
         if linkai_configured:
