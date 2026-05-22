@@ -181,6 +181,7 @@
               {
                 "group": "接入渠道",
                 "pages": [
+                  "channels/index",
                   "channels/weixin",
                   "channels/web",
                   "channels/feishu",

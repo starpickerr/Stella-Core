@@ -330,8 +330,18 @@ def load_config():
     config_str = read_file(config_path)
     logger.debug("[INIT] config str: {}".format(drag_sensitive(config_str)))
 
-    # 将json字符串反序列化为dict类型
-    config = Config(json.loads(config_str))
+    # 将json字符串反序列化为dict类型。
+    # `object_pairs_hook` lets us catch users who accidentally typed the
+    # same key twice (e.g. two `"tools"` blocks) — json.loads would
+    # otherwise silently drop all but the last occurrence.
+    config = Config(json.loads(config_str, object_pairs_hook=_merge_duplicate_keys))
+
+    # Migrate legacy singular keys (`tool`, `skill`) into the canonical
+    # plural buckets so the rest of the codebase only reads one schema.
+    # Deep-merge so existing `tools`/`skills` entries are preserved and
+    # only missing namespaces are filled in from the legacy section.
+    _merge_legacy_namespace(config, legacy="tool",  canonical="tools")
+    _merge_legacy_namespace(config, legacy="skill", canonical="skills")
 
     # override config with environment variables.
     # Some online deployment platforms (e.g. Railway) deploy project from github directly. So you shouldn't put your secrets like api key in a config file, instead use environment variables to override the default config.
@@ -422,7 +432,7 @@ def load_config():
                 os.environ[env_key] = str(val)
                 injected += 1
 
-    injected += _sync_skill_config_to_env(config.get("skill", {}))
+    injected += _sync_skill_config_to_env(config.get("skills", {}))
 
     if injected:
         logger.info("[INIT] Synced {} config values to environment variables".format(injected))
@@ -430,11 +440,90 @@ def load_config():
     config.load_user_datas()
 
 
+def _deep_merge_dicts(base: dict, incoming: dict) -> dict:
+    """Recursively merge ``incoming`` into ``base`` (incoming wins on leaves)."""
+    for key, val in incoming.items():
+        if (
+            key in base
+            and isinstance(base[key], dict)
+            and isinstance(val, dict)
+        ):
+            _deep_merge_dicts(base[key], val)
+        else:
+            base[key] = val
+    return base
+
+
+def _merge_duplicate_keys(pairs):
+    """object_pairs_hook for json.loads: deep-merge duplicate top-level keys
+    (lists concat, dicts merge, scalars take the latter) instead of dropping."""
+    out = {}
+    duplicates = []
+    for key, val in pairs:
+        if key not in out:
+            out[key] = val
+            continue
+        duplicates.append(key)
+        prev = out[key]
+        if isinstance(prev, dict) and isinstance(val, dict):
+            _deep_merge_dicts(prev, val)
+        elif isinstance(prev, list) and isinstance(val, list):
+            prev.extend(val)
+        else:
+            out[key] = val
+    if duplicates:
+        # logger may not be wired yet — fall back to print so we never lose the warning.
+        unique = sorted(set(duplicates))
+        try:
+            logger.warning("[INIT] config.json has duplicate keys (merged): %s", unique)
+        except Exception:
+            print("[INIT] config.json has duplicate keys (merged):", unique)
+    return out
+
+
+def _merge_legacy_namespace(cfg, legacy: str, canonical: str) -> None:
+    """Fold deprecated singular keys (``tool`` / ``skill``) into their plural
+    canonical counterparts at load time. Canonical entries always win."""
+    legacy_section = cfg.get(legacy)
+    if not isinstance(legacy_section, dict) or not legacy_section:
+        cfg.pop(legacy, None)
+        return
+    canonical_section = cfg.get(canonical)
+    if not isinstance(canonical_section, dict):
+        canonical_section = {}
+    merged_keys = []
+    for name, val in legacy_section.items():
+        if name in canonical_section:
+            if isinstance(canonical_section[name], dict) and isinstance(val, dict):
+                for sub_key, sub_val in val.items():
+                    if (
+                        sub_key in canonical_section[name]
+                        and isinstance(canonical_section[name][sub_key], dict)
+                        and isinstance(sub_val, dict)
+                    ):
+                        _deep_merge_dicts(sub_val, canonical_section[name][sub_key])
+                        canonical_section[name][sub_key] = sub_val
+                    else:
+                        canonical_section[name].setdefault(sub_key, sub_val)
+            continue
+        canonical_section[name] = val
+        merged_keys.append(name)
+    cfg[canonical] = canonical_section
+    cfg.pop(legacy, None)
+    if merged_keys:
+        logger.warning(
+            "[INIT] Legacy config key '{}' is deprecated; merged into '{}': {}. "
+            "Please rename '{}' to '{}' in your config.json.".format(
+                legacy, canonical, merged_keys, legacy, canonical,
+            )
+        )
+
+
 def _sync_skill_config_to_env(skill_section) -> int:
     """Flatten skill-namespaced config into environment variables.
 
-    Mapping rule: ``config["skill"][<name>][<key>]`` -> ``SKILL_<NAME>_<KEY>``
-    (e.g. ``skill["image-generation"].model`` -> ``SKILL_IMAGE_GENERATION_MODEL``).
+    Mapping rule: ``config["skills"][<name>][<key>]`` -> ``SKILL_<NAME>_<KEY>``
+    (e.g. ``skills["image-generation"].model`` -> ``SKILL_IMAGE_GENERATION_MODEL``).
 
     This lets subprocess-based skill scripts read their own settings without
     importing project code. Existing env vars are NOT overwritten so the
