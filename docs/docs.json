@@ -216,6 +216,7 @@
                 "group": "发布记录",
                 "pages": [
                   "releases/overview",
+                  "releases/v2.0.9",
                   "releases/v2.0.8",
                   "releases/v2.0.7",
                   "releases/v2.0.6",
@@ -374,6 +375,7 @@
               {
                 "group": "Platforms",
                 "pages": [
+                  "en/channels/index",
                   "en/channels/weixin",
                   "en/channels/web",
                   "en/channels/feishu",
@@ -408,6 +410,7 @@
                 "group": "Release Notes",
                 "pages": [
                   "en/releases/overview",
+                  "en/releases/v2.0.9",
                   "en/releases/v2.0.8",
                   "en/releases/v2.0.7",
                   "en/releases/v2.0.6",
@@ -568,6 +571,7 @@
               {
                 "group": "プラットフォーム",
                 "pages": [
+                  "ja/channels/index",
                   "ja/channels/weixin",
                   "ja/channels/web",
                   "ja/channels/feishu",
@@ -602,6 +606,7 @@
                 "group": "リリースノート",
                 "pages": [
                   "ja/releases/overview",
+                  "ja/releases/v2.0.9",
                   "ja/releases/v2.0.8",
                   "ja/releases/v2.0.7",
                   "ja/releases/v2.0.6",

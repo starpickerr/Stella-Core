@@ -70,6 +70,8 @@
 
 # 🏷 更新日志
 
+>**2026.05.22：** [2.0.9版本](https://github.com/zhayujie/CowAgent/releases/tag/2.0.9)，新增模型管理、MCP 协议支持、浏览器登录态持久化、新模型接入（gpt-5.5、gemini-3.5-flash、qwen3.7-max 等）、部署安全加固
+
 >**2026.05.06：** [2.0.8版本](https://github.com/zhayujie/CowAgent/releases/tag/2.0.8)，飞书渠道全面升级（语音、流式输出和Markdown、一键扫码接入）、新模型支持（DeepSeek V4、百度千帆）、定时任务工具增强等
 
 >**2026.04.22：** [2.0.7版本](https://github.com/zhayujie/CowAgent/releases/tag/2.0.7)，图像生成内置技能（GPT Image 2、Nano Banana 等）、新模型支持（Kimi K2.6、Claude Opus 4.7、GLM 5.1）、知识库和记忆增强、Web 控制台优化
@@ -117,7 +119,7 @@ irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
 
 项目支持国内外主流厂商的模型接口，可选模型及配置说明参考：[模型说明](#模型说明)。
 
-> 注：Agent 模式下推荐使用以下模型，可根据效果及成本综合选择：deepseek-v4-flash、MiniMax-M2.7、glm-5.1、kimi-k2.6、qwen3.5-plus、claude-sonnet-4-6、gemini-3.1-pro-preview、gpt-5.4、gpt-5.4-mini、ernie-5.1
+> 注：Agent 模式下推荐使用以下模型，可根据效果及成本综合选择：deepseek-v4-flash / pro、MiniMax-M2.7、glm-5.1、kimi-k2.6、qwen3.5-plus、claude-sonnet-4-6、gemini-3.5-flash、gpt-5.5、ernie-5.1 等
 
 同时支持使用 **LinkAI 平台** 接口，支持上述全部模型，并支持知识库、工作流、插件等 Agent 技能，参考 [接口文档](https://docs.link-ai.tech/platform/api)。
 

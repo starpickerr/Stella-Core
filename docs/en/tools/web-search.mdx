@@ -1,32 +1,51 @@
 ---
 title: web_search - Web Search
-description: Search the internet for real-time information
+description: Search the internet for real-time information, with support for multiple search providers
 ---
 
-Search the internet for real-time information, news, research, and more. Supports two search backends with automatic fallback.
+Search the internet for real-time information, news, research, and more. Supports four backends — Bocha, Baidu Qianfan, Zhipu, and LinkAI — and works once any one of them is configured.
 
-## Dependencies
+<Tip>
+  It is recommended to configure providers and routing strategy visually from the "Model Management → Search" panel in the [Web Console](/channels/web), without manually editing the configuration file.
+</Tip>
 
-Requires at least one search API key (configured via `env_config` tool or workspace `.env` file):
+## Providers
 
-| Backend | Environment Variable | Priority | How to Get |
-| --- | --- | --- | --- |
-| Bocha Search | `BOCHA_API_KEY` | Primary | [Bocha Open Platform](https://open.bochaai.com/) |
-| LinkAI Search | `LINKAI_API_KEY` | Fallback | [LinkAI Console](https://link-ai.tech/console/interface) |
+| Provider | Credential | Apply |
+| --- | --- | --- |
+| Bocha | `tools.web_search.bocha_api_key` | [Bocha Open Platform](https://open.bochaai.com/) |
+| Baidu Qianfan | Reuses `qianfan_api_key` | [Qianfan Console](https://cloud.baidu.com/doc/qianfan/s/2mh4su4uy) |
+| Zhipu | Reuses `zhipu_ai_api_key` | [Zhipu Open Platform](https://docs.bigmodel.cn/cn/guide/tools/web-search) |
+| LinkAI | Reuses `linkai_api_key` | [LinkAI Console](https://link-ai.tech/console/interface) |
 
-## Parameters
+Except for Bocha which requires a dedicated `bocha_api_key`, the other three reuse the corresponding model's API key — configuring the model automatically grants search capability.
+
+## Routing Strategy
+
+```json
+{
+  "tools": {
+    "web_search": {
+      "strategy": "auto",
+      "provider": ""
+    }
+  }
+}
+```
+
+- `auto` (default): the Agent intelligently picks among configured providers and may call multiple providers in a single task to gather more comprehensive results; when none is specified, falls back through `bocha → qianfan → zhipu → linkai`.
+- `fixed`: always use the provider specified in `provider`; falls back to the auto order if that provider's credentials are missing.
+
+## Tool Parameters
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `query` | string | Yes | Search keywords |
-| `count` | integer | No | Number of results (1-50, default 10) |
-| `freshness` | string | No | Time range: `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, or date range like `2025-01-01..2025-02-01` |
-| `summary` | boolean | No | Return page summaries (default false) |
-
-## Use Cases
-
-When the user asks about latest information, needs fact-checking, or real-time data, the Agent automatically invokes this tool.
+| `count` | integer | No | Number of results (1–50, default 10) |
+| `freshness` | string | No | Time range: `noLimit` (default), `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, or date range like `2025-01-01..2025-02-01` |
+| `summary` | boolean | No | Whether to return page summaries (default false) |
+| `provider` | string | No | Available when multiple providers are configured under the `auto` strategy; used to switch provider for a single call |
 
 <Note>
-  If no search API key is configured, this tool will not be loaded.
+  If none of the four credentials are configured, this tool is not registered with the Agent.
 </Note>
