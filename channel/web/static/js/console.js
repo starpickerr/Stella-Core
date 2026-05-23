@@ -106,7 +106,7 @@ const I18N = {
         config_custom_model_hint: '输入自定义模型名称',
         config_save: '保存', config_saved: '已保存',
         config_save_error: '保存失败',
-        config_custom_option: '自定义...',
+        config_custom_option: '自定义',
         config_custom_tip: '接口需遵循 OpenAI API 协议',
         config_security: '安全设置', config_password: '访问密码',
         config_password_hint: '留空则不启用密码保护',
@@ -280,7 +280,7 @@ const I18N = {
         config_custom_model_hint: 'Enter custom model name',
         config_save: 'Save', config_saved: 'Saved',
         config_save_error: 'Save failed',
-        config_custom_option: 'Custom...',
+        config_custom_option: 'Custom',
         config_custom_tip: 'API must follow OpenAI protocol.',
         config_security: 'Security', config_password: 'Password',
         config_password_hint: 'Leave empty to disable password protection',
@@ -4798,7 +4798,7 @@ function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
         modelValues.push(entry.value);
         return { value: entry.value, label: entry.label || entry.value, hint: entry.hint || '' };
     });
-    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义...' : 'Custom...' });
+    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义' : 'Custom' });
 
     let initialValue = selectedModel || '';
     if (initialValue && !modelValues.includes(initialValue)) {
@@ -4881,7 +4881,7 @@ function rebuildCapabilityVoiceDropdown(providerId, selectedVoice, scope, modelI
             hint: desc === code ? '' : code,
         };
     });
-    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义...' : 'Custom...' });
+    opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义' : 'Custom' });
 
     // Off-catalog values route through the custom branch.
     let initial = selectedVoice || '';

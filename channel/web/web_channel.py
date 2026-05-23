@@ -2011,12 +2011,17 @@ class ModelsHandler:
         if not isinstance(vision_conf, dict):
             vision_conf = {}
         user_specified = (vision_conf.get("model") or "").strip()
+        explicit_provider = (vision_conf.get("provider") or "").strip()
 
-        # When the user pinned a specific model, infer which vendor card to
-        # highlight by scanning the per-provider model lists. Falls back to
-        # an empty provider so the dropdown stays on "auto" if we can't tell.
+        # Provider resolution priority:
+        #   1. Explicit `tools.vision.provider` (persisted via UI; supports
+        #      custom model names that prefix-inference can't recognize).
+        #   2. Scan per-provider model lists by model name.
+        # Empty provider keeps the dropdown on "auto" when we can't tell.
         inferred_provider = ""
-        if user_specified:
+        if explicit_provider and explicit_provider in cls._VISION_PROVIDER_MODELS:
+            inferred_provider = explicit_provider
+        elif user_specified:
             for pid, models in cls._VISION_PROVIDER_MODELS.items():
                 if user_specified in models:
                     inferred_provider = pid
@@ -2181,11 +2186,17 @@ class ModelsHandler:
         if not isinstance(img_node, dict):
             img_node = {}
         explicit_model = (img_node.get("model") or "").strip()
+        explicit_provider = (img_node.get("provider") or "").strip()
 
-        # Infer the provider card to highlight by scanning per-provider
-        # model lists, including alias values inside {value, hint} entries.
+        # Provider resolution priority:
+        #   1. Explicit `skills.image-generation.provider` (persisted via UI;
+        #      supports custom model names that prefix-inference can't catch).
+        #   2. Scan per-provider model catalog by model name.
+        # Empty provider keeps the dropdown on "auto" when we can't tell.
         inferred_provider = ""
-        if explicit_model:
+        if explicit_provider and explicit_provider in cls._IMAGE_PROVIDER_MODELS:
+            inferred_provider = explicit_provider
+        elif explicit_model:
             for pid, models in cls._IMAGE_PROVIDER_MODELS.items():
                 for entry in models:
                     val = entry if isinstance(entry, str) else (entry.get("value") or "")
@@ -2440,27 +2451,37 @@ class ModelsHandler:
         return json.dumps({"status": "error", "message": f"capability not editable: {capability}"})
 
     def _set_image(self, provider_id: str, model: str) -> str:
-        # Source of truth: skills.image-generation.model. provider_id is
-        # informational only; the resolver picks the vendor by model prefix.
+        # Source of truth: skills.image-generation.{provider, model}. The
+        # provider field is persisted so users picking a custom model under
+        # a specific vendor still get routed there — runtime falls back to
+        # model-name prefix inference only when provider is empty.
         local_config = conf()
         file_cfg = self._read_file_config()
 
         self._set_nested_namespace_value(local_config, "skills", "image-generation", "model", model or "")
         self._set_nested_namespace_value(file_cfg, "skills", "image-generation", "model", model or "")
+        self._set_nested_namespace_value(local_config, "skills", "image-generation", "provider", provider_id or "")
+        self._set_nested_namespace_value(file_cfg, "skills", "image-generation", "provider", provider_id or "")
         self._drop_legacy_namespace(local_config, "skill", "skills", child="image-generation")
         self._drop_legacy_namespace(file_cfg, "skill", "skills", child="image-generation")
 
         self._write_file_config(file_cfg)
 
-        # The skill subprocess reads SKILL_IMAGE_GENERATION_MODEL from env at
-        # startup; mirror the change so live edits apply without restart.
-        env_key = "SKILL_IMAGE_GENERATION_MODEL"
+        # The skill subprocess reads SKILL_IMAGE_GENERATION_{MODEL,PROVIDER}
+        # from env at startup; mirror the change so live edits apply without
+        # restart.
+        model_env = "SKILL_IMAGE_GENERATION_MODEL"
+        provider_env = "SKILL_IMAGE_GENERATION_PROVIDER"
         if model:
-            os.environ[env_key] = model
+            os.environ[model_env] = model
         else:
-            os.environ.pop(env_key, None)
+            os.environ.pop(model_env, None)
+        if provider_id:
+            os.environ[provider_env] = provider_id
+        else:
+            os.environ.pop(provider_env, None)
 
-        logger.info(f"[ModelsHandler] image updated: provider_hint={provider_id!r} model={model!r}")
+        logger.info(f"[ModelsHandler] image updated: provider={provider_id!r} model={model!r}")
         return json.dumps({
             "status": "success",
             "provider": provider_id,
@@ -2499,18 +2520,22 @@ class ModelsHandler:
         return json.dumps({"status": "success", "applied": applied})
 
     def _set_vision(self, provider_id: str, model: str) -> str:
-        # Source of truth: tools.vision.model. provider_id is informational
-        # only; the resolver picks the vendor by model prefix.
+        # Source of truth: tools.vision.{provider, model}. The provider field
+        # is persisted so users picking a custom model under a specific vendor
+        # still get routed there — runtime falls back to model-name prefix
+        # inference only when provider is empty.
         local_config = conf()
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
         self._set_nested_namespace_value(local_config, "tools", "vision", "model", model)
+        self._set_nested_namespace_value(file_cfg, "tools", "vision", "provider", provider_id or "")
+        self._set_nested_namespace_value(local_config, "tools", "vision", "provider", provider_id or "")
         self._drop_legacy_namespace(file_cfg, "tool", "tools", child="vision")
         self._drop_legacy_namespace(local_config, "tool", "tools", child="vision")
 
         self._write_file_config(file_cfg)
-        logger.info(f"[ModelsHandler] vision model set: {model!r}")
-        return json.dumps({"status": "success", "model": model})
+        logger.info(f"[ModelsHandler] vision updated: provider={provider_id!r} model={model!r}")
+        return json.dumps({"status": "success", "provider": provider_id, "model": model})
 
     @staticmethod
     def _set_nested_namespace_value(cfg, top: str, name: str, key: str, value):
