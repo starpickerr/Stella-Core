@@ -72,6 +72,8 @@ docker compose up -d
 
 启动成功后访问 `http://localhost:9899` 进入 **Web 控制台**，在控制台内即可完成模型配置、渠道接入、技能安装等全部操作。
 
+> 服务器部署且需要公网访问控制台时，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（同时强烈建议设置 `web_password` 启用鉴权），然后访问 `http://<server-ip>:9899`，并确保防火墙/安全组放行 `9899` 端口。
+
 > 📖 详细安装指南：[快速开始](https://docs.cowagent.ai/guide/quick-start) · [源码安装](https://docs.cowagent.ai/guide/manual-install) · [升级](https://docs.cowagent.ai/guide/upgrade)
 
 安装后可使用 `cow` [CLI 命令](https://docs.cowagent.ai/cli) 管理服务：
@@ -210,8 +212,8 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 也可通过以下方式获取支持：
 
-- 🤖 在线 AI 助手：[项目小助手](https://link-ai.tech/app/Kv2fXJcH)（基于项目知识库）
 - 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues)
+- 🤖 在线 AI 助手：[项目小助手](https://link-ai.tech/app/Kv2fXJcH)（基于项目知识库）
 
 <br/>
 

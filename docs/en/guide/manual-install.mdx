@@ -81,7 +81,7 @@ nohup python3 app.py & tail -f nohup.out
 ```
 
 <Tip>
-  If deploying on a server, open port `9899` in your firewall or security group to access the Web console. It's recommended to restrict access to specific IPs for security.
+  **Deploying on a server?** By default `web_host` only listens on `127.0.0.1` (local access). Set `web_host` to `0.0.0.0` in `config.json` to make the console reachable from outside, and set `web_password` to protect it. Don't forget to open port `9899` in your firewall or security group — ideally restricted to specific IPs.
 </Tip>
 
 ## Docker Deployment
@@ -113,7 +113,7 @@ sudo docker logs -f chatgpt-on-wechat
 ```
 
 <Tip>
-  If deploying on a server, open port `9899` in your firewall or security group to access the Web console. It's recommended to restrict access to specific IPs for security.
+  **Running in Docker?** Set `WEB_HOST` to `0.0.0.0` in `docker-compose.yml` so the console is reachable from outside the container, and set `WEB_PASSWORD` to protect it. Make sure port `9899` is mapped to the host and open in your firewall or security group.
 </Tip>
 
 ## Core Configuration

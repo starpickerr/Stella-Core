@@ -33,6 +33,10 @@ The script automatically performs these steps:
 
 By default, the Web console starts after installation. Access `http://localhost:9899` to begin chatting.
 
+<Note>
+  **Deploying on a server?** By default `web_host` only listens on `127.0.0.1` (local access only). Set `web_host` to `0.0.0.0` in `config.json` to make the console reachable from outside, and set `web_password` to protect it. Don't forget to open port `9899` in your firewall or security group — ideally restricted to specific IPs.
+</Note>
+
 ## Management Commands
 
 After installation, use the `cow` command to manage the service:
