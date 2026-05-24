@@ -33,7 +33,7 @@ CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major 
 | [Channels](https://docs.cowagent.ai/en/channels/index) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts |
 | Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
 | [Models](https://docs.cowagent.ai/en/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
-| [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
+| [Deploy](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
 
 <br/>
 
@@ -201,9 +201,7 @@ Full history: [Release Notes](https://docs.cowagent.ai/en/releases/overview)
 
 ## 🤝 Community & Support
 
-- 🐛 [File an Issue](https://github.com/zhayujie/CowAgent/issues) · 📖 [FAQs](https://github.com/zhayujie/CowAgent/wiki/FAQs)
-
-Scan the WeChat QR code to join the open-source community group:
+[File an issue](https://github.com/zhayujie/CowAgent/issues) on GitHub, or scan the QR code below to join our WeChat community:
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png">
 
