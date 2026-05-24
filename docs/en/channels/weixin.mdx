@@ -1,19 +1,21 @@
 ---
 title: WeChat
-description: Connect CowAgent to personal WeChat
+description: Connect CowAgent to personal WeChat (via the official API)
 ---
 
-> Connect CowAgent to your personal WeChat. Simply scan a QR code to log in — no public IP required. Supports text, image, voice, file, and video messages.
+> Connect CowAgent to your personal WeChat — scan to log in, no public IP required. Supports text, image, voice, file, and video messages in 1-on-1 chats. Backed by WeChat's official API; safe to use. After connecting, a bot assistant is added to your conversation list without affecting normal account usage.
 
-## 1. Configuration
+## 1. Setup and run
 
-### Option A: Web Console
+### Option A: Web console
 
-Start the program and open the Web console (local access: http://127.0.0.1:9899). Go to the **Channels** tab, click **Connect Channel**, select **WeChat**, and follow the prompts to scan the QR code.
+Start CowAgent and open the Web console (local URL: http://127.0.0.1:9899/). Go to the **Channels** tab, click **Connect Channel**, select **WeChat**, and follow the prompts to scan in.
 
-### Option B: Config File
+<img src="https://cdn.link-ai.tech/doc/20260322195114.png" width="800" />
 
-Set `channel_type` to `weixin` in your `config.json`:
+### Option B: Config file
+
+Set `channel_type` to `weixin` in `config.json`:
 
 ```json
 {
@@ -21,52 +23,49 @@ Set `channel_type` to `weixin` in your `config.json`:
 }
 ```
 
-After starting the program, a QR code will be displayed in the terminal. Scan it with WeChat and confirm on your phone to complete login.
+After starting CowAgent, a QR code is displayed in the terminal. Scan it with WeChat to complete login.
+
+<img src="https://cdn.link-ai.tech/doc/20260322195509.png" width="800" />
 
 <Note>
-  For backward compatibility, setting `channel_type` to `wx` also activates the WeChat channel.
+  1. For backward compatibility, setting `channel_type` to `wx` also activates the WeChat channel.
+  2. The WeChat client must be on version **8.0.69** or higher.
 </Note>
 
-## 2. Parameters
+## 2. Usage
 
-| Parameter | Description | Default |
-| --- | --- | --- |
-| `channel_type` | Set to `weixin` or `wx` | — |
+Once authorized, the integration completes and you can start chatting. A bot assistant is created in your WeChat conversation list, leaving normal account usage unaffected.
 
-Login credentials are automatically saved to `~/.weixin_cow_credentials.json`. To force a re-login, delete this file and restart.
+> You can find the bot at any time by searching for **"微信ClawBot"**. You may also rename it, change its avatar, pin it to the top of your conversation list, and so on.
+
+<img src="https://cdn.link-ai.tech/doc/83ae8251d896219fde4803f4205205be.jpg" width="250" />
 
 ## 3. Login
 
-### QR Code Login
+### QR code login
 
-On first startup, a QR code is displayed in the terminal (valid for approximately 2 minutes). Scan it with WeChat and confirm on your phone.
+On first startup, a QR code appears in the terminal (valid for around 2 minutes). Scan it with WeChat and confirm on your phone to log in.
 
-- The QR code automatically refreshes when it expires
-- The `qrcode` dependency is already included in `requirements.txt`, enabling QR code rendering directly in the terminal
+- The QR code refreshes automatically when it expires
+- The `qrcode` dependency is already included in `requirements.txt`, so the QR code renders directly in the terminal after install
 
-### Credential Persistence
+### Credential persistence
 
-After successful login, credentials are saved to `~/.weixin_cow_credentials.json`. Subsequent startups will reuse the saved credentials without requiring a new scan.
+After a successful login, credentials are saved to `~/.weixin_cow_credentials.json`. Subsequent startups reuse the saved credentials with no need to re-scan.
 
-To force a re-login, delete the credentials file and restart the program.
+To force a re-login, delete the credentials file and restart.
 
-### Session Expiry
+### Session expiry
 
-When the WeChat session expires (errcode -14), the program automatically clears old credentials and initiates a new QR login — no manual intervention required.
+When the WeChat session expires (errcode `-14`), CowAgent automatically clears old credentials and initiates a new QR login — no manual intervention required.
 
-## 4. Supported Features
+## 4. Supported features
 
 | Feature | Status |
 | --- | --- |
-| Direct Messages | ✅ |
-| Text Messages | ✅ Send & Receive |
-| Image Messages | ✅ Send & Receive |
-| File Messages | ✅ Send & Receive |
-| Video Messages | ✅ Send & Receive |
-| Voice Messages | ✅ Receive |
-
-## 5. Notes
-
-1. Ensure network access to `ilinkai.weixin.qq.com`.
-2. Media files (images, files, videos) are transferred via CDN with AES-128-ECB encryption, handled automatically by the program.
-3. A stable network connection is recommended to avoid frequent disconnections that would require re-scanning.
+| Direct messages | ✅ |
+| Text messages | ✅ Send & Receive |
+| Image messages | ✅ Send & Receive |
+| File messages | ✅ Send & Receive |
+| Video messages | ✅ Send & Receive |
+| Voice messages | ✅ Receive (built-in speech recognition) |

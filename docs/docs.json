@@ -255,7 +255,8 @@
                 "group": "Installation",
                 "pages": [
                   "en/guide/quick-start",
-                  "en/guide/manual-install"
+                  "en/guide/manual-install",
+                  "en/guide/upgrade"
                 ]
               }
             ]
@@ -332,6 +333,7 @@
                 "pages": [
                   "en/skills/index",
                   "en/skills/install",
+                  "en/skills/create",
                   "en/skills/hub"
                 ]
               },
@@ -398,7 +400,7 @@
                   "en/cli/process",
                   "en/cli/skill",
                   "en/cli/memory-knowledge",
-                  "en/cli/chat"
+                  "en/cli/general"
                 ]
               }
             ]
