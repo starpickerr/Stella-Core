@@ -3,11 +3,11 @@ title: Install Skills
 description: Install skills from multiple sources with a single command
 ---
 
-CowAgent supports installing skills from **Cow Skill Hub, GitHub, ClawHub**, and any URL with a unified `install` command. Use `/skill install` in chat or `cow skill install` in the terminal.
+CowAgent supports installing skills from **[Cow Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub, LinkAI**, and any URL via a unified `install` command. Use `/skill install` in chat or `cow skill install` in the terminal.
 
-## From Skill Hub
+## From the Skill Hub
 
-Browse the Skill Hub and install:
+Browse all available skills at [skills.cowagent.ai](https://skills.cowagent.ai/) and install by name:
 
 ```text
 /skill list --remote
@@ -16,7 +16,7 @@ Browse the Skill Hub and install:
 
 ## From GitHub
 
-Supports batch install from repositories and single skill from subdirectories:
+Any GitHub-hosted skill can be installed directly. Supports both repository-level batch install and subdirectory-level single install:
 
 ```text
 /skill install larksuite/cli
@@ -25,9 +25,21 @@ Supports batch install from repositories and single skill from subdirectories:
 
 ## From ClawHub
 
+All [ClawHub](https://clawhub.ai/) skills (40k+) can be installed with a single command:
+
 ```text
-/skill install clawhub:baidu-search
+/skill install clawhub:<name>
 ```
+
+## From LinkAI
+
+All public resources on [LinkAI](https://link-ai.tech/console) (10k+ apps / workflows / plugins), as well as your own resources (apps, workflows, knowledge bases, databases, plugins), can be installed via:
+
+```text
+/skill install linkai:<code>
+```
+
+> Every resource created on the LinkAI platform has a unique `code`. Find it on each resource's page in the [console](https://link-ai.tech/console).
 
 ## From URL
 

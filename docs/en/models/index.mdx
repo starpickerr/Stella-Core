@@ -3,43 +3,35 @@ title: Models Overview
 description: Model vendors supported by CowAgent and their capability matrix
 ---
 
-CowAgent supports mainstream large language models from both Chinese and overseas vendors. Model interfaces are implemented under the project's `models/` directory. In addition to text chat, some vendors also provide vision understanding, image generation, speech-to-text, text-to-speech, and embedding capabilities, which can be invoked on demand in the Agent flow.
-
-<Note>
-  The following models are recommended in Agent mode; choose based on quality and cost: deepseek-v4-flash, MiniMax-M2.7, claude-sonnet-4-6, gemini-3.5-flash, glm-5.1, qwen3.6-plus, kimi-k2.6, ernie-5.1.
-
-  [LinkAI](https://link-ai.tech) is also supported, letting you switch between multiple vendors with a single key while gaining knowledge bases, workflows, and plugins.
-</Note>
-
+CowAgent supports a wide range of mainstream large language models. Model interfaces live under the project's `models/` directory. Beyond text chat, several vendors also provide vision understanding, image generation, speech-to-text, text-to-speech, and embeddings — all of which can be invoked on demand in the Agent flow.
 
 ## Capability Matrix
 
-A snapshot of each vendor's capabilities. "Text" refers to the main chat model; the remaining columns indicate which Agent capabilities the vendor can handle.
+A snapshot of each vendor's capabilities. "Text" refers to the main chat model; the remaining columns show which Agent capabilities the vendor can power.
 
-| Vendor | Representative Models | Text | Image Understanding | Image Generation | Speech-to-Text | Text-to-Speech | Embedding |
+| Vendor | Representative Models | Text | Vision | Image Gen | STT | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [MiniMax](/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
-| [Claude](/models/claude) | claude-opus-4-7 | ✅ | ✅ | | | | |
-| [Gemini](/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
-| [OpenAI](/models/openai) | gpt-5.5, o-series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Zhipu GLM](/models/glm) | glm-5.1, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [Tongyi Qwen](/models/qwen) | qwen3.7-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Doubao](/models/doubao) | doubao-seed-2.0 series | ✅ | ✅ | ✅ | | | ✅ |
-| [Kimi](/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
-| [Baidu Qianfan](/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [LinkAI](/models/linkai) | 100+ models from multiple vendors | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Custom](/models/custom) | Local models / third-party proxies | ✅ | | | | | |
+| [DeepSeek](/en/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [MiniMax](/en/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
+| [Claude](/en/models/claude) | claude-opus-4-7 | ✅ | ✅ | | | | |
+| [Gemini](/en/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
+| [OpenAI](/en/models/openai) | gpt-5.5, o-series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [GLM](/en/models/glm) | glm-5.1, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [Qwen](/en/models/qwen) | qwen3.7-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Doubao](/en/models/doubao) | doubao-seed-2.0 series | ✅ | ✅ | ✅ | | | ✅ |
+| [Kimi](/en/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
+| [ERNIE](/en/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
+| [LinkAI](/en/models/linkai) | 100+ models from multiple vendors | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Custom](/en/models/custom) | Local models / third-party proxies | ✅ | | | | | |
 
 <Tip>
-  Every capability in the Web Console (Vision / Image / Speech-to-Text / Text-to-Speech / Embedding / Web Search) can be configured independently with its own vendor and model; they are not forced to be bound together.
+  Every capability in the Web console (Vision / Image / STT / TTS / Embedding / Web Search) can be configured independently with its own vendor and model — there is no forced binding between them.
 </Tip>
-
 
 ## How to Configure
 
-**Option 1 (recommended):** Manage models and capabilities online via the [Web Console](/channels/web), with no need to edit the configuration file:
+**Option 1 (recommended):** Manage models and capabilities online via the [Web console](/en/channels/web), with no need to edit the configuration file:
 
 <img width="900" src="https://cdn.link-ai.tech/doc/20260521212527.png" />
 
-**Option 2:** Manually edit `config.json` and fill in the model name and API key according to the selected model. Every model also supports OpenAI-compatible access: set `bot_type` to `openai` and configure `open_ai_api_base` and `open_ai_api_key`.
+**Option 2:** Edit `config.json` manually and fill in the model name and API key for the selected vendor. Every model also supports OpenAI-compatible access — just set `bot_type` to `openai` and configure `open_ai_api_base` and `open_ai_api_key`.
