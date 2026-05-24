@@ -168,7 +168,7 @@ Learn more: [Tools overview](https://docs.cowagent.ai/en/tools/index) · [MCP in
 ### Skills System
 
 - **[Skill Hub](https://skills.cowagent.ai/)** — open skill marketplace: browse, search, install in one click
-- **GitHub / ClawHub** — multiple skill sources, 40,000+ skills available
+- **GitHub / ClawHub / URL and more** — install skills from any source
 - **Conversational authoring** — generate custom skills through dialogue with `skill-creator`; turn any workflow or third-party API into a reusable skill
 
 ```bash
@@ -201,7 +201,7 @@ Full history: [Release Notes](https://docs.cowagent.ai/en/releases/overview)
 
 ## 🤝 Community & Support
 
-- 🐛 [File an Issue](https://github.com/zhayujie/CowAgent/issues) · 💬 [GitHub Discussions](https://github.com/zhayujie/CowAgent/discussions) · 📖 [FAQs](https://github.com/zhayujie/CowAgent/wiki/FAQs)
+- 🐛 [File an Issue](https://github.com/zhayujie/CowAgent/issues) · 📖 [FAQs](https://github.com/zhayujie/CowAgent/wiki/FAQs)
 
 Scan the WeChat QR code to join the open-source community group:
 
