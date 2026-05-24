@@ -72,6 +72,8 @@ docker compose up -d
 
 起動後、`http://localhost:9899` にアクセスして **Web コンソール**を開くと、モデル設定・チャネル接続・Skill インストールがすべてここで完結します。
 
+> サーバーデプロイでコンソールに公開アクセスする場合は、`config.json` の `web_host` を `0.0.0.0` に設定してください（あわせて `web_password` の設定も強く推奨）。その後 `http://<server-ip>:9899` にアクセスし、ファイアウォール／セキュリティグループで `9899` ポートを開放することも忘れずに。
+
 > 📖 詳細ガイド: [クイックスタート](https://docs.cowagent.ai/ja/guide/quick-start) · [ソースからインストール](https://docs.cowagent.ai/ja/guide/manual-install) · [アップグレード](https://docs.cowagent.ai/ja/guide/upgrade)
 
 インストール後は、[`cow` CLI](https://docs.cowagent.ai/ja/cli/index) でサービスを管理できます：

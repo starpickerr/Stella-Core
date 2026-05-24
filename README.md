@@ -72,6 +72,8 @@ docker compose up -d
 
 Once started, open `http://localhost:9899` to access the **Web console** — your one-stop hub to chat with the Agent, configure models, connect channels, and install skills.
 
+> Deploying on a server? Set `web_host` to `0.0.0.0` in `config.json` to make the console reachable from outside, and set `web_password` to protect it. Don't forget to open port `9899` in your firewall or security group.
+
 > 📖 Detailed guides: [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) · [Install from Source](https://docs.cowagent.ai/en/guide/manual-install) · [Upgrade](https://docs.cowagent.ai/en/guide/upgrade)
 
 After installation, manage the service with the [cow CLI](https://docs.cowagent.ai/en/cli/index):
