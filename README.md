@@ -25,15 +25,15 @@ CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major 
 
 | Capability | Description |
 | :--- | :--- |
-| 🤖 [Planning](https://docs.cowagent.ai/en/intro/architecture) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
-| 🧠 [Memory](https://docs.cowagent.ai/en/memory/index) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
-| 📚 [Knowledge](https://docs.cowagent.ai/en/knowledge/index) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
-| 🧩 [Skills](https://docs.cowagent.ai/en/skills/index) | One-click install from [Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub; or create custom skills via natural-language conversation |
-| 🔧 [Tools](https://docs.cowagent.ai/en/tools/index) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
-| 💬 [Channels](https://docs.cowagent.ai/en/channels/index) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts |
-| 🎨 Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
-| ⚙️ [Models](https://docs.cowagent.ai/en/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
-| 📦 [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
+| [Planning](https://docs.cowagent.ai/en/intro/architecture) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
+| [Memory](https://docs.cowagent.ai/en/memory/index) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
+| [Knowledge](https://docs.cowagent.ai/en/knowledge/index) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
+| [Skills](https://docs.cowagent.ai/en/skills/index) | One-click install from [Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub; or create custom skills via natural-language conversation |
+| [Tools](https://docs.cowagent.ai/en/tools/index) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
+| [Channels](https://docs.cowagent.ai/en/channels/index) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts |
+| Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
+| [Models](https://docs.cowagent.ai/en/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
+| [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
 
 <br/>
 
@@ -88,7 +88,7 @@ cow install-browser                # install browser automation
 
 ## 🤖 Models
 
-CowAgent supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor.
+CowAgent supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor. Providers are configured directly in the Web console — no manual file editing required.
 
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -105,13 +105,13 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | [LinkAI](https://docs.cowagent.ai/en/models/linkai) | 100+ models, unified gateway | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Custom](https://docs.cowagent.ai/en/models/custom) | Local models / third-party proxy | ✅ | | | | | |
 
-> The Web console is the recommended way to configure providers — no manual file editing required. For manual setup, see each provider's docs and the [Models overview](https://docs.cowagent.ai/en/models/index).
+> For details on each provider, see the [Models overview](https://docs.cowagent.ai/en/models/index).
 
 <br/>
 
 ## 💬 Channels
 
-A single Agent instance can serve multiple channels at once — set `channel_type` to switch between them, or run several channels in parallel.
+A single Agent instance can serve multiple channels in parallel. Most channels can be onboarded right from the Web console.
 
 | Channel | Text | Image | File | Voice | Group |
 | --- | :-: | :-: | :-: | :-: | :-: |
@@ -124,11 +124,11 @@ A single Agent instance can serve multiple channels at once — set `channel_typ
 | [WeCom App](https://docs.cowagent.ai/en/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
 | [WeChat Official Account](https://docs.cowagent.ai/en/channels/wechatmp) | ✅ | ✅ | | ✅ | |
 
-> Feishu and WeCom Bot can be onboarded by **scanning a QR code right inside the Web console** — no public IP required. See the [Channels overview](https://docs.cowagent.ai/en/channels/index).
+> See the [Channels overview](https://docs.cowagent.ai/en/channels/index) for setup details.
 
 <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-chat.png" alt="CowAgent Web Console" width="800"/>
 
-*The Web console doubles as the default channel and the unified place to configure and manage your Agent.*
+*The Web console is the default channel and the unified entry point to configure models, channels, skills, memory, and more.*
 
 <br/>
 
