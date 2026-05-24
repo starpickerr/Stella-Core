@@ -38,6 +38,12 @@
       {
         "language": "zh",
         "default": true,
+        "navbar": {
+          "links": [
+            { "label": "官网", "href": "https://cowagent.ai/?lang=zh" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "项目介绍",
@@ -234,6 +240,12 @@
       },
       {
         "language": "en",
+        "navbar": {
+          "links": [
+            { "label": "Website", "href": "https://cowagent.ai/" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "Introduction",
@@ -430,6 +442,12 @@
       },
       {
         "language": "ja",
+        "navbar": {
+          "links": [
+            { "label": "ウェブサイト", "href": "https://cowagent.ai/" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "紹介",
