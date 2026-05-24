@@ -1,9 +1,9 @@
 ---
-title: Tongyi Qwen
-description: Tongyi Qwen model configuration (Text / Image Understanding / Image Generation / Speech-to-Text / Text-to-Speech / Embedding)
+title: Qwen
+description: Qwen model configuration (Text / Image Understanding / Image Generation / Speech-to-Text / Text-to-Speech / Embedding)
 ---
 
-Tongyi Qwen (DashScope / Bailian) is one of the most fully-featured vendors in China. Text, image understanding, image generation, speech-to-text, text-to-speech, and embedding can all be enabled with a single `dashscope_api_key`.
+Qwen (Alibaba DashScope / Bailian) is one of the most fully-featured vendors. Text, image understanding, image generation, speech-to-text, text-to-speech, and embedding can all be enabled with a single `dashscope_api_key`.
 
 <Tip>
   All capabilities below can be configured in one place via the "Model Management" page in the Web Console, with no need to manually edit the configuration file.
@@ -66,7 +66,7 @@ Available models: `qwen-image-2.0`, `qwen-image-2.0-pro`.
 
 | Parameter | Description |
 | --- | --- |
-| `voice_to_text` | Set to `dashscope` to enable Tongyi Qwen ASR |
+| `voice_to_text` | Set to `dashscope` to enable Qwen ASR |
 | `voice_to_text_model` | Optional, defaults to `qwen3-asr-flash` |
 
 Credentials are automatically reused from `dashscope_api_key`. A single audio segment should be smaller than 10MB and no longer than 300 seconds.

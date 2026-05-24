@@ -7,9 +7,9 @@
   [English] | [<a href="docs/zh/README.md">中文</a>] | [<a href="docs/ja/README.md">日本語</a>]
 </p>
 
-**CowAgent** is an open-source super AI assistant that proactively plans tasks, operates your computer and external services, creates and runs Skills, and grows alongside you with a personal knowledge base and long-term memory — a reference implementation of Agent Harness engineering.
+**CowAgent** is an open-source super AI assistant that proactively plans tasks, controls your computer and external services, creates and runs Skills, and grows alongside you through a personal knowledge base and long-term memory — a reference implementation of Agent Harness engineering.
 
-CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major LLM provider, run it across Web and major IM platforms, 24/7 on a personal computer or server.
+CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major LLM provider and run it 24/7 on a personal computer or server, across the web and all major IM platforms.
 
 <p align="center">
   <a href="https://cowagent.ai/">🌐 Website</a> &nbsp;·&nbsp;
@@ -25,15 +25,15 @@ CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major 
 
 | Capability | Description |
 | :--- | :--- |
-| 🤖 [Autonomous Task Planning](https://docs.cowagent.ai/en/intro/architecture) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
-| 🧠 [Long-term Memory](https://docs.cowagent.ai/en/memory/index) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
-| 📚 [Personal Knowledge Base](https://docs.cowagent.ai/en/knowledge/index) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
-| 🧩 [Skills System](https://docs.cowagent.ai/en/skills/index) | One-click install from [Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub; or create custom skills via natural-language conversation |
-| 🔧 [Tool System](https://docs.cowagent.ai/en/tools/index) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
-| 💬 [Multi-channel Integration](https://docs.cowagent.ai/en/channels/index) | A single Agent simultaneously serves Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts |
-| 🎨 Multimodal Messaging | First-class support for text, images, voice, and files — recognition, generation, and delivery |
-| ⚙️ [Pluggable Models](https://docs.cowagent.ai/en/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
-| 📦 [Batteries Included](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
+| 🤖 [Planning](https://docs.cowagent.ai/en/intro/architecture) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
+| 🧠 [Memory](https://docs.cowagent.ai/en/memory/index) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
+| 📚 [Knowledge](https://docs.cowagent.ai/en/knowledge/index) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
+| 🧩 [Skills](https://docs.cowagent.ai/en/skills/index) | One-click install from [Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub; or create custom skills via natural-language conversation |
+| 🔧 [Tools](https://docs.cowagent.ai/en/tools/index) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
+| 💬 [Channels](https://docs.cowagent.ai/en/channels/index) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts |
+| 🎨 Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
+| ⚙️ [Models](https://docs.cowagent.ai/en/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
+| 📦 [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
 
 <br/>
 
@@ -41,7 +41,7 @@ CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major 
 
 <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.jpg" alt="CowAgent Architecture" width="750"/>
 
-CowAgent is a complete **Agent Harness**: messages flow in through **Channels**; the **Agent Core** plans and decides using memory, knowledge, and the available tools/skills; **Models** generate the response; results are sent back through the originating channel. Every layer is decoupled and independently extensible.
+CowAgent is a complete **Agent Harness**: messages flow in through **Channels**; the **Agent Core** plans and reasons over memory, knowledge, and the available tools and skills; **Models** generate the response, which is sent back through the originating channel. Every layer is decoupled and independently extensible.
 
 Read more in [Architecture](https://docs.cowagent.ai/en/intro/architecture).
 
@@ -49,7 +49,7 @@ Read more in [Architecture](https://docs.cowagent.ai/en/intro/architecture).
 
 ## 🚀 Quick Start
 
-The project ships with a one-line installer that handles dependencies, configuration, and startup automatically:
+A one-line installer takes care of dependencies, configuration, and startup:
 
 **Linux / macOS:**
 
@@ -70,11 +70,11 @@ curl -O https://cdn.link-ai.tech/code/cow/docker-compose.yml
 docker compose up -d
 ```
 
-Once started, open `http://localhost:9899` to access the **Web console** — a single place to configure models, connect channels, and install skills.
+Once started, open `http://localhost:9899` to access the **Web console** — your one-stop hub to chat with the Agent, configure models, connect channels, and install skills.
 
-> 📖 Detailed guides: [One-line Installer](https://docs.cowagent.ai/en/guide/quick-start) · [Manual Install from Source](https://docs.cowagent.ai/en/guide/manual-install) · [Upgrade](https://docs.cowagent.ai/en/guide/upgrade)
+> 📖 Detailed guides: [Quick Start](https://docs.cowagent.ai/en/guide/quick-start) · [Install from Source](https://docs.cowagent.ai/en/guide/manual-install) · [Upgrade](https://docs.cowagent.ai/en/guide/upgrade)
 
-After installation, manage the service with the [`cow` CLI](https://docs.cowagent.ai/en/cli/index):
+After installation, manage the service with the [cow CLI](https://docs.cowagent.ai/en/cli/index):
 
 ```bash
 cow start | stop | restart        # service control
@@ -88,7 +88,7 @@ cow install-browser                # install browser automation
 
 ## 🤖 Models
 
-CowAgent supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be configured against a different vendor.
+CowAgent supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor.
 
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -101,7 +101,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | [Doubao](https://docs.cowagent.ai/en/models/doubao) | doubao-seed-2.0 series | ✅ | ✅ | ✅ | | | ✅ |
 | [Kimi](https://docs.cowagent.ai/en/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
 | [MiniMax](https://docs.cowagent.ai/en/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
-| [Qianfan](https://docs.cowagent.ai/en/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
+| [ERNIE](https://docs.cowagent.ai/en/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [LinkAI](https://docs.cowagent.ai/en/models/linkai) | 100+ models, unified gateway | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Custom](https://docs.cowagent.ai/en/models/custom) | Local models / third-party proxy | ✅ | | | | | |
 
@@ -111,7 +111,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 
 ## 💬 Channels
 
-A single Agent instance can serve multiple channels at once. Switch with the `channel_type` config or run several channels in parallel.
+A single Agent instance can serve multiple channels at once — set `channel_type` to switch between them, or run several channels in parallel.
 
 | Channel | Text | Image | File | Voice | Group |
 | --- | :-: | :-: | :-: | :-: | :-: |
@@ -159,7 +159,7 @@ A single Agent instance can serve multiple channels at once. Switch with the `ch
 
 ### Tool System
 
-**Built-in tools** cover file I/O (`read` / `write` / `edit` / `ls`), terminal (`bash`), file delivery (`send`), memory retrieval (`memory`), environment variables (`env_config`), web fetching (`web_fetch`), scheduling (`scheduler`), web search (`web_search`), vision (`vision`), and browser automation (`browser`).
+**Built-in tools** cover file I/O (`read` / `write` / `edit` / `ls`), terminal (`bash`), file sending (`send`), memory retrieval (`memory`), environment variables (`env_config`), web fetching (`web_fetch`), scheduling (`scheduler`), web search (`web_search`), vision (`vision`), and browser automation (`browser`).
 
 **MCP protocol** integrates the open ecosystem of [Model Context Protocol](https://modelcontextprotocol.io) servers. A single `mcp.json` is enough — supports stdio / SSE transports, hot reload, and zero-code integration.
 
@@ -217,6 +217,18 @@ Scan the WeChat QR code to join the open-source community group:
 
 <br/>
 
+## 🏢 Enterprise Services
+
+[**LinkAI**](https://link-ai.tech/) is an all-in-one AI Agent platform for enterprises and developers, offering managed hosting and enterprise-grade support for CowAgent:
+
+- **🚀 Zero-deployment hosted runtime** — spin up a [CowAgent online assistant](https://link-ai.tech/cowagent/create) in under a minute, no server required
+- **🧠 Aggregated models & skill marketplace** — unified access to mainstream LLMs and an official skill marketplace, extending CowAgent's reach
+- **🏢 Team & enterprise features** — workspaces, role-based access, audit logs, and private deployment for production use cases
+
+For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
+
+<br/>
+
 ## 🛠️ Development & Contributing
 
 Contributions are welcome — add a new channel by following the [Feishu channel reference](https://github.com/zhayujie/CowAgent/blob/master/channel/feishu/feishu_channel.py), or contribute new skills to [Skill Hub](https://skills.cowagent.ai/submit).
@@ -229,22 +241,10 @@ Contributions are welcome — add a new channel by following the [Feishu channel
 
 <br/>
 
-## 🏢 Enterprise Services
-
-[**LinkAI**](https://link-ai.tech/) is a one-stop AI Agent platform for enterprises and developers, offering managed hosting and enterprise-grade support for CowAgent:
-
-- **🚀 Zero-deployment hosted runtime** — spin up a [CowAgent online assistant](https://link-ai.tech/cowagent/create) in under a minute, no server required
-- **🧠 Aggregated models & skill marketplace** — unified access to mainstream LLMs and an official skill marketplace, extending CowAgent's reach
-- **🏢 Team & enterprise features** — workspaces, role-based access, audit logs, and private deployment for production use cases
-
-For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
-
-<br/>
-
 ## ⚠️ Disclaimer
 
 1. This project is licensed under the [MIT License](/LICENSE) and is intended for technical research and learning. You are responsible for complying with applicable laws and regulations in your jurisdiction; the maintainers assume no liability for any consequences arising from use of this project.
-2. **Cost & safety:** Agent mode consumes substantially more tokens than plain chat — pick models that balance quality and cost. The Agent has access to your local operating system; deploy only in trusted environments.
+2. **Cost & safety:** Agent mode consumes substantially more tokens than regular chat — pick models that balance quality and cost. The Agent has access to your local operating system, so only deploy it in trusted environments.
 3. CowAgent is a pure open-source project and does not participate in, authorize, or issue any cryptocurrency.
 
 <br/>

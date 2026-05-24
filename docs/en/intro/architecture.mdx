@@ -39,8 +39,8 @@ The Agent workspace is located at `~/cow` by default and stores system prompts, 
 
 ```
 ~/cow/
-├── system.md          # Agent system prompt
-├── user.md            # User profile
+├── SYSTEM.md          # Agent system prompt
+├── USER.md            # User profile
 ├── MEMORY.md          # Core memory
 ├── memory/            # Long-term memory storage
 │   └── YYYY-MM-DD.md  # Daily memory
@@ -67,9 +67,10 @@ Configure Agent mode parameters in `config.json`:
 {
   "agent": true,
   "agent_workspace": "~/cow",
-  "agent_max_context_tokens": 40000,
-  "agent_max_context_turns": 30,
-  "agent_max_steps": 15
+  "agent_max_context_tokens": 50000,
+  "agent_max_context_turns": 20,
+  "agent_max_steps": 20,
+  "enable_thinking": false
 }
 ```
 
@@ -77,7 +78,9 @@ Configure Agent mode parameters in `config.json`:
 | --- | --- | --- |
 | `agent` | Enable Agent mode | `true` |
 | `agent_workspace` | Workspace path | `~/cow` |
-| `agent_max_context_tokens` | Max context tokens | `40000` |
-| `agent_max_context_turns` | Max context turns | `30` |
-| `agent_max_steps` | Max decision steps per task | `15` |
+| `agent_max_context_tokens` | Max context tokens | `50000` |
+| `agent_max_context_turns` | Max context turns | `20` |
+| `agent_max_steps` | Max decision steps per task | `20` |
+| `enable_thinking` | Enable deep-thinking mode | `false` |
+| `knowledge` | Enable personal knowledge base | `true` |
 | `knowledge` | Enable personal knowledge base | `true` |
