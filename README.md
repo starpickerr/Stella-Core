@@ -9,7 +9,7 @@
 
 **CowAgent** is an open-source super AI assistant that proactively plans tasks, operates your computer and external services, creates and runs Skills, and grows alongside you with a personal knowledge base and long-term memory — a reference implementation of Agent Harness engineering.
 
-CowAgent is lightweight, easy to deploy, and built to extend. Switch freely between leading models such as Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, and Doubao, and connect to WeChat, Feishu (Lark), DingTalk, WeCom, QQ, the Web, or your terminal — running 24/7 on a personal computer or server.
+CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major LLM provider, run it across Web and major IM platforms, 24/7 on a personal computer or server.
 
 <p align="center">
   <a href="https://cowagent.ai/">🌐 Website</a> &nbsp;·&nbsp;
@@ -39,7 +39,7 @@ CowAgent is lightweight, easy to deploy, and built to extend. Switch freely betw
 
 ## 🏗️ Architecture
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.jpg" alt="CowAgent Architecture" width="700"/>
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.jpg" alt="CowAgent Architecture" width="750"/>
 
 CowAgent is a complete **Agent Harness**: messages flow in through **Channels**; the **Agent Core** plans and decides using memory, knowledge, and the available tools/skills; **Models** generate the response; results are sent back through the originating channel. Every layer is decoupled and independently extensible.
 
@@ -237,7 +237,7 @@ Contributions are welcome — add a new channel by following the [Feishu channel
 - **🧠 Aggregated models & skill marketplace** — unified access to mainstream LLMs and an official skill marketplace, extending CowAgent's reach
 - **🏢 Team & enterprise features** — workspaces, role-based access, audit logs, and private deployment for production use cases
 
-For enterprise inquiries: **sales@simple-future.tech** or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
+For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
 
 <br/>
 
