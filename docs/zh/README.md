@@ -169,7 +169,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 ### 技能系统
 
 - **[Skill Hub](https://skills.cowagent.ai/)** — 开源的技能广场，浏览、搜索、一键安装
-- **GitHub / ClawHub** — 多平台技能源，4w+ 技能可选
+- **GitHub / ClawHub / URL 等** — 任意来源一键安装
 - **对话创造** — 通过 `skill-creator` 用对话快速生成自定义技能，可将工作流程或第三方接口直接固化为技能
 
 ```bash
@@ -208,7 +208,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png">
 
-- 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues) · 💬 [GitHub Discussions](https://github.com/zhayujie/CowAgent/discussions) · 📖 [常见问题 FAQs](https://github.com/zhayujie/CowAgent/wiki/FAQs)
+- 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues) · 📖 [常见问题 FAQs](https://github.com/zhayujie/CowAgent/wiki/FAQs)
 - 🤖 在线咨询：[项目小助手](https://link-ai.tech/app/Kv2fXJcH)（知识库持续完善中）
 
 <br/>

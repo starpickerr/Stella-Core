@@ -168,7 +168,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 ### Skill システム
 
 - **[Skill Hub](https://skills.cowagent.ai/)** — オープン Skill マーケットプレイス：閲覧、検索、ワンクリックインストール
-- **GitHub / ClawHub** — 複数の Skill ソース、4 万以上の Skill を利用可能
+- **GitHub / ClawHub / URL など** — 任意のソースからワンクリックでインストール
 - **対話による作成** — `skill-creator` を使って対話でカスタム Skill を生成；ワークフローやサードパーティ API を再利用可能な Skill に変換
 
 ```bash
@@ -201,7 +201,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🤝 コミュニティとサポート
 
-- 🐛 [Issue を報告](https://github.com/zhayujie/CowAgent/issues) · 💬 [GitHub Discussions](https://github.com/zhayujie/CowAgent/discussions) · 📖 [FAQ](https://github.com/zhayujie/CowAgent/wiki/FAQs)
+- 🐛 [Issue を報告](https://github.com/zhayujie/CowAgent/issues) · 📖 [FAQ](https://github.com/zhayujie/CowAgent/wiki/FAQs)
 
 WeChat の QR コードをスキャンしてオープンソースコミュニティグループに参加：
 
