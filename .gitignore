@@ -32,7 +32,6 @@ plugins/banwords/lib/__pycache__
 !plugins/role
 !plugins/keyword
 !plugins/linkai
-!plugins/agent
 !plugins/cow_cli
 client_config.json
 ref/
