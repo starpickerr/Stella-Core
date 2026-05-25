@@ -28,8 +28,16 @@ from config import conf
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
 
+def _get_web_password() -> str:
+    # Coerce to str so non-string values in config.json (e.g. numeric password) won't break comparisons
+    pwd = conf().get("web_password", "")
+    if pwd is None:
+        return ""
+    return str(pwd)
+
+
 def _is_password_enabled():
-    return bool(conf().get("web_password", ""))
+    return bool(_get_web_password())
 
 
 def _session_expire_seconds():
@@ -40,7 +48,7 @@ def _create_auth_token():
     """Create a stateless signed token: ``<timestamp_hex>.<hmac_hex>``."""
     ts = format(int(time.time()), "x")
     sig = hmac.new(
-        conf().get("web_password", "").encode(),
+        _get_web_password().encode(),
         ts.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -63,7 +71,7 @@ def _verify_auth_token(token):
     if time.time() - ts > _session_expire_seconds():
         return False
     expected = hmac.new(
-        conf().get("web_password", "").encode(),
+        _get_web_password().encode(),
         ts_hex.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -1050,8 +1058,8 @@ class AuthLoginHandler:
             data = json.loads(web.data())
         except Exception:
             return json.dumps({"status": "error", "message": "Invalid request"})
-        password = data.get("password", "")
-        expected = conf().get("web_password", "")
+        password = str(data.get("password", "") or "")
+        expected = _get_web_password()
         if not hmac.compare_digest(password, expected):
             logger.warning("[WebChannel] Invalid login attempt")
             return json.dumps({"status": "error", "message": "Wrong password"})
@@ -1434,7 +1442,7 @@ class ConfigHandler:
                     "api_key_field": p.get("api_key_field"),
                 }
 
-            raw_pwd = local_config.get("web_password", "")
+            raw_pwd = str(local_config.get("web_password", "") or "")
             masked_pwd = ("*" * len(raw_pwd)) if raw_pwd else ""
 
             return json.dumps({
