@@ -367,6 +367,15 @@ function t(key) {
     return (I18N[currentLang] && I18N[currentLang][key]) || (I18N.en[key]) || key;
 }
 
+// Resolve a localized label that may be either a plain string or
+// a {zh, en} object returned by the backend.
+function localizedLabel(label) {
+    if (label && typeof label === 'object') {
+        return label[currentLang] || label.en || label.zh || '';
+    }
+    return label || '';
+}
+
 function applyI18n() {
     document.querySelectorAll('[data-i18n]').forEach(el => {
         el.textContent = t(el.dataset.i18n);
@@ -3164,7 +3173,7 @@ function initConfigView(data) {
     configCurrentModel = data.model || '';
 
     const providerEl = document.getElementById('cfg-provider');
-    const providerOpts = Object.entries(configProviders).map(([pid, p]) => ({ value: pid, label: p.label }));
+    const providerOpts = Object.entries(configProviders).map(([pid, p]) => ({ value: pid, label: localizedLabel(p.label) }));
 
     // if use_linkai is enabled, always select linkai as the provider
     // Otherwise prefer bot_type from config, fall back to model-based detection
@@ -3914,7 +3923,7 @@ function renderVendorChip(p) {
                        bg-slate-50 dark:bg-white/5 hover:border-primary-300 dark:hover:border-primary-500/50
                        cursor-pointer transition-colors duration-150 text-left">
             ${renderProviderLogo(p, 28)}
-            <span class="flex-1 min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(p.label)}</span>
+            <span class="flex-1 min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(localizedLabel(p.label))}</span>
             <i class="fas fa-pen-to-square text-[11px] text-slate-400 dark:text-slate-500 group-hover:text-primary-500 transition-colors"></i>
         </button>`;
 }
@@ -3922,7 +3931,7 @@ function renderVendorChip(p) {
 // Render a uniformly-styled logo for a provider. Tries an SVG asset first; if
 // it 404s the <img> swaps itself for a monogram fallback via onerror.
 function renderProviderLogo(p, sizePx) {
-    const initial = (p.label || p.id || '?').slice(0, 1).toUpperCase();
+    const initial = (localizedLabel(p.label) || p.id || '?').slice(0, 1).toUpperCase();
     const sz = sizePx || 32;
     const url = `${MODELS_PROVIDER_LOGO_PATH}/${encodeURIComponent(p.id)}.svg`;
     const fallbackId = `pl-${p.id}-${Math.random().toString(36).slice(2, 8)}`;
@@ -3977,7 +3986,7 @@ function renderCapabilityHeaderTag(def, cap) {
 function _searchProviderLabel(cap, providerId) {
     const list = (cap && cap.providers) || [];
     const hit = list.find(p => p.id === providerId);
-    return hit ? hit.label : providerId;
+    return hit ? localizedLabel(hit.label) : providerId;
 }
 
 // Search card body: strategy picker + (when fixed) provider picker + a
@@ -4103,7 +4112,7 @@ function _renderSearchSummary(body, cap) {
                     class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md cursor-pointer
                            bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400
                            hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
-                <i class="fas fa-check text-[10px]"></i>${escapeHtml(p.label)}
+                <i class="fas fa-check text-[10px]"></i>${escapeHtml(localizedLabel(p.label))}
             </button>
         `).join('');
         host.innerHTML = `
@@ -4150,7 +4159,7 @@ function openSearchAddProviderPicker(missingProviders) {
                 class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer
                        bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10
                        text-sm text-slate-700 dark:text-slate-200 transition-colors">
-            <span>${escapeHtml(p.label)}</span>
+            <span>${escapeHtml(localizedLabel(p.label))}</span>
             <i class="fas fa-chevron-right text-[10px] text-slate-400"></i>
         </button>
     `).join('');
@@ -4607,7 +4616,7 @@ function renderCapabilityHints(def, cap, body, currentProvider) {
     // id ("linkai") when we know it. Falls back to the id when the
     // provider isn't in our vendor table (rare).
     const provMeta = modelsState.providers.find(p => p.id === fbProv);
-    const fbProvLabel = (provMeta && provMeta.label) || fbProv;
+    const fbProvLabel = (provMeta && localizedLabel(provMeta.label)) || fbProv;
     const fbText = fbModel ? `${fbProvLabel} / ${fbModel}` : fbProvLabel;
     slot.innerHTML = `
         <p class="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 min-w-0">
@@ -4639,7 +4648,7 @@ function buildCapabilityProviderOptions(def, cap) {
         const configured = !tracked || !!meta.configured;
         return {
             value: pid,
-            label: (meta && meta.label) || pid,
+            label: (meta && localizedLabel(meta.label)) || pid,
             _tracked: tracked,
             _configured: configured,
         };
@@ -5069,7 +5078,7 @@ function openVendorModal(providerId, onSaved) {
         const pickerEl = document.getElementById('vendor-modal-picker');
         const pickerOpts = modelsState.providers.map(p => ({
             value: p.id,
-            label: p.label,
+            label: localizedLabel(p.label),
             _configured: !!p.configured,
         }));
         initDropdown(pickerEl, pickerOpts, defaultId, (val) => fillVendorModalForProvider(val));
@@ -5108,7 +5117,7 @@ function openVendorModal(providerId, onSaved) {
 function fillVendorModalForProvider(providerId) {
     const meta = modelsState.providers.find(p => p.id === providerId);
     if (!meta) return;
-    document.getElementById('vendor-modal-title').textContent = meta.label;
+    document.getElementById('vendor-modal-title').textContent = localizedLabel(meta.label);
     document.getElementById('vendor-modal-subtitle').textContent = meta.id;
 
     // ----- API Base -----

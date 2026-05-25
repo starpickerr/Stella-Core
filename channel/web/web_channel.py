@@ -1337,7 +1337,7 @@ class ConfigHandler:
             "models": [const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
         ("zhipu", {
-            "label": "智谱AI",
+            "label": {"zh": "智谱AI", "en": "GLM"},
             "api_key_field": "zhipu_ai_api_key",
             "api_base_key": "zhipu_ai_api_base",
             "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
@@ -1345,7 +1345,7 @@ class ConfigHandler:
             "models": [const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
         }),
         ("dashscope", {
-            "label": "通义千问",
+            "label": {"zh": "通义千问", "en": "Qwen"},
             "api_key_field": "dashscope_api_key",
             "api_base_key": None,
             "api_base_default": None,
@@ -1353,7 +1353,7 @@ class ConfigHandler:
             "models": [const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX],
         }),
         ("doubao", {
-            "label": "豆包",
+            "label": {"zh": "豆包", "en": "Doubao"},
             "api_key_field": "ark_api_key",
             "api_base_key": "ark_base_url",
             "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
@@ -1369,7 +1369,7 @@ class ConfigHandler:
             "models": [const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
         }),
         ("qianfan", {
-            "label": "百度千帆",
+            "label": {"zh": "百度千帆", "en": "ERNIE"},
             "api_key_field": "qianfan_api_key",
             "api_base_key": "qianfan_api_base",
             "api_base_default": "https://qianfan.baidubce.com/v2",
@@ -1385,7 +1385,7 @@ class ConfigHandler:
             "models": _RECOMMENDED_MODELS,
         }),
         ("custom", {
-            "label": "自定义",
+            "label": {"zh": "自定义", "en": "Custom"},
             "api_key_field": "custom_api_key",
             "api_base_key": "custom_api_base",
             "api_base_default": "",
@@ -2241,10 +2241,10 @@ class ModelsHandler:
     _SEARCH_PROVIDERS = ("bocha", "qianfan", "zhipu", "linkai")
 
     _SEARCH_PROVIDER_LABELS = {
-        "bocha":   "博查",
-        "zhipu":   "智谱",
-        "qianfan": "百度千帆",
-        "linkai":  "LinkAI",
+        "bocha":   {"zh": "博查", "en": "Bocha"},
+        "zhipu":   {"zh": "智谱", "en": "GLM"},
+        "qianfan": {"zh": "百度千帆", "en": "ERNIE"},
+        "linkai":  {"zh": "LinkAI", "en": "LinkAI"},
     }
 
     @classmethod

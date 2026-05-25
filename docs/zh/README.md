@@ -227,7 +227,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏢 企业服务
 
-<a href="https://link-ai.tech" target="_blank"><img width="550" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg"></a>
+<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg"></a>
 
 > [LinkAI](https://link-ai.tech/) 是面向企业和个人的一站式 AI 智能体平台，为 CowAgent 提供云端托管和企业级支持：
 >
