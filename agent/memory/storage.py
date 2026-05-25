@@ -741,9 +741,11 @@ class MemoryStorage:
             results = []
             for row in rows:
                 # Dynamic score: reward chunks that contain more of the query words.
-                # matched_count should always be ≥1 (WHERE uses OR), but guard
-                # defensively so zero-match rows are never surfaced.
-                matched_count = sum(1 for w in cjk_words if w in row['text'])
+                # Use all tokens (CJK + ASCII) so pure-ASCII queries are not skipped.
+                # matched_count is always ≥1 because the WHERE clause uses OR, but
+                # guard defensively so unexpected zero-match rows are never surfaced.
+                text_lower = row['text'].lower()
+                matched_count = sum(1 for w in words if w.lower() in text_lower)
                 if matched_count == 0:
                     continue
                 score = min(0.85, 0.3 + 0.15 * matched_count)
