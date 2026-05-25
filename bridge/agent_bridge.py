@@ -285,6 +285,15 @@ class AgentBridge:
         
         # Create helper instances
         self.initializer = AgentInitializer(bridge, self)
+
+        # Eager-start the scheduler so cron tasks fire without waiting
+        # for the first user message. init_scheduler is idempotent.
+        try:
+            from agent.tools.scheduler.integration import init_scheduler
+            if init_scheduler(self):
+                self.scheduler_initialized = True
+        except Exception as e:
+            logger.warning(f"[AgentBridge] Eager scheduler init failed: {e}")
     def create_agent(self, system_prompt: str, tools: List = None, **kwargs) -> Agent:
         """
         Create the super agent with COW integration
