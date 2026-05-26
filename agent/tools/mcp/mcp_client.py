@@ -1,8 +1,8 @@
 """
 MCP (Model Context Protocol) client module.
 
-Implements JSON-RPC 2.0 over stdio and SSE transports without any external
-MCP SDK dependency.
+Implements JSON-RPC 2.0 over stdio, SSE and Streamable HTTP transports
+without any external MCP SDK dependency.
 """
 
 import json
@@ -17,18 +17,29 @@ from typing import Optional
 from common.log import logger
 
 
+# Aliases accepted for the Streamable HTTP transport type
+_STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
+
+
 class McpClient:
-    """Single MCP Server client supporting stdio and SSE transports."""
+    """Single MCP Server client supporting stdio, SSE and Streamable HTTP transports."""
 
     def __init__(self, config: dict):
         """
         config examples:
-          stdio: {"name": "filesystem", "type": "stdio", "command": "npx", "args": [...]}
-          SSE:   {"name": "my-api",    "type": "sse",   "url": "http://localhost:8000/sse"}
+          stdio:           {"name": "filesystem", "type": "stdio", "command": "npx", "args": [...]}
+          SSE:             {"name": "my-api",    "type": "sse",   "url": "http://localhost:8000/sse"}
+          streamable-http: {"name": "pubmed",    "type": "streamable-http", "url": "https://x/mcp"}
         """
         self.config = config
         self.name: str = config.get("name", "unknown")
-        self.transport: str = config.get("type", "stdio")
+        raw_transport: str = config.get("type", "stdio")
+        # Normalize streamable-http aliases to a single internal key
+        self.transport: str = (
+            "streamable-http"
+            if raw_transport.lower() in _STREAMABLE_HTTP_ALIASES
+            else raw_transport
+        )
 
         # stdio state
         self._proc: Optional[subprocess.Popen] = None
@@ -36,6 +47,11 @@ class McpClient:
         # SSE state
         self._sse_url: Optional[str] = None
         self._post_url: Optional[str] = None  # endpoint for sending messages (resolved from SSE)
+
+        # Streamable HTTP state
+        self._http_url: Optional[str] = None
+        self._http_headers: dict = {}  # extra headers from user config (e.g. Authorization)
+        self._http_session_id: Optional[str] = None  # Mcp-Session-Id assigned by the server
 
         # Shared state
         self._next_id = 1
@@ -54,6 +70,8 @@ class McpClient:
                 return self._init_stdio()
             elif self.transport == "sse":
                 return self._init_sse()
+            elif self.transport == "streamable-http":
+                return self._init_streamable_http()
             else:
                 logger.warning(f"[MCP:{self.name}] Unknown transport type: {self.transport!r}")
                 return False
@@ -109,6 +127,21 @@ class McpClient:
                     pass
             self._proc = None
             logger.debug(f"[MCP:{self.name}] stdio process terminated")
+
+        # Best-effort streamable-http session termination
+        if self.transport == "streamable-http" and self._http_session_id and self._http_url:
+            try:
+                req = urllib.request.Request(
+                    self._http_url,
+                    method="DELETE",
+                    headers={"Mcp-Session-Id": self._http_session_id, **self._http_headers},
+                )
+                with urllib.request.urlopen(req, timeout=5):
+                    pass
+            except Exception:
+                pass
+            self._http_session_id = None
+
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -235,6 +268,120 @@ class McpClient:
             return json.loads(raw)
 
     # ------------------------------------------------------------------
+    # Streamable HTTP transport (MCP spec 2025-03-26)
+    # ------------------------------------------------------------------
+
+    def _init_streamable_http(self) -> bool:
+        url = self.config.get("url")
+        if not url:
+            logger.warning(f"[MCP:{self.name}] streamable-http config missing 'url'")
+            return False
+
+        self._http_url = url
+        # Allow user-provided headers (e.g. {"Authorization": "Bearer xxx"})
+        extra_headers = self.config.get("headers") or {}
+        if isinstance(extra_headers, dict):
+            self._http_headers = {str(k): str(v) for k, v in extra_headers.items()}
+
+        return self._handshake()
+
+    def _streamable_http_send(self, message: dict) -> dict:
+        """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
+        return self._streamable_http_post(message, expect_response=True)
+
+    def _streamable_http_post(self, message: dict, expect_response: bool) -> dict:
+        """
+        POST a JSON-RPC message over Streamable HTTP.
+
+        Per the spec, the response Content-Type can be either:
+          - application/json   -> single JSON-RPC response in body
+          - text/event-stream  -> SSE stream; we read until we get a matching response
+        """
+        body = json.dumps(message).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if self._http_session_id:
+            headers["Mcp-Session-Id"] = self._http_session_id
+        headers.update(self._http_headers)
+
+        req = urllib.request.Request(
+            self._http_url,
+            data=body,
+            method="POST",
+            headers=headers,
+        )
+
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as e:
+            # Surface the server-provided error body for easier debugging
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+            raise IOError(
+                f"[MCP:{self.name}] streamable-http HTTP {e.code}: {detail[:200]}"
+            )
+
+        with resp:
+            # Capture session id assigned by the server (if any)
+            session_id = resp.headers.get("Mcp-Session-Id")
+            if session_id and not self._http_session_id:
+                self._http_session_id = session_id
+
+            status = resp.status if hasattr(resp, "status") else resp.getcode()
+
+            # Notifications: server may reply with 202 Accepted and no body
+            if not expect_response or status == 202:
+                try:
+                    resp.read()
+                except Exception:
+                    pass
+                return {}
+
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            expected_id = message.get("id")
+
+            if "text/event-stream" in content_type:
+                return self._read_sse_response(resp, expected_id)
+
+            raw = resp.read().decode("utf-8")
+            if not raw:
+                return {}
+            return json.loads(raw)
+
+    def _read_sse_response(self, resp, expected_id) -> dict:
+        """Read an SSE stream and return the first JSON-RPC response with matching id."""
+        data_buf: list = []
+        for raw_line in resp:
+            line = raw_line.decode("utf-8").rstrip("\n\r")
+            if line == "":
+                # End of an SSE event, attempt to parse accumulated data
+                if data_buf:
+                    payload = "\n".join(data_buf)
+                    data_buf = []
+                    try:
+                        msg = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    # Skip notifications / mismatched ids
+                    if "id" not in msg:
+                        continue
+                    if expected_id is None or msg.get("id") == expected_id:
+                        return msg
+                continue
+            if line.startswith(":"):
+                continue  # SSE comment / keepalive
+            if line.startswith("data:"):
+                data_buf.append(line[len("data:"):].lstrip())
+            # Ignore 'event:' / 'id:' lines; we only care about JSON-RPC payloads
+
+        raise IOError(f"[MCP:{self.name}] streamable-http SSE stream closed before response")
+
+    # ------------------------------------------------------------------
     # Common JSON-RPC helpers
     # ------------------------------------------------------------------
 
@@ -267,6 +414,8 @@ class McpClient:
                 return self._stdio_send(message)
             elif self.transport == "sse":
                 return self._sse_send(message)
+            elif self.transport == "streamable-http":
+                return self._streamable_http_send(message)
             else:
                 raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
 
@@ -289,6 +438,11 @@ class McpClient:
             try:
                 with urllib.request.urlopen(req, timeout=10):
                     pass
+            except Exception:
+                pass  # notifications are fire-and-forget
+        elif self.transport == "streamable-http":
+            try:
+                self._streamable_http_post(notification, expect_response=False)
             except Exception:
                 pass  # notifications are fire-and-forget
 

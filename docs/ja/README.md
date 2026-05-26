@@ -104,7 +104,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 | [Kimi](https://docs.cowagent.ai/ja/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
 | [MiniMax](https://docs.cowagent.ai/ja/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
 | [ERNIE](https://docs.cowagent.ai/ja/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [LinkAI](https://docs.cowagent.ai/ja/models/linkai) | 100+ モデルを統一ゲートウェイで提供 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [LinkAI](https://docs.cowagent.ai/ja/models/linkai) | 1 つの Key で 100+ モデルに接続 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [カスタム](https://docs.cowagent.ai/ja/models/custom) | ローカルモデル / サードパーティプロキシ | ✅ | | | | | |
 
 > Web コンソールでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](https://docs.cowagent.ai/ja/models/index) を参照してください。
@@ -222,7 +222,7 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) する
 [**LinkAI**](https://link-ai.tech/) は企業や開発者向けのワンストップ AI Agent プラットフォームで、CowAgent にマネージドホスティングとエンタープライズグレードのサポートを提供します：
 
 - **🚀 デプロイ不要のホスト型ランタイム** — [CowAgent オンラインアシスタント](https://link-ai.tech/cowagent/create) を 1 分以内に起動、サーバー不要
-- **🧠 統合モデル & Skill マーケットプレイス** — 主要 LLM への統一アクセスと公式 Skill マーケットプレイスで CowAgent の活用範囲を拡大
+- **🧠 Agent インフラ** — 主要 LLM・ナレッジベース・データベース・Skill・ワークフローへの統一アクセス。CowAgent の機能を拡張する、すぐに使えるビルディングブロック
 - **🏢 チーム & エンタープライズ機能** — ワークスペース、ロールベースのアクセス制御、監査ログ、本番運用向けプライベートデプロイ
 
 エンタープライズに関するお問い合わせ：**sales@simple-future.tech** または [QR コードをスキャン](https://cdn.link-ai.tech/consultant.jpg) して WeChat でお問い合わせください。

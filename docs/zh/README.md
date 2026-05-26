@@ -104,7 +104,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 | [豆包 Doubao](https://docs.cowagent.ai/models/doubao) | doubao-seed-2.0 系列 | ✅ | ✅ | ✅ | | | ✅ |
 | [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
 | [百度ERNIE](https://docs.cowagent.ai/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [LinkAI](https://docs.cowagent.ai/models/linkai) | 100+ 模型统一接入 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [LinkAI](https://docs.cowagent.ai/models/linkai) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [自定义](https://docs.cowagent.ai/models/custom) | 本地模型 / 三方代理 | ✅ | | | | | |
 
 > 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](https://docs.cowagent.ai/models)。
@@ -232,7 +232,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 > [LinkAI](https://link-ai.tech/) 是面向企业和个人的一站式 AI 智能体平台，为 CowAgent 提供云端托管和企业级支持：
 >
 > - **🚀 免部署在线运行**：无需服务器即可创建 [CowAgent 在线助理](https://link-ai.tech/cowagent/create)，1 分钟拥有专属 Agent
-> - **🧠 模型与技能支持**：聚合主流大模型与官方技能市场，为 CowAgent 提供更广的模型与技能扩展
+> - **🧠 Agent 基础设施**：聚合主流大模型、知识库、数据库、技能、工作流，提供开箱即用的 Agent 能力扩展
 > - **🏢 企业级协作**：提供团队协作、权限分级、审计日志、私有化部署等能力，让 Agent 安全落地企业场景
 
 **产品咨询和企业服务** 可联系产品客服：

@@ -104,7 +104,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | [Kimi](https://docs.cowagent.ai/en/models/kimi) | kimi-k2.6 | ✅ | ✅ | | | | |
 | [MiniMax](https://docs.cowagent.ai/en/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
 | [ERNIE](https://docs.cowagent.ai/en/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [LinkAI](https://docs.cowagent.ai/en/models/linkai) | 100+ models, unified gateway | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [LinkAI](https://docs.cowagent.ai/en/models/linkai) | One key for 100+ models | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Custom](https://docs.cowagent.ai/en/models/custom) | Local models / third-party proxy | ✅ | | | | | |
 
 > For details on each provider, see the [Models overview](https://docs.cowagent.ai/en/models/index).
@@ -222,7 +222,7 @@ Full history: [Release Notes](https://docs.cowagent.ai/en/releases/overview)
 [**LinkAI**](https://link-ai.tech/) is an all-in-one AI Agent platform for enterprises and developers, offering managed hosting and enterprise-grade support for CowAgent:
 
 - **🚀 Zero-deployment hosted runtime** — spin up a [CowAgent online assistant](https://link-ai.tech/cowagent/create) in under a minute, no server required
-- **🧠 Aggregated models & skill marketplace** — unified access to mainstream LLMs and an official skill marketplace, extending CowAgent's reach
+- **🧠 Agent infrastructure** — unified access to LLMs, knowledge bases, databases, skills, and workflows; plug-and-play building blocks that extend what CowAgent can do
 - **🏢 Team & enterprise features** — workspaces, role-based access, audit logs, and private deployment for production use cases
 
 For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
