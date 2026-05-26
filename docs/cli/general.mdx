@@ -39,6 +39,14 @@ Mode:    agent
 Session: 12 messages | 8 skills loaded
 ```
 
+## cancel
+
+中止当前会话正在运行的 Agent 任务。在 Agent 执行长时间任务（例如多轮工具调用、长流式输出）时，可随时发送 `/cancel`，Agent 会在下一次工具执行前停止。Web 端、微信、企业微信、飞书等各通道均可使用。
+
+```text
+/cancel
+```
+
 ## config
 
 查看或修改运行时配置。修改后立即生效，无需重启服务。

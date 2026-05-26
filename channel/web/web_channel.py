@@ -93,6 +93,15 @@ def _require_auth():
                             json.dumps({"status": "error", "message": "Unauthorized"}))
 
 
+# Localized text for /cancel system replies. Web is the only channel that
+# honors a per-request `lang`; other channels reply in Chinese by default.
+def _cancel_reply_text(cancelled: int, lang: str) -> str:
+    en = lang.startswith("en")
+    if cancelled > 0:
+        return "🛑 Cancelled." if en else "🛑 已中止"
+    return "Nothing to cancel." if en else "当前没有可中止的任务。"
+
+
 def _get_upload_dir() -> str:
     from common.utils import expand_path
     ws_root = expand_path(conf().get("agent_workspace", "~/cow"))
@@ -437,6 +446,18 @@ class WebChannel(ChatChannel):
                     "timestamp": time.time(),
                 })
 
+            elif event_type == "agent_cancelled":
+                # Push an explicit cancelled SSE event so the frontend
+                # marks the bubble as stopped. A trailing "done" still
+                # arrives with the partial answer.
+                final_response = data.get("final_response", "")
+                q.put({
+                    "type": "cancelled",
+                    "content": final_response,
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
             elif event_type == "agent_end":
                 # Safety net: if the agent finishes with an empty final_response,
                 # chat_channel skips _send_reply (because reply.content is empty),
@@ -756,6 +777,25 @@ class WebChannel(ChatChannel):
             # desire_rtype concept used by other channels).
             is_voice_input = bool(json_data.get('is_voice', False))
 
+            # Fast path for /cancel: bypass the session queue and SSE setup.
+            # Web frontend (stream=true) only listens to SSE, so we return an
+            # inline_reply payload to be rendered synchronously.
+            stripped_prompt = (prompt or "").strip().lower()
+            if stripped_prompt == "/cancel":
+                from agent.protocol import get_cancel_registry
+                cancelled = get_cancel_registry().cancel_session(session_id)
+                lang = (json_data.get('lang') or 'zh').lower()
+                msg_text = _cancel_reply_text(cancelled, lang)
+                logger.info(
+                    f"[WebChannel] /cancel fast-path: session={session_id}, cancelled={cancelled}, lang={lang}"
+                )
+                return json.dumps({
+                    "status": "success",
+                    "request_id": "",
+                    "stream": False,
+                    "inline_reply": msg_text,
+                })
+
             # Append file references to the prompt (same format as QQ channel)
             if attachments:
                 file_refs = []
@@ -862,6 +902,11 @@ class WebChannel(ChatChannel):
                 if itype == "done":
                     post_done = True
                     post_deadline = time.time() + POST_DONE_TAIL_SECONDS
+                elif itype == "cancelled":
+                    # Close SSE tail quickly after cancel; don't wait for the
+                    # full TTS tail since the user already pressed Stop.
+                    post_done = True
+                    post_deadline = time.time() + 3
                 elif itype == "voice_attach":
                     # WSGI buffers the previous chunk until the next yield;
                     # shrink the tail so the generator wakes up quickly to
@@ -871,6 +916,59 @@ class WebChannel(ChatChannel):
                     post_deadline = time.time() + 2  # 2s post-attach tail
         finally:
             self.sse_queues.pop(request_id, None)
+
+    def cancel_request(self):
+        """
+        Cancel an in-flight agent run.
+
+        Body: {"request_id": "...", "session_id": "..."}
+        Either field is sufficient; request_id is preferred when known.
+        Always returns success even when nothing was running, so the
+        client's UX is idempotent.
+        """
+        try:
+            from agent.protocol import get_cancel_registry
+
+            data = web.data()
+            try:
+                json_data = json.loads(data) if data else {}
+            except Exception:
+                json_data = {}
+
+            request_id = (json_data.get("request_id") or "").strip()
+            session_id = (json_data.get("session_id") or "").strip()
+            lang = (json_data.get("lang") or "zh").lower()
+
+            registry = get_cancel_registry()
+            cancelled = 0
+
+            if request_id:
+                if registry.cancel_request(request_id):
+                    cancelled = 1
+
+            if cancelled == 0 and session_id:
+                cancelled = registry.cancel_session(session_id)
+
+            if request_id and request_id in self.sse_queues:
+                self.sse_queues[request_id].put({
+                    "type": "cancelled",
+                    "content": "Cancelled" if lang.startswith("en") else "已中止",
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
+            logger.info(
+                f"[WebChannel] cancel request: request_id={request_id!r}, "
+                f"session_id={session_id!r}, cancelled={cancelled}"
+            )
+            return json.dumps({
+                "status": "success",
+                "cancelled": cancelled,
+            })
+
+        except Exception as e:
+            logger.error(f"[WebChannel] cancel_request error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
     def poll_response(self):
         """
@@ -967,6 +1065,7 @@ class WebChannel(ChatChannel):
             '/api/voice/tts', 'VoiceTtsHandler',
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
+            '/cancel', 'CancelHandler',
             '/chat', 'ChatHandler',
             '/config', 'ConfigHandler',
             '/api/models', 'ModelsHandler',
@@ -1238,6 +1337,12 @@ class PollHandler:
     def POST(self):
         _require_auth()
         return WebChannel().poll_response()
+
+
+class CancelHandler:
+    def POST(self):
+        _require_auth()
+        return WebChannel().cancel_request()
 
 
 class StreamHandler:

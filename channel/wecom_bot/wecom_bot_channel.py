@@ -440,6 +440,17 @@ class WecomBotChannel(ChatChannel):
                     state["current"] = ""
                 _push_stream(state, force=True)
 
+            elif event_type == "agent_cancelled":
+                # Flush partial output and strip trailing "---" separator
+                # left over from previous turn, to avoid a dangling divider.
+                if state["current"]:
+                    state["committed"] += state["current"]
+                    state["current"] = ""
+                state["committed"] = state["committed"].rstrip()
+                if state["committed"].endswith("---"):
+                    state["committed"] = state["committed"][:-3].rstrip()
+                _push_stream(state, force=True)
+
         return on_event
 
     # ------------------------------------------------------------------

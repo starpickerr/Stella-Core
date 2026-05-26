@@ -25,6 +25,14 @@ View current session and service status, including process info, model configura
 /status
 ```
 
+## cancel
+
+Abort the agent task currently running in this session. When the agent is busy with a long task (e.g. multi-turn tool calls or a long streaming response), send `/cancel` and the agent will stop before the next tool execution. Available across all channels — Web, WeChat, WeCom, Feishu, etc.
+
+```text
+/cancel
+```
+
 ## config
 
 View or modify runtime configuration. Changes take effect immediately without restarting.

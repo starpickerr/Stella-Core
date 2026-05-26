@@ -5,7 +5,7 @@ Agent Bridge - Integrates Agent system with existing COW bridge
 import os
 from typing import Optional, List
 
-from agent.protocol import Agent, LLMModel, LLMRequest
+from agent.protocol import Agent, LLMModel, LLMRequest, get_cancel_registry
 from bridge.agent_event_handler import AgentEventHandler
 from bridge.agent_initializer import AgentInitializer
 from bridge.bridge import Bridge
@@ -399,11 +399,22 @@ class AgentBridge:
         """
         session_id = None
         agent = None
+        request_id = None
+        cancel_event = None
         try:
             # Extract session_id from context for user isolation
             if context:
                 session_id = context.kwargs.get("session_id") or context.get("session_id")
-            
+                request_id = context.kwargs.get("request_id") or context.get("request_id")
+
+            # Register a cancel token. Prefer per-turn request_id (web),
+            # fall back to session_id (IM channels). The Event is polled by
+            # AgentStreamExecutor at safe checkpoints.
+            registry = get_cancel_registry()
+            token_key = request_id or session_id
+            if token_key:
+                cancel_event = registry.register(token_key, session_id=session_id)
+
             # Get agent for this session (will auto-initialize if needed)
             agent = self.get_agent(session_id=session_id)
             if not agent:
@@ -458,7 +469,8 @@ class AgentBridge:
                 response = agent.run_stream(
                     user_message=query,
                     on_event=event_handler.handle_event,
-                    clear_history=clear_history
+                    clear_history=clear_history,
+                    cancel_event=cancel_event,
                 )
             finally:
                 # Restore original tools
@@ -467,6 +479,13 @@ class AgentBridge:
 
                 # Log execution summary
                 event_handler.log_summary()
+
+                # Release cancel token; keep registry bounded.
+                if token_key:
+                    try:
+                        registry.unregister(token_key)
+                    except Exception:
+                        pass
 
             # Persist new messages generated during this run
             if session_id:
@@ -521,6 +540,12 @@ class AgentBridge:
                         logger.info(f"[AgentBridge] Cleared DB for session after error: {session_id}")
                 except Exception as db_err:
                     logger.warning(f"[AgentBridge] Failed to clear DB after error: {db_err}")
+            # Release cancel token on error path too (idempotent).
+            if cancel_event is not None and (request_id or session_id):
+                try:
+                    get_cancel_registry().unregister(request_id or session_id)
+                except Exception:
+                    pass
             return Reply(ReplyType.ERROR, f"Agent error: {str(e)}")
     
     def _schedule_mcp_hot_reload(self, agent):

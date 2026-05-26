@@ -1016,7 +1016,60 @@ const inputHistory = [];
 let historyIdx = -1;
 let historySavedDraft = '';
 
+// While an SSE stream is in flight, the send button morphs into a cancel
+// button. Only one in-flight request is supported at a time.
+let activeRequestId = null;
+let sendBtnMode = 'send'; // 'send' | 'cancel'
+
+function setSendBtnCancelMode(requestId) {
+    activeRequestId = requestId;
+    sendBtnMode = 'cancel';
+    sendBtn.disabled = false;
+    sendBtn.classList.add('send-btn-cancel');
+    sendBtn.title = (currentLang === 'zh' ? '中止' : 'Cancel');
+    sendBtn.innerHTML = '<i class="fas fa-stop text-sm"></i>';
+}
+
+function resetSendBtnSendMode() {
+    activeRequestId = null;
+    sendBtnMode = 'send';
+    sendBtn.classList.remove('send-btn-cancel');
+    sendBtn.title = '';
+    sendBtn.innerHTML = '<i class="fas fa-paper-plane text-sm"></i>';
+    updateSendBtnState();
+}
+
+function requestCancel() {
+    const reqId = activeRequestId;
+    if (!reqId) return;
+    fetch('/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: reqId, session_id: sessionId, lang: currentLang }),
+    }).catch(err => {
+        console.warn('[cancel] request failed', err);
+    });
+    // Optimistic UI lock so the click visibly registers before the SSE
+    // "cancelled" event arrives.
+    sendBtn.disabled = true;
+    sendBtn.title = (currentLang === 'zh' ? '已中止' : 'Cancelled');
+}
+
+// Button click is the only path to Cancel. Pressing Enter still calls
+// sendMessage() so users can submit "/cancel" as a regular slash command.
+sendBtn.addEventListener('click', () => {
+    if (sendBtnMode === 'cancel') {
+        requestCancel();
+    } else {
+        sendMessage();
+    }
+});
+
 function updateSendBtnState() {
+    if (sendBtnMode === 'cancel') {
+        // Don't downgrade a Cancel button on input edits.
+        return;
+    }
     sendBtn.disabled = uploadingCount > 0 || (!chatInput.value.trim() && pendingAttachments.length === 0);
 }
 
@@ -1264,6 +1317,7 @@ const SLASH_COMMANDS = [
     { cmd: '/knowledge on',        desc: '开启知识库' },
     { cmd: '/knowledge off',       desc: '关闭知识库' },
     { cmd: '/config',              desc: '查看当前配置' },
+    { cmd: '/cancel',              desc: '中止当前正在运行的 Agent 任务' },
     { cmd: '/logs',                desc: '查看最近日志' },
     { cmd: '/version',             desc: '查看版本' },
 ];
@@ -1534,6 +1588,7 @@ function sendVoiceMessage(text, audioUrl) {
         stream: true,
         timestamp: timestamp.toISOString(),
         is_voice: true,
+        lang: currentLang,
     };
 
     const MAX_RETRIES = 2;
@@ -1547,7 +1602,12 @@ function sendVoiceMessage(text, audioUrl) {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
-                if (data.stream) {
+                if (data.inline_reply) {
+                    // Synchronous fast-path reply (e.g. /cancel); skip SSE.
+                    loadingEl.remove();
+                    addBotMessage(data.inline_reply, new Date());
+                } else if (data.stream) {
+                    setSendBtnCancelMode(data.request_id);
                     startSSE(data.request_id, loadingEl, timestamp, titleInfo);
                 } else {
                     loadingContainers[data.request_id] = loadingEl;
@@ -1555,6 +1615,7 @@ function sendVoiceMessage(text, audioUrl) {
             } else {
                 loadingEl.remove();
                 addBotMessage(t('error_send'), new Date());
+                resetSendBtnSendMode();
             }
         })
         .catch(err => {
@@ -1591,6 +1652,10 @@ function addUserVoiceMessage(audioUrl, caption, timestamp) {
 }
 
 function sendMessage() {
+    // Do NOT branch on sendBtnMode here: Enter should always send (so
+    // typing "/cancel" submits normally). Cancel is wired only to the
+    // send button's pointer click — see send-btn listener above.
+
     const text = chatInput.value.trim();
     if (!text && pendingAttachments.length === 0) return;
 
@@ -1619,7 +1684,7 @@ function sendMessage() {
     renderAttachmentPreview();
     sendBtn.disabled = true;
 
-    const body = { session_id: sessionId, message: text, stream: true, timestamp: timestamp.toISOString() };
+    const body = { session_id: sessionId, message: text, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
     if (attachments.length > 0) {
         body.attachments = attachments.map(a => ({
             file_path: a.file_path,
@@ -1641,7 +1706,13 @@ function sendMessage() {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
-                if (data.stream) {
+                if (data.inline_reply) {
+                    // Channel handled synchronously (e.g. /cancel fast-path);
+                    // render as a bot bubble and skip SSE entirely.
+                    loadingEl.remove();
+                    addBotMessage(data.inline_reply, new Date());
+                } else if (data.stream) {
+                    setSendBtnCancelMode(data.request_id);
                     startSSE(data.request_id, loadingEl, timestamp, titleInfo);
                 } else {
                     loadingContainers[data.request_id] = loadingEl;
@@ -1649,12 +1720,14 @@ function sendMessage() {
             } else {
                 loadingEl.remove();
                 addBotMessage(t('error_send'), new Date());
+                resetSendBtnSendMode();
             }
         })
         .catch(err => {
             if (err.name === 'AbortError') {
                 loadingEl.remove();
                 addBotMessage(t('error_timeout'), new Date());
+                resetSendBtnSendMode();
                 return;
             }
             if (attempt < MAX_RETRIES) {
@@ -1664,6 +1737,7 @@ function sendMessage() {
             }
             loadingEl.remove();
             addBotMessage(t('error_send'), new Date());
+            resetSendBtnSendMode();
         });
     }
 
@@ -1919,14 +1993,33 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 stepsEl.appendChild(wrap);
                 scrollChatToBottom();
 
+            } else if (item.type === 'cancelled') {
+                // Agent acknowledged the stop; mark the bubble. A trailing
+                // "done" still arrives with the partial answer.
+                ensureBotEl();
+                if (currentReasoningEl) {
+                    finalizeThinking(currentReasoningEl, reasoningStartTime, reasoningText);
+                    currentReasoningEl = null;
+                    reasoningText = '';
+                }
+                if (!botEl.querySelector('.agent-cancelled-tag')) {
+                    const tag = document.createElement('div');
+                    tag.className = 'agent-cancelled-tag text-xs text-amber-600 dark:text-amber-400 mt-1';
+                    tag.textContent = (currentLang === 'zh') ? '已中止' : 'Cancelled';
+                    stepsEl.appendChild(tag);
+                }
+                resetSendBtnSendMode();
+
             } else if (item.type === 'done') {
                 // Don't close the stream yet: the backend keeps it open
                 // for a short tail to deliver async attachments such as
                 // TTS audio (`voice_attach`). It will close the stream on
                 // its own via onerror once the tail expires.
                 done = true;
+                resetSendBtnSendMode();
 
-                const finalText = item.content || accumulatedText;
+                const finalTextRaw = item.content || accumulatedText;
+                const finalText = localizeCancelMarker(finalTextRaw);
 
                 if (!botEl && finalText) {
                     if (loadingEl) { loadingEl.remove(); loadingEl = null; }
@@ -1934,7 +2027,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 } else if (botEl) {
                     contentEl.classList.remove('sse-streaming');
                     if (finalText) contentEl.innerHTML = renderMarkdown(finalText);
-                    contentEl.dataset.rawMd = finalText || '';
+                    contentEl.dataset.rawMd = finalTextRaw || '';
                     const copyBtn = botEl.querySelector('.copy-msg-btn');
                     if (copyBtn && finalText) copyBtn.style.display = '';
                     applyHighlighting(botEl);
@@ -1964,6 +2057,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 delete activeStreams[requestId];
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
                 addBotMessage(t('error_send'), new Date());
+                resetSendBtnSendMode();
             }
         };
 
@@ -2000,6 +2094,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 applyHighlighting(botEl);
                 bindChatKnowledgeLinks(botEl);
             }
+            resetSendBtnSendMode();
         };
     }
 
@@ -2238,13 +2333,23 @@ function _renderSentFileFromToolResult(step) {
         `<i class="fas fa-file-download" style="color:#6b7280;"></i> ${escapeHtml(fileName)}</a></div>`;
 }
 
+// Cosmetic translator for cancel markers persisted in history.
+// History keeps the English canonical form for the LLM; only display is localized.
+function localizeCancelMarker(text) {
+    if (!text) return text;
+    if (currentLang !== 'zh') return text;
+    return text
+        .replace(/_\(Cancelled by user\)_/g, '_(用户已中止)_')
+        .replace(/_\(Cancelled\)_/g, '_(已中止)_');
+}
+
 function createBotMessageEl(content, timestamp, requestId, msg) {
     const el = document.createElement('div');
     el.className = 'flex gap-3 px-4 sm:px-6 py-3';
     if (requestId) el.dataset.requestId = requestId;
 
     let stepsHtml = '';
-    let displayContent = content;
+    let displayContent = localizeCancelMarker(content);
 
     if (msg && msg.steps && msg.steps.length > 0) {
         // New format: ordered steps with interleaved content
