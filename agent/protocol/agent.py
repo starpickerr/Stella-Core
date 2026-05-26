@@ -365,7 +365,8 @@ class Agent:
 
         return action
 
-    def run_stream(self, user_message: str, on_event=None, clear_history: bool = False, skill_filter=None) -> str:
+    def run_stream(self, user_message: str, on_event=None, clear_history: bool = False,
+                   skill_filter=None, cancel_event=None) -> str:
         """
         Execute single agent task with streaming (based on tool-call)
 
@@ -374,6 +375,7 @@ class Agent:
         - Multi-turn reasoning based on tool-call
         - Event callbacks
         - Persistent conversation history across calls
+        - User-initiated cancellation via ``cancel_event``
 
         Args:
             user_message: User message
@@ -381,6 +383,11 @@ class Agent:
                      event = {"type": str, "timestamp": float, "data": dict}
             clear_history: If True, clear conversation history before this call (default: False)
             skill_filter: Optional list of skill names to include in this run
+            cancel_event: Optional threading.Event polled at agent checkpoints.
+                When set, the loop exits at the next safe point, injects a
+                "[Interrupted by user]" assistant note, and returns the
+                partial response. ``messages`` stays in a valid state
+                (tool_use/tool_result pairs preserved).
 
         Returns:
             Final response text
@@ -424,7 +431,8 @@ class Agent:
             max_turns=self.max_steps,
             on_event=on_event,
             messages=messages_copy,  # Pass copied message history
-            max_context_turns=max_context_turns
+            max_context_turns=max_context_turns,
+            cancel_event=cancel_event,
         )
 
         # Execute

@@ -438,8 +438,21 @@ class ChatChannel(Channel):
 
         return func
 
+    # Chat commands that must bypass the per-session serial queue,
+    # otherwise /cancel would queue behind the task it tries to cancel.
+    # Use /cancel (not /stop) to avoid colliding with `cow stop` CLI.
+    _BYPASS_QUEUE_COMMANDS = ("/cancel",)
+
     def produce(self, context: Context):
         session_id = context["session_id"]
+
+        # Fast path: /cancel must not enter the queue.
+        if context.type == ContextType.TEXT and context.content:
+            stripped = context.content.strip().lower()
+            if stripped in self._BYPASS_QUEUE_COMMANDS:
+                self._handle_cancel_command(context, session_id)
+                return
+
         with self.lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = [
@@ -450,6 +463,29 @@ class ChatChannel(Channel):
                 self.sessions[session_id][0].putleft(context)  # 优先处理管理命令
             else:
                 self.sessions[session_id][0].put(context)
+
+    def _handle_cancel_command(self, context: Context, session_id: str) -> None:
+        """Cancel any in-flight agent run for *session_id* and reply inline.
+
+        Runs synchronously on the caller's thread. Reply is sent through
+        _send_reply so plugins (e.g. logging) still observe it.
+        """
+        try:
+            from agent.protocol import get_cancel_registry
+            from bridge.reply import Reply, ReplyType
+
+            cancelled = get_cancel_registry().cancel_session(session_id)
+            text = (
+                "🛑 已中止"
+                if cancelled > 0
+                else "当前没有可中止的任务。"
+            )
+            logger.info(
+                f"[chat_channel] /cancel fast-path: session={session_id}, cancelled={cancelled}"
+            )
+            self._send_reply(context, Reply(ReplyType.TEXT, text))
+        except Exception as e:
+            logger.warning(f"[chat_channel] /cancel fast-path failed: {e}")
 
     # 消费者函数，单独线程，用于从消息队列中取出消息并处理
     def consume(self):
