@@ -45,30 +45,41 @@ Required resources:
 
 ## 3. Configuration and Run
 
-Add the following configuration to `config.json` (each parameter maps to a field shown in the screenshots above):
+Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token / EncodingAESKey):
 
-```json
-{
-  "channel_type": "wechatcom_kf",
-  "wechatcom_corp_id": "YOUR_CORP_ID",
-  "wechatcom_kf_secret": "YOUR_SECRET",
-  "wechatcom_kf_token": "YOUR_TOKEN",
-  "wechatcom_kf_aes_key": "YOUR_AES_KEY",
-  "wechatcom_kf_port": 9888
-}
-```
+<Tabs>
+  <Tab title="Web Console">
+    Start the Cow project and open the Web Console. Go to the **Channels** menu, click **Connect**, choose **WeCom Customer Service**, fill in Corp ID / Secret / Token / AES Key (port defaults to 9888, configurable), and click Connect.
 
-| Parameter | Description |
-| --- | --- |
-| `wechatcom_corp_id` | Corp ID |
-| `wechatcom_kf_secret` | Secret of the WeCom custom app bound to Customer Service |
-| `wechatcom_kf_token` | Token from the API reception config |
-| `wechatcom_kf_aes_key` | EncodingAESKey from the API reception config |
-| `wechatcom_kf_port` | Listening port, default 9888 |
+    <img src="https://cdn.link-ai.tech/doc/cow-weixinkefu-web-control.png" width="800"/>
+  </Tab>
+  <Tab title="Config File">
+    Add the following configuration to `config.json` (each parameter maps to a field shown in the screenshots above):
 
-After configuration, start the program. When the log shows `Listening on http://0.0.0.0:9888/wxkf/`, the program is running successfully. You need to open this port externally (e.g., allow it in the cloud server security group).
+    ```json
+    {
+      "channel_type": "wechatcom_kf",
+      "wechatcom_corp_id": "YOUR_CORP_ID",
+      "wechatcom_kf_secret": "YOUR_SECRET",
+      "wechatcom_kf_token": "YOUR_TOKEN",
+      "wechatcom_kf_aes_key": "YOUR_AES_KEY",
+      "wechatcom_kf_port": 9888
+    }
+    ```
 
-Once the program is running, go back to **Receive Messages → Set API Reception** in the WeCom console and set the callback URL to `http://<your-host>:9888/wxkf/`, then click Save. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
+    | Parameter | Description |
+    | --- | --- |
+    | `wechatcom_corp_id` | Corp ID |
+    | `wechatcom_kf_secret` | Secret of the WeCom custom app bound to Customer Service |
+    | `wechatcom_kf_token` | Token from the API reception config |
+    | `wechatcom_kf_aes_key` | EncodingAESKey from the API reception config |
+    | `wechatcom_kf_port` | Listening port, default 9888 |
+  </Tab>
+</Tabs>
+
+After connecting, start the program (the Web Console method restarts the channel automatically). When the log shows `Listening on http://0.0.0.0:9888/wxkf/`, the program is running successfully. You need to open this port externally (e.g., allow it in the cloud server security group).
+
+Then go back to **Receive Messages → Set API Reception** in the WeCom console and set the callback URL to `http://<your-host>:9888/wxkf/`, then click Save. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
 
 <img src="https://cdn.link-ai.tech/doc/wechat-com_config.png" width="600"/>
 
