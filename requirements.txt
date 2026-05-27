@@ -10,6 +10,7 @@ PyYAML>=6.0
 croniter>=2.0.0
 click>=8.0
 qrcode
+json-repair
 
 # wechatcom & wechatmp
 wechatpy
