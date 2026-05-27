@@ -13,6 +13,13 @@ from agent.protocol.message_utils import sanitize_claude_messages, compress_turn
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
 
+# Optional: repair malformed JSON args from non-strict providers (e.g. unescaped quotes in long content).
+try:
+    from json_repair import repair_json as _repair_json
+    _HAS_JSON_REPAIR = True
+except ImportError:
+    _HAS_JSON_REPAIR = False
+
 
 # Maximum number of characters of model "reasoning / thinking" content to persist
 # in conversation history. The full reasoning is still streamed to the UI in real
@@ -43,6 +50,30 @@ def _truncate_reasoning_for_storage(text: str) -> str:
     tail = text[-half:]
     omitted = len(text) - len(head) - len(tail)
     return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
+
+
+def _parse_tool_args(args_str: str, finish_reason: Optional[str]) -> Tuple[dict, Optional[str]]:
+    """Parse tool args JSON. Returns (args, error_msg); error_msg is None on success.
+
+    On JSONDecodeError: detect truncation first (skip repair, surface max_tokens hint);
+    otherwise try json-repair for escape issues; finally fall back to the raw decoder error.
+    """
+    if not args_str:
+        return {}, None
+    try:
+        return json.loads(args_str), None
+    except json.JSONDecodeError as e:
+        if finish_reason in ("length", "max_tokens") or not args_str.rstrip().endswith("}"):
+            return {}, "Output truncated (max_tokens reached). Split content into smaller chunks across multiple tool calls."
+        if _HAS_JSON_REPAIR:
+            try:
+                repaired = _repair_json(args_str, return_objects=True)
+                if isinstance(repaired, dict):
+                    logger.warning(f"Tool args JSON repaired ({len(args_str)} chars)")
+                    return repaired, None
+            except Exception:
+                pass
+        return {}, f"Invalid JSON in tool arguments: {e.msg}"
 
 
 class AgentStreamExecutor:
@@ -973,26 +1004,17 @@ class AgentStreamExecutor:
                 import uuid
                 tool_id = f"call_{uuid.uuid4().hex[:24]}"
 
-            try:
-                # Safely get arguments, handle None case
-                args_str = tc.get("arguments") or ""
-                arguments = json.loads(args_str) if args_str else {}
-            except json.JSONDecodeError as e:
-                # Handle None or invalid arguments safely
-                args_str = tc.get('arguments') or ""
-                args_preview = args_str[:200] if len(args_str) > 200 else args_str
-                logger.error(f"Failed to parse tool arguments for {tc['name']}")
-                logger.error(f"Arguments length: {len(args_str)} chars")
-                logger.error(f"Arguments preview: {args_preview}...")
-                logger.error(f"JSON decode error: {e}")
-
-                # Return a clear error message to the LLM instead of empty dict
-                # This helps the LLM understand what went wrong
+            args_str = tc.get("arguments") or ""
+            arguments, parse_err = _parse_tool_args(args_str, stop_reason)
+            if parse_err:
+                logger.error(
+                    f"Tool args parse failed for {tc['name']} ({len(args_str)} chars): {parse_err}"
+                )
                 tool_calls.append({
                     "id": tool_id,
                     "name": tc["name"],
                     "arguments": {},
-                    "_parse_error": f"Invalid JSON in tool arguments: {args_preview}... Error: {str(e)}. Tip: For large content, consider splitting into smaller chunks or using a different approach."
+                    "_parse_error": parse_err,
                 })
                 continue
 
@@ -1080,14 +1102,11 @@ class AgentStreamExecutor:
         tool_id = tool_call["id"]
         arguments = tool_call["arguments"]
 
-        # Check if there was a JSON parse error
         if "_parse_error" in tool_call:
-            parse_error = tool_call["_parse_error"]
-            logger.error(f"Skipping tool execution due to parse error: {parse_error}")
             result = {
                 "status": "error",
-                "result": f"Failed to parse tool arguments. {parse_error}. Please ensure your tool call uses valid JSON format with all required parameters.",
-                "execution_time": 0
+                "result": tool_call["_parse_error"],
+                "execution_time": 0,
             }
             self._record_tool_result(tool_name, arguments, False)
             return result
