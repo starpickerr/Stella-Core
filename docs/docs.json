@@ -196,7 +196,8 @@
                   "channels/wecom-bot",
                   "channels/qq",
                   "channels/wecom",
-                  "channels/wechatmp"
+                  "channels/wechatmp",
+                  "channels/telegram"
                 ]
               }
             ]
