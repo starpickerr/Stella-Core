@@ -166,6 +166,11 @@ available_setting = {
     # 企微智能机器人配置(长连接模式)
     "wecom_bot_id": "",  # 企微智能机器人BotID
     "wecom_bot_secret": "",  # 企微智能机器人长连接Secret
+    # Telegram 配置
+    "telegram_token": "",  # 从 @BotFather 申请的 bot token
+    "telegram_proxy": "",  # 可选的 HTTP/SOCKS5 代理，例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（留空则走系统环境变量）
+    "telegram_group_trigger": "mention_or_reply",  # 群聊触发方式: mention_or_reply(@或回复触发,推荐) | mention_only(仅@) | all(所有消息)
+    "telegram_register_commands": True,  # 启动时是否自动向 BotFather 注册命令菜单（与 web 端 slash 命令一致）
     # 微信配置
     "weixin_token": "",  # 微信登录后获取的bot_token，留空则启动时自动扫码登录
     "weixin_base_url": "https://ilinkai.weixin.qq.com",  # Weixin ilink API base URL
@@ -174,7 +179,7 @@ available_setting = {
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置
-    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app
+    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,telegram
     "web_console": True,  # 是否自动启动Web控制台（默认启动）。设为False可禁用
     "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app
     "debug": False,  # 是否开启debug模式，开启后会打印更多日志
