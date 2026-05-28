@@ -2909,6 +2909,15 @@ class ChannelsHandler:
                 {"key": "wechatmp_port", "label": "Port", "type": "number", "default": 8080},
             ],
         }),
+        ("telegram", {
+            "label": {"zh": "Telegram", "en": "Telegram"},
+            "icon": "fa-paper-plane",
+            "color": "sky",
+            "fields": [
+                {"key": "telegram_token", "label": "Bot Token", "type": "secret"},
+                {"key": "telegram_proxy", "label": "Proxy (optional)", "type": "text"},
+            ],
+        }),
     ])
 
     @staticmethod
