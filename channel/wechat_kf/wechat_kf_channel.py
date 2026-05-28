@@ -344,6 +344,8 @@ class WechatKfChannel(ChatChannel):
 
             # On a text turn, attach any pending images/files as references
             # so the downstream agent can pick them up via the text content.
+            # Paths are already under agent_workspace/tmp (see
+            # WechatKfMessage._get_tmp_dir), so a relative ref also works.
             if kf_msg.ctype == ContextType.TEXT:
                 cached_files = file_cache.get(session_id)
                 if cached_files:

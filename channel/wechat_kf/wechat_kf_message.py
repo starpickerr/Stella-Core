@@ -11,7 +11,19 @@ from wechatpy.enterprise import WeChatClient
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
-from common.tmp_dir import TmpDir
+from common.utils import expand_path
+from config import conf
+
+
+def _get_tmp_dir() -> str:
+    """Save under agent_workspace/tmp/ so agent tools (e.g. `read`) can
+    resolve a relative path like `tmp/xxx.pdf` against their own
+    workspace root. Mirrors the convention used by weixin / wecom_bot.
+    """
+    ws_root = expand_path(conf().get("agent_workspace", "~/cow"))
+    tmp_dir = os.path.join(ws_root, "tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    return tmp_dir
 
 
 def _extract_filename(content_disposition: str) -> str:
@@ -66,7 +78,7 @@ class WechatKfMessage(ChatMessage):
         elif self.msgtype == "image":
             self.ctype = ContextType.IMAGE
             media_id = msg.get("image", {}).get("media_id", "")
-            self.content = TmpDir().path() + media_id + ".jpg"
+            self.content = os.path.join(_get_tmp_dir(), media_id + ".jpg")
 
             def download_image():
                 response = client.media.download(media_id)
@@ -81,7 +93,7 @@ class WechatKfMessage(ChatMessage):
             self.ctype = ContextType.VOICE
             media_id = msg.get("voice", {}).get("media_id", "")
             # WeCom returns amr by default; downstream voice pipeline will convert.
-            self.content = TmpDir().path() + media_id + ".amr"
+            self.content = os.path.join(_get_tmp_dir(), media_id + ".amr")
 
             def download_voice():
                 response = client.media.download(media_id)
@@ -97,7 +109,7 @@ class WechatKfMessage(ChatMessage):
             media_id = msg.get("file", {}).get("media_id", "")
             # Provisional path; rewritten in download_file() once we have
             # the original filename from Content-Disposition.
-            self.content = TmpDir().path() + media_id
+            self.content = os.path.join(_get_tmp_dir(), media_id)
 
             def download_file():
                 response = client.media.download(media_id)
@@ -105,7 +117,7 @@ class WechatKfMessage(ChatMessage):
                     filename = _extract_filename(
                         response.headers.get("Content-Disposition", "")
                     ) or media_id
-                    self.content = os.path.join(TmpDir().path(), filename)
+                    self.content = os.path.join(_get_tmp_dir(), filename)
                     with open(self.content, "wb") as f:
                         f.write(response.content)
                 else:
