@@ -246,8 +246,17 @@ class TelegramChannel(ChatChannel):
 
             is_group = chat.type in ("group", "supergroup")
 
+            # Debug log: helpful when group messages are silently dropped
+            if is_group:
+                logger.debug(
+                    f"[Telegram] group update received: chat_id={chat.id}, "
+                    f"text={(message.text or message.caption or '')[:40]!r}, "
+                    f"reply_to_bot={bool(message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.username == self.bot_username)}"
+                )
+
             # Group trigger gate (silently drop if not triggered)
             if is_group and not self._should_reply_in_group(update):
+                logger.debug(f"[Telegram] group message not triggered (need @{self.bot_username} or reply), skip")
                 return
 
             # Parse message type + download media if needed.

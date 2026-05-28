@@ -2915,7 +2915,6 @@ class ChannelsHandler:
             "color": "sky",
             "fields": [
                 {"key": "telegram_token", "label": "Bot Token", "type": "secret"},
-                {"key": "telegram_proxy", "label": "Proxy (optional)", "type": "text"},
             ],
         }),
     ])

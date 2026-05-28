@@ -20,21 +20,25 @@ description: 将 CowAgent 接入 Telegram Bot
   这个 Token 等同于 Bot 的密码，请勿泄露。如果意外泄漏可向 `@BotFather` 发送 `/revoke` 重置。
 </Tip>
 
-### 步骤二：（可选）配置群聊权限
+### 步骤二：（群聊使用）关闭 Privacy Mode
 
-Telegram Bot 默认开启 **Privacy Mode**，在群聊中只能收到 `@bot` 或 `/command` 消息。这正好是 CowAgent 期望的行为，**无需修改**。
+仅使用单聊可跳过此步。Telegram Bot 默认开启 **Privacy Mode**，群聊中只能收到带 `@bot` 的命令（如 `/start@your_bot`）以及对 bot 消息的 reply；**普通的 `@bot 你好` 文字消息收不到**，会导致群聊无响应。
 
-如果你希望机器人接收群里所有消息（不推荐，会触发频次飙升），向 `@BotFather` 发送 `/setprivacy` → 选择对应 bot → `Disable`。
+向 `@BotFather` 发送：
+
+1. `/setprivacy`
+2. 选择刚才创建的 bot
+3. 选择 `Disable`
+
+<Note>
+  若设置后群聊仍无响应，可尝试把 Bot 从群里移除并重新拉入。
+</Note>
 
 ### 步骤三：接入 CowAgent
 
 <Tabs>
   <Tab title="Web 控制台（推荐）">
-    打开 Web 控制台（本地链接：http://127.0.0.1:9899 ），选择 **通道** 菜单，点击 **接入通道**，选择 **Telegram**，填入 Bot Token（必要时填写代理），点击接入即可。
-
-    <Note>
-      若运行环境无法直接访问 `api.telegram.org`，需在「Proxy」字段填写代理地址，例如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`。
-    </Note>
+    打开 Web 控制台（本地链接：http://127.0.0.1:9899 ），选择 **通道** 菜单，点击 **接入通道**，选择 **Telegram**，填入 Bot Token，点击接入即可。
   </Tab>
   <Tab title="配置文件">
     在 `config.json` 中添加以下配置后启动：
@@ -43,7 +47,6 @@ Telegram Bot 默认开启 **Privacy Mode**，在群聊中只能收到 `@bot` 或
     {
       "channel_type": "telegram",
       "telegram_token": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ",
-      "telegram_proxy": "",
       "telegram_group_trigger": "mention_or_reply"
     }
     ```
@@ -51,13 +54,9 @@ Telegram Bot 默认开启 **Privacy Mode**，在群聊中只能收到 `@bot` 或
     | 参数 | 说明 | 默认值 |
     | --- | --- | --- |
     | `telegram_token` | BotFather 返回的 HTTP API Token | - |
-    | `telegram_proxy` | 代理地址（如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`），留空则走系统环境变量 `HTTPS_PROXY` | `""` |
     | `telegram_group_trigger` | 群聊触发方式：`mention_or_reply`（@或回复机器人）/ `mention_only`（仅@） / `all`（所有消息） | `mention_or_reply` |
     | `telegram_register_commands` | 启动时是否自动向 BotFather 注册命令菜单 | `true` |
-
-    <Note>
-      若运行环境无法直接访问 `api.telegram.org`，需配置 `telegram_proxy`，或为运行进程设置 `HTTPS_PROXY` 环境变量。
-    </Note>
+    | `telegram_proxy` | （可选）代理地址，如 `http://127.0.0.1:7890`、`socks5://127.0.0.1:1080`；运行环境无法直连 `api.telegram.org` 时配置，留空则使用环境变量 `HTTPS_PROXY` | `""` |
   </Tab>
 </Tabs>
 
@@ -108,6 +107,6 @@ Telegram Bot 默认开启 **Privacy Mode**，在群聊中只能收到 `@bot` 或
 完成接入后：
 
 - **单聊**：在 Telegram 中搜索你创建的 Bot 用户名（如 `@my_cowagent_bot`），点击 `Start` 即可开始对话。
-- **群聊**：把 Bot 拉进群，使用 `@bot 你好` 或 **回复 Bot 的某条消息** 触发对话。
+- **群聊**：把 Bot 拉进群，使用 `@bot 你好` 或 **回复 Bot 的某条消息** 触发对话。若群聊无响应，请检查 Privacy Mode 是否已按 [步骤二](#步骤二-群聊使用-关闭-privacy-mode) 关闭。
 
-直接发送图片、语音、文件给 Bot，机器人会自动识图、转写或解析内容。也可以先发图再发问题，两条消息会自动合并提问。
+发送图片或文件时，可以直接在附件上方的输入框中 **添加 Caption**（描述/问题）一并发送，机器人会结合附件回答。也支持先发附件再发问题，两条消息会自动合并提问。
