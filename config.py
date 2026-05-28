@@ -209,6 +209,9 @@ available_setting = {
     "Minimax_base_url": "",
     "deepseek_api_key": "",
     "deepseek_api_base": "https://api.deepseek.com/v1",
+    # 小米 MiMo 大模型
+    "mimo_api_key": "",
+    "mimo_api_base": "https://api.xiaomimimo.com/v1",
     "web_host": "",  # Web console bind address; empty means auto
     "web_port": 9899,
     "web_password": "",  # Web console password; empty means no authentication required
@@ -401,6 +404,8 @@ def load_config():
         "minimax_api_base": "MINIMAX_API_BASE",
         "deepseek_api_key": "DEEPSEEK_API_KEY",
         "deepseek_api_base": "DEEPSEEK_API_BASE",
+        "mimo_api_key": "MIMO_API_KEY",
+        "mimo_api_base": "MIMO_API_BASE",
         "qianfan_api_key": "QIANFAN_API_KEY",
         "qianfan_api_base": "QIANFAN_API_BASE",
         "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
