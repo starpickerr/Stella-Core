@@ -479,22 +479,24 @@ class WechatKfChannel(ChatChannel):
 def _dedup_image_text_pair(messages: list) -> list:
     """
     A WeChat user often sends an image immediately followed by a text
-    question (e.g. "what's in this picture?"). When that happens we
-    treat them as one combined turn: image first, then text.
-    Otherwise (single message or unrelated batch) we return only the
-    last message to avoid replying to stale history.
+    question (e.g. "what's in this picture?"). Only when the batch is
+    exactly that 2-message image+text pair within a 5s window do we
+    collapse it into a single [image, text] turn. Otherwise return
+    every message so rapid-fire texts/images are all processed —
+    cursor freshness is already guaranteed by sync_msg.
     """
     if not messages:
         return []
 
-    text_messages = [m for m in messages if m["msgtype"] == "text"]
-    image_messages = [m for m in messages if m["msgtype"] == "image"]
-    if text_messages and image_messages:
-        last_text_time = text_messages[-1]["send_time"]
-        first_image_time = image_messages[0]["send_time"]
-        if abs(last_text_time - first_image_time) <= 5:
-            return [image_messages[0], text_messages[-1]]
-    return [messages[-1]]
+    if len(messages) == 2:
+        a, b = messages
+        types = {a["msgtype"], b["msgtype"]}
+        if types == {"image", "text"} and abs(a["send_time"] - b["send_time"]) <= 5:
+            img = a if a["msgtype"] == "image" else b
+            txt = b if a["msgtype"] == "image" else a
+            return [img, txt]
+
+    return messages
 
 
 # ----------------------------------------------------------------------
