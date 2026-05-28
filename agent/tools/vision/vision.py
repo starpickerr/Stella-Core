@@ -57,6 +57,7 @@ _DISCOVERABLE_MODELS = [
     ("qianfan_api_key", const.QIANFAN, const.ERNIE_45_TURBO_VL, "Qianfan"),
     ("zhipu_ai_api_key", const.ZHIPU_AI, const.GLM_4_7, "ZhipuAI"),
     ("minimax_api_key", const.MiniMax, const.MINIMAX_M2_7, "MiniMax"),
+    ("mimo_api_key", const.MIMO, const.MIMO_V2_5_PRO, "MiMo"),
 ]
 
 # Model name prefix → discoverable provider display_name.
@@ -73,6 +74,7 @@ _MODEL_PREFIX_TO_PROVIDER = [
     ("glm-", "ZhipuAI"),
     ("minimax-", "MiniMax"),
     ("abab", "MiniMax"),
+    ("mimo-", "MiMo"),
 ]
 
 # Model prefixes that natively belong to OpenAI / LinkAI (raw HTTP providers).
@@ -92,6 +94,7 @@ _PROVIDER_ID_TO_DISPLAY = {
     "qianfan": "Qianfan",
     "zhipu": "ZhipuAI",
     "minimax": "MiniMax",
+    "mimo": "MiMo",
 }
 
 
