@@ -32,10 +32,10 @@
 
 | 字段 | 来源 | 对应 CoW 配置项 |
 |---|---|---|
-| 企业ID（CorpId） | 「我的企业」最下方 | `wechatcom_corp_id` |
-| Secret | 进入应用详情 → 点击「查看」（会推送到管理员手机端，在手机上查看） | `wechatcom_kf_secret` |
-| Token | 应用「接收消息 → 设置API接收」 | `wechatcom_kf_token` |
-| EncodingAESKey | 应用「接收消息 → 设置API接收」 | `wechatcom_kf_aes_key` |
+| 企业ID（CorpId） | 「我的企业」最下方 | `wechat_kf_corp_id` |
+| Secret | 进入应用详情 → 点击「查看」（会推送到管理员手机端，在手机上查看） | `wechat_kf_secret` |
+| Token | 应用「接收消息 → 设置API接收」 | `wechat_kf_token` |
+| EncodingAESKey | 应用「接收消息 → 设置API接收」 | `wechat_kf_aes_key` |
 
 > AgentId 在本通道**不需要**（消息发送走的是 `cgi-bin/kf/send_msg`，不依赖 agent_id）。
 
@@ -63,25 +63,25 @@
 
 ```json
 {
-  "channel_type": "wechatcom_kf",
+  "channel_type": "wechat_kf",
 
-  "wechatcom_corp_id": "ww1234567890abcdef",
-  "wechatcom_kf_secret": "<企微应用的 Secret>",
-  "wechatcom_kf_token": "<接收消息 Token>",
-  "wechatcom_kf_aes_key": "<EncodingAESKey>",
-  "wechatcom_kf_port": 9888
+  "wechat_kf_corp_id": "ww1234567890abcdef",
+  "wechat_kf_secret": "<企微应用的 Secret>",
+  "wechat_kf_token": "<接收消息 Token>",
+  "wechat_kf_aes_key": "<EncodingAESKey>",
+  "wechat_kf_port": 9888
 }
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `wechatcom_corp_id` | 企业 ID，可与 `wechatcom_app` 共用 |
-| `wechatcom_kf_secret` | **绑定到微信客服**的那个企微自建应用的 Secret |
-| `wechatcom_kf_token` | 该应用「接收消息」配置的 Token |
-| `wechatcom_kf_aes_key` | 该应用「接收消息」配置的 EncodingAESKey |
-| `wechatcom_kf_port` | 监听端口，默认 `9888` |
+| `wechat_kf_corp_id` | 企业 ID |
+| `wechat_kf_secret` | **绑定到微信客服**的那个企微自建应用的 Secret |
+| `wechat_kf_token` | 该应用「接收消息」配置的 Token |
+| `wechat_kf_aes_key` | 该应用「接收消息」配置的 EncodingAESKey |
+| `wechat_kf_port` | 监听端口，默认 `9888` |
 
-也支持环境变量：`WECHATCOM_CORP_ID` / `WECHATCOM_KF_SECRET` / `WECHATCOM_KF_TOKEN` / `WECHATCOM_KF_AES_KEY`。
+也支持环境变量：`WECHAT_KF_CORP_ID` / `WECHAT_KF_SECRET` / `WECHAT_KF_TOKEN` / `WECHAT_KF_AES_KEY`。
 
 ## 四、运行
 
@@ -92,8 +92,8 @@ python app.py
 启动后日志里会看到：
 
 ```
-[wechatcom_kf] WeCom customer-service channel started
-[wechatcom_kf] Listening on http://0.0.0.0:9888/wxkf/
+[wechat_kf] WeCom customer-service channel started
+[wechat_kf] Listening on http://0.0.0.0:9888/wxkf/
 ```
 
 回到企微后台「设置API接收」点击保存——会触发 `GET /wxkf/?...&echostr=...`，CoW 通过 `crypto.check_signature` 校验后返回明文 `echostr`，验证成功。

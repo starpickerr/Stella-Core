@@ -27,7 +27,7 @@ Required resources:
 
 <img src="https://cdn.link-ai.tech/doc/20260228103156.png" width="480"/>
 
-2. Click **My Enterprise** and find the **Corp ID** at the bottom of the page (it goes into `wechatcom_corp_id`):
+2. Click **My Enterprise** and find the **Corp ID** at the bottom of the page (it goes into `wechat_kf_corp_id`):
 
 <img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-companyid.png" width="600"/>
 
@@ -58,22 +58,22 @@ Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token 
 
     ```json
     {
-      "channel_type": "wechatcom_kf",
-      "wechatcom_corp_id": "YOUR_CORP_ID",
-      "wechatcom_kf_secret": "YOUR_SECRET",
-      "wechatcom_kf_token": "YOUR_TOKEN",
-      "wechatcom_kf_aes_key": "YOUR_AES_KEY",
-      "wechatcom_kf_port": 9888
+      "channel_type": "wechat_kf",
+      "wechat_kf_corp_id": "YOUR_CORP_ID",
+      "wechat_kf_secret": "YOUR_SECRET",
+      "wechat_kf_token": "YOUR_TOKEN",
+      "wechat_kf_aes_key": "YOUR_AES_KEY",
+      "wechat_kf_port": 9888
     }
     ```
 
     | Parameter | Description |
     | --- | --- |
-    | `wechatcom_corp_id` | Corp ID |
-    | `wechatcom_kf_secret` | Secret of the WeCom custom app bound to Customer Service |
-    | `wechatcom_kf_token` | Token from the API reception config |
-    | `wechatcom_kf_aes_key` | EncodingAESKey from the API reception config |
-    | `wechatcom_kf_port` | Listening port, default 9888 |
+    | `wechat_kf_corp_id` | Corp ID |
+    | `wechat_kf_secret` | Secret of the WeCom custom app bound to Customer Service |
+    | `wechat_kf_token` | Token from the API reception config |
+    | `wechat_kf_aes_key` | EncodingAESKey from the API reception config |
+    | `wechat_kf_port` | Listening port, default 9888 |
   </Tab>
 </Tabs>
 
