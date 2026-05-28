@@ -37,7 +37,7 @@ class CursorStore:
                 with open(self._file_path, "r", encoding="utf-8") as f:
                     return json.load(f) or {}
         except Exception as e:
-            logger.warning(f"[wechatcom_kf] failed to load cursor file {self._file_path}: {e}")
+            logger.warning(f"[wechat_kf] failed to load cursor file {self._file_path}: {e}")
         return {}
 
     def _flush_locked(self):
@@ -49,7 +49,7 @@ class CursorStore:
                 json.dump(self._data, f, ensure_ascii=False)
             os.replace(tmp_path, self._file_path)
         except Exception as e:
-            logger.warning(f"[wechatcom_kf] failed to flush cursor file {self._file_path}: {e}")
+            logger.warning(f"[wechat_kf] failed to flush cursor file {self._file_path}: {e}")
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)

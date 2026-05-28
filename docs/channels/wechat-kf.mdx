@@ -27,7 +27,7 @@ description: 将 CowAgent 接入微信客服（WeCom Customer Service）
 
 <img src="https://cdn.link-ai.tech/doc/20260228103156.png" width="480"/>
 
-2. 点击 **我的企业**，在最下方获取 **企业ID**（后续填写到 `wechatcom_corp_id`）：
+2. 点击 **我的企业**，在最下方获取 **企业ID**（后续填写到 `wechat_kf_corp_id`）：
 
 <img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-companyid.png" width="600"/>
 
@@ -58,22 +58,22 @@ description: 将 CowAgent 接入微信客服（WeCom Customer Service）
 
     ```json
     {
-      "channel_type": "wechatcom_kf",
-      "wechatcom_corp_id": "YOUR_CORP_ID",
-      "wechatcom_kf_secret": "YOUR_SECRET",
-      "wechatcom_kf_token": "YOUR_TOKEN",
-      "wechatcom_kf_aes_key": "YOUR_AES_KEY",
-      "wechatcom_kf_port": 9888
+      "channel_type": "wechat_kf",
+      "wechat_kf_corp_id": "YOUR_CORP_ID",
+      "wechat_kf_secret": "YOUR_SECRET",
+      "wechat_kf_token": "YOUR_TOKEN",
+      "wechat_kf_aes_key": "YOUR_AES_KEY",
+      "wechat_kf_port": 9888
     }
     ```
 
     | 参数 | 说明 |
     | --- | --- |
-    | `wechatcom_corp_id` | 企业 ID |
-    | `wechatcom_kf_secret` | 绑定到微信客服的那个企微自建应用的 Secret |
-    | `wechatcom_kf_token` | API 接收配置中的 Token |
-    | `wechatcom_kf_aes_key` | API 接收配置中的 EncodingAESKey |
-    | `wechatcom_kf_port` | 监听端口，默认 9888 |
+    | `wechat_kf_corp_id` | 企业 ID |
+    | `wechat_kf_secret` | 绑定到微信客服的那个企微自建应用的 Secret |
+    | `wechat_kf_token` | API 接收配置中的 Token |
+    | `wechat_kf_aes_key` | API 接收配置中的 EncodingAESKey |
+    | `wechat_kf_port` | 监听端口，默认 9888 |
   </Tab>
 </Tabs>
 

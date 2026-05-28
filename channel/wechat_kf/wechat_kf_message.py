@@ -11,7 +11,7 @@ from common.log import logger
 from common.tmp_dir import TmpDir
 
 
-class WechatComKfMessage(ChatMessage):
+class WechatKfMessage(ChatMessage):
     """
     msg structure (from cgi-bin/kf/sync_msg):
         {
@@ -54,7 +54,7 @@ class WechatComKfMessage(ChatMessage):
                     with open(self.content, "wb") as f:
                         f.write(response.content)
                 else:
-                    logger.info(f"[wechatcom_kf] Failed to download image, {response.content}")
+                    logger.info(f"[wechat_kf] Failed to download image, {response.content}")
 
             self._prepare_fn = download_image
         elif self.msgtype == "voice":
@@ -69,12 +69,12 @@ class WechatComKfMessage(ChatMessage):
                     with open(self.content, "wb") as f:
                         f.write(response.content)
                 else:
-                    logger.info(f"[wechatcom_kf] Failed to download voice, {response.content}")
+                    logger.info(f"[wechat_kf] Failed to download voice, {response.content}")
 
             self._prepare_fn = download_voice
         else:
             raise NotImplementedError(
-                f"[wechatcom_kf] Unsupported message type: {self.msgtype}"
+                f"[wechat_kf] Unsupported message type: {self.msgtype}"
             )
 
         self.from_user_id = self.external_userid
