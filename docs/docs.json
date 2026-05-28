@@ -88,6 +88,7 @@
                   "models/doubao",
                   "models/kimi",
                   "models/qianfan",
+                  "models/mimo",
                   "models/linkai",
                   "models/coding-plan",
                   "models/custom"
@@ -290,6 +291,7 @@
                   "en/models/doubao",
                   "en/models/kimi",
                   "en/models/qianfan",
+                  "en/models/mimo",
                   "en/models/linkai",
                   "en/models/coding-plan",
                   "en/models/custom"
@@ -492,6 +494,7 @@
                   "ja/models/doubao",
                   "ja/models/kimi",
                   "ja/models/qianfan",
+                  "ja/models/mimo",
                   "ja/models/linkai",
                   "ja/models/coding-plan",
                   "ja/models/custom"
