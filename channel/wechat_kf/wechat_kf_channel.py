@@ -82,9 +82,11 @@ class WechatKfChannel(ChatChannel):
         # corrupts URLs and triggers errcode 40014.
         self.client = WeChatClient(self.corp_id, self.secret)
 
-        # Cursor file is an internal implementation detail — fixed under
-        # the project's `tmp/` dir, not exposed as a user-facing config.
-        cursor_path = os.path.join("tmp", "wechat_kf_cursors.json")
+        # Persist sync_msg cursor under the user's home dir by default,
+        # so it survives `tmp/` cleanups and cwd changes across restarts.
+        cursor_path = os.path.expanduser(
+            conf().get("wechat_kf_cursor_path") or "~/.wechat_kf_cursors.json"
+        )
         self.cursor_store = CursorStore(cursor_path)
 
         # WeCom requires the callback HTTP response to return within ~5s,

@@ -48,6 +48,12 @@ class CursorStore:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, ensure_ascii=False)
             os.replace(tmp_path, self._file_path)
+            # Tighten permissions: cursor file lives in $HOME, restrict to owner.
+            # No-op on Windows.
+            try:
+                os.chmod(self._file_path, 0o600)
+            except Exception:
+                pass
         except Exception as e:
             logger.warning(f"[wechat_kf] failed to flush cursor file {self._file_path}: {e}")
             try:
