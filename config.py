@@ -157,6 +157,7 @@ available_setting = {
     "wechat_kf_port": 9888,  # 微信客服回调服务端口
     "wechat_kf_secret": "",  # 微信客服应用的secret
     "wechat_kf_aes_key": "",  # 微信客服回调aes_key
+    "wechat_kf_cursor_path": "~/.wechat_kf_cursors.json",  # 微信客服sync_msg游标持久化文件路径
     # 飞书配置
     "feishu_port": 80,  # 飞书bot监听端口，仅webhook模式需要
     "feishu_app_id": "",  # 飞书机器人应用APP Id
