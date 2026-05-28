@@ -30,9 +30,10 @@ from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise.exceptions import InvalidCorpIdException
 from wechatpy.exceptions import InvalidSignatureException, WeChatClientException
 
-from bridge.context import Context
+from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
+from channel.file_cache import get_file_cache
 from channel.wechat_kf.wechat_kf_cursor_store import CursorStore
 from channel.wechat_kf.wechat_kf_message import WechatKfMessage
 from common.log import logger
@@ -314,12 +315,48 @@ class WechatKfChannel(ChatChannel):
         msgs = self._pull_messages(token, open_kfid, existing_cursor)
         if not msgs:
             return
+        file_cache = get_file_cache()
         for raw in msgs:
             try:
                 kf_msg = WechatKfMessage(msg=raw, client=self.client)
             except NotImplementedError as e:
                 logger.debug("[wechat_kf] {}".format(e))
                 continue
+
+            session_id = kf_msg.from_user_id
+
+            # Cache lone images/files and wait for the user's follow-up
+            # text. Agent mode never reads memory.USER_IMAGE_CACHE, so
+            # without this the attachment is effectively lost.
+            if kf_msg.ctype in (ContextType.IMAGE, ContextType.FILE):
+                ftype = "image" if kf_msg.ctype == ContextType.IMAGE else "file"
+                try:
+                    kf_msg.prepare()  # download to local tmp path
+                    file_cache.add(session_id, kf_msg.content, file_type=ftype)
+                    logger.info(
+                        "[wechat_kf] {} cached for session {}: {}".format(
+                            ftype, session_id, kf_msg.content
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"[wechat_kf] cache {ftype} failed: {e}")
+                continue
+
+            # On a text turn, attach any pending images/files as references
+            # so the downstream agent can pick them up via the text content.
+            if kf_msg.ctype == ContextType.TEXT:
+                cached_files = file_cache.get(session_id)
+                if cached_files:
+                    refs = []
+                    for fi in cached_files:
+                        ftype, fpath = fi["type"], fi["path"]
+                        if ftype == "image":
+                            refs.append(f"[图片: {fpath}]")
+                        else:
+                            refs.append(f"[文件: {fpath}]")
+                    kf_msg.content = kf_msg.content + "\n" + "\n".join(refs)
+                    file_cache.clear(session_id)
+
             context = self._compose_context(
                 kf_msg.ctype,
                 kf_msg.content,
@@ -371,7 +408,7 @@ class WechatKfChannel(ChatChannel):
                 # back into ourselves.
                 if not item.get("external_userid"):
                     continue
-                if item.get("msgtype") in ("text", "image", "voice"):
+                if item.get("msgtype") in ("text", "image", "voice", "file"):
                     collected.append(item)
             cursor_after = data.get("next_cursor") or ""
             if cursor_after:

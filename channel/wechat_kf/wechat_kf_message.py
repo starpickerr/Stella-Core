@@ -3,12 +3,32 @@
 Adapter that turns a single `sync_msg` item from WeCom customer-service
 into a CoW `ChatMessage` object.
 """
+import os
+import re
+
 from wechatpy.enterprise import WeChatClient
 
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
 from common.tmp_dir import TmpDir
+
+
+def _extract_filename(content_disposition: str) -> str:
+    """Best-effort parse of `filename` / `filename*` from a Content-Disposition
+    header. Returns '' when nothing usable is found."""
+    if not content_disposition:
+        return ""
+    # RFC 5987 form: filename*=UTF-8''xxx
+    m = re.search(r"filename\*=(?:[^'\"]*'[^']*'\s*)?([^;]+)", content_disposition)
+    if m:
+        try:
+            from urllib.parse import unquote
+            return unquote(m.group(1).strip().strip('"'))
+        except Exception:
+            return m.group(1).strip().strip('"')
+    m = re.search(r'filename\s*=\s*"?([^";]+)"?', content_disposition)
+    return m.group(1).strip() if m else ""
 
 
 class WechatKfMessage(ChatMessage):
@@ -72,6 +92,26 @@ class WechatKfMessage(ChatMessage):
                     logger.info(f"[wechat_kf] Failed to download voice, {response.content}")
 
             self._prepare_fn = download_voice
+        elif self.msgtype == "file":
+            self.ctype = ContextType.FILE
+            media_id = msg.get("file", {}).get("media_id", "")
+            # Provisional path; rewritten in download_file() once we have
+            # the original filename from Content-Disposition.
+            self.content = TmpDir().path() + media_id
+
+            def download_file():
+                response = client.media.download(media_id)
+                if response.status_code == 200:
+                    filename = _extract_filename(
+                        response.headers.get("Content-Disposition", "")
+                    ) or media_id
+                    self.content = os.path.join(TmpDir().path(), filename)
+                    with open(self.content, "wb") as f:
+                        f.write(response.content)
+                else:
+                    logger.info(f"[wechat_kf] Failed to download file, {response.content}")
+
+            self._prepare_fn = download_file
         else:
             raise NotImplementedError(
                 f"[wechat_kf] Unsupported message type: {self.msgtype}"
