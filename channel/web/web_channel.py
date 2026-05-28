@@ -1387,6 +1387,7 @@ class ConfigHandler:
         const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
+        const.MIMO_V2_5_PRO, const.MIMO_V2_5,
     ]
 
     # Generic placeholder hints surfaced in the web console. We deliberately
@@ -1481,6 +1482,14 @@ class ConfigHandler:
             "api_base_placeholder": _PLACEHOLDER_QIANFAN,
             "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
         }),
+        ("mimo", {
+            "label": {"zh": "小米 MiMo", "en": "MiMo"},
+            "api_key_field": "mimo_api_key",
+            "api_base_key": "mimo_api_base",
+            "api_base_default": "https://api.xiaomimimo.com/v1",
+            "api_base_placeholder": _PLACEHOLDER_V1,
+            "models": [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
+        }),
         ("linkai", {
             "label": "LinkAI",
             "api_key_field": "linkai_api_key",
@@ -1502,10 +1511,10 @@ class ConfigHandler:
     EDITABLE_KEYS = {
         "model", "bot_type", "use_linkai",
         "open_ai_api_base", "deepseek_api_base", "qianfan_api_base", "claude_api_base", "gemini_api_base",
-        "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base",
+        "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base", "mimo_api_base",
         "open_ai_api_key", "deepseek_api_key", "qianfan_api_key", "claude_api_key", "gemini_api_key",
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
-        "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key",
+        "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "web_password",
     }
@@ -1646,7 +1655,7 @@ class ModelsHandler:
     # Capability -> provider ids drawn from ConfigHandler.PROVIDER_MODELS.
     _ASR_PROVIDERS = ["openai", "dashscope", "zhipu", "linkai"]
     # Web-console white-list. Other vendors stay usable via direct config.
-    _TTS_PROVIDERS = ["openai", "minimax", "dashscope", "linkai"]
+    _TTS_PROVIDERS = ["openai", "minimax", "dashscope", "mimo", "linkai"]
 
     # TTS engine catalog (speech models, not voice timbres). Entries are
     # either a bare code or {value, hint?} when a friendly label helps.
@@ -1660,6 +1669,10 @@ class ModelsHandler:
         ],
         "dashscope": [
             {"value": "qwen3-tts-flash", "hint": "覆盖普通话、方言与主流外语"},
+        ],
+        # 小米 MiMo TTS 系列，通过 chat completions 接口合成
+        "mimo": [
+            {"value": "mimo-v2.5-tts", "hint": "预置音色 · 支持唱歌模式"},
         ],
         # Aggregating gateway: a single endpoint multiplexes several
         # underlying TTS engines, selected via the `model` field.
@@ -1779,6 +1792,18 @@ class ModelsHandler:
             {"value": "Peter",    "hint": "天津话 · 李彼得"},
             {"value": "Marcus",   "hint": "陕西话 · 秦川"},
             {"value": "Roy",      "hint": "闽南语 · 阿杰"},
+        ],
+        # 小米 MiMo 预置音色列表（mimo-v2.5-tts），文档：
+        # https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5
+        "mimo": [
+            {"value": "冰糖",   "hint": "中文 · 女声 · 冰糖"},
+            {"value": "茉莉",   "hint": "中文 · 女声 · 茉莉"},
+            {"value": "苏打",   "hint": "中文 · 男声 · 苏打"},
+            {"value": "白桦",   "hint": "中文 · 男声 · 白桦"},
+            {"value": "Mia",   "hint": "英文 · 女声 · Mia"},
+            {"value": "Chloe", "hint": "英文 · 女声 · Chloe"},
+            {"value": "Milo",  "hint": "英文 · 男声 · Milo"},
+            {"value": "Dean",  "hint": "英文 · 男声 · Dean"},
         ],
         # Aggregating gateway: voices are scoped per engine model. The
         # frontend picks the correct list based on the selected model so
@@ -1916,6 +1941,8 @@ class ModelsHandler:
         # (see models/minimax/minimax_bot.py::call_vision); the M2.x chat
         # family is text-only.
         "minimax":   [const.MINIMAX_TEXT_01],
+        # MiMo 原生全模态模型：v2.5-pro / v2.5 支持图像/音频/视频输入
+        "mimo":      [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
         # LinkAI proxies the underlying vendor; surface a curated set of
         # multimodal models. Order: gpt-4.1-mini → gpt-5.4-mini as the
         # cross-vendor baselines, then each vendor's recommended default.
@@ -2045,6 +2072,7 @@ class ModelsHandler:
         ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
         ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
         ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
+        ("mimo",      "mimo_api_key",      const.MIMO_V2_5_PRO),
     ]
 
     @classmethod
