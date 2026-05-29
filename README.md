@@ -94,7 +94,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [Claude](https://docs.cowagent.ai/en/models/claude) | claude-opus-4-7 | ✅ | ✅ | | | | |
+| [Claude](https://docs.cowagent.ai/en/models/claude) | claude-opus-4-8 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/en/models/openai) | gpt-5.5, o-series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Gemini](https://docs.cowagent.ai/en/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
 | [DeepSeek](https://docs.cowagent.ai/en/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
