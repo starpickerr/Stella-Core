@@ -311,7 +311,7 @@ select_model() {
     echo -e "${CYAN}${BOLD}=========================================${NC}"
     echo -e "${YELLOW}1) DeepSeek (deepseek-v4-flash, deepseek-v4-pro, etc.)${NC}"
     echo -e "${YELLOW}2) MiniMax (MiniMax-M2.7, MiniMax-M2.5, etc.)${NC}"
-    echo -e "${YELLOW}3) Claude (claude-sonnet-4-6, claude-opus-4-7, claude-opus-4-6, etc.)${NC}"
+    echo -e "${YELLOW}3) Claude (claude-opus-4-8, claude-opus-4-7, claude-sonnet-4-6, etc.)${NC}"
     echo -e "${YELLOW}4) Gemini (gemini-3.1-flash-lite-preview, gemini-3.1-pro-preview, etc.)${NC}"
     echo -e "${YELLOW}5) OpenAI GPT (gpt-5.4, gpt-5.2, gpt-4.1, etc.)${NC}"
     echo -e "${YELLOW}6) Zhipu AI (glm-5.1, glm-5-turbo, glm-5, etc.)${NC}"
@@ -360,7 +360,7 @@ configure_model() {
         1) read_model_config "DeepSeek" "deepseek-v4-flash" "DEEPSEEK_KEY" ;;
         2) read_model_config "MiniMax" "MiniMax-M2.7" "MINIMAX_KEY" ;;
         3)
-            read_model_config "Claude" "claude-sonnet-4-6" "CLAUDE_KEY"
+            read_model_config "Claude" "claude-opus-4-8" "CLAUDE_KEY"
             read_api_base "CLAUDE_BASE" "https://api.anthropic.com/v1"
             ;;
         4)
