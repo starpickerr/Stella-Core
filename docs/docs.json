@@ -196,6 +196,7 @@
                   "channels/wecom-bot",
                   "channels/qq",
                   "channels/wecom",
+                  "channels/wechat-kf",
                   "channels/wechatmp",
                   "channels/telegram",
                   "channels/slack"
@@ -401,6 +402,7 @@
                   "en/channels/wecom-bot",
                   "en/channels/qq",
                   "en/channels/wecom",
+                  "en/channels/wechat-kf",
                   "en/channels/wechatmp",
                   "en/channels/telegram",
                   "en/channels/slack"
@@ -606,6 +608,7 @@
                   "ja/channels/wecom-bot",
                   "ja/channels/qq",
                   "ja/channels/wecom",
+                  "ja/channels/wechat-kf",
                   "ja/channels/wechatmp",
                   "ja/channels/telegram",
                   "ja/channels/slack"
