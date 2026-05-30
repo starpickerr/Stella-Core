@@ -2952,6 +2952,14 @@ class ChannelsHandler:
                 {"key": "slack_app_token", "label": "App Token (xapp-)", "type": "secret"},
             ],
         }),
+        ("discord", {
+            "label": {"zh": "Discord", "en": "Discord"},
+            "icon": "fa-discord",
+            "color": "indigo",
+            "fields": [
+                {"key": "discord_token", "label": "Bot Token", "type": "secret"},
+            ],
+        }),
     ])
 
     @staticmethod

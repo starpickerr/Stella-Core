@@ -199,7 +199,8 @@
                   "channels/wechat-kf",
                   "channels/wechatmp",
                   "channels/telegram",
-                  "channels/slack"
+                  "channels/slack",
+                  "channels/discord"
                 ]
               }
             ]
@@ -398,6 +399,7 @@
                   "en/channels/web",
                   "en/channels/telegram",
                   "en/channels/slack",
+                  "en/channels/discord",
                   "en/channels/weixin",
                   "en/channels/feishu",
                   "en/channels/dingtalk",
@@ -611,7 +613,8 @@
                   "ja/channels/wechat-kf",
                   "ja/channels/wechatmp",
                   "ja/channels/telegram",
-                  "ja/channels/slack"
+                  "ja/channels/slack",
+                  "ja/channels/discord"
                 ]
               }
             ]
