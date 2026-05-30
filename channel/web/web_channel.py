@@ -1028,8 +1028,9 @@ class WebChannel(ChatChannel):
         logger.info("[WebChannel]   5. dingtalk         - 钉钉")
         logger.info("[WebChannel]   6. wecom_bot        - 企微智能机器人")
         logger.info("[WebChannel]   7. wechatcom_app    - 企微自建应用")
-        logger.info("[WebChannel]   8. wechatmp         - 个人公众号")
-        logger.info("[WebChannel]   9. wechatmp_service - 企业公众号")
+        logger.info("[WebChannel]   8. wechat_kf        - 微信客服")
+        logger.info("[WebChannel]   9. wechatmp         - 个人公众号")
+        logger.info("[WebChannel]  10. wechatmp_service - 企业公众号")
         logger.info("[WebChannel] ✅ Web控制台已运行")
         logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
         if is_public_bind:
@@ -2908,6 +2909,18 @@ class ChannelsHandler:
                 {"key": "wechatcomapp_token", "label": "Token", "type": "secret"},
                 {"key": "wechatcomapp_aes_key", "label": "AES Key", "type": "secret"},
                 {"key": "wechatcomapp_port", "label": "Port", "type": "number", "default": 9898},
+            ],
+        }),
+        ("wechat_kf", {
+            "label": {"zh": "微信客服", "en": "WeCom Customer Service"},
+            "icon": "fa-headset",
+            "color": "emerald",
+            "fields": [
+                {"key": "wechat_kf_corp_id", "label": "Corp ID", "type": "text"},
+                {"key": "wechat_kf_secret", "label": "Secret", "type": "secret"},
+                {"key": "wechat_kf_token", "label": "Token", "type": "secret"},
+                {"key": "wechat_kf_aes_key", "label": "AES Key", "type": "secret"},
+                {"key": "wechat_kf_port", "label": "Port", "type": "number", "default": 9888},
             ],
         }),
         ("wechatmp", {
