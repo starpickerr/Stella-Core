@@ -15,8 +15,11 @@ description: Integrate CowAgent into Feishu via a custom enterprise app
 
 No need to manually create an app on the Feishu Developer Platform. Start the Cow project, open the web console (default `http://127.0.0.1:9899/`), go to **Channels**, click **Add Channel**, choose **Feishu**, then under the **Scan QR** tab click **One-click Create Feishu App** and scan with the **Feishu App** to complete app creation and connection automatically.
 
+<img src="https://cdn.link-ai.tech/doc/20260505181126.png" width="800"/>
+
 <Note>
-  The created app comes with all required permissions (messaging, card read/write, group events, etc.) and event subscriptions pre-configured. Currently only the Feishu mainland version is supported (Lark international not yet supported).
+  1. Requires `lark-oapi` ≥ 1.5.5.
+  2. The created app comes with all required permissions (messaging, card read/write, group events, etc.) and event subscriptions pre-configured — no manual setup on the developer console needed. Currently only the Feishu mainland version is supported (Lark international not yet supported).
 </Note>
 
 When starting from CLI without `feishu_app_id` configured, the QR code is also printed to the terminal.

@@ -521,7 +521,7 @@ class AgentInitializer:
                 if tool_name == "web_search":
                     from agent.tools.web_search.web_search import WebSearch
                     if not WebSearch.is_available():
-                        logger.debug("[AgentInitializer] WebSearch skipped - no BOCHA_API_KEY or LINKAI_API_KEY")
+                        logger.debug("[AgentInitializer] WebSearch skipped - no search provider configured")
                         continue
 
                 # Special handling for EnvConfig tool

@@ -173,6 +173,15 @@ available_setting = {
     # 企微智能机器人配置(长连接模式)
     "wecom_bot_id": "",  # 企微智能机器人BotID
     "wecom_bot_secret": "",  # 企微智能机器人长连接Secret
+    # Telegram 配置
+    "telegram_token": "",  # 从 @BotFather 申请的 bot token
+    "telegram_proxy": "",  # 可选的 HTTP/SOCKS5 代理，例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（留空则走系统环境变量）
+    "telegram_group_trigger": "mention_or_reply",  # 群聊触发方式: mention_or_reply(@或回复触发,推荐) | mention_only(仅@) | all(所有消息)
+    "telegram_register_commands": True,  # 启动时是否自动向 BotFather 注册命令菜单（与 web 端 slash 命令一致）
+    # Slack 配置（Socket Mode，无需公网 IP）
+    "slack_bot_token": "",  # Bot User OAuth Token，形如 xoxb-...
+    "slack_app_token": "",  # App-Level Token（开启 Socket Mode 后生成），形如 xapp-...
+    "slack_group_trigger": "mention_or_reply",  # 频道触发方式: mention_or_reply(@或线程内回复,推荐) | mention_only(仅@) | all(所有消息)
     # 微信配置
     "weixin_token": "",  # 微信登录后获取的bot_token，留空则启动时自动扫码登录
     "weixin_base_url": "https://ilinkai.weixin.qq.com",  # Weixin ilink API base URL
@@ -181,7 +190,7 @@ available_setting = {
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置
-    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,wechat_kf
+    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,wechat_kf,telegram,slack
     "web_console": True,  # 是否自动启动Web控制台（默认启动）。设为False可禁用
     "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app
     "debug": False,  # 是否开启debug模式，开启后会打印更多日志
@@ -216,10 +225,14 @@ available_setting = {
     "Minimax_base_url": "",
     "deepseek_api_key": "",
     "deepseek_api_base": "https://api.deepseek.com/v1",
+    # 小米 MiMo 大模型
+    "mimo_api_key": "",
+    "mimo_api_base": "https://api.xiaomimimo.com/v1",
     "web_host": "",  # Web console bind address; empty means auto
     "web_port": 9899,
     "web_password": "",  # Web console password; empty means no authentication required
     "web_session_expire_days": 30,  # Auth session expiry in days
+    "web_file_serve_root": "~",  # Root dir the /api/file endpoint may serve; "/" allows the whole filesystem
     "agent": True,  # 是否开启Agent模式
     "agent_workspace": "~/cow",  # agent工作空间路径，用于存储skills、memory等
     "agent_max_context_tokens": 50000,  # Agent模式下最大上下文tokens
@@ -337,8 +350,18 @@ def load_config():
     config_str = read_file(config_path)
     logger.debug("[INIT] config str: {}".format(drag_sensitive(config_str)))
 
-    # 将json字符串反序列化为dict类型
-    config = Config(json.loads(config_str))
+    # 将json字符串反序列化为dict类型。
+    # `object_pairs_hook` lets us catch users who accidentally typed the
+    # same key twice (e.g. two `"tools"` blocks) — json.loads would
+    # otherwise silently drop all but the last occurrence.
+    config = Config(json.loads(config_str, object_pairs_hook=_merge_duplicate_keys))
+
+    # Migrate legacy singular keys (`tool`, `skill`) into the canonical
+    # plural buckets so the rest of the codebase only reads one schema.
+    # Deep-merge so existing `tools`/`skills` entries are preserved and
+    # only missing namespaces are filled in from the legacy section.
+    _merge_legacy_namespace(config, legacy="tool",  canonical="tools")
+    _merge_legacy_namespace(config, legacy="skill", canonical="skills")
 
     # override config with environment variables.
     # Some online deployment platforms (e.g. Railway) deploy project from github directly. So you shouldn't put your secrets like api key in a config file, instead use environment variables to override the default config.
@@ -398,6 +421,8 @@ def load_config():
         "minimax_api_base": "MINIMAX_API_BASE",
         "deepseek_api_key": "DEEPSEEK_API_KEY",
         "deepseek_api_base": "DEEPSEEK_API_BASE",
+        "mimo_api_key": "MIMO_API_KEY",
+        "mimo_api_base": "MIMO_API_BASE",
         "qianfan_api_key": "QIANFAN_API_KEY",
         "qianfan_api_base": "QIANFAN_API_BASE",
         "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
@@ -434,7 +459,7 @@ def load_config():
                 os.environ[env_key] = str(val)
                 injected += 1
 
-    injected += _sync_skill_config_to_env(config.get("skill", {}))
+    injected += _sync_skill_config_to_env(config.get("skills", {}))
 
     if injected:
         logger.info("[INIT] Synced {} config values to environment variables".format(injected))
@@ -442,11 +467,90 @@ def load_config():
     config.load_user_datas()
 
 
+def _deep_merge_dicts(base: dict, incoming: dict) -> dict:
+    """Recursively merge ``incoming`` into ``base`` (incoming wins on leaves)."""
+    for key, val in incoming.items():
+        if (
+            key in base
+            and isinstance(base[key], dict)
+            and isinstance(val, dict)
+        ):
+            _deep_merge_dicts(base[key], val)
+        else:
+            base[key] = val
+    return base
+
+
+def _merge_duplicate_keys(pairs):
+    """object_pairs_hook for json.loads: deep-merge duplicate top-level keys
+    (lists concat, dicts merge, scalars take the latter) instead of dropping."""
+    out = {}
+    duplicates = []
+    for key, val in pairs:
+        if key not in out:
+            out[key] = val
+            continue
+        duplicates.append(key)
+        prev = out[key]
+        if isinstance(prev, dict) and isinstance(val, dict):
+            _deep_merge_dicts(prev, val)
+        elif isinstance(prev, list) and isinstance(val, list):
+            prev.extend(val)
+        else:
+            out[key] = val
+    if duplicates:
+        # logger may not be wired yet — fall back to print so we never lose the warning.
+        unique = sorted(set(duplicates))
+        try:
+            logger.warning("[INIT] config.json has duplicate keys (merged): %s", unique)
+        except Exception:
+            print("[INIT] config.json has duplicate keys (merged):", unique)
+    return out
+
+
+def _merge_legacy_namespace(cfg, legacy: str, canonical: str) -> None:
+    """Fold deprecated singular keys (``tool`` / ``skill``) into their plural
+    canonical counterparts at load time. Canonical entries always win."""
+    legacy_section = cfg.get(legacy)
+    if not isinstance(legacy_section, dict) or not legacy_section:
+        cfg.pop(legacy, None)
+        return
+    canonical_section = cfg.get(canonical)
+    if not isinstance(canonical_section, dict):
+        canonical_section = {}
+    merged_keys = []
+    for name, val in legacy_section.items():
+        if name in canonical_section:
+            if isinstance(canonical_section[name], dict) and isinstance(val, dict):
+                for sub_key, sub_val in val.items():
+                    if (
+                        sub_key in canonical_section[name]
+                        and isinstance(canonical_section[name][sub_key], dict)
+                        and isinstance(sub_val, dict)
+                    ):
+                        _deep_merge_dicts(sub_val, canonical_section[name][sub_key])
+                        canonical_section[name][sub_key] = sub_val
+                    else:
+                        canonical_section[name].setdefault(sub_key, sub_val)
+            continue
+        canonical_section[name] = val
+        merged_keys.append(name)
+    cfg[canonical] = canonical_section
+    cfg.pop(legacy, None)
+    if merged_keys:
+        logger.warning(
+            "[INIT] Legacy config key '{}' is deprecated; merged into '{}': {}. "
+            "Please rename '{}' to '{}' in your config.json.".format(
+                legacy, canonical, merged_keys, legacy, canonical,
+            )
+        )
+
+
 def _sync_skill_config_to_env(skill_section) -> int:
     """Flatten skill-namespaced config into environment variables.
 
-    Mapping rule: ``config["skill"][<name>][<key>]`` -> ``SKILL_<NAME>_<KEY>``
-    (e.g. ``skill["image-generation"].model`` -> ``SKILL_IMAGE_GENERATION_MODEL``).
+    Mapping rule: ``config["skills"][<name>][<key>]`` -> ``SKILL_<NAME>_<KEY>``
+    (e.g. ``skills["image-generation"].model`` -> ``SKILL_IMAGE_GENERATION_MODEL``).
 
     This lets subprocess-based skill scripts read their own settings without
     importing project code. Existing env vars are NOT overwritten so the

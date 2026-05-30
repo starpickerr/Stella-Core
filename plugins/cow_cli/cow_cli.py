@@ -26,16 +26,19 @@ from common.log import logger
 from cli import __version__
 
 
-# Known top-level subcommands that cow supports
+# Known top-level subcommands that cow supports.
+# "start" / "stop" / "restart" refer to daemon lifecycle on the host shell;
+# in chat, "/cancel" aborts the in-flight agent run instead.
 KNOWN_COMMANDS = {
     "help", "version", "status", "logs",
     "start", "stop", "restart",
+    "cancel",
     "skill", "context", "config",
     "knowledge", "memory",
     "install-browser",
 }
 
-# Commands that can only run from the CLI (terminal), not in chat
+# Commands that can only run from the CLI (terminal), not in chat.
 CLI_ONLY_COMMANDS = {"start", "stop", "restart"}
 
 # Commands that can only run from chat (need access to in-process memory)
@@ -225,6 +228,7 @@ class CowCliPlugin(Plugin):
             "  /help          显示此帮助",
             "  /version       查看版本",
             "  /status        查看运行状态",
+            "  /cancel        中止当前正在运行的 Agent 任务",
             "  /logs [N]      查看最近N条日志 (默认20)",
             "  /context       查看当前对话上下文信息",
             "  /context clear 清除当前对话上下文",
@@ -249,6 +253,41 @@ class CowCliPlugin(Plugin):
 
     def _cmd_version(self, args: str, e_context, **_) -> str:
         return f"CowAgent v{__version__}"
+
+    # ------------------------------------------------------------------
+    # cancel — abort the in-flight agent run for the current session.
+    # Fallback handler; in practice chat_channel/web_channel intercept
+    # /cancel earlier so it bypasses the per-session serial queue.
+    # ------------------------------------------------------------------
+
+    def _cmd_cancel(self, args: str, e_context: EventContext, session_id: str = "", **_) -> str:
+        """Signal the running agent to halt at its next checkpoint."""
+        from agent.protocol import get_cancel_registry
+
+        target_session = self._get_session_id(e_context, fallback=session_id)
+        registry = get_cancel_registry()
+
+        # Prefer per-turn request_id (matches the key agent_bridge registered)
+        cancelled = 0
+        request_id = ""
+        if e_context is not None:
+            try:
+                ctx = e_context["context"]
+                request_id = ctx.kwargs.get("request_id") or ctx.get("request_id", "")
+            except Exception:
+                request_id = ""
+
+        if request_id and registry.cancel_request(request_id):
+            cancelled = 1
+
+        # Fall back to session-wide cancel
+        if cancelled == 0 and target_session:
+            cancelled = registry.cancel_session(target_session)
+
+        if cancelled <= 0:
+            return "当前没有可中止的任务。"
+
+        return "🛑 已中止"
 
     # ------------------------------------------------------------------
     # status
@@ -1056,6 +1095,38 @@ class CowCliPlugin(Plugin):
             logger.warning(f"[CowCli] /memory dream sync failed: {e}")
             return f"❌ 记忆蒸馏失败: {e}"
 
+    @staticmethod
+    def _resolve_active_embedding():
+        """
+        Resolve (provider_label, model, dim) from the LATEST config, not the
+        possibly-stale provider instance cached on a running agent. Used by
+        /memory status and rebuild-index hints so they reflect what a rebuild
+        will actually run as after the user changes embedding_provider.
+        Returns (label, model, dim) where any field may be None when unknown.
+        """
+        from agent.memory.embedding import EMBEDDING_VENDORS
+        from config import conf
+
+        provider_key = (conf().get("embedding_provider") or "").strip().lower()
+        cfg_model = (conf().get("embedding_model") or "").strip()
+        try:
+            cfg_dim = int(conf().get("embedding_dimensions") or 0)
+        except (TypeError, ValueError):
+            cfg_dim = 0
+
+        if not provider_key:
+            # Legacy auto path: openai -> linkai, both default to text-embedding-3-small (1536).
+            if (conf().get("open_ai_api_key") or "").strip():
+                return "openai (legacy)", "text-embedding-3-small", 1536
+            if (conf().get("linkai_api_key") or "").strip():
+                return "linkai (legacy)", "text-embedding-3-small", 1536
+            return "(legacy)", None, None
+
+        meta = EMBEDDING_VENDORS.get(provider_key) or {}
+        model = cfg_model or meta.get("default_model")
+        dim = cfg_dim if cfg_dim > 0 else meta.get("default_dimensions")
+        return provider_key, model, dim
+
     def _memory_status(self) -> str:
         """Show current memory index status."""
         from agent.memory.embedding import detect_index_dim
@@ -1078,15 +1149,14 @@ class CowCliPlugin(Plugin):
         lines.append(f"  Chunks  : {chunks} (embedded: {embedded})")
         lines.append("")
 
-        # Active provider (from running config + provider instance).
+        # Resolve from the latest config so users see what /memory rebuild-index
+        # will actually run as — not what the cached agent was initialized with.
+        cfg_provider, cfg_model, cfg_dim = self._resolve_active_embedding()
         provider_obj = memory_manager.embedding_provider
-        cfg_provider = (conf().get("embedding_provider") or "").strip().lower() or "(legacy)"
-        if provider_obj is not None:
-            cfg_model = getattr(provider_obj, "model", "?")
-            cfg_dim = getattr(provider_obj, "_dimensions", None) or "?"
+        if cfg_model:
             lines.append(f"  Provider : {cfg_provider}")
             lines.append(f"  Model    : {cfg_model}")
-            lines.append(f"  Dim      : {cfg_dim}")
+            lines.append(f"  Dim      : {cfg_dim if cfg_dim else '?'}")
         else:
             lines.append("  Provider : (未初始化, keyword-only)")
 
@@ -1105,7 +1175,6 @@ class CowCliPlugin(Plugin):
                 )
 
             index_dim = detect_index_dim(memory_manager.storage)
-            cfg_dim = getattr(provider_obj, "_dimensions", None)
             if index_dim is not None and cfg_dim and index_dim != cfg_dim:
                 warnings.append(
                     f"  ⚠️ 索引中存量向量为 {index_dim} 维，与当前配置 {cfg_dim} 维不一致；"
@@ -1129,15 +1198,27 @@ class CowCliPlugin(Plugin):
             )
 
         memory_manager = agent.memory_manager
-        if memory_manager.embedding_provider is None:
+
+        # Rebuild against the LATEST config: build a fresh provider from
+        # config.json and swap it onto memory_manager. The agent's
+        # conversation_history and other state are untouched.
+        try:
+            from bridge.agent_initializer import AgentInitializer
+            fresh_provider = AgentInitializer(bridge=None, agent_bridge=None) \
+                ._init_embedding_provider(memory_manager.config, session_id=session_id)
+        except Exception as e:
+            logger.exception("[CowCli] /memory rebuild-index: build provider failed")
+            return f"⚠️ 无法根据当前配置构造 embedding provider: {e}"
+
+        if fresh_provider is None:
             return (
                 "⚠️ 当前没有可用的 embedding provider。\n"
                 "请检查 config.json 中的 embedding 相关配置 (provider / api key)。"
             )
+        memory_manager.embedding_provider = fresh_provider
 
-        provider_obj = memory_manager.embedding_provider
-        model_label = getattr(provider_obj, "model", "?")
-        dim_label = getattr(provider_obj, "dimensions", "?")
+        model_label = getattr(fresh_provider, "model", "?")
+        dim_label = getattr(fresh_provider, "dimensions", "?")
 
         # SaaS (e_context is None): run synchronously, return final result
         if e_context is None:
@@ -1168,7 +1249,7 @@ class CowCliPlugin(Plugin):
         threading.Thread(target=_run, daemon=True).start()
         return (
             f"🔧 索引重建已启动 (model={model_label}, dim={dim_label})\n\n"
-            f"将清空现有 chunks 并重新 embed 所有记忆文件，完成后会通知你。"
+            f"将重新向量化所有记忆和知识文件，完成后会通知你。"
         )
 
     @staticmethod

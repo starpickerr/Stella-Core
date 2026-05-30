@@ -60,7 +60,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             "timeout": conf().get("request_timeout", None),  # 重试超时时间，在这个时间内，将会自动重试
         }
         # 部分模型暂不支持一些参数，特殊处理
-        if conf_model in [const.O1, const.O1_MINI, const.GPT_5, const.GPT_5_MINI, const.GPT_5_NANO]:
+        if conf_model in [const.O1, const.O1_MINI, const.GPT_5, const.GPT_5_MINI, const.GPT_5_NANO, const.GPT_55]:
             remove_keys = ["temperature", "top_p", "frequency_penalty", "presence_penalty"]
             for key in remove_keys:
                 self.args.pop(key, None)  # 如果键不存在，使用 None 来避免抛出错、
