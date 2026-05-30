@@ -23,6 +23,7 @@ from plugins import Plugin, Event, EventContext, EventAction
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from config import conf
 from cli import __version__
 
 
@@ -44,6 +45,23 @@ CLI_ONLY_COMMANDS = {"start", "stop", "restart"}
 # Commands that can only run from chat (need access to in-process memory)
 CHAT_ONLY_COMMANDS = set()  # context is allowed in both, but behaves differently
 
+# Convenience shorthands for the slash form only. Values are *full command
+# strings* so an alias can carry arguments (e.g. "cc" -> "context clear").
+# These shorthands are deliberate and NOT derivable from prefix/typo rules:
+#   - "c"  is a prefix of cancel/config/context (ambiguous) -> needs explicit map
+#   - "cc" is a prefix of nothing and expands to a command + argument
+#   - "s"  would otherwise be an ambiguous prefix (skill/start/status/stop)
+# Users may override / extend these via config.json "command_aliases".
+DEFAULT_ALIASES = {
+    "c":   "cancel",
+    "cc":  "context clear",
+    "ctx": "context",
+    "h":   "help",
+    "s":   "status",
+    "cfg": "config",
+    "k":   "knowledge",
+}
+
 
 @plugins.register(
     name="cow_cli",
@@ -57,7 +75,50 @@ class CowCliPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
+        self.aliases = self._build_aliases()
         logger.debug("[CowCli] initialized")
+
+    def reload(self):
+        """Rebuild the alias table (e.g. after config changes)."""
+        self.aliases = self._build_aliases()
+
+    @staticmethod
+    def _build_aliases() -> dict:
+        """Merge DEFAULT_ALIASES with optional config.json ``command_aliases``.
+
+        User-supplied entries (keys lowercased / stripped) override defaults.
+        An alias whose target's first token is not a known command is dropped
+        with a warning, so a bad alias can never create a dead command. An
+        alias key that shadows a real command is kept but warned about — the
+        exact-command stage in ``_resolve`` runs first, so the command wins.
+        """
+        merged = dict(DEFAULT_ALIASES)
+        try:
+            overrides = conf().get("command_aliases", {}) or {}
+        except Exception as e:
+            logger.warning(f"[CowCli] could not read command_aliases from config: {e}")
+            overrides = {}
+        if not isinstance(overrides, dict):
+            logger.warning(f"[CowCli] command_aliases must be an object, got {type(overrides).__name__}; ignoring")
+            overrides = {}
+        for key, value in overrides.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                logger.warning(f"[CowCli] ignoring non-string alias entry: {key!r} -> {value!r}")
+                continue
+            k = key.strip().lower()
+            if k:
+                merged[k] = value.strip()
+
+        valid = {}
+        for key, value in merged.items():
+            head = value.split(None, 1)[0].lower() if value.strip() else ""
+            if head not in KNOWN_COMMANDS:
+                logger.warning(f"[CowCli] dropping alias '/{key}' -> '{value}': unknown command '{head}'")
+                continue
+            if key in KNOWN_COMMANDS:
+                logger.warning(f"[CowCli] alias '/{key}' shadows a real command; the command takes precedence")
+            valid[key] = value
+        return valid
 
     def on_handle_context(self, e_context: EventContext):
         if e_context["context"].type != ContextType.TEXT:
@@ -68,28 +129,24 @@ class CowCliPlugin(Plugin):
         if parsed is None:
             return
 
-        cmd, args = parsed
+        token, user_args = parsed
+        result = self._resolve(token, user_args)
+        kind = result[0]
 
-        if cmd not in KNOWN_COMMANDS:
-            # Slash-prefixed near-miss: looks like a typo of a real command.
-            # Intercept with a hint so we don't burn an LLM round on "/momory".
-            suggestion = self._suggest_command(cmd)
-            if suggestion is None:
-                return
-            hint = f"未知命令: /{cmd}"
-            if suggestion:
-                hint += f"\n你是不是想输入 /{suggestion} ?"
-            hint += "\n发送 /help 查看全部命令。"
-            e_context["reply"] = Reply(ReplyType.TEXT, hint)
-            e_context.action = EventAction.BREAK_PASS
+        if kind == "passthrough":
+            # Not a command and not a near-typo: let the agent handle it.
             return
 
-        logger.info(f"[CowCli] intercepted command: {cmd} {args}")
+        if kind == "run":
+            _, cmd, args = result
+            logger.info(f"[CowCli] intercepted command: {cmd} {args}")
+            reply_text = self._dispatch(cmd, args, e_context)
+        elif kind == "ambiguous":
+            reply_text = self._ambiguous_hint(token, result[1])
+        else:  # "typo"
+            reply_text = self._typo_hint(token, result[1])
 
-        result = self._dispatch(cmd, args, e_context)
-
-        reply = Reply(ReplyType.TEXT, result)
-        e_context["reply"] = reply
+        e_context["reply"] = Reply(ReplyType.TEXT, reply_text)
         e_context.action = EventAction.BREAK_PASS
 
     def _parse_command(self, content: str):
@@ -175,6 +232,69 @@ class CowCliPlugin(Plugin):
                 return known
         return None
 
+    def _resolve(self, token: str, user_args: str):
+        """Resolve a parsed slash token to an action.
+
+        Precedence (first hit wins):
+          1. exact command            -> ("run", cmd, args)
+          2. alias (exact key)        -> expand to a full command string, merge args
+          3. unique prefix            -> ("run", cmd, args)
+          4. ambiguous prefix (>1)    -> ("ambiguous", sorted_candidates)
+          5. typo (edit-distance <=1) -> ("typo", suggestion_or_None)
+          6. no match                 -> ("passthrough",)
+
+        Pure function of (token, user_args, KNOWN_COMMANDS, self.aliases) so it
+        is trivially unit-testable. Note the `cow ` form never reaches stages
+        2-5: `_parse_command` only returns known tokens for it, so it stays
+        strict and alias/prefix matching applies to the `/` form only.
+        """
+        token = token.lower()
+
+        # 1. exact command (a real command can never be shadowed by an alias)
+        if token in KNOWN_COMMANDS:
+            return ("run", token, user_args)
+
+        # 2. alias -> full command string; merge alias args with user args.
+        #    Alias expansion is applied at most once (no alias -> alias chains).
+        if token in self.aliases:
+            parts = self.aliases[token].split(None, 1)
+            cmd = parts[0].lower()
+            alias_args = parts[1] if len(parts) > 1 else ""
+            merged = f"{alias_args} {user_args}".strip() if user_args else alias_args
+            return ("run", cmd, merged)
+
+        # 3 / 4. prefix match
+        candidates = sorted(c for c in KNOWN_COMMANDS if c.startswith(token))
+        if len(candidates) == 1:
+            return ("run", candidates[0], user_args)
+        if len(candidates) > 1:
+            return ("ambiguous", candidates)
+
+        # 5. typo (keeps its own len>=3 + edit-distance<=1 guards)
+        suggestion = self._suggest_command(token)
+        if suggestion is not None:
+            return ("typo", suggestion)
+
+        # 6. nothing matched
+        return ("passthrough",)
+
+    @staticmethod
+    def _typo_hint(token: str, suggestion) -> str:
+        hint = f"未知命令: /{token}"
+        if suggestion:
+            hint += f"\n你是不是想输入 /{suggestion} ?"
+        hint += "\n发送 /help 查看全部命令。"
+        return hint
+
+    @staticmethod
+    def _ambiguous_hint(token: str, candidates) -> str:
+        options = " ".join(f"/{c}" for c in candidates)
+        return (
+            f"命令不明确: /{token}\n"
+            f"可能想输入: {options}\n"
+            "发送 /help 查看全部命令。"
+        )
+
     # ------------------------------------------------------------------
     # Command dispatch
     # ------------------------------------------------------------------
@@ -190,17 +310,17 @@ class CowCliPlugin(Plugin):
         parsed = self._parse_command(query.strip())
         if parsed is None:
             return None
-        cmd, args = parsed
-        if cmd not in KNOWN_COMMANDS:
-            suggestion = self._suggest_command(cmd)
-            if suggestion is None:
-                return None
-            hint = f"未知命令: /{cmd}"
-            if suggestion:
-                hint += f"\n你是不是想输入 /{suggestion} ?"
-            hint += "\n发送 /help 查看全部命令。"
-            return hint
-        return self._dispatch(cmd, args, e_context=None, session_id=session_id)
+        token, user_args = parsed
+        result = self._resolve(token, user_args)
+        kind = result[0]
+        if kind == "passthrough":
+            return None
+        if kind == "run":
+            _, cmd, args = result
+            return self._dispatch(cmd, args, e_context=None, session_id=session_id)
+        if kind == "ambiguous":
+            return self._ambiguous_hint(token, result[1])
+        return self._typo_hint(token, result[1])  # "typo"
 
     def _dispatch(self, cmd: str, args: str, e_context: EventContext, session_id: str = "") -> str:
         if cmd in CLI_ONLY_COMMANDS:
