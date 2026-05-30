@@ -8,9 +8,26 @@ from typing import Optional
 
 import click
 
-from cli.utils import get_project_root
+from cli.utils import get_project_root, load_config_json
 
 _IS_WIN = sys.platform == "win32"
+
+
+def _is_terminal_only() -> bool:
+    """Whether terminal is the only configured channel.
+
+    Terminal needs an interactive stdin/tty, which is incompatible with the
+    background daemon mode (stdout/stdin detached). When terminal is the only
+    channel, `start` must run in the foreground so it can own the tty.
+    """
+    channel = load_config_json().get("channel_type", "")
+    if isinstance(channel, str):
+        names = [c.strip() for c in channel.split(",") if c.strip()]
+    elif isinstance(channel, (list, tuple)):
+        names = [str(c).strip() for c in channel if str(c).strip()]
+    else:
+        names = []
+    return names == ["terminal"]
 
 
 def _get_pid_file():
@@ -102,6 +119,12 @@ def start(foreground, no_logs):
         sys.exit(1)
 
     python = sys.executable
+
+    # Terminal-only setups need an interactive tty; force foreground so the
+    # terminal channel can read stdin instead of fighting the shell over the tty.
+    if not foreground and _is_terminal_only():
+        foreground = True
+        click.echo("Detected terminal-only channel, starting in foreground...")
 
     if foreground:
         click.echo("Starting CowAgent in foreground...")
