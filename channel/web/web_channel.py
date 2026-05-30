@@ -1315,12 +1315,19 @@ class FileServeHandler:
             file_path = params.path
             if not file_path or not os.path.isabs(file_path):
                 raise web.notfound()
-            # Resolve symlinks and confine access to the configured root dir,
+            # Resolve symlinks and confine access to the allowed root dirs,
             # so this endpoint can't be abused to read arbitrary files (e.g. /etc/passwd, ~/.ssh).
-            # Defaults to the user home dir; set web_file_serve_root="/" to allow the whole filesystem.
+            # Defaults to the user home dir plus the agent workspace; set web_file_serve_root="/"
+            # to allow the whole filesystem.
             file_path = os.path.realpath(file_path)
-            serve_root = os.path.realpath(os.path.expanduser(conf().get("web_file_serve_root", "~") or "~"))
-            if serve_root != os.sep and os.path.commonpath([file_path, serve_root]) != serve_root:
+            serve_root = conf().get("web_file_serve_root", "~") or "~"
+            allowed_roots = [
+                os.path.realpath(os.path.expanduser(serve_root)),
+                os.path.realpath(os.path.expanduser(conf().get("agent_workspace", "~/cow"))),
+            ]
+            if os.sep not in allowed_roots and not any(
+                os.path.commonpath([file_path, root]) == root for root in allowed_roots
+            ):
                 raise web.notfound()
             if not os.path.isfile(file_path):
                 raise web.notfound()
