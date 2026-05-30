@@ -151,6 +151,13 @@ available_setting = {
     "wechatcomapp_secret": "",  # 企业微信app的secret
     "wechatcomapp_agent_id": "",  # 企业微信app的agent_id
     "wechatcomapp_aes_key": "",  # 企业微信app的aes_key
+    # 微信客服(wechat_kf)的配置
+    "wechat_kf_corp_id": "",  # 微信客服所在企业的corp_id
+    "wechat_kf_token": "",  # 微信客服回调token
+    "wechat_kf_port": 9888,  # 微信客服回调服务端口
+    "wechat_kf_secret": "",  # 微信客服应用的secret
+    "wechat_kf_aes_key": "",  # 微信客服回调aes_key
+    "wechat_kf_cursor_path": "~/.wechat_kf_cursors.json",  # 微信客服sync_msg游标持久化文件路径
     # 飞书配置
     "feishu_port": 80,  # 飞书bot监听端口，仅webhook模式需要
     "feishu_app_id": "",  # 飞书机器人应用APP Id
@@ -183,7 +190,7 @@ available_setting = {
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置
-    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,telegram,slack
+    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,wechat_kf,telegram,slack
     "web_console": True,  # 是否自动启动Web控制台（默认启动）。设为False可禁用
     "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app
     "debug": False,  # 是否开启debug模式，开启后会打印更多日志
@@ -435,6 +442,11 @@ def load_config():
         "wechatmp_app_secret": "WECHATMP_APP_SECRET",
         "wechatcomapp_agent_id": "WECHATCOMAPP_AGENT_ID",
         "wechatcomapp_secret": "WECHATCOMAPP_SECRET",
+        "wechatcom_corp_id": "WECHATCOM_CORP_ID",
+        "wechat_kf_corp_id": "WECHAT_KF_CORP_ID",
+        "wechat_kf_secret": "WECHAT_KF_SECRET",
+        "wechat_kf_token": "WECHAT_KF_TOKEN",
+        "wechat_kf_aes_key": "WECHAT_KF_AES_KEY",
         "qq_app_id": "QQ_APP_ID",
         "qq_app_secret": "QQ_APP_SECRET",
         "weixin_token": "WEIXIN_TOKEN",
