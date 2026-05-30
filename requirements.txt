@@ -29,3 +29,5 @@ websocket-client>=1.4.0
 pycryptodome
 # telegram bot
 python-telegram-bot
+# slack bot
+slack_bolt

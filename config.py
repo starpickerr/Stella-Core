@@ -171,6 +171,10 @@ available_setting = {
     "telegram_proxy": "",  # 可选的 HTTP/SOCKS5 代理，例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（留空则走系统环境变量）
     "telegram_group_trigger": "mention_or_reply",  # 群聊触发方式: mention_or_reply(@或回复触发,推荐) | mention_only(仅@) | all(所有消息)
     "telegram_register_commands": True,  # 启动时是否自动向 BotFather 注册命令菜单（与 web 端 slash 命令一致）
+    # Slack 配置（Socket Mode，无需公网 IP）
+    "slack_bot_token": "",  # Bot User OAuth Token，形如 xoxb-...
+    "slack_app_token": "",  # App-Level Token（开启 Socket Mode 后生成），形如 xapp-...
+    "slack_group_trigger": "mention_or_reply",  # 频道触发方式: mention_or_reply(@或线程内回复,推荐) | mention_only(仅@) | all(所有消息)
     # 微信配置
     "weixin_token": "",  # 微信登录后获取的bot_token，留空则启动时自动扫码登录
     "weixin_base_url": "https://ilinkai.weixin.qq.com",  # Weixin ilink API base URL
@@ -179,7 +183,7 @@ available_setting = {
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置
-    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,telegram
+    "channel_type": "",  # 通道类型，支持多渠道同时运行。单个: "feishu"，多个: "feishu, dingtalk" 或 ["feishu", "dingtalk"]。可选值: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,telegram,slack
     "web_console": True,  # 是否自动启动Web控制台（默认启动）。设为False可禁用
     "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app
     "debug": False,  # 是否开启debug模式，开启后会打印更多日志
@@ -221,6 +225,7 @@ available_setting = {
     "web_port": 9899,
     "web_password": "",  # Web console password; empty means no authentication required
     "web_session_expire_days": 30,  # Auth session expiry in days
+    "web_file_serve_root": "~",  # Root dir the /api/file endpoint may serve; "/" allows the whole filesystem
     "agent": True,  # 是否开启Agent模式
     "agent_workspace": "~/cow",  # agent工作空间路径，用于存储skills、memory等
     "agent_max_context_tokens": 50000,  # Agent模式下最大上下文tokens
