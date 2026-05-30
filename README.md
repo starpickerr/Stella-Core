@@ -125,6 +125,7 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 | [WeCom Bot](https://docs.cowagent.ai/en/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [QQ](https://docs.cowagent.ai/en/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
 | [WeCom App](https://docs.cowagent.ai/en/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat Customer Service](https://docs.cowagent.ai/en/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
 | [WeChat Official Account](https://docs.cowagent.ai/en/channels/wechatmp) | ✅ | ✅ | | ✅ | |
 | [Telegram](https://docs.cowagent.ai/en/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Slack](https://docs.cowagent.ai/en/channels/slack) | ✅ | ✅ | ✅ | | ✅ |

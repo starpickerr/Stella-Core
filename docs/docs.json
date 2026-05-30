@@ -285,10 +285,10 @@
                 "pages": [
                   "en/models/index",
                   "en/models/deepseek",
-                  "en/models/minimax",
                   "en/models/claude",
                   "en/models/gemini",
                   "en/models/openai",
+                  "en/models/minimax",
                   "en/models/glm",
                   "en/models/qwen",
                   "en/models/doubao",
@@ -395,17 +395,17 @@
                 "group": "Platforms",
                 "pages": [
                   "en/channels/index",
-                  "en/channels/weixin",
                   "en/channels/web",
+                  "en/channels/telegram",
+                  "en/channels/slack",
+                  "en/channels/weixin",
                   "en/channels/feishu",
                   "en/channels/dingtalk",
                   "en/channels/wecom-bot",
                   "en/channels/qq",
                   "en/channels/wecom",
                   "en/channels/wechat-kf",
-                  "en/channels/wechatmp",
-                  "en/channels/telegram",
-                  "en/channels/slack"
+                  "en/channels/wechatmp"
                 ]
               }
             ]
