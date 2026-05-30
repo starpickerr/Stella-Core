@@ -119,6 +119,9 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 | Channel | Text | Image | File | Voice | Group |
 | --- | :-: | :-: | :-: | :-: | :-: |
 | [Web Console](https://docs.cowagent.ai/en/channels/web) (default) | ✅ | ✅ | ✅ | ✅ | |
+| [Telegram](https://docs.cowagent.ai/en/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Slack](https://docs.cowagent.ai/en/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](https://docs.cowagent.ai/en/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
 | [WeChat](https://docs.cowagent.ai/en/channels/weixin) | ✅ | ✅ | ✅ | ✅ | |
 | [Feishu / Lark](https://docs.cowagent.ai/en/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [DingTalk](https://docs.cowagent.ai/en/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -127,8 +130,6 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 | [WeCom App](https://docs.cowagent.ai/en/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
 | [WeChat Customer Service](https://docs.cowagent.ai/en/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
 | [WeChat Official Account](https://docs.cowagent.ai/en/channels/wechatmp) | ✅ | ✅ | | ✅ | |
-| [Telegram](https://docs.cowagent.ai/en/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](https://docs.cowagent.ai/en/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
 
 > See the [Channels overview](https://docs.cowagent.ai/en/channels/index) for setup details.
 

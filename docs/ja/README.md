@@ -129,6 +129,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 | [WeChat 公式アカウント](https://docs.cowagent.ai/ja/channels/wechatmp) | ✅ | ✅ | | ✅ | |
 | [Telegram](https://docs.cowagent.ai/ja/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Slack](https://docs.cowagent.ai/ja/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](https://docs.cowagent.ai/ja/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
 
 > Feishu と WeCom Bot は **Web コンソール内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](https://docs.cowagent.ai/ja/channels/index) を参照してください。
 

@@ -48,6 +48,9 @@ def create_channel(channel_type) -> Channel:
     elif channel_type == const.SLACK:
         from channel.slack.slack_channel import SlackChannel
         ch = SlackChannel()
+    elif channel_type == const.DISCORD:
+        from channel.discord.discord_channel import DiscordChannel
+        ch = DiscordChannel()
     elif channel_type in (const.WEIXIN, "wx"):
         from channel.weixin.weixin_channel import WeixinChannel
         ch = WeixinChannel()

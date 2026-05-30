@@ -31,3 +31,5 @@ pycryptodome
 python-telegram-bot
 # slack bot
 slack_bolt
+# discord bot
+discord.py
