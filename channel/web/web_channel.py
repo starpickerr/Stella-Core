@@ -1,15 +1,17 @@
+import datetime
 import hashlib
 import hmac
-import time
 import json
 import logging
 import mimetypes
 import os
+import random
+import shutil
 import threading
 import time
 import uuid
 from queue import Queue, Empty
-from typing import Tuple
+from typing import List, Tuple
 
 import web
 
@@ -26,8 +28,16 @@ from config import conf
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
 
+def _get_web_password() -> str:
+    # Coerce to str so non-string values in config.json (e.g. numeric password) won't break comparisons
+    pwd = conf().get("web_password", "")
+    if pwd is None:
+        return ""
+    return str(pwd)
+
+
 def _is_password_enabled():
-    return bool(conf().get("web_password", ""))
+    return bool(_get_web_password())
 
 
 def _session_expire_seconds():
@@ -38,7 +48,7 @@ def _create_auth_token():
     """Create a stateless signed token: ``<timestamp_hex>.<hmac_hex>``."""
     ts = format(int(time.time()), "x")
     sig = hmac.new(
-        conf().get("web_password", "").encode(),
+        _get_web_password().encode(),
         ts.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -61,7 +71,7 @@ def _verify_auth_token(token):
     if time.time() - ts > _session_expire_seconds():
         return False
     expected = hmac.new(
-        conf().get("web_password", "").encode(),
+        _get_web_password().encode(),
         ts_hex.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -81,6 +91,15 @@ def _require_auth():
         raise web.HTTPError("401 Unauthorized",
                             {"Content-Type": "application/json; charset=utf-8"},
                             json.dumps({"status": "error", "message": "Unauthorized"}))
+
+
+# Localized text for /cancel system replies. Web is the only channel that
+# honors a per-request `lang`; other channels reply in Chinese by default.
+def _cancel_reply_text(cancelled: int, lang: str) -> str:
+    en = lang.startswith("en")
+    if cancelled > 0:
+        return "🛑 Cancelled." if en else "🛑 已中止"
+    return "Nothing to cancel." if en else "当前没有可中止的任务。"
 
 
 def _get_upload_dir() -> str:
@@ -294,6 +313,12 @@ class WebChannel(ChatChannel):
                     "timestamp": time.time()
                 })
                 logger.debug(f"SSE done sent for request {request_id}")
+                # Auto-trigger TTS once the bot finishes its text reply. The
+                # synthesis runs in the background so the chat stream is never
+                # blocked; the resulting audio URL is pushed via a follow-up
+                # `voice_attach` SSE event and persisted to messages.extras.
+                if reply.type == ReplyType.TEXT and content.strip():
+                    self._maybe_dispatch_auto_tts(request_id, session_id, content, context)
                 return
 
             # Fallback: polling mode
@@ -340,6 +365,10 @@ class WebChannel(ChatChannel):
         # Use a single-element list as a mutable counter accessible from closure.
         reasoning_chars_sent = [0]
         reasoning_capped_notified = [False]
+        # Captures the first error message emitted by agent_stream so the
+        # subsequent agent_end handler can skip its "empty final_response"
+        # fallback (which would otherwise overwrite the real error).
+        streamed_error: List[str] = []
 
         def on_event(event: dict):
             if request_id not in self.sse_queues:
@@ -398,6 +427,37 @@ class WebChannel(ChatChannel):
                 if tool_calls:
                     q.put({"type": "message_end", "has_tool_calls": True})
 
+            elif event_type == "error":
+                # Agent raised an exception (LLM 401/timeout/etc). Surface the
+                # real message instead of letting the empty-response fallback
+                # below hide it as "(模型未返回任何内容)".
+                err_msg = data.get("error") or "unknown error"
+                logger.warning(
+                    f"[WebChannel] agent_stream emitted error for "
+                    f"request {request_id}: {err_msg}"
+                )
+                # Remember it so the agent_end handler below knows not to
+                # rewrite the message into a generic empty-response notice.
+                streamed_error.append(err_msg)
+                q.put({
+                    "type": "done",
+                    "content": f"❌ {err_msg}",
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
+            elif event_type == "agent_cancelled":
+                # Push an explicit cancelled SSE event so the frontend
+                # marks the bubble as stopped. A trailing "done" still
+                # arrives with the partial answer.
+                final_response = data.get("final_response", "")
+                q.put({
+                    "type": "cancelled",
+                    "content": final_response,
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
             elif event_type == "agent_end":
                 # Safety net: if the agent finishes with an empty final_response,
                 # chat_channel skips _send_reply (because reply.content is empty),
@@ -406,16 +466,21 @@ class WebChannel(ChatChannel):
                 # here so the frontend always gets closure.
                 final_response = data.get("final_response", "")
                 if not final_response or not str(final_response).strip():
-                    logger.warning(
-                        f"[WebChannel] agent_end with empty final_response for "
-                        f"request {request_id}, sending fallback done"
-                    )
-                    q.put({
-                        "type": "done",
-                        "content": "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
-                        "request_id": request_id,
-                        "timestamp": time.time(),
-                    })
+                    if streamed_error:
+                        # Error was already surfaced via the `error` event
+                        # handler above; nothing more to do here.
+                        pass
+                    else:
+                        logger.warning(
+                            f"[WebChannel] agent_end with empty final_response for "
+                            f"request {request_id}, sending fallback done"
+                        )
+                        q.put({
+                            "type": "done",
+                            "content": "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
+                            "request_id": request_id,
+                            "timestamp": time.time(),
+                        })
 
             elif event_type == "file_to_send":
                 file_path = data.get("path", "")
@@ -431,6 +496,156 @@ class WebChannel(ChatChannel):
                 })
 
         return on_event
+
+    # ------------------------------------------------------------------
+    # TTS auto-dispatch
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _resolve_voice_reply_mode() -> str:
+        """
+        Decide the TTS auto-reply policy.
+
+        Source of truth is the cross-channel pair
+        (`always_reply_voice`, `voice_reply_voice`) which chat_channel
+        also consults. The web UI presents these as a single three-state
+        picker (off / voice_if_voice / always) via a lossless mapping.
+        """
+        if conf().get("always_reply_voice", False):
+            return "always"
+        if conf().get("voice_reply_voice", False):
+            return "voice_if_voice"
+        return "off"
+
+    # Mirror of ModelsHandler._TTS_PROVIDERS. zhipu is intentionally omitted
+    # from the UI (GLM-TTS prelude beep); pinning it in config.json still works.
+    _TTS_PROVIDERS_SUGGEST_ORDER = ["openai", "minimax", "dashscope", "linkai"]
+
+    @classmethod
+    def _tts_provider_ready(cls) -> bool:
+        """True if user picked a provider OR any suggested vendor has an API key."""
+        if (conf().get("text_to_voice") or "").strip():
+            return True
+        for pid in cls._TTS_PROVIDERS_SUGGEST_ORDER:
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                continue
+            val = (conf().get(key_field) or "").strip()
+            if val and val not in ("YOUR API KEY", "YOUR_API_KEY"):
+                return True
+        return False
+
+    def _maybe_dispatch_auto_tts(
+        self,
+        request_id: str,
+        session_id: str,
+        text: str,
+        context: dict,
+    ) -> None:
+        try:
+            mode = self._resolve_voice_reply_mode()
+            if mode == "off":
+                return
+            if mode == "voice_if_voice" and not context.get("is_voice_input"):
+                return
+            if not self._tts_provider_ready():
+                return
+            threading.Thread(
+                target=self._synthesize_tts_async,
+                args=(request_id, session_id, text),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            logger.debug(f"[WebChannel] auto-tts dispatch skipped: {e}")
+
+    def _synthesize_tts_async(
+        self,
+        request_id: str,
+        session_id: str,
+        text: str,
+    ) -> None:
+        try:
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_text_to_voice(text)
+            if reply is None or reply.type != ReplyType.VOICE or not reply.content:
+                logger.warning(
+                    f"[WebChannel] TTS produced no audio for request {request_id}: "
+                    f"reply={reply}"
+                )
+                return
+            url = self._publish_tts_audio(reply.content)
+            if not url:
+                logger.warning(f"[WebChannel] TTS publish failed for request {request_id}")
+                return
+            payload = {"audio": {"url": url, "kind": "tts"}}
+            try:
+                from agent.memory import get_conversation_store
+                get_conversation_store().attach_extras_to_last_assistant(session_id, payload)
+            except Exception as e:
+                logger.debug(f"[WebChannel] tts persist skipped: {e}")
+            q = self.sse_queues.get(request_id)
+            if q is None:
+                logger.warning(
+                    f"[WebChannel] TTS ready but SSE queue already closed "
+                    f"for request {request_id} (url={url})"
+                )
+                return
+            q.put({
+                "type": "voice_attach",
+                "url": url,
+                "request_id": request_id,
+                "timestamp": time.time(),
+            })
+            logger.info(f"[WebChannel] TTS voice_attach pushed for request {request_id}: {url}")
+        except Exception as e:
+            # TTS failures are intentionally silent (no user-facing error).
+            logger.warning(f"[WebChannel] TTS synthesis failed: {e}")
+
+    @staticmethod
+    def _publish_tts_audio(src_path: str) -> str:
+        """Move a TTS file into uploads/ and return its public URL."""
+        try:
+            if not src_path or not os.path.isfile(src_path):
+                logger.warning(f"[WebChannel] publish_tts_audio missing source: {src_path!r}")
+                return ""
+            ext = os.path.splitext(src_path)[1].lower() or ".mp3"
+            upload_dir = _get_upload_dir()
+            os.makedirs(upload_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            dst_name = f"voice_reply_{ts}_{random.randint(0, 9999)}{ext}"
+            dst_path = os.path.join(upload_dir, dst_name)
+            shutil.move(src_path, dst_path)
+            logger.debug(f"[WebChannel] publish_tts_audio moved {src_path} -> {dst_path}")
+            return f"/uploads/{dst_name}"
+        except Exception as e:
+            logger.warning(f"[WebChannel] publish_tts_audio failed: {e}")
+            return ""
+
+    @staticmethod
+    def _cleanup_stale_voice_recordings(max_age_seconds: int = 3600) -> None:
+        """Drop voice_input_* uploads older than max_age_seconds (run at startup)."""
+        try:
+            upload_dir = _get_upload_dir()
+            if not os.path.isdir(upload_dir):
+                return
+            now = time.time()
+            removed = 0
+            for name in os.listdir(upload_dir):
+                if not name.startswith("voice_input_"):
+                    continue
+                full = os.path.join(upload_dir, name)
+                try:
+                    if not os.path.isfile(full):
+                        continue
+                    if now - os.path.getmtime(full) > max_age_seconds:
+                        os.remove(full)
+                        removed += 1
+                except OSError:
+                    continue
+            if removed:
+                logger.info(f"[WebChannel] cleaned up {removed} stale voice recording(s) from {upload_dir}")
+        except Exception as e:
+            logger.warning(f"[WebChannel] voice cleanup failed: {e}")
 
     def upload_file(self):
         """Handle file or directory upload via multipart/form-data."""
@@ -557,6 +772,29 @@ class WebChannel(ChatChannel):
             prompt = json_data.get('message', '')
             use_sse = json_data.get('stream', True)
             attachments = json_data.get('attachments', [])
+            # Tag the message as originating from voice input so the post-reply
+            # TTS hook can honour the `voice_if_voice` policy (mirrors the
+            # desire_rtype concept used by other channels).
+            is_voice_input = bool(json_data.get('is_voice', False))
+
+            # Fast path for /cancel: bypass the session queue and SSE setup.
+            # Web frontend (stream=true) only listens to SSE, so we return an
+            # inline_reply payload to be rendered synchronously.
+            stripped_prompt = (prompt or "").strip().lower()
+            if stripped_prompt == "/cancel":
+                from agent.protocol import get_cancel_registry
+                cancelled = get_cancel_registry().cancel_session(session_id)
+                lang = (json_data.get('lang') or 'zh').lower()
+                msg_text = _cancel_reply_text(cancelled, lang)
+                logger.info(
+                    f"[WebChannel] /cancel fast-path: session={session_id}, cancelled={cancelled}, lang={lang}"
+                )
+                return json.dumps({
+                    "status": "success",
+                    "request_id": "",
+                    "stream": False,
+                    "inline_reply": msg_text,
+                })
 
             # Append file references to the prompt (same format as QQ channel)
             if attachments:
@@ -607,6 +845,11 @@ class WebChannel(ChatChannel):
             context["session_id"] = session_id
             context["receiver"] = session_id
             context["request_id"] = request_id
+            if is_voice_input:
+                # Web channel runs its own TTS post-pipeline via
+                # _maybe_dispatch_auto_tts; don't set desire_rtype here or
+                # chat_channel would synthesize a duplicate VOICE reply.
+                context["is_voice_input"] = True
 
             if use_sse:
                 context["on_event"] = self._make_sse_callback(request_id)
@@ -634,28 +877,98 @@ class WebChannel(ChatChannel):
         q = self.sse_queues[request_id]
         idle_timeout = 600  # 10 minutes without any real event
         deadline = time.time() + idle_timeout
-        done = False
+        # After the main reply is done we keep the stream open for a short
+        # tail so async post-processing (TTS auto-synthesis) can deliver a
+        # `voice_attach` event before the client disconnects.
+        POST_DONE_TAIL_SECONDS = 60
+        post_done = False
+        post_deadline = 0.0
 
         try:
             while time.time() < deadline:
                 try:
                     item = q.get(timeout=1)
                 except Empty:
+                    if post_done and time.time() >= post_deadline:
+                        break
                     yield b": keepalive\n\n"
                     continue
 
-                # Real event received, reset idle deadline
                 deadline = time.time() + idle_timeout
-
                 payload = json.dumps(item, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
 
-                if item.get("type") == "done":
-                    done = True
-                    break
+                itype = item.get("type")
+                if itype == "done":
+                    post_done = True
+                    post_deadline = time.time() + POST_DONE_TAIL_SECONDS
+                elif itype == "cancelled":
+                    # Close SSE tail quickly after cancel; don't wait for the
+                    # full TTS tail since the user already pressed Stop.
+                    post_done = True
+                    post_deadline = time.time() + 3
+                elif itype == "voice_attach":
+                    # WSGI buffers the previous chunk until the next yield;
+                    # shrink the tail so the generator wakes up quickly to
+                    # emit a couple of keepalive comments that push the
+                    # voice_attach payload through to the browser.
+                    post_done = True
+                    post_deadline = time.time() + 2  # 2s post-attach tail
         finally:
-            if done:
-                self.sse_queues.pop(request_id, None)
+            self.sse_queues.pop(request_id, None)
+
+    def cancel_request(self):
+        """
+        Cancel an in-flight agent run.
+
+        Body: {"request_id": "...", "session_id": "..."}
+        Either field is sufficient; request_id is preferred when known.
+        Always returns success even when nothing was running, so the
+        client's UX is idempotent.
+        """
+        try:
+            from agent.protocol import get_cancel_registry
+
+            data = web.data()
+            try:
+                json_data = json.loads(data) if data else {}
+            except Exception:
+                json_data = {}
+
+            request_id = (json_data.get("request_id") or "").strip()
+            session_id = (json_data.get("session_id") or "").strip()
+            lang = (json_data.get("lang") or "zh").lower()
+
+            registry = get_cancel_registry()
+            cancelled = 0
+
+            if request_id:
+                if registry.cancel_request(request_id):
+                    cancelled = 1
+
+            if cancelled == 0 and session_id:
+                cancelled = registry.cancel_session(session_id)
+
+            if request_id and request_id in self.sse_queues:
+                self.sse_queues[request_id].put({
+                    "type": "cancelled",
+                    "content": "Cancelled" if lang.startswith("en") else "已中止",
+                    "request_id": request_id,
+                    "timestamp": time.time(),
+                })
+
+            logger.info(
+                f"[WebChannel] cancel request: request_id={request_id!r}, "
+                f"session_id={session_id!r}, cancelled={cancelled}"
+            )
+            return json.dumps({
+                "status": "success",
+                "cancelled": cancelled,
+            })
+
+        except Exception as e:
+            logger.error(f"[WebChannel] cancel_request error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
     def poll_response(self):
         """
@@ -703,6 +1016,8 @@ class WebChannel(ChatChannel):
         port = conf().get("web_port", 9899)
         is_public_bind = host in ("0.0.0.0", "::")
 
+        self._cleanup_stale_voice_recordings()
+
         # 打印可用渠道类型提示
         logger.info(
             "[WebChannel] 全部可用通道如下，可修改 config.json 配置文件中的 channel_type 字段进行切换，多个通道用逗号分隔：")
@@ -747,10 +1062,14 @@ class WebChannel(ChatChannel):
             '/upload', 'UploadHandler',
             '/uploads/(.*)', 'UploadsHandler',
             '/api/file', 'FileServeHandler',
+            '/api/voice/asr', 'VoiceAsrHandler',
+            '/api/voice/tts', 'VoiceTtsHandler',
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
+            '/cancel', 'CancelHandler',
             '/chat', 'ChatHandler',
             '/config', 'ConfigHandler',
+            '/api/models', 'ModelsHandler',
             '/api/channels', 'ChannelsHandler',
             '/api/weixin/qrlogin', 'WeixinQrHandler',
             '/api/feishu/register', 'FeishuRegisterHandler',
@@ -839,8 +1158,8 @@ class AuthLoginHandler:
             data = json.loads(web.data())
         except Exception:
             return json.dumps({"status": "error", "message": "Invalid request"})
-        password = data.get("password", "")
-        expected = conf().get("web_password", "")
+        password = str(data.get("password", "") or "")
+        expected = _get_web_password()
         if not hmac.compare_digest(password, expected):
             logger.warning("[WebChannel] Invalid login attempt")
             return json.dumps({"status": "error", "message": "Wrong password"})
@@ -868,6 +1187,103 @@ class UploadHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         return WebChannel().upload_file()
+
+
+class VoiceAsrHandler:
+    """Receive a mic recording, persist it under uploads/ and run ASR.
+    Returns {status, text, audio_url} so the UI can render a playback bubble."""
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+
+        saved_path = None
+        try:
+            params = _raw_web_input()
+            file_obj = params.get("file")
+            if file_obj is None:
+                return json.dumps({"status": "error", "message": "no audio file"})
+
+            filename = getattr(file_obj, "filename", "") or "recording.webm"
+            ext = os.path.splitext(filename)[1].lower() or ".webm"
+            if ext not in (".webm", ".ogg", ".opus", ".mp4", ".m4a", ".mp3", ".wav"):
+                ext = ".webm"
+
+            upload_dir = _get_upload_dir()
+            os.makedirs(upload_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            saved_name = f"voice_input_{ts}_{random.randint(0, 9999)}{ext}"
+            saved_path = os.path.join(upload_dir, saved_name)
+            with open(saved_path, "wb") as f:
+                f.write(file_obj.file.read() if hasattr(file_obj, "file") else file_obj.value)
+
+            audio_url = f"/uploads/{saved_name}"
+
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_voice_to_text(saved_path)
+            if reply is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": "ASR returned no reply",
+                    "audio_url": audio_url,
+                })
+
+            from bridge.reply import ReplyType
+            if reply.type == ReplyType.TEXT:
+                return json.dumps({
+                    "status": "success",
+                    "text": reply.content or "",
+                    "audio_url": audio_url,
+                })
+            return json.dumps({
+                "status": "error",
+                "message": reply.content or "ASR failed",
+                "audio_url": audio_url,
+            })
+        except Exception as e:
+            logger.exception(f"[VoiceAsrHandler] failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class VoiceTtsHandler:
+    """On-demand TTS for the in-chat "read aloud" button. Returns the
+    audio URL and (when session_id is given) persists it onto the message."""
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            data = json.loads(web.data() or b"{}")
+            text = (data.get("text") or "").strip()
+            session_id = (data.get("session_id") or "").strip()
+            if not text:
+                return json.dumps({"status": "error", "message": "empty text"})
+            # `@singleton` makes WebChannel a factory function — go via instance.
+            channel = WebChannel()
+            if not channel._tts_provider_ready():
+                return json.dumps({"status": "error", "message": "tts not configured"})
+
+            from bridge.bridge import Bridge
+            reply = Bridge().fetch_text_to_voice(text)
+            if reply is None or reply.type != ReplyType.VOICE or not reply.content:
+                msg = getattr(reply, "content", "") or "tts failed"
+                return json.dumps({"status": "error", "message": str(msg)})
+
+            url = channel._publish_tts_audio(reply.content)
+            if not url:
+                return json.dumps({"status": "error", "message": "publish failed"})
+
+            if session_id:
+                try:
+                    from agent.memory import get_conversation_store
+                    get_conversation_store().attach_extras_to_last_assistant(
+                        session_id, {"audio": {"url": url, "kind": "tts"}},
+                    )
+                except Exception as e:
+                    logger.debug(f"[VoiceTtsHandler] persist skipped: {e}")
+
+            return json.dumps({"status": "success", "audio_url": url})
+        except Exception as e:
+            logger.exception(f"[VoiceTtsHandler] failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
 
 class UploadsHandler:
@@ -900,7 +1316,20 @@ class FileServeHandler:
             file_path = params.path
             if not file_path or not os.path.isabs(file_path):
                 raise web.notfound()
-            file_path = os.path.normpath(file_path)
+            # Resolve symlinks and confine access to the allowed root dirs,
+            # so this endpoint can't be abused to read arbitrary files (e.g. /etc/passwd, ~/.ssh).
+            # Defaults to the user home dir plus the agent workspace; set web_file_serve_root="/"
+            # to allow the whole filesystem.
+            file_path = os.path.realpath(file_path)
+            serve_root = conf().get("web_file_serve_root", "~") or "~"
+            allowed_roots = [
+                os.path.realpath(os.path.expanduser(serve_root)),
+                os.path.realpath(os.path.expanduser(conf().get("agent_workspace", "~/cow"))),
+            ]
+            if os.sep not in allowed_roots and not any(
+                os.path.commonpath([file_path, root]) == root for root in allowed_roots
+            ):
+                raise web.notfound()
             if not os.path.isfile(file_path):
                 raise web.notfound()
             content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
@@ -922,6 +1351,12 @@ class PollHandler:
     def POST(self):
         _require_auth()
         return WebChannel().poll_response()
+
+
+class CancelHandler:
+    def POST(self):
+        _require_auth()
+        return WebChannel().cancel_request()
 
 
 class StreamHandler:
@@ -958,14 +1393,15 @@ class ConfigHandler:
     _RECOMMENDED_MODELS = [
         const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO, const.DEEPSEEK_CHAT, const.DEEPSEEK_REASONER,
         const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7, const.MINIMAX_M2_5, const.MINIMAX_M2_1, const.MINIMAX_M2_1_LIGHTNING,
-        const.CLAUDE_4_6_SONNET, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_OPUS, const.CLAUDE_4_5_SONNET,
-        const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
+        const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS, const.CLAUDE_4_5_SONNET,
+        const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
+        const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX,
+        const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX,
         const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
+        const.MIMO_V2_5_PRO, const.MIMO_V2_5,
     ]
 
     # Generic placeholder hints surfaced in the web console. We deliberately
@@ -1002,7 +1438,7 @@ class ConfigHandler:
             "api_base_key": "claude_api_base",
             "api_base_default": "https://api.anthropic.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.CLAUDE_4_6_SONNET, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_OPUS, const.CLAUDE_4_5_SONNET],
+            "models": [const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS, const.CLAUDE_4_5_SONNET],
         }),
         ("gemini", {
             "label": "Gemini",
@@ -1010,7 +1446,7 @@ class ConfigHandler:
             "api_base_key": "gemini_api_base",
             "api_base_default": "https://generativelanguage.googleapis.com",
             "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+            "models": [const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         }),
         ("openai", {
             "label": "OpenAI",
@@ -1018,10 +1454,10 @@ class ConfigHandler:
             "api_base_key": "open_ai_api_base",
             "api_base_default": "https://api.openai.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
+            "models": [const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
         ("zhipu", {
-            "label": "智谱AI",
+            "label": {"zh": "智谱AI", "en": "GLM"},
             "api_key_field": "zhipu_ai_api_key",
             "api_base_key": "zhipu_ai_api_base",
             "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
@@ -1029,15 +1465,15 @@ class ConfigHandler:
             "models": [const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
         }),
         ("dashscope", {
-            "label": "通义千问",
+            "label": {"zh": "通义千问", "en": "Qwen"},
             "api_key_field": "dashscope_api_key",
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX],
+            "models": [const.QWEN36_PLUS, const.QWEN37_MAX, const.QWEN35_PLUS, const.QWEN3_MAX],
         }),
         ("doubao", {
-            "label": "豆包",
+            "label": {"zh": "豆包", "en": "Doubao"},
             "api_key_field": "ark_api_key",
             "api_base_key": "ark_base_url",
             "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
@@ -1053,20 +1489,20 @@ class ConfigHandler:
             "models": [const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
         }),
         ("qianfan", {
-            "label": "百度千帆",
+            "label": {"zh": "百度千帆", "en": "ERNIE"},
             "api_key_field": "qianfan_api_key",
             "api_base_key": "qianfan_api_base",
             "api_base_default": "https://qianfan.baidubce.com/v2",
             "api_base_placeholder": _PLACEHOLDER_QIANFAN,
             "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
         }),
-        ("modelscope", {
-            "label": "ModelScope",
-            "api_key_field": "modelscope_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.QWEN3_5_27B, const.QWEN3_235B_A22B_INSTRUCT_2507],
+        ("mimo", {
+            "label": {"zh": "小米 MiMo", "en": "MiMo"},
+            "api_key_field": "mimo_api_key",
+            "api_base_key": "mimo_api_base",
+            "api_base_default": "https://api.xiaomimimo.com/v1",
+            "api_base_placeholder": _PLACEHOLDER_V1,
+            "models": [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
         }),
         ("linkai", {
             "label": "LinkAI",
@@ -1077,7 +1513,7 @@ class ConfigHandler:
             "models": _RECOMMENDED_MODELS,
         }),
         ("custom", {
-            "label": "自定义",
+            "label": {"zh": "自定义", "en": "Custom"},
             "api_key_field": "custom_api_key",
             "api_base_key": "custom_api_base",
             "api_base_default": "",
@@ -1089,10 +1525,10 @@ class ConfigHandler:
     EDITABLE_KEYS = {
         "model", "bot_type", "use_linkai",
         "open_ai_api_base", "deepseek_api_base", "qianfan_api_base", "claude_api_base", "gemini_api_base",
-        "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base",
+        "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base", "mimo_api_base",
         "open_ai_api_key", "deepseek_api_key", "qianfan_api_key", "claude_api_key", "gemini_api_key",
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
-        "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key",
+        "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "web_password",
     }
@@ -1134,7 +1570,7 @@ class ConfigHandler:
                     "api_key_field": p.get("api_key_field"),
                 }
 
-            raw_pwd = local_config.get("web_password", "")
+            raw_pwd = str(local_config.get("web_password", "") or "")
             masked_pwd = ("*" * len(raw_pwd)) if raw_pwd else ""
 
             return json.dumps({
@@ -1211,6 +1647,1209 @@ class ConfigHandler:
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class ModelsHandler:
+    """API for the unified Models console.
+
+    Layered model:
+      Layer 1 (providers): vendor credentials shared across capabilities.
+                            Stored as flat *_api_key / *_api_base fields in
+                            config.json — the same fields ConfigHandler
+                            already manages.
+      Layer 2 (capabilities): which provider/model is used by chat / vision /
+                            asr / tts / embedding / image / search.
+
+    GET  /api/models           -> overview (providers + capabilities)
+    POST /api/models/provider  -> upsert a vendor credential
+    DELETE /api/models/provider -> clear a vendor credential
+    POST /api/models/capability -> set provider/model for a capability
+    """
+
+    # Capability -> provider ids drawn from ConfigHandler.PROVIDER_MODELS.
+    _ASR_PROVIDERS = ["openai", "dashscope", "zhipu", "linkai"]
+    # Web-console white-list. Other vendors stay usable via direct config.
+    _TTS_PROVIDERS = ["openai", "minimax", "dashscope", "mimo", "linkai"]
+
+    # TTS engine catalog (speech models, not voice timbres). Entries are
+    # either a bare code or {value, hint?} when a friendly label helps.
+    _TTS_PROVIDER_MODELS = {
+        "openai":    ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"],
+        "minimax": [
+            {"value": "speech-2.8-hd",    "hint": "情绪渲染融合语气词,自然听感"},
+            {"value": "speech-2.8-turbo", "hint": "极致生成速度,更自然逼真"},
+            {"value": "speech-2.6-hd",    "hint": "超低延时,归一化升级"},
+            {"value": "speech-2.6-turbo", "hint": "更快更便宜,适合语音聊天/数字人"},
+        ],
+        "dashscope": [
+            {"value": "qwen3-tts-flash", "hint": "覆盖普通话、方言与主流外语"},
+        ],
+        # 小米 MiMo TTS 系列，通过 chat completions 接口合成
+        "mimo": [
+            {"value": "mimo-v2.5-tts", "hint": "预置音色 · 支持唱歌模式"},
+        ],
+        # Aggregating gateway: a single endpoint multiplexes several
+        # underlying TTS engines, selected via the `model` field.
+        # Each engine exposes its own voice catalog (see _TTS_PROVIDER_VOICES).
+        "linkai": [
+            {"value": "tts-1",  "hint": "OpenAI · 多语种通用"},
+            {"value": "doubao", "hint": "字节豆包 · 中文音色丰富"},
+            {"value": "baidu",  "hint": "百度 · 中文主播音色"},
+        ],
+    }
+
+    # Per-provider voice timbres. Entries can be a bare code string
+    # (label = code) or {value, hint?} when a friendly secondary label
+    # helps recognition. We keep `value` as the raw API code so power
+    # users can cross-reference config.json.
+    _TTS_PROVIDER_VOICES = {
+        "openai":    [
+            "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+            "ash", "ballad", "coral", "sage", "verse",
+        ],
+        "minimax": [
+            # Mandarin Chinese (full catalog)
+            {"value": "male-qn-qingse",                           "hint": "中文 · 青涩青年（男）"},
+            {"value": "male-qn-jingying",                         "hint": "中文 · 精英青年（男）"},
+            {"value": "male-qn-badao",                            "hint": "中文 · 霸道青年（男）"},
+            {"value": "male-qn-daxuesheng",                       "hint": "中文 · 青年大学生（男）"},
+            {"value": "female-shaonv",                            "hint": "中文 · 少女（女）"},
+            {"value": "female-yujie",                             "hint": "中文 · 御姐（女）"},
+            {"value": "female-chengshu",                          "hint": "中文 · 成熟女性（女）"},
+            {"value": "female-tianmei",                           "hint": "中文 · 甜美女性（女）"},
+            {"value": "male-qn-qingse-jingpin",                   "hint": "中文 · 青涩青年-beta（男）"},
+            {"value": "male-qn-jingying-jingpin",                 "hint": "中文 · 精英青年-beta（男）"},
+            {"value": "male-qn-badao-jingpin",                    "hint": "中文 · 霸道青年-beta（男）"},
+            {"value": "male-qn-daxuesheng-jingpin",               "hint": "中文 · 青年大学生-beta（男）"},
+            {"value": "female-shaonv-jingpin",                    "hint": "中文 · 少女-beta（女）"},
+            {"value": "female-yujie-jingpin",                     "hint": "中文 · 御姐-beta（女）"},
+            {"value": "female-chengshu-jingpin",                  "hint": "中文 · 成熟女性-beta（女）"},
+            {"value": "female-tianmei-jingpin",                   "hint": "中文 · 甜美女性-beta（女）"},
+            {"value": "clever_boy",                               "hint": "中文 · 聪明男童"},
+            {"value": "cute_boy",                                 "hint": "中文 · 可爱男童"},
+            {"value": "lovely_girl",                              "hint": "中文 · 萌萌女童"},
+            {"value": "cartoon_pig",                              "hint": "中文 · 卡通猪小琪"},
+            {"value": "bingjiao_didi",                            "hint": "中文 · 病娇弟弟"},
+            {"value": "junlang_nanyou",                           "hint": "中文 · 俊朗男友"},
+            {"value": "chunzhen_xuedi",                           "hint": "中文 · 纯真学弟"},
+            {"value": "lengdan_xiongzhang",                       "hint": "中文 · 冷淡学长"},
+            {"value": "badao_shaoye",                             "hint": "中文 · 霸道少爷"},
+            {"value": "tianxin_xiaoling",                         "hint": "中文 · 甜心小玲"},
+            {"value": "qiaopi_mengmei",                           "hint": "中文 · 俏皮萌妹"},
+            {"value": "wumei_yujie",                              "hint": "中文 · 妩媚御姐"},
+            {"value": "diadia_xuemei",                            "hint": "中文 · 嗲嗲学妹"},
+            {"value": "danya_xuejie",                             "hint": "中文 · 淡雅学姐"},
+            {"value": "Chinese (Mandarin)_Reliable_Executive",    "hint": "中文 · 沉稳高管"},
+            {"value": "Chinese (Mandarin)_News_Anchor",           "hint": "中文 · 新闻女声"},
+            {"value": "Chinese (Mandarin)_Mature_Woman",          "hint": "中文 · 傲娇御姐"},
+            {"value": "Chinese (Mandarin)_Unrestrained_Young_Man","hint": "中文 · 不羁青年"},
+            {"value": "Arrogant_Miss",                            "hint": "中文 · 嚣张小姐"},
+            {"value": "Robot_Armor",                              "hint": "中文 · 机械战甲"},
+            {"value": "Chinese (Mandarin)_Kind-hearted_Antie",    "hint": "中文 · 热心大婶"},
+            {"value": "Chinese (Mandarin)_HK_Flight_Attendant",   "hint": "中文 · 港普空姐"},
+            {"value": "Chinese (Mandarin)_Humorous_Elder",        "hint": "中文 · 搞笑大爷"},
+            {"value": "Chinese (Mandarin)_Gentleman",             "hint": "中文 · 温润男声"},
+            {"value": "Chinese (Mandarin)_Warm_Bestie",           "hint": "中文 · 温暖闺蜜"},
+            {"value": "Chinese (Mandarin)_Male_Announcer",        "hint": "中文 · 播报男声"},
+            {"value": "Chinese (Mandarin)_Sweet_Lady",            "hint": "中文 · 甜美女声"},
+            {"value": "Chinese (Mandarin)_Southern_Young_Man",    "hint": "中文 · 南方小哥"},
+            {"value": "Chinese (Mandarin)_Wise_Women",            "hint": "中文 · 阅历姐姐"},
+            {"value": "Chinese (Mandarin)_Gentle_Youth",          "hint": "中文 · 温润青年"},
+            {"value": "Chinese (Mandarin)_Warm_Girl",             "hint": "中文 · 温暖少女"},
+            {"value": "Chinese (Mandarin)_Kind-hearted_Elder",    "hint": "中文 · 花甲奶奶"},
+            {"value": "Chinese (Mandarin)_Cute_Spirit",           "hint": "中文 · 憨憨萌兽"},
+            {"value": "Chinese (Mandarin)_Radio_Host",            "hint": "中文 · 电台男主播"},
+            {"value": "Chinese (Mandarin)_Lyrical_Voice",         "hint": "中文 · 抒情男声"},
+            {"value": "Chinese (Mandarin)_Straightforward_Boy",   "hint": "中文 · 率真弟弟"},
+            {"value": "Chinese (Mandarin)_Sincere_Adult",         "hint": "中文 · 真诚青年"},
+            {"value": "Chinese (Mandarin)_Gentle_Senior",         "hint": "中文 · 温柔学姐"},
+            {"value": "Chinese (Mandarin)_Stubborn_Friend",       "hint": "中文 · 嘴硬竹马"},
+            {"value": "Chinese (Mandarin)_Crisp_Girl",            "hint": "中文 · 清脆少女"},
+            {"value": "Chinese (Mandarin)_Pure-hearted_Boy",      "hint": "中文 · 清澈邻家弟弟"},
+            {"value": "Chinese (Mandarin)_Soft_Girl",             "hint": "中文 · 柔和少女"},
+            # Cantonese (full catalog)
+            {"value": "Cantonese_ProfessionalHost（F)",            "hint": "粤语 · 专业女主持"},
+            {"value": "Cantonese_GentleLady",                     "hint": "粤语 · 温柔女声"},
+            {"value": "Cantonese_ProfessionalHost（M)",            "hint": "粤语 · 专业男主持"},
+            {"value": "Cantonese_PlayfulMan",                     "hint": "粤语 · 活泼男声"},
+            {"value": "Cantonese_CuteGirl",                       "hint": "粤语 · 可爱女孩"},
+            {"value": "Cantonese_KindWoman",                      "hint": "粤语 · 善良女声"},
+            # English (curated: 1F + 1M)
+            {"value": "English_Graceful_Lady",                    "hint": "英文 · Graceful Lady（女）"},
+            {"value": "English_Trustworthy_Man",                  "hint": "英文 · Trustworthy Man（男）"},
+            # Japanese (curated: 1F + 1M)
+            {"value": "Japanese_KindLady",                        "hint": "日文 · Kind Lady（女）"},
+            {"value": "Japanese_LoyalKnight",                     "hint": "日文 · Loyal Knight（男）"},
+            # Korean (curated: 1F + 1M)
+            {"value": "Korean_SweetGirl",                         "hint": "韩文 · Sweet Girl（女）"},
+            {"value": "Korean_CheerfulBoyfriend",                 "hint": "韩文 · Cheerful Boyfriend（男）"},
+        ],
+        "dashscope": [
+            {"value": "Cherry",   "hint": "芊悦 · 阳光女声"},
+            {"value": "Serena",   "hint": "苏瑶 · 温柔女声"},
+            {"value": "Chelsie",  "hint": "千雪 · 二次元少女"},
+            {"value": "Ethan",    "hint": "晨煦 · 阳光男声"},
+            {"value": "Moon",     "hint": "月白 · 率性男声"},
+            {"value": "Kai",      "hint": "凯 · 治愈男声"},
+            {"value": "Nofish",   "hint": "不吃鱼 · 设计师男声"},
+            {"value": "Bella",    "hint": "萌宝 · 小萝莉"},
+            {"value": "Bunny",    "hint": "萌小姬 · 萌系少女"},
+            {"value": "Stella",   "hint": "少女阿月 · 元气少女"},
+            {"value": "Neil",     "hint": "阿闻 · 新闻主播"},
+            {"value": "Seren",    "hint": "小婉 · 助眠女声"},
+            {"value": "Jada",     "hint": "上海话 · 阿珍"},
+            {"value": "Dylan",    "hint": "北京话 · 晓东"},
+            {"value": "Sunny",    "hint": "四川话 · 晴儿"},
+            {"value": "Eric",     "hint": "四川话 · 程川"},
+            {"value": "Rocky",    "hint": "粤语 · 阿强"},
+            {"value": "Kiki",     "hint": "粤语 · 阿清"},
+            {"value": "Peter",    "hint": "天津话 · 李彼得"},
+            {"value": "Marcus",   "hint": "陕西话 · 秦川"},
+            {"value": "Roy",      "hint": "闽南语 · 阿杰"},
+        ],
+        # 小米 MiMo 预置音色列表（mimo-v2.5-tts），文档：
+        # https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5
+        "mimo": [
+            {"value": "冰糖",   "hint": "中文 · 女声 · 冰糖"},
+            {"value": "茉莉",   "hint": "中文 · 女声 · 茉莉"},
+            {"value": "苏打",   "hint": "中文 · 男声 · 苏打"},
+            {"value": "白桦",   "hint": "中文 · 男声 · 白桦"},
+            {"value": "Mia",   "hint": "英文 · 女声 · Mia"},
+            {"value": "Chloe", "hint": "英文 · 女声 · Chloe"},
+            {"value": "Milo",  "hint": "英文 · 男声 · Milo"},
+            {"value": "Dean",  "hint": "英文 · 男声 · Dean"},
+        ],
+        # Aggregating gateway: voices are scoped per engine model. The
+        # frontend picks the correct list based on the selected model so
+        # users don't see incompatible timbres for the active engine.
+        "linkai": {
+            "tts-1": [
+                "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+            ],
+            "doubao": [
+                {"value": "zh_female_wanwanxiaohe_moon_bigtts",       "hint": "湾湾小何"},
+                {"value": "BV007_streaming",                          "hint": "亲切女声"},
+                {"value": "BV001_streaming",                          "hint": "通用女声"},
+                {"value": "BV002_streaming",                          "hint": "通用男声"},
+                {"value": "BV051_streaming",                          "hint": "奶气萌娃"},
+                {"value": "zh_female_linjianvhai_moon_bigtts",        "hint": "邻家女孩"},
+                {"value": "BV700_streaming",                          "hint": "灿灿"},
+                {"value": "BV019_streaming",                          "hint": "重庆小伙"},
+                {"value": "BV524_streaming",                          "hint": "日语男声"},
+                {"value": "BV021_streaming",                          "hint": "东北老铁"},
+                {"value": "BV701_streaming",                          "hint": "擎苍"},
+                {"value": "BV113_streaming",                          "hint": "甜宠少御"},
+                {"value": "BV056_streaming",                          "hint": "阳光男声"},
+                {"value": "BV213_streaming",                          "hint": "广西表哥"},
+                {"value": "BV119_streaming",                          "hint": "通用赘婿"},
+                {"value": "BV705_streaming",                          "hint": "炀炀"},
+                {"value": "BV033_streaming",                          "hint": "温柔小哥"},
+                {"value": "BV102_streaming",                          "hint": "儒雅青年"},
+                {"value": "BV522_streaming",                          "hint": "气质女生"},
+                {"value": "BV034_streaming",                          "hint": "知性姐姐 · 双语"},
+                {"value": "BV005_streaming",                          "hint": "活泼女声"},
+                {"value": "zh_female_wanqudashu_moon_bigtts",         "hint": "湾区大叔"},
+                {"value": "zh_female_daimengchuanmei_moon_bigtts",    "hint": "呆萌川妹"},
+                {"value": "zh_male_guozhoudege_moon_bigtts",          "hint": "广州德哥"},
+                {"value": "zh_male_beijingxiaoye_moon_bigtts",        "hint": "北京小爷"},
+                {"value": "zh_male_shaonianzixin_moon_bigtts",        "hint": "少年梓辛 / Brayan"},
+                {"value": "zh_female_meilinvyou_moon_bigtts",         "hint": "魅力女友"},
+                {"value": "zh_male_shenyeboke_moon_bigtts",           "hint": "深夜播客"},
+                {"value": "zh_female_sajiaonvyou_moon_bigtts",        "hint": "柔美女友"},
+                {"value": "zh_female_yuanqinvyou_moon_bigtts",        "hint": "撒娇学妹"},
+                {"value": "zh_male_haoyuxiaoge_moon_bigtts",          "hint": "浩宇小哥"},
+                {"value": "zh_male_guangxiyuanzhou_moon_bigtts",      "hint": "广西远舟"},
+                {"value": "zh_female_meituojieer_moon_bigtts",        "hint": "妹坨洁儿"},
+                {"value": "zh_male_yuzhouzixuan_moon_bigtts",         "hint": "豫州子轩"},
+                {"value": "BV115_streaming",                          "hint": "古风少御"},
+                {"value": "zh_female_gaolengyujie_moon_bigtts",       "hint": "高冷御姐"},
+                {"value": "zh_male_yuanboxiaoshu_moon_bigtts",        "hint": "渊博小叔"},
+                {"value": "zh_male_yangguangqingnian_moon_bigtts",    "hint": "阳光青年"},
+                {"value": "zh_male_aojiaobazong_moon_bigtts",         "hint": "傲娇霸总"},
+                {"value": "zh_male_jingqiangkanye_moon_bigtts",       "hint": "京腔侃爷 / Harmony"},
+                {"value": "zh_female_shuangkuaisisi_moon_bigtts",     "hint": "爽快思思 / Skye"},
+                {"value": "zh_male_wennuanahu_moon_bigtts",           "hint": "温暖阿虎 / Alvin"},
+                {"value": "multi_female_shuangkuaisisi_moon_bigtts",  "hint": "はるこ / Esmeralda"},
+                {"value": "multi_male_jingqiangkanye_moon_bigtts",    "hint": "かずね / Javier or Álvaro"},
+                {"value": "multi_female_gaolengyujie_moon_bigtts",    "hint": "あけみ"},
+                {"value": "multi_male_wanqudashu_moon_bigtts",        "hint": "ひろし / Roberto"},
+                {"value": "ICL_zh_female_bingruoshaonv_tob",          "hint": "病弱少女"},
+                {"value": "ICL_zh_female_huoponvhai_tob",             "hint": "活泼女孩"},
+                {"value": "ICL_zh_female_heainainai_tob",             "hint": "和蔼奶奶"},
+                {"value": "ICL_zh_female_linjuayi_tob",               "hint": "邻居阿姨"},
+                {"value": "zh_female_wenrouxiaoya_moon_bigtts",       "hint": "温柔小雅"},
+                {"value": "zh_female_tianmeixiaoyuan_moon_bigtts",    "hint": "甜美小源"},
+                {"value": "zh_female_qingchezizi_moon_bigtts",        "hint": "清澈梓梓"},
+                {"value": "zh_male_dongfanghaoran_moon_bigtts",       "hint": "东方浩然"},
+                {"value": "zh_male_jieshuoxiaoming_moon_bigtts",      "hint": "解说小明"},
+                {"value": "zh_female_kailangjiejie_moon_bigtts",      "hint": "开朗姐姐"},
+                {"value": "zh_male_linjiananhai_moon_bigtts",         "hint": "邻家男孩"},
+                {"value": "zh_female_tianmeiyueyue_moon_bigtts",      "hint": "甜美悦悦"},
+                {"value": "zh_female_xinlingjitang_moon_bigtts",      "hint": "心灵鸡汤"},
+            ],
+            "baidu": [
+                {"value": "baidu_0",    "hint": "度小美 · 标准女主播"},
+                {"value": "baidu_1",    "hint": "度小宇 · 亲切男声"},
+                {"value": "baidu_3",    "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_4",    "hint": "度丫丫 · 童声"},
+                {"value": "baidu_5",    "hint": "度小娇 · 成熟女主播"},
+                {"value": "baidu_5003", "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_5118", "hint": "度小鹿 · 甜美女声"},
+                {"value": "baidu_103",  "hint": "度米朵 · 可爱童声"},
+                {"value": "baidu_106",  "hint": "度博文 · 专业男主播"},
+                {"value": "baidu_110",  "hint": "度小童 · 童声主播"},
+                {"value": "baidu_111",  "hint": "度小萌 · 软萌妹子"},
+                {"value": "baidu_4003", "hint": "度逍遥 · 情感男声"},
+                {"value": "baidu_4100", "hint": "度小雯 · 活力女主播"},
+                {"value": "baidu_4103", "hint": "度米朵 · 可爱女声"},
+                {"value": "baidu_4105", "hint": "度灵儿 · 清澈女声"},
+                {"value": "baidu_4106", "hint": "度博文 · 专业男主播"},
+                {"value": "baidu_4115", "hint": "度小贤 · 电台男主播"},
+                {"value": "baidu_4117", "hint": "度小乔 · 活泼女声"},
+                {"value": "baidu_4119", "hint": "度小鹿 · 甜美女声"},
+                {"value": "baidu_4129", "hint": "度小彦 · 知识男主播"},
+                {"value": "baidu_4140", "hint": "度小新 · 专业女主播"},
+                {"value": "baidu_4143", "hint": "度清风 · 配音男声"},
+                {"value": "baidu_4144", "hint": "度姗姗 · 娱乐女声"},
+                {"value": "baidu_4149", "hint": "度星河 · 广告男声"},
+                {"value": "baidu_4206", "hint": "度博文 · 综艺男声"},
+                {"value": "baidu_4226", "hint": "南方 · 电台女主播"},
+                {"value": "baidu_4254", "hint": "度小清 · 广告女声"},
+                {"value": "baidu_4278", "hint": "度小贝 · 知识女主播"},
+            ],
+        },
+    }
+    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
+
+    # Capability-scoped model catalogs. The chat dropdown can reuse the
+    # provider's generic model list, but vision and image generation are
+    # served by a narrower subset that the runtime actually dispatches to —
+    # see agent/tools/vision/vision.py and skills/image-generation/SKILL.md.
+    # Anything not listed here intentionally hides the model dropdown so
+    # users cannot pin a chat-only model and silently get a 4xx at runtime.
+    _VISION_PROVIDER_MODELS = {
+        # OpenAI ordering matches the recommended GPT-5.4 family first, then
+        # GPT-5 and the GPT-4.1/4o backstops.
+        "openai":    [
+            const.GPT_55,
+            const.GPT_54,
+            const.GPT_54_MINI,
+            const.GPT_54_NANO,
+            const.GPT_5,
+            const.GPT_41,
+            const.GPT_41_MINI,
+            const.GPT_4o,
+        ],
+        "doubao":    [const.DOUBAO_SEED_2_PRO],
+        "moonshot":  [const.KIMI_K2_6],
+        "dashscope": [const.QWEN36_PLUS, const.QWEN35_PLUS, const.QWEN3_MAX],
+        "claudeAPI": [const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
+        "gemini":    [const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+        "qianfan":   [const.ERNIE_45_TURBO_VL],
+        # Zhipu's bot hard-codes the call to glm-5v-turbo regardless of what
+        # name is passed in (see models/zhipuai/zhipuai_bot.py::call_vision),
+        # so listing the chat models here would silently route to the same
+        # endpoint. Surface only the model the runtime can truly dispatch to.
+        "zhipu":     [const.GLM_5V_TURBO],
+        # MiniMax's vision endpoint is similarly hard-coded to MiniMax-Text-01
+        # (see models/minimax/minimax_bot.py::call_vision); the M2.x chat
+        # family is text-only.
+        "minimax":   [const.MINIMAX_TEXT_01],
+        # MiMo 原生全模态模型：v2.5-pro / v2.5 支持图像/音频/视频输入
+        "mimo":      [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
+        # LinkAI proxies the underlying vendor; surface a curated set of
+        # multimodal models. Order: gpt-4.1-mini → gpt-5.4-mini as the
+        # cross-vendor baselines, then each vendor's recommended default.
+        "linkai":    [
+            const.GPT_41_MINI,
+            const.GPT_54_MINI,
+            const.QWEN36_PLUS,
+            const.DOUBAO_SEED_2_PRO,
+            const.KIMI_K2_6,
+            const.CLAUDE_4_6_SONNET,
+            const.GEMINI_31_FLASH_LITE_PRE,
+        ],
+    }
+
+    # Image-generation catalog. Source of truth: skills/image-generation/SKILL.md.
+    # Listed verbatim (not via const.*) because these are skill-side names
+    # the script forwards directly to the vendor's image endpoint.
+    #
+    # Two shapes are accepted per model entry:
+    #   - bare string                           → the model id, no hint
+    #   - {"value": ..., "hint": "..."}         → model id + dim secondary
+    #                                             label rendered on the right
+    #                                             of the dropdown row. Useful
+    #                                             for surfacing brand names
+    #                                             (e.g. "Nano Banana 2" next
+    #                                             to gemini-3.1-flash-image-preview).
+    # The skill itself maps either form to the real vendor endpoint, so the
+    # hint is purely cosmetic.
+    _IMAGE_PROVIDER_MODELS = {
+        "openai":    ["gpt-image-2", "gpt-image-1"],
+        "gemini": [
+            {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
+            {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
+            {"value": "gemini-2.5-flash-image",         "hint": "Nano Banana"},
+        ],
+        "doubao":    ["seedream-5.0-lite", "seedream-4.5"],
+        "dashscope": ["qwen-image-2.0-pro", "qwen-image-2.0"],
+        "minimax":   ["image-01"],
+        "linkai": [
+            "gpt-image-2",
+            {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
+            {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
+            "seedream-5.0-lite",
+        ],
+    }
+
+    @staticmethod
+    def _config_path() -> str:
+        return os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "config.json",
+        )
+
+    @classmethod
+    def _read_file_config(cls) -> dict:
+        path = cls._config_path()
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @classmethod
+    def _write_file_config(cls, data: dict) -> None:
+        with open(cls._config_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+    @staticmethod
+    def _is_real_key(value: str) -> bool:
+        return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
+
+    @classmethod
+    def _provider_overview(cls) -> List[dict]:
+        """All known providers (configured first, unconfigured after).
+        Re-uses ConfigHandler.PROVIDER_MODELS for the canonical list."""
+        local_config = conf()
+        items = []
+        for pid, p in ConfigHandler.PROVIDER_MODELS.items():
+            key_field = p.get("api_key_field")
+            base_field = p.get("api_base_key")
+            raw_key = local_config.get(key_field, "") if key_field else ""
+            raw_base = local_config.get(base_field, "") if base_field else ""
+            configured = cls._is_real_key(raw_key)
+            items.append({
+                "id": pid,
+                "label": p["label"],
+                "configured": configured,
+                "api_key_field": key_field,
+                "api_base_field": base_field,
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
+                "api_base": raw_base or (p.get("api_base_default") or ""),
+                "api_base_default": p.get("api_base_default") or "",
+                "api_base_placeholder": p.get("api_base_placeholder") or "",
+                "models": list(p.get("models") or []),
+            })
+        items.sort(key=lambda it: (0 if it["configured"] else 1, list(ConfigHandler.PROVIDER_MODELS.keys()).index(it["id"])))
+        return items
+
+    @classmethod
+    def _chat_capability(cls, local_config: dict) -> dict:
+        """Main chat model — drives the agent. bot_type maps to a provider id."""
+        bot_type = local_config.get("bot_type") or ""
+        provider_id = "openai" if bot_type == "chatGPT" else bot_type
+        if provider_id not in ConfigHandler.PROVIDER_MODELS and local_config.get("use_linkai"):
+            provider_id = "linkai"
+        return {
+            "editable": True,
+            "current_provider": provider_id,
+            "current_model": local_config.get("model", ""),
+            "providers": list(ConfigHandler.PROVIDER_MODELS.keys()),
+            "use_linkai": bool(local_config.get("use_linkai", False)),
+        }
+
+    # Auto-fallback order for vision when no explicit model is pinned.
+    # Mirrors agent/tools/vision/vision.py::_resolve_providers — DeepSeek and
+    # other text-only chat bots are intentionally absent, since they cannot
+    # actually serve a vision request. Each entry is
+    #   (provider_id, api_key_field, default_vision_model)
+    # and lookups are case-insensitive on the api_key_field. LinkAI and
+    # OpenAI are handled separately below so use_linkai can promote LinkAI
+    # to the front of the chain.
+    _VISION_AUTO_ORDER = [
+        ("moonshot",  "moonshot_api_key",  const.KIMI_K2_6),
+        ("doubao",    "ark_api_key",       const.DOUBAO_SEED_2_PRO),
+        ("dashscope", "dashscope_api_key", const.QWEN36_PLUS),
+        ("claudeAPI", "claude_api_key",    const.CLAUDE_4_6_SONNET),
+        ("gemini",    "gemini_api_key",    const.GEMINI_35_FLASH),
+        ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
+        ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
+        ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
+        ("mimo",      "mimo_api_key",      const.MIMO_V2_5_PRO),
+    ]
+
+    @classmethod
+    def _predict_vision_auto(cls, local_config: dict) -> dict:
+        """Predict which provider vision.py will actually dispatch to when
+        no tools.vision.model is set. Mirrors the fallback order in
+        agent/tools/vision/vision.py::_resolve_providers so the UI hint
+        matches reality."""
+        chat = cls._chat_capability(local_config)
+        main_provider = chat["current_provider"]
+        main_model = chat["current_model"]
+        use_linkai_flag = bool(local_config.get("use_linkai", False))
+        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+
+        def _try(pid: str, model_default: str):
+            # Look up the api_key for this provider via the canonical
+            # provider table so we don't hardcode field names here.
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                return None
+            if not cls._is_real_key(local_config.get(key_field, "")):
+                return None
+            # Pick a model that the vision runtime can actually dispatch to
+            # for this provider. Using `main_model` here is unsafe — for
+            # vendors like Zhipu/MiniMax the bot hard-codes the vision model
+            # name regardless of the chat-model name, so surfacing the chat
+            # model name in the hint is misleading. Trust the curated
+            # _VISION_PROVIDER_MODELS list: prefer the main model only if
+            # it appears there; otherwise show the vendor's first vision-
+            # capable model.
+            allowed = cls._VISION_PROVIDER_MODELS.get(pid, [])
+            if pid == main_provider and main_model and main_model in allowed:
+                return {"provider": pid, "model": main_model}
+            fallback = allowed[0] if allowed else model_default
+            return {"provider": pid, "model": fallback}
+
+        # 1. use_linkai → suppress the hint entirely. LinkAI is a proxy and
+        #    we don't observe which underlying model it picks; surfacing
+        #    "LinkAI" with no model would not tell the user anything useful.
+        if use_linkai_flag and linkai_configured:
+            return {"provider": "", "model": ""}
+
+        # 2. Main bot — only when it natively supports vision. We approximate
+        #    "natively supports" by membership in _VISION_PROVIDER_MODELS,
+        #    which is the same set vision.py's _DISCOVERABLE_MODELS covers
+        #    (minus the chat-only DeepSeek family).
+        if main_provider in cls._VISION_PROVIDER_MODELS:
+            hit = _try(main_provider, main_model)
+            if hit:
+                return hit
+
+        # 3. Other discoverable providers in declared order
+        for pid, _key, default_model in cls._VISION_AUTO_ORDER:
+            hit = _try(pid, default_model)
+            if hit:
+                return hit
+
+        # 4. OpenAI raw HTTP
+        if cls._is_real_key(local_config.get("open_ai_api_key", "")):
+            return {"provider": "openai", "model": const.GPT_55}
+
+        # 5. LinkAI as last resort (only reached when use_linkai is off)
+        if linkai_configured:
+            return {"provider": "linkai", "model": const.GPT_41_MINI}
+
+        return {"provider": "", "model": ""}
+
+    @classmethod
+    def _vision_capability(cls, local_config: dict) -> dict:
+        """Vision model. tools.vision.model is the explicit override; otherwise
+        the runtime fallback chain in agent/tools/vision/vision.py decides."""
+        tools_conf = local_config.get("tools") or local_config.get("tool") or {}
+        if not isinstance(tools_conf, dict):
+            tools_conf = {}
+        vision_conf = tools_conf.get("vision") or {}
+        if not isinstance(vision_conf, dict):
+            vision_conf = {}
+        user_specified = (vision_conf.get("model") or "").strip()
+        explicit_provider = (vision_conf.get("provider") or "").strip()
+
+        # Provider resolution priority:
+        #   1. Explicit `tools.vision.provider` (persisted via UI; supports
+        #      custom model names that prefix-inference can't recognize).
+        #   2. Scan per-provider model lists by model name.
+        # Empty provider keeps the dropdown on "auto" when we can't tell.
+        inferred_provider = ""
+        if explicit_provider and explicit_provider in cls._VISION_PROVIDER_MODELS:
+            inferred_provider = explicit_provider
+        elif user_specified:
+            for pid, models in cls._VISION_PROVIDER_MODELS.items():
+                if user_specified in models:
+                    inferred_provider = pid
+                    break
+
+        # In auto mode the hint should reflect what vision.py will actually
+        # dispatch to — surface that prediction via fallback_* so the UI
+        # shows e.g. "openai / gpt-4.1-mini" instead of the chat-model name.
+        predicted = cls._predict_vision_auto(local_config)
+
+        return {
+            "editable": True,
+            "strategy": "specified" if user_specified else "auto",
+            "user_specified_model": user_specified,
+            "current_provider": inferred_provider,
+            "current_model": user_specified,
+            "fallback_provider": predicted["provider"],
+            "fallback_model": predicted["model"],
+            "providers": list(cls._VISION_PROVIDER_MODELS.keys()),
+            "provider_models": cls._VISION_PROVIDER_MODELS,
+        }
+
+    @classmethod
+    def _asr_capability(cls, local_config: dict) -> dict:
+        # "Pick or empty" — when voice_to_text is unset we don't show a
+        # current selection. `suggested_provider` previews which vendor
+        # the bridge auto-picker would land on (purely a UX hint, NOT
+        # persisted). Once the user saves a vendor, we lock onto it.
+        explicit = (local_config.get("voice_to_text") or "").strip().lower()
+        suggested = ""
+        if not explicit:
+            for pid in cls._ASR_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
+        return {
+            "editable": True,
+            "current_provider": explicit,
+            "suggested_provider": suggested,
+            "current_model": "",
+            "providers": cls._ASR_PROVIDERS,
+        }
+
+    @classmethod
+    def _tts_capability(cls, local_config: dict) -> dict:
+        explicit = (local_config.get("text_to_voice") or "").strip().lower()
+        # Providers outside the white-list don't drive the picker, but their
+        # underlying runtime config is preserved so bridge still routes them.
+        ui_provider = explicit if explicit in cls._TTS_PROVIDERS else ""
+        suggested = ""
+        if not ui_provider:
+            for pid in cls._TTS_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
+        return {
+            "editable": True,
+            "current_provider": ui_provider,
+            "suggested_provider": suggested,
+            "current_model": (local_config.get("text_to_voice_model") or "") if ui_provider else "",
+            "current_voice": (local_config.get("tts_voice_id") or "") if ui_provider else "",
+            "providers": cls._TTS_PROVIDERS,
+            "provider_models": cls._TTS_PROVIDER_MODELS,
+            "provider_voices": cls._TTS_PROVIDER_VOICES,
+            "reply_mode": cls._tts_reply_mode(local_config),
+        }
+
+    @staticmethod
+    def _tts_reply_mode(local_config: dict) -> str:
+        if local_config.get("always_reply_voice", False):
+            return "always"
+        if local_config.get("voice_reply_voice", False):
+            return "voice_if_voice"
+        return "off"
+
+    @classmethod
+    def _embedding_capability(cls, local_config: dict) -> dict:
+        # Embedding is "pick or empty" — runtime's legacy openai/linkai
+        # fallback is a safety net, not a UX-visible auto mode.
+        # `suggested_provider` is a UI-only hint (NOT persisted) that
+        # preselects the dropdown to whichever configured vendor we'd
+        # recommend, so users don't have to expand the menu to find it.
+        explicit = (local_config.get("embedding_provider") or "").strip().lower()
+        suggested = ""
+        if not explicit:
+            for pid in cls._EMBEDDING_PROVIDERS:
+                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                key_field = meta.get("api_key_field")
+                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                    suggested = pid
+                    break
+        return {
+            "editable": True,
+            "current_provider": explicit,
+            "suggested_provider": suggested,
+            "current_model": local_config.get("embedding_model", "") or "",
+            "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
+            "providers": cls._EMBEDDING_PROVIDERS,
+        }
+
+    # Auto-fallback order for image generation. Mirrors the global priority
+    # used inside skills/image-generation/scripts/generate.py
+    # (`_DEFAULT_PROVIDER_ORDER`): OpenAI → Gemini → Seedream(Ark/doubao) →
+    # Qwen(dashscope) → MiniMax → LinkAI. Each entry maps the
+    # provider-card id to the script's per-provider DEFAULT_MODEL so the
+    # hint matches what the runtime would actually request.
+    _IMAGE_AUTO_ORDER = [
+        ("openai",    "gpt-image-2"),
+        ("gemini",    "gemini-3.1-flash-image-preview"),  # nano-banana-2
+        ("doubao",    "seedream-5.0-lite"),
+        ("dashscope", "qwen-image-2.0"),
+        ("minimax",   "image-01"),
+        ("linkai",    "gpt-image-2"),
+    ]
+
+    @classmethod
+    def _predict_image_auto(cls, local_config: dict) -> dict:
+        """Predict which provider/model the image-generation skill will hit
+        when no SKILL_IMAGE_GENERATION_MODEL override is set. Mirrors
+        skills/image-generation/scripts/generate.py::_build_providers so
+        the UI hint matches reality. Chat-only providers (DeepSeek etc.)
+        are absent by design — image generation never falls back to a chat
+        bot regardless of the main model.
+
+        When use_linkai is enabled the hint is suppressed entirely — LinkAI
+        proxies to whichever backend it deems appropriate and surfacing
+        "LinkAI" alone tells the user nothing actionable."""
+        use_linkai_flag = bool(local_config.get("use_linkai", False))
+        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+        if use_linkai_flag and linkai_configured:
+            return {"provider": "", "model": ""}
+
+        for pid, default_model in cls._IMAGE_AUTO_ORDER:
+            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            key_field = meta.get("api_key_field")
+            if not key_field:
+                continue
+            if cls._is_real_key(local_config.get(key_field, "")):
+                return {"provider": pid, "model": default_model}
+        return {"provider": "", "model": ""}
+
+    @classmethod
+    def _image_capability(cls, local_config: dict) -> dict:
+        """Image generation. Source of truth: config["skills"]["image-generation"]["model"]
+        (mirrors the per-skill config schema documented in skills/image-generation).
+        The runtime resolver in skills/image-generation/scripts/generate.py
+        reads this via the SKILL_IMAGE_GENERATION_MODEL env var that the
+        agent_initializer syncs at startup; provider is inferred from the
+        model name prefix, mirroring vision.py's design.
+
+        ``skill`` (singular) is still tolerated as a legacy fallback —
+        config.load_config() folds it into ``skills`` at startup.
+        """
+        skills_node = local_config.get("skills") or local_config.get("skill") or {}
+        if not isinstance(skills_node, dict):
+            skills_node = {}
+        img_node = skills_node.get("image-generation") or {}
+        if not isinstance(img_node, dict):
+            img_node = {}
+        explicit_model = (img_node.get("model") or "").strip()
+        explicit_provider = (img_node.get("provider") or "").strip()
+
+        # Provider resolution priority:
+        #   1. Explicit `skills.image-generation.provider` (persisted via UI;
+        #      supports custom model names that prefix-inference can't catch).
+        #   2. Scan per-provider model catalog by model name.
+        # Empty provider keeps the dropdown on "auto" when we can't tell.
+        inferred_provider = ""
+        if explicit_provider and explicit_provider in cls._IMAGE_PROVIDER_MODELS:
+            inferred_provider = explicit_provider
+        elif explicit_model:
+            for pid, models in cls._IMAGE_PROVIDER_MODELS.items():
+                for entry in models:
+                    val = entry if isinstance(entry, str) else (entry.get("value") or "")
+                    if val == explicit_model:
+                        inferred_provider = pid
+                        break
+                if inferred_provider:
+                    break
+
+        # In auto mode the hint should reflect what generate.py will actually
+        # dispatch to — surface that prediction via fallback_* so the UI
+        # never claims a chat-only bot (e.g. minimax/MiniMax-M2.7) "would
+        # generate the image", which is impossible.
+        predicted = cls._predict_image_auto(local_config)
+
+        return {
+            "editable": True,
+            "strategy": "specified" if explicit_model else "auto",
+            "current_provider": inferred_provider,
+            "current_model": explicit_model,
+            "fallback_provider": predicted["provider"],
+            "fallback_model": predicted["model"],
+            "providers": list(cls._IMAGE_PROVIDER_MODELS.keys()),
+            "provider_models": cls._IMAGE_PROVIDER_MODELS,
+            # The dispatcher that honors a pinned provider isn't wired up
+            # yet; advertise this so the UI can show a "saved but not active"
+            # banner until the runtime catches up.
+            "runtime_active": False,
+            "note": "router_pending",
+        }
+
+    # Canonical search provider order. Mirrors PROVIDER_ORDER in
+    # agent/tools/web_search/web_search.py — keep them in sync.
+    _SEARCH_PROVIDERS = ("bocha", "qianfan", "zhipu", "linkai")
+
+    _SEARCH_PROVIDER_LABELS = {
+        "bocha":   {"zh": "博查", "en": "Bocha"},
+        "zhipu":   {"zh": "智谱", "en": "GLM"},
+        "qianfan": {"zh": "百度千帆", "en": "ERNIE"},
+        "linkai":  {"zh": "LinkAI", "en": "LinkAI"},
+    }
+
+    @classmethod
+    def _search_provider_key(cls, provider: str, local_config: dict) -> str:
+        """Resolve the (raw) key for a given search provider."""
+        if provider == "bocha":
+            tools_cfg = local_config.get("tools") or {}
+            block = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
+            return (block.get("bocha_api_key") if isinstance(block, dict) else "") or os.environ.get("BOCHA_API_KEY", "")
+        if provider == "zhipu":
+            return local_config.get("zhipu_ai_api_key") or os.environ.get("ZHIPUAI_API_KEY", "")
+        if provider == "qianfan":
+            return local_config.get("qianfan_api_key") or os.environ.get("QIANFAN_API_KEY", "")
+        if provider == "linkai":
+            return local_config.get("linkai_api_key") or os.environ.get("LINKAI_API_KEY", "")
+        return ""
+
+    @classmethod
+    def _search_capability(cls, local_config: dict) -> dict:
+        """Search is editable: pick auto (default) or pin a specific backend.
+        Providers reuse model-vendor keys (zhipu/qianfan/linkai) so they show
+        up as configured once the user adds those vendors; bocha keeps its
+        own key under tools.web_search."""
+        tools_cfg = local_config.get("tools") or {}
+        ws_cfg = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
+        if not isinstance(ws_cfg, dict):
+            ws_cfg = {}
+
+        providers = []
+        configured_ids = []
+        for pid in cls._SEARCH_PROVIDERS:
+            ok = cls._is_real_key(cls._search_provider_key(pid, local_config))
+            raw_key = cls._search_provider_key(pid, local_config) if ok else ""
+            providers.append({
+                "id": pid,
+                "label": cls._SEARCH_PROVIDER_LABELS.get(pid, pid),
+                "configured": ok,
+                # bocha owns its key under tools.web_search; the other three
+                # piggy-back on a model-vendor credential. Frontend uses
+                # this hint to decide which credential editor to surface.
+                "needs_dedicated_key": pid == "bocha",
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if raw_key else "",
+            })
+            if ok:
+                configured_ids.append(pid)
+
+        strategy = (ws_cfg.get("strategy") or "auto").strip().lower()
+        if strategy not in ("auto", "fixed"):
+            strategy = "auto"
+        fixed_provider = (ws_cfg.get("provider") or "").strip().lower()
+        if fixed_provider and fixed_provider not in configured_ids:
+            fixed_provider = ""
+
+        # current_provider drives the chip in the header — show the actually
+        # active backend (pinned or first auto-picked).
+        if strategy == "fixed" and fixed_provider:
+            current = fixed_provider
+        else:
+            current = configured_ids[0] if configured_ids else ""
+
+        return {
+            "editable": True,
+            "strategy": strategy,
+            "providers": providers,
+            "configured_providers": configured_ids,
+            "current_provider": current,
+            "fixed_provider": fixed_provider,
+            "available": bool(current),
+        }
+
+    @classmethod
+    def _capabilities(cls, local_config: dict) -> dict:
+        return {
+            "chat":      cls._chat_capability(local_config),
+            "vision":    cls._vision_capability(local_config),
+            "asr":       cls._asr_capability(local_config),
+            "tts":       cls._tts_capability(local_config),
+            "embedding": cls._embedding_capability(local_config),
+            "image":     cls._image_capability(local_config),
+            "search":    cls._search_capability(local_config),
+        }
+
+    def GET(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            local_config = conf()
+            return json.dumps({
+                "status": "success",
+                "providers": self._provider_overview(),
+                "capabilities": self._capabilities(local_config),
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ModelsHandler] GET failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            data = json.loads(web.data() or b"{}")
+            action = data.get("action") or ""
+            if action == "set_provider":
+                return self._handle_set_provider(data)
+            if action == "delete_provider":
+                return self._handle_delete_provider(data)
+            if action == "set_capability":
+                return self._handle_set_capability(data)
+            if action == "set_voice_reply_mode":
+                return self._handle_set_voice_reply_mode(data)
+            if action == "set_search_credential":
+                return self._handle_set_search_credential(data)
+            return json.dumps({"status": "error", "message": f"unknown action: {action!r}"})
+        except Exception as e:
+            logger.error(f"[ModelsHandler] POST failed: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def _handle_set_provider(self, data: dict) -> str:
+        provider_id = (data.get("provider_id") or "").strip()
+        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        if not meta:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        # api_key absent / empty / null => leave the existing key untouched
+        # (used by the "edit only base url" flow). To clear the key, callers
+        # must use action=delete_provider explicitly.
+        api_key_raw = data.get("api_key")
+        api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
+
+        # api_base presence is significant: an explicit "" means "reset to
+        # default", whereas a missing key means "no change".
+        api_base_present = "api_base" in data
+        api_base = (data.get("api_base") or "").strip() if api_base_present else None
+
+        applied = {}
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        key_field = meta.get("api_key_field")
+        if key_field and api_key:
+            local_config[key_field] = api_key
+            file_cfg[key_field] = api_key
+            applied[key_field] = True
+        base_field = meta.get("api_base_key")
+        if base_field and api_base_present:
+            local_config[base_field] = api_base
+            file_cfg[base_field] = api_base
+            applied[base_field] = True
+
+        if not applied:
+            # Nothing actually changed (e.g. user opened the modal and hit
+            # save without editing). Treat as a successful no-op so the
+            # frontend can show "Saved" instead of surfacing an error.
+            return json.dumps({"status": "success", "provider": provider_id, "noop": True})
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] provider {provider_id} updated: {sorted(applied.keys())}")
+
+        # Vendor credentials affect bot routing for any capability that uses
+        # them; safest to reset Bridge so the next request rebuilds bots.
+        self._reset_bridge()
+        return json.dumps({"status": "success", "provider": provider_id})
+
+    def _handle_delete_provider(self, data: dict) -> str:
+        provider_id = (data.get("provider_id") or "").strip()
+        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        if not meta:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        cleared = []
+        for field_name in (meta.get("api_key_field"), meta.get("api_base_key")):
+            if not field_name:
+                continue
+            # Always write the key — even if it was absent before — so the
+            # in-memory conf() reflects the cleared state without needing a
+            # restart. (`in local_config` was too strict: provider keys that
+            # were ever set then deleted manually wouldn't get reset.)
+            local_config[field_name] = ""
+            file_cfg[field_name] = ""
+            cleared.append(field_name)
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] provider {provider_id} cleared: {cleared}")
+        self._reset_bridge()
+        return json.dumps({"status": "success", "provider": provider_id, "cleared": cleared})
+
+    def _handle_set_capability(self, data: dict) -> str:
+        capability = (data.get("capability") or "").strip()
+        provider_id = (data.get("provider_id") or "").strip()
+        model = (data.get("model") or "").strip()
+
+        if capability == "chat":
+            return self._set_chat(provider_id, model)
+        if capability == "vision":
+            return self._set_vision(provider_id, model)
+        if capability == "asr":
+            return self._set_simple("voice_to_text", provider_id)
+        if capability == "tts":
+            return self._set_tts(provider_id, model, (data.get("voice") or "").strip())
+        if capability == "embedding":
+            return self._set_embedding(provider_id, model)
+        if capability == "image":
+            return self._set_image(provider_id, model)
+        if capability == "search":
+            return self._set_search(
+                (data.get("strategy") or "").strip().lower(),
+                (data.get("provider") or "").strip().lower(),
+            )
+        return json.dumps({"status": "error", "message": f"capability not editable: {capability}"})
+
+    def _set_image(self, provider_id: str, model: str) -> str:
+        # Source of truth: skills.image-generation.{provider, model}. The
+        # provider field is persisted so users picking a custom model under
+        # a specific vendor still get routed there — runtime falls back to
+        # model-name prefix inference only when provider is empty.
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        self._set_nested_namespace_value(local_config, "skills", "image-generation", "model", model or "")
+        self._set_nested_namespace_value(file_cfg, "skills", "image-generation", "model", model or "")
+        self._set_nested_namespace_value(local_config, "skills", "image-generation", "provider", provider_id or "")
+        self._set_nested_namespace_value(file_cfg, "skills", "image-generation", "provider", provider_id or "")
+        self._drop_legacy_namespace(local_config, "skill", "skills", child="image-generation")
+        self._drop_legacy_namespace(file_cfg, "skill", "skills", child="image-generation")
+
+        self._write_file_config(file_cfg)
+
+        # The skill subprocess reads SKILL_IMAGE_GENERATION_{MODEL,PROVIDER}
+        # from env at startup; mirror the change so live edits apply without
+        # restart.
+        model_env = "SKILL_IMAGE_GENERATION_MODEL"
+        provider_env = "SKILL_IMAGE_GENERATION_PROVIDER"
+        if model:
+            os.environ[model_env] = model
+        else:
+            os.environ.pop(model_env, None)
+        if provider_id:
+            os.environ[provider_env] = provider_id
+        else:
+            os.environ.pop(provider_env, None)
+
+        logger.info(f"[ModelsHandler] image updated: provider={provider_id!r} model={model!r}")
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id,
+            "model": model,
+            "router_pending": True,
+        })
+
+    def _set_chat(self, provider_id: str, model: str) -> str:
+        if provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        applied = {}
+        local_config = conf()
+        file_cfg = self._read_file_config()
+
+        if provider_id:
+            bot_type_value = "chatGPT" if provider_id == "openai" else provider_id
+            local_config["bot_type"] = bot_type_value
+            file_cfg["bot_type"] = bot_type_value
+            applied["bot_type"] = bot_type_value
+            use_linkai = (provider_id == "linkai")
+            local_config["use_linkai"] = use_linkai
+            file_cfg["use_linkai"] = use_linkai
+            applied["use_linkai"] = use_linkai
+        if model:
+            local_config["model"] = model
+            file_cfg["model"] = model
+            applied["model"] = model
+
+        if not applied:
+            return json.dumps({"status": "success", "applied": {}, "noop": True})
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] chat updated: {applied}")
+        self._reset_bridge()
+        return json.dumps({"status": "success", "applied": applied})
+
+    def _set_vision(self, provider_id: str, model: str) -> str:
+        # Source of truth: tools.vision.{provider, model}. The provider field
+        # is persisted so users picking a custom model under a specific vendor
+        # still get routed there — runtime falls back to model-name prefix
+        # inference only when provider is empty.
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
+        self._set_nested_namespace_value(local_config, "tools", "vision", "model", model)
+        self._set_nested_namespace_value(file_cfg, "tools", "vision", "provider", provider_id or "")
+        self._set_nested_namespace_value(local_config, "tools", "vision", "provider", provider_id or "")
+        self._drop_legacy_namespace(file_cfg, "tool", "tools", child="vision")
+        self._drop_legacy_namespace(local_config, "tool", "tools", child="vision")
+
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] vision updated: provider={provider_id!r} model={model!r}")
+        return json.dumps({"status": "success", "provider": provider_id, "model": model})
+
+    @staticmethod
+    def _set_nested_namespace_value(cfg, top: str, name: str, key: str, value):
+        """Set ``cfg[top][name][key] = value``, creating missing dicts."""
+        bucket = cfg.get(top)
+        if not isinstance(bucket, dict):
+            bucket = {}
+        node = bucket.get(name)
+        if not isinstance(node, dict):
+            node = {}
+        node[key] = value
+        bucket[name] = node
+        cfg[top] = bucket
+
+    @staticmethod
+    def _drop_legacy_namespace(cfg, legacy: str, canonical: str, child: str) -> None:
+        """Strip the deprecated singular key so config.json stays single-source."""
+        legacy_section = cfg.get(legacy)
+        if not isinstance(legacy_section, dict):
+            return
+        legacy_section.pop(child, None)
+        if legacy_section:
+            cfg[legacy] = legacy_section
+        else:
+            cfg.pop(legacy, None)
+
+    def _handle_set_voice_reply_mode(self, data: dict) -> str:
+        # UI picker (off / voice_if_voice / always) maps to the legacy
+        # always_reply_voice + voice_reply_voice pair that chat_channel.py
+        # reads, so all channels (web/feishu/wecom/...) share the routing.
+        mode = (data.get("mode") or "").strip().lower()
+        if mode not in ("off", "voice_if_voice", "always"):
+            return json.dumps({"status": "error", "message": f"invalid mode: {mode!r}"})
+        always = (mode == "always")
+        if_voice = (mode == "voice_if_voice")
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["always_reply_voice"] = always
+        local_config["voice_reply_voice"] = if_voice
+        file_cfg["always_reply_voice"] = always
+        file_cfg["voice_reply_voice"] = if_voice
+        self._write_file_config(file_cfg)
+        logger.info(
+            f"[ModelsHandler] voice reply mode set: {mode!r} "
+            f"(always_reply_voice={always}, voice_reply_voice={if_voice})"
+        )
+        return json.dumps({"status": "success", "mode": mode})
+
+    def _set_simple(self, key: str, value: str) -> str:
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config[key] = value
+        file_cfg[key] = value
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] {key} set: {value!r}")
+        # Hot-swap the cached voice bot so the change takes effect immediately.
+        if key in ("voice_to_text", "text_to_voice"):
+            self._refresh_voice_routing()
+        return json.dumps({"status": "success", key: value})
+
+    def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["text_to_voice"] = provider_id
+        file_cfg["text_to_voice"] = provider_id
+        local_config["text_to_voice_model"] = model
+        file_cfg["text_to_voice_model"] = model
+        local_config["tts_voice_id"] = voice
+        file_cfg["tts_voice_id"] = voice
+        self._write_file_config(file_cfg)
+        logger.info(
+            f"[ModelsHandler] tts updated: provider={provider_id!r} "
+            f"model={model!r} voice={voice!r}"
+        )
+        self._refresh_voice_routing()
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id, "model": model, "voice": voice,
+        })
+
+    @staticmethod
+    def _refresh_voice_routing() -> None:
+        try:
+            from bridge.bridge import Bridge
+            Bridge().refresh_voice()
+        except Exception as e:
+            logger.warning(f"[ModelsHandler] Bridge voice refresh failed: {e}")
+
+    def _set_embedding(self, provider_id: str, model: str) -> str:
+        # Two valid states: both empty (reset to pick-or-empty) OR both set.
+        # A provider without a model leaves the runtime in a broken half-state,
+        # so reject that explicitly instead of silently writing it through.
+        if provider_id and not model:
+            return json.dumps({
+                "status": "error",
+                "message": "embedding model is required when a provider is selected",
+            })
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["embedding_provider"] = provider_id
+        file_cfg["embedding_provider"] = provider_id
+        local_config["embedding_model"] = model
+        file_cfg["embedding_model"] = model
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
+        # The next /memory rebuild-index command hot-swaps the provider onto
+        # the running MemoryManager (see plugins/cow_cli). The dim may have
+        # changed, so the frontend prompts the user to rebuild.
+        return json.dumps({"status": "success", "provider": provider_id, "model": model})
+
+    def _set_search(self, strategy: str, provider: str) -> str:
+        """Persist search routing under tools.web_search.{strategy,provider}.
+
+        strategy 'auto'  -> provider field is cleared (auto picks at call time)
+        strategy 'fixed' -> provider must be in the canonical list; runtime
+                            silently falls back to auto if its key is missing.
+        """
+        if strategy not in ("auto", "fixed"):
+            return json.dumps({"status": "error", "message": f"invalid strategy: {strategy!r}"})
+        if strategy == "fixed":
+            if provider not in self._SEARCH_PROVIDERS:
+                return json.dumps({"status": "error", "message": f"unknown provider: {provider!r}"})
+        else:
+            provider = ""
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "strategy", strategy)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "strategy", strategy)
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "provider", provider)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "provider", provider)
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] search updated: strategy={strategy!r} provider={provider!r}")
+        return json.dumps({"status": "success", "strategy": strategy, "provider": provider})
+
+    def _handle_set_search_credential(self, data: dict) -> str:
+        """Persist the bocha API key under tools.web_search.bocha_api_key.
+
+        The other three providers (zhipu/qianfan/linkai) reuse model-vendor
+        credentials, so they go through set_provider with the standard
+        model-vendor flow.
+        """
+        api_key = (data.get("api_key") or "").strip() if isinstance(data.get("api_key"), str) else ""
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_nested_namespace_value(local_config, "tools", "web_search", "bocha_api_key", api_key)
+        self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "bocha_api_key", api_key)
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] search credential set: bocha_api_key={'***' if api_key else ''}")
+        return json.dumps({"status": "success", "provider": "bocha"})
+
+    @staticmethod
+    def _reset_bridge() -> None:
+        try:
+            from bridge.bridge import Bridge
+            Bridge().reset_bot()
+            logger.info("[ModelsHandler] Bridge bot routing reset")
+        except Exception as e:
+            logger.warning(f"[ModelsHandler] Bridge reset failed: {e}")
 
 
 class ChannelsHandler:
@@ -1294,6 +2933,23 @@ class ChannelsHandler:
                 {"key": "wechatmp_token", "label": "Token", "type": "secret"},
                 {"key": "wechatmp_aes_key", "label": "AES Key", "type": "secret"},
                 {"key": "wechatmp_port", "label": "Port", "type": "number", "default": 8080},
+            ],
+        }),
+        ("telegram", {
+            "label": {"zh": "Telegram", "en": "Telegram"},
+            "icon": "fa-paper-plane",
+            "color": "sky",
+            "fields": [
+                {"key": "telegram_token", "label": "Bot Token", "type": "secret"},
+            ],
+        }),
+        ("slack", {
+            "label": {"zh": "Slack", "en": "Slack"},
+            "icon": "fa-hashtag",
+            "color": "purple",
+            "fields": [
+                {"key": "slack_bot_token", "label": "Bot Token (xoxb-)", "type": "secret"},
+                {"key": "slack_app_token", "label": "App Token (xapp-)", "type": "secret"},
             ],
         }),
     ])
@@ -2255,7 +3911,12 @@ class AssetsHandler:
                 raise web.notfound()
 
             if not os.path.exists(full_path) or not os.path.isfile(full_path):
-                logger.error(f"File not found: {full_path}")
+                # Browsers routinely probe optional asset variants (e.g. a
+                # .ttf fallback declared alongside .woff2 in @font-face);
+                # logging these as errors floods the console with harmless
+                # noise. Keep it at debug level — real misconfigurations
+                # will still surface via the network panel.
+                logger.debug(f"Static file not found: {full_path}")
                 raise web.notfound()
 
             # 设置正确的Content-Type
@@ -2270,8 +3931,12 @@ class AssetsHandler:
             with open(full_path, 'rb') as f:
                 return f.read()
 
+        except web.HTTPError:
+            # The 404 path above already logged at debug; re-raise as-is so
+            # web.py returns the original status to the client.
+            raise
         except Exception as e:
-            logger.error(f"Error serving static file: {e}", exc_info=True)  # 添加更详细的错误信息
+            logger.error(f"Error serving static file: {e}", exc_info=True)
             raise web.notfound()
 
 

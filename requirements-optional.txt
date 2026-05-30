@@ -3,8 +3,8 @@ tiktoken>=0.3.2 # openai calculate token
 #voice
 pydub>=0.25.1 # need ffmpeg
 gTTS>=2.3.1 # google text to speech
-edge-tts # edge-tts
-elevenlabs==1.0.3 # elevenlabs TTS
+# edge-tts: install on demand, see voice/edge/edge_voice.py
+# elevenlabs: install on demand, see voice/elevent/elevent_voice.py
 
 #install plugin
 dulwich

@@ -15,6 +15,7 @@ ZHIPU_AI = "zhipu"
 MOONSHOT = "moonshot"
 MiniMax = "minimax"
 DEEPSEEK = "deepseek"
+MIMO = "mimo"  # 小米 MiMo 大模型
 CUSTOM = "custom"  # custom OpenAI-compatible API, bot_type won't auto-switch on model change
 MODELSCOPE = "modelscope"
 
@@ -29,8 +30,9 @@ CLAUDE_35_SONNET = "claude-3-5-sonnet-latest"  # 带 latest 标签的模型名�
 CLAUDE_35_SONNET_1022 = "claude-3-5-sonnet-20241022"  # 带具体日期的模型名称，会固定为该日期发布的模型
 CLAUDE_35_SONNET_0620 = "claude-3-5-sonnet-20240620"
 CLAUDE_4_OPUS = "claude-opus-4-0"
+CLAUDE_4_8_OPUS = "claude-opus-4-8"      # Claude Opus 4.8 - Agent推荐模型
 CLAUDE_4_7_OPUS = "claude-opus-4-7"      # Claude Opus 4.7
-CLAUDE_4_6_OPUS = "claude-opus-4-6"      # Claude Opus 4.6 - Agent推荐模型
+CLAUDE_4_6_OPUS = "claude-opus-4-6"      # Claude Opus 4.6
 CLAUDE_4_SONNET = "claude-sonnet-4-0"    # Claude Sonnet 4.0
 CLAUDE_4_5_SONNET = "claude-sonnet-4-5"  # Claude Sonnet 4.5 - Agent推荐模型
 CLAUDE_4_6_SONNET = "claude-sonnet-4-6"  # Claude Sonnet 4.6 - Agent推荐模型
@@ -47,6 +49,7 @@ GEMINI_3_FLASH_PRE = "gemini-3-flash-preview"  # Gemini 3 Flash Preview - Agent�
 GEMINI_3_PRO_PRE = "gemini-3-pro-preview"  # Gemini 3 Pro Preview
 GEMINI_31_PRO_PRE = "gemini-3.1-pro-preview"  # Gemini 3.1 Pro Preview - Agent推荐模型
 GEMINI_31_FLASH_LITE_PRE = "gemini-3.1-flash-lite-preview"  # Gemini 3.1 Flash Lite Preview - Agent推荐模型
+GEMINI_35_FLASH = "gemini-3.5-flash"  # Gemini 3.5 Flash - Agent推荐模型
 
 # OpenAI
 GPT35 = "gpt-3.5-turbo"
@@ -74,6 +77,7 @@ GPT_5_NANO = "gpt-5-nano"
 GPT_54 = "gpt-5.4"  # GPT-5.4 - Agent recommended model
 GPT_54_MINI = "gpt-5.4-mini"
 GPT_54_NANO = "gpt-5.4-nano"
+GPT_55 = "gpt-5.5"  # GPT-5.5 - top-tier (expensive), not default
 O1 = "o1-preview"
 O1_MINI = "o1-mini"
 WHISPER_1 = "whisper-1"
@@ -104,10 +108,12 @@ QWEN_LONG = "qwen-long"
 QWEN3_MAX = "qwen3-max"  # Qwen3 Max - Agent推荐模型
 QWEN35_PLUS = "qwen3.5-plus"  # Qwen3.5 Plus - Omni model (MultiModalConversation)
 QWEN36_PLUS = "qwen3.6-plus"  # Qwen3.6 Plus - Omni model (MultiModalConversation)
+QWEN37_MAX = "qwen3.7-max"  # Qwen3.7 Max - Agent推荐模型
 QWQ_PLUS = "qwq-plus"
 
 # MiniMax
 MINIMAX_M2_7 = "MiniMax-M2.7"  # MiniMax M2.7 - Latest
+MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax 多模态 (vision)
 MINIMAX_M2_7_HIGHSPEED = "MiniMax-M2.7-highspeed"  # MiniMax M2.7 highspeed
 MINIMAX_M2_5 = "MiniMax-M2.5"  # MiniMax M2.5
 MINIMAX_M2_1 = "MiniMax-M2.1"  # MiniMax M2.1
@@ -119,6 +125,7 @@ MINIMAX_ABAB6_5 = "abab6.5-chat"  # MiniMax abab6.5
 GLM_5_1 = "glm-5.1"  # 智谱 GLM-5.1 - Agent recommended model (default)
 GLM_5_TURBO = "glm-5-turbo"  # 智谱 GLM-5-Turbo
 GLM_5 = "glm-5"  # 智谱 GLM-5
+GLM_5V_TURBO = "glm-5v-turbo"  # 智谱多模态 (vision)
 GLM_4 = "glm-4"
 GLM_4_PLUS = "glm-4-plus"
 GLM_4_flash = "glm-4-flash"
@@ -134,6 +141,13 @@ MOONSHOT = "moonshot"
 KIMI_K2 = "kimi-k2"
 KIMI_K2_5 = "kimi-k2.5"
 KIMI_K2_6 = "kimi-k2.6"  # Kimi K2.6 - Agent recommended model (default)
+
+# 小米 MiMo
+MIMO_V2_5_PRO = "mimo-v2.5-pro"      # MiMo V2.5 Pro - 旗舰，长上下文（默认推荐）
+MIMO_V2_5 = "mimo-v2.5"              # MiMo V2.5 - 多模态（文/图/音/视频）
+MIMO_V2_PRO = "mimo-v2-pro"          # MiMo V2 Pro
+MIMO_V2_OMNI = "mimo-v2-omni"        # MiMo V2 Omni - 多模态
+MIMO_V2_FLASH = "mimo-v2-flash"      # MiMo V2 Flash - 极速版
 
 # Doubao (Volcengine Ark)
 DOUBAO = "doubao"
@@ -177,13 +191,16 @@ MODEL_LIST = [
               # MiniMax
               MiniMax, MINIMAX_M2_7, MINIMAX_M2_7_HIGHSPEED, MINIMAX_M2_5, MINIMAX_M2_1, MINIMAX_M2_1_LIGHTNING, MINIMAX_M2, MINIMAX_ABAB6_5,
 
+              # 小米 MiMo
+              MIMO, MIMO_V2_5_PRO, MIMO_V2_5, MIMO_V2_PRO, MIMO_V2_OMNI, MIMO_V2_FLASH,
+
               # Claude
-              CLAUDE3, CLAUDE_4_6_SONNET, CLAUDE_4_7_OPUS, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
+              CLAUDE3, CLAUDE_4_8_OPUS, CLAUDE_4_7_OPUS, CLAUDE_4_6_SONNET, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
               CLAUDE_35_SONNET, CLAUDE_35_SONNET_1022, CLAUDE_35_SONNET_0620, CLAUDE_3_SONNET, CLAUDE_3_HAIKU,
               "claude", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3.5-sonnet",
 
               # Gemini
-              GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
+              GEMINI_35_FLASH, GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
               GEMINI_20_FLASH, GEMINI_20_flash_exp, GEMINI_15_PRO, GEMINI_15_flash, GEMINI_PRO, GEMINI,
 
               # OpenAI
@@ -193,7 +210,7 @@ MODEL_LIST = [
               GPT_4o, GPT_4O_0806, GPT_4o_MINI,
               GPT_41, GPT_41_MINI, GPT_41_NANO,
               GPT_5, GPT_5_MINI, GPT_5_NANO,
-              GPT_54, GPT_54_MINI, GPT_54_NANO,
+              GPT_54, GPT_55, GPT_54_MINI, GPT_54_NANO,
               O1, O1_MINI,
 
               # GLM (智谱AI)
@@ -201,7 +218,7 @@ MODEL_LIST = [
               GLM_4_0520, GLM_4_AIR, GLM_4_AIRX, GLM_4_7,
 
               # Qwen (通义千问)
-              QWEN36_PLUS, QWEN35_PLUS, QWEN3_MAX, QWEN_MAX, QWEN_PLUS, QWEN_TURBO, QWEN_LONG,
+              QWEN37_MAX, QWEN36_PLUS, QWEN35_PLUS, QWEN3_MAX, QWEN_MAX, QWEN_PLUS, QWEN_TURBO, QWEN_LONG,
 
               # Doubao (豆包)
               DOUBAO, DOUBAO_SEED_2_CODE, DOUBAO_SEED_2_PRO, DOUBAO_SEED_2_LITE, DOUBAO_SEED_2_MINI,
@@ -227,4 +244,6 @@ DINGTALK = "dingtalk"
 WECOM_BOT = "wecom_bot"
 QQ = "qq"
 WEIXIN = "weixin"
-WECHAT_KF = "wechat_kf"  # WeCom customer service (微信客服) channel
+WECHAT_KF = "wechat_kf"
+TELEGRAM = "telegram"
+SLACK = "slack"

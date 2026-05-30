@@ -34,7 +34,9 @@ Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./cow` 挂载
 | `command` | stdio | 启动 server 的可执行命令（如 `npx`、`python`、`uvx`） |
 | `args` | 否 | 传给 command 的参数列表 |
 | `env` | 否 | 子进程的环境变量，常用于 API Key |
-| `url` | SSE | SSE 端点 URL（与 `command` 二选一） |
+| `url` | SSE / Streamable HTTP | 远程端点 URL（与 `command` 二选一） |
+| `type` | 远程 | 远程传输类型，可选 `sse` 或 `streamable-http`，默认 `sse` |
+| `headers` | 否 | 远程请求附加 HTTP 头（如 `Authorization`），仅 Streamable HTTP 使用 |
 | `disabled` | 否 | `true` 时跳过该 server，便于临时关闭 |
 
 ### 完整示例
@@ -88,7 +90,8 @@ Agent 会：
 | 协议 | 说明 | 配置字段 |
 | --- | --- | --- |
 | **stdio** | 子进程通信，最常见，社区生态最丰富 | `command` + `args` |
-| **SSE** | HTTP Server-Sent Events，适合远程托管的 MCP 服务 | `url` |
+| **SSE** | HTTP Server-Sent Events，旧版远程协议 | `url`（默认） |
+| **Streamable HTTP** | 新版远程协议，单端点收发，逐步取代 SSE | `type: "streamable-http"` + `url` |
 
 ## 排错
 
@@ -106,4 +109,4 @@ Agent 会：
 - [mcp.so](https://mcp.so) — 全球 MCP 服务索引
 - [ModelScope MCP 广场](https://modelscope.cn/mcp) — 魔搭社区 MCP 广场，国内访问更稳定
 
-只要遵循 MCP 标准协议（stdio / SSE），都可以直接接入 CowAgent。
+只要遵循 MCP 标准协议（stdio / SSE / Streamable HTTP），都可以直接接入 CowAgent。

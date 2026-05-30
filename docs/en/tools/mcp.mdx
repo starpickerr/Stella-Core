@@ -34,7 +34,9 @@ Fully compatible with the MCP community standard, identical to Claude Desktop / 
 | `command` | stdio | Executable to launch the server (e.g. `npx`, `python`, `uvx`) |
 | `args` | No | Arguments passed to `command` |
 | `env` | No | Environment variables for the subprocess, commonly used for API keys |
-| `url` | SSE | SSE endpoint URL (alternative to `command`) |
+| `url` | SSE / Streamable HTTP | Remote endpoint URL (alternative to `command`) |
+| `type` | Remote | Remote transport type: `sse` or `streamable-http` (defaults to `sse`) |
+| `headers` | No | Extra HTTP headers for remote requests (e.g. `Authorization`); Streamable HTTP only |
 | `disabled` | No | When `true`, this server is skipped — handy for temporary disabling |
 
 ### Full Example
@@ -88,7 +90,8 @@ The Agent will:
 | Transport | Description | Config Field |
 | --- | --- | --- |
 | **stdio** | Subprocess communication. The most common option, with the richest community ecosystem. | `command` + `args` |
-| **SSE** | HTTP Server-Sent Events, suitable for remotely hosted MCP services. | `url` |
+| **SSE** | HTTP Server-Sent Events. Legacy remote transport. | `url` (default) |
+| **Streamable HTTP** | New unified remote transport, gradually replacing SSE. | `type: "streamable-http"` + `url` |
 
 ## Troubleshooting
 
@@ -106,4 +109,4 @@ You can browse third-party MCP marketplaces and copy a JSON config to use direct
 - [mcp.so](https://mcp.so) — Global MCP service index
 - [ModelScope MCP Hub](https://modelscope.cn/mcp) — ModelScope's MCP hub, more reliable from mainland China
 
-Any MCP server that follows the standard protocol (stdio / SSE) integrates with CowAgent out of the box.
+Any MCP server that follows the standard protocol (stdio / SSE / Streamable HTTP) integrates with CowAgent out of the box.

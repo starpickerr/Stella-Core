@@ -289,6 +289,16 @@ def _warmup_mcp_tools():
         logger.warning(f"[App] MCP warmup failed (non-fatal): {e}")
 
 
+def _warmup_scheduler():
+    """Eager-init AgentBridge so the scheduler thread starts at process
+    boot rather than waiting for the first user message."""
+    try:
+        from bridge.bridge import Bridge
+        Bridge().get_agent_bridge()
+    except Exception as e:
+        logger.warning(f"[App] Scheduler warmup failed: {e}")
+
+
 def _sync_builtin_skills():
     """Sync builtin skills from project skills/ to workspace skills/ on startup."""
     import shutil
@@ -353,6 +363,8 @@ def run():
         # Kick off MCP server loading in the background so first-message
         # latency isn't dominated by npx package downloads.
         _warmup_mcp_tools()
+
+        _warmup_scheduler()
 
         logger.info(f"[App] Starting channels: {channel_names}")
 

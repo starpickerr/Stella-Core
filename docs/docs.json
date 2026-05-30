@@ -38,6 +38,12 @@
       {
         "language": "zh",
         "default": true,
+        "navbar": {
+          "links": [
+            { "label": "官网", "href": "https://cowagent.ai/?lang=zh" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "项目介绍",
@@ -82,6 +88,7 @@
                   "models/doubao",
                   "models/kimi",
                   "models/qianfan",
+                  "models/mimo",
                   "models/linkai",
                   "models/coding-plan",
                   "models/custom"
@@ -181,6 +188,7 @@
               {
                 "group": "接入渠道",
                 "pages": [
+                  "channels/index",
                   "channels/weixin",
                   "channels/web",
                   "channels/feishu",
@@ -189,7 +197,9 @@
                   "channels/qq",
                   "channels/wecom",
                   "channels/wechat-kf",
-                  "channels/wechatmp"
+                  "channels/wechatmp",
+                  "channels/telegram",
+                  "channels/slack"
                 ]
               }
             ]
@@ -216,6 +226,7 @@
                 "group": "发布记录",
                 "pages": [
                   "releases/overview",
+                  "releases/v2.0.9",
                   "releases/v2.0.8",
                   "releases/v2.0.7",
                   "releases/v2.0.6",
@@ -233,6 +244,12 @@
       },
       {
         "language": "en",
+        "navbar": {
+          "links": [
+            { "label": "Website", "href": "https://cowagent.ai/" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "Introduction",
@@ -254,7 +271,8 @@
                 "group": "Installation",
                 "pages": [
                   "en/guide/quick-start",
-                  "en/guide/manual-install"
+                  "en/guide/manual-install",
+                  "en/guide/upgrade"
                 ]
               }
             ]
@@ -276,6 +294,7 @@
                   "en/models/doubao",
                   "en/models/kimi",
                   "en/models/qianfan",
+                  "en/models/mimo",
                   "en/models/linkai",
                   "en/models/coding-plan",
                   "en/models/custom"
@@ -331,6 +350,7 @@
                 "pages": [
                   "en/skills/index",
                   "en/skills/install",
+                  "en/skills/create",
                   "en/skills/hub"
                 ]
               },
@@ -374,6 +394,7 @@
               {
                 "group": "Platforms",
                 "pages": [
+                  "en/channels/index",
                   "en/channels/weixin",
                   "en/channels/web",
                   "en/channels/feishu",
@@ -382,7 +403,9 @@
                   "en/channels/qq",
                   "en/channels/wecom",
                   "en/channels/wechat-kf",
-                  "en/channels/wechatmp"
+                  "en/channels/wechatmp",
+                  "en/channels/telegram",
+                  "en/channels/slack"
                 ]
               }
             ]
@@ -397,7 +420,7 @@
                   "en/cli/process",
                   "en/cli/skill",
                   "en/cli/memory-knowledge",
-                  "en/cli/chat"
+                  "en/cli/general"
                 ]
               }
             ]
@@ -409,6 +432,7 @@
                 "group": "Release Notes",
                 "pages": [
                   "en/releases/overview",
+                  "en/releases/v2.0.9",
                   "en/releases/v2.0.8",
                   "en/releases/v2.0.7",
                   "en/releases/v2.0.6",
@@ -426,6 +450,12 @@
       },
       {
         "language": "ja",
+        "navbar": {
+          "links": [
+            { "label": "ウェブサイト", "href": "https://cowagent.ai/" },
+            { "label": "GitHub", "href": "https://github.com/zhayujie/CowAgent" }
+          ]
+        },
         "tabs": [
           {
             "tab": "紹介",
@@ -470,6 +500,7 @@
                   "ja/models/doubao",
                   "ja/models/kimi",
                   "ja/models/qianfan",
+                  "ja/models/mimo",
                   "ja/models/linkai",
                   "ja/models/coding-plan",
                   "ja/models/custom"
@@ -569,6 +600,7 @@
               {
                 "group": "プラットフォーム",
                 "pages": [
+                  "ja/channels/index",
                   "ja/channels/weixin",
                   "ja/channels/web",
                   "ja/channels/feishu",
@@ -577,7 +609,9 @@
                   "ja/channels/qq",
                   "ja/channels/wecom",
                   "ja/channels/wechat-kf",
-                  "ja/channels/wechatmp"
+                  "ja/channels/wechatmp",
+                  "ja/channels/telegram",
+                  "ja/channels/slack"
                 ]
               }
             ]
@@ -604,6 +638,7 @@
                 "group": "リリースノート",
                 "pages": [
                   "ja/releases/overview",
+                  "ja/releases/v2.0.9",
                   "ja/releases/v2.0.8",
                   "ja/releases/v2.0.7",
                   "ja/releases/v2.0.6",

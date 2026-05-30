@@ -725,11 +725,134 @@
     background: rgba(74, 190, 110, 0.15);
     color: #74E9A4;
 }
+/* When an item carries a hint (e.g. brand alias next to a technical model
+   id), label/hint are split into two spans so the hint sits on the right in
+   a dim, smaller weight. Without a hint the row stays a plain text node and
+   uses the default ellipsis behaviour, so no layout regressions for old call
+   sites. */
+.cfg-dropdown-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cfg-dropdown-hint {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 12px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 400;
+}
+.dark .cfg-dropdown-hint {
+    color: #64748b;
+}
+.cfg-dropdown-item.active .cfg-dropdown-hint {
+    /* Tint the hint toward the brand colour on the active row so it doesn't
+       fight with the highlighted label tone. */
+    color: rgba(34, 133, 71, 0.65);
+}
+.dark .cfg-dropdown-item.active .cfg-dropdown-hint {
+    color: rgba(116, 233, 164, 0.6);
+}
+/* The active row gets a trailing brand-green checkmark via a Font Awesome
+   pseudo-element so every dropdown (chat / vision / image / asr / tts / etc.)
+   surfaces "this is what's currently selected" without per-call JS plumbing.
+   When a hint is present, the ✓ sits to its right with a small gap; without
+   a hint, margin-left:auto pushes the ✓ flush against the right edge. */
+.cfg-dropdown-item.active::after {
+    content: '\f00c';                  /* FontAwesome check glyph */
+    font-family: 'Font Awesome 6 Free', 'Font Awesome 5 Free', 'FontAwesome';
+    font-weight: 900;
+    margin-left: auto;
+    padding-left: 12px;
+    color: #4abe6e;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+.cfg-dropdown-item.active:has(.cfg-dropdown-hint)::after {
+    /* When hint occupies the auto-margin slot, the ✓ no longer benefits
+       from `margin-left: auto`; replace it with a small fixed gap so the
+       ✓ trails the hint cleanly. */
+    margin-left: 0;
+    padding-left: 10px;
+}
 
 /* API Key masking via CSS (avoids browser password prompts) */
 .cfg-key-masked {
     -webkit-text-security: disc;
     text-security: disc;
+}
+
+/* Provider logo image — vendors flagged as `provider-logo-invert-dark`
+   ship a black wordmark that disappears on the dark canvas; we invert their
+   luminance only in dark mode so the brand stays recognizable without
+   touching multi-color marks like Google/MiniMax. */
+.provider-logo-img {
+    object-fit: contain;
+    object-position: center;
+}
+.dark .provider-logo-invert-dark {
+    filter: invert(1) brightness(1.15);
+}
+
+/* Models page — provider dropdown rows.
+   Configured rows look like ordinary picker entries; the .active row's
+   trailing brand-green ✓ already announces "this is what's selected"
+   (handled globally by .cfg-dropdown-item.active::after above).
+   Unconfigured rows are visually subdued and carry a trailing gear icon
+   as a "click to set up" affordance. */
+.cap-provider-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cap-provider-gear {
+    margin-left: auto;
+    padding-left: 12px;
+    color: #94a3b8;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+.cap-provider-item.cap-provider-unconfigured {
+    color: #94a3b8;
+}
+.dark .cap-provider-item.cap-provider-unconfigured {
+    color: #64748b;
+}
+.cap-provider-item.cap-provider-unconfigured:hover {
+    color: #475569;
+}
+.dark .cap-provider-item.cap-provider-unconfigured:hover {
+    color: #cbd5e1;
+}
+.cap-provider-item.cap-provider-unconfigured:hover .cap-provider-gear {
+    color: #475569;
+}
+.dark .cap-provider-item.cap-provider-unconfigured:hover .cap-provider-gear {
+    color: #cbd5e1;
+}
+/* If the active row ever lands on an unconfigured vendor (defensive — the
+   click handler normally diverts to the modal), suppress the global ✓ so
+   the gear remains the sole trailing icon and the row keeps reading as
+   "needs setup" rather than "already selected". */
+.cap-provider-item.cap-provider-unconfigured.active::after {
+    content: none;
+}
+
+/* "Add vendor" modal picker — each configured row carries a static
+   brand-green ✓ via decorateVendorModalPicker so users can see what's set
+   up at a glance. The active row's global ✓ is suppressed here to avoid
+   showing two checks side by side on configured + selected rows. */
+.vendor-picker-item.active::after {
+    content: none;
+}
+.vendor-picker-configured-mark {
+    margin-left: auto;
+    padding-left: 12px;
+    color: #4abe6e;
+    font-size: 11px;
+    flex-shrink: 0;
 }
 
 /* Chat Input */
@@ -1170,4 +1293,109 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     min-height: 2.5em;  /* ~2 lines at text-sm leading-relaxed */
+}
+
+/* --------------------------------------------------------------------
+ * Voice pill — compact custom audio player used by mic uploads and TTS
+ * replies. Replaces the bulky native <audio controls> with a play/pause
+ * icon + thin progress bar + duration counter so it blends into chat
+ * bubbles without the chrome-grey browser default look.
+ * ------------------------------------------------------------------ */
+.voice-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.05);
+    color: rgb(71, 85, 105);
+    font-size: 12px;
+    line-height: 1;
+    max-width: 240px;
+    user-select: none;
+    cursor: default;
+}
+.dark .voice-pill {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgb(203, 213, 225);
+}
+.voice-pill[data-loading="1"] {
+    opacity: 0.65;
+}
+.voice-pill-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary-500, #2563eb);
+    color: #fff;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+.voice-pill-btn:hover { transform: scale(1.05); }
+.voice-pill-btn i { font-size: 9px; margin-left: 1px; }
+.voice-pill-btn[data-state="play"] i { margin-left: 2px; }
+.voice-pill-btn[data-state="pause"] i { margin-left: 0; }
+.voice-pill-track {
+    flex: 1;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.25);
+    overflow: hidden;
+    min-width: 70px;
+}
+.dark .voice-pill-track {
+    background: rgba(148, 163, 184, 0.25);
+}
+.voice-pill-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--color-primary-500, #2563eb);
+    border-radius: inherit;
+    transition: width 0.1s linear;
+}
+.voice-pill-time {
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    color: inherit;
+    opacity: 0.75;
+    flex-shrink: 0;
+    min-width: 28px;
+    text-align: right;
+}
+.voice-pill audio { display: none; }
+
+/* Send button toggles into a Stop button while an SSE stream is in flight.
+   Match the look of the disabled send button (light grey block + white
+   glyph) so it reads as the same visual element, just paused/idle from
+   sending perspective and clickable to stop. */
+#send-btn.send-btn-cancel {
+    background-color: rgb(203 213 225) !important; /* slate-300, == disabled send-btn */
+    color: white !important;
+}
+#send-btn.send-btn-cancel:hover {
+    background-color: rgb(148 163 184) !important; /* slate-400 */
+}
+#send-btn.send-btn-cancel:disabled {
+    background-color: rgb(226 232 240) !important; /* slate-200, while stop is in flight */
+    color: white !important;
+    cursor: progress;
+}
+.dark #send-btn.send-btn-cancel {
+    background-color: rgb(71 85 105) !important; /* slate-600, == dark disabled send-btn */
+    color: white !important;
+}
+.dark #send-btn.send-btn-cancel:hover {
+    background-color: rgb(100 116 139) !important; /* slate-500 */
+}
+.dark #send-btn.send-btn-cancel:disabled {
+    background-color: rgb(51 65 85) !important; /* slate-700 */
+    color: rgb(203 213 225) !important;
+}
+
+.agent-cancelled-tag {
+    font-style: italic;
 }

@@ -33,6 +33,10 @@ description: 使用脚本一键安装和管理 CowAgent
 
 运行后默认启动 Web 控制台，访问 `http://localhost:9899` 开始对话和管理Agent。
 
+<Note>
+  **服务器部署需要公网访问控制台时**，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（默认仅监听 `127.0.0.1` 本机访问），同时强烈建议设置 `web_password` 启用鉴权。然后通过 `http://<server-ip>:9899` 访问，并确保防火墙/安全组放行 `9899` 端口。
+</Note>
+
 ## 管理命令
 
 安装完成后，使用 `cow` CLI 管理服务：
