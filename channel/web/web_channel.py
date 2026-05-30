@@ -1018,27 +1018,30 @@ class WebChannel(ChatChannel):
 
         self._cleanup_stale_voice_recordings()
 
-        # 打印可用渠道类型提示
+        # Print available channel types
         logger.info(
-            "[WebChannel] 全部可用通道如下，可修改 config.json 配置文件中的 channel_type 字段进行切换，多个通道用逗号分隔：")
-        logger.info("[WebChannel]   1. weixin           - 微信")
-        logger.info("[WebChannel]   2. web              - 网页")
-        logger.info("[WebChannel]   3. terminal         - 终端")
-        logger.info("[WebChannel]   4. feishu           - 飞书")
-        logger.info("[WebChannel]   5. dingtalk         - 钉钉")
-        logger.info("[WebChannel]   6. wecom_bot        - 企微智能机器人")
-        logger.info("[WebChannel]   7. wechatcom_app    - 企微自建应用")
-        logger.info("[WebChannel]   8. wechat_kf        - 微信客服")
-        logger.info("[WebChannel]   9. wechatmp         - 个人公众号")
-        logger.info("[WebChannel]  10. wechatmp_service - 企业公众号")
-        logger.info("[WebChannel] ✅ Web控制台已运行")
-        logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
+            "[WebChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
+        logger.info("[WebChannel]   1. web              - Web")
+        logger.info("[WebChannel]   2. terminal         - Terminal")
+        logger.info("[WebChannel]   3. weixin           - WeChat")
+        logger.info("[WebChannel]   4. feishu           - Feishu")
+        logger.info("[WebChannel]   5. dingtalk         - DingTalk")
+        logger.info("[WebChannel]   6. wecom_bot        - WeCom Bot")
+        logger.info("[WebChannel]   7. wechatcom_app    - WeCom App")
+        logger.info("[WebChannel]   8. wechat_kf        - WeChat Customer Service")
+        logger.info("[WebChannel]   9. wechatmp         - WeChat Official Account")
+        logger.info("[WebChannel]  10. wechatmp_service - WeChat Official Account (Service)")
+        logger.info("[WebChannel]  11. telegram         - Telegram")
+        logger.info("[WebChannel]  12. slack            - Slack")
+        logger.info("[WebChannel]  13. discord          - Discord")
+        logger.info("[WebChannel] ✅ Web console is running")
+        logger.info(f"[WebChannel] 🌐 Local access: http://localhost:{port}")
         if is_public_bind:
-            logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (将YOUR_IP替换为服务器IP)")
+            logger.info(f"[WebChannel] 🌍 Server access: http://YOUR_IP:{port} (replace YOUR_IP with your server IP)")
             if not _is_password_enabled():
-                logger.info("[WebChannel] ⚠️  当前监听 0.0.0.0 且未设置 web_password，公网部署建议在 config.json 中配置访问密码")
+                logger.info("[WebChannel] ⚠️  Listening on 0.0.0.0 without web_password set; set an access password in config.json for public deployment")
         else:
-            logger.info(f"[WebChannel] 🔒 当前仅监听 {host}，仅本机可访问。如需公网访问，请将 web_host 改为 0.0.0.0 并配置 web_password 密码")
+            logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
 
         try:
             import webbrowser
