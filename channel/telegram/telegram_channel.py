@@ -177,10 +177,21 @@ class TelegramChannel(ChatChannel):
         application.add_handler(MessageHandler(filters.COMMAND, self._on_command_passthrough))
 
         # Start polling. drop_pending_updates avoids replaying backlog after restart.
+        # Transient "Server disconnected" / RemoteProtocolError during get_updates
+        # are common over proxies/flaky networks; PTB's network loop auto-retries,
+        # so we only need to keep the noise down (see _quiet_polling_network_errors).
+        self._quiet_polling_network_errors()
         logger.info("[Telegram] Starting long polling...")
         await application.initialize()
         await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            # Long-poll hold time on the server side; smaller value = reconnect more
+            # often but each hung connection fails faster.
+            timeout=30,
+            # Retry forever on transient get_updates network errors instead of giving up.
+            bootstrap_retries=-1,
+        )
         self.report_startup_success()
         logger.info("[Telegram] ✅ Telegram bot ready, polling for updates")
 
@@ -195,6 +206,38 @@ class TelegramChannel(ChatChannel):
                 await application.shutdown()
             except Exception as e:
                 logger.warning(f"[Telegram] shutdown error: {e}")
+
+    @staticmethod
+    def _quiet_polling_network_errors():
+        """Downgrade PTB's noisy 'Exception happened while polling for updates' logs.
+
+        These transient get_updates errors (RemoteProtocolError / NetworkError /
+        TimedOut, typically over a proxy) are auto-retried by PTB's network loop,
+        so logging the full traceback at ERROR is just noise. We attach a filter
+        that drops these specific records while leaving real errors untouched.
+        """
+        import logging
+
+        class _PollingNoiseFilter(logging.Filter):
+            _NEEDLES = (
+                "Exception happened while polling for updates",
+                "Server disconnected without sending a response",
+            )
+
+            def filter(self, record: logging.LogRecord) -> bool:
+                try:
+                    msg = record.getMessage()
+                except Exception:
+                    return True
+                if any(n in msg for n in self._NEEDLES):
+                    # Keep a single-line breadcrumb at DEBUG, drop the traceback.
+                    logger.debug(f"[Telegram] transient polling network error (auto-retrying): {msg.splitlines()[0]}")
+                    return False
+                return True
+
+        noise_filter = _PollingNoiseFilter()
+        for name in ("telegram.ext.Updater", "telegram.ext._updater", "telegram.ext"):
+            logging.getLogger(name).addFilter(noise_filter)
 
     def stop(self):
         logger.info("[Telegram] stop() called")

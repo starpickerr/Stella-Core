@@ -1315,7 +1315,13 @@ class FileServeHandler:
             file_path = params.path
             if not file_path or not os.path.isabs(file_path):
                 raise web.notfound()
-            file_path = os.path.normpath(file_path)
+            # Resolve symlinks and confine access to the configured root dir,
+            # so this endpoint can't be abused to read arbitrary files (e.g. /etc/passwd, ~/.ssh).
+            # Defaults to the user home dir; set web_file_serve_root="/" to allow the whole filesystem.
+            file_path = os.path.realpath(file_path)
+            serve_root = os.path.realpath(os.path.expanduser(conf().get("web_file_serve_root", "~") or "~"))
+            if serve_root != os.sep and os.path.commonpath([file_path, serve_root]) != serve_root:
+                raise web.notfound()
             if not os.path.isfile(file_path):
                 raise web.notfound()
             content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
@@ -2915,6 +2921,15 @@ class ChannelsHandler:
             "color": "sky",
             "fields": [
                 {"key": "telegram_token", "label": "Bot Token", "type": "secret"},
+            ],
+        }),
+        ("slack", {
+            "label": {"zh": "Slack", "en": "Slack"},
+            "icon": "fa-hashtag",
+            "color": "purple",
+            "fields": [
+                {"key": "slack_bot_token", "label": "Bot Token (xoxb-)", "type": "secret"},
+                {"key": "slack_app_token", "label": "App Token (xapp-)", "type": "secret"},
             ],
         }),
     ])
