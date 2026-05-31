@@ -1535,6 +1535,7 @@ class ConfigHandler:
     ])
 
     EDITABLE_KEYS = {
+        "cow_lang",
         "model", "bot_type", "use_linkai",
         "open_ai_api_base", "deepseek_api_base", "qianfan_api_base", "claude_api_base", "gemini_api_base",
         "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base", "mimo_api_base",
@@ -1642,6 +1643,15 @@ class ConfigHandler:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
             logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
+
+            # Apply a language change immediately so backend logs, agent
+            # replies and CLI output switch without a restart.
+            if "cow_lang" in applied:
+                try:
+                    i18n.resolve_language(applied["cow_lang"])
+                    logger.info(f"[WebChannel] Language switched to: {i18n.get_language()}")
+                except Exception as lang_err:
+                    logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
 
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)

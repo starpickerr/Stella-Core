@@ -465,6 +465,10 @@ class CowCliPlugin(Plugin):
         mode = "Chat" if cfg.get("agent") is False else "Agent"
         lines.append(_t(f"  模式: {mode}", f"  Mode: {mode}"))
 
+        from common import i18n
+        lang_label = "中文" if i18n.get_language() == "zh" else "English"
+        lines.append(_t(f"  语言: {lang_label}", f"  Language: {lang_label}"))
+
         session_id = self._get_session_id(e_context, fallback=session_id)
         agent = self._get_agent(session_id)
         if agent:
