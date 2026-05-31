@@ -643,16 +643,25 @@ class AgentInitializer:
             except Exception:
                 timezone_name = "UTC"
             
-            # Chinese weekday mapping
-            weekday_map = {
-                'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
-                'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六', 'Sunday': '星期日'
-            }
-            weekday_zh = weekday_map.get(now.strftime("%A"), now.strftime("%A"))
-            
+            # Weekday: English name in en, Chinese mapping otherwise
+            weekday_en = now.strftime("%A")
+            try:
+                from common import i18n
+                is_en = i18n.get_language() == "en"
+            except Exception:
+                is_en = False
+            if is_en:
+                weekday = weekday_en
+            else:
+                weekday_map = {
+                    'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
+                    'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六', 'Sunday': '星期日'
+                }
+                weekday = weekday_map.get(weekday_en, weekday_en)
+
             return {
                 'time': now.strftime("%Y-%m-%d %H:%M:%S"),
-                'weekday': weekday_zh,
+                'weekday': weekday,
                 'timezone': timezone_name
             }
         

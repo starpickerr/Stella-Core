@@ -1,47 +1,47 @@
 ---
 title: Telegram
-description: 将 CowAgent 接入 Telegram Bot
+description: Integrate CowAgent with Telegram via the Bot API
 ---
 
-> 通过 Telegram Bot API 接入 CowAgent，支持单聊与群聊（@机器人 / 回复机器人触发），使用 Long Polling 模式无需公网 IP，开箱即用。
+> Integrate CowAgent into Telegram via the official Bot API. Supports private chat and group chat (triggered by @mention or replying to the bot). Uses Long Polling — no public IP required, works out of the box.
 
 
-## 一、接入步骤
+## 1. Setup
 
-### 步骤一：通过 BotFather 创建 Bot
+### Step 1: Create a Bot via BotFather
 
-1. 在 Telegram 中搜索并打开官方账号 [@BotFather](https://t.me/BotFather)。
-2. 发送 `/newbot` 命令，按提示输入：
-   - **Bot 名称**（显示名，可中文，例如 `My CowAgent Bot`）
-   - **Bot 用户名**（必须以 `bot` 结尾，例如 `my_cowagent_bot`）
-3. 创建成功后，BotFather 会返回一段 **HTTP API Token**（形如 `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`），妥善保存。
+1. Open the official account [@BotFather](https://t.me/BotFather) in Telegram.
+2. Send `/newbot` and follow the prompts:
+   - **Bot name** (display name, e.g. `My CowAgent Bot`)
+   - **Bot username** (must end with `bot`, e.g. `my_cowagent_bot`)
+3. Once created, BotFather returns an **HTTP API Token** (e.g. `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`). Keep it safe.
 
 <Tip>
-  这个 Token 等同于 Bot 的密码，请勿泄露。如果意外泄漏可向 `@BotFather` 发送 `/revoke` 重置。
+  The token is the password of your bot — never share it. If it leaks, send `/revoke` to `@BotFather` to reset it.
 </Tip>
 
-### 步骤二：（群聊使用）关闭 Privacy Mode
+### Step 2: (Group chat only) Disable Privacy Mode
 
-仅使用单聊可跳过此步。Telegram Bot 默认开启 **Privacy Mode**，群聊中只能收到带 `@bot` 的命令（如 `/start@your_bot`）以及对 bot 消息的 reply；**普通的 `@bot 你好` 文字消息收不到**，会导致群聊无响应。
+Skip this step if you only use private chat. Telegram bots run in **Privacy Mode** by default — in groups they can only see commands suffixed with `@bot` (e.g. `/start@your_bot`) and replies to bot messages; **plain `@bot hello` text messages are not delivered**, so the bot will appear unresponsive in groups.
 
-向 `@BotFather` 发送：
+Send the following to `@BotFather`:
 
 1. `/setprivacy`
-2. 选择刚才创建的 bot
-3. 选择 `Disable`
+2. Pick the bot you just created
+3. Choose `Disable`
 
 <Note>
-  若设置后群聊仍无响应，可尝试把 Bot 从群里移除并重新拉入。
+  If the bot is still silent in groups after this, try removing it from the group and adding it back.
 </Note>
 
-### 步骤三：接入 CowAgent
+### Step 3: Connect to CowAgent
 
 <Tabs>
-  <Tab title="Web 控制台（推荐）">
-    打开 Web 控制台（本地链接：http://127.0.0.1:9899 ），选择 **通道** 菜单，点击 **接入通道**，选择 **Telegram**，填入 Bot Token，点击接入即可。
+  <Tab title="Web Console (Recommended)">
+    Open the Web Console (default `http://127.0.0.1:9899`), go to **Channels**, click **Add Channel**, choose **Telegram**, paste the Bot Token, and click connect.
   </Tab>
-  <Tab title="配置文件">
-    在 `config.json` 中添加以下配置后启动：
+  <Tab title="Config File">
+    Add the following to `config.json` and start Cow:
 
     ```json
     {
@@ -51,16 +51,15 @@ description: 将 CowAgent 接入 Telegram Bot
     }
     ```
 
-    | 参数 | 说明 | 默认值 |
+    | Key | Description | Default |
     | --- | --- | --- |
-    | `telegram_token` | BotFather 返回的 HTTP API Token | - |
-    | `telegram_group_trigger` | 群聊触发方式：`mention_or_reply`（@或回复机器人）/ `mention_only`（仅@） / `all`（所有消息） | `mention_or_reply` |
-    | `telegram_register_commands` | 启动时是否自动向 BotFather 注册命令菜单 | `true` |
-    | `telegram_proxy` | （可选）代理地址，如 `http://127.0.0.1:7890`、`socks5://127.0.0.1:1080`；运行环境无法直连 `api.telegram.org` 时配置，留空则使用环境变量 `HTTPS_PROXY` | `""` |
+    | `telegram_token` | HTTP API Token returned by BotFather | - |
+    | `telegram_group_trigger` | Group trigger: `mention_or_reply` (@ or reply) / `mention_only` (@ only) / `all` (all messages) | `mention_or_reply` |
+    | `telegram_register_commands` | Whether to register the command menu with BotFather on startup | `true` |
   </Tab>
 </Tabs>
 
-启动 Cow 后，日志中出现以下输出即表示接入成功：
+The integration is ready when you see logs like:
 
 ```
 [Telegram] Bot logged in as @my_cowagent_bot (id=123456789)
@@ -68,45 +67,45 @@ description: 将 CowAgent 接入 Telegram Bot
 [Telegram] ✅ Telegram bot ready, polling for updates
 ```
 
-## 二、功能说明
+## 2. Capabilities
 
-| 功能 | 支持情况 |
+| Feature | Support |
 | --- | --- |
-| 单聊 | ✅ |
-| 群聊（@机器人 / 回复机器人） | ✅ |
-| 文本消息 | ✅ 收发 |
-| 图片消息 | ✅ 收发 |
-| 语音消息 | ✅ 收发（接收 OGG/Opus，发送 OGG/Opus） |
-| 视频消息 | ✅ 收发 |
-| 文件消息 | ✅ 收发（PDF / Word / Excel 等） |
-| 命令菜单 | ✅ 与 Web 控制台 slash 命令一致 |
+| Private chat | ✅ |
+| Group chat (@bot / reply to bot) | ✅ |
+| Text messages | ✅ send / receive |
+| Image messages | ✅ send / receive |
+| Voice messages | ✅ send / receive (OGG/Opus) |
+| Video messages | ✅ send / receive |
+| File messages | ✅ send / receive (PDF / Word / Excel, etc.) |
+| Command menu | ✅ aligned with Web Console slash commands |
 
-### 命令菜单
+### Command Menu
 
-启动时会自动向 BotFather 注册命令菜单，用户在 Telegram 输入框输入 `/` 会出现下拉提示：
+On startup, the channel registers a command menu with BotFather. Typing `/` in Telegram shows a dropdown:
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `/help` | 显示命令帮助 |
-| `/status` | 查看运行状态 |
-| `/context` | 查看对话上下文（`/context clear` 清除） |
-| `/skill` | 技能管理（`/skill list`、`/skill install` 等） |
-| `/memory` | 记忆管理（`/memory dream`） |
-| `/knowledge` | 知识库管理（`/knowledge list` / `on` / `off`） |
-| `/config` | 查看当前配置 |
-| `/cancel` | 中止当前正在运行的 Agent 任务 |
-| `/logs` | 查看最近日志 |
-| `/version` | 查看版本 |
+| `/help` | Show command help |
+| `/status` | View runtime status |
+| `/context` | View conversation context (`/context clear` to clear) |
+| `/skill` | Skill management (`/skill list`, `/skill install`, ...) |
+| `/memory` | Memory management (`/memory dream`) |
+| `/knowledge` | Knowledge base (`/knowledge list` / `on` / `off`) |
+| `/config` | View current config |
+| `/cancel` | Cancel the running Agent task |
+| `/logs` | View recent logs |
+| `/version` | Show version |
 
 <Note>
-  Telegram 命令菜单只能展示一级命令，子命令通过空格输入即可，例如 `/skill list`、`/context clear`。
+  Telegram's command menu only displays top-level commands; subcommands are entered with a space, e.g. `/skill list`, `/context clear`.
 </Note>
 
-## 三、使用
+## 3. Usage
 
-完成接入后：
+Once connected:
 
-- **单聊**：在 Telegram 中搜索你创建的 Bot 用户名（如 `@my_cowagent_bot`），点击 `Start` 即可开始对话。
-- **群聊**：把 Bot 拉进群，使用 `@bot 你好` 或 **回复 Bot 的某条消息** 触发对话。若群聊无响应，请检查 Privacy Mode 是否已按 [步骤二](#步骤二-群聊使用-关闭-privacy-mode) 关闭。
+- **Private chat**: search for your bot username (e.g. `@my_cowagent_bot`) in Telegram, click `Start` and chat away.
+- **Group chat**: add the bot to a group, then trigger it with `@bot hello` or by **replying to one of the bot's messages**. If the bot doesn't respond in groups, double-check Privacy Mode in [Step 2](#step-2-group-chat-only-disable-privacy-mode).
 
-发送图片或文件时，可以直接在附件上方的输入框中 **添加 Caption**（描述/问题）一并发送，机器人会结合附件回答。也支持先发附件再发问题，两条消息会自动合并提问。
+When sending an image or file, you can **add a caption** (description / question) directly in the attachment input — the bot will answer based on both. Sending an attachment first and then a follow-up question also works; the two messages are merged automatically.

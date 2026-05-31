@@ -275,7 +275,14 @@ def update(ctx):
 def status():
     """Show CowAgent running status."""
     from cli import __version__
-    from cli.utils import load_config_json
+    from cli.utils import load_config_json, get_cli_language
+
+    # get_cli_language() calls ensure_sys_path(), which adds the project root
+    # to sys.path. Import `common` only AFTER that, otherwise it fails with
+    # ModuleNotFoundError when `cow` runs from outside the project dir.
+    get_cli_language()  # resolve cow_lang so i18n.t reflects config
+    from common import i18n
+    _t = i18n.t
 
     pid = _read_pid()
     if pid:
@@ -283,17 +290,19 @@ def status():
     else:
         click.echo(click.style("● CowAgent is not running", fg="red"))
 
-    click.echo(f"  版本: v{__version__}")
+    click.echo(_t(f"  版本: v{__version__}", f"  Version: v{__version__}"))
 
     cfg = load_config_json()
     if cfg:
         channel = cfg.get("channel_type", "unknown")
         if isinstance(channel, list):
             channel = ", ".join(channel)
-        click.echo(f"  通道: {channel}")
-        click.echo(f"  模型: {cfg.get('model', 'unknown')}")
+        click.echo(_t(f"  通道: {channel}", f"  Channel: {channel}"))
+        click.echo(_t(f"  模型: {cfg.get('model', 'unknown')}", f"  Model: {cfg.get('model', 'unknown')}"))
         mode = "Chat" if cfg.get("agent") is False else "Agent"
-        click.echo(f"  模式: {mode}")
+        click.echo(_t(f"  模式: {mode}", f"  Mode: {mode}"))
+        lang_label = "中文" if i18n.get_language() == "zh" else "English"
+        click.echo(_t(f"  语言: {lang_label}", f"  Language: {lang_label}"))
 
 
 @click.command()

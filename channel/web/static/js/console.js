@@ -91,9 +91,31 @@ const I18N = {
         example_knowledge_title: '知识库', example_knowledge_text: '查看知识库当前文档情况',
         example_skill_title: '技能系统', example_skill_text: '查看所有支持的工具和技能',
         example_web_title: '指令中心', example_web_text: '查看全部命令',
+        slash_help: '显示命令帮助',
+        slash_status: '查看运行状态',
+        slash_context: '查看对话上下文',
+        slash_context_clear: '清除对话上下文',
+        slash_skill_list: '查看已安装技能',
+        slash_skill_list_remote: '浏览技能广场',
+        slash_skill_search: '搜索技能',
+        slash_skill_install: '安装技能 (名称或 GitHub URL)',
+        slash_skill_uninstall: '卸载技能',
+        slash_skill_info: '查看技能详情',
+        slash_skill_enable: '启用技能',
+        slash_skill_disable: '禁用技能',
+        slash_memory_dream: '手动触发记忆蒸馏 (可指定天数, 默认3)',
+        slash_knowledge: '查看知识库统计',
+        slash_knowledge_list: '查看知识库文件树',
+        slash_knowledge_on: '开启知识库',
+        slash_knowledge_off: '关闭知识库',
+        slash_config: '查看当前配置',
+        slash_cancel: '中止当前正在运行的 Agent 任务',
+        slash_logs: '查看最近日志',
+        slash_version: '查看版本',
         input_placeholder: '输入消息，或输入 / 使用指令',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
+        config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
         config_model_advanced: '高级配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
@@ -265,9 +287,31 @@ const I18N = {
         example_knowledge_title: 'Knowledge', example_knowledge_text: 'Show me the current knowledge base',
         example_skill_title: 'Skills', example_skill_text: 'Show current tools and skills',
         example_web_title: 'Commands', example_web_text: 'Show all commands',
+        slash_help: 'Show this help',
+        slash_status: 'Show running status',
+        slash_context: 'Show conversation context',
+        slash_context_clear: 'Clear conversation context',
+        slash_skill_list: 'List installed skills',
+        slash_skill_list_remote: 'Browse Skill Hub',
+        slash_skill_search: 'Search skills',
+        slash_skill_install: 'Install a skill (name or GitHub URL)',
+        slash_skill_uninstall: 'Uninstall a skill',
+        slash_skill_info: 'Show skill details',
+        slash_skill_enable: 'Enable a skill',
+        slash_skill_disable: 'Disable a skill',
+        slash_memory_dream: 'Trigger memory distillation (optional days, default 3)',
+        slash_knowledge: 'Show knowledge base stats',
+        slash_knowledge_list: 'Show knowledge base file tree',
+        slash_knowledge_on: 'Enable knowledge base',
+        slash_knowledge_off: 'Disable knowledge base',
+        slash_config: 'Show current config',
+        slash_cancel: 'Abort the running Agent task',
+        slash_logs: 'Show recent logs',
+        slash_version: 'Show version',
         input_placeholder: 'Type a message, or press / for commands',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
+        config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
         config_model_advanced: 'Advanced',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
@@ -361,7 +405,25 @@ const I18N = {
     }
 };
 
-let currentLang = localStorage.getItem('cow_lang') || 'zh';
+// Resolve language by priority: user choice (localStorage) -> backend-detected
+// (cow_lang) -> browser language -> 'zh'. Shares __cowResolveLang__ defined in
+// chat.html; falls back to a local resolver if loaded standalone.
+let currentLang = (typeof window.__cowResolveLang__ === 'function')
+    ? window.__cowResolveLang__()
+    : (function () {
+        const norm = (raw) => {
+            if (!raw) return '';
+            const v = String(raw).trim().toLowerCase();
+            if (v === 'auto') return '';
+            if (v.indexOf('zh') === 0) return 'zh';
+            if (v.indexOf('en') === 0) return 'en';
+            return '';
+        };
+        return norm(localStorage.getItem('cow_lang'))
+            || norm(window.__COW_DEFAULT_LANG__)
+            || norm(navigator.language)
+            || 'zh';
+    })();
 
 function t(key) {
     return (I18N[currentLang] && I18N[currentLang][key]) || (I18N.en[key]) || key;
@@ -394,14 +456,60 @@ function applyI18n() {
     if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
 }
 
-function toggleLanguage() {
-    currentLang = currentLang === 'zh' ? 'en' : 'zh';
+// Single entry point for switching language. Updates the in-memory language,
+// persists the user choice locally, re-renders the UI, and binds the choice to
+// the backend `cow_lang` config so logs / agent replies / CLI follow suit.
+function setLanguage(lang) {
+    const next = (lang === 'en') ? 'en' : 'zh';
+    if (next === currentLang) {
+        // Still persist + sync in case storage/backend drifted from the UI.
+        syncLanguageToBackend(next);
+        return;
+    }
+    currentLang = next;
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
     // Re-render views whose DOM is built in JS (data-i18n alone does not
     // cover strings interpolated via t() into innerHTML).
     try { rerenderDynamicViews(); } catch (e) {}
+    // Keep the language switch button and config selector visually in sync.
+    try { updateLangControls(); } catch (e) {}
+    syncLanguageToBackend(currentLang);
+}
+
+// Persist the language to the backend `cow_lang` config (best-effort; the UI
+// has already switched locally, so a network failure is non-blocking).
+function syncLanguageToBackend(lang) {
+    try {
+        fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: { cow_lang: lang } })
+        }).catch(() => {});
+    } catch (e) {}
+}
+
+// Reflect the current language on both the top-right toggle and the config
+// selector (if present), so the two entry points stay synchronized.
+function updateLangControls() {
+    const langLabel = document.getElementById('lang-label');
+    if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
+    // The config language picker is the custom .cfg-dropdown component. Only
+    // sync it once it has been initialized (i.e. the config panel was opened).
+    const sel = document.getElementById('cfg-lang-select');
+    if (sel && sel._ddValue !== undefined && sel._ddValue !== currentLang) {
+        sel._ddValue = currentLang;
+        const textEl = sel.querySelector('.cfg-dropdown-text');
+        if (textEl) textEl.textContent = currentLang === 'zh' ? '中文' : 'English';
+        sel.querySelectorAll('.cfg-dropdown-item').forEach(i => {
+            i.classList.toggle('active', i.dataset.value === currentLang);
+        });
+    }
+}
+
+function toggleLanguage() {
+    setLanguage(currentLang === 'zh' ? 'en' : 'zh');
 }
 
 // Refresh JS-rendered views after a language switch. Each branch uses the
@@ -1298,28 +1406,30 @@ chatInput.addEventListener('compositionstart', () => { isComposing = true; });
 chatInput.addEventListener('compositionend', () => { setTimeout(() => { isComposing = false; }, 100); });
 
 // ── Slash Command Menu ───────────────────────────────────────
+// desc holds an i18n key, resolved via t() at render time so the menu follows
+// the current UI language.
 const SLASH_COMMANDS = [
-    { cmd: '/help',                desc: '显示命令帮助' },
-    { cmd: '/status',              desc: '查看运行状态' },
-    { cmd: '/context',             desc: '查看对话上下文' },
-    { cmd: '/context clear',       desc: '清除对话上下文' },
-    { cmd: '/skill list',          desc: '查看已安装技能' },
-    { cmd: '/skill list --remote', desc: '浏览技能广场' },
-    { cmd: '/skill search ',       desc: '搜索技能' },
-    { cmd: '/skill install ',      desc: '安装技能 (名称或 GitHub URL)' },
-    { cmd: '/skill uninstall ',    desc: '卸载技能' },
-    { cmd: '/skill info ',         desc: '查看技能详情' },
-    { cmd: '/skill enable ',       desc: '启用技能' },
-    { cmd: '/skill disable ',      desc: '禁用技能' },
-    { cmd: '/memory dream ',        desc: '手动触发记忆蒸馏 (可指定天数, 默认3)' },
-    { cmd: '/knowledge',            desc: '查看知识库统计' },
-    { cmd: '/knowledge list',      desc: '查看知识库文件树' },
-    { cmd: '/knowledge on',        desc: '开启知识库' },
-    { cmd: '/knowledge off',       desc: '关闭知识库' },
-    { cmd: '/config',              desc: '查看当前配置' },
-    { cmd: '/cancel',              desc: '中止当前正在运行的 Agent 任务' },
-    { cmd: '/logs',                desc: '查看最近日志' },
-    { cmd: '/version',             desc: '查看版本' },
+    { cmd: '/help',                desc: 'slash_help' },
+    { cmd: '/status',              desc: 'slash_status' },
+    { cmd: '/context',             desc: 'slash_context' },
+    { cmd: '/context clear',       desc: 'slash_context_clear' },
+    { cmd: '/skill list',          desc: 'slash_skill_list' },
+    { cmd: '/skill list --remote', desc: 'slash_skill_list_remote' },
+    { cmd: '/skill search ',       desc: 'slash_skill_search' },
+    { cmd: '/skill install ',      desc: 'slash_skill_install' },
+    { cmd: '/skill uninstall ',    desc: 'slash_skill_uninstall' },
+    { cmd: '/skill info ',         desc: 'slash_skill_info' },
+    { cmd: '/skill enable ',       desc: 'slash_skill_enable' },
+    { cmd: '/skill disable ',      desc: 'slash_skill_disable' },
+    { cmd: '/memory dream ',       desc: 'slash_memory_dream' },
+    { cmd: '/knowledge',           desc: 'slash_knowledge' },
+    { cmd: '/knowledge list',      desc: 'slash_knowledge_list' },
+    { cmd: '/knowledge on',        desc: 'slash_knowledge_on' },
+    { cmd: '/knowledge off',       desc: 'slash_knowledge_off' },
+    { cmd: '/config',              desc: 'slash_config' },
+    { cmd: '/cancel',              desc: 'slash_cancel' },
+    { cmd: '/logs',                desc: 'slash_logs' },
+    { cmd: '/version',             desc: 'slash_version' },
 ];
 
 const slashMenu = document.getElementById('slash-menu');
@@ -1373,7 +1483,7 @@ function renderSlashItems() {
         slashFiltered.map((c, i) =>
             `<div class="slash-menu-item${i === slashActiveIdx ? ' active' : ''}" data-idx="${i}">` +
             `<span class="cmd">${escapeHtml(c.cmd)}</span>` +
-            `<span class="desc">${escapeHtml(c.desc)}</span></div>`
+            `<span class="desc">${escapeHtml(t(c.desc))}</span></div>`
         ).join('');
 
     const activeEl = slashMenu.querySelector('.slash-menu-item.active');
@@ -3295,6 +3405,18 @@ function initConfigView(data) {
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     document.getElementById('cfg-enable-thinking').checked = data.enable_thinking === true;
+
+    // Reflect the current UI language (already resolved, may include the user's
+    // local choice) on the selector so it stays in sync with the top-right toggle.
+    const langSel = document.getElementById('cfg-lang-select');
+    if (langSel) {
+        initDropdown(
+            langSel,
+            [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }],
+            currentLang,
+            (val) => setLanguage(val)
+        );
+    }
 
     const pwdInput = document.getElementById('cfg-password');
     const maskedPwd = data.web_password_masked || '';
