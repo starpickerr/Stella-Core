@@ -47,11 +47,30 @@
          This runs synchronously in <head> so the correct class is on <html>
          before any CSS or body rendering occurs. -->
     <script>
+    // Map an arbitrary locale string (zh-CN, en-US, fr ...) to 'zh' / 'en',
+    // or '' when unrecognized so callers can fall through to the next source.
+    window.__cowNormalizeLang__ = function(raw) {
+        if (!raw) return '';
+        var v = String(raw).trim().toLowerCase();
+        if (v === 'auto') return '';
+        if (v.indexOf('zh') === 0) return 'zh';
+        if (v.indexOf('en') === 0) return 'en';
+        return '';
+    };
+    // Resolve the console language by priority:
+    //   user choice (localStorage) -> backend-detected -> browser -> 'zh'.
+    window.__cowResolveLang__ = function() {
+        return window.__cowNormalizeLang__(localStorage.getItem('cow_lang'))
+            || window.__cowNormalizeLang__(window.__COW_DEFAULT_LANG__)
+            || window.__cowNormalizeLang__(navigator.language || (navigator.languages && navigator.languages[0]))
+            || 'zh';
+    };
     (function() {
+        // Backend-resolved default language (from cow_lang config / auto-detect).
+        window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
         var theme = localStorage.getItem('cow_theme') || 'dark';
         if (theme === 'dark') document.documentElement.classList.add('dark');
-        var lang = localStorage.getItem('cow_lang') || 'zh';
-        document.documentElement.setAttribute('lang', lang);
+        document.documentElement.setAttribute('lang', window.__cowResolveLang__());
     })();
     </script>
 </head>

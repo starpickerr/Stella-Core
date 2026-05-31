@@ -12,6 +12,7 @@ from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.message_utils import sanitize_claude_messages, compress_turn_to_text_only
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
+from common.i18n import t as _t
 
 # Optional: repair malformed JSON args from non-strict providers (e.g. unescaped quotes in long content).
 try:
@@ -317,7 +318,10 @@ class AgentStreamExecutor:
         
         # Hard stop at 8 failures - abort with critical message
         if same_tool_failures >= 8:
-            return True, f"抱歉，我没能完成这个任务。可能是我理解有误或者当前方法不太合适。\n\n建议你：\n• 换个方式描述需求试试\n• 把任务拆分成更小的步骤\n• 或者换个思路来解决", True
+            return True, _t(
+                "抱歉，我没能完成这个任务。可能是我理解有误或者当前方法不太合适。\n\n建议你：\n• 换个方式描述需求试试\n• 把任务拆分成更小的步骤\n• 或者换个思路来解决",
+                "Sorry, I couldn't complete this task. I may have misunderstood, or my current approach isn't quite right.\n\nYou could try:\n• Rephrasing your request\n• Breaking the task into smaller steps\n• Taking a different approach",
+            ), True
         
         # Warning at 6 failures
         if same_tool_failures >= 6:
@@ -436,14 +440,16 @@ class AgentStreamExecutor:
                             elif not assistant_msg:
                                 # Still empty (no text and no tool_calls): use fallback
                                 logger.warning(f"[Agent] Still empty after explicit request")
-                                final_response = (
-                                    "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。"
+                                final_response = _t(
+                                    "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
+                                    "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
                                 )
                                 logger.info(f"Generated fallback response for empty LLM output")
                         else:
-                            # 第一轮就空回复，直接 fallback
-                            final_response = (
-                                "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。"
+                            # First-turn empty reply, fall back directly
+                            final_response = _t(
+                                "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
+                                "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
                             )
                             logger.info(f"Generated fallback response for empty LLM output")
                     else:
@@ -514,7 +520,7 @@ class AgentStreamExecutor:
                         # Check for critical error - abort entire conversation
                         if result.get("status") == "critical_error":
                             logger.error(f"💥 检测到严重错误，终止对话")
-                            final_response = result.get('result', '任务执行失败')
+                            final_response = result.get('result') or _t("任务执行失败", "Task execution failed")
                             return final_response
                         
                         # Log tool result in compact format
@@ -650,15 +656,15 @@ class AgentStreamExecutor:
                         logger.info(f"💭 Summary: {summary_response[:150]}{'...' if len(summary_response) > 150 else ''}")
                     else:
                         # Fallback if model still doesn't respond
-                        final_response = (
-                            f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。"
-                            "任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。"
+                        final_response = _t(
+                            f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。",
+                            f"I've taken {turn} decision steps and reached the per-run limit. The task may not be fully complete — try breaking it into smaller steps, or describe your request differently.",
                         )
                 except Exception as e:
                     logger.warning(f"Failed to get summary from LLM: {e}")
-                    final_response = (
-                        f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。"
-                        "任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。"
+                    final_response = _t(
+                        f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。",
+                        f"I've taken {turn} decision steps and reached the per-run limit. The task may not be fully complete — try breaking it into smaller steps, or describe your request differently.",
                     )
                 finally:
                     # Remove the injected user prompt from history to avoid polluting
@@ -953,13 +959,15 @@ class AgentStreamExecutor:
                 self.messages.clear()
                 self._clear_session_db()
                 if is_context_overflow:
-                    raise Exception(
-                        "抱歉，对话历史过长导致上下文溢出。我已清空历史记录，请重新描述你的需求。"
-                    )
+                    raise Exception(_t(
+                        "抱歉，对话历史过长导致上下文溢出。我已清空历史记录，请重新描述你的需求。",
+                        "Sorry, the conversation history got too long and overflowed the context. I've cleared the history — please describe your request again.",
+                    ))
                 else:
-                    raise Exception(
-                        "抱歉，之前的对话出现了问题。我已清空历史记录，请重新发送你的消息。"
-                    )
+                    raise Exception(_t(
+                        "抱歉，之前的对话出现了问题。我已清空历史记录，请重新发送你的消息。",
+                        "Sorry, something went wrong with the earlier conversation. I've cleared the history — please send your message again.",
+                    ))
             
             # Check if error is rate limit (429)
             is_rate_limit = '429' in error_str_lower or 'rate limit' in error_str_lower
