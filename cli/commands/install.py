@@ -118,9 +118,11 @@ def run_install_browser(
         0 on success, 1 on fatal failure (pip or chromium install failed).
     """
     from cli.utils import get_cli_language
-    from common import i18n
 
+    # Import `common` only after get_cli_language() runs ensure_sys_path(),
+    # so it works when `cow` is invoked from outside the project directory.
     get_cli_language()  # resolve cow_lang so i18n.t reflects config
+    from common import i18n
     _t = i18n.t
 
     stream = stream or _default_stream

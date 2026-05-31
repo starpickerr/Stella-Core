@@ -518,9 +518,11 @@ def _install_targz_bytes(content: bytes, name: str, skills_dir: str, result: Ins
 def _print_install_success(name: str, source: str):
     """Print a unified install success message with description and source."""
     from cli.utils import get_cli_language
-    from common import i18n
 
+    # Import `common` only after get_cli_language() runs ensure_sys_path(),
+    # so it works when `cow` is invoked from outside the project directory.
     get_cli_language()  # resolve cow_lang so i18n.t reflects config
+    from common import i18n
     _t = i18n.t
 
     skills_dir = get_skills_dir()
