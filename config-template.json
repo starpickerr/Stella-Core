@@ -1,4 +1,5 @@
 {
+  "cow_lang": "auto",
   "channel_type": "weixin",
   "model": "deepseek-v4-flash",
   "deepseek_api_key": "",
