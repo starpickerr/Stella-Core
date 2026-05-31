@@ -1,60 +1,60 @@
 ---
-title: 微信客服
-description: 将 CowAgent 接入微信客服（WeCom Customer Service）
+title: WeCom Customer Service
+description: Integrate CowAgent into WeCom Customer Service (微信客服)
 ---
 
-通过把企业微信自建应用绑定到「微信客服」账号，CowAgent 可以接管来自外部微信用户的客服咨询，并可在小程序、公众号、视频号及视频号小店等场景中通过链接或二维码触达微信用户。
+By binding a WeCom custom enterprise app to a WeCom Customer Service (微信客服) account, CowAgent can take over inbound inquiries from external WeChat users and serve them through links or QR codes embedded in WeChat Mini Programs, Official Accounts, Video Channels, and Video Channel stores.
 
 <Note>
-  微信客服只能使用 Docker 部署或服务器 Python 部署，需要公网可达的回调地址，不支持本地运行模式。
+  WeCom Customer Service only supports Docker deployment or server Python deployment. A publicly reachable callback URL is required; local run mode is not supported.
 </Note>
 
-## 一、准备
+## 1. Prerequisites
 
-需要的资源：
+Required resources:
 
-1. 一台服务器（有公网 IP）
-2. 注册并已认证的企业微信
-3. 已开通「微信客服」能力
+1. A server with a public IP
+2. A registered and verified WeCom account
+3. WeCom Customer Service capability enabled
 
 <Note>
-  建议**单独再创建一个企微自建应用**用于微信客服，不要复用已有的 `wechatcom_app` 应用，否则两个通道会争抢同一个回调地址。
+  It is recommended to create a **dedicated** WeCom custom app for Customer Service rather than reusing the existing `wechatcom_app` one — otherwise the two channels will compete for the same callback URL.
 </Note>
 
-## 二、创建企业微信自建应用
+## 2. Create a WeCom Custom App
 
-1. 在 [企业微信管理后台](https://work.weixin.qq.com/wework_admin/frame#apps)，点击 **应用管理 → 创建应用**：
+1. In the [WeCom Admin Console](https://work.weixin.qq.com/wework_admin/frame#apps), go to **Application Management → Create Application**:
 
 <img src="https://cdn.link-ai.tech/doc/20260228103156.png" width="480"/>
 
-2. 点击 **我的企业**，在最下方获取 **企业ID**（后续填写到 `wechat_kf_corp_id`）：
+2. Click **My Enterprise** and find the **Corp ID** at the bottom of the page (it goes into `wechat_kf_corp_id`):
 
 <img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-companyid.png" width="600"/>
 
-3. 进入上一步创建的应用，点击 Secret 旁的「**查看**」，Secret 会推送到管理员手机端的企业微信里查看：
+3. Open the app you just created and click **"View"** next to Secret. The Secret will be pushed to the admin's phone via the WeCom app, where it can be viewed:
 
 <img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-agent-secret.png" width="600"/>
 
-4. 进入应用 **接收消息 → 设置API接收**，点击右侧「**随机获取**」生成 **Token** 和 **EncodingAESKey** 并保存：
+4. Open the app's **Receive Messages → Set API Reception** page, click **"Random Generate"** to generate the **Token** and **EncodingAESKey**, and save them:
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wechatcom-hosting-token-aeskey.jpg" width="600"/>
 
 <Note>
-  此时保存 API 接收配置会失败，因为程序还未启动，等项目运行后再回来保存。
+  Saving the API reception configuration will fail at this point because the program has not started yet. Come back to save it after the project is running.
 </Note>
 
-## 三、配置和运行
+## 3. Configuration and Run
 
-填入上一步收集到的 4 个字段（Corp ID / Secret / Token / EncodingAESKey）：
+Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token / EncodingAESKey):
 
 <Tabs>
-  <Tab title="Web 控制台">
-    启动 Cow 项目后打开 Web 控制台，选择 **通道** 菜单，点击 **接入通道**，选择 **微信客服**，依次填入 Corp ID / Secret / Token / AES Key（端口默认 9888，可改），点击接入即可。
+  <Tab title="Web Console">
+    Start the Cow project and open the Web Console. Go to the **Channels** menu, click **Connect**, choose **WeCom Customer Service**, fill in Corp ID / Secret / Token / AES Key (port defaults to 9888, configurable), and click Connect.
 
     <img src="https://cdn.link-ai.tech/doc/cow-weixinkefu-web-control.png" width="800"/>
   </Tab>
-  <Tab title="配置文件">
-    在 `config.json` 中添加以下配置（各参数与企业微信后台的对应关系见上方截图）：
+  <Tab title="Config File">
+    Add the following configuration to `config.json` (each parameter maps to a field shown in the screenshots above):
 
     ```json
     {
@@ -67,34 +67,34 @@ description: 将 CowAgent 接入微信客服（WeCom Customer Service）
     }
     ```
 
-    | 参数 | 说明 |
+    | Parameter | Description |
     | --- | --- |
-    | `wechat_kf_corp_id` | 企业 ID |
-    | `wechat_kf_secret` | 绑定到微信客服的那个企微自建应用的 Secret |
-    | `wechat_kf_token` | API 接收配置中的 Token |
-    | `wechat_kf_aes_key` | API 接收配置中的 EncodingAESKey |
-    | `wechat_kf_port` | 监听端口，默认 9888 |
+    | `wechat_kf_corp_id` | Corp ID |
+    | `wechat_kf_secret` | Secret of the WeCom custom app bound to Customer Service |
+    | `wechat_kf_token` | Token from the API reception config |
+    | `wechat_kf_aes_key` | EncodingAESKey from the API reception config |
+    | `wechat_kf_port` | Listening port, default 9888 |
   </Tab>
 </Tabs>
 
-接入完成后启动程序（Web 控制台方式会自动重启），日志中出现 `Listening on http://0.0.0.0:9888/wxkf/` 表示运行成功，需要将该端口对外开放（如在云服务器安全组中放行）。
+After connecting, start the program (the Web Console method restarts the channel automatically). When the log shows `Listening on http://0.0.0.0:9888/wxkf/`, the program is running successfully. You need to open this port externally (e.g., allow it in the cloud server security group).
 
-接着回到企业微信「接收消息 → 设置API接收」，将回调 URL 填为 `http://<your-host>:9888/wxkf/`，点击保存。保存成功后还需将服务器 IP 添加到 **企业可信IP** 中，否则无法收发消息：
+Then go back to **Receive Messages → Set API Reception** in the WeCom console and set the callback URL to `http://<your-host>:9888/wxkf/`, then click Save. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
 
 <img src="https://cdn.link-ai.tech/doc/wechat-com_config.png" width="600"/>
 
 <img src="https://cdn.link-ai.tech/doc/20260228103224.png" width="520"/>
 
 <Warning>
-  如遇到 URL 配置回调不通过或配置失败：
-  1. 确保服务器防火墙关闭且安全组放行监听端口（默认 9888）
-  2. 仔细检查 Token、Secret、EncodingAESKey 等参数配置是否一致，URL 格式是否正确
-  3. 认证企业微信需要配置与主体一致的备案域名
+  If URL verification fails or the configuration is unsuccessful:
+  1. Ensure the server firewall is disabled and the security group allows the listening port (default 9888)
+  2. Carefully check that Token, Secret, EncodingAESKey and other parameters are consistent, and the URL format is correct
+  3. Verified WeCom accounts must use a filed domain matching the entity
 </Warning>
 
-## 四、绑定微信客服账号
+## 4. Bind a WeCom Customer Service Account
 
-进入企业微信管理后台 **微信客服** 页面，创建客服账号并与上一步的企微自建应用绑定：
+In the WeCom Admin Console, go to **WeCom Customer Service**, create a customer service account, and bind it to the custom app you created above:
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-step1.jpg" width="600"/>
 
@@ -102,28 +102,28 @@ description: 将 CowAgent 接入微信客服（WeCom Customer Service）
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-step3.jpg" width="600"/>
 
-绑定完成后，进入 **微信客服 → 微信客服账号详情**，在「**接入链接**」一栏：
+After binding, go to **WeCom Customer Service → Account Details**, and under **"Access Link"**:
 
-- 点击「**复制链接**」可获得形如 `https://work.weixin.qq.com/kfid/kfcd83e5896b9ba07be` 的访问链接
-- 点击「**生成二维码**」可获得对应的二维码
+- Click **"Copy Link"** to get an access link like `https://work.weixin.qq.com/kfid/kfcd83e5896b9ba07be`
+- Click **"Generate QR Code"** to get the corresponding QR code
 
-把链接或二维码推给微信客户使用即可：
+Distribute the link or QR code to your WeChat customers:
 
 <img src="https://cdn.link-ai.tech/doc/wechat-customer-service_use.png" width="600"/>
 
-## 五、使用
+## 5. Usage
 
-微信用户通过链接或二维码进入客服对话后，即可与 AI 进行多轮对话，支持文本、图片、语音等消息：
+After WeChat users enter the customer service conversation via the link or QR code, they can chat with the AI across multiple turns, with support for text, image, and voice messages:
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-chat-demo.jpg" width="900"/>
 
-除此之外，基于微信生态官方能力，还可将微信客服应用在公众号、小程序、视频号及视频号小店等场景，详情可查看企业微信管理后台 [微信客服 → 接入场景](https://work.weixin.qq.com/wework_admin/frame#/app/servicer) 的相关说明：
+Beyond that, leveraging the official WeChat ecosystem, WeCom Customer Service can also be embedded into Official Accounts, Mini Programs, Video Channels and more. See the **WeCom Customer Service → Access Scenarios** section in the [WeCom Admin Console](https://work.weixin.qq.com/wework_admin/frame#/app/servicer) for details:
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-interface-demo.png" width="800"/>
 
-## 常见问题
+## FAQ
 
-需要确保已安装以下依赖：
+Make sure the following dependencies are installed:
 
 ```bash
 pip install websocket-client pycryptodome
