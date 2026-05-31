@@ -70,7 +70,8 @@ Configure Agent mode parameters in `config.json`:
   "agent_max_context_tokens": 50000,
   "agent_max_context_turns": 20,
   "agent_max_steps": 20,
-  "enable_thinking": false
+  "enable_thinking": false,
+  "cow_lang": "auto"
 }
 ```
 
@@ -83,4 +84,4 @@ Configure Agent mode parameters in `config.json`:
 | `agent_max_steps` | Max decision steps per task | `20` |
 | `enable_thinking` | Enable deep-thinking mode | `false` |
 | `knowledge` | Enable personal knowledge base | `true` |
-| `knowledge` | Enable personal knowledge base | `true` |
+| `cow_lang` | Language for the UI, command text and system prompts; `auto` to detect, or set `zh` / `en` | `auto` |

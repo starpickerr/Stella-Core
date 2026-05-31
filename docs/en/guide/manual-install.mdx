@@ -127,7 +127,8 @@ sudo docker logs -f chatgpt-on-wechat
   "agent_workspace": "~/cow",
   "agent_max_context_tokens": 40000,
   "agent_max_context_turns": 30,
-  "agent_max_steps": 15
+  "agent_max_steps": 15,
+  "cow_lang": "auto"
 }
 ```
 
@@ -140,6 +141,7 @@ sudo docker logs -f chatgpt-on-wechat
 | `agent_max_context_tokens` | Max context tokens | `40000` |
 | `agent_max_context_turns` | Max context turns | `30` |
 | `agent_max_steps` | Max decision steps per task | `15` |
+| `cow_lang` | Language for the UI, command text and system prompts; `auto` to detect, or set `zh` / `en` | `auto` |
 
 <Tip>
   Full configuration options are in the project [`config.py`](https://github.com/zhayujie/CowAgent/blob/master/config.py).

@@ -114,7 +114,12 @@ class Agent:
 
             context_files = load_context_files(self.workspace_dir) if self.workspace_dir else None
 
-            builder = PromptBuilder(workspace_dir=self.workspace_dir or "", language="zh")
+            try:
+                from common import i18n
+                lang = i18n.get_language()
+            except Exception:
+                lang = "zh"
+            builder = PromptBuilder(workspace_dir=self.workspace_dir or "", language=lang)
             return builder.build(
                 tools=self.tools,
                 context_files=context_files,
