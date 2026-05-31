@@ -387,7 +387,7 @@ class AgentStreamExecutor:
                 self._check_cancelled()
 
                 turn += 1
-                logger.info(f"[Agent] 第 {turn} 轮")
+                logger.info(f"[Agent] Turn {turn}")
                 self._emit_event("turn_start", {"turn": turn})
 
                 # Call LLM (enable retry_on_empty for better reliability)
@@ -458,7 +458,7 @@ class AgentStreamExecutor:
                     # If the explicit-response retry produced tool_calls, skip the break
                     # and continue down to the tool execution branch in this same iteration.
                     if not tool_calls:
-                        logger.debug(f"✅ 完成 (无工具调用)")
+                        logger.debug(f"✅ Done (no tool calls)")
                         self._emit_event("turn_end", {
                             "turn": turn,
                             "has_tool_calls": False
@@ -514,12 +514,12 @@ class AgentStreamExecutor:
                             result_data = result.get("result")
                             if result_data.get("type") == "file_to_send":
                                 self.files_to_send.append(result_data)
-                                logger.info(f"📎 检测到待发送文件: {result_data.get('file_name', result_data.get('path'))}")
+                                logger.info(f"📎 File queued for sending: {result_data.get('file_name', result_data.get('path'))}")
                                 self._emit_event("file_to_send", result_data)
                         
                         # Check for critical error - abort entire conversation
                         if result.get("status") == "critical_error":
-                            logger.error(f"💥 检测到严重错误，终止对话")
+                            logger.error(f"💥 Fatal error detected, aborting conversation")
                             final_response = result.get('result') or _t("任务执行失败", "Task execution failed")
                             return final_response
                         
@@ -631,7 +631,7 @@ class AgentStreamExecutor:
                 })
 
             if turn >= self.max_turns:
-                logger.warning(f"⚠️  已达到最大决策步数限制: {self.max_turns}")
+                logger.warning(f"⚠️  Reached max decision step limit: {self.max_turns}")
                 
                 # Force model to summarize without tool calls
                 logger.info(f"[Agent] Requesting summary from LLM after reaching max steps...")
@@ -679,13 +679,13 @@ class AgentStreamExecutor:
             # User-initiated stop: wind down message history cleanly so the
             # next turn is unaffected; channels emit a "cancelled" UI event.
             cancelled = True
-            logger.info(f"[Agent] 🛑 已被用户中止 (第 {turn} 轮)")
+            logger.info(f"[Agent] 🛑 Cancelled by user (turn {turn})")
             self._handle_cancelled(final_response)
             if not final_response or not final_response.strip():
                 final_response = "_(Cancelled)_"
 
         except Exception as e:
-            logger.error(f"❌ Agent执行错误: {e}")
+            logger.error(f"❌ Agent execution error: {e}")
             self._emit_event("error", {"error": str(e)})
             raise
 
@@ -694,7 +694,7 @@ class AgentStreamExecutor:
             if cancelled:
                 # Emit before agent_end so channels can mark UI as cancelled
                 self._emit_event("agent_cancelled", {"final_response": final_response})
-            logger.info(f"[Agent] 🏁 完成 ({turn}轮)" + (" [cancelled]" if cancelled else ""))
+            logger.info(f"[Agent] 🏁 Done ({turn} turns)" + (" [cancelled]" if cancelled else ""))
             self._emit_event("agent_end", {"final_response": final_response, "cancelled": cancelled})
 
         return final_response
@@ -752,6 +752,22 @@ class AgentStreamExecutor:
                     "description": tool.description,
                     "input_schema": input_schema,
                 })
+
+        # Debug: dump the full system prompt and messages sent to the LLM.
+        # Gated behind `debug` config to avoid flooding normal logs.
+        # try:
+        #     from config import conf
+        #     if conf().get("debug", False):
+        #         logger.debug(
+        #             "[Agent][debug] system_prompt sent to LLM "
+        #             f"({len(self.system_prompt or '')} chars):\n"
+        #             "================ SYSTEM PROMPT BEGIN ================\n"
+        #             f"{self.system_prompt}\n"
+        #             "================ SYSTEM PROMPT END =================="
+        #         )
+        #         logger.info(f"[Agent][debug] messages sent to LLM: {messages}")
+        # except Exception:
+        #     pass
 
         # Create request
         request = LLMRequest(
@@ -1546,8 +1562,8 @@ class AgentStreamExecutor:
             turns = turns[-keep_count:]
 
             logger.info(
-                f"💾 上下文轮次超限: {keep_count + removed_count} > {self.max_context_turns}，"
-                f"裁剪至 {keep_count} 轮（移除 {removed_count} 轮）"
+                f"💾 Context turns exceeded: {keep_count + removed_count} > {self.max_context_turns}, "
+                f"trimmed to {keep_count} turns (removed {removed_count})"
             )
 
             # Flush to daily memory + inject context summary (single async LLM call)
@@ -1595,7 +1611,7 @@ class AgentStreamExecutor:
             
             # Log if we removed messages due to turn limit
             if old_count > len(self.messages):
-                logger.info(f"   重建消息列表: {old_count} -> {len(self.messages)} 条消息")
+                logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
             return
 
         # Token limit exceeded — tiered strategy based on turn count:
@@ -1628,10 +1644,10 @@ class AgentStreamExecutor:
             self.messages = new_messages
 
             logger.info(
-                f"📦 上下文tokens超限(轮次<{COMPRESS_THRESHOLD}): "
-                f"~{current_tokens + system_tokens} > {max_tokens}，"
-                f"压缩全部 {len(turns)} 轮为纯文本 "
-                f"({old_count} -> {len(self.messages)} 条消息，"
+                f"📦 Context tokens exceeded (turns<{COMPRESS_THRESHOLD}): "
+                f"~{current_tokens + system_tokens} > {max_tokens}, "
+                f"compressed all {len(turns)} turns to plain text "
+                f"({old_count} -> {len(self.messages)} messages, "
                 f"~{current_tokens + system_tokens} -> ~{new_tokens + system_tokens} tokens)"
             )
             return
@@ -1644,8 +1660,8 @@ class AgentStreamExecutor:
         kept_tokens = sum(self._estimate_turn_tokens(t) for t in kept_turns)
 
         logger.info(
-            f"🔄 上下文tokens超限: ~{current_tokens + system_tokens} > {max_tokens}，"
-            f"裁剪至 {keep_count} 轮（移除 {removed_count} 轮）"
+            f"🔄 Context tokens exceeded: ~{current_tokens + system_tokens} > {max_tokens}, "
+            f"trimmed to {keep_count} turns (removed {removed_count})"
         )
 
         if self.agent.memory_manager:
@@ -1669,8 +1685,8 @@ class AgentStreamExecutor:
         self.messages = new_messages
 
         logger.info(
-            f"   移除了 {removed_count} 轮对话 "
-            f"({old_count} -> {len(self.messages)} 条消息，"
+            f"   Removed {removed_count} turns "
+            f"({old_count} -> {len(self.messages)} messages, "
             f"~{current_tokens + system_tokens} -> ~{kept_tokens + system_tokens} tokens)"
         )
 
