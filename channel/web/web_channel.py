@@ -21,6 +21,7 @@ from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
 from collections import OrderedDict
 from common import const
+from common import i18n
 from common.log import logger
 from common.singleton import singleton
 from config import conf
@@ -98,7 +99,7 @@ def _require_auth():
 def _cancel_reply_text(cancelled: int, lang: str) -> str:
     en = lang.startswith("en")
     if cancelled > 0:
-        return "🛑 Cancelled." if en else "🛑 已中止"
+        return "🛑 Cancelled" if en else "🛑 已中止"
     return "Nothing to cancel." if en else "当前没有可中止的任务。"
 
 
@@ -477,7 +478,10 @@ class WebChannel(ChatChannel):
                         )
                         q.put({
                             "type": "done",
-                            "content": "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
+                            "content": i18n.t(
+                                "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
+                                "(The model returned no content. Please retry or rephrase your request.)",
+                            ),
                             "request_id": request_id,
                             "timestamp": time.time(),
                         })
@@ -805,13 +809,13 @@ class WebChannel(ChatChannel):
                     if not fpath:
                         continue
                     if ftype == "image":
-                        file_refs.append(f"[图片: {fpath}]")
+                        file_refs.append(f"[{i18n.t('图片', 'Image')}: {fpath}]")
                     elif ftype == "video":
-                        file_refs.append(f"[视频: {fpath}]")
+                        file_refs.append(f"[{i18n.t('视频', 'Video')}: {fpath}]")
                     elif ftype == "directory":
-                        file_refs.append(f"[目录: {fpath}]")
+                        file_refs.append(f"[{i18n.t('目录', 'Directory')}: {fpath}]")
                     else:
-                        file_refs.append(f"[文件: {fpath}]")
+                        file_refs.append(f"[{i18n.t('文件', 'File')}: {fpath}]")
                 if file_refs:
                     prompt = prompt + "\n" + "\n".join(file_refs)
                     logger.info(f"[WebChannel] Attached {len(file_refs)} file(s) to message")
@@ -952,7 +956,7 @@ class WebChannel(ChatChannel):
             if request_id and request_id in self.sse_queues:
                 self.sse_queues[request_id].put({
                     "type": "cancelled",
-                    "content": "Cancelled" if lang.startswith("en") else "已中止",
+                    "content": "🛑 Cancelled" if lang.startswith("en") else "🛑 已中止",
                     "request_id": request_id,
                     "timestamp": time.time(),
                 })
@@ -1008,7 +1012,10 @@ class WebChannel(ChatChannel):
         """Serve the chat HTML page."""
         file_path = os.path.join(os.path.dirname(__file__), 'chat.html')  # 使用绝对路径
         with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
+            html = f.read()
+        # Inject the backend-resolved default language so the console can use
+        # it on first load (when the user has no saved cow_lang preference).
+        return html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
 
     def startup(self):
         configured_host = conf().get("web_host", "")
@@ -1388,6 +1395,8 @@ class ChatHandler:
         cache_bust = str(int(time.time()))
         html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
         html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
+        # Inject the backend-resolved default language for first-load fallback.
+        html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
         return html
 
 
@@ -1526,6 +1535,7 @@ class ConfigHandler:
     ])
 
     EDITABLE_KEYS = {
+        "cow_lang",
         "model", "bot_type", "use_linkai",
         "open_ai_api_base", "deepseek_api_base", "qianfan_api_base", "claude_api_base", "gemini_api_base",
         "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base", "mimo_api_base",
@@ -1633,6 +1643,15 @@ class ConfigHandler:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
             logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
+
+            # Apply a language change immediately so backend logs, agent
+            # replies and CLI output switch without a restart.
+            if "cow_lang" in applied:
+                try:
+                    i18n.resolve_language(applied["cow_lang"])
+                    logger.info(f"[WebChannel] Language switched to: {i18n.get_language()}")
+                except Exception as lang_err:
+                    logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
 
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)

@@ -7,11 +7,17 @@ import os
 import pickle
 
 from common.log import logger
+from common import i18n
 
 # All available config keys are listed in this dict (use lowercase keys).
 # The values here are placeholders only; the program does NOT read them.
 # They merely document the expected format — put real values in config.json.
 available_setting = {
+    # global UI language for CLI, startup logs, error messages, agent prompts
+    # and channel replies. Options: "auto" (detect from system locale, default),
+    # "zh" (Chinese) or "en" (English). An explicit value locks the language.
+    # value: auto/en/zh
+    "cow_lang": "auto",
     # openai api config
     "open_ai_api_key": "",  # openai api key
     # openai api base; when use_azure_chatgpt is true, set the matching api base
@@ -390,12 +396,17 @@ def load_config():
         logger.setLevel(logging.DEBUG)
         logger.debug("[INIT] set log level to DEBUG")
 
+    # Resolve the global UI language as early as possible so that every
+    # downstream layer (logs, CLI, agent prompts, channel replies) shares it.
+    resolved_lang = i18n.resolve_language(config.get("cow_lang", "auto"))
+
     logger.info("[INIT] load config: {}".format(drag_sensitive(config)))
 
     # print system initialization info
     logger.info("[INIT] ========================================")
     logger.info("[INIT] System Initialization")
     logger.info("[INIT] ========================================")
+    logger.info("[INIT] Language: {}".format(resolved_lang))
     logger.info("[INIT] Channel: {}".format(config.get("channel_type", "unknown")))
     logger.info("[INIT] Model: {}".format(config.get("model", "unknown")))
 
