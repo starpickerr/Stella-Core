@@ -115,6 +115,7 @@ const I18N = {
         input_placeholder: '输入消息，或输入 / 使用指令',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
+        config_language: '语言', config_language_hint: '界面展示、命令文案、系统报错等使用的语言（与右上角切换同步）',
         config_model_advanced: '高级配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
@@ -310,6 +311,7 @@ const I18N = {
         input_placeholder: 'Type a message, or press / for commands',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
+        config_language: 'Language', config_language_hint: 'Language for the UI, command text, system messages and more (synced with the top-right switch)',
         config_model_advanced: 'Advanced',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
@@ -454,14 +456,60 @@ function applyI18n() {
     if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
 }
 
-function toggleLanguage() {
-    currentLang = currentLang === 'zh' ? 'en' : 'zh';
+// Single entry point for switching language. Updates the in-memory language,
+// persists the user choice locally, re-renders the UI, and binds the choice to
+// the backend `cow_lang` config so logs / agent replies / CLI follow suit.
+function setLanguage(lang) {
+    const next = (lang === 'en') ? 'en' : 'zh';
+    if (next === currentLang) {
+        // Still persist + sync in case storage/backend drifted from the UI.
+        syncLanguageToBackend(next);
+        return;
+    }
+    currentLang = next;
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
     // Re-render views whose DOM is built in JS (data-i18n alone does not
     // cover strings interpolated via t() into innerHTML).
     try { rerenderDynamicViews(); } catch (e) {}
+    // Keep the language switch button and config selector visually in sync.
+    try { updateLangControls(); } catch (e) {}
+    syncLanguageToBackend(currentLang);
+}
+
+// Persist the language to the backend `cow_lang` config (best-effort; the UI
+// has already switched locally, so a network failure is non-blocking).
+function syncLanguageToBackend(lang) {
+    try {
+        fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: { cow_lang: lang } })
+        }).catch(() => {});
+    } catch (e) {}
+}
+
+// Reflect the current language on both the top-right toggle and the config
+// selector (if present), so the two entry points stay synchronized.
+function updateLangControls() {
+    const langLabel = document.getElementById('lang-label');
+    if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
+    // The config language picker is the custom .cfg-dropdown component. Only
+    // sync it once it has been initialized (i.e. the config panel was opened).
+    const sel = document.getElementById('cfg-lang-select');
+    if (sel && sel._ddValue !== undefined && sel._ddValue !== currentLang) {
+        sel._ddValue = currentLang;
+        const textEl = sel.querySelector('.cfg-dropdown-text');
+        if (textEl) textEl.textContent = currentLang === 'zh' ? '中文' : 'English';
+        sel.querySelectorAll('.cfg-dropdown-item').forEach(i => {
+            i.classList.toggle('active', i.dataset.value === currentLang);
+        });
+    }
+}
+
+function toggleLanguage() {
+    setLanguage(currentLang === 'zh' ? 'en' : 'zh');
 }
 
 // Refresh JS-rendered views after a language switch. Each branch uses the
@@ -3357,6 +3405,18 @@ function initConfigView(data) {
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     document.getElementById('cfg-enable-thinking').checked = data.enable_thinking === true;
+
+    // Reflect the current UI language (already resolved, may include the user's
+    // local choice) on the selector so it stays in sync with the top-right toggle.
+    const langSel = document.getElementById('cfg-lang-select');
+    if (langSel) {
+        initDropdown(
+            langSel,
+            [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }],
+            currentLang,
+            (val) => setLanguage(val)
+        );
+    }
 
     const pwdInput = document.getElementById('cfg-password');
     const maskedPwd = data.web_password_masked || '';

@@ -298,6 +298,8 @@ def status():
         click.echo(_t(f"  模型: {cfg.get('model', 'unknown')}", f"  Model: {cfg.get('model', 'unknown')}"))
         mode = "Chat" if cfg.get("agent") is False else "Agent"
         click.echo(_t(f"  模式: {mode}", f"  Mode: {mode}"))
+        lang_label = "中文" if i18n.get_language() == "zh" else "English"
+        click.echo(_t(f"  语言: {lang_label}", f"  Language: {lang_label}"))
 
 
 @click.command()
