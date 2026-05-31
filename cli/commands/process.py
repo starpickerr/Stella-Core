@@ -276,9 +276,12 @@ def status():
     """Show CowAgent running status."""
     from cli import __version__
     from cli.utils import load_config_json, get_cli_language
-    from common import i18n
 
+    # get_cli_language() calls ensure_sys_path(), which adds the project root
+    # to sys.path. Import `common` only AFTER that, otherwise it fails with
+    # ModuleNotFoundError when `cow` runs from outside the project dir.
     get_cli_language()  # resolve cow_lang so i18n.t reflects config
+    from common import i18n
     _t = i18n.t
 
     pid = _read_pid()
