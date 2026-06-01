@@ -95,7 +95,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 | 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M2.7 | ✅ | ✅ | ✅ | | ✅ | |
+| [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-4-8 | ✅ | ✅ | | | | |
 | [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
 | [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.5、o 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
