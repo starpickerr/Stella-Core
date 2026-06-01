@@ -158,13 +158,13 @@ available_setting = {
     "wechatcomapp_secret": "",  # WeCom app secret
     "wechatcomapp_agent_id": "",  # WeCom app agent_id
     "wechatcomapp_aes_key": "",  # WeCom app aes_key
-    # WeCom Customer Service (wechat_kf) config
-    "wechat_kf_corp_id": "",  # corp_id of the company the WeCom Customer Service belongs to
-    "wechat_kf_token": "",  # WeCom Customer Service callback token
-    "wechat_kf_port": 9888,  # WeCom Customer Service callback service port
-    "wechat_kf_secret": "",  # WeCom Customer Service app secret
-    "wechat_kf_aes_key": "",  # WeCom Customer Service callback aes_key
-    "wechat_kf_cursor_path": "~/.wechat_kf_cursors.json",  # path for persisting the WeCom Customer Service sync_msg cursor
+    # WeChat Customer Service (wechat_kf) config
+    "wechat_kf_corp_id": "",  # corp_id of the company the WeChat Customer Service belongs to
+    "wechat_kf_token": "",  # WeChat Customer Service callback token
+    "wechat_kf_port": 9888,  # WeChat Customer Service callback service port
+    "wechat_kf_secret": "",  # WeChat Customer Service app secret
+    "wechat_kf_aes_key": "",  # WeChat Customer Service callback aes_key
+    "wechat_kf_cursor_path": "~/.wechat_kf_cursors.json",  # path for persisting the WeChat Customer Service sync_msg cursor
     # Feishu config
     "feishu_port": 80,  # Feishu bot listening port; only needed in webhook mode
     "feishu_app_id": "",  # Feishu bot app id

@@ -191,6 +191,8 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏷 更新日志
 
+> **2026.06.01：** [v2.1.0](https://github.com/zhayujie/CowAgent/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
+
 > **2026.05.22：** [v2.0.9](https://github.com/zhayujie/CowAgent/releases/tag/2.0.9) — 模型管理、MCP 协议支持、浏览器登录态持久化、新模型接入（gpt-5.5、gemini-3.5-flash、qwen3.7-max）、部署安全加固
 
 > **2026.05.06：** [v2.0.8](https://github.com/zhayujie/CowAgent/releases/tag/2.0.8) — 飞书渠道全面升级（语音、流式输出、扫码接入）、新模型支持（DeepSeek V4、百度千帆）、定时任务工具增强

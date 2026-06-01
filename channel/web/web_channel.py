@@ -2934,7 +2934,7 @@ class ChannelsHandler:
             ],
         }),
         ("wechat_kf", {
-            "label": {"zh": "微信客服", "en": "WeCom Customer Service"},
+            "label": {"zh": "微信客服", "en": "WeChat Customer Service"},
             "icon": "fa-headset",
             "color": "emerald",
             "fields": [
