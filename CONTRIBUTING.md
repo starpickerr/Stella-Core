@@ -9,7 +9,7 @@ features.
 To keep the project accessible to a global community, **please write issues,
 pull requests, code comments, and commit messages in English.**
 
-> 【致中文开发者】为方便全球开发者协作，请尽量使用**英文**提交 issue、PR、代码注释与
+> 为方便全球开发者协作，请尽量使用**英文**提交 issue、PR、代码注释与
 > commit message。不必担心英文不完美——表达清楚即可，工具翻译也完全没问题。感谢理解 ❤️
 
 ## Reporting issues

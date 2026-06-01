@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        > 💡 English is recommended so global developers can help. 【中文用户】推荐使用英文提交，谢谢 ❤️
+        > 💡 English is recommended so global developers can help. 推荐使用英文提交，谢谢 ❤️
   - type: checkboxes
     attributes:
       label: Self check
@@ -40,7 +40,7 @@ body:
   - type: textarea
     attributes:
       label: Logs
-      description: "Relevant logs from `nohup.out` (set `\"debug\": true` for more detail). ⚠️ Redact your API keys."
+      description: "Relevant logs from `run.log` (set `\"debug\": true` for more detail). ⚠️ Redact your API keys."
       render: shell
     validations:
       required: false
