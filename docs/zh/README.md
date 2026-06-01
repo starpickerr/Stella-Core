@@ -252,7 +252,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 欢迎接入更多应用通道，参考 [飞书通道实现](https://github.com/zhayujie/CowAgent/blob/master/channel/feishu/feishu_channel.py) 新增自定义通道；同时欢迎贡献新技能，向 [Skill Hub](https://skills.cowagent.ai/submit) 提交。
 
-通过 ⭐ Star 关注项目更新，欢迎提交 PR、Issue 进行反馈。
+欢迎 ⭐ Star 支持项目，并通过 Watch → Custom → Releases 订阅新版本通知。也欢迎提交 PR、Issue 进行反馈。
 
 ## 🌟 贡献者
 

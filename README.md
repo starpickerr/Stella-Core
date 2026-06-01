@@ -238,9 +238,9 @@ For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https:/
 
 ## 🛠️ Development & Contributing
 
-Contributions are welcome — add a new channel by following the [Feishu channel reference](https://github.com/zhayujie/CowAgent/blob/master/channel/feishu/feishu_channel.py), or contribute new skills to [Skill Hub](https://skills.cowagent.ai/submit).
+Contributions are welcome — add a new channel by following the [Telegram channel reference](https://github.com/zhayujie/CowAgent/blob/master/channel/telegram/telegram_channel.py), or contribute new skills to [Skill Hub](https://skills.cowagent.ai/submit).
 
-⭐ Star the project to follow updates, and feel free to open PRs and Issues.
+⭐ Star the project to show your support, and Watch → Custom → Releases to get notified of new versions. PRs and Issues are always welcome.
 
 ## 🌟 Contributors
 
