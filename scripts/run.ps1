@@ -370,7 +370,7 @@ $ModelChoices = @{
     4  = @{ Provider = "OpenAI GPT";              Default = "gpt-5.4";                             Field = "open_ai_api_key";   BaseField = "open_ai_api_base" }
     5  = @{ Provider = "MiniMax";                 Default = "MiniMax-M3";                          Field = "minimax_api_key" }
     6  = @{ Provider = "Zhipu AI";                Default = "glm-5.1";                             Field = "zhipu_ai_api_key" }
-    7  = @{ Provider = "Qwen (DashScope)";        Default = "qwen3.6-plus";                        Field = "dashscope_api_key" }
+    7  = @{ Provider = "Qwen (DashScope)";        Default = "qwen3.7-plus";                        Field = "dashscope_api_key" }
     8  = @{ Provider = "Doubao (Volcengine Ark)"; Default = "doubao-seed-2-0-code-preview-260215"; Field = "ark_api_key" }
     9  = @{ Provider = "Kimi (Moonshot)";         Default = "kimi-k2.6";                           Field = "moonshot_api_key" }
     10 = @{ Provider = "LinkAI";                  Default = "deepseek-v4-flash";                   Field = "linkai_api_key";    Linkai = $true }
@@ -386,7 +386,7 @@ function Select-Model {
         "OpenAI GPT (gpt-5.4, gpt-5.2, gpt-4.1, etc.)",
         "MiniMax (MiniMax-M3, MiniMax-M2.7, etc.)",
         "Zhipu AI (glm-5.1, glm-5-turbo, glm-5, etc.)",
-        "Qwen (qwen3.6-plus, qwen3.5-plus, qwen3-max, qwq-plus, etc.)",
+        "Qwen (qwen3.7-plus, qwen3.6-plus, qwen3.5-plus, qwen3-max, qwq-plus, etc.)",
         "Doubao (doubao-seed-2-0-code-preview-260215, etc.)",
         "Kimi (kimi-k2.6, kimi-k2.5, kimi-k2, etc.)",
         ("LinkAI (" + (T "一个 Key 接入所有模型" "access all models via one API") + ")"),
