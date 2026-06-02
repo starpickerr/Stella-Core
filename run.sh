@@ -604,7 +604,7 @@ select_model() {
         "OpenAI GPT (gpt-5.4, gpt-5.2, gpt-4.1, etc.)" \
         "MiniMax (MiniMax-M3, MiniMax-M2.7, etc.)" \
         "Zhipu AI (glm-5.1, glm-5-turbo, glm-5, etc.)" \
-        "Qwen (qwen3.6-plus, qwen3.5-plus, qwen3-max, qwq-plus, etc.)" \
+        "Qwen (qwen3.7-plus, qwen3.6-plus, qwen3.5-plus, qwen3-max, qwq-plus, etc.)" \
         "Doubao (doubao-seed-2-0-code-preview-260215, etc.)" \
         "Kimi (kimi-k2.6, kimi-k2.5, kimi-k2, etc.)" \
         "LinkAI ($(t "一个 Key 接入所有模型" "access all models via one API"))" \
@@ -635,7 +635,7 @@ configure_model() {
         4) read_model_config "OpenAI GPT" "gpt-5.4" "OPENAI_KEY" ;;
         5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
         6) read_model_config "Zhipu AI" "glm-5.1" "ZHIPU_KEY" ;;
-        7) read_model_config "Qwen (DashScope)" "qwen3.6-plus" "DASHSCOPE_KEY" ;;
+        7) read_model_config "Qwen (DashScope)" "qwen3.7-plus" "DASHSCOPE_KEY" ;;
         8) read_model_config "Doubao (Volcengine Ark)" "doubao-seed-2-0-code-preview-260215" "ARK_KEY" ;;
         9) read_model_config "Kimi (Moonshot)" "kimi-k2.6" "MOONSHOT_KEY" ;;
         10)
