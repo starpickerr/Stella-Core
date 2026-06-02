@@ -2613,7 +2613,7 @@ class ModelsHandler:
         if capability == "vision":
             return self._set_vision(provider_id, model)
         if capability == "asr":
-            return self._set_simple("voice_to_text", provider_id)
+            return self._set_asr(provider_id, model)
         if capability == "tts":
             return self._set_tts(provider_id, model, (data.get("voice") or "").strip())
         if capability == "embedding":
@@ -2772,6 +2772,24 @@ class ModelsHandler:
         if key in ("voice_to_text", "text_to_voice"):
             self._refresh_voice_routing()
         return json.dumps({"status": "success", key: value})
+
+    def _set_asr(self, provider_id: str, model: str) -> str:
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["voice_to_text"] = provider_id
+        file_cfg["voice_to_text"] = provider_id
+        local_config["voice_to_text_model"] = model
+        file_cfg["voice_to_text_model"] = model
+        self._write_file_config(file_cfg)
+        logger.info(
+            f"[ModelsHandler] asr updated: provider={provider_id!r} "
+            f"model={model!r}"
+        )
+        self._refresh_voice_routing()
+        return json.dumps({
+            "status": "success",
+            "provider": provider_id, "model": model,
+        })
 
     def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:
         local_config = conf()
