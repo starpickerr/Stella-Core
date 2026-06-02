@@ -112,13 +112,10 @@ QWEN37_MAX = "qwen3.7-max"  # Qwen3.7 Max - Agent推荐模型
 QWQ_PLUS = "qwq-plus"
 
 # MiniMax
-MINIMAX_M2_7 = "MiniMax-M2.7"  # MiniMax M2.7 - Latest
-MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax 多模态 (vision)
+MINIMAX_M3 = "MiniMax-M3"  # MiniMax M3 - Latest (default)
+MINIMAX_M2_7 = "MiniMax-M2.7"  # MiniMax M2.7
 MINIMAX_M2_7_HIGHSPEED = "MiniMax-M2.7-highspeed"  # MiniMax M2.7 highspeed
-MINIMAX_M2_5 = "MiniMax-M2.5"  # MiniMax M2.5
-MINIMAX_M2_1 = "MiniMax-M2.1"  # MiniMax M2.1
-MINIMAX_M2_1_LIGHTNING = "MiniMax-M2.1-lightning"  # MiniMax M2.1 极速版
-MINIMAX_M2 = "MiniMax-M2"  # MiniMax M2
+MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax 多模态 (vision)
 MINIMAX_ABAB6_5 = "abab6.5-chat"  # MiniMax abab6.5
 
 # GLM (智谱AI)
@@ -189,7 +186,7 @@ MODEL_LIST = [
               ERNIE_45_TURBO_VL, ERNIE_45_TURBO_VL_32K,
 
               # MiniMax
-              MiniMax, MINIMAX_M2_7, MINIMAX_M2_7_HIGHSPEED, MINIMAX_M2_5, MINIMAX_M2_1, MINIMAX_M2_1_LIGHTNING, MINIMAX_M2, MINIMAX_ABAB6_5,
+              MiniMax, MINIMAX_M3, MINIMAX_M2_7, MINIMAX_M2_7_HIGHSPEED, MINIMAX_ABAB6_5,
 
               # 小米 MiMo
               MIMO, MIMO_V2_5_PRO, MIMO_V2_5, MIMO_V2_PRO, MIMO_V2_OMNI, MIMO_V2_FLASH,

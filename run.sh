@@ -602,7 +602,7 @@ select_model() {
         "Claude (claude-opus-4-8, claude-opus-4-7, claude-sonnet-4-6, etc.)" \
         "Gemini (gemini-3.1-flash-lite-preview, gemini-3.1-pro-preview, etc.)" \
         "OpenAI GPT (gpt-5.4, gpt-5.2, gpt-4.1, etc.)" \
-        "MiniMax (MiniMax-M2.7, MiniMax-M2.5, etc.)" \
+        "MiniMax (MiniMax-M3, MiniMax-M2.7, etc.)" \
         "Zhipu AI (glm-5.1, glm-5-turbo, glm-5, etc.)" \
         "Qwen (qwen3.6-plus, qwen3.5-plus, qwen3-max, qwq-plus, etc.)" \
         "Doubao (doubao-seed-2-0-code-preview-260215, etc.)" \
@@ -633,7 +633,7 @@ configure_model() {
         2) read_model_config "Claude" "claude-opus-4-8" "CLAUDE_KEY" ;;
         3) read_model_config "Gemini" "gemini-3.1-pro-preview" "GEMINI_KEY" ;;
         4) read_model_config "OpenAI GPT" "gpt-5.4" "OPENAI_KEY" ;;
-        5) read_model_config "MiniMax" "MiniMax-M2.7" "MINIMAX_KEY" ;;
+        5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
         6) read_model_config "Zhipu AI" "glm-5.1" "ZHIPU_KEY" ;;
         7) read_model_config "Qwen (DashScope)" "qwen3.6-plus" "DASHSCOPE_KEY" ;;
         8) read_model_config "Doubao (Volcengine Ark)" "doubao-seed-2-0-code-preview-260215" "ARK_KEY" ;;
