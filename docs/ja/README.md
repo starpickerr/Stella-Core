@@ -238,7 +238,7 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) する
 
 ## 🛠️ 開発とコントリビューション
 
-新しいチャネルの追加を歓迎します — [Telegram チャネル](https://github.com/zhayujie/CowAgent/blob/master/channel/telegram/telegram_channel.py) を参考にカスタムチャネルを実装できます。新しい Skill のコントリビューションも [Skill Hub](https://skills.cowagent.ai/submit) で受け付けています。
+あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [Skill Hub](https://skills.cowagent.ai/submit) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
 
 ⭐ Star でプロジェクトを応援し、Watch → Custom → Releases で新バージョンの通知を受け取れます。PR や Issue の提出も歓迎します。
 
