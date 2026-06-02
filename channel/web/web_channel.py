@@ -1720,6 +1720,28 @@ class ModelsHandler:
         ],
     }
 
+    # ASR engine catalog per provider. The first entry of each list is the
+    # runtime default (mirrors DEFAULT_ASR_MODEL in voice/*). Users can still
+    # pick "custom" in the UI to send any other model id.
+    _ASR_PROVIDER_MODELS = {
+        "openai": [
+            {"value": "gpt-4o-mini-transcribe", "hint": "默认 · 速度快"},
+            {"value": "gpt-4o-transcribe",      "hint": "更高准确率"},
+            {"value": "whisper-1",              "hint": "经典 Whisper"},
+        ],
+        "dashscope": [
+            {"value": "qwen3-asr-flash", "hint": "覆盖普通话、方言与主流外语"},
+        ],
+        "zhipu": [
+            {"value": "glm-asr-2512", "hint": "智谱语音识别"},
+        ],
+        # LinkAI gateway pins whisper-1 for ASR and ignores any other id,
+        # so expose only that to avoid misleading the user.
+        "linkai": [
+            {"value": "whisper-1", "hint": "网关固定使用"},
+        ],
+    }
+
     # Per-provider voice timbres. Entries can be a bare code string
     # (label = code) or {value, hint?} when a friendly secondary label
     # helps recognition. We keep `value` as the raw API code so power
@@ -2240,8 +2262,9 @@ class ModelsHandler:
             "editable": True,
             "current_provider": explicit,
             "suggested_provider": suggested,
-            "current_model": "",
+            "current_model": (local_config.get("voice_to_text_model") or "") if explicit else "",
             "providers": cls._ASR_PROVIDERS,
+            "provider_models": cls._ASR_PROVIDER_MODELS,
         }
 
     @classmethod
@@ -2778,8 +2801,13 @@ class ModelsHandler:
         file_cfg = self._read_file_config()
         local_config["voice_to_text"] = provider_id
         file_cfg["voice_to_text"] = provider_id
-        local_config["voice_to_text_model"] = model
-        file_cfg["voice_to_text_model"] = model
+        # Only overwrite the model when one is supplied. An empty model means
+        # "keep whatever is configured" so switching provider from the console
+        # never wipes a user's hand-set voice_to_text_model (runtime falls back
+        # to the engine default via `or DEFAULT_ASR_MODEL` regardless).
+        if model:
+            local_config["voice_to_text_model"] = model
+            file_cfg["voice_to_text_model"] = model
         self._write_file_config(file_cfg)
         logger.info(
             f"[ModelsHandler] asr updated: provider={provider_id!r} "
@@ -2788,7 +2816,8 @@ class ModelsHandler:
         self._refresh_voice_routing()
         return json.dumps({
             "status": "success",
-            "provider": provider_id, "model": model,
+            "provider": provider_id,
+            "model": local_config.get("voice_to_text_model", ""),
         })
 
     def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:

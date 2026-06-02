@@ -1,6 +1,6 @@
 <!--
 Thanks for your contribution! Please write this PR in English.
-【中文开发者】请使用英文填写，感谢 ❤️
+推荐使用英文填写，感谢 ❤️
 -->
 
 ## What does this PR do?
@@ -16,6 +16,7 @@ Thanks for your contribution! Please write this PR in English.
 
 ## Checklist
 
+- [ ] I have read the [Contributing Guide](https://github.com/zhayujie/CowAgent/blob/master/CONTRIBUTING.md)
 - [ ] I tested this change locally
 - [ ] Code comments and docs are in English
 - [ ] Linked related issue (if any): closes #
