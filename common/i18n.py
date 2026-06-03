@@ -124,10 +124,12 @@ def detect_language():
       3. Python locale module
       4. default English
     """
+    deployed = bool(os.environ.get("CLOUD_DEPLOYMENT_ID"))
     return (
         _detect_from_macos()
         or _detect_from_env()
         or _detect_from_python_locale()
+        or (ZH if deployed else None)
         or DEFAULT_LANG
     )
 
