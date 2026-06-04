@@ -59,7 +59,13 @@ class McpClient:
         # Shared state
         self._next_id = 1
         self._id_lock = threading.Lock()
+        # _call_lock serializes all requests on the single stdio pipe.
+        # SSE and streamable-http use independent HTTP requests, so they
+        # do not acquire this lock (see _send_request).
         self._call_lock = threading.Lock()
+        # _http_lock protects _http_session_id initialization across
+        # concurrent streamable-http requests.
+        self._http_lock = threading.Lock()
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -338,8 +344,12 @@ class McpClient:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
-        if self._http_session_id:
-            headers["Mcp-Session-Id"] = self._http_session_id
+        # Read session id under lock to avoid racing with the
+        # initialization write below during concurrent requests.
+        with self._http_lock:
+            sid = self._http_session_id
+        if sid:
+            headers["Mcp-Session-Id"] = sid
         headers.update(self._http_headers)
 
         req = urllib.request.Request(
@@ -365,8 +375,13 @@ class McpClient:
         with resp:
             # Capture session id assigned by the server (if any)
             session_id = resp.headers.get("Mcp-Session-Id")
+            # Double-checked lock: only the first response sets the
+            # session id, preventing concurrent initializers from
+            # overwriting each other.
             if session_id and not self._http_session_id:
-                self._http_session_id = session_id
+                with self._http_lock:
+                    if not self._http_session_id:
+                        self._http_session_id = session_id
 
             status = resp.status if hasattr(resp, "status") else resp.getcode()
 
@@ -445,15 +460,18 @@ class McpClient:
 
         message = self._build_request(method, params)
 
-        with self._call_lock:
-            if self.transport == "stdio":
+        # stdio transport uses a single pipe and must be serialized.
+        # SSE and streamable-http use independent HTTP requests and
+        # can safely run concurrently across sessions.
+        if self.transport == "stdio":
+            with self._call_lock:
                 return self._stdio_send(message)
-            elif self.transport == "sse":
-                return self._sse_send(message)
-            elif self.transport == "streamable-http":
-                return self._streamable_http_send(message)
-            else:
-                raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
+        elif self.transport == "sse":
+            return self._sse_send(message)
+        elif self.transport == "streamable-http":
+            return self._streamable_http_send(message)
+        else:
+            raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
 
     def _send_notification(self, method: str, params: dict):
         """Fire-and-forget notification (no response expected)."""
