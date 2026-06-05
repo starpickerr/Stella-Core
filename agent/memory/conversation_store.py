@@ -291,7 +291,7 @@ class ConversationStore:
 
     def __init__(self, db_path: Path):
         self._db_path = db_path
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # Use RLock to allow reentrant locking
         self._init_db()
 
     # ------------------------------------------------------------------
@@ -521,6 +521,109 @@ class ConversationStore:
                     conn.execute(
                         "DELETE FROM sessions WHERE session_id = ?", (session_id,)
                     )
+            finally:
+                conn.close()
+
+    def delete_message_pair(self, session_id: str, user_seq: int, delete_user: bool = True, cascade: bool = False) -> int:
+        """Delete a user message and/or its corresponding assistant reply.
+
+        The assistant reply is identified as all messages between user_seq
+        and the next visible user message (or end of session).
+
+        Args:
+            session_id: Session identifier.
+            user_seq: The seq number of the user message.
+            delete_user: If True (default), delete the user message too.
+                        If False, only delete assistant reply (for regenerate scenarios).
+            cascade: If True, also delete all subsequent turns after this one.
+                    Used by edit-message which removes this turn and everything after.
+
+        Returns:
+            Number of message rows deleted.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    # Verify this is a user message
+                    row = conn.execute(
+                        "SELECT role FROM messages WHERE session_id = ? AND seq = ?",
+                        (session_id, user_seq),
+                    ).fetchone()
+                    if not row or row[0] != "user":
+                        return 0
+
+                    if cascade:
+                        # Delete from this message to end of session
+                        start_seq = user_seq if delete_user else user_seq + 1
+                        end_seq_row = conn.execute(
+                            "SELECT MAX(seq) FROM messages WHERE session_id = ?",
+                            (session_id,),
+                        ).fetchone()
+                        end_seq = (end_seq_row[0] or user_seq) + 1
+                    else:
+                        # Find the next visible user message seq (exclude tool_result)
+                        # Use batched query to avoid loading too many rows at once
+                        next_user_seq = None
+                        batch_size = 100
+                        offset = 0
+                        while True:
+                            batch = conn.execute(
+                                """
+                                SELECT seq, content FROM messages
+                                WHERE session_id = ? AND seq > ? AND role = 'user'
+                                ORDER BY seq ASC
+                                LIMIT ? OFFSET ?
+                                """,
+                                (session_id, user_seq, batch_size, offset),
+                            ).fetchall()
+                            if not batch:
+                                break
+                            for seq, content in batch:
+                                try:
+                                    content_obj = json.loads(content)
+                                except Exception:
+                                    content_obj = content
+                                if _is_visible_user_message(content_obj):
+                                    next_user_seq = seq
+                                    break
+                            if next_user_seq is not None:
+                                break
+                            offset += batch_size
+
+                        # Determine the end boundary for deletion
+                        if next_user_seq is not None:
+                            end_seq = next_user_seq
+                        else:
+                            end_seq_row = conn.execute(
+                                "SELECT MAX(seq) FROM messages WHERE session_id = ?",
+                                (session_id,),
+                            ).fetchone()
+                            end_seq = (end_seq_row[0] or user_seq) + 1
+
+                        # Determine the start boundary for deletion
+                        start_seq = user_seq if delete_user else user_seq + 1
+
+                    # Delete messages from start_seq to end_seq (exclusive)
+                    cur = conn.execute(
+                        "DELETE FROM messages WHERE session_id = ? AND seq >= ? AND seq < ?",
+                        (session_id, start_seq, end_seq),
+                    )
+                    deleted = cur.rowcount
+
+                    # Update session msg_count
+                    conn.execute(
+                        """
+                        UPDATE sessions
+                        SET msg_count = (
+                            SELECT COUNT(*) FROM messages WHERE session_id = ?
+                        )
+                        WHERE session_id = ?
+                        """,
+                        (session_id, session_id),
+                    )
+
+                    return deleted
             finally:
                 conn.close()
 
@@ -1053,3 +1156,4 @@ def get_conversation_store() -> ConversationStore:
         _store_instance = ConversationStore(db_path)
         logger.debug(f"[ConversationStore] Using shared DB at: {db_path}")
         return _store_instance
+
