@@ -509,6 +509,65 @@ class ConversationStore:
             finally:
                 conn.close()
 
+    def get_latest_pair_seqs(self, session_id: str) -> Dict[str, Optional[int]]:
+        """Return the seq numbers of the latest visible user message and the
+        latest assistant message in a session.
+
+        A "visible" user message is one whose content is real user text
+        (not just a tool_result block), so tool-execution turns do not
+        shadow the actual user query.
+
+        Returns:
+            Dict with keys ``user_seq`` and ``bot_seq``; either may be None
+            when no matching message exists.
+        """
+        result: Dict[str, Optional[int]] = {"user_seq": None, "bot_seq": None}
+        with self._lock:
+            conn = self._connect()
+            try:
+                # Latest assistant message (cheap: single row by seq DESC).
+                row = conn.execute(
+                    "SELECT seq FROM messages "
+                    "WHERE session_id = ? AND role = 'assistant' "
+                    "ORDER BY seq DESC LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if row:
+                    result["bot_seq"] = int(row[0])
+
+                # Latest visible user message: scan recent user rows and
+                # skip pure tool_result entries.
+                rows = conn.execute(
+                    "SELECT seq, content FROM messages "
+                    "WHERE session_id = ? AND role = 'user' "
+                    "ORDER BY seq DESC LIMIT 20",
+                    (session_id,),
+                ).fetchall()
+                for seq, content_raw in rows:
+                    try:
+                        content = json.loads(content_raw)
+                    except Exception:
+                        result["user_seq"] = int(seq)
+                        break
+                    if isinstance(content, list):
+                        has_text = any(
+                            isinstance(b, dict) and b.get("type") == "text"
+                            for b in content
+                        )
+                        has_tool_result = any(
+                            isinstance(b, dict) and b.get("type") == "tool_result"
+                            for b in content
+                        )
+                        if has_text and not has_tool_result:
+                            result["user_seq"] = int(seq)
+                            break
+                    else:
+                        result["user_seq"] = int(seq)
+                        break
+            finally:
+                conn.close()
+        return result
+
     def clear_session(self, session_id: str) -> None:
         """Delete all messages and the session record for a given session_id."""
         with self._lock:

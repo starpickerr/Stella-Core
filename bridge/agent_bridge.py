@@ -383,7 +383,49 @@ class AgentBridge:
         """Initialize agent for a specific session"""
         agent = self.initializer.initialize_agent(session_id=session_id)
         self.agents[session_id] = agent
-    
+
+    def sync_session_messages_from_store(self, session_id: str) -> int:
+        """Reload an agent's in-memory ``messages`` list from the persistent
+        conversation store.
+
+        Used after an external mutation (e.g. user edits / deletes a message
+        via the web console) so the agent's next turn sees the same history
+        as the database. The operation is a no-op when the agent has not been
+        instantiated yet for the session.
+
+        Returns:
+            Number of messages now held in the agent's memory. Returns -1 if
+            the agent does not exist or has no compatible ``messages`` attr.
+        """
+        if not session_id or session_id not in self.agents:
+            return -1
+        agent = self.agents[session_id]
+        if not (hasattr(agent, "messages") and hasattr(agent, "messages_lock")):
+            return -1
+        try:
+            from agent.memory import get_conversation_store
+            store = get_conversation_store()
+            # No turn cap here: we want a faithful mirror of what the store
+            # has for this session after deletion.
+            remaining = store.load_messages(session_id, max_turns=10**6)
+        except Exception as e:
+            logger.warning(
+                f"[AgentBridge] Failed to load messages for sync (session={session_id}): {e}"
+            )
+            return -1
+        with agent.messages_lock:
+            agent.messages.clear()
+            for msg in remaining:
+                agent.messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"],
+                })
+            count = len(agent.messages)
+        logger.info(
+            f"[AgentBridge] Synced agent memory for session={session_id}, messages={count}"
+        )
+        return count
+
     def agent_reply(self, query: str, context: Context = None, 
                    on_event=None, clear_history: bool = False) -> Reply:
         """

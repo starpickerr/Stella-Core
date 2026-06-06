@@ -1180,68 +1180,40 @@ messagesDiv.addEventListener('click', (e) => {
         return;
     }
 
-    // Delete message
+    // Delete message (user bubble only; bot bubbles intentionally lack a
+    // delete button — removing only the bot reply would leave an orphan
+    // user message that breaks LLM context alternation).
     const deleteBtn = e.target.closest('.delete-msg-btn');
     if (deleteBtn) {
         e.preventDefault();
         const userMsgEl = deleteBtn.closest('.user-message-group');
-        const botMsgEl = deleteBtn.closest('.flex.gap-3:not(.user-message-group)');
-        
-        if (userMsgEl) {
-            showConfirmModal(t('delete_message_title'), t('delete_message_confirm'), () => {
-                let nextSibling = userMsgEl.nextElementSibling;
-                let botReplyEl = null;
-                while (nextSibling) {
-                    if (nextSibling.classList && nextSibling.classList.contains('flex') && nextSibling.classList.contains('gap-3') && !nextSibling.classList.contains('user-message-group')) {
-                        botReplyEl = nextSibling;
-                        break;
-                    }
-                    nextSibling = nextSibling.nextElementSibling;
+        if (!userMsgEl) return;
+
+        showConfirmModal(t('delete_message_title'), t('delete_message_confirm'), () => {
+            // Find the next bot reply for this turn (skip non-message nodes).
+            let botReplyEl = null;
+            let sibling = userMsgEl.nextElementSibling;
+            while (sibling) {
+                if (sibling.classList && sibling.classList.contains('bot-message-group')) {
+                    botReplyEl = sibling;
+                    break;
                 }
-                userMsgEl.remove();
-                if (botReplyEl) botReplyEl.remove();
-                
-                const userSeq = userMsgEl.dataset.seq;
-                if (userSeq) {
-                    fetch('/api/messages/delete', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ session_id: sessionId, user_seq: parseInt(userSeq) })
-                    }).then(r => r.json()).then(data => {
-                        if (data.status === 'success') console.log(`Deleted ${data.deleted} messages`);
-                    }).catch(err => console.error('Failed to delete:', err));
-                }
-            });
-        } else if (botMsgEl) {
-            showConfirmModal(t('delete_message_title'), t('delete_message_confirm'), () => {
-                // Find the preceding user message to get its seq
-                let prevUserEl = botMsgEl.previousElementSibling;
-                while (prevUserEl && !prevUserEl.classList.contains('user-message-group')) {
-                    prevUserEl = prevUserEl.previousElementSibling;
-                }
-                
-                // Delete from database (keep user message, only delete bot reply)
-                if (prevUserEl) {
-                    const userSeq = prevUserEl.dataset.seq;
-                    if (userSeq) {
-                        fetch('/api/messages/delete', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                session_id: sessionId, 
-                                user_seq: parseInt(userSeq),
-                                delete_user: false
-                            })
-                        }).then(r => r.json()).then(data => {
-                            if (data.status === 'success') console.log(`Deleted ${data.deleted} bot reply messages`);
-                        }).catch(err => console.error('Failed to delete bot reply:', err));
-                    }
-                }
-                
-                // Remove from DOM
-                botMsgEl.remove();
-            });
-        }
+                sibling = sibling.nextElementSibling;
+            }
+            userMsgEl.remove();
+            if (botReplyEl) botReplyEl.remove();
+
+            const userSeq = userMsgEl.dataset.seq;
+            if (userSeq) {
+                fetch('/api/messages/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, user_seq: parseInt(userSeq) })
+                }).then(r => r.json()).then(data => {
+                    if (data.status === 'success') console.log(`Deleted ${data.deleted} messages`);
+                }).catch(err => console.error('Failed to delete:', err));
+            }
+        });
         return;
     }
 
@@ -2028,17 +2000,25 @@ async function editUserMessage(msgEl) {
         }
     }
 
-    // Find all subsequent messages (this message and everything after it)
+    // Remove this message bubble and every later bubble that belongs to
+    // this or a subsequent turn. We mirror the backend cascade contract:
+    // anything with a data-seq >= current seq, plus any live SSE bubble
+    // that is still being streamed (no seq yet) after this point.
+    const currentSeqNum = userSeq ? parseInt(userSeq) : null;
     const messagesToRemove = [];
     let current = msgEl;
     while (current) {
-        if (current.classList && (current.classList.contains('user-message-group') || current.classList.contains('flex'))) {
-            messagesToRemove.push(current);
+        if (current.classList && (current.classList.contains('user-message-group') || current.classList.contains('bot-message-group'))) {
+            const seqAttr = current.dataset.seq;
+            if (seqAttr === undefined || seqAttr === '') {
+                // Live message without a persisted seq yet — treat as later.
+                messagesToRemove.push(current);
+            } else if (currentSeqNum === null || parseInt(seqAttr) >= currentSeqNum) {
+                messagesToRemove.push(current);
+            }
         }
         current = current.nextElementSibling;
     }
-
-    // Remove all messages from this one onwards
     messagesToRemove.forEach(el => {
         if (el && el.parentNode) el.parentNode.removeChild(el);
     });
@@ -2266,8 +2246,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
         if (botEl) return;
         if (loadingEl) { loadingEl.remove(); loadingEl = null; }
         botEl = document.createElement('div');
-        botEl.className = 'flex gap-3 px-4 sm:px-6 py-3';
+        botEl.className = 'flex gap-3 px-4 sm:px-6 py-3 bot-message-group';
         botEl.dataset.requestId = requestId;
+        // Regenerate button starts hidden; it's revealed in the "done"
+        // event handler once seq metadata arrives from the backend.
         botEl.innerHTML = `
             <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
             <div class="min-w-0 flex-1 max-w-[85%]">
@@ -2284,6 +2266,9 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                     </button>
                     <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
                         <i class="fas fa-volume-up"></i>
+                    </button>
+                    <button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}" style="display:none;">
+                        <i class="fas fa-rotate-right"></i>
                     </button>
                 </div>
             </div>
@@ -2533,6 +2518,29 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                     const copyBtn = botEl.querySelector('.copy-msg-btn');
                     if (copyBtn && finalText) copyBtn.style.display = '';
                     applyHighlighting(botEl);
+                }
+
+                // Backfill seq metadata so edit/regenerate buttons can call
+                // the delete API without a page refresh. Backend includes
+                // user_seq / bot_seq on the done event after persistence.
+                const targetBotEl = botEl || (requestId ? messagesDiv.querySelector(`[data-request-id="${requestId}"]`) : null);
+                if (targetBotEl) {
+                    if (item.bot_seq !== undefined && item.bot_seq !== null) {
+                        targetBotEl.dataset.seq = item.bot_seq;
+                    }
+                    // Reveal regenerate button now that the seq is wired up.
+                    const regenBtn = targetBotEl.querySelector('.regenerate-msg-btn');
+                    if (regenBtn) regenBtn.style.display = '';
+                    if (item.user_seq !== undefined && item.user_seq !== null) {
+                        // Locate the preceding user bubble for this turn.
+                        let prev = targetBotEl.previousElementSibling;
+                        while (prev && !prev.classList.contains('user-message-group')) {
+                            prev = prev.previousElementSibling;
+                        }
+                        if (prev && !prev.dataset.seq) {
+                            prev.dataset.seq = item.user_seq;
+                        }
+                    }
                 }
                 renderBotSpeakerButton(botEl, finalText);
                 scrollChatToBottom();
@@ -2857,7 +2865,7 @@ function localizeCancelMarker(text) {
 
 function createBotMessageEl(content, timestamp, requestId, msg) {
     const el = document.createElement('div');
-    el.className = 'flex gap-3 px-4 sm:px-6 py-3';
+    el.className = 'flex gap-3 px-4 sm:px-6 py-3 bot-message-group';
     if (requestId) el.dataset.requestId = requestId;
 
     let stepsHtml = '';
@@ -2889,14 +2897,11 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
                 <button class="copy-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${currentLang === 'zh' ? '复制' : 'Copy'}">
                     <i class="fas fa-copy"></i>
                 </button>
-                <button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
-                    <i class="fas fa-rotate-right"></i>
-                </button>
-                <button class="delete-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer" title="${t('delete_message_title')}">
-                    <i class="fas fa-trash"></i>
-                </button>
                 <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
                     <i class="fas fa-volume-up"></i>
+                </button>
+                <button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
+                    <i class="fas fa-rotate-right"></i>
                 </button>
             </div>
         </div>
