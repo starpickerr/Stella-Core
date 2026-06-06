@@ -275,7 +275,7 @@ def update(ctx):
 def status():
     """Show CowAgent running status."""
     from cli import __version__
-    from cli.utils import load_config_json, get_cli_language
+    from cli.utils import load_config_json, get_cli_language, get_project_root
 
     # get_cli_language() calls ensure_sys_path(), which adds the project root
     # to sys.path. Import `common` only AFTER that, otherwise it fails with
@@ -291,6 +291,11 @@ def status():
         click.echo(click.style("● CowAgent is not running", fg="red"))
 
     click.echo(_t(f"  版本: v{__version__}", f"  Version: v{__version__}"))
+
+    # Project path bound to this `cow` CLI — disambiguates which checkout the
+    # command actually controls when the user has multiple clones.
+    project_root = get_project_root()
+    click.echo(_t(f"  路径: {project_root}", f"  Path: {project_root}"))
 
     cfg = load_config_json()
     if cfg:
