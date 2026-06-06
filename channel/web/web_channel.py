@@ -251,6 +251,21 @@ class WebChannel(ChatChannel):
         """生成唯一的请求ID"""
         return str(uuid.uuid4())
 
+    def _fetch_latest_pair_seqs(self, session_id: str):
+        """Query the conversation store for the latest user/bot message seqs.
+
+        Returned as ``{"user_seq": int|None, "bot_seq": int|None}``; used to
+        attach seq metadata onto the SSE ``done`` event so the frontend can
+        wire edit / regenerate buttons for live-streamed bubbles without a
+        page refresh.
+        """
+        try:
+            from agent.memory import get_conversation_store
+            return get_conversation_store().get_latest_pair_seqs(session_id)
+        except Exception as e:
+            logger.debug(f"[WebChannel] _fetch_latest_pair_seqs failed: {e}")
+            return {"user_seq": None, "bot_seq": None}
+
     def send(self, reply: Reply, context: Context):
         try:
             if reply.type in self.NOT_SUPPORT_REPLYTYPE:
@@ -291,11 +306,14 @@ class WebChannel(ChatChannel):
                 if reply.type in (ReplyType.IMAGE_URL, ReplyType.FILE) and content.startswith("file://"):
                     text_content = getattr(reply, 'text_content', '')
                     if text_content:
+                        seqs = self._fetch_latest_pair_seqs(session_id)
                         self.sse_queues[request_id].put({
                             "type": "done",
                             "content": text_content,
                             "request_id": request_id,
-                            "timestamp": time.time()
+                            "timestamp": time.time(),
+                            "user_seq": seqs.get("user_seq"),
+                            "bot_seq": seqs.get("bot_seq"),
                         })
                     logger.debug(f"SSE skipped duplicate file for request {request_id}")
                     return
@@ -307,11 +325,14 @@ class WebChannel(ChatChannel):
                     logger.debug(f"SSE skipped http media reply for request {request_id}")
                     return
 
+                seqs = self._fetch_latest_pair_seqs(session_id)
                 self.sse_queues[request_id].put({
                     "type": "done",
                     "content": content,
                     "request_id": request_id,
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "user_seq": seqs.get("user_seq"),
+                    "bot_seq": seqs.get("bot_seq"),
                 })
                 logger.debug(f"SSE done sent for request {request_id}")
                 # Auto-trigger TTS once the bot finishes its text reply. The
@@ -3940,31 +3961,15 @@ class MessageDeleteHandler:
             from agent.memory import get_conversation_store
             store = get_conversation_store()
             deleted = store.delete_message_pair(session_id, int(user_seq), delete_user=delete_user, cascade=cascade)
-            
-            # 2. Sync agent's in-memory context
+
+            # 2. Sync agent's in-memory context so its next turn sees the
+            # same history as the DB. Handled by the agent_bridge helper.
             try:
                 from bridge import Bridge
-                ab = Bridge().get_agent_bridge()
-                agent = ab.get_agent(session_id)
-                if agent and hasattr(agent, 'messages') and hasattr(agent, 'messages_lock'):
-                    with agent.messages_lock:
-                        # Rebuild agent.messages from database
-                        # load_messages returns: [{"role": "user", "content": "..."}, ...]
-                        remaining_msgs = store.load_messages(session_id, max_turns=1000)
-                        
-                        agent.messages.clear()
-                        for msg in remaining_msgs:
-                            agent.messages.append({
-                                "role": msg["role"],
-                                "content": msg["content"]
-                            })
-                        
-                        logger.info(f"[WebChannel] Synced agent memory for session {session_id}, "
-                                  f"remaining messages: {len(agent.messages)}")
+                Bridge().get_agent_bridge().sync_session_messages_from_store(session_id)
             except Exception as sync_err:
                 logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")
-                # Don't fail the request if memory sync fails
-            
+
             return json.dumps({"status": "success", "deleted": deleted}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Message delete error: {e}")

@@ -1476,6 +1476,11 @@
 /* =====================================================================
    Drag and Drop Overlay
    ===================================================================== */
+/* Anchor the absolutely-positioned overlay to the chat view. */
+#view-chat {
+    position: relative;
+}
+
 .drag-overlay {
     position: absolute;
     top: 0;
@@ -1554,8 +1559,7 @@
 
 .user-message-group:hover .edit-msg-btn,
 .user-message-group:hover .delete-msg-btn,
-.flex.gap-3:hover .regenerate-msg-btn,
-.flex.gap-3:hover .delete-msg-btn {
+.bot-message-group:hover .regenerate-msg-btn {
     opacity: 1;
 }
 
