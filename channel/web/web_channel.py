@@ -1046,22 +1046,44 @@ class WebChannel(ChatChannel):
 
         self._cleanup_stale_voice_recordings()
 
-        # Print available channel types
+        # Print available channel types (ordered by language: prioritize
+        # locally-popular channels for the current UI language)
         logger.info(
             "[WebChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
-        logger.info("[WebChannel]   1. web              - Web")
-        logger.info("[WebChannel]   2. terminal         - Terminal")
-        logger.info("[WebChannel]   3. weixin           - WeChat")
-        logger.info("[WebChannel]   4. feishu           - Feishu")
-        logger.info("[WebChannel]   5. dingtalk         - DingTalk")
-        logger.info("[WebChannel]   6. wecom_bot        - WeCom Bot")
-        logger.info("[WebChannel]   7. wechatcom_app    - WeCom App")
-        logger.info("[WebChannel]   8. wechat_kf        - WeChat Customer Service")
-        logger.info("[WebChannel]   9. wechatmp         - WeChat Official Account")
-        logger.info("[WebChannel]  10. wechatmp_service - WeChat Official Account (Service)")
-        logger.info("[WebChannel]  11. telegram         - Telegram")
-        logger.info("[WebChannel]  12. slack            - Slack")
-        logger.info("[WebChannel]  13. discord          - Discord")
+        zh_channels = [
+            ("web", "Web"),
+            ("terminal", "Terminal"),
+            ("weixin", "WeChat"),
+            ("feishu", "Feishu"),
+            ("dingtalk", "DingTalk"),
+            ("wecom_bot", "WeCom Bot"),
+            ("wechatcom_app", "WeCom App"),
+            ("wechat_kf", "WeChat Customer Service"),
+            ("wechatmp", "WeChat Official Account"),
+            ("wechatmp_service", "WeChat Official Account (Service)"),
+            ("telegram", "Telegram"),
+            ("slack", "Slack"),
+            ("discord", "Discord"),
+        ]
+        en_channels = [
+            ("web", "Web"),
+            ("terminal", "Terminal"),
+            ("telegram", "Telegram"),
+            ("slack", "Slack"),
+            ("discord", "Discord"),
+            ("weixin", "WeChat"),
+            ("feishu", "Feishu"),
+            ("dingtalk", "DingTalk"),
+            ("wecom_bot", "WeCom Bot"),
+            ("wechatcom_app", "WeCom App"),
+            ("wechat_kf", "WeChat Customer Service"),
+            ("wechatmp", "WeChat Official Account"),
+            ("wechatmp_service", "WeChat Official Account (Service)"),
+        ]
+        channels = en_channels if i18n.get_language() == "en" else zh_channels
+        name_width = max(len(name) for name, _ in channels)
+        for idx, (name, label) in enumerate(channels, 1):
+            logger.info(f"[WebChannel]  {idx:>2}. {name:<{name_width}} - {label}")
         logger.info("[WebChannel] ✅ Web console is running")
         logger.info(f"[WebChannel] 🌐 Local access: http://localhost:{port}")
         if is_public_bind:
