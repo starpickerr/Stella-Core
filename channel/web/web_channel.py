@@ -1096,6 +1096,7 @@ class WebChannel(ChatChannel):
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
             '/api/sessions/(.*)', 'SessionDetailHandler',
             '/api/history', 'HistoryHandler',
+            '/api/messages/delete', 'MessageDeleteHandler',
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
             '/assets/(.*)', 'AssetsHandler',
@@ -3917,6 +3918,56 @@ class HistoryHandler:
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] History API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class MessageDeleteHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Access-Control-Allow-Origin', '*')
+        try:
+            data = json.loads(web.data())
+            session_id = data.get('session_id', '').strip()
+            user_seq = data.get('user_seq')
+            delete_user = data.get('delete_user', True)
+            cascade = data.get('cascade', False)
+            
+            if not session_id or user_seq is None:
+                return json.dumps({"status": "error", "message": "session_id and user_seq required"})
+            
+            # 1. Delete from database
+            from agent.memory import get_conversation_store
+            store = get_conversation_store()
+            deleted = store.delete_message_pair(session_id, int(user_seq), delete_user=delete_user, cascade=cascade)
+            
+            # 2. Sync agent's in-memory context
+            try:
+                from bridge import Bridge
+                ab = Bridge().get_agent_bridge()
+                agent = ab.get_agent(session_id)
+                if agent and hasattr(agent, 'messages') and hasattr(agent, 'messages_lock'):
+                    with agent.messages_lock:
+                        # Rebuild agent.messages from database
+                        # load_messages returns: [{"role": "user", "content": "..."}, ...]
+                        remaining_msgs = store.load_messages(session_id, max_turns=1000)
+                        
+                        agent.messages.clear()
+                        for msg in remaining_msgs:
+                            agent.messages.append({
+                                "role": msg["role"],
+                                "content": msg["content"]
+                            })
+                        
+                        logger.info(f"[WebChannel] Synced agent memory for session {session_id}, "
+                                  f"remaining messages: {len(agent.messages)}")
+            except Exception as sync_err:
+                logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")
+                # Don't fail the request if memory sync fails
+            
+            return json.dumps({"status": "success", "deleted": deleted}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Message delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
