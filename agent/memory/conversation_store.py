@@ -124,6 +124,11 @@ def _is_internal_user_marker(text: str) -> bool:
     return any(t.startswith(m) for m in _SCHEDULED_DISPLAY_MARKERS)
 
 
+def _is_evolution_text(text: str) -> bool:
+    """True if assistant text is a self-evolution summary (before cleaning)."""
+    return (text or "").lstrip().startswith(_EVOLUTION_DISPLAY_MARKER)
+
+
 def _clean_display_text(text: str) -> str:
     """Strip internal markers from assistant text for user-facing display.
 
@@ -306,6 +311,10 @@ def _group_into_display_turns(
                 step["result"] = tr.get("result", "")
                 step["is_error"] = tr.get("is_error", False)
 
+        # Detect a self-evolution bubble BEFORE cleaning the marker away, so the
+        # UI can flag it even though the visible text stays clean.
+        is_evolution = _is_evolution_text(final_text)
+
         # Clean internal markers from the user-facing assistant text. Applies to
         # both the final content and the mirrored content step so the rendered
         # bubble shows clean text while the stored message keeps the markers.
@@ -321,6 +330,8 @@ def _group_into_display_turns(
                 "steps": steps,
                 "created_at": final_ts or (user_row[1] if user_row else 0),
             }
+            if is_evolution:
+                turn["kind"] = "evolution"
             if merged_extras:
                 turn["extras"] = merged_extras
             turns.append(turn)
