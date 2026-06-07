@@ -79,13 +79,14 @@ them. When their signal is clear, act; do not be shy here.
    Act ONLY on something the main assistant clearly MISSED that does not belong
    in any skill.
    - MEMORY.md is the curated long-term index, auto-loaded into EVERY future
-     conversation. Treat it as precious: writing here is RARE and reserved for
-     CORRECTING a wrong fact already in MEMORY.md (edit that line in place).
-     Do NOT append new entries to MEMORY.md — that is the nightly pass's job.
-   - For a genuinely important NEW durable fact the chat missed, append ONE
-     short bullet to today's `memory/YYYY-MM-DD.md` (not MEMORY.md). When unsure,
-     the daily file is the safe place — but first ask whether this really
-     belongs in a skill instead.
+     conversation. Treat it as precious: edit it in place to CORRECT a wrong
+     fact, or append a new durable preference/decision/lesson — but do so
+     SPARINGLY (a lasting fact, not a passing detail; the nightly pass handles
+     routine consolidation).
+   - For a NEW fact that is important but not yet clearly lasting, append ONE
+     short bullet to today's `memory/YYYY-MM-DD.md` instead. When unsure, the
+     daily file is the safe place — but first ask whether this really belongs
+     in a skill.
    - Keep it to ONE short bullet. Never write paragraphs, never re-summarize the
      conversation, never copy what the main assistant already recorded.
    - If it is already captured anywhere (check MEMORY.md AND the daily file
