@@ -13,6 +13,7 @@ Storage path: ~/cow/sessions/conversations.db
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -107,6 +108,43 @@ def _extract_display_text(content: Any) -> str:
         ]
         return "\n".join(p for p in parts if p).strip()
     return ""
+
+
+# Internal markers written into the session for the agent's own bookkeeping
+# (scheduler injection / self-evolution undo). They must stay in the stored
+# content (the LLM reads them, e.g. to find a backup_id for undo) but should
+# never be shown verbatim to the user in the chat history UI.
+_SCHEDULED_DISPLAY_MARKERS = ("[SCHEDULED]", "Scheduled task")
+_EVOLUTION_DISPLAY_MARKER = "[EVOLUTION]"
+
+
+def _is_internal_user_marker(text: str) -> bool:
+    """True if a user-turn text is an internal injection marker (hide from UI)."""
+    t = (text or "").lstrip()
+    return any(t.startswith(m) for m in _SCHEDULED_DISPLAY_MARKERS)
+
+
+def _clean_display_text(text: str) -> str:
+    """Strip internal markers from assistant text for user-facing display.
+
+    Removes a leading ``[EVOLUTION]`` tag and a trailing ``(backup_id: ...)``
+    undo hint. The raw stored message is untouched, so undo + LLM context still
+    work; only the rendered chat bubble is cleaned.
+    """
+    if not text:
+        return text
+    cleaned = text
+    stripped = cleaned.lstrip()
+    if stripped.startswith(_EVOLUTION_DISPLAY_MARKER):
+        cleaned = stripped[len(_EVOLUTION_DISPLAY_MARKER):].lstrip()
+    # Drop a trailing backup_id undo hint line, e.g.
+    #   "(backup_id: 20260607-...; to undo, restore this backup)"
+    cleaned = re.sub(
+        r"\n*\(backup_id:[^\)]*\)\s*$",
+        "",
+        cleaned,
+    ).rstrip()
+    return cleaned
 
 
 def _extract_tool_calls(content: Any) -> List[Dict[str, Any]]:
@@ -210,7 +248,10 @@ def _group_into_display_turns(
         if user_row:
             content, created_at, _u_extras = user_row
             text = _extract_display_text(content)
-            if text:
+            # Hide internal injection markers (scheduler / self-evolution) so the
+            # user never sees a synthetic "[SCHEDULED] self-evolution" bubble;
+            # the assistant reply that follows is still rendered.
+            if text and not _is_internal_user_marker(text):
                 turns.append({"role": "user", "content": text, "created_at": created_at})
 
         # Build an ordered list of steps preserving the original sequence:
@@ -264,6 +305,14 @@ def _group_into_display_turns(
                     tr = {"result": tr}
                 step["result"] = tr.get("result", "")
                 step["is_error"] = tr.get("is_error", False)
+
+        # Clean internal markers from the user-facing assistant text. Applies to
+        # both the final content and the mirrored content step so the rendered
+        # bubble shows clean text while the stored message keeps the markers.
+        final_text = _clean_display_text(final_text)
+        for step in steps:
+            if step.get("type") == "content":
+                step["content"] = _clean_display_text(step.get("content", ""))
 
         if steps or final_text:
             turn = {
