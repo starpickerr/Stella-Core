@@ -1587,7 +1587,7 @@ class ConfigHandler:
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
-        "enable_thinking", "web_password",
+        "enable_thinking", "self_evolution_enabled", "web_password",
     }
 
     @staticmethod
@@ -1642,6 +1642,7 @@ class ConfigHandler:
                 "agent_max_context_turns": local_config.get("agent_max_context_turns", 20),
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
+                "self_evolution_enabled": bool(local_config.get("self_evolution_enabled", False)),
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
                 "providers": providers,
@@ -1667,7 +1668,7 @@ class ConfigHandler:
                     continue
                 if key in ("agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps"):
                     value = int(value)
-                if key in ("use_linkai", "enable_thinking"):
+                if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)
                 local_config[key] = value
                 applied[key] = value
