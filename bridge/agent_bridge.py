@@ -302,6 +302,7 @@ class AgentBridge:
             start_evolution_trigger(self)
         except Exception as e:
             logger.warning(f"[AgentBridge] Evolution trigger init failed: {e}")
+
     def create_agent(self, system_prompt: str, tools: List = None, **kwargs) -> Agent:
         """
         Create the super agent with COW integration
