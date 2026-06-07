@@ -140,7 +140,7 @@ const I18N = {
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
-        memory_tab_files: '记忆文件', memory_tab_dreams: '梦境日记',
+        memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
         memory_back: '返回列表',
         memory_col_name: '文件名', memory_col_type: '类型', memory_col_size: '大小', memory_col_updated: '更新时间',
@@ -342,7 +342,7 @@ const I18N = {
         skills_section_title: 'Skills', skill_enable: 'Enable', skill_disable: 'Disable',
         skill_toggle_error: 'Operation failed, please try again',
         memory_title: 'Memory', memory_desc: 'View agent memory files and contents',
-        memory_tab_files: 'Memory Files', memory_tab_dreams: 'Dream Diary',
+        memory_tab_files: 'Memory Files', memory_tab_dreams: 'Self-Evolution',
         memory_loading: 'Loading memory files...', memory_loading_desc: 'Memory files will be displayed here',
         memory_back: 'Back to list',
         memory_col_name: 'Filename', memory_col_type: 'Type', memory_col_size: 'Size', memory_col_updated: 'Updated',
@@ -4304,13 +4304,14 @@ function toggleSkill(name, currentlyEnabled) {
 // Memory View
 // =====================================================================
 let memoryPage = 1;
-let memoryCategory = 'memory';   // 'memory' | 'dream'
+let memoryCategory = 'memory';   // 'memory' | 'evolution'
 const memoryPageSize = 10;
 
 function switchMemoryTab(tab) {
     document.querySelectorAll('.memory-tab').forEach(el => el.classList.remove('active'));
     document.getElementById('memory-tab-' + tab).classList.add('active');
-    memoryCategory = tab === 'dreams' ? 'dream' : 'memory';
+    // The "dreams" tab now surfaces self-evolution logs (merged with dream diaries).
+    memoryCategory = tab === 'dreams' ? 'evolution' : 'memory';
     loadMemoryView(1);
 }
 
@@ -4327,9 +4328,9 @@ function loadMemoryView(page) {
         if (total === 0) {
             const emptyIcon = emptyEl.querySelector('i');
             const emptyTitle = emptyEl.querySelector('p');
-            if (memoryCategory === 'dream') {
-                emptyIcon.className = 'fas fa-moon text-purple-400 text-xl';
-                emptyTitle.textContent = currentLang === 'zh' ? '暂无梦境日记' : 'No dream diaries yet';
+            if (memoryCategory === 'evolution') {
+                emptyIcon.className = 'fas fa-seedling text-emerald-400 text-xl';
+                emptyTitle.textContent = currentLang === 'zh' ? '暂无进化记录' : 'No evolution records yet';
             } else {
                 emptyIcon.className = 'fas fa-brain text-purple-400 text-xl';
                 emptyTitle.textContent = currentLang === 'zh' ? '暂无记忆文件' : 'No memory files';
@@ -4346,10 +4347,15 @@ function loadMemoryView(page) {
         files.forEach(f => {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors';
-            tr.onclick = () => openMemoryFile(f.filename, memoryCategory);
+            // In the merged evolution tab, resolve each file by its own origin
+            // (evolution logs vs dream diaries live in different dirs).
+            const fileCategory = (f.type === 'dream' || f.type === 'evolution') ? f.type : memoryCategory;
+            tr.onclick = () => openMemoryFile(f.filename, fileCategory);
             let typeLabel;
             if (f.type === 'global') {
                 typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">Global</span>';
+            } else if (f.type === 'evolution') {
+                typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">Evolution</span>';
             } else if (f.type === 'dream') {
                 typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400">Dream</span>';
             } else {
