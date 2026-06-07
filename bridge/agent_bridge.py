@@ -295,6 +295,14 @@ class AgentBridge:
                 self.scheduler_initialized = True
         except Exception as e:
             logger.warning(f"[AgentBridge] Eager scheduler init failed: {e}")
+
+        # Start the self-evolution idle trigger (idempotent, daemon thread).
+        try:
+            from agent.evolution.trigger import start_evolution_trigger
+            start_evolution_trigger(self)
+        except Exception as e:
+            logger.warning(f"[AgentBridge] Evolution trigger init failed: {e}")
+
     def create_agent(self, system_prompt: str, tools: List = None, **kwargs) -> Agent:
         """
         Create the super agent with COW integration
@@ -547,6 +555,23 @@ class AgentBridge:
                         except Exception as e:
                             logger.warning(f"[AgentBridge] Failed to clear DB after recovery: {e}")
             
+            # Record this user turn for the self-evolution idle trigger. Skip
+            # scheduler-injected / scheduled-task sessions so internal runs do
+            # not count as user activity.
+            if session_id and not session_id.startswith("scheduler_") and not (
+                context and context.get("is_scheduled_task")
+            ):
+                try:
+                    from agent.evolution.trigger import note_user_turn
+                    ch = (context.get("channel_type") or "") if context else ""
+                    rcv = (context.get("receiver") or "") if context else ""
+                    is_group = bool(context.get("isgroup")) if context else False
+                    # Only enable proactive push for single chats (group push is
+                    # noisy); group sessions still evolve, just without notify.
+                    note_user_turn(agent, channel_type=ch, receiver=(rcv if not is_group else ""))
+                except Exception:
+                    pass
+
             # Post-message hot-reload: detect edits to ~/cow/mcp.json and
             # sync any new/removed MCP tools into the live agent in the
             # background. Off the critical path so user latency is unaffected;

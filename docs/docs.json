@@ -179,7 +179,8 @@
                 "pages": [
                   "memory/index",
                   "memory/context",
-                  "memory/deep-dream"
+                  "memory/deep-dream",
+                  "memory/self-evolution"
                 ]
               }
             ]
@@ -393,7 +394,8 @@
                 "pages": [
                   "zh/memory/index",
                   "zh/memory/context",
-                  "zh/memory/deep-dream"
+                  "zh/memory/deep-dream",
+                  "zh/memory/self-evolution"
                 ]
               }
             ]
@@ -607,7 +609,8 @@
                 "pages": [
                   "ja/memory/index",
                   "ja/memory/context",
-                  "ja/memory/deep-dream"
+                  "ja/memory/deep-dream",
+                  "ja/memory/self-evolution"
                 ]
               }
             ]
