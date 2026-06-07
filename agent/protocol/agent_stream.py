@@ -347,11 +347,14 @@ class AgentStreamExecutor:
         Returns:
             Final response text
         """
-        # Log user message with model info
-        
+        # Log user message with model info. Truncate very long messages (e.g.
+        # injected transcripts / large prompts) so logs stay readable.
         thinking_enabled = self._is_thinking_enabled()
         thinking_label = " | 💭 thinking" if thinking_enabled else ""
-        logger.info(f"🤖 {self.model.model}{thinking_label} | 👤 {user_message}")        
+        _log_msg = user_message if len(user_message) <= 500 else (
+            user_message[:500] + f" …(+{len(user_message) - 500} chars)"
+        )
+        logger.info(f"🤖 {self.model.model}{thinking_label} | 👤 {_log_msg}")        
         
         # Add user message (Claude format - use content blocks for consistency)
         self.messages.append({

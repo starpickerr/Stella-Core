@@ -123,6 +123,7 @@ const I18N = {
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
+        config_self_evolution: '自主进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
         config_channel_type: '通道类型',
         config_provider: '模型厂商', config_model_name: '模型',
         config_custom_model_hint: '输入自定义模型名称',
@@ -140,7 +141,7 @@ const I18N = {
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
-        memory_tab_files: '记忆文件', memory_tab_dreams: '梦境日记',
+        memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
         memory_back: '返回列表',
         memory_col_name: '文件名', memory_col_type: '类型', memory_col_size: '大小', memory_col_updated: '更新时间',
@@ -325,6 +326,7 @@ const I18N = {
         config_max_turns: 'Max Memory Turns', config_max_turns_hint: 'One Q&A pair = one turn, auto-compressed when exceeded',
         config_max_steps: 'Max Steps', config_max_steps_hint: 'Max tool calls the Agent can make in a single conversation',
         config_enable_thinking: 'Deep Thinking', config_enable_thinking_hint: 'Enable deep thinking mode',
+        config_self_evolution: 'Self-Evolution', config_self_evolution_hint: 'Auto-review idle conversations to consolidate memory, improve skills, and follow up on unfinished tasks',
         config_channel_type: 'Channel Type',
         config_provider: 'Provider', config_model_name: 'Model',
         config_custom_model_hint: 'Enter custom model name',
@@ -342,7 +344,7 @@ const I18N = {
         skills_section_title: 'Skills', skill_enable: 'Enable', skill_disable: 'Disable',
         skill_toggle_error: 'Operation failed, please try again',
         memory_title: 'Memory', memory_desc: 'View agent memory files and contents',
-        memory_tab_files: 'Memory Files', memory_tab_dreams: 'Dream Diary',
+        memory_tab_files: 'Memory Files', memory_tab_dreams: 'Self-Evolution',
         memory_loading: 'Loading memory files...', memory_loading_desc: 'Memory files will be displayed here',
         memory_back: 'Back to list',
         memory_col_name: 'Filename', memory_col_type: 'Type', memory_col_size: 'Size', memory_col_updated: 'Updated',
@@ -3824,6 +3826,7 @@ function initConfigView(data) {
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     document.getElementById('cfg-enable-thinking').checked = data.enable_thinking === true;
+    document.getElementById('cfg-self-evolution').checked = data.self_evolution_enabled === true;
 
     // Reflect the current UI language (already resolved, may include the user's
     // local choice) on the selector so it stays in sync with the top-right toggle.
@@ -4079,6 +4082,7 @@ function saveAgentConfig() {
         agent_max_context_turns: parseInt(document.getElementById('cfg-max-turns').value) || 20,
         agent_max_steps: parseInt(document.getElementById('cfg-max-steps').value) || 20,
         enable_thinking: document.getElementById('cfg-enable-thinking').checked,
+        self_evolution_enabled: document.getElementById('cfg-self-evolution').checked,
     };
 
     const btn = document.getElementById('cfg-agent-save');
@@ -4304,13 +4308,14 @@ function toggleSkill(name, currentlyEnabled) {
 // Memory View
 // =====================================================================
 let memoryPage = 1;
-let memoryCategory = 'memory';   // 'memory' | 'dream'
+let memoryCategory = 'memory';   // 'memory' | 'evolution'
 const memoryPageSize = 10;
 
 function switchMemoryTab(tab) {
     document.querySelectorAll('.memory-tab').forEach(el => el.classList.remove('active'));
     document.getElementById('memory-tab-' + tab).classList.add('active');
-    memoryCategory = tab === 'dreams' ? 'dream' : 'memory';
+    // The "dreams" tab now surfaces self-evolution logs (merged with dream diaries).
+    memoryCategory = tab === 'dreams' ? 'evolution' : 'memory';
     loadMemoryView(1);
 }
 
@@ -4327,9 +4332,9 @@ function loadMemoryView(page) {
         if (total === 0) {
             const emptyIcon = emptyEl.querySelector('i');
             const emptyTitle = emptyEl.querySelector('p');
-            if (memoryCategory === 'dream') {
-                emptyIcon.className = 'fas fa-moon text-purple-400 text-xl';
-                emptyTitle.textContent = currentLang === 'zh' ? '暂无梦境日记' : 'No dream diaries yet';
+            if (memoryCategory === 'evolution') {
+                emptyIcon.className = 'fas fa-seedling text-emerald-400 text-xl';
+                emptyTitle.textContent = currentLang === 'zh' ? '暂无进化记录' : 'No evolution records yet';
             } else {
                 emptyIcon.className = 'fas fa-brain text-purple-400 text-xl';
                 emptyTitle.textContent = currentLang === 'zh' ? '暂无记忆文件' : 'No memory files';
@@ -4346,10 +4351,15 @@ function loadMemoryView(page) {
         files.forEach(f => {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors';
-            tr.onclick = () => openMemoryFile(f.filename, memoryCategory);
+            // In the merged evolution tab, resolve each file by its own origin
+            // (evolution logs vs dream diaries live in different dirs).
+            const fileCategory = (f.type === 'dream' || f.type === 'evolution') ? f.type : memoryCategory;
+            tr.onclick = () => openMemoryFile(f.filename, fileCategory);
             let typeLabel;
             if (f.type === 'global') {
                 typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">Global</span>';
+            } else if (f.type === 'evolution') {
+                typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">Evolution</span>';
             } else if (f.type === 'dream') {
                 typeLabel = '<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400">Dream</span>';
             } else {
