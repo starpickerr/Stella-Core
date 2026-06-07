@@ -338,6 +338,114 @@ def scenario_skill_wrong_config():
     }
 
 
+def scenario_skill_create():
+    """A reusable, repeatable workflow emerges that no skill covers, and the
+    user explicitly asks to make it permanent -> CREATE a new skill.
+    """
+    return {
+        "name": "技能-新增 (should create a new skill)",
+        "goal": "skill",
+        "turns": [
+            ("每周一帮我把客户反馈整理成晨会简报：先按「严重/一般/建议」给反馈分类，再统计每类数量，最后写一段 3 句话的总结，发我",
+             "好的，本周客户反馈晨会简报：\n\n## 严重 (2)\n- 支付失败\n- 数据丢失\n## 一般 (3)\n- 加载慢…\n## 建议 (1)\n- 增加暗色模式\n\n总结：本周以稳定性问题为主，建议优先排查支付与数据链路，其余可排期跟进。"),
+            ("很好，就是这个格式。上周我也是这么让你弄的", "嗯，分类+计数+三句总结这套流程挺顺手。"),
+            ("对，这个我每周一都要用，你能不能把这套流程固化下来，以后我直接说『生成客户反馈晨会简报』你就照这个来",
+             "可以，我把这套「客户反馈晨会简报」流程固化成一个可复用的技能。"),
+        ],
+        "scripted": (
+            "我刚做了一次自我学习。\n"
+            "- 学到：你每周一都要按「分类+计数+三句总结」生成客户反馈晨会简报\n"
+            "- 调整：新建了「客户反馈晨会简报」技能，固化这套流程\n"
+            "如果不对，回复「撤销上次学习」即可。"
+        ),
+        "on_edit": _create_briefing_skill,
+        "expect_evolved": True,
+        "expect_new_skill": True,
+    }
+
+
+def scenario_skill_create_implicit():
+    """A complex, clearly-structured multi-step workflow is executed once. The
+    user NEVER says "I do this weekly" or "make this a skill" — the agent must
+    判断 on its own that this is a reusable procedure worth capturing.
+
+    This is the realistic, harder case: no explicit instruction to create a
+    skill, only an obviously repeatable workflow.
+    """
+    return {
+        "name": "技能-隐式新增 (complex workflow, user never asks to save)",
+        "goal": "skill",
+        "turns": [
+            ("帮我做一份竞品调研：对比一下 Notion、飞书文档、语雀这三个产品",
+             "好的，我按一套固定方法来做竞品调研：\n1. 先确定对比维度：定价、协作能力、模板生态、API 开放度、本地化；\n2. 逐个产品按维度收集信息；\n3. 做成对比表；\n4. 给出结论和选型建议。\n\n（随后产出了完整的五维度对比表 + 结论）"),
+            ("不错。再帮我用同样的方法调研一下 Slack、企业微信、钉钉",
+             "好的，沿用刚才那套方法（定价/协作/模板/API/本地化 五维度 → 收集 → 对比表 → 结论）：\n\n（产出了第二份五维度对比表 + 选型建议）"),
+            ("可以，结论挺清楚的", "嗯，这套五维度对比的方法做下来结构很清楚。"),
+        ],
+        # In real mode the model decides on its own. The scripted side effect
+        # only wires stub mode; it emulates capturing the procedure as a skill.
+        "scripted": (
+            "我刚做了一次自我学习。\n"
+            "- 学到：你做竞品调研有一套固定方法（五维度对比 → 收集 → 对比表 → 结论）\n"
+            "- 调整：把这套竞品调研流程固化成了一个可复用技能\n"
+            "如果不对，回复「撤销上次学习」即可。"
+        ),
+        "on_edit": _create_competitor_skill,
+        "expect_evolved": True,
+        "expect_new_skill": True,
+    }
+
+
+def _create_competitor_skill(ws):
+    """Stub side effect: emulate capturing the competitor-research procedure."""
+    d = ws / "skills" / "competitor-research"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(
+        "# Competitor Research\n\n"
+        "Compare a set of products with a fixed methodology.\n\n"
+        "## Steps\n"
+        "1. Fix the comparison dimensions (pricing, collaboration, templates, API, localization).\n"
+        "2. Collect info per product across each dimension.\n"
+        "3. Build a comparison table.\n"
+        "4. Give a conclusion and recommendation.\n",
+        encoding="utf-8",
+    )
+
+
+def scenario_skill_no_create():
+    """A one-off, novel task with no sign of recurrence -> must NOT create a
+    skill (and ideally stay silent). Guards against over-eager skill creation.
+    """
+    return {
+        "name": "技能-不应新增 (one-off task, must NOT create skill)",
+        "goal": "none",
+        "turns": [
+            ("帮我把这段话翻译成英文：今晚的庆功宴改到 8 点", "翻译：The celebration dinner tonight is moved to 8 PM."),
+            ("谢谢", "不客气。"),
+            ("嗯没事了", "好的，随时找我。"),
+        ],
+        "scripted": "[SILENT]",
+        "on_edit": None,
+        "expect_evolved": False,
+        "expect_no_new_skill": True,
+    }
+
+
+def _create_briefing_skill(ws):
+    """Stub side effect: emulate creating a new skill under workspace skills/."""
+    d = ws / "skills" / "customer-feedback-briefing"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(
+        "# Customer Feedback Briefing\n\n"
+        "Turn raw customer feedback into a standup briefing.\n\n"
+        "## Steps\n"
+        "1. Classify each item as 严重/一般/建议.\n"
+        "2. Count items per category.\n"
+        "3. Write a 3-sentence summary.\n",
+        encoding="utf-8",
+    )
+
+
 def scenario_unfinished_task():
     """A promised deliverable was not produced -> finish it now via tools."""
     def edit(ws):
@@ -372,8 +480,23 @@ SCENARIOS = [
     scenario_skill_gap,
     scenario_skill_error,
     scenario_skill_wrong_config,
+    scenario_skill_create,
+    scenario_skill_create_implicit,
+    scenario_skill_no_create,
     scenario_unfinished_task,
 ]
+
+# Skill directories present in a fresh workspace; anything beyond these that
+# appears after a pass is a newly-created skill.
+_SEED_SKILLS = {"weekly-report", "expense-tracker", "data-fetch", "image-generation"}
+
+
+def _new_skill_dirs(ws: Path) -> set:
+    """Skill directories created beyond the seeded set."""
+    skills_dir = ws / "skills"
+    if not skills_dir.exists():
+        return set()
+    return {p.name for p in skills_dir.iterdir() if p.is_dir()} - _SEED_SKILLS
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +554,9 @@ def run_stub():
                     if txt not in content:
                         ok = False
                         errs.append("skill missing expected content")
+                if sc.get("expect_new_skill") and not _new_skill_dirs(ws):
+                    ok = False
+                    errs.append("expected a new skill to be created")
                 # notify happened
                 if not channel.sent:
                     ok = False
@@ -457,6 +583,9 @@ def run_stub():
                 if bridge.injected:
                     ok = False
                     errs.append("injected record on SILENT")
+            if sc.get("expect_no_new_skill") and _new_skill_dirs(ws):
+                ok = False
+                errs.append(f"unexpected new skill created: {_new_skill_dirs(ws)}")
 
             ex._notify_user = orig_notify
 
@@ -625,6 +754,15 @@ def run_real():
                         print("      (无文件变更)")
                 else:
                     print("      (静默，未做任何改动)")
+
+                new_skills = _new_skill_dirs(ws)
+                if new_skills:
+                    print(f"      新建技能: {', '.join(sorted(new_skills))}")
+                # Surface mismatches against the scenario's skill expectation.
+                if sc.get("expect_new_skill") and not new_skills:
+                    print("      ⚠ 预期新建技能，但未创建")
+                if sc.get("expect_no_new_skill") and new_skills:
+                    print("      ⚠ 不应新建技能，但创建了")
 
                 print("\n【给用户的回复】")
                 if captured["reply"]:
