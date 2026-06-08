@@ -201,7 +201,7 @@ function Find-Python {
             $ver = & $bin.Source -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}')" 2>$null
             $parts = $ver -split '\.'
             $major = [int]$parts[0]; $minor = [int]$parts[1]
-            if ($major -eq 3 -and $minor -ge 9 -and $minor -le 13) {
+            if ($major -eq 3 -and $minor -ge 7 -and $minor -le 13) {
                 return $bin.Source
             }
         } catch {}
@@ -212,7 +212,7 @@ function Find-Python {
 $PythonCmd = Find-Python
 function Assert-Python {
     if (-not $PythonCmd) {
-        Write-Err (T "未找到 Python 3.9-3.13，请从 https://www.python.org/downloads/ 安装" "Python 3.9-3.13 not found. Please install from https://www.python.org/downloads/")
+        Write-Err (T "未找到 Python 3.7-3.13，请从 https://www.python.org/downloads/ 安装" "Python 3.7-3.13 not found. Please install from https://www.python.org/downloads/")
         Read-Host (T "按回车退出" "Press Enter to exit")
         exit 1
     }
