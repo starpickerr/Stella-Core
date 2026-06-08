@@ -195,6 +195,55 @@ def scenario_silent():
     }
 
 
+def scenario_silent_qa():
+    """A normal knowledge Q&A -> nothing durable, should stay SILENT."""
+    return {
+        "name": "普通问答 (should stay SILENT)",
+        "goal": "none",
+        "turns": [
+            ("Python 里 list 和 tuple 有什么区别？",
+             "主要区别：list 可变、用 []；tuple 不可变、用 ()。tuple 更省内存、可作字典键。"),
+            ("那什么时候该用 tuple？", "当数据不应被修改、或要做字典键/集合元素时用 tuple。"),
+            ("懂了，谢谢", "不客气。"),
+        ],
+        "scripted": "[SILENT]",
+        "on_edit": None,
+        "expect_evolved": False,
+    }
+
+
+def scenario_silent_transient():
+    """User shares transient, non-durable info -> should stay SILENT."""
+    return {
+        "name": "临时信息 (should stay SILENT)",
+        "goal": "none",
+        "turns": [
+            ("帮我看下今天天气适合跑步吗，深圳", "深圳今天多云 26°C，傍晚湿度高，清晨或晚上跑步比较合适。"),
+            ("那我晚上去吧", "好的，记得补水。"),
+            ("行", "👍"),
+        ],
+        "scripted": "[SILENT]",
+        "on_edit": None,
+        "expect_evolved": False,
+    }
+
+
+def scenario_silent_advice():
+    """User asks for one-off advice, no reusable workflow -> should stay SILENT."""
+    return {
+        "name": "一次性建议 (should stay SILENT)",
+        "goal": "none",
+        "turns": [
+            ("给我起三个适合咖啡馆的名字", "可以考虑：① 拾光咖啡 ② 角落 Corner ③ 慢半拍。"),
+            ("第二个不错", "嗯，「角落 Corner」简洁好记。"),
+            ("就用这个了", "好的，祝开业顺利。"),
+        ],
+        "scripted": "[SILENT]",
+        "on_edit": None,
+        "expect_evolved": False,
+    }
+
+
 def scenario_memory_preference():
     """User states a durable working preference -> update MEMORY.md."""
     def edit(ws):
@@ -475,6 +524,9 @@ def scenario_unfinished_task():
 
 SCENARIOS = [
     scenario_silent,
+    scenario_silent_qa,
+    scenario_silent_transient,
+    scenario_silent_advice,
     scenario_memory_preference,
     scenario_memory_correction,
     scenario_skill_gap,
@@ -791,6 +843,12 @@ def run_real():
 
 
 if __name__ == "__main__":
+    if "--debug" in sys.argv:
+        import logging
+        from common.log import logger as _cow_logger
+        _cow_logger.setLevel(logging.DEBUG)
+        for _h in _cow_logger.handlers:
+            _h.setLevel(logging.DEBUG)
     if "--real" in sys.argv:
         run_real()
     else:

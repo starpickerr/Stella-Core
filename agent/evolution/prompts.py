@@ -7,7 +7,7 @@ language (instructed at the end of the prompt).
 
 Design goals (see ref/hermes-agent background_review for inspiration):
   - Default to doing NOTHING. Evolution is the exception, not the rule.
-  - Three signal types: memory, skill, unfinished task.
+  - Signal types: skill, unfinished task, memory, knowledge.
   - An explicit "do NOT capture" list to avoid self-poisoning over time.
   - Generic examples only — never bake in domain-specific business terms.
 """
@@ -72,12 +72,11 @@ them. When their signal is clear, act; do not be shy here.
    reply/decision, do NOTHING and stay [SILENT] — do not nag or ping the user.
    You only ever notify the user as a side effect of having actually done work.
 
-3. MEMORY — LAST resort, and you are only a SAFETY NET here, not the primary
-   writer. The main assistant already writes memory DURING the conversation, and
-   a nightly pass consolidates daily notes into long-term memory. Prefer fixing
-   a skill (above) over writing memory whenever the fact belongs in a skill.
-   Act ONLY on something the main assistant clearly MISSED that does not belong
-   in any skill.
+3. MEMORY — RARE, last resort. Default to writing NOTHING here. The main
+   assistant already writes memory during the chat, and a nightly pass plus
+   context-overflow saves are dedicated safety nets — so memory is almost always
+   already covered without you. Skip unless the main assistant clearly missed a
+   durable fact that belongs in no skill AND would visibly change future replies.
    - MEMORY.md is the curated long-term index, auto-loaded into EVERY future
      conversation. Treat it as precious: edit it in place to CORRECT a wrong
      fact, or append a new durable preference/decision/lesson — but do so
@@ -91,6 +90,12 @@ them. When their signal is clear, act; do not be shy here.
      conversation, never copy what the main assistant already recorded.
    - If it is already captured anywhere (check MEMORY.md AND the daily file
      first), do NOTHING.
+
+4. KNOWLEDGE — only if the conversation produced durable, reusable reference
+   knowledge on a topic (the kind worth looking up again) that the main
+   assistant did NOT already save to `knowledge/`. Add or update the relevant
+   file there. Like memory, this is the exception: skip routine Q&A, and if the
+   topic is already covered in `knowledge/`, do NOTHING rather than duplicate.
 
 # Do NOT capture (these poison future behavior)
 
@@ -140,9 +145,6 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
     ``protected_skills`` lists skill names that must never be edited (built-in
     skills shipped with the product). Surfaced so the agent avoids them.
     """
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
-
     protected_note = ""
     if protected_skills:
         names = ", ".join(sorted(protected_skills))
@@ -152,12 +154,10 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
         )
     return (
         "Here is the conversation transcript that just went idle. Review it per "
-        "your instructions and act on any clear signal. Prefer fixing a skill at "
-        "its source over writing memory whenever the fact belongs in a skill.\n"
-        f"Today is {today}. Only if a fact genuinely belongs in memory (and not "
-        f"in a skill): append one short bullet to the daily file "
-        f"`memory/{today}.md` for a new fact, or edit MEMORY.md in place to "
-        f"correct an existing wrong fact."
+        "your instructions. Acting is the exception: the main value is fixing or "
+        "creating a skill and finishing promised work. Memory and knowledge are "
+        "rare last resorts — stay [SILENT] unless there is a clear, durable signal "
+        "not already covered."
         f"{protected_note}\n"
         "<transcript>\n"
         f"{transcript}\n"
