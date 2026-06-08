@@ -884,6 +884,7 @@ let pollGeneration = 0;   // incremented on each restart to cancel stale poll lo
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
 let sessionActiveRequest = {};   // session_id -> request_id (in-flight stream per session)
+let streamBuffers = {};   // request_id -> { items: [event...], timestamp } for re-attach replay
 let isComposing = false;
 let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
 
@@ -2238,7 +2239,7 @@ function sendMessage() {
     postWithRetry(0);
 }
 
-function startSSE(requestId, loadingEl, timestamp, titleInfo) {
+function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let botEl = null;
     let stepsEl = null;    // .agent-steps  (thinking summaries + tool indicators)
     let contentEl = null;  // .answer-content (final streaming answer)
@@ -2251,24 +2252,22 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
     let done = false;
 
     // The session this stream belongs to. Sessions run in parallel: the user
-    // may switch to another session while this one is still streaming. When
-    // that happens the stream keeps running in the background (so the reply
-    // still completes and persists) but must NOT touch the now-foreign view.
-    // On return, the completed reply is loaded from the DB via loadHistory.
+    // may switch to another session while this one is still streaming. The
+    // stream keeps running in the background (so the reply still completes and
+    // persists); when foreign it does not touch the view but still records
+    // every event into a buffer, so returning to the session can rebuild the
+    // bubble by replaying the buffer and then resume live rendering.
     const ownerSession = sessionId;
-    // Once the user navigates away, this stream is permanently "detached":
-    // its bubble was wiped from the DOM by the switch, so it must never render
-    // again — even if the user returns to this session. It keeps running to
-    // finish + persist the reply; the completed reply is then surfaced via
-    // history reload / polling. This avoids re-creating a mangled bubble that
-    // starts mid-stream.
-    let detached = false;
-    const isActive = () => ownerSession === sessionId && !detached;
+    const isActive = () => ownerSession === sessionId;
     sessionActiveRequest[ownerSession] = requestId;
+    // Per-request event buffer used to rebuild the bubble on re-attach.
+    const buffer = streamBuffers[requestId] || { items: [], timestamp };
+    streamBuffers[requestId] = buffer;
     const clearOwnerRequest = () => {
         if (sessionActiveRequest[ownerSession] === requestId) {
             delete sessionActiveRequest[ownerSession];
         }
+        delete streamBuffers[requestId];
     };
 
     const MAX_RECONNECTS = 10;
@@ -2312,34 +2311,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
         mediaEl = botEl.querySelector('.media-content');
     }
 
-    function connect() {
-        const es = new EventSource(`/stream?request_id=${encodeURIComponent(requestId)}`);
-        activeStreams[requestId] = es;
+    // Holds the live EventSource so terminal events (done/voice_attach/error)
+    // can close it. During replay there is no live connection (null).
+    let currentEs = null;
 
-        es.onmessage = function(e) {
-            let item;
-            try { item = JSON.parse(e.data); } catch (_) { return; }
-
-            // Successful data received, reset reconnect counter
-            reconnectCount = 0;
-
-            // Background session: keep the stream alive so the reply finishes
-            // and persists, but skip all UI rendering for the foreign view.
-            // Once a stream has rendered into a view that later got cleared
-            // (the user switched away), mark it detached for good so it never
-            // tries to render into a rebuilt/foreign view — switching back
-            // shows the finished reply via history reload / polling instead.
-            if (ownerSession !== sessionId || detached) {
-                detached = true;
-                if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
-                    done = true;
-                    es.close();
-                    delete activeStreams[requestId];
-                    clearOwnerRequest();
-                }
-                return;
-            }
-
+    // Render one SSE event into the bubble. Used by the live handler and by
+    // re-attach replay alike, so both paths produce identical UI.
+    function processSSEItem(item) {
             if (item.type === 'reasoning') {
                 ensureBotEl();
                 reasoningText += item.content;
@@ -2609,19 +2587,52 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 if (botEl && item.url) {
                     attachAudioToBotBubble(botEl, item.url, { autoplay: true });
                 }
-                es.close();
+                if (currentEs) { currentEs.close(); }
                 delete activeStreams[requestId];
                 clearOwnerRequest();
 
             } else if (item.type === 'error') {
                 done = true;
-                es.close();
+                if (currentEs) { currentEs.close(); }
                 delete activeStreams[requestId];
                 clearOwnerRequest();
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
                 addBotMessage(t('error_send'), new Date());
                 resetSendBtnSendMode();
             }
+    }
+
+    function connect() {
+        const es = new EventSource(`/stream?request_id=${encodeURIComponent(requestId)}`);
+        currentEs = es;
+        activeStreams[requestId] = es;
+
+        es.onmessage = function(e) {
+            let item;
+            try { item = JSON.parse(e.data); } catch (_) { return; }
+
+            // Successful data received, reset reconnect counter
+            reconnectCount = 0;
+
+            // Record every event for re-attach replay (capped to avoid
+            // unbounded growth on very long streams).
+            if (buffer.items.length < 5000) buffer.items.push(item);
+
+            // Background session: keep the stream alive so the reply finishes
+            // and persists, but skip rendering into the now-foreign view. The
+            // buffer above still grows so returning to the session can rebuild
+            // the bubble and resume live rendering.
+            if (ownerSession !== sessionId) {
+                if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
+                    done = true;
+                    es.close();
+                    delete activeStreams[requestId];
+                    clearOwnerRequest();
+                }
+                return;
+            }
+
+            processSSEItem(item);
         };
 
         es.onerror = function() {
@@ -2662,6 +2673,27 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
             }
             resetSendBtnSendMode();
         };
+    }
+
+    // Re-attach replay: rebuild the bubble from buffered events (snapshot,
+    // not animated) before connecting for the live tail. `processSSEItem`
+    // is the same renderer used by the live onmessage handler, so the
+    // snapshot matches exactly what live rendering would have produced.
+    if (replayItems && replayItems.length) {
+        for (const item of replayItems) {
+            try { processSSEItem(item); } catch (_) {}
+            if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
+                done = true;
+            }
+        }
+        // If the buffered stream already finished, don't reconnect — the
+        // reply is complete and persisted; show its final state and stop.
+        if (done) {
+            clearOwnerRequest();
+            resetSendBtnSendMode();
+            scrollChatToBottom(true);
+            return;
+        }
     }
 
     connect();
@@ -3238,9 +3270,12 @@ function loadHistory(page) {
             historyPage = page;
 
             if (isFirstLoad) {
-                // Use requestAnimationFrame to ensure the DOM has fully rendered
-                // before scrolling, otherwise scrollHeight may not reflect new content.
+                // Scroll to the very bottom after the DOM settles. A single
+                // rAF isn't enough: markdown/code-highlight/images keep growing
+                // scrollHeight after the first paint, leaving the last bubble's
+                // timestamp clipped. Re-pin a few times to catch late layout.
                 requestAnimationFrame(() => scrollChatToBottom(true));
+                [120, 350, 700].forEach(d => setTimeout(() => scrollChatToBottom(true), d));
             } else {
                 // Restore scroll position so loading older messages doesn't jump the view
                 messagesDiv.scrollTop = messagesDiv.scrollHeight - prevScrollHeight;
@@ -3272,9 +3307,6 @@ function newChat() {
     // Do NOT close active streams: other sessions keep streaming in the
     // background (each stream self-guards against the foreign view) and their
     // replies still complete and persist.
-
-    // Stop any pending-reply poller from the previous session.
-    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
 
     // Generate a fresh session and persist it so the next page load also starts clean
     sessionId = generateSessionId();
@@ -3614,33 +3646,44 @@ function _onSessionListScroll() {
     }
 })();
 
-// When returning to a session whose reply is still streaming in the
-// background, the reply isn't in history yet. Show a loading indicator and
-// reload history until the reply has persisted (stream cleared) or the user
-// navigates away. Stable bubbles are de-duplicated by request_id on reload.
-let _pendingReplyTimer = null;
-function _waitForPendingReply(sid) {
-    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
-    // The user turn is already in history (persisted eagerly); show a loading
-    // hint beneath it while the reply streams in the background.
-    addLoadingIndicator();
+// Returning to a session whose reply is still streaming in the background.
+// Close the background EventSource, rebuild the bubble from the buffered
+// events (snapshot), then resume live streaming via a fresh connection that
+// reads the remaining tail from the backend queue. Returns true if a stream
+// was re-attached. The user's own bubble is already in history (persisted
+// eagerly), so it was rendered by loadHistory before this runs.
+function _reattachStream(sid) {
+    const requestId = sessionActiveRequest[sid];
+    if (!requestId) return false;
+    const buffer = streamBuffers[requestId];
+    if (!buffer) return false;
 
-    function tick() {
-        // User switched away — abandon; the other session manages its own view.
-        if (sid !== sessionId) return;
-        if (sessionActiveRequest[sid]) {
-            // Still streaming — keep waiting without touching the view.
-            _pendingReplyTimer = setTimeout(tick, 1500);
-            return;
-        }
-        // Reply finished and persisted: rebuild the view from history once.
-        // loadHistory only prepends, so clear first to avoid duplicates.
-        historyPage = 0;
-        historyLoading = false;
-        messagesDiv.innerHTML = '';
-        loadHistory(1);
+    // If the buffered stream already finished, the assistant reply is already
+    // persisted and rendered by loadHistory — re-attaching would duplicate it.
+    // Just clean up the buffer/cursor and rely on history.
+    const finished = buffer.items.some(
+        it => it.type === 'done' || it.type === 'error'
+    );
+    if (finished) {
+        const oldEs = activeStreams[requestId];
+        if (oldEs) { try { oldEs.close(); } catch (_) {} delete activeStreams[requestId]; }
+        delete streamBuffers[requestId];
+        delete sessionActiveRequest[sid];
+        resetSendBtnSendMode();
+        return false;
     }
-    _pendingReplyTimer = setTimeout(tick, 1500);
+
+    // Stop the background stream so the rebuilt one is the sole consumer of
+    // the backend queue (the queue survives until "done", so the new
+    // connection picks up any remaining events).
+    const oldEs = activeStreams[requestId];
+    if (oldEs) { try { oldEs.close(); } catch (_) {} delete activeStreams[requestId]; }
+
+    // Snapshot the buffered events into the replay, then start a fresh stream
+    // that replays them and reconnects for the live tail.
+    const replay = buffer.items.slice();
+    startSSE(requestId, null, buffer.timestamp || new Date(), null, replay);
+    return true;
 }
 
 function switchSession(newSessionId) {
@@ -3649,13 +3692,10 @@ function switchSession(newSessionId) {
         return;
     }
 
-    // Stop any pending-reply poller from the session we're leaving.
-    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
-
     // Do NOT close active streams here: sessions run in parallel, so any
     // in-flight reply for another session must keep streaming in the
     // background (it self-guards against rendering into the foreign view).
-    // The reply completes and persists; switching back loads it from history.
+    // Switching back re-attaches and resumes live streaming.
 
     sessionId = newSessionId;
     localStorage.setItem(SESSION_ID_KEY, sessionId);
@@ -3668,14 +3708,13 @@ function switchSession(newSessionId) {
     loadHistory(1);
     startPolling();
 
-    // Restore the send button to match this session's stream state: if it has
-    // an in-flight reply, show Cancel; otherwise show Send. A reply that is
-    // still streaming in the background won't be in history yet, so poll the
-    // history until it lands.
+    // Restore the send button to match this session's stream state, and if a
+    // reply is still streaming in the background, re-attach to resume showing
+    // it live (the user turn itself comes from history above).
     const pendingReq = sessionActiveRequest[sessionId];
     if (pendingReq) {
         setSendBtnCancelMode(pendingReq);
-        _waitForPendingReply(sessionId);
+        _reattachStream(sessionId);
     } else {
         resetSendBtnSendMode();
     }

@@ -947,7 +947,12 @@ class WebChannel(ChatChannel):
                     post_done = True
                     post_deadline = time.time() + 2  # 2s post-attach tail
         finally:
-            self.sse_queues.pop(request_id, None)
+            # Only drop the queue once the reply is actually complete. If the
+            # client disconnected early (e.g. switched sessions and will
+            # re-attach with the same request_id), keep the queue so the new
+            # connection can resume reading the remaining events.
+            if post_done or time.time() >= deadline:
+                self.sse_queues.pop(request_id, None)
 
     def cancel_request(self):
         """
