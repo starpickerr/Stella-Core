@@ -120,11 +120,12 @@ them. When their signal is clear, act; do not be shy here.
 
 - Nothing worth evolving -> output exactly `[SILENT]` and nothing else.
 - Otherwise, after performing the edits, output a short user-facing summary in
-  the SAME LANGUAGE the user used in the conversation. Tell the user, briefly:
+  the SAME LANGUAGE the user used. Write it for an ordinary user, in plain
+  everyday words — NOT a developer report. No need to expose internal details
+  (file names/paths, system mechanics, etc.). Tell the user, briefly:
     1) that you just did a self-learning pass,
-    2) what you learned and what you changed (in plain terms — no need to cite
-       exact file paths; "remembered X" / "improved the weekly-report skill" is
-       enough).
+    2) what you learned and what you changed in THIS pass ("remembered X" /
+       "improved the <name> skill" / "finished <task>").
   Keep it to 1-3 lines. Generic shape (do not copy domain words):
     "I just did a self-learning pass.
      - Learned: <what you learned>

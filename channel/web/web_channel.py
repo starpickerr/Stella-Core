@@ -360,6 +360,13 @@ class WebChannel(ChatChannel):
                 ):
                     logger.debug(f"Polling skipped duplicate file reply for session {session_id}")
                     return
+                # SSE-enabled requests already stream the text reply to the
+                # client. Do NOT also enqueue it for polling: if the user
+                # switched away mid-run, the queued copy would resurface as a
+                # duplicate bubble when they return and poll the session.
+                if reply.type == ReplyType.TEXT and context.get("on_event") is not None:
+                    logger.debug(f"Polling skipped SSE text reply for session {session_id}")
+                    return
                 response_data = {
                     "type": str(reply.type),
                     "content": content,

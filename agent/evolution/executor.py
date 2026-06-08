@@ -269,7 +269,9 @@ def run_evolution_for_session(
         new_messages = all_messages[done:]
         transcript = _build_transcript(new_messages)
         if not transcript.strip():
-            logger.info(f"[Evolution] session={session_id}: no new messages, skip")
+            # Routine no-op: the per-minute scan hits every idle session, so keep
+            # this at debug to avoid spamming the log.
+            logger.debug(f"[Evolution] session={session_id}: no new messages, skip")
             # Advance the cursor anyway so we don't re-scan the same tail.
             agent._evo_done_msg_count = total_msgs
             return False

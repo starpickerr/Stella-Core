@@ -515,6 +515,15 @@ class AgentBridge:
                 )
                 self._trim_in_memory_to_turns(agent, scheduler_keep_turns)
 
+            # Eagerly persist the user message BEFORE running the agent so the
+            # session and the user's bubble are immediately visible — even if
+            # the user switches away or refreshes before the reply finishes.
+            # The reply (assistant/tool messages) is appended once the run
+            # completes; the final persist skips this already-stored user turn.
+            pre_persisted = self._pre_persist_user_message(
+                session_id, query, context, clear_history
+            )
+
             try:
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
@@ -541,7 +550,11 @@ class AgentBridge:
             # Persist new messages generated during this run
             if session_id:
                 channel_type = (context.get("channel_type") or "") if context else ""
-                new_messages = getattr(agent, '_last_run_new_messages', [])
+                new_messages = list(getattr(agent, '_last_run_new_messages', []))
+                # The leading user turn was already persisted eagerly above;
+                # drop it here so it isn't stored twice.
+                if pre_persisted and new_messages and new_messages[0].get("role") == "user":
+                    new_messages = new_messages[1:]
                 if new_messages:
                     self._persist_messages(session_id, list(new_messages), channel_type)
                 else:
@@ -757,6 +770,48 @@ class AgentBridge:
             except Exception as e:
                 logger.warning(f"[AgentBridge] Failed to sync API keys: {e}")
     
+    def _pre_persist_user_message(
+        self, session_id: str, query: str, context: Context, clear_history: bool
+    ) -> bool:
+        """Persist the user's message before the agent runs.
+
+        This makes a brand-new session (and the user's bubble) visible even if
+        the reply hasn't finished — switching away or refreshing no longer
+        loses the in-flight session. Returns True when the user turn was
+        stored, so the caller can skip it in the post-run persist.
+
+        Best-effort: any failure is swallowed and reported as not-persisted.
+        """
+        if not session_id or not query:
+            return False
+        # Only real user turns: skip scheduler-injected / scheduled-task runs.
+        if session_id.startswith("scheduler_") or (
+            context and context.get("is_scheduled_task")
+        ):
+            return False
+        try:
+            from config import conf
+            if not conf().get("conversation_persistence", True):
+                return False
+            from agent.memory import get_conversation_store
+            store = get_conversation_store()
+            # clear_history starts a fresh transcript: wipe the store first so
+            # the eager user turn becomes seq 0, matching in-memory state.
+            if clear_history:
+                store.clear_session(session_id)
+            channel_type = (context.get("channel_type") or "") if context else ""
+            user_msg = {
+                "role": "user",
+                "content": [{"type": "text", "text": query}],
+            }
+            store.append_messages(session_id, [user_msg], channel_type=channel_type)
+            return True
+        except Exception as e:
+            logger.warning(
+                f"[AgentBridge] Failed to pre-persist user message for session={session_id}: {e}"
+            )
+            return False
+
     def _persist_messages(
         self, session_id: str, new_messages: list, channel_type: str = ""
     ) -> None:
