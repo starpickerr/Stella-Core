@@ -359,38 +359,36 @@ detect_python_command() {
     FOUND_NEWER_VERSION=""
     
     # Try to find Python command in order of preference
-    for cmd in python3 python python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
+    for cmd in python3 python python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
         if command -v $cmd &> /dev/null; then
             # Check Python version
             major_version=$($cmd -c 'import sys; print(sys.version_info[0])' 2>/dev/null)
             minor_version=$($cmd -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
             
             if [[ "$major_version" == "3" ]]; then
-                # Check if version is in supported range (3.7 - 3.12)
-                if (( minor_version >= 7 && minor_version <= 12 )); then
+                # Supported range is 3.7+. On 3.13+ web.py is installed from a
+                # pinned GitHub commit (see requirements.txt), which needs git.
+                if (( minor_version >= 7 )); then
                     PYTHON_CMD=$cmd
                     PYTHON_VERSION="${major_version}.${minor_version}"
                     break
-                elif (( minor_version >= 13 )); then
-                    # Found Python 3.13+, but not compatible
-                    if [ -z "$FOUND_NEWER_VERSION" ]; then
-                        FOUND_NEWER_VERSION="${major_version}.${minor_version}"
-                    fi
                 fi
             fi
         fi
     done
     
     if [ -z "$PYTHON_CMD" ]; then
-        echo -e "${YELLOW}Tried: python3, python, python3.12, python3.11, python3.10, python3.9, python3.8, python3.7${NC}"
-        if [ -n "$FOUND_NEWER_VERSION" ]; then
-            echo -e "${RED}❌ Found Python $FOUND_NEWER_VERSION, but this project requires Python 3.7-3.12${NC}"
-            echo -e "${YELLOW}Python 3.13+ has compatibility issues with some dependencies (web.py, cgi module removed)${NC}"
-            echo -e "${YELLOW}Please install Python 3.7-3.12 (recommend Python 3.12)${NC}"
-        else
-            echo -e "${RED}❌ No suitable Python found. Please install Python 3.7-3.12${NC}"
-        fi
+        echo -e "${YELLOW}Tried: python3, python, python3.13, python3.12, python3.11, python3.10, python3.9, python3.8, python3.7${NC}"
+        echo -e "${RED}❌ No suitable Python found. Please install Python 3.7 or newer${NC}"
         exit 1
+    fi
+
+    # On 3.13+, web.py is pulled from GitHub via pip, which requires git.
+    if [[ "$major_version" == "3" ]] && (( minor_version >= 13 )); then
+        if ! command -v git &> /dev/null; then
+            echo -e "${YELLOW}⚠️  Python $PYTHON_VERSION detected. Installing web.py from GitHub requires git, which was not found.${NC}"
+            echo -e "${YELLOW}    Please install git, or use Python 3.12 where web.py installs directly from PyPI.${NC}"
+        fi
     fi
     
     # Export for global use
