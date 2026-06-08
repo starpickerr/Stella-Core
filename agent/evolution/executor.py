@@ -175,6 +175,9 @@ _WATCH_SUBDIRS = ("MEMORY.md", "skills", "knowledge", "output")
 # Subpaths under memory/ to ignore: evolution's own bookkeeping + the nightly
 # dream diary, none of which count as a user-facing change signal.
 _MEMORY_IGNORE = (".evolution_backups", "dreams", "evolution")
+# Files the skill subsystem maintains automatically (the enable/disable index).
+# Not an evolution result, so a rewrite must not count as a change signal.
+_WATCH_IGNORE_NAMES = ("skills_config.json",)
 
 
 def _workspace_snapshot(workspace_dir) -> dict:
@@ -194,6 +197,8 @@ def _workspace_snapshot(workspace_dir) -> dict:
             continue
         for p in root.rglob("*"):
             if not p.is_file():
+                continue
+            if p.name in _WATCH_IGNORE_NAMES:
                 continue
             try:
                 st = p.stat()
@@ -269,10 +274,8 @@ def run_evolution_for_session(
         new_messages = all_messages[done:]
         transcript = _build_transcript(new_messages)
         if not transcript.strip():
-            # Routine no-op: the per-minute scan hits every idle session, so keep
-            # this at debug to avoid spamming the log.
-            logger.debug(f"[Evolution] session={session_id}: no new messages, skip")
-            # Advance the cursor anyway so we don't re-scan the same tail.
+            # Routine no-op: the per-minute scan hits every idle session. Advance
+            # the cursor so we don't re-scan the same tail; no log (pure noise).
             agent._evo_done_msg_count = total_msgs
             return False
 
@@ -334,17 +337,23 @@ def run_evolution_for_session(
             str(workspace_dir),
         )
         review_agent = agent_bridge.create_agent(
-            system_prompt=EVOLUTION_SYSTEM_PROMPT,
+            system_prompt="",
             tools=review_tools,
             description="Self-evolution review agent",
             max_steps=cfg.max_steps,
             workspace_dir=str(workspace_dir),
             skill_manager=getattr(agent, "skill_manager", None),
             memory_manager=getattr(agent, "memory_manager", None),
-            enable_skills=False,
+            enable_skills=True,
+            runtime_info=getattr(agent, "runtime_info", None),
         )
         # Reuse the live model so it follows the user's configured model.
         review_agent.model = agent.model
+        # Inject the evolution task brief AFTER the full system prompt: the agent
+        # gets the full context (tools, workspace, user preferences, memory, time)
+        # AND its evolution-specific instructions on top, instead of one
+        # overwriting the other.
+        review_agent.extra_system_suffix = EVOLUTION_SYSTEM_PROMPT
 
         logger.info(
             f"[Evolution] backup {backup_id} ({_backup_n} files) → running review agent"
