@@ -123,7 +123,7 @@ const I18N = {
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
-        config_self_evolution: '自主进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
+        config_self_evolution: '自我进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
         evolution_badge: '自主学习',
         config_channel_type: '通道类型',
         config_provider: '模型厂商', config_model_name: '模型',
@@ -142,7 +142,7 @@ const I18N = {
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
-        memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
+        memory_tab_files: '记忆文件', memory_tab_dreams: '自我进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
         memory_back: '返回列表',
         memory_col_name: '文件名', memory_col_type: '类型', memory_col_size: '大小', memory_col_updated: '更新时间',
@@ -883,6 +883,7 @@ let isPolling = false;
 let pollGeneration = 0;   // incremented on each restart to cancel stale poll loops
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
+let sessionActiveRequest = {};   // session_id -> request_id (in-flight stream per session)
 let isComposing = false;
 let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
 
@@ -2242,6 +2243,27 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
     let reasoningStartTime = 0;
     let done = false;
 
+    // The session this stream belongs to. Sessions run in parallel: the user
+    // may switch to another session while this one is still streaming. When
+    // that happens the stream keeps running in the background (so the reply
+    // still completes and persists) but must NOT touch the now-foreign view.
+    // On return, the completed reply is loaded from the DB via loadHistory.
+    const ownerSession = sessionId;
+    // Once the user navigates away, this stream is permanently "detached":
+    // its bubble was wiped from the DOM by the switch, so it must never render
+    // again — even if the user returns to this session. It keeps running to
+    // finish + persist the reply; the completed reply is then surfaced via
+    // history reload / polling. This avoids re-creating a mangled bubble that
+    // starts mid-stream.
+    let detached = false;
+    const isActive = () => ownerSession === sessionId && !detached;
+    sessionActiveRequest[ownerSession] = requestId;
+    const clearOwnerRequest = () => {
+        if (sessionActiveRequest[ownerSession] === requestId) {
+            delete sessionActiveRequest[ownerSession];
+        }
+    };
+
     const MAX_RECONNECTS = 10;
     const RECONNECT_BASE_MS = 1000;
     let reconnectCount = 0;
@@ -2293,6 +2315,23 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
 
             // Successful data received, reset reconnect counter
             reconnectCount = 0;
+
+            // Background session: keep the stream alive so the reply finishes
+            // and persists, but skip all UI rendering for the foreign view.
+            // Once a stream has rendered into a view that later got cleared
+            // (the user switched away), mark it detached for good so it never
+            // tries to render into a rebuilt/foreign view — switching back
+            // shows the finished reply via history reload / polling instead.
+            if (ownerSession !== sessionId || detached) {
+                detached = true;
+                if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
+                    done = true;
+                    es.close();
+                    delete activeStreams[requestId];
+                    clearOwnerRequest();
+                }
+                return;
+            }
 
             if (item.type === 'reasoning') {
                 ensureBotEl();
@@ -2507,6 +2546,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 // TTS audio (`voice_attach`). It will close the stream on
                 // its own via onerror once the tail expires.
                 done = true;
+                clearOwnerRequest();
                 resetSendBtnSendMode();
 
                 const finalTextRaw = item.content || accumulatedText;
@@ -2564,11 +2604,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 }
                 es.close();
                 delete activeStreams[requestId];
+                clearOwnerRequest();
 
             } else if (item.type === 'error') {
                 done = true;
                 es.close();
                 delete activeStreams[requestId];
+                clearOwnerRequest();
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
                 addBotMessage(t('error_send'), new Date());
                 resetSendBtnSendMode();
@@ -2598,7 +2640,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 return;
             }
 
-            // Exhausted retries, show whatever we have
+            // Exhausted retries. Only surface the failure in the owning view —
+            // a background session must not mutate the currently shown chat.
+            clearOwnerRequest();
+            if (!isActive()) return;
             if (loadingEl) { loadingEl.remove(); loadingEl = null; }
             if (!botEl) {
                 addBotMessage(t('error_send'), new Date());
@@ -2641,10 +2686,19 @@ function startPolling() {
                     loadingContainers[rid].remove();
                     delete loadingContainers[rid];
                 }
-                const welcomeScreen = document.getElementById('welcome-screen');
-                if (welcomeScreen) welcomeScreen.remove();
-                addBotMessage(data.content, new Date(data.timestamp * 1000), rid);
-                scrollChatToBottom();
+                // Skip if this reply is already on screen. Happens when a reply
+                // arrives via both the SSE stream and the poll queue (e.g. the
+                // user switched away mid-run, leaving the queued reply to be
+                // re-fetched on return) — render it only once.
+                const already = rid && messagesDiv.querySelector(
+                    `[data-request-id="${rid}"]`
+                );
+                if (!already) {
+                    const welcomeScreen = document.getElementById('welcome-screen');
+                    if (welcomeScreen) welcomeScreen.remove();
+                    addBotMessage(data.content, new Date(data.timestamp * 1000), rid);
+                    scrollChatToBottom();
+                }
             }
             const delay = (data.status === 'success' && data.has_content) ? 5000 : 10000;
             setTimeout(poll, delay);
@@ -2889,8 +2943,11 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
     }
 
     // Self-evolution bubbles get a small badge so the user can feel the agent
-    // learned something on its own (text itself stays clean).
-    const evolutionBadge = (msg && msg.kind === 'evolution')
+    // learned something on its own (text itself stays clean). History replay
+    // carries msg.kind; live pushes are identified by the evolution_ request id.
+    const isEvolution = (msg && msg.kind === 'evolution')
+        || (typeof requestId === 'string' && requestId.startsWith('evolution_'));
+    const evolutionBadge = isEvolution
         ? `<div class="flex items-center gap-1 mb-1.5 text-xs text-slate-400 dark:text-slate-500">
                 <i class="fas fa-seedling text-[11px]"></i>
                 <span>${t('evolution_badge')}</span>
@@ -3205,14 +3262,17 @@ function addLoadingIndicator() {
 }
 
 function newChat() {
-    // Close all active SSE connections for the current session
-    Object.values(activeStreams).forEach(es => { try { es.close(); } catch (_) {} });
-    activeStreams = {};
+    // Do NOT close active streams: other sessions keep streaming in the
+    // background (each stream self-guards against the foreign view) and their
+    // replies still complete and persist.
+
+    // Stop any pending-reply poller from the previous session.
+    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
 
     // Generate a fresh session and persist it so the next page load also starts clean
     sessionId = generateSessionId();
     localStorage.setItem(SESSION_ID_KEY, sessionId);
-    loadingContainers = {};
+    resetSendBtnSendMode();  // fresh session has no in-flight reply
     startPolling();  // bump generation so old loop self-cancels, new loop uses fresh sessionId
     messagesDiv.innerHTML = '';
     const ws = document.createElement('div');
@@ -3547,15 +3607,48 @@ function _onSessionListScroll() {
     }
 })();
 
+// When returning to a session whose reply is still streaming in the
+// background, the reply isn't in history yet. Show a loading indicator and
+// reload history until the reply has persisted (stream cleared) or the user
+// navigates away. Stable bubbles are de-duplicated by request_id on reload.
+let _pendingReplyTimer = null;
+function _waitForPendingReply(sid) {
+    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
+    // The user turn is already in history (persisted eagerly); show a loading
+    // hint beneath it while the reply streams in the background.
+    addLoadingIndicator();
+
+    function tick() {
+        // User switched away — abandon; the other session manages its own view.
+        if (sid !== sessionId) return;
+        if (sessionActiveRequest[sid]) {
+            // Still streaming — keep waiting without touching the view.
+            _pendingReplyTimer = setTimeout(tick, 1500);
+            return;
+        }
+        // Reply finished and persisted: rebuild the view from history once.
+        // loadHistory only prepends, so clear first to avoid duplicates.
+        historyPage = 0;
+        historyLoading = false;
+        messagesDiv.innerHTML = '';
+        loadHistory(1);
+    }
+    _pendingReplyTimer = setTimeout(tick, 1500);
+}
+
 function switchSession(newSessionId) {
     if (newSessionId === sessionId) {
         if (currentView !== 'chat') navigateTo('chat');
         return;
     }
 
-    Object.values(activeStreams).forEach(es => { try { es.close(); } catch (_) {} });
-    activeStreams = {};
-    loadingContainers = {};
+    // Stop any pending-reply poller from the session we're leaving.
+    if (_pendingReplyTimer) { clearTimeout(_pendingReplyTimer); _pendingReplyTimer = null; }
+
+    // Do NOT close active streams here: sessions run in parallel, so any
+    // in-flight reply for another session must keep streaming in the
+    // background (it self-guards against rendering into the foreign view).
+    // The reply completes and persists; switching back loads it from history.
 
     sessionId = newSessionId;
     localStorage.setItem(SESSION_ID_KEY, sessionId);
@@ -3567,6 +3660,18 @@ function switchSession(newSessionId) {
     messagesDiv.innerHTML = '';
     loadHistory(1);
     startPolling();
+
+    // Restore the send button to match this session's stream state: if it has
+    // an in-flight reply, show Cancel; otherwise show Send. A reply that is
+    // still streaming in the background won't be in history yet, so poll the
+    // history until it lands.
+    const pendingReq = sessionActiveRequest[sessionId];
+    if (pendingReq) {
+        setSendBtnCancelMode(pendingReq);
+        _waitForPendingReply(sessionId);
+    } else {
+        resetSendBtnSendMode();
+    }
 
     document.querySelectorAll('.session-item').forEach(el => {
         el.classList.toggle('active', el.dataset.sessionId === sessionId);

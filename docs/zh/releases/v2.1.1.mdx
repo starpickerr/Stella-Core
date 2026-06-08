@@ -1,0 +1,61 @@
+---
+title: v2.1.1
+description: CowAgent 2.1.1 - 自进化能力、Web 控制台消息管理升级、MCP 跨平台增强、多模型接入与优化
+---
+
+🌐 [English](https://docs.cowagent.ai/releases/v2.1.1) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.1)
+
+## 🧬 自进化能力
+
+CowAgent 新增**自进化（Self-Evolution）**能力，让 Agent 不止于完成单次任务，而是在与你的日常协作中持续成长：
+
+- **自动复盘成长**：一段对话自然结束并进入空闲后，Agent 会在后台悄悄回顾刚刚的对话，沉淀值得记住的偏好和事实、修复技能中暴露的问题、并补做未完成的任务
+- **越用越懂你**：随着使用，Agent 会逐渐记住你的习惯、减少重复犯错，在收尾上做得更好
+- **不打扰原则**：只有在确实做出了改动时，才用一句话告诉你它学到了什么、调整了什么，没有变化时全程静默
+- **安全可回退**：每次复盘前都会自动备份，对结果不满意时只需在对话中让它撤销即可恢复；内置技能受保护、所有改动均限制在工作空间内
+
+默认关闭，可在 Web 控制台 **设置 → Agent 配置** 中一键开启。
+
+相关文档：[自进化](https://docs.cowagent.ai/zh/memory/self-evolution)
+
+## 💬 Web 控制台消息管理升级
+
+Web 控制台的聊天体验进一步增强，操作更接近主流聊天产品：
+
+- **消息编辑与重发**：用户与机器人的消息均支持编辑、删除、重新生成
+- **代码块更易用**：代码块新增语言标签和一键复制按钮
+- **拖拽体验优化**：支持将文件拖拽到整个聊天区域
+
+Thanks @core-power (#2865)
+
+## 🧩 MCP 跨平台增强
+
+- **Windows 兼容修复**：修复 MCP 在 Windows 下 `stdio` 通信不可用的问题，并支持通过 `mcp.json` 配置服务超时时间
+- **并发调用支持**：`sse` 与 `streamable-http` 传输支持跨会话并发调用，多工具响应更快
+
+Thanks @xliu123321 (#2859)
+
+相关文档：[MCP 工具](https://docs.cowagent.ai/zh/tools/mcp)
+
+## 🤖 模型新增与优化
+
+- **MiniMax-M3**：新增并设为默认模型，保留 M2.7 系列作为可选项。Thanks @octo-patch (#2855)
+- **通义千问 qwen3.7-plus**：支持多模态对话
+- **语音识别模型可选**：Web 控制台支持选择 ASR（语音识别）模型并持久化保存。Thanks @nightwhite (#2857)
+- **安装菜单简化**：一键安装脚本精简模型选择菜单，新增小米 MiMo 选项
+
+相关文档：[模型概览](https://docs.cowagent.ai/zh/models)
+
+## 🛠 体验优化与修复
+
+- **国际化体验**：通道列表按界面语言排序展示；优化 `auto` 模式下的语言自动回退逻辑
+- **任务取消更可靠**：修复部分场景下流式回复无法中断的问题
+- **CLI 增强**：`cow status` 新增显示当前项目路径
+- **部署安全加固**：凭证文件拦截范围收敛至 `~/.cow/.env`，不再误拦其他目录（Thanks @orbisai0security #2863）；微信公众号在 `wechatmp_token` 为空时拒绝 Webhook 请求
+- **群任务看板插件**：内置群任务看板插件源。Thanks @Wyh-max-star (#2853)
+
+## 📦 升级方式
+
+源码部署可执行 `cow update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
+
+**发布日期**：2026.06.08 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.0...2.1.1)
