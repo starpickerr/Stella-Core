@@ -1298,8 +1298,15 @@ sendBtn.addEventListener('click', () => {
 
 function updateSendBtnState() {
     if (sendBtnMode === 'cancel') {
-        // Don't downgrade a Cancel button on input edits.
-        return;
+        // Self-heal a stuck Cancel button: if there's no live stream backing
+        // the current request, the cancel state leaked (e.g. a stream ended
+        // without resetting). Recover to Send so the input isn't blocked.
+        if (!activeRequestId || !activeStreams[activeRequestId]) {
+            resetSendBtnSendMode();
+        } else {
+            // Don't downgrade a genuinely active Cancel button on input edits.
+            return;
+        }
     }
     sendBtn.disabled = uploadingCount > 0 || (!chatInput.value.trim() && pendingAttachments.length === 0);
 }
