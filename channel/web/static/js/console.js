@@ -123,7 +123,7 @@ const I18N = {
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
-        config_self_evolution: '自进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
+        config_self_evolution: '自主进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
         evolution_badge: '自主学习',
         config_channel_type: '通道类型',
         config_provider: '模型厂商', config_model_name: '模型',
@@ -142,7 +142,7 @@ const I18N = {
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
-        memory_tab_files: '记忆文件', memory_tab_dreams: '自进化',
+        memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
         memory_back: '返回列表',
         memory_col_name: '文件名', memory_col_type: '类型', memory_col_size: '大小', memory_col_updated: '更新时间',
@@ -3303,7 +3303,7 @@ function addLoadingIndicator() {
     return el;
 }
 
-function newChat() {
+function newChat(optimistic = true) {
     // Do NOT close active streams: other sessions keep streaming in the
     // background (each stream self-guards against the foreign view) and their
     // replies still complete and persist.
@@ -3407,8 +3407,16 @@ function newChat() {
         _showSessionOverlay();
         _persistPanelState();
     }
+    // Only prepend an optimistic "new chat" item when this is a real new-chat
+    // action. When called after deleting the current session, skip it: the
+    // fresh session has no backend record yet, so inserting it would leave an
+    // empty, undeletable item in the list (deleting it just spawns another).
     const newSid = sessionId;
-    loadSessionList(() => _addOptimisticSessionItem(newSid));
+    if (optimistic) {
+        loadSessionList(() => _addOptimisticSessionItem(newSid));
+    } else {
+        loadSessionList();
+    }
 }
 
 // =====================================================================
@@ -3729,18 +3737,47 @@ function switchSession(newSessionId) {
 
 function deleteSession(sid) {
     showConfirmModal(t('delete_session_title'), t('delete_session_confirm'), () => {
+        // Before deleting, find the next real session to fall back to when the
+        // current one is removed (the sibling item in the list, which is sorted
+        // newest-first). Falls back to the welcome screen if none remain.
+        const nextSid = sid === sessionId ? _findNextSessionId(sid) : null;
+
         fetch(`/api/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') return;
-                if (sid === sessionId) {
-                    newChat();
-                } else {
+                if (sid !== sessionId) {
                     loadSessionList();
+                    return;
+                }
+                if (nextSid) {
+                    // Switch to an existing session; refresh the list afterwards
+                    // so the deleted item disappears.
+                    switchSession(nextSid);
+                    loadSessionList();
+                } else {
+                    // No other sessions: reset to a fresh empty session without
+                    // inserting an optimistic placeholder (it has no backend
+                    // record and would be an empty, undeletable item).
+                    newChat(false);
                 }
             })
             .catch(() => {});
     });
+}
+
+// Pick the session to show after deleting `sid` (the current session): prefer
+// the next item below it in the list, otherwise the previous one. Returns null
+// if no other session exists.
+function _findNextSessionId(sid) {
+    const items = Array.from(document.querySelectorAll('.session-item[data-session-id]'));
+    const idx = items.findIndex(el => el.dataset.sessionId === sid);
+    if (idx === -1) {
+        const other = items.find(el => el.dataset.sessionId !== sid);
+        return other ? other.dataset.sessionId : null;
+    }
+    const next = items[idx + 1] || items[idx - 1];
+    return next ? next.dataset.sessionId : null;
 }
 
 function showConfirmModal(title, message, onConfirm) {
