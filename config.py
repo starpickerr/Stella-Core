@@ -253,8 +253,8 @@ available_setting = {
     "knowledge": True,  # whether to enable the knowledge base feature
     # Self-evolution: review idle conversations to learn memory/skills. Flat keys.
     "self_evolution_enabled": False,        # switch to enable/disable self-evolution
-    "self_evolution_idle_minutes": 15,      # idle time before a session is reviewed
-    "self_evolution_min_turns": 8,          # min user turns (or context pressure) to trigger
+    "self_evolution_idle_minutes": 10,      # idle time before a session is reviewed
+    "self_evolution_min_turns": 6,          # min user turns (or context pressure) to trigger
     "skill": {},  # Per-skill runtime config; nested keys flatten to SKILL_<NAME>_<KEY> env vars at startup
     "mcp_servers": [],  # MCP server list; each entry supports type "stdio" (local process) or "sse" (remote URL)
 }

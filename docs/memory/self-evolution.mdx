@@ -33,7 +33,7 @@ Once a review is done, if it actually changed something, the Agent tells you in 
 
 Self-Evolution does not run on a fixed schedule. It only kicks in **after a conversation naturally ends and goes idle**, so it never interrupts an ongoing exchange. Two conditions must both hold:
 
-- **The conversation is idle**: more time has passed since the last interaction than the configured idle window (15 minutes by default)
+- **The conversation is idle**: more time has passed since the last interaction than the configured idle window (10 minutes by default)
 - **There is enough to review**: enough turns have accumulated since the last evolution, or the context is close to its capacity
 
 Only when both are met does a review begin. This makes sure there is something worth reviewing while keeping it from bothering you mid-conversation.
@@ -45,8 +45,8 @@ You can toggle Self-Evolution in the Web console under **Settings → Agent Conf
 | Parameter | Description | Default |
 | --- | --- | --- |
 | `self_evolution_enabled` | Whether Self-Evolution is enabled (on by default for new installs) | `false` |
-| `self_evolution_idle_minutes` | How long the conversation must be idle before it triggers (minutes) | `15` |
-| `self_evolution_min_turns` | Minimum conversation turns required to trigger | `8` |
+| `self_evolution_idle_minutes` | How long the conversation must be idle before it triggers (minutes) | `10` |
+| `self_evolution_min_turns` | Minimum conversation turns required to trigger | `6` |
 
 <Frame>
   <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-evolution-config.png" alt="Enable Self-Evolution in the Web console" />
