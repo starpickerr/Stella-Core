@@ -16,6 +16,7 @@ CowAgent's architecture consists of the following core modules:
 | **Plan** | Understands user intent, decomposes complex tasks into multi-step plans, and iteratively invokes tools until the goal is achieved |
 | **Memory** | Automatically persists important information as core memory and daily memory, with hybrid keyword and vector retrieval for cross-session context continuity |
 | **Knowledge** | Organizes structured knowledge by topic. The Agent autonomously distills valuable information into Markdown pages, maintaining indexes and cross-references to build a growing knowledge network |
+| **Evolution** | Reviews a conversation in an isolated environment after it goes idle, improving skills, following up on unfinished tasks, and backfilling memory and knowledge so the Agent keeps growing through everyday use |
 | **Tools** | Core capability for Agent to access OS resources. 10+ built-in tools including file read/write, terminal, browser, scheduler, memory search, web search, and more |
 | **Skills** | Loads and manages Skills. Supports one-click installation from Skill Hub, GitHub, and more, or custom skill creation through conversation |
 | **Models** | Model layer with unified access to OpenAI, Claude, Gemini, DeepSeek, MiniMax, GLM, Qwen, and other mainstream LLMs |
@@ -84,4 +85,5 @@ Configure Agent mode parameters in `config.json`:
 | `agent_max_steps` | Max decision steps per task | `20` |
 | `enable_thinking` | Enable deep-thinking mode | `false` |
 | `knowledge` | Enable personal knowledge base | `true` |
+| `self_evolution_enabled` | Enable Self-Evolution (on by default for new installs) | `false` |
 | `cow_lang` | Language for the UI, command text and system prompts; `auto` to detect, or set `zh` / `en` | `auto` |
