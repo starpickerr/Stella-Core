@@ -464,6 +464,14 @@ def run_evolution_for_session(
         append_session_evolution(workspace_dir, result, backup_id=backup_id, user_id=user_id)
         # Inject an [EVOLUTION] note so the main agent can honor "undo".
         _inject_evolution_record(agent_bridge, session_id, channel_type, result, backup_id)
+        # The injection appended its own messages ([SCHEDULED]/[EVOLUTION]).
+        # Advance the cursor past them so the next scan does not treat
+        # evolution's own bookkeeping as new user content and re-trigger.
+        try:
+            with agent.messages_lock:
+                agent._evo_done_msg_count = len(agent.messages)
+        except Exception:
+            pass
 
         # Push the summary to the user's channel. The "did a file actually
         # change" gate above is the only throttle we need: real evolutions are

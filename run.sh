@@ -881,6 +881,9 @@ base = {
     'agent_max_context_tokens': 40000,
     'agent_max_context_turns': 30,
     'agent_max_steps': 15,
+    # New installs opt into self-evolution; existing users (no key) keep the
+    # code default (off) so an upgrade never silently changes their behavior.
+    'self_evolution_enabled': True,
 }
 channel_map = {
     'feishu': {'feishu_app_id': 'FEISHU_APP_ID', 'feishu_app_secret': 'FEISHU_APP_SECRET'},
