@@ -470,6 +470,9 @@ function applyI18n() {
     installCfgTipPortal();
     const langLabel = document.getElementById('lang-label');
     if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
+    // Point the docs link to the locale-specific documentation site.
+    const docsLink = document.getElementById('docs-link');
+    if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
 }
 
 // Single entry point for switching language. Updates the in-memory language,

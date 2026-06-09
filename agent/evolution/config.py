@@ -13,8 +13,8 @@ from typing import Any
 # Defaults — conservative (see executor module docstring). Disabled by default
 # until release; enable via ``self_evolution_enabled``.
 DEFAULT_ENABLED = False
-DEFAULT_IDLE_MINUTES = 15
-DEFAULT_MIN_TURNS = 8
+DEFAULT_IDLE_MINUTES = 10
+DEFAULT_MIN_TURNS = 6
 # Max review steps for the isolated evolution agent. Kept small (not exposed as
 # config): the review is meant to be cheap and focused, not a long autonomous run.
 DEFAULT_MAX_STEPS = 12
