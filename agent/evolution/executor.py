@@ -19,6 +19,7 @@ remember_scheduled_output, channel_factory) rather than introducing a fork.
 
 from __future__ import annotations
 
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -37,8 +38,10 @@ from agent.evolution.prompts import (
 from agent.evolution.record import append_session_evolution
 
 # Tools the isolated evolution agent is allowed to use. Everything else is
-# withheld so a review pass can only read context and edit memory/skill files.
-_ALLOWED_TOOLS = {"read", "write", "edit", "ls", "memory_search", "memory_get"}
+# withheld so a review pass can only read context, run workspace scripts, and
+# edit memory/skill files. bash is needed by skill-creator's init script and is
+# confined to the workspace by _BashWorkspaceGuard.
+_ALLOWED_TOOLS = {"read", "write", "edit", "ls", "bash", "memory_search", "memory_get"}
 
 # Cap concurrent evolution passes so a burst of idle sessions can't spawn many
 # background model runs at once. Extra sessions simply wait for the next scan.
@@ -159,12 +162,81 @@ class _WorkspaceWriteGuard:
         return self._inner.execute(args)
 
 
+class _BashWorkspaceGuard:
+    """Wraps the bash tool so evolution can only run commands inside the
+    workspace.
+
+    Evolution needs bash for skill-creator's init script, but it runs
+    unattended in the background, so a raw shell is too broad. This guard:
+      - forces the command to execute with cwd = workspace,
+      - rejects commands that reference an absolute path or ``..`` segment
+        pointing OUTSIDE the workspace (the common ways to escape it).
+    It is a coarse textual check, not a sandbox — paired with the model's
+    instruction to only run skill-creator scripts, it keeps writes local.
+    """
+
+    def __init__(self, inner, workspace_dir: str):
+        self._inner = inner
+        self._ws = Path(workspace_dir).resolve()
+        # Pin the shell's working directory to the workspace.
+        try:
+            self._inner.cwd = str(self._ws)
+        except Exception:
+            pass
+        self.name = inner.name
+        self.description = inner.description
+        self.params = inner.params
+
+    def __getattr__(self, item):
+        return getattr(self._inner, item)
+
+    def execute_tool(self, params):
+        try:
+            return self.execute(params)
+        except Exception as e:
+            logger.error(f"[Evolution] guarded bash error: {e}")
+            from agent.tools.base_tool import ToolResult
+            return ToolResult.fail(f"Error: {e}")
+
+    def _escapes_workspace(self, command: str) -> bool:
+        # Absolute paths that are not under the workspace.
+        for tok in re.findall(r'(?:^|\s)(/[^\s\'";|&]+)', command):
+            try:
+                resolved = Path(tok).resolve()
+            except Exception:
+                continue
+            if self._ws != resolved and self._ws not in resolved.parents:
+                return True
+        # Parent-dir traversal that climbs above the workspace.
+        for tok in re.findall(r'[^\s\'";|&]*\.\.[^\s\'";|&]*', command):
+            try:
+                resolved = (self._ws / tok).resolve()
+            except Exception:
+                continue
+            if self._ws != resolved and self._ws not in resolved.parents:
+                return True
+        return False
+
+    def execute(self, args):
+        from agent.tools.base_tool import ToolResult
+        command = (args.get("command") or "").strip()
+        if command and self._escapes_workspace(command):
+            return ToolResult.fail(
+                "Error: evolution may only run commands inside the workspace; "
+                "this command references a path outside it and was blocked."
+            )
+        return self._inner.execute(args)
+
+
 def _guard_tools(tools: list, workspace_dir: str) -> list:
-    """Wrap write/edit tools with the workspace guard; leave others as-is."""
+    """Wrap write/edit/bash tools with workspace guards; leave others as-is."""
     guarded = []
     for t in tools:
-        if getattr(t, "name", None) in _WRITE_TOOLS:
+        name = getattr(t, "name", None)
+        if name in _WRITE_TOOLS:
             guarded.append(_WorkspaceWriteGuard(t, workspace_dir))
+        elif name == "bash":
+            guarded.append(_BashWorkspaceGuard(t, workspace_dir))
         else:
             guarded.append(t)
     return guarded
@@ -366,20 +438,26 @@ def run_evolution_for_session(
         # only looks at messages added after this point (silent or not).
         agent._evo_done_msg_count = total_msgs
 
-        if not result or SILENT_TOKEN in result:
+        # Respect an explicit silent verdict: empty, exactly [SILENT], or text
+        # that STARTS with [SILENT] means the model chose to stay quiet.
+        if not result or result.startswith(SILENT_TOKEN):
             logger.info(f"[Evolution] ✗ No change for session={session_id} ([SILENT])")
             return False
 
-        # Hard gate: an evolution only counts (and only notifies) if a workspace
-        # file ACTUALLY changed. If the model did real work (wrote memory /
-        # patched a skill / finished a task) the user is told; if it merely
-        # produced text without changing anything, we stay silent. This is the
-        # key anti-nag rule — no notification unless something was actually done.
+        # Anti-nag backstop: if the model wrote a summary but actually changed no
+        # watched file, stay silent — never notify about work that didn't happen.
         if not _workspace_changed(workspace_dir, pre_snapshot):
             logger.info(
-                f"[Evolution] ✗ session={session_id}: model produced text but "
-                f"changed no file — treating as silent"
+                f"[Evolution] ✗ session={session_id}: text produced but no file "
+                f"changed — staying silent"
             )
+            return False
+
+        # The model produced a real summary. Strip any stray [SILENT] tokens it
+        # left mid-text, then notify.
+        result = result.replace(SILENT_TOKEN, "").strip()
+        if not result:
+            logger.info(f"[Evolution] ✗ No change for session={session_id} ([SILENT])")
             return False
 
         logger.info(f"[Evolution] ✓ session={session_id} evolved:\n{result}")
