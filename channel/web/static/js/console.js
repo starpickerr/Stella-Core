@@ -858,8 +858,10 @@ function _addCodeBlockHeaders(container) {
         if (!codeEl) return;
         
         const langClass = Array.from(codeEl.classList).find(c => c.startsWith('language-'));
-        const language = langClass ? langClass.replace('language-', '') : 'code';
-        const langLabel = language.charAt(0).toUpperCase() + language.slice(1);
+        const language = langClass ? langClass.replace('language-', '') : '';
+        // Hide label for unknown/empty languages (e.g. language-undefined)
+        const showLang = language && language !== 'undefined' && language !== 'code';
+        const langLabel = showLang ? language.charAt(0).toUpperCase() + language.slice(1) : '';
         
         const wrapper = document.createElement('div');
         wrapper.className = 'code-block-wrapper';
