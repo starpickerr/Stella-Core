@@ -11,6 +11,10 @@ Self-Evolution lets the Agent do more than finish one task at a time; it keeps i
 
 > Self-Evolution complements [Deep Dream](/memory/deep-dream). Deep Dream organizes memory itself, while Self-Evolution goes a step further to improve skills and push unfinished tasks forward, sharpening the Agent's abilities through everyday use.
 
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-evolution-demo.png" alt="Self-Evolution in a conversation" />
+</Frame>
+
 ### Three Goals
 
 Self-Evolution focuses on three things:
@@ -36,13 +40,17 @@ Only when both are met does a review begin. This makes sure there is something w
 
 ### Configuration
 
-Self-Evolution is off by default. You can turn it on with the toggle in the Web console under **Settings → Agent Config** (below "Deep Thinking"), or adjust it in the config file:
+You can toggle Self-Evolution in the Web console under **Settings → Agent Config** (below "Deep Thinking"), or adjust it in the config file:
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `self_evolution_enabled` | Whether Self-Evolution is enabled | `false` |
+| `self_evolution_enabled` | Whether Self-Evolution is enabled (on by default for new installs) | `false` |
 | `self_evolution_idle_minutes` | How long the conversation must be idle before it triggers (minutes) | `15` |
-| `self_evolution_min_turns` | Minimum conversation turns required to trigger | `6` |
+| `self_evolution_min_turns` | Minimum conversation turns required to trigger | `8` |
+
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-evolution-config.png" alt="Enable Self-Evolution in the Web console" />
+</Frame>
 
 <Tip>
   The Web console only exposes the on/off toggle. To change the idle window or the turn threshold, edit the config file. Changes take effect immediately, with no restart needed.
@@ -51,6 +59,10 @@ Self-Evolution is off by default. You can turn it on with the toggle in the Web 
 ### Evolution Records
 
 Each review is recorded by date in `memory/evolution/YYYY-MM-DD.md`, viewable in the Web console under the **Memory → Self-Evolution** tab. That tab gathers both self-evolution records and dream diaries in one place, so you can look back on how the Agent has grown.
+
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-evolution-logs.png" alt="Self-Evolution records list" />
+</Frame>
 
 ### Rolling Back
 
