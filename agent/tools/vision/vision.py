@@ -31,7 +31,7 @@ from common.log import logger
 from config import conf
 
 DEFAULT_MODEL = const.GPT_41_MINI
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 180
 MAX_TOKENS = 4000
 COMPRESS_THRESHOLD = 1_048_576  # 1 MB
 
