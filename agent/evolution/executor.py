@@ -242,8 +242,9 @@ def _guard_tools(tools: list, workspace_dir: str) -> list:
     return guarded
 
 
-# Workspace subtrees worth watching for evolution-induced changes.
-_WATCH_SUBDIRS = ("MEMORY.md", "skills", "knowledge", "output")
+# Workspace subtrees worth watching for evolution-induced changes. AGENT.md is
+# watched too: evolution may rarely refine the assistant's persona/style there.
+_WATCH_SUBDIRS = ("MEMORY.md", "AGENT.md", "skills", "knowledge", "output")
 # Subpaths under memory/ to ignore: evolution's own bookkeeping + the nightly
 # dream diary, none of which count as a user-facing change signal.
 _MEMORY_IGNORE = (".evolution_backups", "dreams", "evolution")
@@ -381,7 +382,11 @@ def run_evolution_for_session(
             today_daily = Path(workspace_dir) / "memory" / "users" / user_id / (
                 datetime.now().strftime("%Y-%m-%d") + ".md"
             )
-        backup_files = [Path(memory_file), today_daily]
+        # AGENT.md (persona) is backed up too so a rare persona edit is undoable.
+        # Persona is workspace-global (not per-user): it always lives at the
+        # workspace root, regardless of user_id.
+        agent_file = Path(workspace_dir) / "AGENT.md"
+        backup_files = [Path(memory_file), today_daily, agent_file]
         if skills_dir.exists():
             for skill_md in skills_dir.rglob("SKILL.md"):
                 # The skill dir is the SKILL.md's parent (or an ancestor for

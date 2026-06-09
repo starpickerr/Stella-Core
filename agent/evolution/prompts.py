@@ -88,6 +88,9 @@ them. When their signal is clear, act; do not be shy here.
      short bullet to today's `memory/YYYY-MM-DD.md` instead. When unsure, the
      daily file is the safe place — but first ask whether this really belongs
      in a skill.
+   - PERSONA (AGENT.md) — EXTREMELY rare: only on an explicit, repeated signal
+     about the assistant's own identity/personality/style, make a small edit to
+     AGENT.md; never for user/world facts, and when in doubt do nothing.
    - Keep it to ONE short bullet. Never write paragraphs, never re-summarize the
      conversation, never copy what the main assistant already recorded.
    - If it is already captured anywhere (check MEMORY.md AND the daily file
