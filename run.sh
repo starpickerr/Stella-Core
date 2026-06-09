@@ -359,7 +359,7 @@ detect_python_command() {
     FOUND_NEWER_VERSION=""
     
     # Try to find Python command in order of preference
-    for cmd in python3 python python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
+    for cmd in python3 python python3.12 python3.11 python3.10 python3.9 python3.8 python3.7 python3.13; do
         if command -v $cmd &> /dev/null; then
             # Check Python version
             major_version=$($cmd -c 'import sys; print(sys.version_info[0])' 2>/dev/null)
@@ -378,7 +378,7 @@ detect_python_command() {
     done
     
     if [ -z "$PYTHON_CMD" ]; then
-        echo -e "${YELLOW}Tried: python3, python, python3.13, python3.12, python3.11, python3.10, python3.9, python3.8, python3.7${NC}"
+        echo -e "${YELLOW}Tried: python3, python, python3.12, python3.11, python3.10, python3.9, python3.8, python3.7, python3.13${NC}"
         echo -e "${RED}❌ No suitable Python found. Please install Python 3.7 or newer${NC}"
         exit 1
     fi
