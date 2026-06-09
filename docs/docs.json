@@ -241,6 +241,7 @@
                 "group": "Release Notes",
                 "pages": [
                   "releases/overview",
+                  "releases/v2.1.1",
                   "releases/v2.1.0",
                   "releases/v2.0.9",
                   "releases/v2.0.8",
