@@ -194,6 +194,8 @@ function Select-Language {
 
 # ── Python detection ─────────────────────────────────────────────
 function Find-Python {
+    # 3.13 compatibility is not great, so prefer 3.7-3.12 and only fall back to 3.13.
+    $fallback = $null
     foreach ($cmd in @("python3", "python")) {
         $bin = Get-Command $cmd -ErrorAction SilentlyContinue
         if (-not $bin) { continue }
@@ -201,12 +203,15 @@ function Find-Python {
             $ver = & $bin.Source -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}')" 2>$null
             $parts = $ver -split '\.'
             $major = [int]$parts[0]; $minor = [int]$parts[1]
-            if ($major -eq 3 -and $minor -ge 7 -and $minor -le 13) {
+            if ($major -eq 3 -and $minor -ge 7 -and $minor -le 12) {
                 return $bin.Source
+            }
+            if ($major -eq 3 -and $minor -eq 13 -and -not $fallback) {
+                $fallback = $bin.Source
             }
         } catch {}
     }
-    return $null
+    return $fallback
 }
 
 $PythonCmd = Find-Python
