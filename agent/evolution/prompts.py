@@ -127,7 +127,7 @@ them. When their signal is clear, act; do not be shy here.
 
 - Nothing worth evolving -> output exactly `[SILENT]` and nothing else.
 - Otherwise, after performing the edits, output a short user-facing summary in
-  the SAME LANGUAGE the user used. Write it for an ordinary user, in plain
+  the SAME LANGUAGE the user speaks in the conversation. Write it for an ordinary user, in plain
   everyday words — NOT a developer report. No need to expose internal details
   (file names/paths, system mechanics, etc.). Tell the user, briefly:
     1) that you just did a self-learning pass,
