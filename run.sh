@@ -597,7 +597,7 @@ select_model() {
     # The 12th option is "skip" -> configure later in the web console.
     select_menu sel "$title" \
         "DeepSeek (deepseek-v4-flash, deepseek-v4-pro, etc.)" \
-        "Claude (claude-opus-4-8, claude-opus-4-7, etc.)" \
+        "Claude (claude-fable-5, claude-opus-4-8, etc.)" \
         "Gemini (gemini-3.5-flash, gemini-3.1-pro-preview, etc.)" \
         "OpenAI (gpt-5.5, etc.)" \
         "MiniMax (MiniMax-M3, etc.)" \
@@ -629,7 +629,7 @@ read_model_config() {
 configure_model() {
     case "$model_choice" in
         1) read_model_config "DeepSeek" "deepseek-v4-flash" "DEEPSEEK_KEY" ;;
-        2) read_model_config "Claude" "claude-opus-4-8" "CLAUDE_KEY" ;;
+        2) read_model_config "Claude" "claude-fable-5" "CLAUDE_KEY" ;;
         3) read_model_config "Gemini" "gemini-3.1-pro-preview" "GEMINI_KEY" ;;
         4) read_model_config "OpenAI" "gpt-5.5" "OPENAI_KEY" ;;
         5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
