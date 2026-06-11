@@ -638,9 +638,9 @@ function New-ConfigFile {
         linkai_api_key            = ""
         linkai_app_code           = ""
         agent                     = $true
-        agent_max_context_tokens  = 40000
-        agent_max_context_turns   = 30
-        agent_max_steps           = 15
+        agent_max_context_tokens  = 50000
+        agent_max_context_turns   = 20
+        agent_max_steps           = 20
         # New installs opt into self-evolution (matches run.sh).
         self_evolution_enabled    = $true
     }
