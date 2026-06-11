@@ -26,10 +26,9 @@ available_setting = {
     "gemini_api_base": "https://generativelanguage.googleapis.com",  # gemini api base
     "custom_api_key": "",  # custom OpenAI-compatible provider api key (used when bot_type is "custom"); legacy single-provider field
     "custom_api_base": "",  # custom OpenAI-compatible provider api base (used when bot_type is "custom"); legacy single-provider field
-    # Multiple custom (OpenAI-compatible) providers. When non-empty, supersedes the legacy custom_api_key/base above.
-    # Each item: {"name": "siliconflow", "api_key": "sk-...", "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"}
+    # Multiple custom (OpenAI-compatible) providers. Activated via bot_type: "custom:<id>".
+    # Each item: {"id": "3f2a9c1b", "name": "siliconflow", "api_key": "sk-...", "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"}
     "custom_providers": [],
-    "custom_active_provider": "",  # name of the active provider in custom_providers; empty = use the first entry / legacy fields
     "proxy": "",  # proxy used by openai
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "gpt-3.5-turbo",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
@@ -325,24 +324,37 @@ class Config(dict):
 config = Config()
 
 
+def _mask_value(val):
+    """Mask a sensitive string value, keeping first 3 and last 3 chars."""
+    if not isinstance(val, str) or len(val) <= 8:
+        return val
+    return val[0:3] + "*" * 5 + val[-3:]
+
+
+def _mask_sensitive_recursive(obj):
+    """Recursively mask values whose keys contain 'key' or 'secret'."""
+    if isinstance(obj, dict):
+        masked = {}
+        for k, v in obj.items():
+            if ("key" in k or "secret" in k) and isinstance(v, str):
+                masked[k] = _mask_value(v)
+            else:
+                masked[k] = _mask_sensitive_recursive(v)
+        return masked
+    elif isinstance(obj, list):
+        return [_mask_sensitive_recursive(item) for item in obj]
+    return obj
+
+
 def drag_sensitive(config):
     try:
         if isinstance(config, str):
             conf_dict: dict = json.loads(config)
-            conf_dict_copy = copy.deepcopy(conf_dict)
-            for key in conf_dict_copy:
-                if "key" in key or "secret" in key:
-                    if isinstance(conf_dict_copy[key], str):
-                        conf_dict_copy[key] = conf_dict_copy[key][0:3] + "*" * 5 + conf_dict_copy[key][-3:]
+            conf_dict_copy = _mask_sensitive_recursive(conf_dict)
             return json.dumps(conf_dict_copy, indent=4)
 
         elif isinstance(config, dict):
-            config_copy = copy.deepcopy(config)
-            for key in config:
-                if "key" in key or "secret" in key:
-                    if isinstance(config_copy[key], str):
-                        config_copy[key] = config_copy[key][0:3] + "*" * 5 + config_copy[key][-3:]
-            return config_copy
+            return _mask_sensitive_recursive(config)
     except Exception as e:
         logger.exception(e)
         return config

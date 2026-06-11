@@ -1601,7 +1601,7 @@ class ConfigHandler:
         "open_ai_api_key", "deepseek_api_key", "qianfan_api_key", "claude_api_key", "gemini_api_key",
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
-        "custom_providers", "custom_active_provider",
+        "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "self_evolution_enabled", "web_password",
     }
@@ -2137,10 +2137,9 @@ class ModelsHandler:
         """Expand ``custom_providers`` into one card per provider.
 
         Each user-defined OpenAI-compatible provider becomes its own card with
-        a synthetic id ``custom:<name>`` so the frontend can render, edit,
-        delete and activate them independently. The card carries
-        ``is_custom=True`` and ``active`` flags that the UI uses to render the
-        extra controls (delete button, "set active" affordance).
+        id ``custom:<id>`` so the frontend can render, edit, delete and
+        activate them independently. The card carries ``is_custom=True`` and
+        ``active`` flags that the UI uses to render the extra controls.
 
         Returns an empty list when no multi-providers are configured, in which
         case the caller keeps the single legacy ``custom`` card untouched —
@@ -2148,7 +2147,7 @@ class ModelsHandler:
         ``custom_api_key`` / ``custom_api_base`` config.
         """
         try:
-            from models.custom_provider import get_custom_providers
+            from models.custom_provider import get_custom_providers, parse_custom_bot_type
             providers = get_custom_providers()
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"[ModelsHandler] failed to load custom_providers: {e}")
@@ -2156,27 +2155,26 @@ class ModelsHandler:
         if not providers:
             return []
 
-        active_name = (local_config.get("custom_active_provider") or "").strip()
-        # When no valid active name is set, the resolver treats the first entry
-        # as active; mirror that here so exactly one card is highlighted.
-        names = [p.get("name") for p in providers]
-        if active_name not in names:
-            active_name = names[0] if names else ""
+        # Determine the currently active provider id from bot_type.
+        bot_type = local_config.get("bot_type") or ""
+        _, active_id = parse_custom_bot_type(bot_type)
 
         meta = ConfigHandler.PROVIDER_MODELS.get("custom") or {}
         cards = []
         for p in providers:
-            name = p.get("name") or ""
+            pid = p.get("id") or ""
+            name = p.get("name") or pid
             raw_key = p.get("api_key") or ""
             raw_base = p.get("api_base") or ""
             configured = cls._is_real_key(raw_key)
             cards.append({
-                "id": f"custom:{name}",
+                "id": f"custom:{pid}",
                 "label": {"zh": name, "en": name},
                 "configured": configured,
                 "is_custom": True,
+                "custom_id": pid,
                 "custom_name": name,
-                "active": (name == active_name),
+                "active": (pid == active_id),
                 "model": p.get("model") or "",
                 # Custom cards are edited via the dedicated set_custom_provider
                 # action, not the field-based set_provider flow, so the field
@@ -2781,10 +2779,9 @@ class ModelsHandler:
     # ------------------------------------------------------------------
     # Multiple custom (OpenAI-compatible) providers
     # ------------------------------------------------------------------
-    # These actions manage the ``custom_providers`` list and the
-    # ``custom_active_provider`` selector. They are the write-side companion to
-    # ``_custom_provider_cards`` and let the console add / edit / delete /
-    # activate user-defined OpenAI-compatible providers individually.
+    # These actions manage the ``custom_providers`` list.  Activation is done
+    # by setting ``bot_type`` to ``"custom:<id>"``.  There is no separate
+    # ``custom_active_provider`` field — a single source of truth.
 
     @staticmethod
     def _normalize_custom_providers(raw) -> List[dict]:
@@ -2793,20 +2790,22 @@ class ModelsHandler:
             return []
         out = []
         for p in raw:
-            if isinstance(p, dict) and (p.get("name") or "").strip():
+            if isinstance(p, dict) and (p.get("id") or "").strip():
                 out.append(p)
         return out
 
-    def _persist_custom_providers(self, providers: List[dict], active_name) -> None:
-        """Write the providers list + active selector to both in-memory conf
-        and the on-disk config, then reset the bridge so bots rebuild."""
+    def _persist_custom_providers(self, providers: List[dict], bot_type=None) -> None:
+        """Write the providers list to both in-memory conf and the on-disk
+        config, then reset the bridge so bots rebuild.
+
+        If ``bot_type`` is given, also update ``bot_type``."""
         local_config = conf()
         file_cfg = self._read_file_config()
         local_config["custom_providers"] = providers
         file_cfg["custom_providers"] = providers
-        if active_name is not None:
-            local_config["custom_active_provider"] = active_name
-            file_cfg["custom_active_provider"] = active_name
+        if bot_type is not None:
+            local_config["bot_type"] = bot_type
+            file_cfg["bot_type"] = bot_type
         self._write_file_config(file_cfg)
         self._reset_bridge()
 
@@ -2817,48 +2816,38 @@ class ModelsHandler:
 
             {
               "action": "set_custom_provider",
-              "name": "siliconflow",        # required, unique
-              "api_base": "https://...",    # required when creating
-              "api_key": "sk-...",          # optional on edit (keep existing)
-              "model": "deepseek-ai/...",   # optional default model
-              "original_name": "old-name",  # optional, set when renaming
+              "id": "3f2a9c1b",             # required for edit; omit for create
+              "name": "siliconflow",         # required, display label
+              "api_base": "https://...",     # required when creating
+              "api_key": "sk-...",           # optional on edit (keep existing)
+              "model": "deepseek-ai/...",    # optional default model
               "make_active": true            # optional, also activate it
             }
         """
+        from models.custom_provider import generate_provider_id, parse_custom_bot_type
+
         name = (data.get("name") or "").strip()
         if not name:
             return json.dumps({"status": "error", "message": "name is required"})
 
+        provider_id = (data.get("id") or "").strip()
         api_base = (data.get("api_base") or "").strip()
         # api_key omitted/empty on edit => keep the existing one.
         api_key_raw = data.get("api_key")
         api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
         model = (data.get("model") or "").strip()
-        # ``original_name`` is supplied only when editing an existing entry
-        # (so it can be renamed). Its absence means "create a new provider";
-        # we must keep that distinction explicit, otherwise a create request
-        # for an already-taken name would be misread as an in-place edit.
-        original_name = (data.get("original_name") or "").strip()
-        is_edit = bool(original_name)
         make_active = bool(data.get("make_active"))
 
         local_config = conf()
         providers = self._normalize_custom_providers(local_config.get("custom_providers"))
 
-        # Reject a name collision unless it is the very entry being edited.
-        for p in providers:
-            if p.get("name") == name and p.get("name") != original_name:
-                return json.dumps({
-                    "status": "error",
-                    "message": f"a custom provider named {name!r} already exists",
-                })
-
-        existing = next((p for p in providers if p.get("name") == original_name), None) if is_edit else None
+        existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
         if existing is None:
             # Creating a new provider — api_base is mandatory.
             if not api_base:
                 return json.dumps({"status": "error", "message": "api_base is required"})
-            entry = {"name": name, "api_key": api_key, "api_base": api_base}
+            provider_id = generate_provider_id()
+            entry = {"id": provider_id, "name": name, "api_key": api_key, "api_base": api_base}
             if model:
                 entry["model"] = model
             providers.append(entry)
@@ -2876,64 +2865,68 @@ class ModelsHandler:
                 existing.pop("model", None)
             created = False
 
-        # Decide the active selector.
-        active_name = (local_config.get("custom_active_provider") or "").strip()
-        if make_active or created and not active_name:
+        # Decide bot_type.
+        _, current_active_id = parse_custom_bot_type(local_config.get("bot_type") or "")
+        new_bot_type = None
+        if make_active or (created and not current_active_id):
             # Activate on explicit request, or auto-activate the very first
             # provider so the resolver has a definite target.
-            active_name = name
-        elif active_name == original_name and original_name != name:
-            # The active provider was renamed; keep it pointed at the new name.
-            active_name = name
+            new_bot_type = f"custom:{provider_id}"
 
-        self._persist_custom_providers(providers, active_name)
+        self._persist_custom_providers(providers, new_bot_type)
         logger.info(
-            f"[ModelsHandler] custom provider {name!r} "
-            f"{'created' if created else 'updated'} (active={active_name!r})"
+            f"[ModelsHandler] custom provider {name!r} (id={provider_id}) "
+            f"{'created' if created else 'updated'}"
         )
         return json.dumps({
             "status": "success",
+            "id": provider_id,
             "name": name,
             "created": created,
-            "active": active_name,
         })
 
     def _handle_delete_custom_provider(self, data: dict) -> str:
-        """Remove a custom provider by name."""
-        name = (data.get("name") or "").strip()
-        if not name:
-            return json.dumps({"status": "error", "message": "name is required"})
+        """Remove a custom provider by id."""
+        from models.custom_provider import parse_custom_bot_type
+
+        provider_id = (data.get("id") or "").strip()
+        if not provider_id:
+            return json.dumps({"status": "error", "message": "id is required"})
 
         local_config = conf()
         providers = self._normalize_custom_providers(local_config.get("custom_providers"))
-        remaining = [p for p in providers if p.get("name") != name]
+        remaining = [p for p in providers if p.get("id") != provider_id]
         if len(remaining) == len(providers):
-            return json.dumps({"status": "error", "message": f"unknown custom provider: {name}"})
+            return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
 
-        active_name = (local_config.get("custom_active_provider") or "").strip()
-        if active_name == name:
-            # The active provider was removed — fall back to the first
-            # remaining entry (resolver does the same when the name is stale).
-            active_name = remaining[0]["name"] if remaining else ""
+        # If the deleted provider was active, fall back to the first remaining.
+        _, current_active_id = parse_custom_bot_type(local_config.get("bot_type") or "")
+        new_bot_type = None
+        if current_active_id == provider_id:
+            if remaining:
+                new_bot_type = f"custom:{remaining[0]['id']}"
+            else:
+                new_bot_type = "custom"  # revert to legacy
 
-        self._persist_custom_providers(remaining, active_name)
-        logger.info(f"[ModelsHandler] custom provider {name!r} deleted (active={active_name!r})")
-        return json.dumps({"status": "success", "name": name, "active": active_name})
+        self._persist_custom_providers(remaining, new_bot_type)
+        logger.info(f"[ModelsHandler] custom provider id={provider_id} deleted")
+        return json.dumps({"status": "success", "id": provider_id})
 
     def _handle_set_active_custom_provider(self, data: dict) -> str:
-        """Mark one of the existing custom providers as active."""
-        name = (data.get("name") or "").strip()
-        if not name:
-            return json.dumps({"status": "error", "message": "name is required"})
+        """Activate a custom provider by setting bot_type to 'custom:<id>'."""
+        provider_id = (data.get("id") or "").strip()
+        if not provider_id:
+            return json.dumps({"status": "error", "message": "id is required"})
 
         local_config = conf()
         providers = self._normalize_custom_providers(local_config.get("custom_providers"))
-        if not any(p.get("name") == name for p in providers):
-            return json.dumps({"status": "error", "message": f"unknown custom provider: {name}"})
+        if not any(p.get("id") == provider_id for p in providers):
+            return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
 
-        self._persist_custom_providers(providers, name)
-        logger.info(f"[ModelsHandler] active custom provider set to {name!r}")
-        return json.dumps({"status": "success", "active": name})
+        new_bot_type = f"custom:{provider_id}"
+        self._persist_custom_providers(providers, new_bot_type)
+        logger.info(f"[ModelsHandler] active custom provider set to id={provider_id}")
+        return json.dumps({"status": "success", "active_id": provider_id})
 
     def _handle_set_capability(self, data: dict) -> str:
         capability = (data.get("capability") or "").strip()
