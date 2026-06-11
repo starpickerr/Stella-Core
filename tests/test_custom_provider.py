@@ -4,8 +4,9 @@ Unit tests for multiple custom (OpenAI-compatible) provider support (issue #2838
 
 Covers models/custom_provider.py:
   - Backward compatibility: legacy custom_api_key / custom_api_base fallback
-  - Multi-provider selection via custom_providers / custom_active_provider
-  - Robustness against malformed config (missing name, non-dict, non-list)
+  - Multi-provider selection via bot_type "custom:<id>" routing
+  - parse_custom_bot_type helper
+  - Robustness against malformed config (missing id, non-dict, non-list)
 """
 import sys
 import os
@@ -23,11 +24,43 @@ def set_conf(d):
     config_module.config = Config(d)
 
 
+class TestParseCustomBotType(unittest.TestCase):
+    """parse_custom_bot_type() parsing logic."""
+
+    def setUp(self):
+        from models.custom_provider import parse_custom_bot_type
+        self.parse = parse_custom_bot_type
+
+    def test_legacy_custom(self):
+        is_custom, pid = self.parse("custom")
+        self.assertTrue(is_custom)
+        self.assertEqual(pid, "")
+
+    def test_custom_with_id(self):
+        is_custom, pid = self.parse("custom:3f2a9c1b")
+        self.assertTrue(is_custom)
+        self.assertEqual(pid, "3f2a9c1b")
+
+    def test_non_custom(self):
+        is_custom, pid = self.parse("openai")
+        self.assertFalse(is_custom)
+        self.assertEqual(pid, "")
+
+    def test_empty(self):
+        is_custom, pid = self.parse("")
+        self.assertFalse(is_custom)
+        self.assertEqual(pid, "")
+
+    def test_none(self):
+        is_custom, pid = self.parse(None)
+        self.assertFalse(is_custom)
+        self.assertEqual(pid, "")
+
+
 class TestResolveCustomCredentials(unittest.TestCase):
     """resolve_custom_credentials() resolution order and fallbacks."""
 
     def setUp(self):
-        # Import here so the module picks up our config-swapping helper.
         from models.custom_provider import resolve_custom_credentials, get_custom_providers
         self.resolve = resolve_custom_credentials
         self.get_providers = get_custom_providers
@@ -49,31 +82,15 @@ class TestResolveCustomCredentials(unittest.TestCase):
         set_conf({"bot_type": "custom"})
         self.assertEqual(self.resolve(), ("", None, None))
 
-    # --- Multi-provider selection ---
+    # --- Multi-provider selection via bot_type ---
 
-    def test_multi_providers_no_active_uses_first(self):
+    def test_provider_selected_by_id(self):
         set_conf({
-            "bot_type": "custom",
+            "bot_type": "custom:abc12345",
             "custom_providers": [
-                {"name": "siliconflow", "api_key": "sf-key",
+                {"id": "sf001", "name": "siliconflow", "api_key": "sf-key",
                  "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"},
-                {"name": "qiniu", "api_key": "qn-key",
-                 "api_base": "https://api.qnaigc.com/v1", "model": "deepseek-v3"},
-            ],
-        })
-        self.assertEqual(
-            self.resolve(),
-            ("sf-key", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3"),
-        )
-
-    def test_active_provider_selected(self):
-        set_conf({
-            "bot_type": "custom",
-            "custom_active_provider": "qiniu",
-            "custom_providers": [
-                {"name": "siliconflow", "api_key": "sf-key",
-                 "api_base": "https://api.siliconflow.cn/v1", "model": "m1"},
-                {"name": "qiniu", "api_key": "qn-key",
+                {"id": "abc12345", "name": "qiniu", "api_key": "qn-key",
                  "api_base": "https://api.qnaigc.com/v1", "model": "deepseek-v3"},
             ],
         })
@@ -82,25 +99,26 @@ class TestResolveCustomCredentials(unittest.TestCase):
             ("qn-key", "https://api.qnaigc.com/v1", "deepseek-v3"),
         )
 
-    def test_active_name_missing_falls_back_to_first(self):
+    def test_id_not_found_falls_back_to_legacy(self):
         set_conf({
-            "bot_type": "custom",
-            "custom_active_provider": "ghost",
+            "bot_type": "custom:ghost",
+            "custom_api_key": "legacy-key",
+            "custom_api_base": "https://legacy.example.com/v1",
             "custom_providers": [
-                {"name": "siliconflow", "api_key": "sf-key",
+                {"id": "sf001", "name": "siliconflow", "api_key": "sf-key",
                  "api_base": "https://api.siliconflow.cn/v1"},
             ],
         })
         self.assertEqual(
             self.resolve(),
-            ("sf-key", "https://api.siliconflow.cn/v1", None),
+            ("legacy-key", "https://legacy.example.com/v1", None),
         )
 
     def test_provider_without_model_returns_none_model(self):
         set_conf({
-            "bot_type": "custom",
+            "bot_type": "custom:local01",
             "custom_providers": [
-                {"name": "local", "api_key": "", "api_base": "http://localhost:11434/v1"},
+                {"id": "local01", "name": "local", "api_key": "", "api_base": "http://localhost:11434/v1"},
             ],
         })
         self.assertEqual(
@@ -112,12 +130,12 @@ class TestResolveCustomCredentials(unittest.TestCase):
 
     def test_malformed_entries_filtered_and_fallback(self):
         set_conf({
-            "bot_type": "custom",
+            "bot_type": "custom:nope",
             "custom_api_key": "legacy-key",
             "custom_api_base": "https://legacy.example.com/v1",
             "custom_providers": [
-                {"api_key": "no-name-key"},   # invalid: no name
-                "not-a-dict",                 # invalid: wrong type
+                {"name": "no-id", "api_key": "no-id-key"},   # invalid: no id
+                "not-a-dict",                                  # invalid: wrong type
             ],
         })
         # All entries invalid -> treated as empty -> legacy fallback
@@ -130,14 +148,14 @@ class TestResolveCustomCredentials(unittest.TestCase):
         set_conf({
             "bot_type": "custom",
             "custom_providers": [
-                {"name": "ok", "api_key": "k", "api_base": "https://x/v1"},
-                {"api_key": "no-name"},   # dropped
-                123,                       # dropped
+                {"id": "ok1", "name": "ok", "api_key": "k", "api_base": "https://x/v1"},
+                {"name": "no-id", "api_key": "no-id"},   # dropped: no id
+                123,                                       # dropped
             ],
         })
         providers = self.get_providers()
         self.assertEqual(len(providers), 1)
-        self.assertEqual(providers[0]["name"], "ok")
+        self.assertEqual(providers[0]["id"], "ok1")
 
     def test_custom_providers_not_a_list_falls_back(self):
         set_conf({
@@ -152,6 +170,22 @@ class TestResolveCustomCredentials(unittest.TestCase):
         )
 
 
+class TestGenerateProviderId(unittest.TestCase):
+    """generate_provider_id() produces valid short ids."""
+
+    def test_length_and_hex(self):
+        from models.custom_provider import generate_provider_id
+        pid = generate_provider_id()
+        self.assertEqual(len(pid), 8)
+        # Must be valid hex characters
+        int(pid, 16)
+
+    def test_uniqueness(self):
+        from models.custom_provider import generate_provider_id
+        ids = {generate_provider_id() for _ in range(100)}
+        self.assertEqual(len(ids), 100)
+
+
 class TestConfigDefaults(unittest.TestCase):
     """The new config fields must exist with safe defaults."""
 
@@ -160,10 +194,46 @@ class TestConfigDefaults(unittest.TestCase):
         self.assertIn("custom_providers", available_setting)
         self.assertEqual(available_setting["custom_providers"], [])
 
-    def test_default_config_has_active_provider(self):
+    def test_default_config_no_custom_active_provider(self):
+        """custom_active_provider was removed — replaced by bot_type routing."""
         from config import available_setting
-        self.assertIn("custom_active_provider", available_setting)
-        self.assertEqual(available_setting["custom_active_provider"], "")
+        self.assertNotIn("custom_active_provider", available_setting)
+
+
+class TestDragSensitiveNested(unittest.TestCase):
+    """drag_sensitive() must mask api_key in nested structures."""
+
+    def test_nested_api_key_masked(self):
+        from config import drag_sensitive
+        import json
+        test_config = {
+            "open_ai_api_key": "sk-1234567890abcdef",
+            "custom_providers": [
+                {"id": "x1", "name": "test", "api_key": "sk-nested-secret-key-long", "api_base": "https://x/v1"}
+            ],
+        }
+        result = drag_sensitive(test_config)
+        # Top-level key should be masked
+        self.assertNotIn("1234567890abcdef", str(result))
+        # Nested key should also be masked
+        self.assertNotIn("nested-secret-key-long", str(result))
+        # But the id/name/api_base should not be masked
+        self.assertIn("x1", str(result))
+        self.assertIn("test", str(result))
+        self.assertIn("https://x/v1", str(result))
+
+    def test_string_config_masked(self):
+        from config import drag_sensitive
+        import json
+        test_str = json.dumps({
+            "open_ai_api_key": "sk-1234567890abcdef",
+            "custom_providers": [
+                {"id": "x1", "api_key": "sk-nested-very-long-secret"}
+            ],
+        })
+        result = drag_sensitive(test_str)
+        self.assertNotIn("1234567890abcdef", result)
+        self.assertNotIn("nested-very-long-secret", result)
 
 
 if __name__ == "__main__":

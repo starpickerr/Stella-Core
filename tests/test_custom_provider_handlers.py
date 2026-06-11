@@ -4,14 +4,11 @@ Unit tests for the multi custom-provider management API (issue #2838, web UI).
 
 Covers channel/web/web_channel.py::ModelsHandler:
   - _custom_provider_cards / _provider_overview expansion
-  - _handle_set_custom_provider   (create / edit / rename / activate)
+  - _handle_set_custom_provider   (create / edit / activate)
   - _handle_delete_custom_provider
   - _handle_set_active_custom_provider
 
-These handlers are normally driven by the `web.py` framework, which isn't
-available in the headless test environment, so we stub the `web` module before
-import. The on-disk config read/write and the Bridge reset are patched to keep
-the tests hermetic (no file I/O, no live bot routing).
+Uses id-based routing (bot_type: "custom:<id>") — no custom_active_provider.
 """
 import json
 import os
@@ -72,7 +69,7 @@ class _HandlerHarness:
 
 class TestSetCustomProvider(unittest.TestCase):
     def setUp(self):
-        set_conf({"bot_type": "custom", "custom_providers": [], "custom_active_provider": ""})
+        set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
 
     def test_create_first_provider_auto_activates(self):
@@ -80,11 +77,15 @@ class TestSetCustomProvider(unittest.TestCase):
                           api_base="https://api.siliconflow.cn/v1", api_key="sf-key")
         self.assertEqual(res["status"], "success")
         self.assertTrue(res["created"])
-        self.assertEqual(res["active"], "siliconflow")
+        self.assertIn("id", res)
+        # bot_type should be updated to "custom:<id>"
+        bot_type = config_module.conf().get("bot_type")
+        self.assertTrue(bot_type.startswith("custom:"))
+        self.assertEqual(bot_type, f"custom:{res['id']}")
         providers = config_module.conf().get("custom_providers")
         self.assertEqual(len(providers), 1)
+        self.assertEqual(providers[0]["id"], res["id"])
         self.assertEqual(providers[0]["name"], "siliconflow")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "siliconflow")
         self.assertEqual(self.h.bridge_resets, 1)
 
     def test_create_requires_api_base(self):
@@ -97,161 +98,158 @@ class TestSetCustomProvider(unittest.TestCase):
         self.assertEqual(res["status"], "error")
 
     def test_second_provider_does_not_steal_active(self):
-        self.h.call(action="set_custom_provider", name="a",
-                    api_base="https://a/v1", api_key="ak")
-        res = self.h.call(action="set_custom_provider", name="b",
-                          api_base="https://b/v1", api_key="bk")
-        self.assertTrue(res["created"])
+        res1 = self.h.call(action="set_custom_provider", name="a",
+                           api_base="https://a/v1", api_key="ak")
+        res2 = self.h.call(action="set_custom_provider", name="b",
+                           api_base="https://b/v1", api_key="bk")
+        self.assertTrue(res2["created"])
         # First provider stays active unless make_active is requested.
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "a")
+        bot_type = config_module.conf().get("bot_type")
+        self.assertEqual(bot_type, f"custom:{res1['id']}")
 
     def test_make_active_flag(self):
         self.h.call(action="set_custom_provider", name="a",
                     api_base="https://a/v1", api_key="ak")
-        self.h.call(action="set_custom_provider", name="b",
-                    api_base="https://b/v1", api_key="bk", make_active=True)
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "b")
-
-    def test_duplicate_name_rejected(self):
-        self.h.call(action="set_custom_provider", name="dup",
-                    api_base="https://a/v1", api_key="ak")
-        res = self.h.call(action="set_custom_provider", name="dup",
-                          api_base="https://b/v1", api_key="bk")
-        self.assertEqual(res["status"], "error")
-        self.assertIn("already exists", res["message"])
-        # The original entry must be untouched.
-        providers = config_module.conf().get("custom_providers")
-        self.assertEqual(len(providers), 1)
-        self.assertEqual(providers[0]["api_base"], "https://a/v1")
+        res2 = self.h.call(action="set_custom_provider", name="b",
+                           api_base="https://b/v1", api_key="bk", make_active=True)
+        bot_type = config_module.conf().get("bot_type")
+        self.assertEqual(bot_type, f"custom:{res2['id']}")
 
     def test_edit_keeps_key_when_omitted(self):
-        self.h.call(action="set_custom_provider", name="a",
-                    api_base="https://a/v1", api_key="secret")
-        # Edit only the base; omit api_key.
         res = self.h.call(action="set_custom_provider", name="a",
-                          original_name="a", api_base="https://a2/v1")
-        self.assertEqual(res["status"], "success")
-        self.assertFalse(res["created"])
+                          api_base="https://a/v1", api_key="secret")
+        pid = res["id"]
+        # Edit only the base; omit api_key.
+        res2 = self.h.call(action="set_custom_provider", name="a",
+                           id=pid, api_base="https://a2/v1")
+        self.assertEqual(res2["status"], "success")
+        self.assertFalse(res2["created"])
         providers = config_module.conf().get("custom_providers")
         self.assertEqual(providers[0]["api_base"], "https://a2/v1")
         self.assertEqual(providers[0]["api_key"], "secret")  # preserved
 
-    def test_rename_updates_active_pointer(self):
-        self.h.call(action="set_custom_provider", name="old",
-                    api_base="https://a/v1", api_key="ak")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "old")
-        res = self.h.call(action="set_custom_provider", name="new",
-                          original_name="old", api_base="https://a/v1")
-        self.assertEqual(res["status"], "success")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "new")
-        names = [p["name"] for p in config_module.conf().get("custom_providers")]
-        self.assertEqual(names, ["new"])
+    def test_edit_can_rename(self):
+        res = self.h.call(action="set_custom_provider", name="old",
+                          api_base="https://a/v1", api_key="ak")
+        pid = res["id"]
+        res2 = self.h.call(action="set_custom_provider", name="new",
+                           id=pid, api_base="https://a/v1")
+        self.assertEqual(res2["status"], "success")
+        providers = config_module.conf().get("custom_providers")
+        self.assertEqual(providers[0]["name"], "new")
+        # ID stays the same
+        self.assertEqual(providers[0]["id"], pid)
 
     def test_edit_clears_model_when_empty(self):
-        self.h.call(action="set_custom_provider", name="a",
-                    api_base="https://a/v1", api_key="ak", model="m1")
+        res = self.h.call(action="set_custom_provider", name="a",
+                          api_base="https://a/v1", api_key="ak", model="m1")
+        pid = res["id"]
         self.assertEqual(config_module.conf().get("custom_providers")[0]["model"], "m1")
-        self.h.call(action="set_custom_provider", name="a", original_name="a",
+        self.h.call(action="set_custom_provider", name="a", id=pid,
                     api_base="https://a/v1", model="")
         self.assertNotIn("model", config_module.conf().get("custom_providers")[0])
 
 
 class TestDeleteCustomProvider(unittest.TestCase):
     def setUp(self):
-        set_conf({"bot_type": "custom", "custom_providers": [], "custom_active_provider": ""})
+        set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
-        self.h.call(action="set_custom_provider", name="a", api_base="https://a/v1", api_key="ak")
-        self.h.call(action="set_custom_provider", name="b", api_base="https://b/v1", api_key="bk")
+        self.res_a = self.h.call(action="set_custom_provider", name="a",
+                                 api_base="https://a/v1", api_key="ak")
+        self.res_b = self.h.call(action="set_custom_provider", name="b",
+                                 api_base="https://b/v1", api_key="bk")
 
     def test_delete_unknown(self):
-        res = self.h.call(action="delete_custom_provider", name="ghost")
+        res = self.h.call(action="delete_custom_provider", id="ghost")
         self.assertEqual(res["status"], "error")
 
     def test_delete_non_active(self):
-        res = self.h.call(action="delete_custom_provider", name="b")
+        res = self.h.call(action="delete_custom_provider", id=self.res_b["id"])
         self.assertEqual(res["status"], "success")
-        names = [p["name"] for p in config_module.conf().get("custom_providers")]
-        self.assertEqual(names, ["a"])
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "a")
+        ids = [p["id"] for p in config_module.conf().get("custom_providers")]
+        self.assertEqual(ids, [self.res_a["id"]])
+        # bot_type unchanged (still pointing to a)
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_a['id']}")
 
     def test_delete_active_falls_back_to_first_remaining(self):
         # 'a' is active (created first); deleting it should re-point to 'b'.
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "a")
-        res = self.h.call(action="delete_custom_provider", name="a")
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_a['id']}")
+        res = self.h.call(action="delete_custom_provider", id=self.res_a["id"])
         self.assertEqual(res["status"], "success")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "b")
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_b['id']}")
 
-    def test_delete_last_clears_active(self):
-        self.h.call(action="delete_custom_provider", name="a")
-        self.h.call(action="delete_custom_provider", name="b")
+    def test_delete_last_reverts_to_legacy(self):
+        self.h.call(action="delete_custom_provider", id=self.res_a["id"])
+        self.h.call(action="delete_custom_provider", id=self.res_b["id"])
         self.assertEqual(config_module.conf().get("custom_providers"), [])
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "")
+        # When all providers deleted, reverts to legacy "custom"
+        self.assertEqual(config_module.conf().get("bot_type"), "custom")
 
 
 class TestSetActiveCustomProvider(unittest.TestCase):
     def setUp(self):
-        set_conf({"bot_type": "custom", "custom_providers": [], "custom_active_provider": ""})
+        set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
-        self.h.call(action="set_custom_provider", name="a", api_base="https://a/v1", api_key="ak")
-        self.h.call(action="set_custom_provider", name="b", api_base="https://b/v1", api_key="bk")
+        self.res_a = self.h.call(action="set_custom_provider", name="a",
+                                 api_base="https://a/v1", api_key="ak")
+        self.res_b = self.h.call(action="set_custom_provider", name="b",
+                                 api_base="https://b/v1", api_key="bk")
 
     def test_set_active_valid(self):
-        res = self.h.call(action="set_active_custom_provider", name="b")
+        res = self.h.call(action="set_active_custom_provider", id=self.res_b["id"])
         self.assertEqual(res["status"], "success")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "b")
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_b['id']}")
 
     def test_set_active_unknown(self):
-        res = self.h.call(action="set_active_custom_provider", name="ghost")
+        res = self.h.call(action="set_active_custom_provider", id="ghost")
         self.assertEqual(res["status"], "error")
-        self.assertEqual(config_module.conf().get("custom_active_provider"), "a")
+        # bot_type unchanged
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_a['id']}")
 
 
 class TestProviderOverviewExpansion(unittest.TestCase):
     """_provider_overview / _custom_provider_cards should expand the list."""
 
     def test_no_custom_providers_keeps_single_card(self):
-        set_conf({"bot_type": "custom", "custom_providers": [], "custom_active_provider": ""})
+        set_conf({"bot_type": "custom", "custom_providers": []})
         cards = ModelsHandler._custom_provider_cards(config_module.conf())
         self.assertEqual(cards, [])
         overview = ModelsHandler._provider_overview()
         custom_cards = [c for c in overview if c.get("id") == "custom"]
         # Legacy single custom card remains present.
         self.assertEqual(len(custom_cards), 1)
-        self.assertTrue(custom_cards[0].get("is_custom"))
 
     def test_multi_providers_expand_into_cards(self):
         set_conf({
-            "bot_type": "custom",
-            "custom_active_provider": "b",
+            "bot_type": "custom:id_b",
             "custom_providers": [
-                {"name": "a", "api_key": "ak", "api_base": "https://a/v1"},
-                {"name": "b", "api_key": "bk", "api_base": "https://b/v1", "model": "m"},
+                {"id": "id_a", "name": "a", "api_key": "ak", "api_base": "https://a/v1"},
+                {"id": "id_b", "name": "b", "api_key": "bk", "api_base": "https://b/v1", "model": "m"},
             ],
         })
         overview = ModelsHandler._provider_overview()
         custom_cards = [c for c in overview if c.get("is_custom")]
         self.assertEqual(len(custom_cards), 2)
-        by_name = {c["custom_name"]: c for c in custom_cards}
-        self.assertEqual(by_name["a"]["id"], "custom:a")
-        self.assertFalse(by_name["a"]["active"])
-        self.assertTrue(by_name["b"]["active"])
-        self.assertEqual(by_name["b"]["model"], "m")
+        by_id = {c["custom_id"]: c for c in custom_cards}
+        self.assertEqual(by_id["id_a"]["id"], "custom:id_a")
+        self.assertFalse(by_id["id_a"]["active"])
+        self.assertTrue(by_id["id_b"]["active"])
+        self.assertEqual(by_id["id_b"]["model"], "m")
         # No single legacy "custom" card when expanded.
         self.assertFalse(any(c.get("id") == "custom" for c in overview))
 
-    def test_active_defaults_to_first_when_unset(self):
+    def test_no_active_shows_none_active(self):
+        """When bot_type is plain 'custom', no card is marked active."""
         set_conf({
             "bot_type": "custom",
-            "custom_active_provider": "",
             "custom_providers": [
-                {"name": "a", "api_key": "ak", "api_base": "https://a/v1"},
-                {"name": "b", "api_key": "bk", "api_base": "https://b/v1"},
+                {"id": "id_a", "name": "a", "api_key": "ak", "api_base": "https://a/v1"},
+                {"id": "id_b", "name": "b", "api_key": "bk", "api_base": "https://b/v1"},
             ],
         })
         cards = ModelsHandler._custom_provider_cards(config_module.conf())
-        by_name = {c["custom_name"]: c for c in cards}
-        self.assertTrue(by_name["a"]["active"])
-        self.assertFalse(by_name["b"]["active"])
+        active_cards = [c for c in cards if c.get("active")]
+        self.assertEqual(len(active_cards), 0)
 
 
 if __name__ == "__main__":

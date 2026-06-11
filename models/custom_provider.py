@@ -13,25 +13,34 @@ Config model
 - ``custom_providers``: list of dicts, each describing one custom provider::
 
       {
-          "name": "siliconflow",          # unique, user-facing identifier
-          "api_key": "sk-...",            # required
-          "api_base": "https://...",     # required, must be OpenAI-compatible
+          "id": "3f2a9c1b",               # server-generated short uuid (primary key)
+          "name": "siliconflow",           # user-facing display label (not a key)
+          "api_key": "sk-...",             # required
+          "api_base": "https://...",       # required, must be OpenAI-compatible
           "model": "deepseek-ai/DeepSeek-V3"  # optional default model
       }
 
-- ``custom_active_provider``: the ``name`` of the provider to use. When empty
-  (or pointing to a non-existent name) we fall back to the first provider in
-  the list, and finally to the legacy ``custom_api_key`` / ``custom_api_base``.
+Routing
+-------
+- ``bot_type: "custom"`` (legacy): reads the flat ``custom_api_key`` / ``custom_api_base``.
+- ``bot_type: "custom:<id>"`` (multi-provider): looks up the provider by id in
+  ``custom_providers``.  There is a single source of truth — no separate
+  ``custom_active_provider`` field.
 
 Backward-compatibility contract
 -------------------------------
-When ``custom_providers`` is empty, ``resolve_custom_credentials`` returns
-exactly the legacy ``custom_api_key`` / ``custom_api_base`` values, so existing
-deployments behave byte-for-byte identically.
+When ``bot_type`` is exactly ``"custom"`` (no colon suffix), behaviour is
+unchanged: we return ``custom_api_key`` / ``custom_api_base`` values.
 """
 
+import uuid
 from config import conf
 from common.log import logger
+
+
+def generate_provider_id() -> str:
+    """Generate a short random id for a new custom provider."""
+    return uuid.uuid4().hex[:8]
 
 
 def get_custom_providers():
@@ -39,43 +48,75 @@ def get_custom_providers():
     providers = conf().get("custom_providers")
     if not isinstance(providers, list):
         return []
-    # Keep only well-formed entries with a name.
-    return [p for p in providers if isinstance(p, dict) and p.get("name")]
+    # Keep only well-formed entries with an id.
+    return [p for p in providers if isinstance(p, dict) and p.get("id")]
 
 
-def _find_active_provider(providers):
-    """Pick the active provider from the list, or None when list is empty."""
-    if not providers:
+def _find_provider_by_id(providers, provider_id):
+    """Look up a provider by its id, or None if not found."""
+    if not providers or not provider_id:
         return None
-    active_name = conf().get("custom_active_provider") or ""
-    if active_name:
-        for p in providers:
-            if p.get("name") == active_name:
-                return p
-        logger.warning(
-            "[CUSTOM] active provider '%s' not found in custom_providers, "
-            "falling back to the first entry", active_name
-        )
-    return providers[0]
+    for p in providers:
+        if p.get("id") == provider_id:
+            return p
+    return None
+
+
+def parse_custom_bot_type(bot_type):
+    """Parse bot_type to extract custom provider id.
+
+    Returns:
+        (is_custom, provider_id) where:
+        - is_custom: True if bot_type starts with "custom"
+        - provider_id: the id suffix (e.g. "3f2a9c1b") or empty string for legacy mode
+    """
+    if not bot_type or not isinstance(bot_type, str):
+        return False, ""
+    if bot_type == "custom":
+        return True, ""
+    if bot_type.startswith("custom:"):
+        return True, bot_type[7:]  # len("custom:") == 7
+    return False, ""
 
 
 def resolve_custom_credentials():
     """Resolve the effective (api_key, api_base, model) for custom mode.
 
     Resolution order:
-      1. The active entry in ``custom_providers`` (multi-provider mode).
-      2. The legacy flat keys ``custom_api_key`` / ``custom_api_base``.
+      1. If ``bot_type`` is ``"custom:<id>"``, look up that id in
+         ``custom_providers``.
+      2. If ``bot_type`` is exactly ``"custom"`` (legacy), return the flat
+         ``custom_api_key`` / ``custom_api_base``.
 
     :return: tuple ``(api_key, api_base, model)``. ``api_base`` and ``model``
              may be ``None`` / empty when not configured.
     """
-    provider = _find_active_provider(get_custom_providers())
-    if provider is not None:
+    bot_type = conf().get("bot_type", "")
+    is_custom, provider_id = parse_custom_bot_type(bot_type)
+
+    if not is_custom:
+        # Not custom at all — should not happen but be defensive.
         return (
-            provider.get("api_key", ""),
-            provider.get("api_base") or None,
-            provider.get("model") or None,
+            conf().get("open_ai_api_key", ""),
+            conf().get("open_ai_api_base") or None,
+            None,
         )
+
+    if provider_id:
+        # Multi-provider mode: look up by id.
+        providers = get_custom_providers()
+        provider = _find_provider_by_id(providers, provider_id)
+        if provider is not None:
+            return (
+                provider.get("api_key", ""),
+                provider.get("api_base") or None,
+                provider.get("model") or None,
+            )
+        logger.warning(
+            "[CUSTOM] provider id '%s' not found in custom_providers, "
+            "falling back to legacy fields", provider_id
+        )
+
     # Legacy single-provider fallback — unchanged behavior.
     return (
         conf().get("custom_api_key", ""),
