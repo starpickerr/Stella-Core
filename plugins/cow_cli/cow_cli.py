@@ -147,6 +147,7 @@ class CowCliPlugin(Plugin):
         else:  # "typo"
             reply_text = self._typo_hint(token, result[1])
 
+        reply_text = self._harden_line_breaks(reply_text, e_context)
         e_context["reply"] = Reply(ReplyType.TEXT, reply_text)
         e_context.action = EventAction.BREAK_PASS
 
@@ -1515,6 +1516,43 @@ class CowCliPlugin(Plugin):
             return e_context["context"].kwargs.get("channel_type") == "web"
         except Exception:
             return False
+
+    @staticmethod
+    def _harden_line_breaks(text: str, e_context) -> str:
+        """WeChat PC renders bot messages as Markdown, where a lone '\\n' is
+        collapsed into a space, so plain-text CLI output gets squashed onto
+        one line. Prefix consecutive text lines with '- ' so the Markdown
+        list keeps each on its own line (the only form WeChat respects).
+        WeChat-only; other channels are untouched. Blank lines, code fences,
+        and lines that are already list items are left intact."""
+        if e_context is None or not text or "\n" not in text:
+            return text
+        try:
+            if e_context["context"].kwargs.get("channel_type") != "weixin":
+                return text
+        except Exception:
+            return text
+
+        out = []
+        in_code = False
+        lines = text.split("\n")
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("```"):
+                in_code = not in_code
+                out.append(line)
+                continue
+            stripped = line.lstrip()
+            prev_packed = i > 0 and lines[i - 1].strip() != ""
+            next_packed = i < len(lines) - 1 and lines[i + 1].strip() != ""
+            # Only convert lines inside a multi-line block (a neighbour line is
+            # non-blank); standalone paragraphs separated by blank lines, code
+            # blocks, blank lines, and existing list items are left intact.
+            if (in_code or not stripped or stripped.startswith(("- ", "* ", "+ "))
+                    or not (prev_packed or next_packed)):
+                out.append(line)
+            else:
+                out.append("- " + stripped)
+        return "\n".join(out)
 
     @staticmethod
     def _build_dream_result(flush_mgr, is_web: bool) -> str:
