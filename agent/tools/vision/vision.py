@@ -17,11 +17,14 @@ Provider resolution:
 """
 
 import base64
+import ipaddress
 import os
+import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -654,6 +657,40 @@ class Vision(BaseTool):
             return api_base
         return api_base.rstrip("/") + "/v1"
 
+    @staticmethod
+    def _validate_url_safe(url: str) -> None:
+        """Reject URLs that target private/loopback/link-local addresses (SSRF guard).
+
+        Resolves the hostname to its IP address(es) and blocks any that fall
+        into non-public ranges.  Also rejects URLs with no host, non-HTTP(S)
+        schemes, or hosts that fail DNS resolution.
+
+        Raises:
+            ValueError: if the URL targets a disallowed address.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
+
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL has no hostname")
+
+        try:
+            # Resolve all addresses for the hostname.
+            addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except socket.gaierror:
+            raise ValueError(f"Cannot resolve hostname: {hostname}")
+
+        for family, _, _, _, sockaddr in addr_infos:
+            ip_str = sockaddr[0]
+            ip = ipaddress.ip_address(ip_str)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise ValueError(
+                    f"URL resolves to a non-public address ({ip_str}), "
+                    f"request blocked for security"
+                )
+
     def _build_image_content(self, image: str) -> dict:
         """
         Build the image_url content block.
@@ -661,6 +698,7 @@ class Vision(BaseTool):
         so every bot backend can consume them without extra downloads.
         """
         if image.startswith(("http://", "https://")):
+            self._validate_url_safe(image)
             return self._download_to_data_url(image)
 
         if not os.path.isfile(image):
