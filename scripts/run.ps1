@@ -32,6 +32,44 @@ try {
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
 
+# ── disable console QuickEdit mode ───────────────────────────────
+# On Windows, QuickEdit is ON by default: a stray click/selection in the
+# window FREEZES all output until the user presses a key. During long steps
+# (git clone, pip install) this looks like a hang, and the wake-up key gets
+# buffered and later auto-confirms a menu default. Turning QuickEdit off
+# removes both the freeze and the phantom keystrokes.
+try {
+    if (-not ([Console]::IsInputRedirected)) {
+        $quickEditType = @'
+using System;
+using System.Runtime.InteropServices;
+public static class ConsoleQuickEdit {
+    const int  STD_INPUT_HANDLE   = -10;
+    const uint ENABLE_QUICK_EDIT  = 0x0040;
+    const uint ENABLE_EXTENDED    = 0x0080;
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")]
+    static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")]
+    static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    public static void Disable() {
+        IntPtr handle = GetStdHandle(STD_INPUT_HANDLE);
+        uint mode;
+        if (!GetConsoleMode(handle, out mode)) { return; }
+        mode &= ~ENABLE_QUICK_EDIT;   // clear QuickEdit
+        mode |=  ENABLE_EXTENDED;     // keep extended flags valid
+        SetConsoleMode(handle, mode);
+    }
+}
+'@
+        if (-not ([System.Management.Automation.PSTypeName]'ConsoleQuickEdit').Type) {
+            Add-Type -TypeDefinition $quickEditType -ErrorAction Stop
+        }
+        [ConsoleQuickEdit]::Disable()
+    }
+} catch {}
+
 # ── colours ──────────────────────────────────────────────────────
 function Write-Cow   { param([string]$M) Write-Host $M -ForegroundColor Green  }
 function Write-Warn  { param([string]$M) Write-Host $M -ForegroundColor Yellow }
@@ -91,6 +129,17 @@ function Initialize-UiLang {
     }
 }
 
+# Drain any buffered console keystrokes. During long steps (git clone, pip
+# install) users often hit Enter to "wake up" a seemingly stuck console; those
+# keys sit in the input buffer and would otherwise be consumed by the next
+# ReadKey, auto-confirming a menu's default. Flush them before reading input.
+function Clear-InputBuffer {
+    try {
+        if ([Console]::IsInputRedirected) { return }
+        while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) }
+    } catch {}
+}
+
 # ── arrow-key selectable menu with number fallback ───────────────
 # Usage: $idx = Select-Menu -Title "..." -Options @("a","b") [-Default 1]
 # Returns the selected 1-based index.
@@ -124,6 +173,10 @@ function Select-Menu {
 
     Write-Info $Title
     Write-Host (T "↑/↓ 选择，Enter 确认" "Use ↑/↓ to move, Enter to select") -ForegroundColor Cyan
+
+    # Discard keystrokes buffered during the previous (possibly long-running)
+    # step so a leftover Enter doesn't instantly confirm the default option.
+    Clear-InputBuffer
 
     [Console]::CursorVisible = $false
     $firstDraw = $true
@@ -573,8 +626,11 @@ function New-ConfigFile {
         mimo_api_key              = ""
         deepseek_api_key          = ""
         deepseek_api_base         = "https://api.deepseek.com/v1"
-        voice_to_text             = "openai"
-        text_to_voice             = "openai"
+        # Leave ASR/TTS provider empty so the web console auto-suggests the
+        # vendor whose API key is actually configured (e.g. LinkAI), instead
+        # of always defaulting to OpenAI.
+        voice_to_text             = ""
+        text_to_voice             = ""
         voice_reply_voice         = $false
         speech_recognition        = $true
         group_speech_recognition  = $false
@@ -585,6 +641,8 @@ function New-ConfigFile {
         agent_max_context_tokens  = 40000
         agent_max_context_turns   = 30
         agent_max_steps           = 15
+        # New installs opt into self-evolution (matches run.sh).
+        self_evolution_enabled    = $true
     }
 
     # Set the API key into the right field (skipped models leave it empty).
