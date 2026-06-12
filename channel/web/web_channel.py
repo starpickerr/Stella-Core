@@ -3016,6 +3016,10 @@ class ChannelsHandler:
             "fields": [
                 {"key": "wecom_bot_id", "label": "Bot ID", "type": "text"},
                 {"key": "wecom_bot_secret", "label": "Secret", "type": "secret"},
+                {"key": "wecom_bot_callback", "label": "Callback Mode", "type": "bool", "default": False},
+                {"key": "wecom_bot_token", "label": "Token", "type": "secret"},
+                {"key": "wecom_bot_encoding_aes_key", "label": "EncodingAESKey", "type": "secret"},
+                {"key": "wecom_bot_port", "label": "Port", "type": "number", "default": 9892},
             ],
         }),
         ("qq", {

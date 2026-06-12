@@ -17,11 +17,13 @@ import time
 import uuid
 
 import requests
+import web
 import websocket
 
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
+from channel.wecom_bot.wecom_bot_crypt import WecomBotCrypt
 from channel.wecom_bot.wecom_bot_message import WecomBotMessage
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -97,6 +99,14 @@ class WecomBotChannel(ChatChannel):
         self._pending_lock = threading.Lock()
         self._stream_states = {}  # req_id -> {"stream_id": str, "content": str}
 
+        # Callback (webhook) mode state
+        self.callback_mode = False
+        self._crypt = None
+        self._http_server = None
+        # stream_id -> {"committed", "current", "finished", "images", "last_access"}
+        self._callback_streams = ExpiredDict(60 * 10)  # auto-expire after 10min (max poll window is 6min)
+        self._callback_lock = threading.Lock()
+
         conf()["group_name_white_list"] = ["ALL_GROUP"]
         conf()["single_chat_prefix"] = [""]
 
@@ -105,6 +115,11 @@ class WecomBotChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def startup(self):
+        self.callback_mode = bool(conf().get("wecom_bot_callback", False))
+        if self.callback_mode:
+            self._startup_callback()
+            return
+
         self.bot_id = conf().get("wecom_bot_id", "")
         self.bot_secret = conf().get("wecom_bot_secret", "")
 
@@ -127,6 +142,13 @@ class WecomBotChannel(ChatChannel):
                 pass
         self._ws = None
         self._connected = False
+        if self._http_server:
+            try:
+                self._http_server.stop()
+                logger.info("[WecomBot] Callback HTTP server stopped")
+            except Exception as e:
+                logger.warning(f"[WecomBot] Error stopping HTTP server: {e}")
+            self._http_server = None
 
     # ------------------------------------------------------------------
     # WebSocket connection
@@ -182,6 +204,158 @@ class WecomBotChannel(ChatChannel):
 
     def _gen_req_id(self) -> str:
         return uuid.uuid4().hex[:16]
+
+    # ------------------------------------------------------------------
+    # Callback (webhook) mode
+    # ------------------------------------------------------------------
+
+    def _startup_callback(self):
+        """Start an HTTP server that receives encrypted callbacks (webhook mode).
+
+        The bot's "接收消息" URL in the WeCom admin console should point at this
+        server (any path is accepted). Verification (GET) and message delivery
+        (POST) are both handled by ``WecomBotCallbackController``.
+        """
+        token = conf().get("wecom_bot_token", "")
+        aes_key = conf().get("wecom_bot_encoding_aes_key", "")
+        if not token or not aes_key:
+            err = "[WecomBot] callback mode requires wecom_bot_token and wecom_bot_encoding_aes_key"
+            logger.error(err)
+            self.report_startup_error(err)
+            return
+
+        try:
+            # Enterprise-internal smart bot: receive_id is an empty string.
+            self._crypt = WecomBotCrypt(token, aes_key, "")
+        except Exception as e:
+            err = f"[WecomBot] invalid callback credentials: {e}"
+            logger.error(err)
+            self.report_startup_error(err)
+            return
+
+        port = int(conf().get("wecom_bot_port", 9892))
+        logger.info(f"[WecomBot] Starting callback (webhook) server on port {port}...")
+        urls = ("/.*", "channel.wecom_bot.wecom_bot_channel.WecomBotCallbackController")
+        app = web.application(urls, globals(), autoreload=False)
+        func = web.httpserver.StaticMiddleware(app.wsgifunc())
+        func = web.httpserver.LogMiddleware(func)
+        server = web.httpserver.WSGIServer(("0.0.0.0", port), func)
+        self._http_server = server
+        self.report_startup_success()
+        try:
+            server.start()
+        except (KeyboardInterrupt, SystemExit):
+            server.stop()
+
+    def _new_callback_stream(self) -> str:
+        """Create a new stream state and return its id."""
+        stream_id = uuid.uuid4().hex[:16]
+        with self._callback_lock:
+            self._callback_streams[stream_id] = {
+                "committed": "",
+                "current": "",
+                "finished": False,
+                "images": [],  # list of (base64_str, md5_str), flushed only at finish
+                "last_access": time.time(),
+            }
+        return stream_id
+
+    def _callback_handle_message(self, data: dict) -> dict:
+        """Handle a freshly-received user message in callback mode.
+
+        Produces the context for async processing and returns the initial passive
+        reply (a stream packet with finish=false) so WeCom starts polling for the
+        agent's streamed answer. Returns ``None`` when there's nothing to reply
+        (e.g. an image/file silently cached for the next query).
+        """
+        msg_id = data.get("msgid", "")
+        if msg_id and self.received_msgs.get(msg_id):
+            logger.debug(f"[WecomBot] Duplicate msg filtered: {msg_id}")
+            return None
+        if msg_id:
+            self.received_msgs[msg_id] = True
+
+        chattype = data.get("chattype", "single")
+        is_group = chattype == "group"
+
+        default_aeskey = conf().get("wecom_bot_encoding_aes_key", "")
+        result = self._build_context(data, is_group, default_aeskey=default_aeskey)
+        if not result:
+            return None
+        context, wecom_msg = result
+
+        stream_id = self._new_callback_stream()
+        wecom_msg.stream_id = stream_id
+        context["wecom_stream_id"] = stream_id
+        context["on_event"] = self._make_callback_stream_callback(stream_id)
+        self.produce(context)
+
+        # First passive reply: register the stream id, WeCom will poll for updates.
+        return {
+            "msgtype": "stream",
+            "stream": {"id": stream_id, "finish": False, "content": ""},
+        }
+
+    def _callback_handle_stream_poll(self, data: dict) -> dict:
+        """Handle a "流式消息刷新" poll: return the latest accumulated content."""
+        stream_id = data.get("stream", {}).get("id", "")
+        with self._callback_lock:
+            state = self._callback_streams.get(stream_id)
+            if state is None:
+                # Unknown / expired stream: tell WeCom we're done to stop polling.
+                return {"msgtype": "stream", "stream": {"id": stream_id, "finish": True, "content": ""}}
+            state["last_access"] = time.time()
+            content = state["committed"] + state["current"]
+            finished = state["finished"]
+            images = state["images"] if finished else []
+
+        stream = {"id": stream_id, "finish": finished, "content": content}
+        if images:
+            stream["msg_item"] = [
+                {"msgtype": "image", "image": {"base64": b64, "md5": md5}}
+                for (b64, md5) in images
+            ]
+        return {"msgtype": "stream", "stream": stream}
+
+    def _make_callback_stream_callback(self, stream_id: str):
+        """Build an on_event callback that accumulates agent output into stream state.
+
+        Mirrors the websocket streaming behaviour: intermediate turns (text before
+        a tool call) are committed with a '---' separator; WeCom reads the full
+        accumulated content on each poll.
+        """
+        def on_event(event: dict):
+            event_type = event.get("type")
+            edata = event.get("data", {})
+            with self._callback_lock:
+                state = self._callback_streams.get(stream_id)
+                if not state:
+                    return
+
+                if event_type == "turn_start":
+                    state["current"] = ""
+                elif event_type == "message_update":
+                    delta = edata.get("delta", "")
+                    if delta:
+                        state["current"] += delta
+                elif event_type == "message_end":
+                    tool_calls = edata.get("tool_calls", [])
+                    if tool_calls:
+                        if state["current"].strip():
+                            state["committed"] += state["current"].strip() + "\n\n---\n\n"
+                            state["current"] = ""
+                    else:
+                        state["committed"] += state["current"]
+                        state["current"] = ""
+                elif event_type == "agent_cancelled":
+                    if state["current"]:
+                        state["committed"] += state["current"]
+                        state["current"] = ""
+                    state["committed"] = state["committed"].rstrip()
+                    if state["committed"].endswith("---"):
+                        state["committed"] = state["committed"][:-3].rstrip()
+
+        return on_event
 
     # ------------------------------------------------------------------
     # Subscribe & heartbeat
@@ -287,16 +461,31 @@ class WecomBotChannel(ChatChannel):
         chattype = body.get("chattype", "single")
         is_group = chattype == "group"
 
+        result = self._build_context(body, is_group)
+        if not result:
+            return
+        context, wecom_msg = result
+        wecom_msg.req_id = req_id
+        if req_id:
+            context["on_event"] = self._make_stream_callback(req_id)
+        self.produce(context)
+
+    def _build_context(self, body: dict, is_group: bool, default_aeskey: str = ""):
+        """Parse a wecom message body into a Context, applying file-cache logic.
+
+        Shared by both the websocket (long-connection) and callback (webhook)
+        receive paths. Returns ``(context, wecom_msg)`` when the message should be
+        handed to the agent, or ``None`` when it was consumed (cached image/file,
+        parse failure, etc.).
+        """
         try:
-            wecom_msg = WecomBotMessage(body, is_group=is_group)
+            wecom_msg = WecomBotMessage(body, is_group=is_group, default_aeskey=default_aeskey)
         except NotImplementedError as e:
             logger.warning(f"[WecomBot] {e}")
-            return
+            return None
         except Exception as e:
             logger.error(f"[WecomBot] Failed to parse message: {e}", exc_info=True)
-            return
-
-        wecom_msg.req_id = req_id
+            return None
 
         # File cache logic (same pattern as feishu)
         from channel.file_cache import get_file_cache
@@ -314,13 +503,13 @@ class WecomBotChannel(ChatChannel):
             if hasattr(wecom_msg, "image_path") and wecom_msg.image_path:
                 file_cache.add(session_id, wecom_msg.image_path, file_type="image")
                 logger.info(f"[WecomBot] Image cached for session {session_id}")
-            return
+            return None
 
         if wecom_msg.ctype == ContextType.FILE:
             wecom_msg.prepare()
             file_cache.add(session_id, wecom_msg.content, file_type="file")
             logger.info(f"[WecomBot] File cached for session {session_id}: {wecom_msg.content}")
-            return
+            return None
 
         if wecom_msg.ctype == ContextType.TEXT:
             cached_files = file_cache.get(session_id)
@@ -346,10 +535,9 @@ class WecomBotChannel(ChatChannel):
             msg=wecom_msg,
             no_need_at=True,
         )
-        if context:
-            if req_id:
-                context["on_event"] = self._make_stream_callback(req_id)
-            self.produce(context)
+        if not context:
+            return None
+        return context, wecom_msg
 
     # ------------------------------------------------------------------
     # Event callback
@@ -491,10 +679,120 @@ class WecomBotChannel(ChatChannel):
         return context
 
     # ------------------------------------------------------------------
+    # Callback (webhook) send: write the final reply into the stream state
+    # so the next "流式消息刷新" poll returns it with finish=true.
+    # ------------------------------------------------------------------
+
+    def _callback_send(self, reply: Reply, context: Context):
+        msg = context.get("msg")
+        stream_id = getattr(msg, "stream_id", None) if msg else None
+        if not stream_id:
+            stream_id = context.get("wecom_stream_id")
+        if not stream_id:
+            logger.warning("[WecomBot] callback send without stream_id, dropping reply")
+            return
+
+        if reply.type == ReplyType.TEXT:
+            self._callback_finalize_text(stream_id, reply.content)
+        elif reply.type in (ReplyType.IMAGE_URL, ReplyType.IMAGE):
+            self._callback_finalize_image(stream_id, reply.content)
+        elif reply.type == ReplyType.FILE:
+            # Passive callback replies only support text + image (base64); files
+            # are not supported by the protocol, so degrade to a text notice.
+            text = getattr(reply, "text_content", "") or ""
+            note = (text + "\n" if text else "") + "[文件回复在回调模式下暂不支持]"
+            self._callback_finalize_text(stream_id, note)
+        elif reply.type in (ReplyType.VIDEO, ReplyType.VIDEO_URL, ReplyType.VOICE):
+            logger.warning(f"[WecomBot] reply type {reply.type} not supported in callback mode")
+            self._callback_finalize_text(stream_id, "[该消息类型在回调模式下暂不支持]")
+        else:
+            self._callback_finalize_text(stream_id, str(reply.content))
+
+    def _callback_get_or_create_state(self, stream_id: str) -> dict:
+        state = self._callback_streams.get(stream_id)
+        if state is None:
+            state = {
+                "committed": "",
+                "current": "",
+                "finished": False,
+                "images": [],
+                "last_access": time.time(),
+            }
+            self._callback_streams[stream_id] = state
+        return state
+
+    def _callback_finalize_text(self, stream_id: str, content: str):
+        with self._callback_lock:
+            state = self._callback_get_or_create_state(stream_id)
+            accumulated = (state["committed"] + state["current"]).strip()
+            state["committed"] = accumulated if accumulated else (content or "")
+            state["current"] = ""
+            state["finished"] = True
+            state["last_access"] = time.time()
+
+    def _callback_finalize_image(self, stream_id: str, img_path_or_url: str):
+        b64md5 = self._load_image_base64(img_path_or_url)
+        with self._callback_lock:
+            state = self._callback_get_or_create_state(stream_id)
+            accumulated = (state["committed"] + state["current"]).strip()
+            state["current"] = ""
+            if b64md5:
+                state["images"].append(b64md5)
+                state["committed"] = accumulated
+            else:
+                state["committed"] = accumulated or "[图片发送失败]"
+            state["finished"] = True
+            state["last_access"] = time.time()
+
+    def _load_image_base64(self, img_path_or_url: str):
+        """Load a local/remote image, ensure JPG/PNG within 10MB, return (base64, md5)."""
+        local_path = img_path_or_url
+        if local_path.startswith("file://"):
+            local_path = local_path[7:]
+
+        if local_path.startswith(("http://", "https://")):
+            try:
+                resp = requests.get(local_path, timeout=30)
+                resp.raise_for_status()
+                tmp_path = f"/tmp/wecom_cb_img_{uuid.uuid4().hex[:8]}"
+                with open(tmp_path, "wb") as f:
+                    f.write(resp.content)
+                local_path = tmp_path
+            except Exception as e:
+                logger.error(f"[WecomBot] Failed to download image for callback reply: {e}")
+                return None
+
+        if not os.path.exists(local_path):
+            logger.error(f"[WecomBot] Image file not found: {local_path}")
+            return None
+
+        local_path = self._ensure_image_format(local_path)
+        if not local_path:
+            return None
+
+        max_image_size = 10 * 1024 * 1024  # callback image base64 input max is 10MB
+        if os.path.getsize(local_path) > max_image_size:
+            local_path = self._compress_image(local_path, max_image_size)
+            if not local_path:
+                return None
+
+        try:
+            with open(local_path, "rb") as f:
+                raw = f.read()
+            return base64.b64encode(raw).decode("utf-8"), hashlib.md5(raw).hexdigest()
+        except Exception as e:
+            logger.error(f"[WecomBot] Failed to read image for callback reply: {e}")
+            return None
+
+    # ------------------------------------------------------------------
     # Send reply
     # ------------------------------------------------------------------
 
     def send(self, reply: Reply, context: Context):
+        if self.callback_mode:
+            self._callback_send(reply, context)
+            return
+
         msg = context.get("msg")
         is_group = context.get("isgroup", False)
         receiver = context.get("receiver", "")
@@ -906,3 +1204,82 @@ class WecomBotChannel(ChatChannel):
         else:
             logger.error("[WecomBot] Failed to get media_id from finish response")
         return media_id
+
+
+class WecomBotCallbackController:
+    """HTTP controller for wecom bot callback (webhook) mode.
+
+    - GET  : URL verification (echo the decrypted echostr).
+    - POST : encrypted message / stream-refresh / event callbacks; returns an
+             encrypted passive reply (or "success" for an empty reply).
+    """
+
+    @staticmethod
+    def _channel() -> "WecomBotChannel":
+        return WecomBotChannel()
+
+    def GET(self):
+        channel = self._channel()
+        params = web.input(msg_signature="", timestamp="", nonce="", echostr="")
+        if not channel._crypt:
+            return "wecom bot callback not ready"
+        ret, echo = channel._crypt.verify_url(
+            params.msg_signature, params.timestamp, params.nonce, params.echostr
+        )
+        if ret != 0:
+            logger.error(f"[WecomBot] URL verify failed: ret={ret}")
+            return "verify fail"
+        if isinstance(echo, bytes):
+            echo = echo.decode("utf-8")
+        return echo
+
+    def POST(self):
+        channel = self._channel()
+        if not channel._crypt:
+            return "success"
+
+        params = web.input(msg_signature="", timestamp="", nonce="")
+        body = web.data()
+        ret, plain = channel._crypt.decrypt_msg(
+            body, params.msg_signature, params.timestamp, params.nonce
+        )
+        if ret != 0:
+            logger.error(f"[WecomBot] callback decrypt failed: ret={ret}")
+            return "success"
+
+        try:
+            data = json.loads(plain)
+        except Exception as e:
+            logger.error(f"[WecomBot] callback json parse failed: {e}")
+            return "success"
+
+        msgtype = data.get("msgtype", "")
+        logger.debug(f"[WecomBot] callback received msgtype={msgtype}")
+
+        try:
+            if msgtype == "stream":
+                reply = channel._callback_handle_stream_poll(data)
+            elif msgtype == "event":
+                event_type = data.get("event", {}).get("eventtype", "")
+                logger.info(f"[WecomBot] callback event: {event_type}")
+                reply = None
+            elif msgtype in ("text", "image", "voice", "file", "video", "mixed"):
+                reply = channel._callback_handle_message(data)
+            else:
+                logger.warning(f"[WecomBot] unsupported callback msgtype: {msgtype}")
+                reply = None
+        except Exception as e:
+            logger.error(f"[WecomBot] callback handling error: {e}", exc_info=True)
+            reply = None
+
+        if not reply:
+            # Empty reply package is acceptable.
+            return "success"
+
+        plain_reply = json.dumps(reply, ensure_ascii=False)
+        ret, enc = channel._crypt.encrypt_msg(plain_reply, params.nonce, params.timestamp)
+        if ret != 0:
+            logger.error(f"[WecomBot] callback encrypt failed: ret={ret}")
+            return "success"
+        web.header("Content-Type", "application/json; charset=utf-8")
+        return json.dumps(enc, ensure_ascii=False)
