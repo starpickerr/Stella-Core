@@ -32,6 +32,23 @@ const I18N = {
         models_clear_credential: '清除凭据',
         models_base_default_hint: '留空将使用官方默认地址',
         models_base_default: '默认',
+        models_custom_section: '自定义厂商',
+        models_custom_section_desc: '配置多个 OpenAI 兼容厂商，自由切换',
+        models_custom_add: '添加自定义厂商',
+        models_custom_name: '名称',
+        models_custom_name_placeholder: '例如 siliconflow',
+        models_custom_default_model: '默认模型（可选）',
+        models_custom_default_model_placeholder: '例如 deepseek-ai/DeepSeek-V3',
+        models_custom_active: '使用中',
+        models_custom_set_active: '设为使用中',
+        models_custom_delete: '删除',
+        models_custom_delete_confirm_title: '删除自定义厂商',
+        models_custom_delete_confirm_msg: '确定删除该自定义厂商吗？此操作无法撤销。',
+        models_custom_name_required: '请填写名称',
+        models_custom_base_required: '请填写 API Base',
+        models_custom_empty: '尚未配置自定义厂商，点击添加',
+        models_custom_edit_title: '编辑自定义厂商',
+        models_custom_add_title: '添加自定义厂商',
         models_capability_chat: '主模型',
         models_capability_chat_desc: '用于基础对话和 Agent 推理',
         models_capability_vision: '图像理解',
@@ -236,6 +253,23 @@ const I18N = {
         models_clear_credential: 'Clear credentials',
         models_base_default_hint: 'Leave blank to use the official default base URL',
         models_base_default: 'Default',
+        models_custom_section: 'Custom Providers',
+        models_custom_section_desc: 'Configure multiple OpenAI-compatible providers and switch freely',
+        models_custom_add: 'Add custom provider',
+        models_custom_name: 'Name',
+        models_custom_name_placeholder: 'e.g. siliconflow',
+        models_custom_default_model: 'Default model (optional)',
+        models_custom_default_model_placeholder: 'e.g. deepseek-ai/DeepSeek-V3',
+        models_custom_active: 'Active',
+        models_custom_set_active: 'Set active',
+        models_custom_delete: 'Delete',
+        models_custom_delete_confirm_title: 'Delete custom provider',
+        models_custom_delete_confirm_msg: 'Delete this custom provider? This cannot be undone.',
+        models_custom_name_required: 'Name is required',
+        models_custom_base_required: 'API Base is required',
+        models_custom_empty: 'No custom providers yet, click to add',
+        models_custom_edit_title: 'Edit custom provider',
+        models_custom_add_title: 'Add custom provider',
         models_capability_chat: 'Main Model',
         models_capability_chat_desc: 'Used for basic chat and agent reasoning',
         models_capability_vision: 'Image Understanding',
@@ -4732,7 +4766,14 @@ function renderModelsView() {
     const container = document.getElementById('models-content');
     container.innerHTML = '';
     container.appendChild(renderVendorsSection());
+    container.appendChild(renderCustomProvidersSection());
     MODELS_CAPABILITY_DEFS.forEach(def => container.appendChild(renderCapabilityCard(def)));
+}
+
+// True when a provider card is one of the expanded custom (OpenAI-compatible)
+// providers — these are managed in their own section, not the vendor grid.
+function isCustomProviderCard(p) {
+    return !!(p && p.is_custom && p.custom_name);
 }
 
 // ---------- Vendor section (Layer 1) -----------------------------------
@@ -4741,7 +4782,10 @@ function renderVendorsSection() {
     const wrap = document.createElement('div');
     wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
 
-    const configured = modelsState.providers.filter(p => p.configured);
+    // Expanded custom providers live in their own section; keep the built-in
+    // vendor grid focused on the canonical (field-based) providers.
+    const builtinProviders = modelsState.providers.filter(p => !isCustomProviderCard(p));
+    const configured = builtinProviders.filter(p => p.configured);
 
     const header = `
         <div class="flex items-start gap-3 mb-5">
@@ -4752,7 +4796,7 @@ function renderVendorsSection() {
                 <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_section_vendors')}</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t('models_section_vendors_desc')}</p>
             </div>
-            <span class="text-xs text-slate-400 dark:text-slate-500 mt-2 flex-shrink-0">${configured.length}/${modelsState.providers.length}</span>
+            <span class="text-xs text-slate-400 dark:text-slate-500 mt-2 flex-shrink-0">${configured.length}/${builtinProviders.length}</span>
         </div>`;
 
     let body;
@@ -4810,6 +4854,112 @@ function renderProviderLogo(p, sizePx) {
                  onload="(function(el){var f=document.getElementById('${fallbackId}');if(f)f.style.display='none';})(this)"
                  onerror="this.remove();">
         </span>`;
+}
+
+// ---------- Custom providers section (multiple OpenAI-compatible) -------
+// Renders the user-defined OpenAI-compatible providers as a dedicated,
+// independently managed list: add / edit / delete / activate. The backend
+// expands `custom_providers` into provider cards with id="custom:<id>",
+// is_custom=true, custom_id, custom_name and an `active` flag (see
+// ModelsHandler._custom_provider_cards / _provider_overview).
+// All button interactions use data-* attributes + event delegation (no inline
+// onclick) to avoid XSS via user-supplied names.
+
+function getCustomProviderCards() {
+    return modelsState.providers.filter(isCustomProviderCard);
+}
+
+function renderCustomProvidersSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
+
+    const customs = getCustomProviderCards();
+
+    const header = `
+        <div class="flex items-start gap-3 mb-5">
+            <div class="w-9 h-9 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-sliders text-violet-500 text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_custom_section')}</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t('models_custom_section_desc')}</p>
+            </div>
+            <button data-action="add-custom"
+                    class="mt-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/50 cursor-pointer transition-colors flex-shrink-0">
+                <i class="fas fa-plus text-[10px] mr-1"></i>${t('models_custom_add')}
+            </button>
+        </div>`;
+
+    let body;
+    if (customs.length === 0) {
+        body = `
+            <div class="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-slate-200 dark:border-white/10">
+                <p class="text-sm text-slate-500 dark:text-slate-400 text-center">${t('models_custom_empty')}</p>
+            </div>`;
+    } else {
+        body = `<div class="space-y-2.5">
+            ${customs.map(renderCustomProviderRow).join('')}
+        </div>`;
+    }
+
+    wrap.innerHTML = header + body;
+    // Event delegation — handles all custom-provider actions via data-action attrs.
+    wrap.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+        const providerId = btn.getAttribute('data-provider-id') || '';
+        if (action === 'add-custom') openCustomProviderModal('');
+        else if (action === 'edit-custom') openCustomProviderModal(providerId);
+        else if (action === 'delete-custom') deleteCustomProvider(providerId);
+        else if (action === 'set-active-custom') setActiveCustomProvider(providerId);
+    });
+    return wrap;
+}
+
+function renderCustomProviderRow(p) {
+    const id = p.custom_id || '';
+    const name = p.custom_name || '';
+    const nameEsc = escapeHtml(name);
+    // The active provider gets a highlighted ring + badge; others show a
+    // "set active" affordance via data-attributes (no inline onclick — XSS safe).
+    const activeBadge = p.active
+        ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+               <i class="fas fa-check text-[9px] mr-0.5"></i>${t('models_custom_active')}</span>`
+        : `<button data-action="set-active-custom" data-provider-id="${escapeHtml(id)}"
+                   class="px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-emerald-300 hover:text-emerald-500 cursor-pointer transition-colors flex-shrink-0">
+               ${t('models_custom_set_active')}</button>`;
+
+    const ring = p.active
+        ? 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-900/10'
+        : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5';
+
+    const model = p.model
+        ? `<span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono truncate">${escapeHtml(p.model)}</span>`
+        : '';
+    const base = p.api_base
+        ? `<span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono truncate">${escapeHtml(p.api_base)}</span>`
+        : '';
+
+    return `
+        <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border ${ring} transition-colors" data-provider-id="${escapeHtml(id)}">
+            ${renderProviderLogo(p, 28)}
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">${nameEsc}</span>
+                    ${activeBadge}
+                </div>
+                <div class="flex items-center gap-2 mt-0.5">${base}${model ? '<span class="text-slate-300 dark:text-slate-600">·</span>' + model : ''}</div>
+            </div>
+            <button data-action="edit-custom" data-provider-id="${escapeHtml(id)}" title="${t('models_custom_edit_title')}"
+                    class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer transition-colors flex-shrink-0">
+                <i class="fas fa-pen-to-square text-[12px]"></i>
+            </button>
+            <button data-action="delete-custom" data-provider-id="${escapeHtml(id)}" title="${t('models_custom_delete')}"
+                    class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer transition-colors flex-shrink-0">
+                <i class="fas fa-trash-can text-[12px]"></i>
+            </button>
+        </div>`;
 }
 
 // ---------- Capability cards (Layer 2) ---------------------------------
@@ -5933,11 +6083,15 @@ function openVendorModal(providerId, onSaved) {
         // currently selected vendor via its own background highlight, so we
         // intentionally suppress the global active-row ✓ for this picker
         // (see CSS) — otherwise configured + selected rows would show two.
-        const unconfigured = modelsState.providers.filter(p => !p.configured);
-        const defaultId = (unconfigured[0] && unconfigured[0].id) || (modelsState.providers[0] && modelsState.providers[0].id) || '';
+        // Custom (OpenAI-compatible) providers are managed in their own
+        // section with a dedicated modal, so they are excluded from this
+        // built-in vendor picker.
+        const builtinProviders = modelsState.providers.filter(p => !isCustomProviderCard(p));
+        const unconfigured = builtinProviders.filter(p => !p.configured);
+        const defaultId = (unconfigured[0] && unconfigured[0].id) || (builtinProviders[0] && builtinProviders[0].id) || '';
         pickerWrap.classList.remove('hidden');
         const pickerEl = document.getElementById('vendor-modal-picker');
-        const pickerOpts = modelsState.providers.map(p => ({
+        const pickerOpts = builtinProviders.map(p => ({
             value: p.id,
             label: localizedLabel(p.label),
             _configured: !!p.configured,
@@ -6096,6 +6250,155 @@ function clearVendorModal() {
                     showStatus('vendor-modal-status', 'models_clear_failed', true);
                 }
             }).catch(() => showStatus('vendor-modal-status', 'models_clear_failed', true));
+        }
+    });
+}
+
+// =====================================================================
+// Custom (OpenAI-compatible) provider modal — add / edit
+// =====================================================================
+// State for the dedicated custom-provider modal. `editId` is empty when
+// adding and set to the provider id when editing.
+let customProviderModalState = { editId: '' };
+
+function openCustomProviderModal(providerId) {
+    const editing = !!providerId;
+    customProviderModalState = { editId: editing ? providerId : '' };
+
+    const card = editing ? getCustomProviderCards().find(p => p.custom_id === providerId) : null;
+
+    const overlay = document.getElementById('custom-provider-modal-overlay');
+    if (!overlay) return;
+
+    document.getElementById('custom-provider-modal-title').textContent =
+        editing ? t('models_custom_edit_title') : t('models_custom_add_title');
+
+    const nameInput = document.getElementById('custom-provider-name');
+    const baseInput = document.getElementById('custom-provider-base');
+    const keyInput = document.getElementById('custom-provider-key');
+    const modelInput = document.getElementById('custom-provider-model');
+
+    nameInput.value = card ? (card.custom_name || '') : '';
+    baseInput.value = card ? (card.api_base || '') : '';
+    modelInput.value = card ? (card.model || '') : '';
+
+    // Surface the masked key as the value for configured providers so the
+    // "already set" state is unambiguous; an untouched masked value means
+    // "keep the existing key" on save (mirrors the vendor modal contract).
+    if (card && card.configured && card.api_key_masked) {
+        keyInput.value = card.api_key_masked;
+        keyInput.dataset.masked = '1';
+        keyInput.dataset.maskedVal = card.api_key_masked;
+    } else {
+        keyInput.value = '';
+        keyInput.dataset.masked = '';
+        keyInput.dataset.maskedVal = '';
+    }
+    keyInput.oninput = function () {
+        if (keyInput.dataset.masked === '1' && keyInput.value !== keyInput.dataset.maskedVal) {
+            keyInput.dataset.masked = '';
+        }
+    };
+
+    const statusEl = document.getElementById('custom-provider-modal-status');
+    if (statusEl) { statusEl.textContent = ''; statusEl.classList.add('opacity-0'); }
+
+    overlay.classList.remove('hidden');
+    document.getElementById('custom-provider-modal-cancel').onclick = closeCustomProviderModal;
+    document.getElementById('custom-provider-modal-save').onclick = saveCustomProviderModal;
+
+    function onOverlayClick(e) {
+        if (e.target === overlay) {
+            closeCustomProviderModal();
+            overlay.removeEventListener('click', onOverlayClick);
+        }
+    }
+    overlay.addEventListener('click', onOverlayClick);
+    nameInput.focus();
+}
+
+function closeCustomProviderModal() {
+    const overlay = document.getElementById('custom-provider-modal-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+function saveCustomProviderModal() {
+    const name = document.getElementById('custom-provider-name').value.trim();
+    const apiBase = document.getElementById('custom-provider-base').value.trim();
+    const model = document.getElementById('custom-provider-model').value.trim();
+    const keyInput = document.getElementById('custom-provider-key');
+
+    if (!name) {
+        showStatus('custom-provider-modal-status', 'models_custom_name_required', true);
+        document.getElementById('custom-provider-name').focus();
+        return;
+    }
+    const editing = !!customProviderModalState.editId;
+    if (!editing && !apiBase) {
+        showStatus('custom-provider-modal-status', 'models_custom_base_required', true);
+        document.getElementById('custom-provider-base').focus();
+        return;
+    }
+
+    // Untouched masked key => no change (omit from payload).
+    let apiKey = keyInput.value.trim();
+    if (keyInput.dataset.masked === '1' && apiKey === (keyInput.dataset.maskedVal || '')) {
+        apiKey = '';
+    }
+
+    const payload = {
+        action: 'set_custom_provider',
+        name: name,
+        api_base: apiBase,
+        model: model,
+    };
+    if (apiKey) payload.api_key = apiKey;
+    if (editing) payload.id = customProviderModalState.editId;
+
+    const btn = document.getElementById('custom-provider-modal-save');
+    btn.disabled = true;
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        btn.disabled = false;
+        if (data.status === 'success') {
+            closeCustomProviderModal();
+            loadModelsView();
+        } else {
+            showStatus('custom-provider-modal-status', 'models_save_failed', true);
+        }
+    }).catch(() => {
+        btn.disabled = false;
+        showStatus('custom-provider-modal-status', 'models_save_failed', true);
+    });
+}
+
+function setActiveCustomProvider(providerId) {
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_active_custom_provider', id: providerId }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') loadModelsView();
+    }).catch(() => { /* noop */ });
+}
+
+function deleteCustomProvider(providerId) {
+    showConfirmDialog({
+        title: t('models_custom_delete_confirm_title'),
+        message: t('models_custom_delete_confirm_msg'),
+        okText: t('models_custom_delete'),
+        cancelText: t('cancel'),
+        onConfirm: () => {
+            fetch('/api/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete_custom_provider', id: providerId }),
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') loadModelsView();
+            }).catch(() => { /* noop */ });
         }
     });
 }

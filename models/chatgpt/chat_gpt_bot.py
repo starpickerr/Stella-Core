@@ -17,6 +17,7 @@ from common import const
 from common.i18n import t as _t
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
+from models.custom_provider import resolve_custom_credentials, parse_custom_bot_type
 from models.chatgpt.chat_gpt_session import ChatGPTSession
 from models.openai.open_ai_image import OpenAIImage
 from models.session_manager import SessionManager
@@ -32,9 +33,12 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
     def __init__(self):
         super().__init__()
         # Resolve api key / base from config (no global SDK state anymore).
-        if conf().get("bot_type") == "custom":
-            self._api_key = conf().get("custom_api_key", "")
-            self._api_base = conf().get("custom_api_base") or None
+        is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+        custom_model = None
+        if is_custom:
+            # Supports multiple custom providers via bot_type "custom:<id>"
+            # with automatic fallback to the legacy custom_api_key/base fields.
+            self._api_key, self._api_base, custom_model = resolve_custom_credentials()
         else:
             self._api_key = conf().get("open_ai_api_key")
             self._api_base = conf().get("open_ai_api_base") or None
@@ -46,8 +50,9 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
         )
         if conf().get("rate_limit_chatgpt"):
             self.tb4chatgpt = TokenBucket(conf().get("rate_limit_chatgpt", 20))
-        conf_model = conf().get("model") or "gpt-3.5-turbo"
-        self.sessions = SessionManager(ChatGPTSession, model=conf().get("model") or "gpt-3.5-turbo")
+        # Per-provider model takes precedence over global model.
+        conf_model = custom_model or conf().get("model") or "gpt-3.5-turbo"
+        self.sessions = SessionManager(ChatGPTSession, model=conf_model)
         # o1相关模型不支持system prompt，暂时用文心模型的session
 
         self.args = {
@@ -70,11 +75,20 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
 
     def get_api_config(self):
         """Get API configuration for OpenAI-compatible base class"""
-        is_custom = conf().get("bot_type") == "custom"
+        is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+        if is_custom:
+            custom_key, custom_base, custom_model = resolve_custom_credentials()
+            api_key = custom_key
+            api_base = custom_base
+            model = custom_model or conf().get("model", "gpt-3.5-turbo")
+        else:
+            api_key = conf().get("open_ai_api_key")
+            api_base = conf().get("open_ai_api_base")
+            model = conf().get("model", "gpt-3.5-turbo")
         return {
-            'api_key': conf().get("custom_api_key") if is_custom else conf().get("open_ai_api_key"),
-            'api_base': conf().get("custom_api_base") if is_custom else conf().get("open_ai_api_base"),
-            'model': conf().get("model", "gpt-3.5-turbo"),
+            'api_key': api_key,
+            'api_base': api_base,
+            'model': model,
             'default_temperature': conf().get("temperature", 0.9),
             'default_top_p': conf().get("top_p", 1.0),
             'default_frequency_penalty': conf().get("frequency_penalty", 0.0),
@@ -185,10 +199,16 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             mime_type = mime_type_map.get(extension, "image/jpeg")
             
             # Get model and API config
-            is_custom = conf().get("bot_type") == "custom"
-            model = context.get("gpt_model") or conf().get("model", "gpt-4o")
-            api_key = context.get("openai_api_key") or (conf().get("custom_api_key") if is_custom else conf().get("open_ai_api_key"))
-            api_base = conf().get("custom_api_base") if is_custom else conf().get("open_ai_api_base")
+            is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+            if is_custom:
+                custom_key, custom_base, custom_model = resolve_custom_credentials()
+                model = context.get("gpt_model") or custom_model or conf().get("model", "gpt-4o")
+                api_key = context.get("openai_api_key") or custom_key
+                api_base = custom_base
+            else:
+                model = context.get("gpt_model") or conf().get("model", "gpt-4o")
+                api_key = context.get("openai_api_key") or conf().get("open_ai_api_key")
+                api_base = conf().get("open_ai_api_base")
             
             # Build vision request
             messages = [
