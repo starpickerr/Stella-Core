@@ -72,21 +72,30 @@ class TestSetCustomProvider(unittest.TestCase):
         set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
 
-    def test_create_first_provider_auto_activates(self):
+    def test_create_provider_does_not_hijack_bot_type(self):
+        """Creating a provider without make_active must not change bot_type."""
         res = self.h.call(action="set_custom_provider", name="siliconflow",
                           api_base="https://api.siliconflow.cn/v1", api_key="sf-key")
         self.assertEqual(res["status"], "success")
         self.assertTrue(res["created"])
         self.assertIn("id", res)
-        # bot_type should be updated to "custom:<id>"
+        # bot_type must remain unchanged — no auto-activation.
         bot_type = config_module.conf().get("bot_type")
-        self.assertTrue(bot_type.startswith("custom:"))
-        self.assertEqual(bot_type, f"custom:{res['id']}")
+        self.assertEqual(bot_type, "custom")  # unchanged from setUp
         providers = config_module.conf().get("custom_providers")
         self.assertEqual(len(providers), 1)
         self.assertEqual(providers[0]["id"], res["id"])
         self.assertEqual(providers[0]["name"], "siliconflow")
         self.assertEqual(self.h.bridge_resets, 1)
+
+    def test_create_with_make_active_switches_bot_type(self):
+        """Creating a provider with make_active=true must switch bot_type."""
+        res = self.h.call(action="set_custom_provider", name="siliconflow",
+                          api_base="https://api.siliconflow.cn/v1", api_key="sf-key",
+                          make_active=True)
+        self.assertEqual(res["status"], "success")
+        bot_type = config_module.conf().get("bot_type")
+        self.assertEqual(bot_type, f"custom:{res['id']}")
 
     def test_create_requires_api_base(self):
         res = self.h.call(action="set_custom_provider", name="x", api_key="k")
@@ -98,12 +107,13 @@ class TestSetCustomProvider(unittest.TestCase):
         self.assertEqual(res["status"], "error")
 
     def test_second_provider_does_not_steal_active(self):
+        # Explicitly activate the first provider.
         res1 = self.h.call(action="set_custom_provider", name="a",
-                           api_base="https://a/v1", api_key="ak")
+                           api_base="https://a/v1", api_key="ak", make_active=True)
         res2 = self.h.call(action="set_custom_provider", name="b",
                            api_base="https://b/v1", api_key="bk")
         self.assertTrue(res2["created"])
-        # First provider stays active unless make_active is requested.
+        # First provider stays active — second creation doesn't steal it.
         bot_type = config_module.conf().get("bot_type")
         self.assertEqual(bot_type, f"custom:{res1['id']}")
 
@@ -155,7 +165,8 @@ class TestDeleteCustomProvider(unittest.TestCase):
         set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
         self.res_a = self.h.call(action="set_custom_provider", name="a",
-                                 api_base="https://a/v1", api_key="ak")
+                                 api_base="https://a/v1", api_key="ak",
+                                 make_active=True)
         self.res_b = self.h.call(action="set_custom_provider", name="b",
                                  api_base="https://b/v1", api_key="bk")
 
@@ -191,7 +202,8 @@ class TestSetActiveCustomProvider(unittest.TestCase):
         set_conf({"bot_type": "custom", "custom_providers": []})
         self.h = _HandlerHarness()
         self.res_a = self.h.call(action="set_custom_provider", name="a",
-                                 api_base="https://a/v1", api_key="ak")
+                                 api_base="https://a/v1", api_key="ak",
+                                 make_active=True)
         self.res_b = self.h.call(action="set_custom_provider", name="b",
                                  api_base="https://b/v1", api_key="bk")
 
@@ -205,6 +217,27 @@ class TestSetActiveCustomProvider(unittest.TestCase):
         self.assertEqual(res["status"], "error")
         # bot_type unchanged
         self.assertEqual(config_module.conf().get("bot_type"), f"custom:{self.res_a['id']}")
+
+    def test_activation_syncs_model_to_global(self):
+        """Activating a provider must write its model into global model field."""
+        set_conf({"bot_type": "custom", "custom_providers": [], "model": "gpt-4o"})
+        h = _HandlerHarness()
+        res = h.call(action="set_custom_provider", name="sf",
+                     api_base="https://sf/v1", api_key="k", model="deepseek-v3",
+                     make_active=True)
+        # Global model field should now be the provider's model.
+        self.assertEqual(config_module.conf().get("model"), "deepseek-v3")
+        self.assertEqual(config_module.conf().get("bot_type"), f"custom:{res['id']}")
+
+    def test_activation_without_model_keeps_global_model(self):
+        """Activating a provider with no model must not overwrite global model."""
+        set_conf({"bot_type": "custom", "custom_providers": [], "model": "gpt-4o"})
+        h = _HandlerHarness()
+        h.call(action="set_custom_provider", name="local",
+               api_base="http://localhost:11434/v1", api_key="",
+               make_active=True)
+        # Global model field should remain unchanged.
+        self.assertEqual(config_module.conf().get("model"), "gpt-4o")
 
 
 class TestProviderOverviewExpansion(unittest.TestCase):

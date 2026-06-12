@@ -2798,7 +2798,12 @@ class ModelsHandler:
         """Write the providers list to both in-memory conf and the on-disk
         config, then reset the bridge so bots rebuild.
 
-        If ``bot_type`` is given, also update ``bot_type``."""
+        If ``bot_type`` is given, also update ``bot_type``.  When activating a
+        provider (bot_type is ``custom:<id>``), also write the provider's
+        ``model`` into the global ``model`` field so that all paths (chat,
+        agent, vision) automatically use the correct model."""
+        from models.custom_provider import parse_custom_bot_type
+
         local_config = conf()
         file_cfg = self._read_file_config()
         local_config["custom_providers"] = providers
@@ -2806,6 +2811,13 @@ class ModelsHandler:
         if bot_type is not None:
             local_config["bot_type"] = bot_type
             file_cfg["bot_type"] = bot_type
+            # Sync the provider's model into the global model field.
+            _, pid = parse_custom_bot_type(bot_type)
+            if pid:
+                provider = next((p for p in providers if p.get("id") == pid), None)
+                if provider and provider.get("model"):
+                    local_config["model"] = provider["model"]
+                    file_cfg["model"] = provider["model"]
         self._write_file_config(file_cfg)
         self._reset_bridge()
 
@@ -2865,12 +2877,9 @@ class ModelsHandler:
                 existing.pop("model", None)
             created = False
 
-        # Decide bot_type.
-        _, current_active_id = parse_custom_bot_type(local_config.get("bot_type") or "")
+        # Decide bot_type — only switch when explicitly requested.
         new_bot_type = None
-        if make_active or (created and not current_active_id):
-            # Activate on explicit request, or auto-activate the very first
-            # provider so the resolver has a definite target.
+        if make_active:
             new_bot_type = f"custom:{provider_id}"
 
         self._persist_custom_providers(providers, new_bot_type)
