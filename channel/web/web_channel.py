@@ -432,7 +432,15 @@ class WebChannel(ChatChannel):
             elif event_type == "tool_execution_start":
                 tool_name = data.get("tool_name", "tool")
                 arguments = data.get("arguments", {})
-                q.put({"type": "tool_start", "tool": tool_name, "arguments": arguments})
+                q.put({"type": "tool_start", "tool_call_id": data.get("tool_call_id"), "tool": tool_name, "arguments": arguments})
+
+            elif event_type == "tool_execution_progress":
+                q.put({
+                    "type": "tool_progress",
+                    "tool_call_id": data.get("tool_call_id"),
+                    "tool": data.get("tool_name", "tool"),
+                    "content": str(data.get("message", ""))[-4 * 1024:],
+                })
 
             elif event_type == "tool_execution_end":
                 tool_name = data.get("tool_name", "tool")
@@ -445,6 +453,7 @@ class WebChannel(ChatChannel):
                     result_str = result_str[:2000] + "…"
                 q.put({
                     "type": "tool_end",
+                    "tool_call_id": data.get("tool_call_id"),
                     "tool": tool_name,
                     "status": status,
                     "result": result_str,

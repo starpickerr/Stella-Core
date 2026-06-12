@@ -605,6 +605,18 @@
     color: inherit;
 }
 .tool-error-text { color: #f87171; }
+.tool-live-output:empty { display: none; }
+.tool-streaming .tool-live-output:not(:empty)::after {
+    content: ' ';
+    display: inline-block;
+    width: 0.45em;
+    height: 1em;
+    margin-left: 0.15em;
+    vertical-align: -0.15em;
+    background: currentColor;
+    animation: tool-cursor-blink 1s steps(1) infinite;
+}
+@keyframes tool-cursor-blink { 50% { opacity: 0; } }
 
 /* Log level highlighting */
 .log-line { display: block; }
@@ -1578,4 +1590,10 @@
 
 .delete-msg-btn:hover {
     color: #ef4444 !important;
+}
+
+.edit-msg-btn:disabled,
+.delete-msg-btn:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.35 !important;
 }
