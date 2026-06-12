@@ -439,7 +439,7 @@ class WebChannel(ChatChannel):
                     "type": "tool_progress",
                     "tool_call_id": data.get("tool_call_id"),
                     "tool": data.get("tool_name", "tool"),
-                    "content": str(data.get("message", ""))[-32 * 1024:],
+                    "content": str(data.get("message", ""))[-4 * 1024:],
                 })
 
             elif event_type == "tool_execution_end":

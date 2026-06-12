@@ -188,6 +188,8 @@ const I18N = {
         delete_session_title: '删除会话',
         delete_message_confirm: '确认删除这条消息？',
         delete_message_title: '删除消息',
+        edit_disabled_reply_active: '正在生成回复，暂时无法编辑。',
+        delete_disabled_reply_active: '正在生成回复，暂时无法删除。',
         untitled_session: '新对话',
         context_cleared: '— 以上内容已从上下文中移除 —',
         tip_new_chat: '新建对话',
@@ -392,6 +394,8 @@ const I18N = {
         delete_session_title: 'Delete Session',
         delete_message_confirm: 'Delete this message?',
         delete_message_title: 'Delete Message',
+        edit_disabled_reply_active: 'Reply is being generated; editing is temporarily unavailable.',
+        delete_disabled_reply_active: 'Reply is being generated; deletion is temporarily unavailable.',
         untitled_session: 'New Chat',
         context_cleared: '— Context above has been cleared —',
         tip_new_chat: 'New Chat',
@@ -900,11 +904,11 @@ function updateEditButtonsState() {
         btn.disabled = active;
         if (btn.classList.contains('edit-msg-btn')) {
             btn.title = active
-                ? 'Reply is being generated; editing is temporarily unavailable.'
-                : (currentLang === 'zh' ? '编辑消息' : 'Edit Message');
+                ? t('edit_disabled_reply_active')
+                : t('edit_message');
         } else {
             btn.title = active
-                ? 'Reply is being generated; deletion is temporarily unavailable.'
+                ? t('delete_disabled_reply_active')
                 : t('delete_message_title');
         }
     });
@@ -2446,6 +2450,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 // Add tool execution indicator (collapsible)
                 const toolEl = document.createElement('div');
                 toolEl.className = 'agent-step agent-tool-step tool-streaming';
+                toolEl.dataset.progressReceived = 'false';
                 const argsStr = formatToolArgs(item.arguments || {});
                 toolEl.innerHTML = `
                     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -2471,7 +2476,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             } else if (item.type === 'tool_progress') {
                 const toolEl = toolElements.get(item.tool_call_id);
                 if (toolEl) {
-                    toolEl.classList.add('expanded');
+                    if (toolEl.dataset.progressReceived !== 'true') {
+                        toolEl.classList.add('expanded');
+                        toolEl.dataset.progressReceived = 'true';
+                    }
                     toolEl.querySelector('.tool-live-output').textContent = String(item.content || '');
                     scrollChatToBottom();
                 }
@@ -2501,6 +2509,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     }
 
                     toolEl.classList.remove('tool-streaming');
+                    toolEl.classList.remove('expanded');
+                    if (!item.result) {
+                        const outputSection = toolEl.querySelector('.tool-output-section');
+                        if (outputSection) outputSection.remove();
+                    }
                     if (isError) toolEl.classList.add('tool-failed');
                     toolElements.delete(item.tool_call_id);
                 }
@@ -2661,6 +2674,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
 
             // Record every event for re-attach replay (capped to avoid
             // unbounded growth on very long streams).
+            if (item.type === 'tool_progress' && item.tool_call_id) {
+                const previousIndex = buffer.items.findIndex(
+                    buffered => buffered.type === 'tool_progress'
+                        && buffered.tool_call_id === item.tool_call_id
+                );
+                if (previousIndex >= 0) buffer.items.splice(previousIndex, 1);
+            }
             if (buffer.items.length < 5000) buffer.items.push(item);
 
             // Background session: keep the stream alive so the reply finishes
