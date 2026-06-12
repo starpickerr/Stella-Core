@@ -1601,6 +1601,7 @@ class ConfigHandler:
         "open_ai_api_key", "deepseek_api_key", "qianfan_api_key", "claude_api_key", "gemini_api_key",
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
+        "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "self_evolution_enabled", "web_password",
     }
@@ -2132,12 +2133,82 @@ class ModelsHandler:
         return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
 
     @classmethod
+    def _custom_provider_cards(cls, local_config: dict) -> List[dict]:
+        """Expand ``custom_providers`` into one card per provider.
+
+        Each user-defined OpenAI-compatible provider becomes its own card with
+        id ``custom:<id>`` so the frontend can render, edit, delete and
+        activate them independently. The card carries ``is_custom=True`` and
+        ``active`` flags that the UI uses to render the extra controls.
+
+        Returns an empty list when no multi-providers are configured, in which
+        case the caller keeps the single legacy ``custom`` card untouched —
+        guaranteeing backward compatibility with the flat
+        ``custom_api_key`` / ``custom_api_base`` config.
+        """
+        try:
+            from models.custom_provider import get_custom_providers, parse_custom_bot_type
+            providers = get_custom_providers()
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"[ModelsHandler] failed to load custom_providers: {e}")
+            providers = []
+        if not providers:
+            return []
+
+        # Determine the currently active provider id from bot_type.
+        bot_type = local_config.get("bot_type") or ""
+        _, active_id = parse_custom_bot_type(bot_type)
+
+        meta = ConfigHandler.PROVIDER_MODELS.get("custom") or {}
+        cards = []
+        for p in providers:
+            pid = p.get("id") or ""
+            name = p.get("name") or pid
+            raw_key = p.get("api_key") or ""
+            raw_base = p.get("api_base") or ""
+            configured = cls._is_real_key(raw_key)
+            cards.append({
+                "id": f"custom:{pid}",
+                "label": {"zh": name, "en": name},
+                "configured": configured,
+                "is_custom": True,
+                "custom_id": pid,
+                "custom_name": name,
+                "active": (pid == active_id),
+                "model": p.get("model") or "",
+                # Custom cards are edited via the dedicated set_custom_provider
+                # action, not the field-based set_provider flow, so the field
+                # names are intentionally null.
+                "api_key_field": None,
+                "api_base_field": None,
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
+                "api_base": raw_base,
+                "api_base_default": "",
+                "api_base_placeholder": meta.get("api_base_placeholder") or "",
+                "models": [p.get("model")] if p.get("model") else [],
+            })
+        return cards
+
+    @classmethod
     def _provider_overview(cls) -> List[dict]:
         """All known providers (configured first, unconfigured after).
-        Re-uses ConfigHandler.PROVIDER_MODELS for the canonical list."""
+        Re-uses ConfigHandler.PROVIDER_MODELS for the canonical list.
+
+        When the user has defined multiple custom (OpenAI-compatible)
+        providers via ``custom_providers``, the single built-in ``custom``
+        card is replaced by one card per provider (see
+        ``_custom_provider_cards``). Otherwise the legacy single ``custom``
+        card is shown unchanged.
+        """
         local_config = conf()
+        custom_cards = cls._custom_provider_cards(local_config)
         items = []
         for pid, p in ConfigHandler.PROVIDER_MODELS.items():
+            if pid == "custom" and custom_cards:
+                # Multi-provider mode: emit the expanded cards instead of the
+                # single legacy custom card.
+                items.extend(custom_cards)
+                continue
             key_field = p.get("api_key_field")
             base_field = p.get("api_base_key")
             raw_key = local_config.get(key_field, "") if key_field else ""
@@ -2147,6 +2218,7 @@ class ModelsHandler:
                 "id": pid,
                 "label": p["label"],
                 "configured": configured,
+                "is_custom": (pid == "custom"),
                 "api_key_field": key_field,
                 "api_base_field": base_field,
                 "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
@@ -2155,7 +2227,19 @@ class ModelsHandler:
                 "api_base_placeholder": p.get("api_base_placeholder") or "",
                 "models": list(p.get("models") or []),
             })
-        items.sort(key=lambda it: (0 if it["configured"] else 1, list(ConfigHandler.PROVIDER_MODELS.keys()).index(it["id"])))
+
+        def _sort_key(it):
+            pid = it["id"]
+            # Custom expanded cards share the sort weight of the base "custom"
+            # entry so they cluster where the single custom card used to be.
+            base_id = "custom" if it.get("is_custom") else pid
+            try:
+                order = list(ConfigHandler.PROVIDER_MODELS.keys()).index(base_id)
+            except ValueError:
+                order = len(ConfigHandler.PROVIDER_MODELS)
+            return (0 if it["configured"] else 1, order)
+
+        items.sort(key=_sort_key)
         return items
 
     @classmethod
@@ -2163,13 +2247,24 @@ class ModelsHandler:
         """Main chat model — drives the agent. bot_type maps to a provider id."""
         bot_type = local_config.get("bot_type") or ""
         provider_id = "openai" if bot_type == "chatGPT" else bot_type
-        if provider_id not in ConfigHandler.PROVIDER_MODELS and local_config.get("use_linkai"):
+        is_custom_id = provider_id.startswith("custom:")
+        if (provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id
+                and local_config.get("use_linkai")):
             provider_id = "linkai"
+        # In multi-provider mode, replace the single "custom" entry with the
+        # expanded "custom:<id>" ids so the chat dropdown matches the cards.
+        provider_ids = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in ConfigHandler.PROVIDER_MODELS.keys():
+            if pid == "custom" and custom_cards:
+                provider_ids.extend(c["id"] for c in custom_cards)
+            else:
+                provider_ids.append(pid)
         return {
             "editable": True,
             "current_provider": provider_id,
             "current_model": local_config.get("model", ""),
-            "providers": list(ConfigHandler.PROVIDER_MODELS.keys()),
+            "providers": provider_ids,
             "use_linkai": bool(local_config.get("use_linkai", False)),
         }
 
@@ -2603,6 +2698,12 @@ class ModelsHandler:
                 return self._handle_set_provider(data)
             if action == "delete_provider":
                 return self._handle_delete_provider(data)
+            if action == "set_custom_provider":
+                return self._handle_set_custom_provider(data)
+            if action == "delete_custom_provider":
+                return self._handle_delete_custom_provider(data)
+            if action == "set_active_custom_provider":
+                return self._handle_set_active_custom_provider(data)
             if action == "set_capability":
                 return self._handle_set_capability(data)
             if action == "set_voice_reply_mode":
@@ -2686,6 +2787,167 @@ class ModelsHandler:
         self._reset_bridge()
         return json.dumps({"status": "success", "provider": provider_id, "cleared": cleared})
 
+    # ------------------------------------------------------------------
+    # Multiple custom (OpenAI-compatible) providers
+    # ------------------------------------------------------------------
+    # These actions manage the ``custom_providers`` list.  Activation is done
+    # by setting ``bot_type`` to ``"custom:<id>"``.  There is no separate
+    # ``custom_active_provider`` field — a single source of truth.
+
+    @staticmethod
+    def _normalize_custom_providers(raw) -> List[dict]:
+        """Return a clean list of provider dicts (drops malformed entries)."""
+        if not isinstance(raw, list):
+            return []
+        out = []
+        for p in raw:
+            if isinstance(p, dict) and (p.get("id") or "").strip():
+                out.append(p)
+        return out
+
+    def _persist_custom_providers(self, providers: List[dict], bot_type=None) -> None:
+        """Write the providers list to both in-memory conf and the on-disk
+        config, then reset the bridge so bots rebuild.
+
+        If ``bot_type`` is given, also update ``bot_type``.  When activating a
+        provider (bot_type is ``custom:<id>``), also write the provider's
+        ``model`` into the global ``model`` field so that all paths (chat,
+        agent, vision) automatically use the correct model."""
+        from models.custom_provider import parse_custom_bot_type
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        local_config["custom_providers"] = providers
+        file_cfg["custom_providers"] = providers
+        if bot_type is not None:
+            local_config["bot_type"] = bot_type
+            file_cfg["bot_type"] = bot_type
+            # Sync the provider's model into the global model field.
+            _, pid = parse_custom_bot_type(bot_type)
+            if pid:
+                provider = next((p for p in providers if p.get("id") == pid), None)
+                if provider and provider.get("model"):
+                    local_config["model"] = provider["model"]
+                    file_cfg["model"] = provider["model"]
+        self._write_file_config(file_cfg)
+        self._reset_bridge()
+
+    def _handle_set_custom_provider(self, data: dict) -> str:
+        """Add a new custom provider or update an existing one.
+
+        Payload::
+
+            {
+              "action": "set_custom_provider",
+              "id": "3f2a9c1b",             # required for edit; omit for create
+              "name": "siliconflow",         # required, display label
+              "api_base": "https://...",     # required when creating
+              "api_key": "sk-...",           # optional on edit (keep existing)
+              "model": "deepseek-ai/...",    # optional default model
+              "make_active": true            # optional, also activate it
+            }
+        """
+        from models.custom_provider import generate_provider_id, parse_custom_bot_type
+
+        name = (data.get("name") or "").strip()
+        if not name:
+            return json.dumps({"status": "error", "message": "name is required"})
+
+        provider_id = (data.get("id") or "").strip()
+        api_base = (data.get("api_base") or "").strip()
+        # api_key omitted/empty on edit => keep the existing one.
+        api_key_raw = data.get("api_key")
+        api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
+        model = (data.get("model") or "").strip()
+        make_active = bool(data.get("make_active"))
+
+        local_config = conf()
+        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+
+        existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
+        if existing is None:
+            # Creating a new provider — api_base is mandatory.
+            if not api_base:
+                return json.dumps({"status": "error", "message": "api_base is required"})
+            provider_id = generate_provider_id()
+            entry = {"id": provider_id, "name": name, "api_key": api_key, "api_base": api_base}
+            if model:
+                entry["model"] = model
+            providers.append(entry)
+            created = True
+        else:
+            existing["name"] = name
+            if api_base:
+                existing["api_base"] = api_base
+            if api_key:
+                existing["api_key"] = api_key
+            # model is always overwritten (empty clears the default model).
+            if model:
+                existing["model"] = model
+            else:
+                existing.pop("model", None)
+            created = False
+
+        # Decide bot_type — only switch when explicitly requested.
+        new_bot_type = None
+        if make_active:
+            new_bot_type = f"custom:{provider_id}"
+
+        self._persist_custom_providers(providers, new_bot_type)
+        logger.info(
+            f"[ModelsHandler] custom provider {name!r} (id={provider_id}) "
+            f"{'created' if created else 'updated'}"
+        )
+        return json.dumps({
+            "status": "success",
+            "id": provider_id,
+            "name": name,
+            "created": created,
+        })
+
+    def _handle_delete_custom_provider(self, data: dict) -> str:
+        """Remove a custom provider by id."""
+        from models.custom_provider import parse_custom_bot_type
+
+        provider_id = (data.get("id") or "").strip()
+        if not provider_id:
+            return json.dumps({"status": "error", "message": "id is required"})
+
+        local_config = conf()
+        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        remaining = [p for p in providers if p.get("id") != provider_id]
+        if len(remaining) == len(providers):
+            return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
+
+        # If the deleted provider was active, fall back to the first remaining.
+        _, current_active_id = parse_custom_bot_type(local_config.get("bot_type") or "")
+        new_bot_type = None
+        if current_active_id == provider_id:
+            if remaining:
+                new_bot_type = f"custom:{remaining[0]['id']}"
+            else:
+                new_bot_type = "custom"  # revert to legacy
+
+        self._persist_custom_providers(remaining, new_bot_type)
+        logger.info(f"[ModelsHandler] custom provider id={provider_id} deleted")
+        return json.dumps({"status": "success", "id": provider_id})
+
+    def _handle_set_active_custom_provider(self, data: dict) -> str:
+        """Activate a custom provider by setting bot_type to 'custom:<id>'."""
+        provider_id = (data.get("id") or "").strip()
+        if not provider_id:
+            return json.dumps({"status": "error", "message": "id is required"})
+
+        local_config = conf()
+        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        if not any(p.get("id") == provider_id for p in providers):
+            return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
+
+        new_bot_type = f"custom:{provider_id}"
+        self._persist_custom_providers(providers, new_bot_type)
+        logger.info(f"[ModelsHandler] active custom provider set to id={provider_id}")
+        return json.dumps({"status": "success", "active_id": provider_id})
+
     def _handle_set_capability(self, data: dict) -> str:
         capability = (data.get("capability") or "").strip()
         provider_id = (data.get("provider_id") or "").strip()
@@ -2750,12 +3012,27 @@ class ModelsHandler:
         })
 
     def _set_chat(self, provider_id: str, model: str) -> str:
-        if provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+        # Accept expanded custom provider ids ("custom:<id>") as well as the
+        # built-in vendors, so the chat capability card and the custom
+        # providers section behave consistently.
+        custom_provider = None
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         applied = {}
         local_config = conf()
         file_cfg = self._read_file_config()
+
+        # Fall back to the custom provider's default model when none is given.
+        if not model and custom_provider:
+            model = custom_provider.get("model") or ""
 
         if provider_id:
             bot_type_value = "chatGPT" if provider_id == "openai" else provider_id
