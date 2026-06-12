@@ -197,6 +197,8 @@ const I18N = {
         delete_session_title: '删除会话',
         delete_message_confirm: '确认删除这条消息？',
         delete_message_title: '删除消息',
+        edit_disabled_reply_active: '正在生成回复，暂时无法编辑。',
+        delete_disabled_reply_active: '正在生成回复，暂时无法删除。',
         untitled_session: '新对话',
         context_cleared: '— 以上内容已从上下文中移除 —',
         tip_new_chat: '新建对话',
@@ -410,6 +412,8 @@ const I18N = {
         delete_session_title: 'Delete Session',
         delete_message_confirm: 'Delete this message?',
         delete_message_title: 'Delete Message',
+        edit_disabled_reply_active: 'Reply is being generated; editing is temporarily unavailable.',
+        delete_disabled_reply_active: 'Reply is being generated; deletion is temporarily unavailable.',
         untitled_session: 'New Chat',
         context_cleared: '— Context above has been cleared —',
         tip_new_chat: 'New Chat',
@@ -907,6 +911,26 @@ let pollGeneration = 0;   // incremented on each restart to cancel stale poll lo
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
 let sessionActiveRequest = {};   // session_id -> request_id (in-flight stream per session)
+
+function isCurrentSessionConversationActive() {
+    return !!sessionActiveRequest[sessionId];
+}
+
+function updateEditButtonsState() {
+    const active = isCurrentSessionConversationActive();
+    document.querySelectorAll('.edit-msg-btn, .delete-msg-btn').forEach(btn => {
+        btn.disabled = active;
+        if (btn.classList.contains('edit-msg-btn')) {
+            btn.title = active
+                ? t('edit_disabled_reply_active')
+                : t('edit_message');
+        } else {
+            btn.title = active
+                ? t('delete_disabled_reply_active')
+                : t('delete_message_title');
+        }
+    });
+}
 let streamBuffers = {};   // request_id -> { items: [event...], timestamp } for re-attach replay
 let isComposing = false;
 let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
@@ -1195,6 +1219,7 @@ messagesDiv.addEventListener('click', (e) => {
     const editBtn = e.target.closest('.edit-msg-btn');
     if (editBtn) {
         e.preventDefault();
+        if (isCurrentSessionConversationActive()) return;
         const msgRoot = editBtn.closest('.user-message-group');
         if (msgRoot) editUserMessage(msgRoot);
         return;
@@ -1215,6 +1240,7 @@ messagesDiv.addEventListener('click', (e) => {
     const deleteBtn = e.target.closest('.delete-msg-btn');
     if (deleteBtn) {
         e.preventDefault();
+        if (isCurrentSessionConversationActive()) return;
         const userMsgEl = deleteBtn.closest('.user-message-group');
         if (!userMsgEl) return;
 
@@ -2011,6 +2037,7 @@ function copyToClipboard(text) {
 
 // Edit user message: extract content, remove this and subsequent messages, fill input
 async function editUserMessage(msgEl) {
+    if (isCurrentSessionConversationActive()) return;
     const rawContent = msgEl.dataset.rawContent;
     if (!rawContent) return;
 
@@ -2061,9 +2088,9 @@ async function editUserMessage(msgEl) {
 
     // Fill input with the original content
     chatInput.value = rawContent;
-    chatInput.style.height = 'auto';
-    chatInput.style.height = chatInput.scrollHeight + 'px';
+    chatInput.dispatchEvent(new Event("input", { bubbles: true }));
     chatInput.focus();
+    chatInput.selectionStart = chatInput.selectionEnd = chatInput.value.length;
     scrollChatToBottom();
 }
 
@@ -2268,7 +2295,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let contentEl = null;  // .answer-content (final streaming answer)
     let mediaEl = null;    // .media-content (images & file attachments)
     let accumulatedText = '';
-    let currentToolEl = null;
+    const toolElements = new Map();
     let currentReasoningEl = null;  // live reasoning bubble
     let reasoningText = '';
     let reasoningStartTime = 0;
@@ -2283,12 +2310,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     const ownerSession = sessionId;
     const isActive = () => ownerSession === sessionId;
     sessionActiveRequest[ownerSession] = requestId;
+    updateEditButtonsState();
     // Per-request event buffer used to rebuild the bubble on re-attach.
     const buffer = streamBuffers[requestId] || { items: [], timestamp };
     streamBuffers[requestId] = buffer;
     const clearOwnerRequest = () => {
         if (sessionActiveRequest[ownerSession] === requestId) {
             delete sessionActiveRequest[ownerSession];
+            updateEditButtonsState();
         }
         delete streamBuffers[requestId];
     };
@@ -2437,10 +2466,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 contentEl.innerHTML = '';
 
                 // Add tool execution indicator (collapsible)
-                currentToolEl = document.createElement('div');
-                currentToolEl.className = 'agent-step agent-tool-step';
+                const toolEl = document.createElement('div');
+                toolEl.className = 'agent-step agent-tool-step tool-streaming';
+                toolEl.dataset.progressReceived = 'false';
                 const argsStr = formatToolArgs(item.arguments || {});
-                currentToolEl.innerHTML = `
+                toolEl.innerHTML = `
                     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
                         <i class="fas fa-cog fa-spin text-primary-400 flex-shrink-0 tool-icon"></i>
                         <span class="tool-name">${item.tool}</span>
@@ -2451,36 +2481,59 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                             <div class="tool-detail-label">Input</div>
                             <pre class="tool-detail-content">${argsStr}</pre>
                         </div>
-                        <div class="tool-detail-section tool-output-section"></div>
+                        <div class="tool-detail-section tool-output-section">
+                            <div class="tool-detail-label tool-output-label">Output</div>
+                            <pre class="tool-detail-content tool-live-output"></pre>
+                        </div>
                     </div>`;
-                stepsEl.appendChild(currentToolEl);
+                stepsEl.appendChild(toolEl);
+                toolElements.set(item.tool_call_id, toolEl);
 
                 scrollChatToBottom();
 
+            } else if (item.type === 'tool_progress') {
+                const toolEl = toolElements.get(item.tool_call_id);
+                if (toolEl) {
+                    if (toolEl.dataset.progressReceived !== 'true') {
+                        toolEl.classList.add('expanded');
+                        toolEl.dataset.progressReceived = 'true';
+                    }
+                    toolEl.querySelector('.tool-live-output').textContent = String(item.content || '');
+                    scrollChatToBottom();
+                }
+
             } else if (item.type === 'tool_end') {
-                if (currentToolEl) {
+                const toolEl = toolElements.get(item.tool_call_id);
+                if (toolEl) {
                     const isError = item.status !== 'success';
-                    const icon = currentToolEl.querySelector('.tool-icon');
+                    const icon = toolEl.querySelector('.tool-icon');
                     icon.className = isError
                         ? 'fas fa-times text-red-400 flex-shrink-0 tool-icon'
                         : 'fas fa-check text-primary-400 flex-shrink-0 tool-icon';
 
                     // Show execution time
-                    const nameEl = currentToolEl.querySelector('.tool-name');
+                    const nameEl = toolEl.querySelector('.tool-name');
                     if (item.execution_time !== undefined) {
                         nameEl.innerHTML += ` <span class="tool-time">${item.execution_time}s</span>`;
                     }
 
                     // Fill output section
-                    const outputSection = currentToolEl.querySelector('.tool-output-section');
-                    if (outputSection && item.result) {
-                        outputSection.innerHTML = `
-                            <div class="tool-detail-label">${isError ? 'Error' : 'Output'}</div>
-                            <pre class="tool-detail-content ${isError ? 'tool-error-text' : ''}">${escapeHtml(String(item.result))}</pre>`;
+                    const outputLabel = toolEl.querySelector('.tool-output-label');
+                    const outputEl = toolEl.querySelector('.tool-live-output');
+                    if (outputLabel) outputLabel.textContent = isError ? 'Error' : 'Output';
+                    if (outputEl) {
+                        outputEl.textContent = item.result ? String(item.result) : '';
+                        outputEl.classList.toggle('tool-error-text', isError);
                     }
 
-                    if (isError) currentToolEl.classList.add('tool-failed');
-                    currentToolEl = null;
+                    toolEl.classList.remove('tool-streaming');
+                    toolEl.classList.remove('expanded');
+                    if (!item.result) {
+                        const outputSection = toolEl.querySelector('.tool-output-section');
+                        if (outputSection) outputSection.remove();
+                    }
+                    if (isError) toolEl.classList.add('tool-failed');
+                    toolElements.delete(item.tool_call_id);
                 }
 
             } else if (item.type === 'image') {
@@ -2639,6 +2692,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
 
             // Record every event for re-attach replay (capped to avoid
             // unbounded growth on very long streams).
+            if (item.type === 'tool_progress' && item.tool_call_id) {
+                const previousIndex = buffer.items.findIndex(
+                    buffered => buffered.type === 'tool_progress'
+                        && buffered.tool_call_id === item.tool_call_id
+                );
+                if (previousIndex >= 0) buffer.items.splice(previousIndex, 1);
+            }
             if (buffer.items.length < 5000) buffer.items.push(item);
 
             // Background session: keep the stream alive so the reply finishes
@@ -3274,6 +3334,7 @@ function loadHistory(page) {
             const sentinel = document.getElementById('history-load-more');
             const insertBefore = sentinel ? sentinel.nextSibling : messagesDiv.firstChild;
             messagesDiv.insertBefore(fragment, insertBefore);
+            updateEditButtonsState();
 
             // Manage the "load more" sentinel at the very top
             if (data.has_more) {
@@ -3729,6 +3790,7 @@ function switchSession(newSessionId) {
     // Switching back re-attaches and resumes live streaming.
 
     sessionId = newSessionId;
+    updateEditButtonsState();
     localStorage.setItem(SESSION_ID_KEY, sessionId);
 
     historyPage = 0;

@@ -4,9 +4,12 @@ Bash tool - Execute bash commands
 
 import os
 import re
+import signal
 import sys
 import subprocess
 import tempfile
+import threading
+import time
 from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
@@ -19,6 +22,8 @@ class Bash(BaseTool):
     """Tool for executing bash commands"""
 
     _IS_WIN = sys.platform == "win32"
+    _PROGRESS_MAX_BYTES = 4 * 1024
+    _PROGRESS_INTERVAL = 0.5
 
     name: str = "bash"
     description: str = f"""Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file.
@@ -113,17 +118,11 @@ SAFETY:
                 if command and not command.strip().lower().startswith("chcp"):
                     command = f"chcp 65001 >nul 2>&1 && {command}"
 
-            result = subprocess.run(
+            result = self._run_streaming(
                 command,
-                shell=True,
-                cwd=self.cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout,
-                env=env,
+                timeout,
+                env,
+                dotenv_vars,
             )
             
             logger.debug(f"[Bash] Exit code: {result.returncode}")
@@ -235,6 +234,105 @@ SAFETY:
             return ToolResult.fail(f"Error: Command timed out after {timeout} seconds")
         except Exception as e:
             return ToolResult.fail(f"Error executing command: {str(e)}")
+
+    def _run_streaming(self, command: str, timeout: int, env: dict, dotenv_vars: dict):
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=self.cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=not self._IS_WIN,
+        )
+        stdout_chunks, stderr_chunks = [], []
+        recent = bytearray()
+        recent_lock = threading.Lock()
+
+        def drain(stream, chunks):
+            while True:
+                chunk = os.read(stream.fileno(), 4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                with recent_lock:
+                    recent.extend(chunk)
+                    if len(recent) > self._PROGRESS_MAX_BYTES:
+                        del recent[:-self._PROGRESS_MAX_BYTES]
+
+        readers = [
+            threading.Thread(target=drain, args=(process.stdout, stdout_chunks), daemon=True),
+            threading.Thread(target=drain, args=(process.stderr, stderr_chunks), daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+
+        started = time.monotonic()
+        last_reported_at = started
+        last_snapshot = None
+        try:
+            while process.poll() is None:
+                now = time.monotonic()
+                elapsed = now - started
+                if elapsed >= timeout:
+                    self._kill_process(process)
+                    raise subprocess.TimeoutExpired(command, timeout)
+                if elapsed >= self._PROGRESS_INTERVAL and now - last_reported_at >= self._PROGRESS_INTERVAL:
+                    with recent_lock:
+                        snapshot = bytes(recent).decode("utf-8", errors="replace")
+                    snapshot = self._redact_progress(snapshot, dotenv_vars)
+                    if snapshot and snapshot != last_snapshot:
+                        self.report_progress(snapshot)
+                        last_snapshot = snapshot
+                    last_reported_at = now
+                time.sleep(0.1)
+        finally:
+            if process.poll() is None:
+                self._kill_process(process)
+            process.wait()
+            join_deadline = time.monotonic() + 5
+            for reader in readers:
+                reader.join(timeout=max(0, join_deadline - time.monotonic()))
+
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            returncode=process.returncode,
+            stdout=b"".join(stdout_chunks).decode("utf-8", errors="replace"),
+            stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+        )
+
+    def _kill_process(self, process):
+        if self._IS_WIN:
+            try:
+                result = subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if result.returncode != 0 and process.poll() is None:
+                    process.kill()
+            except (OSError, subprocess.SubprocessError):
+                if process.poll() is None:
+                    process.kill()
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (PermissionError, ProcessLookupError):
+                if process.poll() is None:
+                    process.kill()
+
+    @staticmethod
+    def _redact_progress(text: str, dotenv_vars: dict) -> str:
+        text = re.sub(
+            r'(?i)\b(API_KEY|TOKEN|PASSWORD|AUTHORIZATION)\s*=\s*[^\s]+',
+            lambda match: f"{match.group(1)}=[REDACTED]",
+            text,
+        )
+        for value in dotenv_vars.values():
+            value = str(value or "")
+            if len(value) >= 6:
+                text = text.replace(value, "[REDACTED]")
+        return text
 
     def _get_safety_warning(self, command: str) -> str:
         """

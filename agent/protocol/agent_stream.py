@@ -1174,10 +1174,21 @@ class AgentStreamExecutor:
             # Set tool context
             tool.model = self.model
             tool.context = self.agent
+            tool.progress_callback = lambda message: self._emit_event(
+                "tool_execution_progress",
+                {
+                    "tool_call_id": tool_id,
+                    "tool_name": tool_name,
+                    "message": message,
+                }
+            )
 
             # Execute tool
             start_time = time.time()
-            result: ToolResult = tool.execute_tool(arguments)
+            try:
+                result: ToolResult = tool.execute_tool(arguments)
+            finally:
+                tool.progress_callback = None
             execution_time = time.time() - start_time
 
             result_dict = {
