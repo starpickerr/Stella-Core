@@ -180,6 +180,11 @@ available_setting = {
     # WeCom smart bot config (long connection mode)
     "wecom_bot_id": "",  # WeCom smart bot BotID
     "wecom_bot_secret": "",  # WeCom smart bot long-connection secret
+    # WeCom smart bot callback (webhook) mode; default off, keep using the long connection
+    "wecom_bot_callback": False,  # whether to receive messages via HTTP callback (webhook) instead of the long connection
+    "wecom_bot_token": "",  # callback mode: Token configured on the bot's receive-message URL
+    "wecom_bot_encoding_aes_key": "",  # callback mode: EncodingAESKey configured on the bot's receive-message URL
+    "wecom_bot_port": 9892,  # callback mode: local HTTP server port for the receive-message URL
     # Telegram config
     "telegram_token": "",  # Bot token from @BotFather
     "telegram_proxy": "",  # Optional HTTP/SOCKS5 proxy, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080 (empty falls back to env vars)
