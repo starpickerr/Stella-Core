@@ -247,16 +247,22 @@ class WecomBotChannel(ChatChannel):
         except (KeyboardInterrupt, SystemExit):
             server.stop()
 
-    def _new_callback_stream(self) -> str:
+    def _new_callback_stream(self, response_url: str = "") -> str:
         """Create a new stream state and return its id."""
         stream_id = uuid.uuid4().hex[:16]
+        now = time.time()
         with self._callback_lock:
             self._callback_streams[stream_id] = {
                 "committed": "",
                 "current": "",
                 "finished": False,
                 "images": [],  # list of (base64_str, md5_str), flushed only at finish
-                "last_access": time.time(),
+                "image_urls": [],  # public http(s) image urls (usable in response_url markdown)
+                "last_access": now,
+                "created_at": now,
+                "response_url": response_url or "",
+                "delivered": False,  # final answer handed to WeCom via a poll
+                "url_sent": False,   # final answer pushed via response_url (active reply)
             }
         return stream_id
 
@@ -284,7 +290,10 @@ class WecomBotChannel(ChatChannel):
             return None
         context, wecom_msg = result
 
-        stream_id = self._new_callback_stream()
+        # response_url lets us actively reply once within 1h, used as a fallback
+        # when the agent finishes after WeCom stops polling (max ~6min window).
+        response_url = data.get("response_url", "") or ""
+        stream_id = self._new_callback_stream(response_url=response_url)
         wecom_msg.stream_id = stream_id
         context["wecom_stream_id"] = stream_id
         context["on_event"] = self._make_callback_stream_callback(stream_id)
@@ -305,9 +314,15 @@ class WecomBotChannel(ChatChannel):
                 # Unknown / expired stream: tell WeCom we're done to stop polling.
                 return {"msgtype": "stream", "stream": {"id": stream_id, "finish": True, "content": ""}}
             state["last_access"] = time.time()
-            content = state["committed"] + state["current"]
             finished = state["finished"]
+            if state.get("url_sent"):
+                # Final answer already pushed via response_url; finish silently.
+                return {"msgtype": "stream", "stream": {"id": stream_id, "finish": True, "content": ""}}
+            content = state["committed"] + state["current"]
             images = state["images"] if finished else []
+            if finished:
+                state["delivered"] = True
+                logger.debug(f"[WecomBot] stream {stream_id} delivered via poll, len={len(content)}, images={len(images)}")
 
         stream = {"id": stream_id, "finish": finished, "content": content}
         if images:
@@ -698,37 +713,50 @@ class WecomBotChannel(ChatChannel):
             self._callback_finalize_image(stream_id, reply.content)
         elif reply.type == ReplyType.FILE:
             # Passive callback replies only support text + image (base64); files
-            # are not supported by the protocol, so degrade to a text notice.
+            # are not supported by the protocol, so append a notice to whatever
+            # text the agent already streamed (do not drop it).
             text = getattr(reply, "text_content", "") or ""
-            note = (text + "\n" if text else "") + "[文件回复在回调模式下暂不支持]"
-            self._callback_finalize_text(stream_id, note)
+            note = (text + "\n\n" if text else "") + "（文件无法在企微回调模式下直接发送）"
+            self._callback_finalize_text(stream_id, note, append=True)
         elif reply.type in (ReplyType.VIDEO, ReplyType.VIDEO_URL, ReplyType.VOICE):
             logger.warning(f"[WecomBot] reply type {reply.type} not supported in callback mode")
-            self._callback_finalize_text(stream_id, "[该消息类型在回调模式下暂不支持]")
+            text = getattr(reply, "text_content", "") or ""
+            note = (text + "\n\n" if text else "") + "（该消息类型无法在企微回调模式下直接发送）"
+            self._callback_finalize_text(stream_id, note, append=True)
         else:
             self._callback_finalize_text(stream_id, str(reply.content))
 
     def _callback_get_or_create_state(self, stream_id: str) -> dict:
         state = self._callback_streams.get(stream_id)
         if state is None:
+            now = time.time()
             state = {
                 "committed": "",
                 "current": "",
                 "finished": False,
                 "images": [],
-                "last_access": time.time(),
+                "image_urls": [],
+                "last_access": now,
+                "created_at": now,
+                "response_url": "",
+                "delivered": False,
+                "url_sent": False,
             }
             self._callback_streams[stream_id] = state
         return state
 
-    def _callback_finalize_text(self, stream_id: str, content: str):
+    def _callback_finalize_text(self, stream_id: str, content: str, append: bool = False):
         with self._callback_lock:
             state = self._callback_get_or_create_state(stream_id)
             accumulated = (state["committed"] + state["current"]).strip()
-            state["committed"] = accumulated if accumulated else (content or "")
+            if append and accumulated:
+                state["committed"] = (accumulated + "\n\n" + (content or "")).strip()
+            else:
+                state["committed"] = accumulated if accumulated else (content or "")
             state["current"] = ""
             state["finished"] = True
             state["last_access"] = time.time()
+        self._schedule_response_url_fallback(stream_id)
 
     def _callback_finalize_image(self, stream_id: str, img_path_or_url: str):
         b64md5 = self._load_image_base64(img_path_or_url)
@@ -739,10 +767,65 @@ class WecomBotChannel(ChatChannel):
             if b64md5:
                 state["images"].append(b64md5)
                 state["committed"] = accumulated
+                # Remember the public url (if any) so the response_url fallback
+                # can embed it as markdown when the poll window has closed.
+                if img_path_or_url.startswith(("http://", "https://")):
+                    state["image_urls"].append(img_path_or_url)
             else:
                 state["committed"] = accumulated or "[图片发送失败]"
             state["finished"] = True
             state["last_access"] = time.time()
+        self._schedule_response_url_fallback(stream_id)
+
+    # ------------------------------------------------------------------
+    # Active reply fallback (response_url): rescue replies that finish after
+    # WeCom stops polling (the passive stream window is ~6 min from the user's
+    # message). A short delay lets an in-flight poll deliver first; only if no
+    # poll picks up the finished answer do we push it actively via response_url.
+    # ------------------------------------------------------------------
+
+    def _schedule_response_url_fallback(self, stream_id: str, delay: float = 3.0):
+        def _run():
+            time.sleep(delay)
+            with self._callback_lock:
+                state = self._callback_streams.get(stream_id)
+                if not state:
+                    return
+                if state.get("delivered") or state.get("url_sent"):
+                    return  # a poll already delivered (or fallback already ran)
+                response_url = state.get("response_url") or ""
+                if not response_url:
+                    logger.warning(
+                        f"[WecomBot] stream {stream_id} finished after poll window but no response_url; reply dropped"
+                    )
+                    return
+                content = (state["committed"] + state["current"]).strip()
+                image_urls = list(state.get("image_urls") or [])
+                has_images = bool(state.get("images"))
+                state["url_sent"] = True
+
+            self._send_via_response_url(stream_id, response_url, content, image_urls, has_images)
+
+        threading.Thread(target=_run, daemon=True, name=f"wecom-respurl-{stream_id}").start()
+
+    def _send_via_response_url(self, stream_id, response_url, content, image_urls, has_images):
+        """Push a one-shot active markdown reply to response_url (valid 1h, single use)."""
+        md = content or ""
+        if image_urls:
+            md += ("\n\n" if md else "") + "\n".join(f"![]({u})" for u in image_urls)
+        elif has_images:
+            md += ("\n\n" if md else "") + "（图片已生成，但因处理超时无法通过回调发送）"
+        if not md:
+            md = "（处理完成）"
+        payload = {"msgtype": "markdown", "markdown": {"content": md}}
+        try:
+            resp = requests.post(response_url, json=payload, timeout=15)
+            logger.info(
+                f"[WecomBot] response_url active reply sent for {stream_id}: "
+                f"status={resp.status_code}, body={resp.text[:200]}"
+            )
+        except Exception as e:
+            logger.error(f"[WecomBot] response_url active reply failed for {stream_id}: {e}")
 
     def _load_image_base64(self, img_path_or_url: str):
         """Load a local/remote image, ensure JPG/PNG within 10MB, return (base64, md5)."""
@@ -1254,7 +1337,10 @@ class WecomBotCallbackController:
             return "success"
 
         msgtype = data.get("msgtype", "")
-        logger.debug(f"[WecomBot] callback received msgtype={msgtype}")
+        # Stream polls arrive ~1/s; logging each is noisy, so only log non-poll
+        # callbacks here (poll completion is logged in the stream-poll handler).
+        if msgtype != "stream":
+            logger.debug(f"[WecomBot] callback received msgtype={msgtype}")
 
         try:
             if msgtype == "stream":
