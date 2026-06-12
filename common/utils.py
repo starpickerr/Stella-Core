@@ -27,10 +27,14 @@ def compress_imgfile(file, max_size):
     img = Image.open(file)
     rgb_image = img.convert("RGB")
     quality = 95
+    min_quality = 10
     while True:
         out_buf = io.BytesIO()
         rgb_image.save(out_buf, "JPEG", quality=quality)
-        if fsize(out_buf) <= max_size:
+        if fsize(out_buf) <= max_size or quality <= min_quality:
+            # Stop at min_quality: further decrements would pass an invalid
+            # quality (<1) to PIL and the loop would otherwise never terminate
+            # for images that cannot be compressed below max_size.
             return out_buf
         quality -= 5
 
