@@ -519,7 +519,10 @@ class ChatChannel(Channel):
     def cancel_session(self, session_id):
         with self.lock:
             if session_id in self.sessions:
-                for future in self.futures[session_id]:
+                # futures[session_id] is only created in consume() when a task is
+                # dispatched, so it may be absent if cancel happens right after
+                # produce() but before the first dispatch. Default to [].
+                for future in self.futures.get(session_id, []):
                     future.cancel()
                 cnt = self.sessions[session_id][0].qsize()
                 if cnt > 0:
@@ -529,7 +532,7 @@ class ChatChannel(Channel):
     def cancel_all_session(self):
         with self.lock:
             for session_id in self.sessions:
-                for future in self.futures[session_id]:
+                for future in self.futures.get(session_id, []):
                     future.cancel()
                 cnt = self.sessions[session_id][0].qsize()
                 if cnt > 0:
