@@ -22,7 +22,7 @@ class Bash(BaseTool):
     """Tool for executing bash commands"""
 
     _IS_WIN = sys.platform == "win32"
-    _PROGRESS_MAX_BYTES = 32 * 1024
+    _PROGRESS_MAX_BYTES = 4 * 1024
     _PROGRESS_INTERVAL = 0.5
 
     name: str = "bash"
@@ -290,8 +290,9 @@ SAFETY:
             if process.poll() is None:
                 self._kill_process(process)
             process.wait()
+            join_deadline = time.monotonic() + 5
             for reader in readers:
-                reader.join()
+                reader.join(timeout=max(0, join_deadline - time.monotonic()))
 
         from types import SimpleNamespace
         return SimpleNamespace(
@@ -302,12 +303,23 @@ SAFETY:
 
     def _kill_process(self, process):
         if self._IS_WIN:
-            process.kill()
+            try:
+                result = subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if result.returncode != 0 and process.poll() is None:
+                    process.kill()
+            except (OSError, subprocess.SubprocessError):
+                if process.poll() is None:
+                    process.kill()
         else:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except PermissionError:
-                process.kill()
+            except (PermissionError, ProcessLookupError):
+                if process.poll() is None:
+                    process.kill()
 
     @staticmethod
     def _redact_progress(text: str, dotenv_vars: dict) -> str:
