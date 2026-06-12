@@ -2247,13 +2247,24 @@ class ModelsHandler:
         """Main chat model — drives the agent. bot_type maps to a provider id."""
         bot_type = local_config.get("bot_type") or ""
         provider_id = "openai" if bot_type == "chatGPT" else bot_type
-        if provider_id not in ConfigHandler.PROVIDER_MODELS and local_config.get("use_linkai"):
+        is_custom_id = provider_id.startswith("custom:")
+        if (provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id
+                and local_config.get("use_linkai")):
             provider_id = "linkai"
+        # In multi-provider mode, replace the single "custom" entry with the
+        # expanded "custom:<id>" ids so the chat dropdown matches the cards.
+        provider_ids = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in ConfigHandler.PROVIDER_MODELS.keys():
+            if pid == "custom" and custom_cards:
+                provider_ids.extend(c["id"] for c in custom_cards)
+            else:
+                provider_ids.append(pid)
         return {
             "editable": True,
             "current_provider": provider_id,
             "current_model": local_config.get("model", ""),
-            "providers": list(ConfigHandler.PROVIDER_MODELS.keys()),
+            "providers": provider_ids,
             "use_linkai": bool(local_config.get("use_linkai", False)),
         }
 
@@ -3001,12 +3012,27 @@ class ModelsHandler:
         })
 
     def _set_chat(self, provider_id: str, model: str) -> str:
-        if provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+        # Accept expanded custom provider ids ("custom:<id>") as well as the
+        # built-in vendors, so the chat capability card and the custom
+        # providers section behave consistently.
+        custom_provider = None
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         applied = {}
         local_config = conf()
         file_cfg = self._read_file_config()
+
+        # Fall back to the custom provider's default model when none is given.
+        if not model and custom_provider:
+            model = custom_provider.get("model") or ""
 
         if provider_id:
             bot_type_value = "chatGPT" if provider_id == "openai" else provider_id
