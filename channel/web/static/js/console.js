@@ -188,6 +188,30 @@ const I18N = {
         feishu_mode_scan: '扫码创建', feishu_mode_manual: '手动填写',
         tasks_title: '定时任务', tasks_desc: '查看和管理定时任务',
         tasks_coming: '即将推出', tasks_coming_desc: '定时任务管理功能即将在此提供',
+        task_add_btn: '新增任务',
+        task_edit_title: '编辑定时任务',
+        task_add_title: '新增定时任务',
+        task_name: '任务名称',
+        task_enabled: '启用任务',
+        task_schedule_type: '调度类型',
+        task_schedule_cron: 'Cron 表达式',
+        task_schedule_interval: '固定间隔',
+        task_schedule_once: '一次性任务',
+        task_cron_expression: 'Cron 表达式',
+        task_cron_hint: '格式: 分 时 日 月 周，例如 "0 9 * * *" 表示每天 9:00',
+        task_interval_seconds: '间隔秒数',
+        task_interval_hint: '最小 60 秒，例如 3600 表示每小时执行一次',
+        task_once_time: '执行时间',
+        task_action_type: '动作类型',
+        task_action_send_message: '发送消息',
+        task_action_agent_task: 'AI 任务',
+        task_channel_type: '通道类型',
+        task_channel_hint: '选择定时消息发送的通道',
+        task_message_content: '消息内容',
+        task_task_description: '任务描述',
+        task_delete_btn: '删除任务',
+        task_delete_confirm_title: '删除定时任务',
+        task_delete_confirm_msg: '确定删除该定时任务吗？此操作无法撤销。',
         logs_title: '日志', logs_desc: '实时日志输出 (run.log)',
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
@@ -403,6 +427,30 @@ const I18N = {
         feishu_mode_scan: 'Scan QR', feishu_mode_manual: 'Manual',
         tasks_title: 'Scheduled Tasks', tasks_desc: 'View and manage scheduled tasks',
         tasks_coming: 'Coming Soon', tasks_coming_desc: 'Scheduled task management will be available here',
+        task_add_btn: 'Add Task',
+        task_edit_title: 'Edit Task',
+        task_add_title: 'Add Task',
+        task_name: 'Task Name',
+        task_enabled: 'Enable Task',
+        task_schedule_type: 'Schedule Type',
+        task_schedule_cron: 'Cron Expression',
+        task_schedule_interval: 'Fixed Interval',
+        task_schedule_once: 'One-time Task',
+        task_cron_expression: 'Cron Expression',
+        task_cron_hint: 'Format: minute hour day month weekday, e.g. "0 9 * * *" means daily at 9:00',
+        task_interval_seconds: 'Interval (seconds)',
+        task_interval_hint: 'Minimum 60 seconds, e.g. 3600 means once per hour',
+        task_once_time: 'Execution Time',
+        task_action_type: 'Action Type',
+        task_action_send_message: 'Send Message',
+        task_action_agent_task: 'AI Task',
+        task_channel_type: 'Channel Type',
+        task_channel_hint: 'Select the channel to send scheduled messages',
+        task_message_content: 'Message Content',
+        task_task_description: 'Task Description',
+        task_delete_btn: 'Delete Task',
+        task_delete_confirm_title: 'Delete Task',
+        task_delete_confirm_msg: 'Delete this scheduled task? This action cannot be undone.',
         logs_title: 'Logs', logs_desc: 'Real-time log output (run.log)',
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
@@ -559,6 +607,11 @@ function rerenderDynamicViews() {
     if (currentView === 'models' && typeof renderModelsView === 'function'
             && modelsState && (modelsState.providers || modelsState.capabilities)) {
         renderModelsView();
+    }
+    // Reload task list after language switch
+    if (currentView === 'tasks') {
+        tasksLoaded = false;
+        loadTasksView();
     }
 }
 
@@ -7377,6 +7430,26 @@ function connectFeishuAfterRegister(appId, appSecret) {
 // Scheduler View
 // =====================================================================
 let tasksLoaded = false;
+function refreshTasksView() {
+    const btn = document.getElementById('task-refresh-btn');
+    const icon = btn.querySelector('i');
+    
+    // Add spin animation
+    icon.classList.add('fa-spin');
+    btn.disabled = true;
+    
+    tasksLoaded = false;
+    const listEl = document.getElementById('tasks-list');
+    listEl.innerHTML = '';
+    
+    loadTasksView();
+    
+    // Restore button after animation ends
+    setTimeout(() => {
+        icon.classList.remove('fa-spin');
+        btn.disabled = false;
+    }, 500);
+}
 function loadTasksView() {
     if (tasksLoaded) return;
     fetch('/api/scheduler').then(r => r.json()).then(data => {
@@ -7384,39 +7457,94 @@ function loadTasksView() {
         const emptyEl = document.getElementById('tasks-empty');
         const listEl = document.getElementById('tasks-list');
         const allTasks = data.tasks || [];
-        // Only show active (enabled) tasks
-        const tasks = allTasks.filter(t => t.enabled !== false);
-        if (tasks.length === 0) {
+        // Backend already sorted by enabled and next_run_at, no need to re-sort on frontend
+        if (allTasks.length === 0) {
             emptyEl.querySelector('p').textContent = currentLang === 'zh' ? '暂无定时任务' : 'No scheduled tasks';
+            emptyEl.classList.remove('hidden');
+            listEl.classList.add('hidden');
+            tasksLoaded = true;
             return;
         }
         emptyEl.classList.add('hidden');
         listEl.classList.remove('hidden');
         listEl.innerHTML = '';
 
-        tasks.forEach(task => {
+        allTasks.forEach(task => {
+            const isEnabled = task.enabled !== false;
             const card = document.createElement('div');
             card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-4';
-            const typeLabel = task.type === 'cron'
-                ? `<span class="text-xs font-mono text-slate-400">${escapeHtml(task.cron || '')}</span>`
-                : `<span class="text-xs text-slate-400">${escapeHtml(task.type || 'once')}</span>`;
+            card.dataset.taskId = task.id;
+            if (!isEnabled) card.classList.add('opacity-50');
+            const schedule = task.schedule || {};
+            let typeLabel = '';
+            if (schedule.type === 'cron') {
+                typeLabel = `<span class="text-xs font-mono text-slate-400">${escapeHtml(schedule.expression || '')}</span>`;
+            } else if (schedule.type === 'interval') {
+                const seconds = schedule.seconds || 0;
+                const hours = Math.floor(seconds / 3600);
+                const mins = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                let intervalText = [];
+                if (hours > 0) intervalText.push(`${hours}h`);
+                if (mins > 0) intervalText.push(`${mins}m`);
+                if (secs > 0 || intervalText.length === 0) intervalText.push(`${secs}s`);
+                typeLabel = `<span class="text-xs text-slate-400">${intervalText.join(' ')}</span>`;
+            } else {
+                typeLabel = `<span class="text-xs text-slate-400">${escapeHtml(schedule.type || 'once')}</span>`;
+            }
             let nextRun = '--';
             if (task.next_run_at) {
-                // next_run_at is an ISO string, not a Unix timestamp
                 const d = new Date(task.next_run_at);
                 if (!isNaN(d.getTime())) nextRun = d.toLocaleString();
             }
+            const action = task.action || {};
+            const taskContent = action.content || action.task_description || '';
+            const toggleId = 'toggle-' + task.id;
             card.innerHTML = `
                 <div class="flex items-center gap-2 mb-2">
-                    <span class="w-2 h-2 rounded-full bg-primary-400"></span>
+                    <span class="w-2 h-2 rounded-full ${isEnabled ? 'bg-primary-400' : 'bg-slate-300 dark:bg-slate-600'}"></span>
                     <span class="font-medium text-sm text-slate-700 dark:text-slate-200">${escapeHtml(task.name || task.id || '--')}</span>
                     <div class="flex-1"></div>
                     ${typeLabel}
                 </div>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mb-2 line-clamp-2">${escapeHtml(task.prompt || task.description || '')}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-2 line-clamp-2">${escapeHtml(taskContent)}</p>
                 <div class="flex items-center gap-4 text-xs text-slate-400 dark:text-slate-500">
                     <span><i class="fas fa-clock mr-1"></i>${currentLang === 'zh' ? '下次执行' : 'Next run'}: ${nextRun}</span>
+                    <div class="flex-1"></div>
+                    <label class="relative inline-flex items-center cursor-pointer" for="${toggleId}">
+                        <input type="checkbox" id="${toggleId}" class="sr-only peer" ${isEnabled ? 'checked' : ''}>
+                        <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-500 dark:bg-slate-600 dark:peer-checked:bg-primary-500"></div>
+                    </label>
                 </div>`;
+            const checkbox = card.querySelector('#' + toggleId);
+            checkbox.addEventListener('change', function() {
+                const newEnabled = this.checked;
+                fetch('/api/scheduler/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task_id: task.id, enabled: newEnabled})
+                }).then(r => r.json()).then(res => {
+                    if (res.status === 'success') {
+                        const dot = card.querySelector('.rounded-full.w-2');
+                        if (newEnabled) {
+                            card.classList.remove('opacity-50');
+                            if (dot) { dot.classList.remove('bg-slate-300','dark:bg-slate-600'); dot.classList.add('bg-primary-400'); }
+                        } else {
+                            card.classList.add('opacity-50');
+                            if (dot) { dot.classList.remove('bg-primary-400'); dot.classList.add('bg-slate-300','dark:bg-slate-600'); }
+                        }
+                    } else {
+                        this.checked = !newEnabled;
+                    }
+                }).catch(() => { this.checked = !newEnabled; });
+            });
+            // Card click event (excluding toggle switch clicks)
+            card.addEventListener('click', function(e) {
+                if (!e.target.closest('label') && !e.target.closest('input[type="checkbox"]')) {
+                    openTaskEditModal(task);
+                }
+            });
+            card.style.cursor = 'pointer';
             listEl.appendChild(card);
         });
         tasksLoaded = true;
@@ -8148,4 +8276,383 @@ fetch('/auth/check').then(r => r.json()).then(data => {
 
 requestAnimationFrame(() => {
     document.body.classList.add('transition-colors', 'duration-200');
+});
+
+// =====================================================================
+// Task Edit Modal
+// =====================================================================
+let currentEditingTask = null;
+
+function loadTaskChannelOptions(selectedChannelType) {
+    const select = document.getElementById('task-edit-channel-type');
+    select.innerHTML = '';
+    fetch('/api/channels').then(r => r.json()).then(data => {
+        if (data.status !== 'success') return;
+        const allChannels = data.channels || [];
+        // Only include currently active channels, strictly following the channel management page logic
+        let channels = allChannels.filter(c => c.active).map(c => {
+            const label = (typeof c.label === 'object') ? (c.label[currentLang] || c.label.en || c.name) : (c.label || c.name);
+            return { name: c.name, label: label };
+        });
+        const channelNames = channels.map(c => c.name);
+        // Always include the web console channel
+        if (!channelNames.includes('web')) {
+            channels.unshift({ name: 'web', label: currentLang === 'zh' ? 'Web' : 'Web' });
+        }
+        // If the currently selected channel is not in the active list (e.g. disabled), append it to preserve selection
+        if (selectedChannelType && !channelNames.includes(selectedChannelType) && selectedChannelType !== 'web') {
+            const ch = allChannels.find(c => c.name === selectedChannelType);
+            const label = ch
+                ? ((typeof ch.label === 'object') ? (ch.label[currentLang] || ch.label.en || ch.name) : (ch.label || ch.name))
+                : selectedChannelType;
+            channels.push({ name: selectedChannelType, label: label });
+        }
+        channels.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.name;
+            opt.textContent = c.label;
+            select.appendChild(opt);
+        });
+        // Set selected value
+        if (selectedChannelType) {
+            select.value = selectedChannelType;
+        }
+    }).catch(() => {
+        // fallback: at least keep the current selection and web
+        select.innerHTML = '';
+        const webOpt = document.createElement('option');
+        webOpt.value = 'web';
+        webOpt.textContent = 'Web';
+        select.appendChild(webOpt);
+        
+        if (selectedChannelType && selectedChannelType !== 'web') {
+            const opt = document.createElement('option');
+            opt.value = selectedChannelType;
+            opt.textContent = selectedChannelType;
+            select.appendChild(opt);
+        }
+        if (selectedChannelType) {
+            select.value = selectedChannelType;
+        }
+        
+        // Show error message
+        console.error('Failed to load channel options');
+    });
+}
+
+function openTaskEditModal(task) {
+    currentEditingTask = task;
+    const overlay = document.getElementById('task-edit-modal-overlay');
+    const titleEl = document.querySelector('#task-edit-modal-overlay h3');
+    const subtitle = document.getElementById('task-edit-modal-subtitle');
+    const deleteBtn = document.getElementById('task-edit-modal-delete');
+    const nameInput = document.getElementById('task-edit-name');
+    const enabledInput = document.getElementById('task-edit-enabled');
+    const scheduleTypeSelect = document.getElementById('task-edit-schedule-type');
+    const cronInput = document.getElementById('task-edit-cron-expression');
+    const intervalInput = document.getElementById('task-edit-interval-seconds');
+    const onceInput = document.getElementById('task-edit-once-time');
+    const actionTypeSelect = document.getElementById('task-edit-action-type');
+    const receiverInput = document.getElementById('task-edit-receiver');
+    const contentInput = document.getElementById('task-edit-content');
+
+    // Set title and subtitle
+    titleEl.textContent = t('task_edit_title');
+    subtitle.textContent = task.id;
+    deleteBtn.classList.remove('hidden');
+
+    // Populate data
+    nameInput.value = task.name || '';
+    enabledInput.checked = task.enabled !== false;
+
+    const schedule = task.schedule || {};
+    scheduleTypeSelect.value = schedule.type || 'cron';
+
+    // Clear all schedule type input values first to avoid stale data
+    cronInput.value = '';
+    intervalInput.value = '';
+    onceInput.value = '';
+
+    if (schedule.type === 'cron') {
+        cronInput.value = schedule.expression || '';
+    } else if (schedule.type === 'interval') {
+        intervalInput.value = schedule.seconds || '';
+    } else if (schedule.type === 'once') {
+        if (schedule.run_at) {
+            // Manually parse ISO time string to avoid cross-browser timezone issues with new Date()
+            // run_at format: "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DDTHH:mm:ss.ffffff"
+            const parts = schedule.run_at.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+            if (parts) {
+                const timeInput = document.getElementById('task-edit-once-time');
+                timeInput.value = `${parts[1]}-${parts[2]}-${parts[3]}T${parts[4]}:${parts[5]}:${parts[6]}`;
+            }
+        }
+    }
+
+    const action = task.action || {};
+    actionTypeSelect.value = action.type || 'send_message';
+    receiverInput.value = action.receiver || '';
+    contentInput.value = action.content || action.task_description || '';
+
+    // Load channel options and set selected value
+    loadTaskChannelOptions(action.channel_type || 'web');
+
+    // Disable channel type selector — channel is read-only when editing.
+    // Switching the channel after a task is created is problematic because:
+    //   1. The WeChat (weixin/ilink) bot requires a valid context_token that is tied
+    //      to a specific user-session on that channel. Changing the channel to weixin
+    //      would invalidate the existing token — the new receiver on weixin may not
+    //      have an active context_token, causing the scheduled push to silently fail.
+    //   2. Other channels (DingTalk, Feishu, etc.) also carry channel-specific fields
+    //      (e.g. dingtalk_sender_staff_id) that cannot be trivially re-populated for
+    //      a different channel type without user intervention.
+    //   3. The receiver identity itself is channel-bound — a weixin user-id means
+    //      nothing on a Feishu channel, so changing the channel would orphan the task.
+    // For these reasons, the channel type is intentionally frozen once a task exists.
+    // Users who need a task on a different channel should create a new task through
+    // the chat interface (by asking the bot) rather than editing an existing one.
+    document.getElementById('task-edit-channel-type').disabled = true;
+
+    // Update UI
+    updateTaskScheduleFields();
+    updateTaskActionLabel();
+
+    overlay.classList.remove('hidden');
+}
+
+function closeTaskEditModal() {
+    document.getElementById('task-edit-modal-overlay').classList.add('hidden');
+    currentEditingTask = null;
+}
+
+function updateTaskScheduleFields() {
+    const scheduleType = document.getElementById('task-edit-schedule-type').value;
+    const cronWrap = document.getElementById('task-edit-cron-wrap');
+    const intervalWrap = document.getElementById('task-edit-interval-wrap');
+    const onceWrap = document.getElementById('task-edit-once-wrap');
+    const cronHint = document.getElementById('task-edit-cron-hint');
+    const intervalHint = document.getElementById('task-edit-interval-hint');
+    
+    cronWrap.classList.toggle('hidden', scheduleType !== 'cron');
+    intervalWrap.classList.toggle('hidden', scheduleType !== 'interval');
+    onceWrap.classList.toggle('hidden', scheduleType !== 'once');
+    
+    if (cronHint) cronHint.classList.toggle('hidden', scheduleType !== 'cron');
+    if (intervalHint) intervalHint.classList.toggle('hidden', scheduleType !== 'interval');
+}
+
+function updateTaskActionLabel() {
+    const actionType = document.getElementById('task-edit-action-type').value;
+    const label = document.getElementById('task-edit-content-label');
+    const content = document.getElementById('task-edit-content');
+    
+    if (actionType === 'send_message') {
+        label.textContent = t('task_message_content');
+        content.placeholder = t('task_message_content');
+    } else {
+        label.textContent = t('task_task_description');
+        content.placeholder = t('task_task_description');
+    }
+}
+
+function saveTaskEdit() {
+    const nameInput = document.getElementById('task-edit-name');
+    const enabledInput = document.getElementById('task-edit-enabled');
+    const scheduleTypeSelect = document.getElementById('task-edit-schedule-type');
+    const cronInput = document.getElementById('task-edit-cron-expression');
+    const intervalInput = document.getElementById('task-edit-interval-seconds');
+    const onceInput = document.getElementById('task-edit-once-time');
+    const actionTypeSelect = document.getElementById('task-edit-action-type');
+    const channelTypeSelect = document.getElementById('task-edit-channel-type');
+    const receiverInput = document.getElementById('task-edit-receiver');
+    const contentInput = document.getElementById('task-edit-content');
+    const statusEl = document.getElementById('task-edit-modal-status');
+    const saveBtn = document.getElementById('task-edit-modal-save');
+    
+    const name = nameInput.value.trim();
+    if (!name) {
+        statusEl.textContent = currentLang === 'zh' ? '请输入任务名称' : 'Please enter task name';
+        statusEl.style.opacity = '1';
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+        return;
+    }
+    
+    const scheduleType = scheduleTypeSelect.value;
+    const schedule = { type: scheduleType };
+    
+    if (scheduleType === 'cron') {
+        const expr = cronInput.value.trim();
+        if (!expr) {
+            statusEl.textContent = currentLang === 'zh' ? '请输入 Cron 表达式' : 'Please enter cron expression';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        // Basic cron expression format validation: 5 or 6 fields
+        const fields = expr.split(/\s+/);
+        if (fields.length < 5 || fields.length > 6) {
+            statusEl.textContent = currentLang === 'zh' ? 'Cron 表达式格式错误，应为 5 或 6 个字段（分 时 日 月 周）' : 'Invalid cron expression, expected 5 or 6 fields (min hour day month weekday)';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        schedule.expression = expr;
+        // Note: detailed cron expression validity is verified by the backend croniter library; frontend only does basic format validation
+    } else if (scheduleType === 'interval') {
+        const seconds = parseInt(intervalInput.value);
+        if (!seconds || seconds < 60) {
+            statusEl.textContent = currentLang === 'zh' ? '间隔秒数最小为 60 秒' : 'Interval must be at least 60 seconds';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        schedule.seconds = seconds;
+    } else if (scheduleType === 'once') {
+        const time = onceInput.value;
+        if (!time) {
+            statusEl.textContent = currentLang === 'zh' ? '请选择执行时间' : 'Please select execution time';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        // Validate execution time format
+        const selectedTime = new Date(time);
+        if (isNaN(selectedTime.getTime())) {
+            statusEl.textContent = currentLang === 'zh' ? '执行时间格式错误' : 'Invalid execution time format';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        // Validate that time is in the future for one-time tasks
+        if (selectedTime <= new Date()) {
+            statusEl.textContent = currentLang === 'zh' ? '执行时间必须在当前时间之后' : 'Execution time must be in the future';
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+            return;
+        }
+        // datetime-local value with step="1" is already in YYYY-MM-DDTHH:mm:ss format
+        // Backend _parse_naive_local treats strings without timezone suffix as local time
+        schedule.run_at = time;
+    }
+    
+    const actionType = actionTypeSelect.value;
+    const channelType = channelTypeSelect.value;
+    const content = contentInput.value.trim();
+
+    if (!content) {
+        statusEl.textContent = currentLang === 'zh' ? '请输入内容' : 'Please enter content';
+        statusEl.style.opacity = '1';
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+        return;
+    }
+    
+    // Build action with only necessary fields to avoid stale data
+    const action = {
+        type: actionType,
+        channel_type: channelType,
+        receiver: '',
+        receiver_name: '',
+        is_group: false,
+        notify_session_id: ''
+    };
+    
+    if (actionType === 'send_message') {
+        action.content = content;
+    } else {
+        action.task_description = content;
+    }
+    
+    // Preserve the original receiver info (channel is read-only, so it never changes)
+    if (currentEditingTask && currentEditingTask.action) {
+        action.receiver = currentEditingTask.action.receiver || '';
+        action.receiver_name = currentEditingTask.action.receiver_name || '';
+        action.is_group = currentEditingTask.action.is_group || false;
+        action.notify_session_id = currentEditingTask.action.notify_session_id || '';
+        
+        // Preserve channel-specific fields (e.g. DingTalk sender_staff_id)
+        if (channelType === 'dingtalk' && currentEditingTask.action.dingtalk_sender_staff_id) {
+            action.dingtalk_sender_staff_id = currentEditingTask.action.dingtalk_sender_staff_id;
+        }
+    }
+    
+    saveBtn.disabled = true;
+    
+    const payload = {
+        task_id: currentEditingTask.id,
+        name: name,
+        enabled: enabledInput.checked,
+        schedule: schedule,
+        action: action
+    };
+    
+    fetch('/api/scheduler/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(res => {
+        saveBtn.disabled = false;
+        if (res.status === 'success') {
+            closeTaskEditModal();
+            tasksLoaded = false;
+            loadTasksView();
+        } else {
+            statusEl.textContent = res.message || (currentLang === 'zh' ? '保存失败' : 'Save failed');
+            statusEl.style.opacity = '1';
+            setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+        }
+    }).catch(() => {
+        saveBtn.disabled = false;
+        statusEl.textContent = currentLang === 'zh' ? '网络错误' : 'Network error';
+        statusEl.style.opacity = '1';
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+    });
+}
+
+function deleteTask() {
+    if (!currentEditingTask) return;
+    
+    const taskName = currentEditingTask.name || currentEditingTask.id || '未知任务';
+    const taskId = currentEditingTask.id;  // Capture early to avoid closure race condition
+    showConfirmDialog({
+        title: t('task_delete_confirm_title'),
+        message: (currentLang === 'zh' ? `确定要删除任务「${taskName}」吗？` : `Are you sure to delete task "${taskName}"?`),
+        onConfirm: () => {
+            fetch('/api/scheduler/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId })
+            }).then(r => r.json()).then(res => {
+                if (res.status === 'success') {
+                    closeTaskEditModal();
+                    tasksLoaded = false;
+                    loadTasksView();
+                } else {
+                    const statusEl = document.getElementById('task-edit-modal-status');
+                    if (statusEl) {
+                        statusEl.textContent = res.message || 'Delete failed';
+                        statusEl.classList.remove('hidden', 'text-green-500');
+                        statusEl.classList.add('text-red-500');
+                        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+                    }
+                }
+            }).catch(() => {
+                const statusEl = document.getElementById('task-edit-modal-status');
+                if (statusEl) {
+                    statusEl.textContent = 'Network error';
+                    statusEl.classList.remove('hidden', 'text-green-500');
+                    statusEl.classList.add('text-red-500');
+                    setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+                }
+            });
+        }
+    });
+}
+
+document.getElementById('task-edit-schedule-type').addEventListener('change', updateTaskScheduleFields);
+document.getElementById('task-edit-action-type').addEventListener('change', updateTaskActionLabel);
+document.getElementById('task-edit-modal-cancel').addEventListener('click', closeTaskEditModal);
+document.getElementById('task-edit-modal-save').addEventListener('click', saveTaskEdit);
+document.getElementById('task-edit-modal-delete').addEventListener('click', deleteTask);
+document.getElementById('task-edit-modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) closeTaskEditModal();
 });
