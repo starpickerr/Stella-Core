@@ -1155,6 +1155,9 @@ class WebChannel(ChatChannel):
             '/api/knowledge/read', 'KnowledgeReadHandler',
             '/api/knowledge/graph', 'KnowledgeGraphHandler',
             '/api/scheduler', 'SchedulerHandler',
+            '/api/scheduler/toggle', 'SchedulerToggleHandler',
+            '/api/scheduler/update', 'SchedulerUpdateHandler',
+            '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
@@ -4159,6 +4162,141 @@ class SchedulerHandler:
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerToggleHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            enabled = body.get("enabled", True)
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            from agent.tools.scheduler.task_store import TaskStore
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            store.enable_task(task_id, enabled)
+            task = store.get_task(task_id)
+            return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler toggle error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerUpdateHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            
+            from agent.tools.scheduler.task_store import TaskStore
+            from agent.tools.scheduler.scheduler_service import SchedulerService
+            from datetime import datetime
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            
+            # Get original task (single query to avoid repeated I/O)
+            original_task = store.get_task(task_id)
+            if not original_task:
+                return json.dumps({"status": "error", "message": f"Task '{task_id}' not found"})
+            
+            # Build updates dict
+            updates = {}
+            if "name" in body:
+                updates["name"] = body["name"]
+            if "enabled" in body:
+                updates["enabled"] = body["enabled"]
+            
+            # Update schedule
+            if "schedule" in body:
+                updates["schedule"] = body["schedule"]
+                # If schedule config changed, recalculate next_run_at
+                # Build merged temp task data for calculation (without modifying the original object)
+                merged = dict(original_task)
+                merged.update(updates)
+                if "action" in body:
+                    merged["action"] = body["action"]
+                temp_service = SchedulerService(store, lambda t: None)
+                next_run = temp_service._calculate_next_run(merged, datetime.now())
+                if next_run:
+                    updates["next_run_at"] = next_run.isoformat()
+                else:
+                    # Cannot calculate next run time, schedule config may be invalid
+                    return json.dumps({
+                        "status": "error", 
+                        "message": "Cannot calculate next run time. Please check the schedule config (e.g., cron expression format, or whether the one-time task time has already passed)."
+                    }, ensure_ascii=False)
+            
+            # Update action
+            if "action" in body:
+                action = body["action"]
+                channel_type = action.get("channel_type", "web")
+                
+                # Get the task's original channel_type
+                old_channel = original_task.get("action", {}).get("channel_type", "web")
+                
+                # If channel type changed or no receiver, reject the update.
+                # Note: the web UI disables the channel selector, so this branch
+                # is only reachable via direct API calls. Changing a task's channel
+                # after creation is not supported because the receiver identity is
+                # channel-bound and cannot be trivially re-populated (e.g. weixin
+                # requires a valid context_token tied to the original user-session).
+                if old_channel and old_channel != channel_type:
+                    return json.dumps({
+                        "status": "error",
+                        "message": f"Cannot change channel type from '{old_channel}' to '{channel_type}'. Please create a new task on the target channel instead."
+                    }, ensure_ascii=False)
+                if not action.get("receiver"):
+                    return json.dumps({
+                        "status": "error",
+                        "message": "Receiver is required. Please create a new task through the chat interface."
+                    }, ensure_ascii=False)
+                updates["action"] = action
+                
+                # If schedule was not updated but action was, ensure next_run_at exists
+                if "schedule" not in body and "next_run_at" not in original_task:
+                    merged = dict(original_task)
+                    merged.update(updates)
+                    temp_service = SchedulerService(store, lambda t: None)
+                    next_run = temp_service._calculate_next_run(merged, datetime.now())
+                    if next_run:
+                        updates["next_run_at"] = next_run.isoformat()
+            
+            store.update_task(task_id, updates)
+            task = store.get_task(task_id)
+            return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler update error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerDeleteHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            
+            from agent.tools.scheduler.task_store import TaskStore
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            store.delete_task(task_id)
+            return json.dumps({"status": "success"}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
