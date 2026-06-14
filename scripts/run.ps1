@@ -423,7 +423,7 @@ function Install-Dependencies {
 # Each entry: Provider / default model name / config key field / optional base.
 $ModelChoices = @{
     1  = @{ Provider = "DeepSeek";                Default = "deepseek-v4-flash";                   Field = "deepseek_api_key" }
-    2  = @{ Provider = "Claude";                  Default = "claude-fable-5";                      Field = "claude_api_key";    BaseField = "claude_api_base" }
+    2  = @{ Provider = "Claude";                  Default = "claude-opus-4-8";                     Field = "claude_api_key";    BaseField = "claude_api_base" }
     3  = @{ Provider = "Gemini";                  Default = "gemini-3.1-pro-preview";              Field = "gemini_api_key";    BaseField = "gemini_api_base" }
     4  = @{ Provider = "OpenAI";                  Default = "gpt-5.5";                             Field = "open_ai_api_key";   BaseField = "open_ai_api_base" }
     5  = @{ Provider = "MiniMax";                 Default = "MiniMax-M3";                          Field = "minimax_api_key" }
@@ -440,7 +440,7 @@ function Select-Model {
     $title = T "选择 AI 模型" "Select AI Model"
     $options = @(
         "DeepSeek (deepseek-v4-flash, deepseek-v4-pro, etc.)",
-        "Claude (claude-fable-5, claude-opus-4-8, etc.)",
+        "Claude (claude-opus-4-8, claude-fable-5, etc.)",
         "Gemini (gemini-3.5-flash, gemini-3.1-pro-preview, etc.)",
         "OpenAI (gpt-5.5, etc.)",
         "MiniMax (MiniMax-M3, etc.)",
