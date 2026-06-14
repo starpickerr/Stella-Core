@@ -195,6 +195,120 @@ def restart(ctx, no_logs):
     ctx.invoke(start, no_logs=no_logs)
 
 
+# Detached relay that survives the caller's process tree. Run via `python -c`
+# with start_new_session=True so it keeps going after the agent's bash child
+# (and the main app it kills) both die. Flow: self-check the new code FIRST
+# (import app); abort without touching the old process if it fails. Only when
+# the new code is loadable does it SIGTERM the old PID, wait for exit (SIGKILL
+# fallback), then start a fresh app.py and write the pid.
+_RELAY_SCRIPT = r"""
+import os, sys, time, signal, subprocess
+
+root, python, app_py, pid_file, log_file = sys.argv[1:6]
+old_pid = int(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else 0
+
+
+def alive(pid):
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def log(msg):
+    try:
+        with open(log_file, "a") as f:
+            f.write("[self-restart] " + msg + "\n")
+    except OSError:
+        pass
+
+
+# 0) Self-check: make sure the new code actually loads BEFORE killing anything.
+# `import app` exercises top-level imports / syntax of the entry module. If it
+# fails, abort and leave the running service untouched — never end up with the
+# old process killed and the new one unable to start.
+check = subprocess.run(
+    [python, "-c", "import app"], cwd=root,
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+)
+if check.returncode != 0:
+    detail = (check.stdout or b"").decode("utf-8", "replace").strip()
+    log("self-check FAILED, aborting restart; service left running:\n" + detail)
+    sys.exit(1)
+log("self-check passed")
+
+# 1) Ask the old process to exit gracefully (its SIGTERM handler persists state).
+if alive(old_pid):
+    try:
+        os.kill(old_pid, signal.SIGTERM)
+    except OSError:
+        pass
+    # 2) Wait up to ~15s for it to go, then force-kill as a backstop.
+    for _ in range(150):
+        if not alive(old_pid):
+            break
+        time.sleep(0.1)
+    else:
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        time.sleep(0.5)
+
+# 3) Start a fresh instance, detached, logging to the same file.
+with open(log_file, "a") as f:
+    proc = subprocess.Popen(
+        [python, app_py], cwd=root,
+        stdout=f, stderr=f, start_new_session=True,
+    )
+with open(pid_file, "w") as f:
+    f.write(str(proc.pid))
+log("restarted, new pid=" + str(proc.pid))
+"""
+
+
+@click.command(name="self-restart", hidden=True)
+def self_restart():
+    """Restart from inside the running agent (detached; survives parent death).
+
+    Intended to be invoked by the agent itself (e.g. via bash after editing its
+    own code), not by users — so it is hidden from `cow help`. Unlike `restart`,
+    the actual stop+start runs in a detached relay process that outlives the
+    agent's bash child, which would otherwise die together with the main app it
+    kills.
+    """
+    if _IS_WIN:
+        click.echo("self-restart is not supported on Windows; use `cow restart`.", err=True)
+        sys.exit(1)
+
+    root = get_project_root()
+    app_py = os.path.join(root, "app.py")
+    if not os.path.exists(app_py):
+        click.echo("Error: app.py not found in project root.", err=True)
+        sys.exit(1)
+
+    python = sys.executable
+    pid = _read_pid() or 0
+
+    subprocess.Popen(
+        [
+            python, "-c", _RELAY_SCRIPT,
+            root, python, app_py, _get_pid_file(), _get_log_file(), str(pid),
+        ],
+        cwd=root,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    click.echo(click.style(
+        "✓ Restart scheduled. The service will stop and come back in a few seconds.",
+        fg="green",
+    ))
+
+
 @click.command()
 @click.pass_context
 def update(ctx):
