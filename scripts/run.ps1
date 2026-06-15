@@ -748,6 +748,7 @@ function Install-Mode {
     # Auto-start after configuration for a true out-of-the-box experience.
     Write-Host ""
     if ($script:AccessInfo) { Write-Cow $script:AccessInfo }
+    Write-Warn (T "提示：需要让 Agent 浏览网页时，运行 cow install-browser 安装浏览器工具" "Tip: to let the Agent browse the web, run 'cow install-browser' to install the browser tool")
     Start-CowAgent
 }
 
