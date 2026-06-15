@@ -55,6 +55,10 @@ class ChatService:
         context = self._build_context(query, session_id, channel_type)
         self._attach_context_aware_tools(agent, context)
 
+        # Mark this session as mid-run so the self-evolution idle scan does not
+        # fire concurrently when a single turn runs longer than idle_minutes.
+        self._mark_run_active(agent, True)
+
         # State shared between the event callback and this method
         state = _StreamState()
 
@@ -205,6 +209,8 @@ class ChatService:
                     logger.info("[ChatService] Cleared agent message history after executor recovery")
             raise
         finally:
+            # Clear the mid-run flag so idle scans can review this session again.
+            self._mark_run_active(agent, False)
             # Release cancel token to keep the registry bounded.
             if session_id:
                 try:
@@ -313,6 +319,15 @@ class ChatService:
                     break
         except Exception as e:
             logger.warning(f"[ChatService] Failed to attach context to scheduler: {e}")
+
+    @staticmethod
+    def _mark_run_active(agent, active):
+        """Toggle the self-evolution mid-run flag for this session's agent."""
+        try:
+            from agent.evolution.trigger import mark_run_active
+            mark_run_active(agent, active)
+        except Exception:
+            pass
 
     @staticmethod
     def _note_evolution_turn(agent, context):

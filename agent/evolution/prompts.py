@@ -164,7 +164,24 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
         "rare last resorts — stay [SILENT] unless there is a clear, durable signal "
         "not already covered."
         f"{protected_note}\n"
+        f"{_language_instruction()}\n"
         "<transcript>\n"
         f"{transcript}\n"
         "</transcript>"
+    )
+
+
+def _language_instruction() -> str:
+    """Force the user-facing summary into the configured UI language.
+
+    The summary must match what the user reads, so resolve the language from
+    i18n rather than letting the model guess from the (English-heavy) prompt.
+    """
+    try:
+        from common import i18n
+        lang_name = "中文" if i18n.is_zh() else "English"
+    except Exception:
+        lang_name = "the user's language"
+    return (
+        f"\nIMPORTANT: if you produce a summary, write it ENTIRELY in {lang_name}. "
     )
