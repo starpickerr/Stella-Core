@@ -73,6 +73,20 @@ def note_user_turn(agent, channel_type: str = "", receiver: str = "") -> None:
         pass
 
 
+def mark_run_active(agent, active: bool) -> None:
+    """Flag whether the agent is mid-run, so idle scans skip a busy session.
+
+    Without this, a single run that lasts longer than idle_minutes would let
+    the scanner fire an evolution pass concurrently with the live turn.
+    """
+    try:
+        agent._evo_run_active = bool(active)
+        if active:
+            agent._evo_last_active = time.time()
+    except Exception:
+        pass
+
+
 def start_evolution_trigger(agent_bridge) -> None:
     """Start the idle-scan thread once per process (idempotent)."""
     if getattr(agent_bridge, "_evolution_trigger_started", False):
@@ -105,6 +119,10 @@ def _scan_once(agent_bridge, cfg) -> None:
     sessions = list(getattr(agent_bridge, "agents", {}).items())
     for session_id, agent in sessions:
         try:
+            # Skip sessions whose agent is mid-run: a long turn must not be
+            # reviewed while it is still producing the answer.
+            if getattr(agent, "_evo_run_active", False):
+                continue
             last_active = getattr(agent, "_evo_last_active", 0)
             turns = int(getattr(agent, "_evo_turns", 0))
             # Enough signal = enough turns OR enough context pressure.
