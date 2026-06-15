@@ -400,12 +400,11 @@ function Install-Dependencies {
     & $PythonCmd -m pip install -e $BaseDir @pipMirror 2>&1 | Out-Null
     $ErrorActionPreference = $prevEAP
 
-    # Ensure Python Scripts dir is in PATH for this session
+    # Add the Scripts dir (where pip puts cow.exe) to PATH, both for this
+    # session and persistently, so `cow` keeps working after a reboot.
     $scriptsDir = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
     if ($scriptsDir -and (Test-Path $scriptsDir)) {
-        if ($env:PATH -notlike "*$scriptsDir*") {
-            $env:PATH = "$scriptsDir;$env:PATH"
-        }
+        Add-ScriptsDirToPath $scriptsDir
     }
 
     $cowBin = Get-Command cow -ErrorAction SilentlyContinue
@@ -413,7 +412,39 @@ function Install-Dependencies {
         Write-Cow ((T "cow CLI 注册成功" "cow CLI registered") + ": $($cowBin.Source)")
     } else {
         Write-Warn ((T "cow CLI 不在 PATH 中，你可以使用" "cow CLI not in PATH. You can use") + ": $PythonCmd -m cli.cli")
-        Write-Warn (T "如需永久修复，请将 Python Scripts 目录加入系统 PATH。" "To fix permanently, add Python Scripts directory to your system PATH.")
+    }
+}
+
+# Add the Python Scripts dir to PATH for this session and persist it to the
+# user PATH (User scope needs no admin rights), so `cow` survives a reboot.
+function Add-ScriptsDirToPath {
+    param([string]$ScriptsDir)
+
+    if ($env:PATH -notlike "*$ScriptsDir*") {
+        $env:PATH = "$ScriptsDir;$env:PATH"
+    }
+
+    # Persist to the User PATH only if missing from BOTH User and Machine scopes
+    # (checking Machine avoids a duplicate when Python is installed for all
+    # users). Read raw scope values, not the already-merged $env:PATH.
+    try {
+        $target = $ScriptsDir.TrimEnd('\')
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $machinePath = ""
+        try { $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine") } catch {}
+
+        $allParts = @()
+        foreach ($p in @($userPath, $machinePath)) {
+            if ($p) { $allParts += ($p -split ';' | Where-Object { $_ -ne "" }) }
+        }
+        $already = $allParts | Where-Object { $_.TrimEnd('\') -ieq $target }
+        if (-not $already) {
+            $newPath = if ($userPath) { "$userPath;$ScriptsDir" } else { $ScriptsDir }
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+            Write-Cow ((T "已将 cow 命令目录加入用户 PATH（重启后仍可用）" "Added cow command directory to user PATH (persists after reboot)") + ": $ScriptsDir")
+        }
+    } catch {
+        Write-Warn (T "无法自动写入持久化 PATH，重启后可能需要重新配置。" "Could not persist PATH automatically; you may need to reconfigure after reboot.")
     }
 }
 
@@ -664,11 +695,27 @@ function New-ConfigFile {
     Write-Cow (T "配置文件创建成功。" "Configuration file created.")
 }
 
+# Resolve the `cow` command, self-healing PATH if needed. When `cow` is missing
+# (e.g. an older install whose PATH was never persisted), locate the Scripts dir,
+# re-add it to PATH (session + persistent), and retry. Returns $true if callable.
+function Resolve-CowCommand {
+    if (Get-Command cow -ErrorAction SilentlyContinue) { return $true }
+
+    $py = if ($PythonCmd) { $PythonCmd } else { Find-Python }
+    if ($py) {
+        $scriptsDir = & $py -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
+        if ($scriptsDir -and (Test-Path "$scriptsDir\cow.exe")) {
+            Add-ScriptsDirToPath $scriptsDir
+            if (Get-Command cow -ErrorAction SilentlyContinue) { return $true }
+        }
+    }
+    return $false
+}
+
 # ── start via cow CLI ─────────────────────────────────────────────
 function Start-CowAgent {
     Write-Cow (T "正在启动 CowAgent..." "Starting CowAgent...")
-    $cowBin = Get-Command cow -ErrorAction SilentlyContinue
-    if ($cowBin) {
+    if (Resolve-CowCommand) {
         & cow start
     } else {
         Write-Warn (T "未找到 cow CLI，直接启动..." "cow CLI not found, starting directly...")
@@ -679,12 +726,21 @@ function Start-CowAgent {
 # ── delegate management commands to cow CLI ──────────────────────
 function Invoke-CowCommand {
     param([string]$Cmd)
-    $cowBin = Get-Command cow -ErrorAction SilentlyContinue
-    if ($cowBin) {
+    if (Resolve-CowCommand) {
         & cow $Cmd
     } else {
-        Write-Err (T "未找到 cow CLI，请先不带参数运行本脚本进行安装。" "cow CLI not found. Run this script without arguments first to install.")
-        exit 1
+        # Fall back to the module entrypoint so management commands still work
+        # even when cow.exe isn't on PATH (e.g. right after a fresh reboot on
+        # an older install).
+        $py = if ($PythonCmd) { $PythonCmd } else { Find-Python }
+        if ($py -and (Test-Path "$BaseDir\app.py")) {
+            Write-Warn (T "未找到 cow 命令，使用 python -m cli.cli 兜底运行..." "cow command not found, falling back to python -m cli.cli...")
+            Push-Location $BaseDir
+            try { & $py -m cli.cli $Cmd } finally { Pop-Location }
+        } else {
+            Write-Err (T "未找到 cow CLI，请先不带参数运行本脚本进行安装。" "cow CLI not found. Run this script without arguments first to install.")
+            exit 1
+        }
     }
 }
 
