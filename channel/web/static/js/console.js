@@ -84,6 +84,7 @@ const I18N = {
         knowledge_select_hint: '选择一个文档查看', knowledge_empty_hint: '暂无知识页面',
         knowledge_empty_guide: '在对话中发送文档、链接或主题给 Agent，它会自动整理到你的知识库中。',
         knowledge_go_chat: '开始对话',
+        knowledge_new_category: '新建分类',
         welcome_subtitle: '我可以帮你解答问题、管理计算机、创造和执行技能，并通过<br>长期记忆和知识库不断成长',
         example_sys_title: '系统管理', example_sys_text: '查看工作空间里有哪些文件',
         example_task_title: '定时任务', example_task_text: '1分钟后提醒我检查服务器',
@@ -290,6 +291,7 @@ const I18N = {
         knowledge_select_hint: 'Select a document to view', knowledge_empty_hint: 'No knowledge pages yet',
         knowledge_empty_guide: 'Send documents, links or topics to the agent in chat, and it will automatically organize them into your knowledge base.',
         knowledge_go_chat: 'Start a conversation',
+        knowledge_new_category: 'New category',
         welcome_subtitle: 'I can help you answer questions, manage your computer, create and execute skills, and keep growing through <br> long-term memory and a personal knowledge base.',
         example_sys_title: 'System', example_sys_text: 'Show me the files in the workspace',
         example_task_title: 'Scheduler', example_task_text: 'Remind me to check the server in 5 minutes',
@@ -7351,7 +7353,7 @@ function loadKnowledgeView() {
 
         statsEl.textContent = totalPages + ' pages · ' + sizeStr;
 
-        if (totalPages === 0) {
+        if (totalPages === 0 && tree.length === 0 && rootFiles.length === 0) {
             emptyEl.querySelector('p').textContent = t('knowledge_empty_hint');
             const guideEl = document.getElementById('knowledge-empty-guide');
             if (guideEl) guideEl.classList.remove('hidden');
@@ -7397,7 +7399,7 @@ function renderKnowledgeTree(tree, rootFilesOrFilter, filter) {
         const fbtn = document.createElement('button');
         fbtn.className = 'knowledge-tree-file' + (_knowledgeCurrentFile === f.name ? ' active' : '');
         fbtn.dataset.path = f.name;
-        fbtn.innerHTML = `<i class="fas fa-file-lines text-[10px] text-slate-400"></i><span class="truncate">${escapeHtml(f.title)}</span>`;
+        fbtn.innerHTML = `<i class="fas fa-file-lines text-[10px] text-slate-400"></i><span class="truncate">${escapeHtml(f.title)}</span>${_knowledgeFileActions(f.name)}`;
         fbtn.onclick = () => openKnowledgeFile(f.name, f.title);
         container.appendChild(fbtn);
     });
@@ -7422,7 +7424,7 @@ function _renderKnowledgeGroups(container, groups, parentPath, lowerFilter, dept
         const btn = document.createElement('button');
         btn.className = 'knowledge-tree-group-btn';
         btn.style.paddingLeft = (8 + indent) + 'px';
-        btn.innerHTML = `<i class="fas fa-chevron-right chevron"></i><i class="fas fa-folder text-amber-400 text-[11px]"></i><span>${escapeHtml(group.dir)}</span><span class="ml-auto text-[10px] text-slate-400">${fileCount}</span>`;
+        btn.innerHTML = `<i class="fas fa-chevron-right chevron"></i><i class="fas fa-folder text-amber-400 text-[11px]"></i><span>${escapeHtml(group.dir)}</span><span class="ml-auto text-[10px] text-slate-400">${fileCount}</span>${_knowledgeCategoryActions(groupPath)}`;
         btn.onclick = () => div.classList.toggle('open');
         div.appendChild(btn);
 
@@ -7434,7 +7436,7 @@ function _renderKnowledgeGroups(container, groups, parentPath, lowerFilter, dept
             fbtn.className = 'knowledge-tree-file' + (_knowledgeCurrentFile === fpath ? ' active' : '');
             fbtn.dataset.path = fpath;
             fbtn.style.paddingLeft = (24 + indent) + 'px';
-            fbtn.innerHTML = `<i class="fas fa-file-lines text-[10px] text-slate-400"></i><span class="truncate">${escapeHtml(f.title)}</span>`;
+            fbtn.innerHTML = `<i class="fas fa-file-lines text-[10px] text-slate-400"></i><span class="truncate">${escapeHtml(f.title)}</span>${_knowledgeFileActions(fpath)}`;
             fbtn.onclick = () => openKnowledgeFile(fpath, f.title);
             items.appendChild(fbtn);
         });
@@ -7443,6 +7445,181 @@ function _renderKnowledgeGroups(container, groups, parentPath, lowerFilter, dept
         }
         div.appendChild(items);
         container.appendChild(div);
+    });
+}
+
+function _knowledgeActionButton(icon, title, handler) {
+    const danger = icon === 'fa-trash' ? ' danger' : '';
+    return `<span role="button" tabindex="0" title="${escapeHtml(title)}" onclick="event.stopPropagation();${handler}" class="knowledge-action${danger}"><i class="fas ${icon}"></i></span>`;
+}
+
+function _knowledgeFileActions(path) {
+    if (path === 'index.md' || path === 'log.md') return '';
+    const value = JSON.stringify(path).replace(/"/g, '&quot;');
+    return `<span class="knowledge-actions">${_knowledgeActionButton('fa-arrow-right-arrow-left', '移动', `moveKnowledgeDocument(${value})`)}${_knowledgeActionButton('fa-trash', '删除', `deleteKnowledgeDocument(${value})`)}</span>`;
+}
+
+function _knowledgeCategoryActions(path) {
+    const value = JSON.stringify(path).replace(/"/g, '&quot;');
+    return `<span class="knowledge-actions">${_knowledgeActionButton('fa-pen', '重命名', `renameKnowledgeCategory(${value})`)}${_knowledgeActionButton('fa-trash', '删除', `deleteKnowledgeCategory(${value})`)}</span>`;
+}
+
+async function dispatchKnowledgeAction(action, payload) {
+    _setKnowledgeStatus(currentLang === 'zh' ? '处理中...' : 'Working...', false, true);
+    try {
+        const response = await fetch('/api/knowledge/action', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action, payload}),
+        });
+        const result = await response.json();
+        if (result.status !== 'success') {
+            _setKnowledgeStatus(result.message || (currentLang === 'zh' ? '操作失败' : 'Operation failed'), true);
+            loadKnowledgeView();
+            return null;
+        }
+        _setKnowledgeStatus(_knowledgeResultMessage(action, result.payload), false);
+        loadKnowledgeView();
+        return result.payload;
+    } catch (error) {
+        _setKnowledgeStatus(currentLang === 'zh' ? '请求失败，请稍后重试' : 'Request failed, please try again', true);
+        return null;
+    }
+}
+
+function _setKnowledgeStatus(message, isError, persistent) {
+    const el = document.getElementById('knowledge-action-status');
+    el.textContent = message;
+    el.className = `text-xs transition-opacity duration-200 ${isError ? 'text-red-500' : 'text-primary-500'}`;
+    el.classList.remove('opacity-0');
+    clearTimeout(el._hideTimer);
+    if (!persistent) el._hideTimer = setTimeout(() => el.classList.add('opacity-0'), 3500);
+}
+
+function _knowledgeResultMessage(action, payload) {
+    if (currentLang !== 'zh') {
+        return action === 'create_category' ? 'Category created' :
+            action === 'rename_category' ? 'Category renamed' :
+            action === 'delete_category' ? 'Category deleted' :
+            action === 'move_documents' ? `${payload?.moved || 0} document moved` :
+            `${payload?.deleted || 0} document deleted`;
+    }
+    return action === 'create_category' ? '分类已创建' :
+        action === 'rename_category' ? '分类已重命名' :
+        action === 'delete_category' ? '分类已删除' :
+        action === 'move_documents' ? `已移动 ${payload?.moved || 0} 个文档` :
+        `已删除 ${payload?.deleted || 0} 个文档`;
+}
+
+function _knowledgeCategoryPaths(groups, parent = '') {
+    const paths = [];
+    for (const group of groups || []) {
+        const path = parent ? `${parent}/${group.dir}` : group.dir;
+        paths.push(path, ..._knowledgeCategoryPaths(group.children || [], path));
+    }
+    return paths;
+}
+
+function openKnowledgeDialog(options) {
+    const overlay = document.getElementById('knowledge-dialog-overlay');
+    const input = document.getElementById('knowledge-dialog-input');
+    const select = document.getElementById('knowledge-dialog-select');
+    const submit = document.getElementById('knowledge-dialog-submit');
+    const cancel = document.getElementById('knowledge-dialog-cancel');
+    document.getElementById('knowledge-dialog-title').textContent = options.title;
+    document.getElementById('knowledge-dialog-subtitle').textContent = options.subtitle || '';
+    document.getElementById('knowledge-dialog-label').textContent = options.label;
+    document.getElementById('knowledge-dialog-hint').textContent = options.hint || '';
+    document.getElementById('knowledge-dialog-error').classList.add('hidden');
+    document.getElementById('knowledge-dialog-icon').className = `fas ${options.icon || 'fa-folder'} text-emerald-500`;
+    input.classList.toggle('hidden', options.type === 'select');
+    select.classList.toggle('hidden', options.type !== 'select');
+    input.value = options.value || '';
+    if (options.type === 'select') {
+        select.innerHTML = (options.choices || []).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+    }
+    submit.textContent = currentLang === 'zh' ? '确定' : 'Confirm';
+    cancel.textContent = currentLang === 'zh' ? '取消' : 'Cancel';
+    submit.disabled = options.type === 'select' && !(options.choices || []).length;
+
+    const close = () => overlay.classList.add('hidden');
+    const submitAction = async () => {
+        const value = (options.type === 'select' ? select.value : input.value).trim();
+        const error = options.validate ? options.validate(value) : (!value ? (currentLang === 'zh' ? '此项不能为空' : 'This field is required') : '');
+        if (error) {
+            const errorEl = document.getElementById('knowledge-dialog-error');
+            errorEl.textContent = error;
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        submit.disabled = true;
+        const ok = await options.onSubmit(value);
+        submit.disabled = false;
+        if (ok !== null) close();
+    };
+    submit.onclick = submitAction;
+    cancel.onclick = close;
+    overlay.onclick = event => { if (event.target === overlay) close(); };
+    input.onkeydown = event => { if (event.key === 'Enter') submitAction(); };
+    overlay.classList.remove('hidden');
+    setTimeout(() => (options.type === 'select' ? select : input).focus(), 0);
+}
+
+function createKnowledgeCategory() {
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '新建分类' : 'New category',
+        subtitle: currentLang === 'zh' ? '分类会创建为 knowledge/ 下的目录' : 'Creates a directory under knowledge/',
+        label: currentLang === 'zh' ? '分类路径' : 'Category path',
+        hint: currentLang === 'zh' ? '支持嵌套路径，例如 research/ai' : 'Nested paths are supported, e.g. research/ai',
+        icon: 'fa-folder-plus',
+        onSubmit: path => dispatchKnowledgeAction('create_category', {path}),
+    });
+}
+
+function renameKnowledgeCategory(path) {
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '重命名分类' : 'Rename category',
+        subtitle: path,
+        label: currentLang === 'zh' ? '新的分类路径' : 'New category path',
+        value: path,
+        icon: 'fa-pen',
+        validate: value => value === path ? (currentLang === 'zh' ? '请输入不同的分类路径' : 'Enter a different category path') : '',
+        onSubmit: newPath => dispatchKnowledgeAction('rename_category', {path, new_path: newPath}),
+    });
+}
+
+function deleteKnowledgeCategory(path) {
+    showConfirmDialog({
+        title: '删除分类',
+        message: `确认删除“${path}”及其中全部文档？`,
+        okText: t('confirm_yes'),
+        cancelText: t('confirm_cancel'),
+        onConfirm: () => dispatchKnowledgeAction('delete_category', {path, confirm: true}),
+    });
+}
+
+function deleteKnowledgeDocument(path) {
+    showConfirmDialog({
+        title: '删除文档',
+        message: `确认删除“${path}”？`,
+        okText: t('confirm_yes'),
+        cancelText: t('confirm_cancel'),
+        onConfirm: () => dispatchKnowledgeAction('delete_documents', {paths: [path]}),
+    });
+}
+
+function moveKnowledgeDocument(path) {
+    const currentCategory = path.includes('/') ? path.split('/').slice(0, -1).join('/') : '';
+    const choices = _knowledgeCategoryPaths(_knowledgeTreeData).filter(value => value !== currentCategory);
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '移动文档' : 'Move document',
+        subtitle: path,
+        label: currentLang === 'zh' ? '目标分类' : 'Destination category',
+        hint: choices.length ? '' : (currentLang === 'zh' ? '请先创建其他分类' : 'Create another category first'),
+        type: 'select',
+        choices,
+        icon: 'fa-arrow-right-arrow-left',
+        onSubmit: target => dispatchKnowledgeAction('move_documents', {paths: [path], target_category: target}),
     });
 }
 
