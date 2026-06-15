@@ -1154,6 +1154,7 @@ class WebChannel(ChatChannel):
             '/api/knowledge/list', 'KnowledgeListHandler',
             '/api/knowledge/read', 'KnowledgeReadHandler',
             '/api/knowledge/graph', 'KnowledgeGraphHandler',
+            '/api/knowledge/action', 'KnowledgeActionHandler',
             '/api/scheduler', 'SchedulerHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
@@ -4162,6 +4163,25 @@ class KnowledgeGraphHandler:
         except Exception as e:
             logger.error(f"[WebChannel] Knowledge graph error: {e}")
             return json.dumps({"nodes": [], "links": []})
+
+
+class KnowledgeActionHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            action = body.get("action", "")
+            payload = body.get("payload") or {}
+            from agent.knowledge.service import KnowledgeService
+            result = KnowledgeService(_get_workspace_root()).dispatch(action, payload)
+            return json.dumps({
+                "status": "success" if result["code"] < 300 else "error",
+                **result,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Knowledge action error: {e}")
+            return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
 
 
 class VersionHandler:
