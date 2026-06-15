@@ -78,12 +78,13 @@ def _is_china_network() -> bool:
 
 
 def _pip_install(package_spec: str, stream: StreamFn) -> int:
-    """Install a package, retrying with --user on permission failure."""
+    """Install a package, preferring prebuilt wheels; retry with --user on perm error."""
     python = sys.executable
-    ret = subprocess.call([python, "-m", "pip", "install", package_spec])
+    base = [python, "-m", "pip", "install", "--prefer-binary"]
+    ret = subprocess.call(base + [package_spec])
     if ret != 0:
         stream("  Retrying with --user flag...", "yellow")
-        ret = subprocess.call([python, "-m", "pip", "install", "--user", package_spec])
+        ret = subprocess.call(base + ["--user", package_spec])
     return ret
 
 
@@ -154,6 +155,22 @@ def run_install_browser(
         )
 
     target_version = PLAYWRIGHT_LEGACY_VERSION if legacy_mode else PLAYWRIGHT_VERSION
+
+    # Windows-only: greenlet 3.2.x ships no Windows wheel, so pip would build it
+    # from source (needs MSVC) and fail. Pre-install 3.1.x (has win wheels for
+    # py3.7-3.13) which still satisfies playwright's greenlet>=3.1.1,<4.
+    if sys.platform == "win32":
+        stream("[1/3] Pre-installing greenlet (prebuilt wheel) for Windows...", "yellow")
+        ret = subprocess.call(
+            [python, "-m", "pip", "install", "--only-binary=:all:", "greenlet>=3.1.1,<3.2"]
+        )
+        if ret != 0:
+            stream(
+                "  Could not pre-install a prebuilt greenlet wheel.\n"
+                "  playwright may try to build greenlet from source, which needs\n"
+                "  Microsoft C++ Build Tools: https://visualstudio.microsoft.com/visual-cpp-build-tools/",
+                "yellow",
+            )
 
     _phase(on_phase, _t("📦 [1/3] 正在安装 Playwright Python 包…", "📦 [1/3] Installing Playwright Python package…"))
     stream("[1/3] Installing playwright Python package...", "yellow")

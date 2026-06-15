@@ -172,6 +172,11 @@ class CloudClient(LinkAIClient):
             if key in available_setting and config.get(key) is not None:
                 local_config[key] = config.get(key)
 
+        # Self-evolution switch: normalize remote value (bool / "Y"/"N" / "true")
+        # to a real bool so the evolution config parser reads it correctly.
+        if config.get("self_evolution_enabled") is not None:
+            local_config["self_evolution_enabled"] = self._to_bool(config.get("self_evolution_enabled"))
+
         # Voice settings
         reply_voice_mode = config.get("reply_voice_mode")
         if reply_voice_mode:
@@ -340,6 +345,20 @@ class CloudClient(LinkAIClient):
                 logger.info(f"[CloudClient] Removed weixin credentials: {cred_path}")
         except Exception as e:
             logger.warning(f"[CloudClient] Failed to remove weixin credentials: {e}")
+
+    # ------------------------------------------------------------------
+    # value helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _to_bool(value) -> bool:
+        """Normalize a remote config value to bool (bool / "Y"/"N" / "true"/"1")."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ("y", "yes", "true", "1", "on")
+        return False
 
     # ------------------------------------------------------------------
     # channel credentials helpers
@@ -855,6 +874,10 @@ def _build_config():
         "agent_max_context_turns": local_conf.get("agent_max_context_turns"),
         "agent_max_context_tokens": local_conf.get("agent_max_context_tokens"),
         "agent_max_steps": local_conf.get("agent_max_steps"),
+        # Self-evolution switch reported so the cloud console can reflect state
+        "self_evolution_enabled": "Y" if local_conf.get("self_evolution_enabled") else "N",
+        "self_evolution_idle_minutes": local_conf.get("self_evolution_idle_minutes"),
+        "self_evolution_min_turns": local_conf.get("self_evolution_min_turns"),
         "channelType": local_conf.get("channel_type"),
     }
 

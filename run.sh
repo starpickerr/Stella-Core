@@ -980,7 +980,10 @@ start_project() {
         echo -e "  ${GREEN}./run.sh status${NC}     $(t "查看状态" "Check status")"
         echo -e "  ${GREEN}./run.sh logs${NC}       $(t "查看日志" "View logs")"
         echo -e "  ${GREEN}./run.sh update${NC}     $(t "更新并重启" "Update and restart")"
+        echo -e "  ${GREEN}cow install-browser${NC}  $(t "安装浏览器工具" "Install browser tool")"
     fi
+    echo ""
+    echo -e "${YELLOW}$(t "提示：需要让 Agent 浏览网页时，运行 cow install-browser 安装浏览器工具" "Tip: to let the Agent browse the web, run 'cow install-browser' to install the browser tool")${NC}"
     echo -e "${CYAN}${BOLD}=========================================${NC}"
     echo ""
 
