@@ -607,6 +607,9 @@ class CowCliPlugin(Plugin):
         "agent_max_steps",
         "knowledge",
         "enable_thinking",
+        "self_evolution_enabled",
+        "self_evolution_idle_minutes",
+        "self_evolution_min_turns",
     }
 
     _CONFIG_READABLE = _CONFIG_WRITABLE | {"channel_type"}
