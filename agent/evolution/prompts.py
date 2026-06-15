@@ -151,6 +151,11 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
             "\n\nPROTECTED skills (built-in — never edit these): "
             f"{names}\n"
         )
+    try:
+        from common import i18n
+        lang_name = "中文" if i18n.is_zh() else "English"
+    except Exception:
+        lang_name = "中文"
     return (
         "Here is the conversation transcript that just went idle. Review it per "
         "your instructions. Acting is the exception: the main value is fixing or "
@@ -158,6 +163,7 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
         "rare last resorts — stay [SILENT] unless there is a clear, durable signal "
         "not already covered."
         f"{protected_note}\n"
+        f"The summary should preferably be written in: {lang_name}\n"
         "<transcript>\n"
         f"{transcript}\n"
         "</transcript>"
