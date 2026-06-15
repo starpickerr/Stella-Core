@@ -892,9 +892,12 @@ class WecomBotChannel(ChatChannel):
         if not local_path:
             return None
 
-        # Keep consistent with the long-connection upload path (2MB limit):
-        # only compress when the image exceeds the cap, otherwise send as-is.
-        callback_max_size = 2 * 1024 * 1024
+        # Unlike the long-connection path (which uploads and sends only a tiny
+        # media_id), the callback reply embeds the whole image as base64 inside
+        # an AES-encrypted body that is returned on EVERY poll. Empirically a
+        # ~1.5MB image (base64 ~2.1MB, encrypted ~2.8MB) makes WeCom reject the
+        # finish packet and poll forever, so cap well below that.
+        callback_max_size = 512 * 1024
         if os.path.getsize(local_path) > callback_max_size:
             compressed = self._compress_image(local_path, callback_max_size)
             if compressed:
