@@ -129,18 +129,12 @@ them. When their signal is clear, act; do not be shy here.
 # Output
 
 - Nothing worth evolving -> output exactly `[SILENT]` and nothing else.
-- Otherwise, after performing the edits, output a short user-facing summary in
-  the SAME LANGUAGE the user speaks in the conversation. Write it for an ordinary user, in plain
+- Otherwise, after performing the edits, output a user-facing summary in
+  the SAME LANGUAGE the user speaks in the conversation transcript. Write it for an ordinary user, in plain
   everyday words — NOT a developer report. No need to expose internal details
-  (file names/paths, system mechanics, etc.). Tell the user, briefly:
-    1) that you just did a self-learning pass,
-    2) what you learned and what you changed in THIS pass ("remembered X" /
-       "improved the <name> skill" / "finished <task>").
-  Keep it to 1-3 lines. Generic shape (do not copy domain words):
-    "I just did a self-learning pass.
-     - Learned: <what you learned>
-     - Changed: <remembered it / improved the <name> skill / finished <task>>
-     Reply 'undo the last learning' if this is wrong."
+  (file names/paths, system mechanics, etc.). Briefly Convey that you just did a
+  self-learning pass, what you learned, and what you changed in THIS pass. Keep
+  it clear and focused on the key changes, and let the user know they can undo it.
 """
 
 
@@ -164,24 +158,7 @@ def build_review_user_message(transcript: str, protected_skills: list = None) ->
         "rare last resorts — stay [SILENT] unless there is a clear, durable signal "
         "not already covered."
         f"{protected_note}\n"
-        f"{_language_instruction()}\n"
         "<transcript>\n"
         f"{transcript}\n"
         "</transcript>"
-    )
-
-
-def _language_instruction() -> str:
-    """Force the user-facing summary into the configured UI language.
-
-    The summary must match what the user reads, so resolve the language from
-    i18n rather than letting the model guess from the (English-heavy) prompt.
-    """
-    try:
-        from common import i18n
-        lang_name = "中文" if i18n.is_zh() else "English"
-    except Exception:
-        lang_name = "the user's language"
-    return (
-        f"\nIMPORTANT: if you produce a summary, write it ENTIRELY in {lang_name}. "
     )
