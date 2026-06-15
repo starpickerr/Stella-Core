@@ -258,6 +258,7 @@ class WecomBotChannel(ChatChannel):
                 "finished": False,
                 "images": [],  # list of (base64_str, md5_str), flushed only at finish
                 "image_urls": [],  # public http(s) image urls (usable in response_url markdown)
+                "image_pending": False,  # an image reply is being prepared; don't finish on text yet
                 "last_access": now,
                 "created_at": now,
                 "response_url": response_url or "",
@@ -752,6 +753,7 @@ class WecomBotChannel(ChatChannel):
                 "finished": False,
                 "images": [],
                 "image_urls": [],
+                "image_pending": False,
                 "last_access": now,
                 "created_at": now,
                 "response_url": "",
@@ -770,11 +772,31 @@ class WecomBotChannel(ChatChannel):
             else:
                 state["committed"] = accumulated if accumulated else (content or "")
             state["current"] = ""
-            state["finished"] = True
             state["last_access"] = time.time()
-        self._schedule_response_url_fallback(stream_id)
+        # Don't finish synchronously: chat_channel splits an image-with-caption
+        # reply into a TEXT send followed (0.3s later) by the IMAGE send. If the
+        # text finished the stream immediately, WeCom would close it before the
+        # image arrives. Defer the finish so a trailing image can merge in.
+        self._schedule_text_finish(stream_id)
+
+    def _schedule_text_finish(self, stream_id: str, delay: float = 1.2):
+        def _run():
+            time.sleep(delay)
+            with self._callback_lock:
+                state = self._callback_streams.get(stream_id)
+                if not state or state["finished"] or state.get("image_pending"):
+                    return  # already finished, or an image reply is on its way
+                state["finished"] = True
+                state["last_access"] = time.time()
+            self._schedule_response_url_fallback(stream_id)
+
+        threading.Thread(target=_run, daemon=True, name=f"wecom-textfin-{stream_id}").start()
 
     def _callback_finalize_image(self, stream_id: str, img_path_or_url: str):
+        # Mark the image as pending up front (before the slow load/compress) so a
+        # preceding text finalize won't close the stream while we work.
+        with self._callback_lock:
+            self._callback_get_or_create_state(stream_id)["image_pending"] = True
         b64md5 = self._load_image_base64(img_path_or_url)
         with self._callback_lock:
             state = self._callback_get_or_create_state(stream_id)
@@ -790,6 +812,7 @@ class WecomBotChannel(ChatChannel):
             else:
                 state["committed"] = accumulated or "[图片发送失败]"
             state["finished"] = True
+            state["image_pending"] = False
             state["last_access"] = time.time()
         self._schedule_response_url_fallback(stream_id)
 
@@ -869,12 +892,9 @@ class WecomBotChannel(ChatChannel):
         if not local_path:
             return None
 
-        # The passive stream reply embeds the image as base64 and is AES-encrypted
-        # and returned on EVERY poll. A multi-MB body gets rejected / times out on
-        # WeCom's side (the bubble then spins forever), so keep it small: base64
-        # inflates ~1.33x and the encrypted response a bit more, so target a few
-        # hundred KB rather than the 10MB the protocol nominally allows.
-        callback_max_size = 512 * 1024
+        # Keep consistent with the long-connection upload path (2MB limit):
+        # only compress when the image exceeds the cap, otherwise send as-is.
+        callback_max_size = 2 * 1024 * 1024
         if os.path.getsize(local_path) > callback_max_size:
             compressed = self._compress_image(local_path, callback_max_size)
             if compressed:
