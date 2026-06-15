@@ -49,6 +49,12 @@ class ChatService:
             agent.model.channel_type = channel_type or ""
             agent.model.session_id = session_id or ""
 
+        # Build a context so context-aware tools (e.g. scheduler) can resolve the
+        # receiver/session. This streaming path bypasses agent_bridge.agent_reply,
+        # so the attach step that normally happens there must be done here too.
+        context = self._build_context(query, session_id, channel_type)
+        self._attach_context_aware_tools(agent, context)
+
         # State shared between the event callback and this method
         state = _StreamState()
 
@@ -271,6 +277,37 @@ class ChatService:
         logger.info(f"[ChatService] Agent run completed: session={session_id}")
 
 
+
+    @staticmethod
+    def _build_context(query: str, session_id: str, channel_type: str):
+        """Build a Context for tool resolution on the streaming chat path.
+
+        receiver falls back to session_id; the scheduler's delivery keys on
+        session_id as the receiver.
+        """
+        from bridge.context import Context, ContextType
+        # Pass an explicit kwargs dict: Context's default kwargs is a shared
+        # mutable default, so omitting it would leak fields across sessions.
+        ctx = Context(ContextType.TEXT, query, kwargs={})
+        ctx["session_id"] = session_id
+        ctx["receiver"] = session_id
+        ctx["isgroup"] = False
+        ctx["channel_type"] = channel_type or ""
+        return ctx
+
+    @staticmethod
+    def _attach_context_aware_tools(agent, context):
+        """Attach the current context to tools that need it (scheduler)."""
+        try:
+            if not (context and getattr(agent, "tools", None)):
+                return
+            for tool in agent.tools:
+                if tool.name == "scheduler":
+                    from agent.tools.scheduler.integration import attach_scheduler_to_tool
+                    attach_scheduler_to_tool(tool, context)
+                    break
+        except Exception as e:
+            logger.warning(f"[ChatService] Failed to attach context to scheduler: {e}")
 
     @staticmethod
     def _persist_messages(session_id: str, new_messages: list, channel_type: str = ""):
