@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import threading
 import time
 import uuid
@@ -34,6 +35,9 @@ from config import conf
 WECOM_WS_URL = "wss://openws.work.weixin.qq.com"
 HEARTBEAT_INTERVAL = 30
 MEDIA_CHUNK_SIZE = 512 * 1024  # 512KB per chunk (before base64 encoding)
+# Fixed URL path for the callback (webhook) HTTP server. The bot's
+# receive-message URL must point at this path, e.g. http://host:9892/wecombot
+CALLBACK_PATH = "/wecombot"
 
 
 def _escape_control_chars_inside_json_strings(s: str) -> str:
@@ -234,8 +238,10 @@ class WecomBotChannel(ChatChannel):
             return
 
         port = int(conf().get("wecom_bot_port", 9892))
-        logger.info(f"[WecomBot] Starting callback (webhook) server on port {port}...")
-        urls = ("/.*", "channel.wecom_bot.wecom_bot_channel.WecomBotCallbackController")
+        logger.info(f"[WecomBot] Starting callback (webhook) server on port {port}, path {CALLBACK_PATH} ...")
+        # Only serve the fixed callback path; everything else 404s instead of being
+        # treated as a (signature-failing) WeCom callback.
+        urls = (re.escape(CALLBACK_PATH), "channel.wecom_bot.wecom_bot_channel.WecomBotCallbackController")
         app = web.application(urls, globals(), autoreload=False)
         func = web.httpserver.StaticMiddleware(app.wsgifunc())
         func = web.httpserver.LogMiddleware(func)
