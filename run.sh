@@ -597,7 +597,7 @@ select_model() {
     # The 12th option is "skip" -> configure later in the web console.
     select_menu sel "$title" \
         "DeepSeek (deepseek-v4-flash, deepseek-v4-pro, etc.)" \
-        "Claude (claude-fable-5, claude-opus-4-8, etc.)" \
+        "Claude (claude-opus-4-8, claude-fable-5, etc.)" \
         "Gemini (gemini-3.5-flash, gemini-3.1-pro-preview, etc.)" \
         "OpenAI (gpt-5.5, etc.)" \
         "MiniMax (MiniMax-M3, etc.)" \
@@ -629,7 +629,7 @@ read_model_config() {
 configure_model() {
     case "$model_choice" in
         1) read_model_config "DeepSeek" "deepseek-v4-flash" "DEEPSEEK_KEY" ;;
-        2) read_model_config "Claude" "claude-fable-5" "CLAUDE_KEY" ;;
+        2) read_model_config "Claude" "claude-opus-4-8" "CLAUDE_KEY" ;;
         3) read_model_config "Gemini" "gemini-3.1-pro-preview" "GEMINI_KEY" ;;
         4) read_model_config "OpenAI" "gpt-5.5" "OPENAI_KEY" ;;
         5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
@@ -869,8 +869,10 @@ base = {
     'mimo_api_key': e('MIMO_KEY', ''),
     'deepseek_api_key': e('DEEPSEEK_KEY', ''),
     'deepseek_api_base': e('DEEPSEEK_BASE'),
-    'voice_to_text': 'openai',
-    'text_to_voice': 'openai',
+    # Leave ASR/TTS provider empty so the web console auto-suggests the vendor
+    # whose API key is actually configured (e.g. LinkAI), not always OpenAI.
+    'voice_to_text': '',
+    'text_to_voice': '',
     'voice_reply_voice': False,
     'speech_recognition': True,
     'group_speech_recognition': False,
@@ -878,9 +880,9 @@ base = {
     'linkai_api_key': e('LINKAI_KEY', ''),
     'linkai_app_code': '',
     'agent': True,
-    'agent_max_context_tokens': 40000,
-    'agent_max_context_turns': 30,
-    'agent_max_steps': 15,
+    'agent_max_context_tokens': 50000,
+    'agent_max_context_turns': 20,
+    'agent_max_steps': 20,
     # New installs opt into self-evolution; existing users (no key) keep the
     # code default (off) so an upgrade never silently changes their behavior.
     'self_evolution_enabled': True,
@@ -978,7 +980,10 @@ start_project() {
         echo -e "  ${GREEN}./run.sh status${NC}     $(t "查看状态" "Check status")"
         echo -e "  ${GREEN}./run.sh logs${NC}       $(t "查看日志" "View logs")"
         echo -e "  ${GREEN}./run.sh update${NC}     $(t "更新并重启" "Update and restart")"
+        echo -e "  ${GREEN}cow install-browser${NC}  $(t "安装浏览器工具" "Install browser tool")"
     fi
+    echo ""
+    echo -e "${YELLOW}$(t "提示：需要让 Agent 浏览网页时，运行 cow install-browser 安装浏览器工具" "Tip: to let the Agent browse the web, run 'cow install-browser' to install the browser tool")${NC}"
     echo -e "${CYAN}${BOLD}=========================================${NC}"
     echo ""
 

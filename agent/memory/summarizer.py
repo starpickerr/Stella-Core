@@ -462,13 +462,12 @@ class MemoryFlushManager:
                 daily_content=daily_content or "(no recent daily records)",
             )
             from agent.protocol.models import LLMRequest
-            # Scale max_tokens based on input size to avoid truncating large MEMORY.md
-            input_chars = len(memory_content) + len(daily_content)
-            dream_max_tokens = max(2000, min(input_chars, 8000))
+            # No output cap: the prompt already keeps MEMORY.md concise (~50
+            # items), so a hard max_tokens would only risk truncating a large
+            # rewrite. Let the model use its default output budget.
             request = LLMRequest(
                 messages=[{"role": "user", "content": user_msg}],
                 temperature=0.3,
-                max_tokens=dream_max_tokens,
                 stream=False,
                 system=_dream_system_prompt(),
             )
