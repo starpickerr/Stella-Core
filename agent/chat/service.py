@@ -274,6 +274,11 @@ class ChatService:
         # Execute post-process tools
         agent._execute_post_process_tools()
 
+        # Record this user turn for the self-evolution idle trigger. This
+        # streaming path bypasses agent_bridge.agent_reply, so the activity must
+        # be noted here, otherwise idle scans never see any signal to evolve.
+        self._note_evolution_turn(agent, context)
+
         logger.info(f"[ChatService] Agent run completed: session={session_id}")
 
 
@@ -308,6 +313,19 @@ class ChatService:
                     break
         except Exception as e:
             logger.warning(f"[ChatService] Failed to attach context to scheduler: {e}")
+
+    @staticmethod
+    def _note_evolution_turn(agent, context):
+        """Record a user turn so the self-evolution idle trigger has signal."""
+        try:
+            from agent.evolution.trigger import note_user_turn
+            ch = (context.get("channel_type") or "") if context else ""
+            rcv = (context.get("receiver") or "") if context else ""
+            is_group = bool(context.get("isgroup")) if context else False
+            # Only single chats get a proactive push target; group push is noisy.
+            note_user_turn(agent, channel_type=ch, receiver=(rcv if not is_group else ""))
+        except Exception:
+            pass
 
     @staticmethod
     def _persist_messages(session_id: str, new_messages: list, channel_type: str = ""):
