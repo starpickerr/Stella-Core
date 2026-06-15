@@ -869,15 +869,23 @@ class WecomBotChannel(ChatChannel):
         if not local_path:
             return None
 
-        max_image_size = 10 * 1024 * 1024  # callback image base64 input max is 10MB
-        if os.path.getsize(local_path) > max_image_size:
-            local_path = self._compress_image(local_path, max_image_size)
-            if not local_path:
-                return None
+        # The passive stream reply embeds the image as base64 and is AES-encrypted
+        # and returned on EVERY poll. A multi-MB body gets rejected / times out on
+        # WeCom's side (the bubble then spins forever), so keep it small: base64
+        # inflates ~1.33x and the encrypted response a bit more, so target a few
+        # hundred KB rather than the 10MB the protocol nominally allows.
+        callback_max_size = 512 * 1024
+        if os.path.getsize(local_path) > callback_max_size:
+            compressed = self._compress_image(local_path, callback_max_size)
+            if compressed:
+                local_path = compressed
+            else:
+                logger.warning("[WecomBot] callback image compress failed; sending original (may be rejected)")
 
         try:
             with open(local_path, "rb") as f:
                 raw = f.read()
+            logger.debug(f"[WecomBot] callback image base64 ready: raw={len(raw)} bytes")
             return base64.b64encode(raw).decode("utf-8"), hashlib.md5(raw).hexdigest()
         except Exception as e:
             logger.error(f"[WecomBot] Failed to read image for callback reply: {e}")
