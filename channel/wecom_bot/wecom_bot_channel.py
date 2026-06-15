@@ -314,10 +314,14 @@ class WecomBotChannel(ChatChannel):
                 # Unknown / expired stream: tell WeCom we're done to stop polling.
                 return {"msgtype": "stream", "stream": {"id": stream_id, "finish": True, "content": ""}}
             state["last_access"] = time.time()
-            finished = state["finished"]
             if state.get("url_sent"):
                 # Final answer already pushed via response_url; finish silently.
                 return {"msgtype": "stream", "stream": {"id": stream_id, "finish": True, "content": ""}}
+            # We never force-finish on a timer: while a task is still running the
+            # bubble should keep spinning until either the task finishes or the
+            # user cancels. If WeCom's 6min window closes before completion, the
+            # answer is delivered later via response_url instead.
+            finished = state["finished"]
             content = state["committed"] + state["current"]
             images = state["images"] if finished else []
             if finished:
@@ -342,6 +346,7 @@ class WecomBotChannel(ChatChannel):
         def on_event(event: dict):
             event_type = event.get("type")
             edata = event.get("data", {})
+            cancelled = False
             with self._callback_lock:
                 state = self._callback_streams.get(stream_id)
                 if not state:
@@ -363,12 +368,23 @@ class WecomBotChannel(ChatChannel):
                         state["committed"] += state["current"]
                         state["current"] = ""
                 elif event_type == "agent_cancelled":
+                    # Mechanism 1: a cancelled run never reaches send(), so finalize
+                    # its stream here to stop the "···" bubble immediately.
                     if state["current"]:
                         state["committed"] += state["current"]
                         state["current"] = ""
                     state["committed"] = state["committed"].rstrip()
                     if state["committed"].endswith("---"):
                         state["committed"] = state["committed"][:-3].rstrip()
+                    if not state["committed"].strip():
+                        state["committed"] = "🛑 已中止"
+                    state["finished"] = True
+                    state["last_access"] = time.time()
+                    cancelled = True
+
+            if cancelled:
+                # Outside the lock: response_url fallback re-acquires it.
+                self._schedule_response_url_fallback(stream_id)
 
         return on_event
 
