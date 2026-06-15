@@ -866,6 +866,14 @@
     font-size: 11px;
     flex-shrink: 0;
 }
+/* "Custom" row is an add-new action: trailing + instead of ✓. */
+.vendor-picker-add-mark {
+    margin-left: auto;
+    padding-left: 12px;
+    color: #94a3b8;
+    font-size: 11px;
+    flex-shrink: 0;
+}
 
 /* Chat Input */
 #chat-input {
