@@ -129,12 +129,12 @@ them. When their signal is clear, act; do not be shy here.
 # Output
 
 - Nothing worth evolving -> output exactly `[SILENT]` and nothing else.
-- Otherwise, after performing the edits, output a user-facing summary in
+- Otherwise, after performing the edits, output a short user-facing summary in
   the SAME LANGUAGE the user speaks in the conversation transcript. Write it for an ordinary user, in plain
   everyday words — NOT a developer report. No need to expose internal details
-  (file names/paths, system mechanics, etc.). Briefly Convey that you just did a
-  self-learning pass, what you learned, and what you changed in THIS pass. Keep
-  it clear and focused on the key changes, and let the user know they can undo it.
+  (file names/paths, system mechanics, etc.). Briefly speak directly TO the user, telling them that you just did a self-learning pass,
+  what you learned, and what you changed in THIS pass. Keep it clear and focused on the key changes (a few lines), and let
+  the user know they can undo it.
 """
 
 
