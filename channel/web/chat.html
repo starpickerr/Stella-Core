@@ -840,6 +840,11 @@
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span id="knowledge-stats" class="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline"></span>
+                                    <span id="knowledge-action-status" class="text-xs opacity-0 transition-opacity duration-200"></span>
+                                    <button onclick="createKnowledgeCategory()"
+                                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-xs font-medium cursor-pointer transition-colors">
+                                        <i class="fas fa-folder-plus"></i><span data-i18n="knowledge_new_category">新建分类</span>
+                                    </button>
                                     <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
                                         <button id="knowledge-tab-docs" onclick="switchKnowledgeTab('docs')"
                                                 class="knowledge-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
@@ -1075,6 +1080,34 @@
             </div><!-- /content-area -->
         </div><!-- /main-content -->
     </div><!-- /app -->
+
+    <!-- Knowledge Action Dialog -->
+    <div id="knowledge-dialog-overlay" class="fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center">
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center">
+                        <i id="knowledge-dialog-icon" class="fas fa-folder text-emerald-500"></i>
+                    </div>
+                    <div>
+                        <h3 id="knowledge-dialog-title" class="font-semibold text-slate-800 dark:text-slate-100"></h3>
+                        <p id="knowledge-dialog-subtitle" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5"></p>
+                    </div>
+                </div>
+                <label id="knowledge-dialog-label" class="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1.5"></label>
+                <input id="knowledge-dialog-input" type="text"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500">
+                <select id="knowledge-dialog-select"
+                        class="hidden w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-[#222] text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"></select>
+                <p id="knowledge-dialog-hint" class="mt-2 text-xs text-slate-400 dark:text-slate-500"></p>
+                <p id="knowledge-dialog-error" class="mt-2 text-xs text-red-500 hidden"></p>
+            </div>
+            <div class="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 dark:border-white/5">
+                <button id="knowledge-dialog-cancel" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-sm hover:bg-slate-50 dark:hover:bg-white/5">取消</button>
+                <button id="knowledge-dialog-submit" class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium disabled:opacity-50">确定</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Confirm Dialog -->
     <div id="confirm-dialog-overlay" class="fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center">
