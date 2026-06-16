@@ -220,6 +220,7 @@ const I18N = {
         today: '今天', yesterday: '昨天', earlier: '更早',
         delete_session_confirm: '确认删除该会话？所有消息将被清除。',
         delete_session_title: '删除会话',
+        rename_session: '重命名',
         delete_message_confirm: '确认删除这条消息？',
         delete_message_title: '删除消息',
         edit_disabled_reply_active: '正在生成回复，暂时无法编辑。',
@@ -460,6 +461,7 @@ const I18N = {
         today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier',
         delete_session_confirm: 'Delete this session? All messages will be removed.',
         delete_session_title: 'Delete Session',
+        rename_session: 'Rename',
         delete_message_confirm: 'Delete this message?',
         delete_message_title: 'Delete Message',
         edit_disabled_reply_active: 'Reply is being generated; editing is temporarily unavailable.',
@@ -3670,6 +3672,9 @@ function _addOptimisticSessionItem(sid) {
     item.innerHTML = `
         <i class="fas fa-message session-icon"></i>
         <span class="session-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+        <button class="session-rename" onclick="event.stopPropagation(); renameSession('${sid}')" title="${escapeHtml(t('rename_session'))}">
+            <i class="fas fa-pen"></i>
+        </button>
         <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${sid}')" title="Delete">
             <i class="fas fa-trash-can"></i>
         </button>
@@ -3757,6 +3762,9 @@ function _fetchSessionPage(page, clear, onDone) {
                 item.innerHTML = `
                     <i class="fas fa-message session-icon"></i>
                     <span class="session-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+                    <button class="session-rename" onclick="event.stopPropagation(); renameSession('${s.session_id}')" title="${escapeHtml(t('rename_session'))}">
+                        <i class="fas fa-pen"></i>
+                    </button>
                     <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')" title="Delete">
                         <i class="fas fa-trash-can"></i>
                     </button>
@@ -3873,6 +3881,84 @@ function switchSession(newSessionId) {
 
     if (_isMobileView()) closeSessionPanel();
     if (currentView !== 'chat') navigateTo('chat');
+}
+
+// In-place rename a session title: replace the title <span> with an <input>,
+// commit on Enter/blur, cancel on Escape. Persists via PUT /api/sessions/<id>.
+function renameSession(sid) {
+    const item = document.querySelector(`.session-item[data-session-id="${sid}"]`);
+    if (!item) return;
+    const titleEl = item.querySelector('.session-title');
+    if (!titleEl || item.querySelector('.session-title-input')) return;
+
+    const oldTitle = titleEl.textContent;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'session-title-input';
+    input.value = oldTitle;
+    input.maxLength = 100;
+
+    // Avoid switching session while interacting with the input
+    const stop = e => e.stopPropagation();
+    input.addEventListener('click', stop);
+    input.addEventListener('mousedown', stop);
+
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+
+    const restore = (title) => {
+        if (done) return;
+        done = true;
+        const span = document.createElement('span');
+        span.className = 'session-title';
+        span.title = title;
+        span.textContent = title;
+        input.replaceWith(span);
+    };
+
+    const commit = () => {
+        if (done) return;
+        const newTitle = input.value.trim();
+        if (!newTitle || newTitle === oldTitle) {
+            restore(oldTitle);
+            return;
+        }
+        // Optimistically show the new title, then persist.
+        restore(newTitle);
+        fetch(`/api/sessions/${encodeURIComponent(sid)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle })
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    // Revert UI on failure
+                    const span = item.querySelector('.session-title');
+                    if (span) {
+                        span.title = oldTitle;
+                        span.textContent = oldTitle;
+                    }
+                }
+            })
+            .catch(() => {
+                const span = item.querySelector('.session-title');
+                if (span) {
+                    span.title = oldTitle;
+                    span.textContent = oldTitle;
+                }
+            });
+    };
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); restore(oldTitle); }
+    });
+    input.addEventListener('blur', commit);
 }
 
 function deleteSession(sid) {
