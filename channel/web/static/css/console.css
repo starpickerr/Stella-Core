@@ -1211,6 +1211,34 @@
     background: #EDFDF3;
     color: #228547;
 }
+
+.knowledge-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.knowledge-tree-file:hover .knowledge-actions,
+.knowledge-tree-group-btn:hover .knowledge-actions,
+.knowledge-tree-file:focus-within .knowledge-actions,
+.knowledge-tree-group-btn:focus-within .knowledge-actions {
+    opacity: 1;
+}
+.knowledge-action {
+    padding: 3px 5px;
+    border-radius: 5px;
+    color: #94a3b8;
+    font-size: 9px;
+}
+.knowledge-action:hover {
+    color: #228547;
+    background: rgba(34, 133, 71, 0.08);
+}
+.knowledge-action.danger:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
 .dark .knowledge-tree-file:hover {
     background: rgba(255,255,255,0.06);
     color: #e2e8f0;

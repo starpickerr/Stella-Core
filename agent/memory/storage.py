@@ -825,9 +825,10 @@ class MemoryStorage:
             return []
 
     def delete_by_path(self, path: str):
-        """Delete all chunks from a file"""
+        """Delete all chunks and file metadata for a path."""
         with self._lock:
             self.conn.execute("DELETE FROM chunks WHERE path = ?", (path,))
+            self.conn.execute("DELETE FROM files WHERE path = ?", (path,))
             self.conn.commit()
 
     def get_file_hash(self, path: str) -> Optional[str]:
