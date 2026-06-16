@@ -103,8 +103,8 @@ class WecomBotChannel(ChatChannel):
         self._pending_lock = threading.Lock()
         self._stream_states = {}  # req_id -> {"stream_id": str, "content": str}
 
-        # Callback (webhook) mode state
-        self.callback_mode = False
+        # Transport mode: "websocket" (long connection) or "webhook" (HTTP callback)
+        self.mode = "websocket"
         self._crypt = None
         self._http_server = None
         # stream_id -> {"committed", "current", "finished", "images", "last_access"}
@@ -119,8 +119,8 @@ class WecomBotChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def startup(self):
-        self.callback_mode = bool(conf().get("wecom_bot_callback", False))
-        if self.callback_mode:
+        self.mode = conf().get("wecom_bot_mode", "websocket")
+        if self.mode == "webhook":
             self._startup_callback()
             return
 
@@ -878,54 +878,68 @@ class WecomBotChannel(ChatChannel):
         if local_path.startswith("file://"):
             local_path = local_path[7:]
 
-        if local_path.startswith(("http://", "https://")):
-            try:
-                resp = requests.get(local_path, timeout=30)
-                resp.raise_for_status()
-                tmp_path = f"/tmp/wecom_cb_img_{uuid.uuid4().hex[:8]}"
-                with open(tmp_path, "wb") as f:
-                    f.write(resp.content)
-                local_path = tmp_path
-            except Exception as e:
-                logger.error(f"[WecomBot] Failed to download image for callback reply: {e}")
+        # Temp files we create here (downloads/conversions/compressions) must be
+        # cleaned up afterwards; the caller's original local file must not be.
+        temp_files = []
+        try:
+            if local_path.startswith(("http://", "https://")):
+                try:
+                    resp = requests.get(local_path, timeout=30)
+                    resp.raise_for_status()
+                    tmp_path = f"/tmp/wecom_cb_img_{uuid.uuid4().hex[:8]}"
+                    with open(tmp_path, "wb") as f:
+                        f.write(resp.content)
+                    temp_files.append(tmp_path)
+                    local_path = tmp_path
+                except Exception as e:
+                    logger.error(f"[WecomBot] Failed to download image for callback reply: {e}")
+                    return None
+
+            if not os.path.exists(local_path):
+                logger.error(f"[WecomBot] Image file not found: {local_path}")
                 return None
 
-        if not os.path.exists(local_path):
-            logger.error(f"[WecomBot] Image file not found: {local_path}")
-            return None
+            formatted = self._ensure_image_format(local_path)
+            if not formatted:
+                return None
+            if formatted != local_path:
+                temp_files.append(formatted)
+            local_path = formatted
 
-        local_path = self._ensure_image_format(local_path)
-        if not local_path:
-            return None
+            # Unlike the long-connection path (which uploads and sends only a tiny
+            # media_id), the callback reply embeds the whole image as base64 inside
+            # an AES-encrypted body that is returned on EVERY poll. Empirically a
+            # ~1.5MB image (base64 ~2.1MB, encrypted ~2.8MB) makes WeCom reject the
+            # finish packet and poll forever, so cap well below that.
+            callback_max_size = 512 * 1024
+            if os.path.getsize(local_path) > callback_max_size:
+                compressed = self._compress_image(local_path, callback_max_size)
+                if compressed:
+                    temp_files.append(compressed)
+                    local_path = compressed
+                else:
+                    logger.warning("[WecomBot] callback image compress failed; sending original (may be rejected)")
 
-        # Unlike the long-connection path (which uploads and sends only a tiny
-        # media_id), the callback reply embeds the whole image as base64 inside
-        # an AES-encrypted body that is returned on EVERY poll. Empirically a
-        # ~1.5MB image (base64 ~2.1MB, encrypted ~2.8MB) makes WeCom reject the
-        # finish packet and poll forever, so cap well below that.
-        callback_max_size = 512 * 1024
-        if os.path.getsize(local_path) > callback_max_size:
-            compressed = self._compress_image(local_path, callback_max_size)
-            if compressed:
-                local_path = compressed
-            else:
-                logger.warning("[WecomBot] callback image compress failed; sending original (may be rejected)")
-
-        try:
-            with open(local_path, "rb") as f:
-                raw = f.read()
-            logger.debug(f"[WecomBot] callback image base64 ready: raw={len(raw)} bytes")
-            return base64.b64encode(raw).decode("utf-8"), hashlib.md5(raw).hexdigest()
-        except Exception as e:
-            logger.error(f"[WecomBot] Failed to read image for callback reply: {e}")
-            return None
+            try:
+                with open(local_path, "rb") as f:
+                    raw = f.read()
+                return base64.b64encode(raw).decode("utf-8"), hashlib.md5(raw).hexdigest()
+            except Exception as e:
+                logger.error(f"[WecomBot] Failed to read image for callback reply: {e}")
+                return None
+        finally:
+            for path in temp_files:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     # Send reply
     # ------------------------------------------------------------------
 
     def send(self, reply: Reply, context: Context):
-        if self.callback_mode:
+        if self.mode == "webhook":
             self._callback_send(reply, context)
             return
 
