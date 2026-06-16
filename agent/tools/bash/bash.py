@@ -24,6 +24,8 @@ class Bash(BaseTool):
     _IS_WIN = sys.platform == "win32"
     _PROGRESS_MAX_BYTES = 4 * 1024
     _PROGRESS_INTERVAL = 0.5
+    # cmd.exe command line limit is ~8191 chars; rewrite python -c above this.
+    _WIN_CMD_SAFE_LEN = 7000
 
     name: str = "bash"
     description: str = f"""Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file.
@@ -111,19 +113,35 @@ SAFETY:
             else:
                 logger.debug(f"[Bash] Process User: {os.environ.get('USERNAME', os.environ.get('USER', 'unknown'))}")
             
+            # Temp script written for long `python -c` commands (Windows only),
+            # cleaned up after execution.
+            temp_script_path = None
+
             # On Windows, convert $VAR references to %VAR% for cmd.exe
             if self._IS_WIN:
                 env["PYTHONIOENCODING"] = "utf-8"
                 command = self._convert_env_vars_for_windows(command, dotenv_vars)
+                # cmd.exe has an ~8191 char command line limit. Long
+                # `python -c "..."` commands silently fail, so spill the inline
+                # code into a temp .py file and run that instead.
+                if len(command) > self._WIN_CMD_SAFE_LEN:
+                    command, temp_script_path = self._rewrite_long_python_c(command)
                 if command and not command.strip().lower().startswith("chcp"):
                     command = f"chcp 65001 >nul 2>&1 && {command}"
 
-            result = self._run_streaming(
-                command,
-                timeout,
-                env,
-                dotenv_vars,
-            )
+            try:
+                result = self._run_streaming(
+                    command,
+                    timeout,
+                    env,
+                    dotenv_vars,
+                )
+            finally:
+                if temp_script_path:
+                    try:
+                        os.remove(temp_script_path)
+                    except OSError:
+                        pass
             
             logger.debug(f"[Bash] Exit code: {result.returncode}")
             logger.debug(f"[Bash] Stdout length: {len(result.stdout)}")
@@ -391,3 +409,43 @@ SAFETY:
             return m.group(0)
 
         return re.sub(r'\$\{(\w+)\}|\$(\w+)', replace_match, command)
+
+    @staticmethod
+    def _rewrite_long_python_c(command: str):
+        """
+        Rewrite `python -c "<code>"` into `python <tempfile>` to bypass the
+        cmd.exe command line length limit on Windows.
+
+        Returns (new_command, temp_file_path). On any parse failure the original
+        command and None are returned, so behavior is unchanged when unmatched.
+        """
+        # Match: <python|python3|py> [flags] -c "<code>" (single or double quoted)
+        m = re.search(
+            r'^(?P<prefix>.*?\b(?:python3?|py)\b[^\n]*?\s-c\s+)'
+            r'(?P<quote>["\'])(?P<code>.*)(?P=quote)\s*(?P<suffix>.*)$',
+            command,
+            re.DOTALL,
+        )
+        if not m:
+            return command, None
+
+        quote = m.group("quote")
+        code = m.group("code")
+        # Reverse common shell-level escaping of the quote char inside the code.
+        code = code.replace("\\" + quote, quote)
+
+        try:
+            fd, path = tempfile.mkstemp(suffix=".py", prefix="bash-pyc-")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(code)
+        except OSError:
+            return command, None
+
+        prefix = m.group("prefix")
+        # Drop the trailing "-c " from the prefix, keep the interpreter + flags.
+        interp = re.sub(r'\s-c\s+$', ' ', prefix).rstrip()
+        suffix = m.group("suffix").strip()
+        new_command = f'{interp} "{path}"'
+        if suffix:
+            new_command += f' {suffix}'
+        return new_command, path
