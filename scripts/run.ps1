@@ -458,10 +458,10 @@ $ModelChoices = @{
     3  = @{ Provider = "Gemini";                  Default = "gemini-3.1-pro-preview";              Field = "gemini_api_key";    BaseField = "gemini_api_base" }
     4  = @{ Provider = "OpenAI";                  Default = "gpt-5.5";                             Field = "open_ai_api_key";   BaseField = "open_ai_api_base" }
     5  = @{ Provider = "MiniMax";                 Default = "MiniMax-M3";                          Field = "minimax_api_key" }
-    6  = @{ Provider = "GLM";                     Default = "glm-5.1";                             Field = "zhipu_ai_api_key" }
+    6  = @{ Provider = "GLM";                     Default = "glm-5.2";                             Field = "zhipu_ai_api_key" }
     7  = @{ Provider = "Qwen (DashScope)";        Default = "qwen3.7-plus";                        Field = "dashscope_api_key" }
     8  = @{ Provider = "Doubao (Volcengine Ark)"; Default = "doubao-seed-2-0-code-preview-260215"; Field = "ark_api_key" }
-    9  = @{ Provider = "Kimi (Moonshot)";         Default = "kimi-k2.6";                           Field = "moonshot_api_key" }
+    9  = @{ Provider = "Kimi (Moonshot)";         Default = "kimi-k2.7-code";                      Field = "moonshot_api_key" }
     10 = @{ Provider = "MiMo";                    Default = "mimo-v2.5-pro";                       Field = "mimo_api_key" }
     11 = @{ Provider = "LinkAI";                  Default = "deepseek-v4-flash";                   Field = "linkai_api_key";    Linkai = $true }
 }
@@ -475,10 +475,10 @@ function Select-Model {
         "Gemini (gemini-3.5-flash, gemini-3.1-pro-preview, etc.)",
         "OpenAI (gpt-5.5, etc.)",
         "MiniMax (MiniMax-M3, etc.)",
-        "GLM (glm-5.1, etc.)",
+        "GLM (glm-5.2, etc.)",
         "Qwen (qwen3.7-plus, qwen3.7-max, etc.)",
         "Doubao (doubao-seed-2.0, etc.)",
-        "Kimi (kimi-k2.6, etc.)",
+        "Kimi (kimi-k2.7-code, etc.)",
         "MiMo (mimo-v2.5-pro, etc.)",
         ("LinkAI (" + (T "一个 Key 接入所有模型" "access all models via one API") + ")"),
         (T "⏭  跳过（稍后在 Web 控制台配置）" "⏭  Skip (configure later in the web console)")
