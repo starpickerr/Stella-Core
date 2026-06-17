@@ -17,18 +17,16 @@ Provider resolution:
 """
 
 import base64
-import ipaddress
 import os
-import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 import requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from agent.tools.utils.url_safety import validate_url_safe
 from common import const
 from common.log import logger
 from config import conf
@@ -665,31 +663,13 @@ class Vision(BaseTool):
         into non-public ranges.  Also rejects URLs with no host, non-HTTP(S)
         schemes, or hosts that fail DNS resolution.
 
+        Delegates to the shared ``agent.tools.utils.url_safety`` helper so the
+        same guard protects every tool that fetches model-supplied URLs.
+
         Raises:
             ValueError: if the URL targets a disallowed address.
         """
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
-
-        hostname = parsed.hostname
-        if not hostname:
-            raise ValueError("URL has no hostname")
-
-        try:
-            # Resolve all addresses for the hostname.
-            addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        except socket.gaierror:
-            raise ValueError(f"Cannot resolve hostname: {hostname}")
-
-        for family, _, _, _, sockaddr in addr_infos:
-            ip_str = sockaddr[0]
-            ip = ipaddress.ip_address(ip_str)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                raise ValueError(
-                    f"URL resolves to a non-public address ({ip_str}), "
-                    f"request blocked for security"
-                )
+        validate_url_safe(url)
 
     def _build_image_content(self, image: str) -> dict:
         """
