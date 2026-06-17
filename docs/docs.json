@@ -23,6 +23,10 @@
         "href": "https://cowagent.ai/"
       },
       {
+        "label": "博客",
+        "href": "https://cowagent.ai/zh/blog/"
+      },
+      {
         "label": "GitHub",
         "href": "https://github.com/zhayujie/CowAgent"
       }
@@ -50,6 +54,10 @@
             {
               "label": "Website",
               "href": "https://cowagent.ai/"
+            },
+            {
+              "label": "Blog",
+              "href": "https://cowagent.ai/blog/"
             },
             {
               "label": "GitHub",
@@ -241,6 +249,7 @@
                 "group": "Release Notes",
                 "pages": [
                   "releases/overview",
+                  "releases/v2.1.2",
                   "releases/v2.1.1",
                   "releases/v2.1.0",
                   "releases/v2.0.9",
@@ -266,6 +275,10 @@
             {
               "label": "官网",
               "href": "https://cowagent.ai/?lang=zh"
+            },
+            {
+              "label": "博客",
+              "href": "https://cowagent.ai/zh/blog/"
             },
             {
               "label": "GitHub",
@@ -457,6 +470,7 @@
                 "group": "发布记录",
                 "pages": [
                   "zh/releases/overview",
+                  "zh/releases/v2.1.2",
                   "zh/releases/v2.1.1",
                   "zh/releases/v2.1.0",
                   "zh/releases/v2.0.9",
@@ -482,6 +496,10 @@
             {
               "label": "ウェブサイト",
               "href": "https://cowagent.ai/"
+            },
+            {
+              "label": "ブログ",
+              "href": "https://cowagent.ai/blog/"
             },
             {
               "label": "GitHub",
@@ -673,6 +691,7 @@
                 "group": "リリースノート",
                 "pages": [
                   "ja/releases/overview",
+                  "ja/releases/v2.1.2",
                   "ja/releases/v2.1.1",
                   "ja/releases/v2.1.0",
                   "ja/releases/v2.0.9",
