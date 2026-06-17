@@ -4476,7 +4476,7 @@ class MessageDeleteHandler:
             # 2. Sync agent's in-memory context so its next turn sees the
             # same history as the DB. Handled by the agent_bridge helper.
             try:
-                from bridge import Bridge
+                from bridge.bridge import Bridge
                 Bridge().get_agent_bridge().sync_session_messages_from_store(session_id)
             except Exception as sync_err:
                 logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")
