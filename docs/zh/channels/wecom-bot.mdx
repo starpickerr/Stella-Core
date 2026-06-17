@@ -69,6 +69,20 @@ description: 将 CowAgent 接入企业微信智能机器人（长连接模式）
 
 日志显示 `[WecomBot] Subscribe success` 即表示连接成功。
 
+<Note>
+  除长连接外，也支持**回调（HTTP 回调）模式**：创建机器人时选择「使用 URL 回调」，将接收消息 URL 设为 `http(s)://<域名或IP>:9892/wecombot`，并复制该页面的 Token 和 EncodingAESKey。该模式需公网可达，且不支持文件发送与定时推送，一般推荐使用长连接。对应 `config.json` 配置如下：
+
+```json
+{
+  "channel_type": "wecom_bot",
+  "wecom_bot_mode": "webhook",
+  "wecom_bot_token": "YOUR_TOKEN",
+  "wecom_bot_encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+  "wecom_bot_port": 9892
+}
+```
+</Note>
+
 ## 二、功能说明
 
 | 功能 | 支持情况 |
