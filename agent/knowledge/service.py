@@ -32,6 +32,10 @@ class KnowledgeService:
 
     PROTECTED_FILES = {"index.md", "log.md"}
     INVALID_NAME_RE = re.compile(r'[<>:"|?*\x00-\x1f]')
+    IMPORT_EXTENSIONS = {".md", ".txt"}
+    MAX_IMPORT_FILES = 100
+    MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
+    MAX_IMPORT_TOTAL_SIZE = 50 * 1024 * 1024
 
     def __init__(self, workspace_root: str, memory_manager=None):
         self.workspace_root = os.path.abspath(workspace_root)
@@ -100,15 +104,122 @@ class KnowledgeService:
             raise error[0]
         return result[0] if result else None
 
-    def _sync_index(self, old_paths: Iterable[str]):
+    def _sync_index(self, old_paths: Iterable[str], force: bool = False):
         old_paths = sorted(set(old_paths))
-        if not old_paths:
+        if not old_paths and not force:
             return
         manager = self._manager()
         for rel_path in old_paths:
             manager.storage.delete_by_path(f"knowledge/{rel_path}")
         manager.mark_dirty()
         self._run_sync(manager.sync())
+
+    def _sanitize_document_name(self, filename: str) -> str:
+        name = os.path.basename((filename or "").replace("\\", "/")).strip()
+        if not name:
+            raise ValueError("filename is required")
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in self.IMPORT_EXTENSIONS:
+            raise ValueError(f"unsupported file type: {ext or name}")
+        if not stem or stem in (".", "..") or self.INVALID_NAME_RE.search(stem):
+            raise ValueError("invalid filename")
+        safe_name = f"{stem}.md"
+        self._ensure_not_protected(safe_name)
+        return safe_name
+
+    @staticmethod
+    def _decode_document_content(content) -> str:
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, (bytes, bytearray)):
+            raise ValueError("document content is required")
+        return bytes(content).decode("utf-8-sig", errors="replace")
+
+    def _resolve_import_destination(self, target_category: str, filename: str,
+                                    conflict_strategy: str) -> tuple:
+        target_rel, target_full = self._resolve_path(target_category, kind="category")
+        if not target_full.is_dir():
+            raise FileNotFoundError(f"category not found: {target_rel}")
+
+        safe_name = self._sanitize_document_name(filename)
+        destination = target_full / safe_name
+        rel_path = f"{target_rel}/{safe_name}"
+
+        if destination.exists():
+            if conflict_strategy == "skip":
+                return rel_path, destination, "skip"
+            if conflict_strategy == "rename":
+                stem = destination.stem
+                suffix = destination.suffix
+                for index in range(1, 1000):
+                    candidate = target_full / f"{stem}-{index}{suffix}"
+                    if not candidate.exists():
+                        candidate_rel = f"{target_rel}/{candidate.name}"
+                        return candidate_rel, candidate, "write"
+                raise FileExistsError(f"target already exists: {rel_path}")
+            if conflict_strategy != "overwrite":
+                raise ValueError("invalid conflict strategy")
+        return rel_path, destination, "write"
+
+    def create_document(self, path: str, content: str = "", overwrite: bool = False) -> dict:
+        rel_path, full_path = self._resolve_path(path, kind="document")
+        self._ensure_not_protected(rel_path)
+        if len((content or "").encode("utf-8")) > self.MAX_IMPORT_FILE_SIZE:
+            raise ValueError("file too large")
+        if full_path.exists() and not overwrite:
+            raise FileExistsError(f"target already exists: {rel_path}")
+        old_paths = [rel_path] if full_path.exists() else []
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content or "", encoding="utf-8")
+        self._sync_index(old_paths, force=True)
+        return {"path": rel_path, "created": True, "overwritten": bool(old_paths)}
+
+    def import_documents(self, target_category: str, files: Iterable[dict],
+                         conflict_strategy: str = "skip") -> dict:
+        if not isinstance(files, list):
+            raise ValueError("files must be a list")
+        if len(files) > self.MAX_IMPORT_FILES:
+            raise ValueError(f"too many files: max {self.MAX_IMPORT_FILES}")
+        results = []
+        old_paths = []
+        imported = skipped = failed = 0
+        total_size = 0
+
+        for item in files:
+            filename = item.get("filename") if isinstance(item, dict) else None
+            try:
+                content_bytes = item.get("content") if isinstance(item, dict) else None
+                size = len(content_bytes.encode("utf-8")) if isinstance(content_bytes, str) else len(content_bytes or b"")
+                total_size += size
+                if total_size > self.MAX_IMPORT_TOTAL_SIZE:
+                    raise ValueError("import batch too large")
+                if size > self.MAX_IMPORT_FILE_SIZE:
+                    raise ValueError("file too large")
+                rel_path, destination, mode = self._resolve_import_destination(
+                    target_category, filename, conflict_strategy
+                )
+                if mode == "skip":
+                    skipped += 1
+                    results.append({"filename": filename, "path": rel_path, "status": "skipped",
+                                    "reason": "target_exists"})
+                    continue
+
+                old_exists = destination.exists()
+                content = self._decode_document_content(content_bytes)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(content, encoding="utf-8")
+                if old_exists:
+                    old_paths.append(rel_path)
+                imported += 1
+                results.append({"filename": filename, "path": rel_path, "status": "imported",
+                                "overwritten": old_exists})
+            except Exception as exc:
+                failed += 1
+                results.append({"filename": filename or "", "status": "failed", "reason": str(exc)})
+
+        if imported:
+            self._sync_index(old_paths, force=True)
+        return {"results": results, "imported": imported, "skipped": skipped, "failed": failed}
 
     def create_category(self, path: str) -> dict:
         rel_path, full_path = self._resolve_path(path, kind="category")
@@ -416,6 +527,15 @@ class KnowledgeService:
                 result = self.delete_documents(payload.get("paths") or [])
             elif action == "move_documents":
                 result = self.move_documents(payload.get("paths") or [], payload.get("target_category"))
+            elif action == "create_document":
+                result = self.create_document(payload.get("path"), payload.get("content", ""),
+                                              payload.get("overwrite", False))
+            elif action == "import_documents":
+                result = self.import_documents(
+                    payload.get("target_category"),
+                    payload.get("files") or [],
+                    payload.get("conflict_strategy", "skip"),
+                )
             else:
                 return {"action": action, "code": 400, "message": f"unknown action: {action}", "payload": None}
             return {"action": action, "code": 200, "message": "success", "payload": result}
