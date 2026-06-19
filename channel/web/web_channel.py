@@ -2066,17 +2066,15 @@ class ModelsHandler:
 
     # Embedding model catalog per provider. Mirrors the default_model in
     # agent/memory/embedding/provider.py::EMBEDDING_VENDORS.
+    # Custom providers have no preset list — model names vary per vendor,
+    # so the user always types the model id manually.
     _EMBEDDING_PROVIDER_MODELS = {
         "openai":    ["text-embedding-3-small", "text-embedding-3-large"],
         "dashscope": ["text-embedding-v4"],
         "doubao":    ["doubao-embedding-vision-251215"],
         "zhipu":     ["embedding-3"],
         "linkai":    ["text-embedding-3-small"],
-        "custom":    [ # 202606 HnBigVolibear modify: The EMBEDDING model supports custom provider and custom model ID. For the dropdown dictionary values here, refer to SiliconFlow's free vector models. 
-            "BAAI/bge-m3", "Pro/BAAI/bge-m3", 
-            "BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5", 
-            "Qwen/Qwen3-Embedding-8B", "Qwen/Qwen3-Embedding-4B", "Qwen/Qwen3-Embedding-0.6B"
-        ],
+        "custom":    [],
     }
 
     # Capability-scoped model catalogs. The chat dropdown can reuse the
@@ -2127,12 +2125,9 @@ class ModelsHandler:
             const.CLAUDE_4_6_SONNET,
             const.GEMINI_31_FLASH_LITE_PRE,
         ],
-        # Custom OpenAI-compatible providers — any multimodal model that
-        # accepts image_url content blocks over /chat/completions.
-        "custom": [
-            "Qwen/Qwen3.5-397B-A17B", "Qwen/Qwen3-VL-32B-Instruct",
-            "deepseek-ai/DeepSeek-OCR", "zai-org/GLM-4.5V", "Pro/moonshotai/Kimi-K2.6",
-        ],
+        # Custom OpenAI-compatible providers have no preset list — model
+        # names vary per vendor, so the user types the model id manually.
+        "custom": [],
     }
 
     # Image-generation catalog. Source of truth: skills/image-generation/SKILL.md.
@@ -3188,7 +3183,7 @@ class ModelsHandler:
                 return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
             if not model:
                 model = custom_provider.get("model") or ""
-        elif provider_id and provider_id not in {k for k in ConfigHandler._VISION_PROVIDER_MODELS if k != "custom"}:
+        elif provider_id and provider_id not in {k for k in ModelsHandler._VISION_PROVIDER_MODELS if k != "custom"}:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         if provider_id and not model:
@@ -3333,7 +3328,7 @@ class ModelsHandler:
             # Fall back to the custom provider's default model when none is given.
             if not model:
                 model = custom_provider.get("model") or ""
-        elif provider_id and provider_id not in ConfigHandler._EMBEDDING_PROVIDERS[:-1]:
+        elif provider_id and provider_id not in {p for p in ModelsHandler._EMBEDDING_PROVIDERS if p != "custom"}:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         # A provider without a model leaves the runtime in a broken half-state,

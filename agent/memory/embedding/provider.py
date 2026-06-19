@@ -145,9 +145,9 @@ EMBEDDING_VENDORS = {
     # Custom provider — any OpenAI-compatible /embeddings endpoint. The
     # user must supply api_key + api_base + model via the web console
     # (stored in custom_providers list or legacy custom_api_key / custom_api_base).
-    # Dimensions defaults to 1024 (most Chinese vendors) but can be
-    # overridden via config's embedding_dimensions. No dim-param support
-    # assumption — safest default for unknown endpoints.
+    # Dimensions defaults to 1024 but can be overridden via config's
+    # embedding_dimensions. No dim-param support assumption — safest
+    # default for unknown endpoints.
     "custom": {
         "default_base_url": "",
         "default_model": "",
