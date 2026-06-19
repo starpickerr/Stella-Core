@@ -85,14 +85,12 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
                     {ch.fields.map((field) => (
                       <div key={field.key}>
                         <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                          {field.label?.zh || field.label?.en || field.key}
-                          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                          {field.label || field.key}
                         </label>
                         <input
-                          type={field.type === 'password' ? 'password' : 'text'}
+                          type={field.type === 'secret' ? 'password' : 'text'}
                           value={configValues[ch.name]?.[field.key] || ''}
                           onChange={(e) => handleFieldChange(ch.name, field.key, e.target.value)}
-                          placeholder={field.placeholder?.zh || field.placeholder?.en || ''}
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 transition-colors"
                         />
                       </div>

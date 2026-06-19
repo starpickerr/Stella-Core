@@ -63,9 +63,13 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                   </span>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Cron: <code className="bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono">{task.cron}</code></span>
-                  {task.next_run && <span>Next: {task.next_run}</span>}
-                  {task.last_run && <span>Last: {task.last_run}</span>}
+                  <span>
+                    {task.schedule?.type}:{' '}
+                    <code className="bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono">
+                      {task.schedule?.expression || task.schedule?.run_at || `${task.schedule?.seconds ?? ''}s`}
+                    </code>
+                  </span>
+                  {task.next_run_at && <span>Next: {task.next_run_at}</span>}
                 </div>
               </div>
             ))}

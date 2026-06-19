@@ -72,7 +72,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 <div key={tool.name} className="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-1.5">
                     <i className="fas fa-cog text-xs text-primary-400" />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{tool.display_name || tool.name}</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{tool.name}</span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{tool.description}</p>
                 </div>
@@ -104,7 +104,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <i className="fas fa-bolt text-xs text-amber-400" />
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{skill.display_name || skill.name}</span>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{skill.name}</span>
                     </div>
                     <button
                       onClick={() => handleToggle(skill)}

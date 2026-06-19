@@ -95,7 +95,7 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
                       >
                         <td className="px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 font-mono">{item.filename}</td>
                         <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{formatSize(item.size)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{formatTime(item.modified)}</td>
+                        <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{item.updated_at}</td>
                       </tr>
                     ))}
                   </tbody>
