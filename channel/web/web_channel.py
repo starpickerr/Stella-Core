@@ -2949,10 +2949,10 @@ class ModelsHandler:
             {
               "action": "set_custom_provider",
               "id": "3f2a9c1b",             # required for edit; omit for create
-              "name": "siliconflow",         # required, display label
+              "name": "my-provider",         # required, display label
               "api_base": "https://...",     # required when creating
               "api_key": "sk-...",           # optional on edit (keep existing)
-              "model": "deepseek-ai/...",    # optional default model
+              "model": "model-name",         # optional default model
               "make_active": true            # optional, also activate it
             }
         """
