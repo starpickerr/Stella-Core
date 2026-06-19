@@ -2062,7 +2062,22 @@ class ModelsHandler:
             ],
         },
     }
-    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
+    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai", "custom"]
+
+    # Embedding model catalog per provider. Mirrors the default_model in
+    # agent/memory/embedding/provider.py::EMBEDDING_VENDORS.
+    _EMBEDDING_PROVIDER_MODELS = {
+        "openai":    ["text-embedding-3-small", "text-embedding-3-large"],
+        "dashscope": ["text-embedding-v4"],
+        "doubao":    ["doubao-embedding-vision-251215"],
+        "zhipu":     ["embedding-3"],
+        "linkai":    ["text-embedding-3-small"],
+        "custom":    [ # 202606 HnBigVolibear modify: The EMBEDDING model supports custom provider and custom model ID. For the dropdown dictionary values here, refer to SiliconFlow's free vector models. 
+            "BAAI/bge-m3", "Pro/BAAI/bge-m3", 
+            "BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5", 
+            "Qwen/Qwen3-Embedding-8B", "Qwen/Qwen3-Embedding-4B", "Qwen/Qwen3-Embedding-0.6B"
+        ],
+    }
 
     # Capability-scoped model catalogs. The chat dropdown can reuse the
     # provider's generic model list, but vision and image generation are
@@ -2111,6 +2126,12 @@ class ModelsHandler:
             const.KIMI_K2_6,
             const.CLAUDE_4_6_SONNET,
             const.GEMINI_31_FLASH_LITE_PRE,
+        ],
+        # Custom OpenAI-compatible providers — any multimodal model that
+        # accepts image_url content blocks over /chat/completions.
+        "custom": [
+            "Qwen/Qwen3.5-397B-A17B", "Qwen/Qwen3-VL-32B-Instruct",
+            "deepseek-ai/DeepSeek-OCR", "zai-org/GLM-4.5V", "Pro/moonshotai/Kimi-K2.6",
         ],
     }
 
@@ -2425,18 +2446,31 @@ class ModelsHandler:
         user_specified = (vision_conf.get("model") or "").strip()
         explicit_provider = (vision_conf.get("provider") or "").strip()
 
+        # Build provider list: built-in providers + expanded custom:<id> entries.
+        # Same pattern as _embedding_capability — each user-created custom
+        # provider gets its own dropdown entry showing the user-chosen name.
+        providers = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in cls._VISION_PROVIDER_MODELS:
+            if pid == "custom":
+                if custom_cards:
+                    providers.extend(c["id"] for c in custom_cards)
+            else:
+                providers.append(pid)
+
         # Provider resolution priority:
         #   1. Explicit `tools.vision.provider` (persisted via UI; supports
         #      custom model names that prefix-inference can't recognize).
         #   2. Scan per-provider model lists by model name.
         # Empty provider keeps the dropdown on "auto" when we can't tell.
         inferred_provider = ""
-        if explicit_provider and explicit_provider in cls._VISION_PROVIDER_MODELS:
+        if explicit_provider and explicit_provider in providers:
             inferred_provider = explicit_provider
         elif user_specified:
             for pid, models in cls._VISION_PROVIDER_MODELS.items():
                 if user_specified in models:
-                    inferred_provider = pid
+                    # For "custom" key, map to the first custom card
+                    inferred_provider = custom_cards[0]["id"] if pid == "custom" and custom_cards else pid
                     break
 
         # In auto mode the hint should reflect what vision.py will actually
@@ -2452,7 +2486,7 @@ class ModelsHandler:
             "current_model": user_specified,
             "fallback_provider": predicted["provider"],
             "fallback_model": predicted["model"],
-            "providers": list(cls._VISION_PROVIDER_MODELS.keys()),
+            "providers": providers,
             "provider_models": cls._VISION_PROVIDER_MODELS,
         }
 
@@ -2525,18 +2559,40 @@ class ModelsHandler:
         suggested = ""
         if not explicit:
             for pid in cls._EMBEDDING_PROVIDERS:
+                if pid == "custom":
+                    continue
                 meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
                 key_field = meta.get("api_key_field")
                 if key_field and cls._is_real_key(local_config.get(key_field, "")):
                     suggested = pid
                     break
+            if not suggested:
+                custom_cards = cls._custom_provider_cards(local_config)
+                if custom_cards:
+                    suggested = custom_cards[0]["id"]
+
+        # Build provider list: built-in providers + expanded custom:<id> entries
+        # Same pattern as _chat_capability — each user-created custom provider
+        # gets its own dropdown entry showing the user-chosen name.
+        providers = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in cls._EMBEDDING_PROVIDERS:
+            if pid == "custom":
+                if custom_cards:
+                    providers.extend(c["id"] for c in custom_cards)
+                # No custom providers configured — skip the bare "custom" entry
+                # since the runtime cannot resolve its credentials.
+            else:
+                providers.append(pid)
+
         return {
             "editable": True,
             "current_provider": explicit,
             "suggested_provider": suggested,
             "current_model": local_config.get("embedding_model", "") or "",
             "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
-            "providers": cls._EMBEDDING_PROVIDERS,
+            "providers": providers,
+            "provider_models": cls._EMBEDDING_PROVIDER_MODELS,
         }
 
     # Auto-fallback order for image generation. Mirrors the global priority
@@ -3122,6 +3178,25 @@ class ModelsHandler:
         # is persisted so users picking a custom model under a specific vendor
         # still get routed there — runtime falls back to model-name prefix
         # inference only when provider is empty.
+        # Validate provider_id — mirrors _set_chat / _set_embedding pattern.
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+            if not model:
+                model = custom_provider.get("model") or ""
+        elif provider_id and provider_id not in {k for k in ConfigHandler._VISION_PROVIDER_MODELS if k != "custom"}:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        if provider_id and not model:
+            return json.dumps({
+                "status": "error",
+                "message": "vision model is required when a provider is selected",
+            })
+
         local_config = conf()
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
@@ -3247,7 +3322,20 @@ class ModelsHandler:
             logger.warning(f"[ModelsHandler] Bridge voice refresh failed: {e}")
 
     def _set_embedding(self, provider_id: str, model: str) -> str:
-        # Two valid states: both empty (reset to pick-or-empty) OR both set.
+        # Validate provider_id — mirrors _set_chat's validation pattern.
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+            # Fall back to the custom provider's default model when none is given.
+            if not model:
+                model = custom_provider.get("model") or ""
+        elif provider_id and provider_id not in ConfigHandler._EMBEDDING_PROVIDERS[:-1]:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
         # A provider without a model leaves the runtime in a broken half-state,
         # so reject that explicitly instead of silently writing it through.
         if provider_id and not model:
