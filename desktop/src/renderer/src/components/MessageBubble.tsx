@@ -1,157 +1,153 @@
 import React, { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import type { ChatMessage, ToolCall } from '../types'
+import { Copy, Check, RefreshCw, Pencil, Trash2, File as FileIcon, Sprout } from 'lucide-react'
+import type { ChatMessage } from '../types'
+import { t } from '../i18n'
+import apiClient from '../api/client'
+import Markdown from './Markdown'
+import MessageSteps, { ThinkingStep } from './MessageSteps'
 
 interface MessageBubbleProps {
   message: ChatMessage
-  theme: 'light' | 'dark'
-  baseUrl: string
+  onRegenerate?: (id: string) => void
+  onEdit?: (id: string) => void
+  onDelete?: (msg: ChatMessage) => void
 }
 
-const ToolStep: React.FC<{ tool: ToolCall; theme: 'light' | 'dark' }> = ({ tool, theme }) => {
-  const [expanded, setExpanded] = useState(false)
-  const isRunning = tool.type === 'tool_start' && !tool.status
-  const isSuccess = tool.status === 'success'
-
-  const iconClass = isRunning
-    ? 'fas fa-cog fa-spin text-slate-400'
-    : isSuccess
-      ? 'fas fa-check text-primary-400'
-      : 'fas fa-times text-red-400'
-
-  return (
-    <div className="border-b border-slate-100 dark:border-white/5 last:border-0">
-      <div
-        className="tool-header flex items-center gap-2 px-3 py-2"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <i className={`${iconClass} text-xs w-4 text-center`} />
-        <span className={`text-sm font-medium flex-1 ${tool.status === 'failed' ? 'text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
-          {tool.tool}
-        </span>
-        {tool.execution_time !== undefined && (
-          <span className="text-xs text-slate-400">{tool.execution_time.toFixed(1)}s</span>
-        )}
-        <i className={`fas fa-chevron-right text-[10px] text-slate-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
-      </div>
-      {expanded && (
-        <div className="tool-detail rounded-lg mx-3 mb-3 p-3 space-y-2">
-          {tool.arguments && (
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Input</div>
-              <pre className="text-xs overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto text-slate-600 dark:text-slate-400">
-                {JSON.stringify(tool.arguments, null, 2)}
-              </pre>
-            </div>
-          )}
-          {tool.result && (
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Output</div>
-              <pre className="text-xs overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto text-slate-600 dark:text-slate-400">
-                {tool.result.length > 1000 ? tool.result.slice(0, 1000) + '...' : tool.result}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+function fmtTime(ts: number): string {
+  if (!ts) return ''
+  const d = new Date(ts * 1000)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, baseUrl }) => {
+const HoverAction: React.FC<{ onClick: () => void; title: string; danger?: boolean; children: React.ReactNode }> = ({
+  onClick,
+  title,
+  danger,
+  children,
+}) => (
+  <button
+    onClick={onClick}
+    title={title}
+    className={`inline-flex items-center justify-center w-7 h-7 rounded-md cursor-pointer transition-colors text-content-tertiary ${
+      danger ? 'hover:text-danger hover:bg-danger-soft' : 'hover:text-content hover:bg-surface-2'
+    }`}
+  >
+    {children}
+  </button>
+)
+
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, onEdit, onDelete }) => {
   const isUser = message.role === 'user'
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
+  const copy = () => {
+    navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
   }
 
   if (isUser) {
     return (
-      <div className="flex justify-end px-4 sm:px-6 py-3">
-        <div className="max-w-[75%] sm:max-w-[60%]">
-          {/* User attachments */}
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2 justify-end">
-              {message.attachments.map((att, i) => (
-                <div key={i}>
-                  {att.file_type === 'image' && att.preview_url ? (
-                    <img src={`${baseUrl}${att.preview_url}`} alt={att.file_name}
-                         className="max-w-[200px] max-h-[160px] rounded-lg object-cover" />
-                  ) : (
-                    <div className="px-3 py-2 bg-slate-100 dark:bg-white/5 rounded-lg text-sm text-slate-500">
-                      <i className="fas fa-file text-xs mr-1.5" />{att.file_name}
-                    </div>
-                  )}
+      <div className="group flex flex-col items-end px-4 sm:px-6 py-2">
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-1.5 justify-end max-w-[75%]">
+            {message.attachments.map((att, i) =>
+              att.file_type === 'image' && att.preview_url ? (
+                <img
+                  key={i}
+                  src={apiClient.getFileUrl(att.preview_url)}
+                  alt={att.file_name}
+                  className="max-w-[180px] max-h-[150px] rounded-xl object-cover border border-default"
+                />
+              ) : (
+                <div key={i} className="flex items-center gap-1.5 px-3 py-2 bg-surface-2 rounded-xl text-xs text-content-secondary">
+                  <FileIcon size={13} />
+                  {att.file_name}
                 </div>
-              ))}
-            </div>
-          )}
-          <div className="bg-primary-400 text-white rounded-2xl px-4 py-2.5">
-            <div className="msg-content text-sm whitespace-pre-wrap">{message.content}</div>
+              )
+            )}
           </div>
+        )}
+        <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-[var(--user-bubble-bg)] text-content">
+          <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
+        </div>
+        <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="text-[11px] text-content-tertiary mr-1">{fmtTime(message.timestamp)}</span>
+          {onEdit && message.userSeq != null && (
+            <HoverAction onClick={() => onEdit(message.id)} title={t('msg_edit')}>
+              <Pencil size={13} />
+            </HoverAction>
+          )}
+          {onDelete && message.userSeq != null && (
+            <HoverAction onClick={() => onDelete(message)} title={t('msg_delete')} danger>
+              <Trash2 size={13} />
+            </HoverAction>
+          )}
         </div>
       </div>
     )
   }
 
-  // Assistant message
+  // Assistant
+  const showCursor = message.isStreaming && !message.content && (!message.steps || message.steps.length === 0)
+
+  const hasSteps = !!(message.steps && message.steps.length > 0)
+  const hasLiveReasoning = !!(message.reasoning && message.isStreaming)
+
   return (
-    <div className="flex gap-3 px-4 sm:px-6 py-3">
-      <img src="./logo.jpg" alt="CowAgent" className="w-8 h-8 rounded-lg flex-shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden">
-          {/* Agent tool steps */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="border-b border-slate-200 dark:border-white/8">
-              {message.toolCalls.map((tool, i) => (
-                <ToolStep key={i} tool={tool} theme={theme} />
-              ))}
+    <div className="group flex gap-3 px-4 sm:px-6 py-2">
+      <img src="./logo.jpg" alt="CowAgent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
+      <div className="flex-1 min-w-0 max-w-[calc(100%-2.5rem)]">
+        <div className="inline-block w-full rounded-2xl border border-default bg-surface px-4 py-3">
+          {message.kind === 'evolution' && (
+            <div className="inline-flex items-center gap-1 mb-1.5 text-[11px] text-content-tertiary">
+              <Sprout size={11} />
+              {t('msg_self_learned')}
             </div>
           )}
 
-          {/* Answer content */}
-          <div className="px-4 py-3 msg-content text-sm text-slate-800 dark:text-slate-200">
-            <ReactMarkdown
-              components={{
-                code({ className, children, ...props }) {
-                  const match = /language-(\w+)/.exec(className || '')
-                  const codeStr = String(children).replace(/\n$/, '')
-                  if (match) {
-                    const codeId = `code-${message.id}-${match[1]}-${codeStr.length}`
-                    return (
-                      <div className="relative group">
-                        <button
-                          onClick={() => handleCopy(codeStr, codeId)}
-                          className="absolute top-2 right-2 p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-700/80 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        >
-                          <i className={`fas ${copiedId === codeId ? 'fa-check' : 'fa-copy'} text-xs`} />
-                        </button>
-                        <SyntaxHighlighter
-                          style={theme === 'dark' ? oneDark : oneLight}
-                          language={match[1]}
-                          PreTag="div"
-                        >
-                          {codeStr}
-                        </SyntaxHighlighter>
-                      </div>
-                    )
-                  }
-                  return <code {...props}>{children}</code>
-                },
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
-            {message.isStreaming && (
-              <span className="inline-block w-[6px] h-[14px] bg-primary-400 ml-0.5 animate-blink" />
+          {/* Steps area (thinking / tools / intermediate content), web-aligned:
+              muted, separated from the final answer by a dashed divider. */}
+          {(hasSteps || hasLiveReasoning) && (
+            <div className="mb-2.5 pb-2 border-b border-dashed border-default">
+              {hasLiveReasoning && <ThinkingStep content={message.reasoning!} streaming />}
+              {hasSteps && <MessageSteps steps={message.steps!} />}
+            </div>
+          )}
+
+          {/* Final answer */}
+          {message.content && <Markdown content={message.content} />}
+
+          {showCursor && (
+            <div className="flex items-center gap-1 py-0.5">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </div>
+          )}
+
+          {message.isStreaming && message.content && (
+            <span className="inline-block w-[6px] h-[14px] bg-accent ml-0.5 align-middle animate-blink" />
+          )}
+
+          {message.isCancelled && <div className="text-xs text-warning mt-1">{t('msg_cancelled')}</div>}
+          {message.error && <div className="text-xs text-danger mt-1">{message.error}</div>}
+        </div>
+
+        {/* Hover actions (only when finished) */}
+        {!message.isStreaming && (message.content || message.error) && (
+          <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[11px] text-content-tertiary mr-1">{fmtTime(message.timestamp)}</span>
+            <HoverAction onClick={copy} title={t('msg_copy')}>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </HoverAction>
+            {onRegenerate && (
+              <HoverAction onClick={() => onRegenerate(message.id)} title={t('msg_regenerate')}>
+                <RefreshCw size={13} />
+              </HoverAction>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
