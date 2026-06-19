@@ -27,7 +27,7 @@ available_setting = {
     "custom_api_key": "",  # custom OpenAI-compatible provider api key (used when bot_type is "custom"); legacy single-provider field
     "custom_api_base": "",  # custom OpenAI-compatible provider api base (used when bot_type is "custom"); legacy single-provider field
     # Multiple custom (OpenAI-compatible) providers. Activated via bot_type: "custom:<id>".
-    # Each item: {"id": "3f2a9c1b", "name": "siliconflow", "api_key": "sk-...", "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"}
+    # Each item: {"id": "3f2a9c1b", "name": "my-provider", "api_key": "sk-...", "api_base": "https://api.example.com/v1", "model": "model-name"}
     "custom_providers": [],
     "proxy": "",  # proxy used by openai
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
