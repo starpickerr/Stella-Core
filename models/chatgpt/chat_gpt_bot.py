@@ -3,12 +3,21 @@
 import time
 import json
 
-import openai
-from models.openai.openai_compat import error as openai_error, RateLimitError, Timeout, APIError, APIConnectionError
+from models.openai.openai_compat import (
+    error as openai_error,
+    RateLimitError,
+    Timeout,
+    APIError,
+    APIConnectionError,
+    wrap_http_error,
+)
+from models.openai.openai_http_client import OpenAIHTTPClient, OpenAIHTTPError
 import requests
 from common import const
+from common.i18n import t as _t
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
+from models.custom_provider import resolve_custom_credentials, parse_custom_bot_type
 from models.chatgpt.chat_gpt_session import ChatGPTSession
 from models.openai.open_ai_image import OpenAIImage
 from models.session_manager import SessionManager
@@ -23,17 +32,27 @@ from models.baidu.baidu_wenxin_session import BaiduWenxinSession
 class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
     def __init__(self):
         super().__init__()
-        # set the default api_key
-        openai.api_key = conf().get("open_ai_api_key")
-        if conf().get("open_ai_api_base"):
-            openai.api_base = conf().get("open_ai_api_base")
-        proxy = conf().get("proxy")
-        if proxy:
-            openai.proxy = proxy
+        # Resolve api key / base from config (no global SDK state anymore).
+        is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+        custom_model = None
+        if is_custom:
+            # Supports multiple custom providers via bot_type "custom:<id>"
+            # with automatic fallback to the legacy custom_api_key/base fields.
+            self._api_key, self._api_base, custom_model = resolve_custom_credentials()
+        else:
+            self._api_key = conf().get("open_ai_api_key")
+            self._api_base = conf().get("open_ai_api_base") or None
+        self._proxy = conf().get("proxy") or None
+        self._http_client = OpenAIHTTPClient(
+            api_key=self._api_key,
+            api_base=self._api_base,
+            proxy=self._proxy,
+        )
         if conf().get("rate_limit_chatgpt"):
             self.tb4chatgpt = TokenBucket(conf().get("rate_limit_chatgpt", 20))
-        conf_model = conf().get("model") or "gpt-3.5-turbo"
-        self.sessions = SessionManager(ChatGPTSession, model=conf().get("model") or "gpt-3.5-turbo")
+        # Per-provider model takes precedence over global model.
+        conf_model = custom_model or conf().get("model") or "gpt-3.5-turbo"
+        self.sessions = SessionManager(ChatGPTSession, model=conf_model)
         # o1相关模型不支持system prompt，暂时用文心模型的session
 
         self.args = {
@@ -47,7 +66,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             "timeout": conf().get("request_timeout", None),  # 重试超时时间，在这个时间内，将会自动重试
         }
         # 部分模型暂不支持一些参数，特殊处理
-        if conf_model in [const.O1, const.O1_MINI, const.GPT_5, const.GPT_5_MINI, const.GPT_5_NANO]:
+        if conf_model in [const.O1, const.O1_MINI, const.GPT_5, const.GPT_5_MINI, const.GPT_5_NANO, const.GPT_55]:
             remove_keys = ["temperature", "top_p", "frequency_penalty", "presence_penalty"]
             for key in remove_keys:
                 self.args.pop(key, None)  # 如果键不存在，使用 None 来避免抛出错、
@@ -56,15 +75,29 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
 
     def get_api_config(self):
         """Get API configuration for OpenAI-compatible base class"""
+        is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+        if is_custom:
+            custom_key, custom_base, custom_model = resolve_custom_credentials()
+            api_key = custom_key
+            api_base = custom_base
+            model = custom_model or conf().get("model", "gpt-3.5-turbo")
+        else:
+            api_key = conf().get("open_ai_api_key")
+            api_base = conf().get("open_ai_api_base")
+            model = conf().get("model", "gpt-3.5-turbo")
         return {
-            'api_key': conf().get("open_ai_api_key"),
-            'api_base': conf().get("open_ai_api_base"),
-            'model': conf().get("model", "gpt-3.5-turbo"),
+            'api_key': api_key,
+            'api_base': api_base,
+            'model': model,
             'default_temperature': conf().get("temperature", 0.9),
             'default_top_p': conf().get("top_p", 1.0),
             'default_frequency_penalty': conf().get("frequency_penalty", 0.0),
             'default_presence_penalty': conf().get("presence_penalty", 0.0),
         }
+
+    def _get_http_client(self) -> OpenAIHTTPClient:
+        """Override the default HTTP client to reuse our pre-configured one."""
+        return self._http_client
     
     def reply(self, query, context=None):
         # acquire reply content
@@ -76,13 +109,13 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             clear_memory_commands = conf().get("clear_memory_commands", ["#清除记忆"])
             if query in clear_memory_commands:
                 self.sessions.clear_session(session_id)
-                reply = Reply(ReplyType.INFO, "记忆已清除")
+                reply = Reply(ReplyType.INFO, _t("记忆已清除", "Memory cleared"))
             elif query == "#清除所有":
                 self.sessions.clear_all_session()
-                reply = Reply(ReplyType.INFO, "所有人记忆已清除")
+                reply = Reply(ReplyType.INFO, _t("所有人记忆已清除", "All memories cleared"))
             elif query == "#更新配置":
                 load_config()
-                reply = Reply(ReplyType.INFO, "配置已更新")
+                reply = Reply(ReplyType.INFO, _t("配置已更新", "Config updated"))
             if reply:
                 return reply
             session = self.sessions.session_query(query, session_id)
@@ -130,7 +163,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             reply = self.reply_image(context)
             return reply
         else:
-            reply = Reply(ReplyType.ERROR, "Bot不支持处理{}类型的消息".format(context.type))
+            reply = Reply(ReplyType.ERROR, _t("Bot不支持处理{}类型的消息", "Bot does not support message type {}").format(context.type))
             return reply
 
     def reply_image(self, context):
@@ -147,7 +180,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             # Check if file exists
             if not os.path.exists(image_path):
                 logger.error(f"[CHATGPT] Image file not found: {image_path}")
-                return Reply(ReplyType.ERROR, "图片文件不存在")
+                return Reply(ReplyType.ERROR, _t("图片文件不存在", "Image file not found"))
             
             # Read and encode image
             with open(image_path, "rb") as f:
@@ -166,9 +199,16 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             mime_type = mime_type_map.get(extension, "image/jpeg")
             
             # Get model and API config
-            model = context.get("gpt_model") or conf().get("model", "gpt-4o")
-            api_key = context.get("openai_api_key") or conf().get("open_ai_api_key")
-            api_base = conf().get("open_ai_api_base")
+            is_custom, _ = parse_custom_bot_type(conf().get("bot_type", ""))
+            if is_custom:
+                custom_key, custom_base, custom_model = resolve_custom_credentials()
+                model = context.get("gpt_model") or custom_model or conf().get("model", "gpt-4o")
+                api_key = context.get("openai_api_key") or custom_key
+                api_base = custom_base
+            else:
+                model = context.get("gpt_model") or conf().get("model", "gpt-4o")
+                api_key = context.get("openai_api_key") or conf().get("open_ai_api_key")
+                api_base = conf().get("open_ai_api_base")
             
             # Build vision request
             messages = [
@@ -188,20 +228,16 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             
             logger.info(f"[CHATGPT] Calling vision API with model: {model}")
             
-            # Call OpenAI API
-            kwargs = {
-                "model": model,
-                "messages": messages,
-                "max_tokens": 1000
-            }
-            if api_key:
-                kwargs["api_key"] = api_key
-            if api_base:
-                kwargs["api_base"] = api_base
-            
-            response = openai.ChatCompletion.create(**kwargs)
-            
-            content = response.choices[0]["message"]["content"]
+            # Call OpenAI-compatible API via HTTP
+            response = self._http_client.chat_completions(
+                api_key=api_key or None,
+                api_base=api_base or None,
+                model=model,
+                messages=messages,
+                max_tokens=1000,
+            )
+
+            content = response["choices"][0]["message"]["content"]
             logger.info(f"[CHATGPT] Vision API response: {content[:100]}...")
             
             # Clean up temp file
@@ -217,7 +253,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             logger.error(f"[CHATGPT] Image processing error: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return Reply(ReplyType.ERROR, f"图片识别失败: {str(e)}")
+            return Reply(ReplyType.ERROR, _t("图片识别失败: ", "Image recognition failed: ") + str(e))
 
     def reply_text(self, session: ChatGPTSession, api_key=None, args=None, retry_count=0) -> dict:
         """
@@ -230,57 +266,100 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
         try:
             if conf().get("rate_limit_chatgpt") and not self.tb4chatgpt.get_token():
                 raise RateLimitError("RateLimitError: rate limit exceeded")
-            # if api_key == None, the default openai.api_key will be used
+            # If api_key is None, the per-instance default key will be used.
             if args is None:
                 args = self.args
-            response = openai.ChatCompletion.create(api_key=api_key, messages=session.messages, **args)
-            # logger.debug("[CHATGPT] response={}".format(response))
-            logger.info("[ChatGPT] reply={}, total_tokens={}".format(response.choices[0]['message']['content'], response["usage"]["total_tokens"]))
+            # Translate old SDK kwargs to HTTP client params:
+            # - request_timeout / timeout -> per-call timeout
+            call_args = dict(args)
+            timeout = call_args.pop("request_timeout", None) or call_args.pop("timeout", None)
+            response = self._http_client.chat_completions(
+                api_key=api_key or None,
+                timeout=timeout,
+                messages=session.messages,
+                **call_args,
+            )
+            logger.info("[ChatGPT] reply={}, total_tokens={}".format(
+                response["choices"][0]["message"]["content"],
+                response["usage"]["total_tokens"]
+            ))
             return {
                 "total_tokens": response["usage"]["total_tokens"],
                 "completion_tokens": response["usage"]["completion_tokens"],
-                "content": response.choices[0]["message"]["content"],
+                "content": response["choices"][0]["message"]["content"],
             }
+        except OpenAIHTTPError as http_err:
+            return self._handle_reply_error(
+                wrap_http_error(http_err), session, api_key, args, retry_count
+            )
         except Exception as e:
-            need_retry = retry_count < 2
-            result = {"completion_tokens": 0, "content": "我现在有点累了，等会再来吧"}
-            if isinstance(e, RateLimitError):
-                logger.warn("[CHATGPT] RateLimitError: {}".format(e))
-                result["content"] = "提问太快啦，请休息一下再问我吧"
-                if need_retry:
-                    time.sleep(20)
-            elif isinstance(e, Timeout):
-                logger.warn("[CHATGPT] Timeout: {}".format(e))
-                result["content"] = "我没有收到你的消息"
-                if need_retry:
-                    time.sleep(5)
-            elif isinstance(e, APIError):
-                logger.warn("[CHATGPT] Bad Gateway: {}".format(e))
-                result["content"] = "请再问我一次"
-                if need_retry:
-                    time.sleep(10)
-            elif isinstance(e, APIConnectionError):
-                logger.warn("[CHATGPT] APIConnectionError: {}".format(e))
-                result["content"] = "我连接不到你的网络"
-                if need_retry:
-                    time.sleep(5)
-            else:
-                logger.exception("[CHATGPT] Exception: {}".format(e))
-                need_retry = False
-                self.sessions.clear_session(session.session_id)
+            return self._handle_reply_error(e, session, api_key, args, retry_count)
 
+    def _handle_reply_error(self, e, session, api_key, args, retry_count):
+        """Map exception to user-facing reply with retry/backoff (mirrors SDK behavior)."""
+        need_retry = retry_count < 2
+        result = {"completion_tokens": 0, "content": _t("我现在有点累了，等会再来吧", "I'm a bit tired right now. Please try again later.")}
+        if isinstance(e, RateLimitError):
+            logger.warn("[CHATGPT] RateLimitError: {}".format(e))
+            result["content"] = _t("提问太快啦，请休息一下再问我吧", "You're asking too fast. Please take a short break and try again.")
             if need_retry:
-                logger.warn("[CHATGPT] 第{}次重试".format(retry_count + 1))
-                return self.reply_text(session, api_key, args, retry_count + 1)
-            else:
-                return result
+                time.sleep(20)
+        elif isinstance(e, Timeout):
+            logger.warn("[CHATGPT] Timeout: {}".format(e))
+            result["content"] = _t("我没有收到你的消息", "I didn't receive your message")
+            if need_retry:
+                time.sleep(5)
+        elif isinstance(e, APIConnectionError):
+            logger.warn("[CHATGPT] APIConnectionError: {}".format(e))
+            result["content"] = _t("我连接不到你的网络", "I can't reach your network")
+            if need_retry:
+                time.sleep(5)
+        elif isinstance(e, APIError):
+            logger.warn("[CHATGPT] Bad Gateway: {}".format(e))
+            result["content"] = _t("请再问我一次", "Please ask me again")
+            if need_retry:
+                time.sleep(10)
+        else:
+            logger.exception("[CHATGPT] Exception: {}".format(e))
+            need_retry = False
+            self.sessions.clear_session(session.session_id)
+
+        if need_retry:
+            logger.warn("[CHATGPT] 第{}次重试".format(retry_count + 1))
+            return self.reply_text(session, api_key, args, retry_count + 1)
+        return result
 
 class AzureChatGPTBot(ChatGPTBot):
+    """Azure OpenAI variant.
+
+    Azure's HTTP shape differs from public OpenAI:
+      URL    : {endpoint}/openai/deployments/{deployment}/chat/completions
+      Auth   : api-key header (not Bearer)
+      Query  : ?api-version={version}
+    We model that with a dedicated HTTP client and override _get_http_client
+    so the OpenAICompatibleBot streaming/tool path uses it transparently.
+    """
+
     def __init__(self):
         super().__init__()
-        openai.api_type = "azure"
-        openai.api_version = conf().get("azure_api_version", "2023-06-01-preview")
-        self.args["deployment_id"] = conf().get("azure_deployment_id")
+        self._azure_api_version = conf().get("azure_api_version", "2023-06-01-preview")
+        self._azure_deployment_id = conf().get("azure_deployment_id")
+        # Drop legacy SDK kwarg; Azure deployment is encoded in the URL now.
+        self.args.pop("deployment_id", None)
+
+        endpoint = (self._api_base or "").rstrip("/")
+        deployment = self._azure_deployment_id or ""
+        # Build a base that already includes /openai/deployments/{deployment}.
+        # /chat/completions will be appended by the client.
+        azure_base = (
+            f"{endpoint}/openai/deployments/{deployment}" if endpoint and deployment else endpoint
+        )
+        self._http_client = _AzureChatHTTPClient(
+            api_key=self._api_key,
+            api_base=azure_base,
+            api_version=self._azure_api_version,
+            proxy=self._proxy,
+        )
 
     def create_img(self, query, retry_count=0, api_key=None):
         text_to_image_model = conf().get("text_to_image")
@@ -300,7 +379,7 @@ class AzureChatGPTBot(ChatGPTBot):
                 status = ""
                 while (status != "succeeded"):
                     if retry_count > 3:
-                        return False, "图片生成失败"
+                        return False, _t("图片生成失败", "Image generation failed")
                     response = requests.get(operation_location, headers=headers)
                     status = response.json()['status']
                     retry_count += 1
@@ -308,7 +387,7 @@ class AzureChatGPTBot(ChatGPTBot):
                 return True, image_url
             except Exception as e:
                 logger.error("create image error: {}".format(e))
-                return False, "图片生成失败"
+                return False, _t("图片生成失败", "Image generation failed")
         elif text_to_image_model == "dall-e-3":
             api_version = conf().get("azure_api_version", "2024-02-15-preview")
             endpoint = conf().get("azure_openai_dalle_api_base","open_ai_api_base")
@@ -331,7 +410,7 @@ class AzureChatGPTBot(ChatGPTBot):
                 else:
                     error_message = "响应中没有图像 URL"
                     logger.error(error_message)
-                    return False, "图片生成失败"
+                    return False, _t("图片生成失败", "Image generation failed")
 
             except requests.exceptions.RequestException as e:
                 # 捕获所有请求相关的异常
@@ -347,6 +426,39 @@ class AzureChatGPTBot(ChatGPTBot):
                 # 捕获所有其他异常
                 error_message = f"生成图像时发生错误: {e}"
                 logger.error(error_message)
-                return False, "图片生成失败"
+                return False, _t("图片生成失败", "Image generation failed")
         else:
-            return False, "图片生成失败，未配置text_to_image参数"
+            return False, _t("图片生成失败，未配置text_to_image参数", "Image generation failed: text_to_image is not configured")
+
+
+class _AzureChatHTTPClient(OpenAIHTTPClient):
+    """Subclass that injects Azure's ``api-version`` query param and ``api-key``
+    header on every chat-completion request, and accepts the deployment-scoped
+    base URL set by :class:`AzureChatGPTBot`.
+    """
+
+    def __init__(self, api_key, api_base, api_version, proxy=None, timeout=None):
+        super().__init__(
+            api_key=api_key, api_base=api_base, proxy=proxy, timeout=timeout
+        )
+        self._api_version = api_version
+
+    def _build_headers(self, api_key, extra_headers, url=None):
+        # Azure uses api-key header, not Bearer token. No attribution
+        # headers — Azure deployments are the customer's own tenant.
+        key = api_key if api_key is not None else self.api_key
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["api-key"] = key
+        if self.extra_headers:
+            headers.update(self.extra_headers)
+        if extra_headers:
+            headers.update(extra_headers)
+        return headers
+
+    def chat_completions(self, **kwargs):
+        # Always force api-version query param for Azure.
+        eq = dict(kwargs.get("extra_query") or {})
+        eq.setdefault("api-version", self._api_version)
+        kwargs["extra_query"] = eq
+        return super().chat_completions(**kwargs)

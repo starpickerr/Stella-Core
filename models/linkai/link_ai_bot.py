@@ -133,7 +133,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             if file_id:
                 body["file_id"] = file_id
             logger.info(f"[LINKAI] query={query}, app_code={app_code}, model={body.get('model')}, file_id={file_id}")
-            headers = {"Authorization": "Bearer " + linkai_api_key}
+            headers = {"Authorization": "Bearer " + linkai_api_key, "X-Title": "CowAgent"}
 
             # do http request
             base_url = conf().get("linkai_api_base", "https://api.link-ai.tech")
@@ -272,7 +272,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             }
             if self.args.get("max_tokens"):
                 body["max_tokens"] = self.args.get("max_tokens")
-            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
+            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
 
             # do http request
             base_url = conf().get("linkai_api_base", "https://api.link-ai.tech")
@@ -560,8 +560,12 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
             body["tools"] = tools
             body["tool_choice"] = kwargs.get("tool_choice", "auto")
 
+        thinking = kwargs.get("thinking")
+        if thinking:
+            body["thinking"] = thinking
+
         # Prepare headers
-        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
+        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
         base_url = conf().get("linkai_api_base", "https://api.link-ai.tech")
         
         if stream:
@@ -669,6 +673,9 @@ def _handle_linkai_stream_response(self, base_url, headers, body):
                         }
                         return
 
+                    # Forward SSE JSON as-is so extensions (e.g. delta._gemini_raw_parts
+                    # for Gemini via LinkAI) reach agent_stream and are stored on assistant
+                    # messages for the next request. Standard OpenAI fields are unchanged.
                     yield chunk
                         
     except Exception as e:
@@ -679,7 +686,75 @@ def _handle_linkai_stream_response(self, base_url, headers, body):
             "status_code": 500
         }
 
+def _linkai_convert_messages_to_openai_format(self, messages):
+    """
+    Override the base OpenAI-compatible conversion to round-trip
+    ``reasoning_content`` on assistant messages.
+
+    Internally, the agent layer keeps the model's reasoning trace as a
+    Claude-style ``thinking`` content block on the assistant message. The
+    base converter drops that block. For thinking-capable models proxied via
+    LinkAI (DeepSeek V4, Kimi K2 thinking, …), the upstream API requires
+    the trace to be echoed back as a top-level ``reasoning_content`` field
+    on every assistant turn that contained tool calls — otherwise the next
+    request returns 400. We re-emit it for every assistant turn (it's
+    silently ignored on plain text turns).
+    """
+    openai_messages = OpenAICompatibleBot._convert_messages_to_openai_format(self, messages)
+    if not messages:
+        return openai_messages
+
+    # DeepSeek (proxied via LinkAI) requires `reasoning_content` on EVERY
+    # assistant message once the history contains any tool-call turn — not
+    # just the tool-call turn itself. Detect that condition first.
+    has_tool_call_history = False
+    for src in messages:
+        if src.get("role") != "assistant":
+            continue
+        if src.get("tool_calls"):
+            has_tool_call_history = True
+            break
+        content = src.get("content")
+        if isinstance(content, list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_use" for b in content
+        ):
+            has_tool_call_history = True
+            break
+
+    # Walk the original Claude messages to collect each assistant turn's
+    # reasoning text, then attach it to the matching converted entry.
+    dst_idx = 0
+    for src in messages:
+        if src.get("role") != "assistant":
+            continue
+        content = src.get("content")
+        reasoning_parts = []
+        if isinstance(content, list):
+            reasoning_parts = [
+                b.get("thinking", "") for b in content
+                if isinstance(b, dict) and b.get("type") == "thinking"
+            ]
+        # Locate the corresponding assistant entry in the converted list.
+        while dst_idx < len(openai_messages) and openai_messages[dst_idx].get("role") != "assistant":
+            dst_idx += 1
+        if dst_idx >= len(openai_messages):
+            break
+        dst_msg = openai_messages[dst_idx]
+        if reasoning_parts:
+            dst_msg["reasoning_content"] = "\n".join(reasoning_parts)
+        elif has_tool_call_history:
+            # Fallback when the trace was lost (proxy stripped it, model
+            # switched mid-session, thinking toggled on after tool calls).
+            # DeepSeek-style backends validate field presence, not value;
+            # non-thinking backends silently ignore the empty string.
+            dst_msg["reasoning_content"] = ""
+        dst_idx += 1
+
+    return openai_messages
+
+
 # Attach methods to LinkAIBot class
 LinkAIBot.call_with_tools = _linkai_call_with_tools
 LinkAIBot._handle_linkai_sync_response = _handle_linkai_sync_response
 LinkAIBot._handle_linkai_stream_response = _handle_linkai_stream_response
+LinkAIBot._convert_messages_to_openai_format = _linkai_convert_messages_to_openai_format
