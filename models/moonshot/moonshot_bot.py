@@ -2,6 +2,7 @@
 
 import json
 import time
+from typing import Optional
 
 import requests
 from models.bot import Bot
@@ -37,6 +38,40 @@ class MoonshotBot(Bot):
         if url.endswith("/chat/completions"):
             url = url.rsplit("/chat/completions", 1)[0]
         return url.rstrip("/")
+
+    @property
+    def _is_kimi_coding_plan(self) -> bool:
+        """Detect Kimi Coding Plan by model name or API base URL."""
+        model = str(conf().get("model", ""))
+        base = str(conf().get("moonshot_base_url", ""))
+        return model == "kimi-for-coding" or "api.kimi.com/coding" in base
+
+    @staticmethod
+    def _is_builtin_reasoning_model(model_name: str) -> bool:
+        """Return True for Kimi code models with built-in reasoning.
+
+        These models only accept thinking type=enabled and reject disabled,
+        so the thinking param must be omitted entirely.
+        """
+        return model_name.lower().startswith("kimi-k2.7-code")
+
+    @classmethod
+    def _model_supports_thinking(cls, model_name: str) -> bool:
+        """Return True if the model accepts the ``thinking`` request parameter."""
+        m = model_name.lower()
+        if cls._is_builtin_reasoning_model(m):
+            return False
+        return m.startswith("kimi-k2") or m.startswith("kimi-k1.5")
+
+    def _build_headers(self) -> dict:
+        """Build HTTP headers, adding Coding-Agent User-Agent for Kimi Coding Plan."""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        if self._is_kimi_coding_plan:
+            headers["User-Agent"] = "claude-cli/2.1.39"
+        return headers
 
     def reply(self, query, context=None):
         # acquire reply content
@@ -96,12 +131,17 @@ class MoonshotBot(Bot):
         :return: {}
         """
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.api_key
-            }
-            body = args
+            headers = self._build_headers()
+            # Fallback to default args (e.g. when called by session title
+            # generation which passes only the session). Always copy to avoid
+            # mutating the shared self.args across calls.
+            body = dict(args) if args else dict(self.args)
             body["messages"] = session.messages
+            model_name = str(body.get("model", ""))
+            # K2.x / Coding Plan enforce fixed temperature/top_p; strip them.
+            if model_name.startswith("kimi-k2") or model_name == "kimi-for-coding":
+                body.pop("temperature", None)
+                body.pop("top_p", None)
             res = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
@@ -146,6 +186,46 @@ class MoonshotBot(Bot):
                 return self.reply_text(session, args, retry_count + 1)
             else:
                 return result
+
+    def call_vision(self, image_url: str, question: str,
+                    model: Optional[str] = None,
+                    max_tokens: int = 1000) -> dict:
+        """Analyze an image using Moonshot (Kimi) OpenAI-compatible API."""
+        try:
+            vision_model = model or self.args.get("model", "kimi-k2.6")
+            payload = {
+                "model": vision_model,
+                "max_tokens": max_tokens,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": question},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }],
+            }
+            headers = self._build_headers()
+            resp = requests.post(f"{self.base_url}/chat/completions",
+                                 headers=headers, json=payload, timeout=180)
+            if resp.status_code != 200:
+                return {"error": True, "message": f"HTTP {resp.status_code}: {resp.text[:300]}"}
+            data = resp.json()
+            if "error" in data:
+                return {"error": True, "message": data["error"].get("message", str(data["error"]))}
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            usage = data.get("usage", {})
+            return {
+                "model": vision_model,
+                "content": content,
+                "usage": {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                },
+            }
+        except Exception as e:
+            logger.error(f"[MOONSHOT] call_vision error: {e}")
+            return {"error": True, "message": str(e)}
 
     # ==================== Agent mode support ====================
 
@@ -205,10 +285,12 @@ class MoonshotBot(Bot):
                 request_body["tools"] = converted_tools
                 request_body["tool_choice"] = "auto"
 
-            # Explicitly disable thinking to avoid reasoning_content issues in multi-turn tool calls.
-            # kimi-k2.5 may enable thinking by default; without preserving reasoning_content
-            # in conversation history the API will reject subsequent requests.
-            request_body["thinking"] = {"type": "disabled"}
+            # Kimi Coding Plan has built-in reasoning and ignores the thinking param.
+            # For regular Kimi models, only K2/K1.5 series support the thinking param.
+            # Respect the enable_thinking config passed from agent_bridge.
+            if not self._is_kimi_coding_plan and self._model_supports_thinking(model):
+                thinking = kwargs.get("thinking", {"type": "enabled"})
+                request_body["thinking"] = thinking
 
             logger.debug(f"[MOONSHOT] API call: model={model}, "
                          f"tools={len(converted_tools) if converted_tools else 0}, stream={stream}")
@@ -232,10 +314,7 @@ class MoonshotBot(Bot):
     def _handle_stream_response(self, request_body: dict):
         """Handle streaming SSE response from Moonshot API and yield OpenAI-format chunks."""
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
+            headers = self._build_headers()
 
             url = f"{self.base_url}/chat/completions"
             response = requests.post(url, headers=headers, json=request_body, stream=True, timeout=120)
@@ -254,10 +333,13 @@ class MoonshotBot(Bot):
                     continue
 
                 line = line.decode("utf-8")
-                if not line.startswith("data: "):
+                # Handle both "data: {...}" and "data:{...}" (Kimi Coding Plan omits the space)
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                elif line.startswith("data:"):
+                    data_str = line[5:]
+                else:
                     continue
-
-                data_str = line[6:]  # Remove "data: " prefix
                 if data_str.strip() == "[DONE]":
                     break
 
@@ -278,11 +360,27 @@ class MoonshotBot(Bot):
                 if not chunk.get("choices"):
                     continue
 
-                choice = chunk["choices"][0]
+                choices = chunk["choices"]
+                if not choices:
+                    continue
+                choice = choices[0]
                 delta = choice.get("delta", {})
 
-                # Skip reasoning_content (thinking) – don't log or forward
+                # Capture finish_reason early (it may arrive on any chunk type)
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+
                 if delta.get("reasoning_content"):
+                    yield {
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "reasoning_content": delta["reasoning_content"]
+                            },
+                            "finish_reason": None
+                        }]
+                    }
                     continue
 
                 # Handle text content
@@ -323,10 +421,6 @@ class MoonshotBot(Bot):
                             }]
                         }
 
-                # Capture finish_reason
-                if choice.get("finish_reason"):
-                    finish_reason = choice["finish_reason"]
-
             # Final chunk with finish_reason
             yield {
                 "choices": [{
@@ -350,10 +444,7 @@ class MoonshotBot(Bot):
     def _handle_sync_response(self, request_body: dict):
         """Handle synchronous API response and yield a single result dict."""
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
+            headers = self._build_headers()
 
             request_body.pop("stream", None)
             url = f"{self.base_url}/chat/completions"
@@ -435,36 +526,43 @@ class MoonshotBot(Bot):
                 continue
 
             if role == "user":
-                text_parts = []
-                tool_results = []
+                has_tool_result = any(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+                )
+                if has_tool_result:
+                    text_parts = []
+                    tool_results = []
 
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    if block.get("type") == "text":
-                        text_parts.append(block.get("text", ""))
-                    elif block.get("type") == "tool_result":
-                        tool_call_id = block.get("tool_use_id") or ""
-                        result_content = block.get("content", "")
-                        if not isinstance(result_content, str):
-                            result_content = json.dumps(result_content, ensure_ascii=False)
-                        tool_results.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "content": result_content
-                        })
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_result":
+                            tool_call_id = block.get("tool_use_id") or ""
+                            result_content = block.get("content", "")
+                            if not isinstance(result_content, str):
+                                result_content = json.dumps(result_content, ensure_ascii=False)
+                            tool_results.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "content": result_content
+                            })
 
-                # Tool results first (must come right after assistant with tool_calls)
-                for tr in tool_results:
-                    converted.append(tr)
+                    for tr in tool_results:
+                        converted.append(tr)
 
-                if text_parts:
-                    converted.append({"role": "user", "content": "\n".join(text_parts)})
+                    if text_parts:
+                        converted.append({"role": "user", "content": "\n".join(text_parts)})
+                else:
+                    # Keep as-is for multimodal content (e.g. image_url blocks)
+                    converted.append(msg)
 
             elif role == "assistant":
                 openai_msg = {"role": "assistant"}
                 text_parts = []
                 tool_calls = []
+                reasoning_parts = []
 
                 for block in content:
                     if not isinstance(block, dict):
@@ -480,6 +578,8 @@ class MoonshotBot(Bot):
                                 "arguments": json.dumps(block.get("input", {}))
                             }
                         })
+                    elif block.get("type") == "thinking":
+                        reasoning_parts.append(block.get("thinking", ""))
 
                 if text_parts:
                     openai_msg["content"] = "\n".join(text_parts)
@@ -490,6 +590,12 @@ class MoonshotBot(Bot):
                     openai_msg["tool_calls"] = tool_calls
                     if not text_parts:
                         openai_msg["content"] = None
+
+                # Kimi API requires reasoning_content in assistant messages
+                # when thinking was active for that turn. The presence of
+                # reasoning_parts means thinking was on, so always round-trip it.
+                if reasoning_parts:
+                    openai_msg["reasoning_content"] = "\n".join(reasoning_parts)
 
                 converted.append(openai_msg)
             else:

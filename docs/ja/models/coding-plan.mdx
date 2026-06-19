@@ -61,7 +61,7 @@ description: Coding Planモデルの設定
 ```json
 {
   "bot_type": "openai",
-  "model": "MiniMax-M2.5",
+  "model": "MiniMax-M3",
   "open_ai_api_base": "https://api.minimaxi.com/v1",
   "open_ai_api_key": "YOUR_API_KEY"
 }
@@ -69,7 +69,7 @@ description: Coding Planモデルの設定
 
 | パラメータ | 説明 |
 | --- | --- |
-| `model` | `MiniMax-M2.5`、`MiniMax-M2.5-highspeed`、`MiniMax-M2.1`、`MiniMax-M2` |
+| `model` | `MiniMax-M3`、`MiniMax-M2.7`、`MiniMax-M2.7-highspeed` |
 | `open_ai_api_base` | 中国: `https://api.minimaxi.com/v1`、グローバル: `https://api.minimax.io/v1` |
 | `open_ai_api_key` | Coding Plan専用キー（従量課金とは共有不可） |
 
@@ -102,18 +102,18 @@ description: Coding Planモデルの設定
 
 ```json
 {
-  "bot_type": "openai",
+  "bot_type": "moonshot",
   "model": "kimi-for-coding",
-  "open_ai_api_base": "https://api.kimi.com/coding/v1",
-  "open_ai_api_key": "YOUR_API_KEY"
+  "moonshot_base_url": "https://api.kimi.com/coding/v1",
+  "moonshot_api_key": "YOUR_API_KEY"
 }
 ```
 
 | パラメータ | 説明 |
 | --- | --- |
-| `model` | `kimi-for-coding` |
-| `open_ai_api_base` | `https://api.kimi.com/coding/v1` |
-| `open_ai_api_key` | Coding Plan専用キー（従量課金とは共有不可） |
+| `model` | `kimi-for-coding`で自動更新モデル、または`kimi-k2.6`などのモデルを指定 |
+| `moonshot_base_url` | `https://api.kimi.com/coding/v1` |
+| `moonshot_api_key` | Coding Plan専用キー（従量課金とは共有不可） |
 
 参考: [キー & ドキュメント](https://www.kimi.com/code/docs/)
 

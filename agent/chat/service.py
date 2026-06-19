@@ -49,6 +49,16 @@ class ChatService:
             agent.model.channel_type = channel_type or ""
             agent.model.session_id = session_id or ""
 
+        # Build a context so context-aware tools (e.g. scheduler) can resolve the
+        # receiver/session. This streaming path bypasses agent_bridge.agent_reply,
+        # so the attach step that normally happens there must be done here too.
+        context = self._build_context(query, session_id, channel_type)
+        self._attach_context_aware_tools(agent, context)
+
+        # Mark this session as mid-run so the self-evolution idle scan does not
+        # fire concurrently when a single turn runs longer than idle_minutes.
+        self._mark_run_active(agent, True)
+
         # State shared between the event callback and this method
         state = _StreamState()
 
@@ -57,7 +67,16 @@ class ChatService:
             event_type = event.get("type")
             data = event.get("data", {})
 
-            if event_type == "message_update":
+            if event_type == "reasoning_update":
+                delta = data.get("delta", "")
+                if delta:
+                    send_chunk_fn({
+                        "chunk_type": "reasoning",
+                        "delta": delta,
+                        "segment_id": state.segment_id,
+                    })
+
+            elif event_type == "message_update":
                 # Incremental text delta
                 delta = data.get("delta", "")
                 if delta:
@@ -74,6 +93,23 @@ class ChatService:
                     # After tool_calls are executed the next content will be
                     # a new segment; collect tool results until turn_end.
                     state.pending_tool_results = []
+
+            elif event_type == "file_to_send":
+                url = data.get("url") or ""
+                if url:
+                    fname = data.get("file_name") or "file"
+                    ft = data.get("file_type") or "file"
+                    if ft == "image":
+                        link = f"![{fname}]({url})"
+                    else:
+                        link = f"[{fname}]({url})"
+                    send_chunk_fn({
+                        "chunk_type": "content",
+                        "delta": "\n\n" + link + "\n\n",
+                        "segment_id": state.segment_id,
+                    })
+                    # Remove url so the model won't repeat it in its reply
+                    data.pop("url", None)
 
             elif event_type == "tool_execution_start":
                 # Notify the client that a tool is about to run (with its input args)
@@ -145,6 +181,12 @@ class ChatService:
 
         from agent.protocol.agent_stream import AgentStreamExecutor
 
+        # Register a cancel token so /cancel can abort this in-flight run.
+        # IM channels key on session_id (no per-turn request_id here).
+        from agent.protocol import get_cancel_registry
+        registry = get_cancel_registry()
+        cancel_event = registry.register(session_id, session_id=session_id) if session_id else None
+
         executor = AgentStreamExecutor(
             agent=agent,
             model=agent.model,
@@ -154,6 +196,7 @@ class ChatService:
             on_event=on_event,
             messages=messages_copy,
             max_context_turns=max_context_turns,
+            cancel_event=cancel_event,
         )
 
         try:
@@ -165,11 +208,66 @@ class ChatService:
                     agent.messages.clear()
                     logger.info("[ChatService] Cleared agent message history after executor recovery")
             raise
+        finally:
+            # Clear the mid-run flag so idle scans can review this session again.
+            self._mark_run_active(agent, False)
+            # Release cancel token to keep the registry bounded.
+            if session_id:
+                try:
+                    registry.unregister(session_id)
+                except Exception:
+                    pass
 
-        # Append only the NEW messages from this execution (thread-safe)
+        # Sync executor messages back to agent (thread-safe).
+        # The executor may have trimmed context, making its list shorter than
+        # original_length. In that case we must replace entirely — just
+        # appending would leave stale pre-trim messages in agent.messages
+        # and cause the same trim to fire on every subsequent request.
         with agent.messages_lock:
-            new_messages = executor.messages[original_length:]
-            agent.messages.extend(new_messages)
+            trimmed = len(executor.messages) < original_length
+            if trimmed:
+                # Context was trimmed: the executor appended the new user
+                # query *before* trimming, so the new messages (user +
+                # assistant + tools) sit at the tail of the trimmed list.
+                # We cannot simply slice at original_length (it exceeds the
+                # list length).  Instead, count how many messages the
+                # executor added on top of the post-trim baseline.
+                #
+                # Timeline inside executor.run_stream:
+                #   1. messages had `original_length` items
+                #   2. append user query  → original_length + 1
+                #   3. _trim_messages()   → some smaller number (includes the
+                #      user query because it belongs to the last turn)
+                #   4. LLM replies / tool calls appended
+                #
+                # The user query message is always the first message of the
+                # last turn (it cannot be trimmed away), so we locate it to
+                # find where "new" messages begin.
+                new_start = original_length  # fallback
+                for idx in range(len(executor.messages) - 1, -1, -1):
+                    msg = executor.messages[idx]
+                    if msg.get("role") == "user":
+                        content = msg.get("content", [])
+                        is_user_query = False
+                        if isinstance(content, list):
+                            has_text = any(
+                                isinstance(b, dict) and b.get("type") == "text"
+                                for b in content
+                            )
+                            has_tool_result = any(
+                                isinstance(b, dict) and b.get("type") == "tool_result"
+                                for b in content
+                            )
+                            is_user_query = has_text and not has_tool_result
+                        elif isinstance(content, str):
+                            is_user_query = True
+                        if is_user_query:
+                            new_start = idx
+                            break
+                new_messages = list(executor.messages[new_start:])
+            else:
+                new_messages = list(executor.messages[original_length:])
+            agent.messages = list(executor.messages)
 
         # Persist new messages to SQLite so they survive restarts and
         # can be queried via the HISTORY interface.
@@ -182,9 +280,67 @@ class ChatService:
         # Execute post-process tools
         agent._execute_post_process_tools()
 
+        # Record this user turn for the self-evolution idle trigger. This
+        # streaming path bypasses agent_bridge.agent_reply, so the activity must
+        # be noted here, otherwise idle scans never see any signal to evolve.
+        self._note_evolution_turn(agent, context)
+
         logger.info(f"[ChatService] Agent run completed: session={session_id}")
 
 
+
+    @staticmethod
+    def _build_context(query: str, session_id: str, channel_type: str):
+        """Build a Context for tool resolution on the streaming chat path.
+
+        receiver falls back to session_id; the scheduler's delivery keys on
+        session_id as the receiver.
+        """
+        from bridge.context import Context, ContextType
+        # Pass an explicit kwargs dict: Context's default kwargs is a shared
+        # mutable default, so omitting it would leak fields across sessions.
+        ctx = Context(ContextType.TEXT, query, kwargs={})
+        ctx["session_id"] = session_id
+        ctx["receiver"] = session_id
+        ctx["isgroup"] = False
+        ctx["channel_type"] = channel_type or ""
+        return ctx
+
+    @staticmethod
+    def _attach_context_aware_tools(agent, context):
+        """Attach the current context to tools that need it (scheduler)."""
+        try:
+            if not (context and getattr(agent, "tools", None)):
+                return
+            for tool in agent.tools:
+                if tool.name == "scheduler":
+                    from agent.tools.scheduler.integration import attach_scheduler_to_tool
+                    attach_scheduler_to_tool(tool, context)
+                    break
+        except Exception as e:
+            logger.warning(f"[ChatService] Failed to attach context to scheduler: {e}")
+
+    @staticmethod
+    def _mark_run_active(agent, active):
+        """Toggle the self-evolution mid-run flag for this session's agent."""
+        try:
+            from agent.evolution.trigger import mark_run_active
+            mark_run_active(agent, active)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _note_evolution_turn(agent, context):
+        """Record a user turn so the self-evolution idle trigger has signal."""
+        try:
+            from agent.evolution.trigger import note_user_turn
+            ch = (context.get("channel_type") or "") if context else ""
+            rcv = (context.get("receiver") or "") if context else ""
+            is_group = bool(context.get("isgroup")) if context else False
+            # Only single chats get a proactive push target; group push is noisy.
+            note_user_turn(agent, channel_type=ch, receiver=(rcv if not is_group else ""))
+        except Exception:
+            pass
 
     @staticmethod
     def _persist_messages(session_id: str, new_messages: list, channel_type: str = ""):

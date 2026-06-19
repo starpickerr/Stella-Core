@@ -1,7 +1,10 @@
 # encoding:utf-8
 
+import base64
 import json
+import re
 import time
+from typing import Optional
 
 import requests
 
@@ -220,9 +223,82 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             return 8192
         elif model and model.startswith("claude-3") and "opus" in model:
             return 4096
-        elif model and (model.startswith("claude-sonnet-4") or model.startswith("claude-opus-4")):
+        elif model and (model.startswith("claude-sonnet-4") or model.startswith("claude-opus-4") or model.startswith("claude-fable")):
             return 64000
         return 8192
+
+    @staticmethod
+    def _parse_data_url(data_url: str):
+        """Parse a data:<mime>;base64,<data> URL into (media_type, base64_data)."""
+        m = re.match(r"^data:([^;]+);base64,(.+)$", data_url, re.DOTALL)
+        if m:
+            return m.group(1), m.group(2)
+        return None, None
+
+    def call_vision(self, image_url: str, question: str,
+                    model: Optional[str] = None,
+                    max_tokens: int = 1000) -> dict:
+        """Analyze an image using Claude Messages API (native image blocks)."""
+        try:
+            actual_model = model or self._model_mapping(conf().get("model"))
+
+            # Build Claude-native image content block
+            if image_url.startswith("data:"):
+                media_type, b64_data = self._parse_data_url(image_url)
+                if not b64_data:
+                    return {"error": True, "message": "Invalid base64 data URL"}
+                image_block = {
+                    "type": "image",
+                    "source": {"type": "base64",
+                               "media_type": media_type or "image/jpeg",
+                               "data": b64_data},
+                }
+            else:
+                image_block = {
+                    "type": "image",
+                    "source": {"type": "url", "url": image_url},
+                }
+
+            data = {
+                "model": actual_model,
+                "max_tokens": max_tokens,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        image_block,
+                        {"type": "text", "text": question},
+                    ],
+                }],
+            }
+
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
+            resp = requests.post(f"{self.api_base}/messages",
+                                 headers=headers, json=data, proxies=proxies)
+
+            if resp.status_code != 200:
+                return {"error": True, "message": f"HTTP {resp.status_code}: {resp.text[:300]}"}
+
+            body = resp.json()
+            text_parts = [b.get("text", "") for b in body.get("content", [])
+                          if b.get("type") == "text"]
+            usage = body.get("usage", {})
+            return {
+                "model": actual_model,
+                "content": "".join(text_parts),
+                "usage": {
+                    "prompt_tokens": usage.get("input_tokens", 0),
+                    "completion_tokens": usage.get("output_tokens", 0),
+                    "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                },
+            }
+        except Exception as e:
+            logger.error(f"[CLAUDE] call_vision error: {e}")
+            return {"error": True, "message": str(e)}
 
     def call_with_tools(self, messages, tools=None, stream=False, **kwargs):
         """
@@ -247,7 +323,7 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             if msg.get("role") == "system":
                 system_prompt = msg["content"]
             else:
-                claude_messages.append(msg)
+                claude_messages.append(self._sanitize_message(msg))
 
         request_params = {
             "model": actual_model,
@@ -286,6 +362,30 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                     "message": str(e),
                     "status_code": 500
                 }
+
+    @staticmethod
+    def _sanitize_message(msg: dict) -> dict:
+        """Strip thinking blocks without a ``signature`` from assistant messages.
+
+        When the session switches from another model (e.g. MiniMax) to Claude,
+        the in-memory history may contain thinking blocks that lack the
+        ``signature`` field required by the Anthropic API, causing 400 errors.
+        We create a shallow copy so the original history is not mutated.
+        """
+        if msg.get("role") != "assistant":
+            return msg
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return msg
+        cleaned = [
+            block for block in content
+            if not (isinstance(block, dict)
+                    and block.get("type") == "thinking"
+                    and "signature" not in block)
+        ]
+        if len(cleaned) == len(content):
+            return msg
+        return {**msg, "content": cleaned}
 
     def _handle_sync_response(self, request_params):
         """Handle synchronous Claude API response"""
@@ -429,8 +529,21 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                                 delta = event.get("delta", {})
                                 delta_type = delta.get("type")
 
-                                if delta_type == "text_delta":
-                                    # Text content
+                                if delta_type == "thinking_delta":
+                                    thinking_text = delta.get("thinking", "")
+                                    if thinking_text:
+                                        yield {
+                                            "choices": [{
+                                                "index": 0,
+                                                "delta": {
+                                                    "role": "assistant",
+                                                    "reasoning_content": thinking_text
+                                                },
+                                                "finish_reason": None
+                                            }]
+                                        }
+
+                                elif delta_type == "text_delta":
                                     content = delta.get("text", "")
                                     yield {
                                         "id": event.get("id", ""),

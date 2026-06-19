@@ -52,6 +52,11 @@ class Agent:
         self.workspace_dir = workspace_dir  # Workspace directory
         self.enable_skills = enable_skills  # Skills enabled flag
         self.runtime_info = runtime_info  # Runtime info for dynamic time update
+        # Optional extra instructions appended AFTER the rebuilt full system
+        # prompt. Used by the self-evolution review agent to add its task brief
+        # on top of the full context (tools, workspace, user preferences, time)
+        # so it both follows the user's preferences and knows its evolution job.
+        self.extra_system_suffix = None
         
         # Initialize skill manager
         self.skill_manager = None
@@ -100,138 +105,41 @@ class Agent:
     
     def get_full_system_prompt(self, skill_filter=None) -> str:
         """
-        Get the full system prompt including skills.
+        Build the complete system prompt from scratch every time.
 
-        Note: Skills are now built into the system prompt by PromptBuilder,
-        so we just return the base prompt directly. This method is kept for
-        backward compatibility.
-
-        :param skill_filter: Optional list of skill names to include (deprecated)
-        :return: Complete system prompt
-        """
-        prompt = self.system_prompt
-
-        # Rebuild tool list section to reflect current self.tools
-        prompt = self._rebuild_tool_list_section(prompt)
-
-        # If runtime_info contains dynamic time function, rebuild runtime section
-        if self.runtime_info and callable(self.runtime_info.get('_get_current_time')):
-            prompt = self._rebuild_runtime_section(prompt)
-
-        # Rebuild skills section to pick up newly installed/removed skills
-        if self.skill_manager:
-            prompt = self._rebuild_skills_section(prompt)
-
-        return prompt
-    
-    def _rebuild_runtime_section(self, prompt: str) -> str:
-        """
-        Rebuild runtime info section with current time.
-        
-        This method dynamically updates the runtime info section by calling
-        the _get_current_time function from runtime_info.
-        
-        :param prompt: Original system prompt
-        :return: Updated system prompt with current runtime info
+        Re-reads AGENT.md / USER.md / RULE.md from disk, refreshes skills,
+        tools, and runtime info so any change takes effect immediately.
+        Falls back to the cached self.system_prompt on error.
         """
         try:
-            # Get current time dynamically
-            time_info = self.runtime_info['_get_current_time']()
-            
-            # Build new runtime section
-            runtime_lines = [
-                "\n## 运行时信息\n",
-                "\n",
-                f"当前时间: {time_info['time']} {time_info['weekday']} ({time_info['timezone']})\n",
-                "\n"
-            ]
-            
-            # Add other runtime info
-            runtime_parts = []
-            if self.runtime_info.get("model"):
-                runtime_parts.append(f"模型={self.runtime_info['model']}")
-            if self.runtime_info.get("workspace"):
-                # Replace backslashes with forward slashes for Windows paths
-                workspace_path = str(self.runtime_info['workspace']).replace('\\', '/')
-                runtime_parts.append(f"工作空间={workspace_path}")
-            if self.runtime_info.get("channel") and self.runtime_info.get("channel") != "web":
-                runtime_parts.append(f"渠道={self.runtime_info['channel']}")
-            
-            if runtime_parts:
-                runtime_lines.append("运行时: " + " | ".join(runtime_parts) + "\n")
-                runtime_lines.append("\n")
-            
-            new_runtime_section = "".join(runtime_lines)
-            
-            # Find and replace the runtime section
-            import re
-            pattern = r'\n## 运行时信息\s*\n.*?(?=\n##|\Z)'
-            _repl = new_runtime_section.rstrip('\n')
-            updated_prompt = re.sub(pattern, lambda m: _repl, prompt, flags=re.DOTALL)
-            
-            return updated_prompt
+            from agent.prompt import load_context_files, PromptBuilder
+
+            if self.skill_manager:
+                self.skill_manager.refresh_skills()
+
+            context_files = load_context_files(self.workspace_dir) if self.workspace_dir else None
+
+            try:
+                from common import i18n
+                lang = i18n.get_language()
+            except Exception:
+                lang = "zh"
+            builder = PromptBuilder(workspace_dir=self.workspace_dir or "", language=lang)
+            full = builder.build(
+                tools=self.tools,
+                context_files=context_files,
+                skill_manager=self.skill_manager,
+                memory_manager=self.memory_manager,
+                runtime_info=self.runtime_info,
+            )
+            if self.extra_system_suffix:
+                full = f"{full}\n\n{self.extra_system_suffix}"
+            return full
         except Exception as e:
-            logger.warning(f"Failed to rebuild runtime section: {e}")
-            return prompt
-
-    def _rebuild_skills_section(self, prompt: str) -> str:
-        """
-        Rebuild the <available_skills> block so that newly installed or
-        removed skills are reflected without re-creating the agent.
-        """
-        try:
-            import re
-            self.skill_manager.refresh_skills()
-            new_skills_xml = self.skill_manager.build_skills_prompt()
-
-            old_block_pattern = r'<available_skills>.*?</available_skills>'
-            has_old_block = re.search(old_block_pattern, prompt, flags=re.DOTALL)
-
-            # Extract the new <available_skills>...</available_skills> tag from the prompt
-            new_block = ""
-            if new_skills_xml and new_skills_xml.strip():
-                m = re.search(old_block_pattern, new_skills_xml, flags=re.DOTALL)
-                if m:
-                    new_block = m.group(0)
-
-            if has_old_block:
-                replacement = new_block or "<available_skills>\n</available_skills>"
-                # Use lambda to prevent re.sub from interpreting backslashes in replacement
-                # (e.g. Windows paths like \LinkAI would be treated as bad escape sequences)
-                prompt = re.sub(old_block_pattern, lambda m: replacement, prompt, flags=re.DOTALL)
-            elif new_block:
-                skills_header = "以下是可用技能："
-                idx = prompt.find(skills_header)
-                if idx != -1:
-                    insert_pos = idx + len(skills_header)
-                    prompt = prompt[:insert_pos] + "\n" + new_block + prompt[insert_pos:]
-        except Exception as e:
-            logger.warning(f"Failed to rebuild skills section: {e}")
-        return prompt
-
-    def _rebuild_tool_list_section(self, prompt: str) -> str:
-        """
-        Rebuild the tool list inside the '## 工具系统' section so that it
-        always reflects the current ``self.tools`` (handles dynamic add/remove
-        of conditional tools like web_search).
-        """
-        import re
-        from agent.prompt.builder import _build_tooling_section
-
-        try:
-            if not self.tools:
-                return prompt
-
-            new_lines = _build_tooling_section(self.tools, "zh")
-            new_section = "\n".join(new_lines).rstrip("\n")
-
-            # Replace existing tooling section
-            pattern = r'## 工具系统\s*\n.*?(?=\n## |\Z)'
-            updated = re.sub(pattern, lambda m: new_section, prompt, count=1, flags=re.DOTALL)
-            return updated
-        except Exception as e:
-            logger.warning(f"Failed to rebuild tool list section: {e}")
-            return prompt
+            logger.warning(f"Failed to rebuild system prompt, using cached version: {e}")
+            if self.extra_system_suffix:
+                return f"{self.system_prompt}\n\n{self.extra_system_suffix}"
+            return self.system_prompt
 
     def refresh_skills(self):
         """Refresh the loaded skills."""
@@ -472,7 +380,8 @@ class Agent:
 
         return action
 
-    def run_stream(self, user_message: str, on_event=None, clear_history: bool = False, skill_filter=None) -> str:
+    def run_stream(self, user_message: str, on_event=None, clear_history: bool = False,
+                   skill_filter=None, cancel_event=None) -> str:
         """
         Execute single agent task with streaming (based on tool-call)
 
@@ -481,6 +390,7 @@ class Agent:
         - Multi-turn reasoning based on tool-call
         - Event callbacks
         - Persistent conversation history across calls
+        - User-initiated cancellation via ``cancel_event``
 
         Args:
             user_message: User message
@@ -488,6 +398,11 @@ class Agent:
                      event = {"type": str, "timestamp": float, "data": dict}
             clear_history: If True, clear conversation history before this call (default: False)
             skill_filter: Optional list of skill names to include in this run
+            cancel_event: Optional threading.Event polled at agent checkpoints.
+                When set, the loop exits at the next safe point, injects a
+                "[Interrupted by user]" assistant note, and returns the
+                partial response. ``messages`` stays in a valid state
+                (tool_use/tool_result pairs preserved).
 
         Returns:
             Final response text
@@ -531,7 +446,8 @@ class Agent:
             max_turns=self.max_steps,
             on_event=on_event,
             messages=messages_copy,  # Pass copied message history
-            max_context_turns=max_context_turns
+            max_context_turns=max_context_turns,
+            cancel_event=cancel_event,
         )
 
         # Execute

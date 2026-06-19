@@ -7,10 +7,74 @@ import json
 import time
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
+from agent.protocol.cancel import AgentCancelledError
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.message_utils import sanitize_claude_messages, compress_turn_to_text_only
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
+from common.i18n import t as _t
+
+# Optional: repair malformed JSON args from non-strict providers (e.g. unescaped quotes in long content).
+try:
+    from json_repair import repair_json as _repair_json
+    _HAS_JSON_REPAIR = True
+except ImportError:
+    _HAS_JSON_REPAIR = False
+
+
+# Maximum number of characters of model "reasoning / thinking" content to persist
+# in conversation history. The full reasoning is still streamed to the UI in real
+# time (subject to its own SSE / rendering limits); this bound only controls what
+# is stored in DB and replayed in history. Long reasoning is not useful for later
+# context (the LLM never sees thinking blocks anyway) and bloats DB.
+# Keep aligned with the frontend REASONING_RENDER_CAP and the SSE
+# MAX_REASONING_STREAM_CHARS so that storage / stream / display all match.
+MAX_STORED_REASONING_CHARS = 4 * 1024  # 4 KB
+
+# Marker inserted between head and tail when reasoning is truncated.
+_REASONING_TRUNCATE_MARKER = "\n\n... [reasoning truncated, {omitted} chars omitted] ...\n\n"
+
+
+def _truncate_reasoning_for_storage(text: str) -> str:
+    """Trim long reasoning to head + tail with an omission marker.
+
+    Keeps the first and last halves of MAX_STORED_REASONING_CHARS so both the
+    initial chain-of-thought and the final conclusions are preserved for UI
+    replay, without storing the entire (often very large) middle.
+    """
+    if not text:
+        return text
+    if len(text) <= MAX_STORED_REASONING_CHARS:
+        return text
+    half = MAX_STORED_REASONING_CHARS // 2
+    head = text[:half]
+    tail = text[-half:]
+    omitted = len(text) - len(head) - len(tail)
+    return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
+
+
+def _parse_tool_args(args_str: str, finish_reason: Optional[str]) -> Tuple[dict, Optional[str]]:
+    """Parse tool args JSON. Returns (args, error_msg); error_msg is None on success.
+
+    On JSONDecodeError: detect truncation first (skip repair, surface max_tokens hint);
+    otherwise try json-repair for escape issues; finally fall back to the raw decoder error.
+    """
+    if not args_str:
+        return {}, None
+    try:
+        return json.loads(args_str), None
+    except json.JSONDecodeError as e:
+        if finish_reason in ("length", "max_tokens") or not args_str.rstrip().endswith("}"):
+            return {}, "Output truncated (max_tokens reached). Split content into smaller chunks across multiple tool calls."
+        if _HAS_JSON_REPAIR:
+            try:
+                repaired = _repair_json(args_str, return_objects=True)
+                if isinstance(repaired, dict):
+                    logger.warning(f"Tool args JSON repaired ({len(args_str)} chars)")
+                    return repaired, None
+            except Exception:
+                pass
+        return {}, f"Invalid JSON in tool arguments: {e.msg}"
 
 
 class AgentStreamExecutor:
@@ -33,7 +97,8 @@ class AgentStreamExecutor:
             max_turns: int = 50,
             on_event: Optional[Callable] = None,
             messages: Optional[List[Dict]] = None,
-            max_context_turns: int = 30
+            max_context_turns: int = 30,
+            cancel_event=None,
     ):
         """
         Initialize stream executor
@@ -47,6 +112,10 @@ class AgentStreamExecutor:
             on_event: Event callback function
             messages: Optional existing message history (for persistent conversations)
             max_context_turns: Maximum number of conversation turns to keep in context
+            cancel_event: Optional threading.Event used to signal user cancel.
+                Checked at every safe point (turn boundary, before tool execution,
+                during LLM streaming). When set, raises AgentCancelledError which
+                run_stream catches to gracefully wind down.
         """
         self.agent = agent
         self.model = model
@@ -56,6 +125,7 @@ class AgentStreamExecutor:
         self.max_turns = max_turns
         self.on_event = on_event
         self.max_context_turns = max_context_turns
+        self.cancel_event = cancel_event
 
         # Message history - use provided messages or create new list
         self.messages = messages if messages is not None else []
@@ -65,6 +135,73 @@ class AgentStreamExecutor:
         
         # Track files to send (populated by read tool)
         self.files_to_send = []  # List of file metadata dicts
+
+    def _check_cancelled(self) -> None:
+        """Raise AgentCancelledError if the user requested cancellation.
+
+        Called at safe points (turn start, between tool calls, between LLM
+        chunks). Cheap to call: just an Event.is_set() probe.
+        """
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise AgentCancelledError("agent cancelled by user")
+
+    def _handle_cancelled(self, partial_response: str) -> None:
+        """Wind down ``self.messages`` after a user-initiated cancel.
+
+        The messages list may be in any of these states when we get here:
+          (a) Last message is an assistant message containing tool_use
+              blocks but the matching tool_result has not been appended yet.
+          (b) Last message is an assistant text-only reply (cancel happened
+              right before the next turn started).
+          (c) Last message is a user tool_result message and we cancelled
+              between turns.
+
+        For (a) we MUST synthesise tool_result blocks, otherwise the next
+        request will fail Claude/OpenAI's strict pairing validation. For
+        (b)/(c) the state is already valid and we just append a small
+        cancellation note so the user/LLM both see the boundary clearly.
+        """
+        try:
+            # Step 1: close any orphaned tool_use in the trailing assistant
+            # message by injecting matching tool_result blocks.
+            if self.messages and isinstance(self.messages[-1], dict) \
+                    and self.messages[-1].get("role") == "assistant":
+                last = self.messages[-1]
+                content = last.get("content")
+                if isinstance(content, list):
+                    pending_tool_use_ids = [
+                        block.get("id")
+                        for block in content
+                        if isinstance(block, dict) and block.get("type") == "tool_use"
+                    ]
+                    pending_tool_use_ids = [tid for tid in pending_tool_use_ids if tid]
+                    if pending_tool_use_ids:
+                        tool_result_blocks = [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tid,
+                                "content": "Cancelled by user before this tool finished.",
+                                "is_error": True,
+                            }
+                            for tid in pending_tool_use_ids
+                        ]
+                        self.messages.append({
+                            "role": "user",
+                            "content": tool_result_blocks,
+                        })
+                        logger.info(
+                            f"[Agent] Injected {len(tool_result_blocks)} cancellation "
+                            f"tool_result blocks to keep message history valid"
+                        )
+
+            # Step 2: append a stable "interrupted" marker so the LLM sees a
+            # clear stop boundary on the next turn.
+            self.messages.append({
+                "role": "assistant",
+                "content": [{"type": "text", "text": "_(Cancelled by user)_"}],
+            })
+        except Exception as e:
+            logger.warning(f"[Agent] _handle_cancelled cleanup failed: {e}")
 
     def _emit_event(self, event_type: str, data: dict = None):
         """Emit event"""
@@ -78,18 +215,48 @@ class AgentStreamExecutor:
             except Exception as e:
                 logger.error(f"Event callback error: {e}")
     
+    def _is_thinking_enabled(self) -> bool:
+        """Whether deep-thinking mode is on at the model layer.
+
+        Mirrors the global toggle used by ``bridge.agent_bridge`` when deciding
+        whether to send ``thinking={"type": "enabled"}`` to the model. Used for
+        logging and reasoning-update event emission across all channels.
+        """
+        from config import conf
+        return bool(conf().get("enable_thinking", False))
+
+    def _should_render_thinking_inline(self) -> bool:
+        """Whether ``<think>...</think>`` blocks embedded directly in ``content``
+        (MiniMax, some third-party proxies) should be surfaced to the channel.
+
+        Only the Web console can render them in a collapsible panel. IM channels
+        (WeChat/WeCom/DingTalk/Feishu) must strip them, otherwise users see raw
+        XML tags in their chat.
+        """
+        from config import conf
+        channel_type = getattr(self.model, 'channel_type', '') or ''
+        return conf().get("enable_thinking", False) and channel_type == 'web'
+
     def _filter_think_tags(self, text: str) -> str:
         """
-        Remove <think> and </think> tags but keep the content inside.
-        Some LLM providers (e.g., MiniMax) may return thinking process wrapped in <think> tags.
-        We only remove the tags themselves, keeping the actual thinking content.
+        Handle <think>...</think> blocks in content returned by some LLM providers
+        (e.g., MiniMax).
+
+        - When inline thinking rendering is allowed (Web + thinking enabled):
+          remove only the tags, keep the content inside.
+        - Otherwise (IM channels, or thinking disabled globally): remove both
+          the tags and the content entirely.
         """
         if not text:
             return text
         import re
-        # Remove only the <think> and </think> tags, keep the content
-        text = re.sub(r'<think>', '', text)
-        text = re.sub(r'</think>', '', text)
+        if self._should_render_thinking_inline():
+            text = re.sub(r'<think>', '', text)
+            text = re.sub(r'</think>', '', text)
+        else:
+            text = re.sub(r'<think>[\s\S]*?</think>', '', text)
+            # Also strip unclosed <think> tag at the end (streaming partial)
+            text = re.sub(r'<think>[\s\S]*$', '', text)
         return text
 
     def _hash_args(self, args: dict) -> str:
@@ -151,7 +318,10 @@ class AgentStreamExecutor:
         
         # Hard stop at 8 failures - abort with critical message
         if same_tool_failures >= 8:
-            return True, f"抱歉，我没能完成这个任务。可能是我理解有误或者当前方法不太合适。\n\n建议你：\n• 换个方式描述需求试试\n• 把任务拆分成更小的步骤\n• 或者换个思路来解决", True
+            return True, _t(
+                "抱歉，我没能完成这个任务。可能是我理解有误或者当前方法不太合适。\n\n建议你：\n• 换个方式描述需求试试\n• 把任务拆分成更小的步骤\n• 或者换个思路来解决",
+                "Sorry, I couldn't complete this task. I may have misunderstood, or my current approach isn't quite right.\n\nYou could try:\n• Rephrasing your request\n• Breaking the task into smaller steps\n• Taking a different approach",
+            ), True
         
         # Warning at 6 failures
         if same_tool_failures >= 6:
@@ -177,8 +347,14 @@ class AgentStreamExecutor:
         Returns:
             Final response text
         """
-        # Log user message with model info
-        logger.info(f"🤖 {self.model.model} | 👤 {user_message}")
+        # Log user message with model info. Truncate very long messages (e.g.
+        # injected transcripts / large prompts) so logs stay readable.
+        thinking_enabled = self._is_thinking_enabled()
+        thinking_label = " | 💭 thinking" if thinking_enabled else ""
+        _log_msg = user_message if len(user_message) <= 500 else (
+            user_message[:500] + f" …(+{len(user_message) - 500} chars)"
+        )
+        logger.info(f"🤖 {self.model.model}{thinking_label} | 👤 {_log_msg}")        
         
         # Add user message (Claude format - use content blocks for consistency)
         self.messages.append({
@@ -206,10 +382,15 @@ class AgentStreamExecutor:
         final_response = ""
         turn = 0
 
+        cancelled = False
         try:
             while turn < self.max_turns:
+                # Check at the very top of every turn so a cancel arriving
+                # between turns short-circuits cleanly.
+                self._check_cancelled()
+
                 turn += 1
-                logger.info(f"[Agent] 第 {turn} 轮")
+                logger.info(f"[Agent] Turn {turn}")
                 self._emit_event("turn_start", {"turn": turn})
 
                 # Call LLM (enable retry_on_empty for better reliability)
@@ -227,6 +408,9 @@ class AgentStreamExecutor:
                         if turn > 1:
                             logger.info(f"[Agent] Requesting explicit response from LLM...")
                             
+                            # Remember position so we can remove the injected prompt later
+                            prompt_insert_idx = len(self.messages)
+                            
                             # 添加一条消息，明确要求回复用户
                             self.messages.append({
                                 "role": "user",
@@ -240,36 +424,62 @@ class AgentStreamExecutor:
                             assistant_msg, tool_calls = self._call_llm_stream(retry_on_empty=False)
                             final_response = assistant_msg
                             
-                            # 如果还是空，才使用 fallback
-                            if not assistant_msg and not tool_calls:
+                            # Remove the injected prompt from history so it doesn't
+                            # appear as a user message in persisted conversations.
+                            # _call_llm_stream may have appended an assistant message
+                            # after the prompt, so we locate and remove only the prompt.
+                            if (prompt_insert_idx < len(self.messages)
+                                    and self.messages[prompt_insert_idx].get("role") == "user"):
+                                self.messages.pop(prompt_insert_idx)
+                                logger.debug("[Agent] Removed injected explicit-response prompt from message history")
+                            
+                            # If LLM responded with tool_calls instead of text, fall through
+                            # to the tool execution path below (don't break the loop).
+                            if tool_calls:
+                                logger.info(
+                                    f"[Agent] LLM returned tool_calls in explicit-response retry, "
+                                    f"continuing to execute tools instead of breaking"
+                                )
+                            elif not assistant_msg:
+                                # Still empty (no text and no tool_calls): use fallback
                                 logger.warning(f"[Agent] Still empty after explicit request")
-                                final_response = (
-                                    "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。"
+                                final_response = _t(
+                                    "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
+                                    "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
                                 )
                                 logger.info(f"Generated fallback response for empty LLM output")
                         else:
-                            # 第一轮就空回复，直接 fallback
-                            final_response = (
-                                "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。"
+                            # First-turn empty reply, fall back directly
+                            final_response = _t(
+                                "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
+                                "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
                             )
                             logger.info(f"Generated fallback response for empty LLM output")
                     else:
                         logger.info(f"💭 {assistant_msg[:150]}{'...' if len(assistant_msg) > 150 else ''}")
                     
-                    logger.debug(f"✅ 完成 (无工具调用)")
-                    self._emit_event("turn_end", {
-                        "turn": turn,
-                        "has_tool_calls": False
-                    })
-                    break
+                    # If the explicit-response retry produced tool_calls, skip the break
+                    # and continue down to the tool execution branch in this same iteration.
+                    if not tool_calls:
+                        logger.debug(f"✅ Done (no tool calls)")
+                        self._emit_event("turn_end", {
+                            "turn": turn,
+                            "has_tool_calls": False
+                        })
+                        break
 
-                # Log tool calls with arguments
+                # Log tool calls with arguments (truncate long values like base64)
                 tool_calls_str = []
                 for tc in tool_calls:
-                    # Safely handle None or missing arguments
                     args = tc.get('arguments') or {}
                     if isinstance(args, dict):
-                        args_str = ', '.join([f"{k}={v}" for k, v in args.items()])
+                        parts = []
+                        for k, v in args.items():
+                            v_str = str(v)
+                            if len(v_str) > 200:
+                                v_str = v_str[:200] + f"...({len(v_str)} chars)"
+                            parts.append(f"{k}={v_str}")
+                        args_str = ', '.join(parts)
                         if args_str:
                             tool_calls_str.append(f"{tc['name']}({args_str})")
                         else:
@@ -284,6 +494,8 @@ class AgentStreamExecutor:
 
                 try:
                     for tool_call in tool_calls:
+                        # Honour cancel between tool invocations within the same turn
+                        self._check_cancelled()
                         result = self._execute_tool(tool_call)
                         tool_results.append(result)
                         
@@ -300,18 +512,18 @@ class AgentStreamExecutor:
                                     f"with same arguments. This may indicate a loop."
                                 )
                         
-                        # Check if this is a file to send (from read tool)
+                        # Check if this is a file to send
                         if result.get("status") == "success" and isinstance(result.get("result"), dict):
                             result_data = result.get("result")
                             if result_data.get("type") == "file_to_send":
-                                # Store file metadata for later sending
                                 self.files_to_send.append(result_data)
-                                logger.info(f"📎 检测到待发送文件: {result_data.get('file_name', result_data.get('path'))}")
+                                logger.info(f"📎 File queued for sending: {result_data.get('file_name', result_data.get('path'))}")
+                                self._emit_event("file_to_send", result_data)
                         
                         # Check for critical error - abort entire conversation
                         if result.get("status") == "critical_error":
-                            logger.error(f"💥 检测到严重错误，终止对话")
-                            final_response = result.get('result', '任务执行失败')
+                            logger.error(f"💥 Fatal error detected, aborting conversation")
+                            final_response = result.get('result') or _t("任务执行失败", "Task execution failed")
                             return final_response
                         
                         # Log tool result in compact format
@@ -422,7 +634,7 @@ class AgentStreamExecutor:
                 })
 
             if turn >= self.max_turns:
-                logger.warning(f"⚠️  已达到最大决策步数限制: {self.max_turns}")
+                logger.warning(f"⚠️  Reached max decision step limit: {self.max_turns}")
                 
                 # Force model to summarize without tool calls
                 logger.info(f"[Agent] Requesting summary from LLM after reaching max steps...")
@@ -447,15 +659,15 @@ class AgentStreamExecutor:
                         logger.info(f"💭 Summary: {summary_response[:150]}{'...' if len(summary_response) > 150 else ''}")
                     else:
                         # Fallback if model still doesn't respond
-                        final_response = (
-                            f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。"
-                            "任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。"
+                        final_response = _t(
+                            f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。",
+                            f"I've taken {turn} decision steps and reached the per-run limit. The task may not be fully complete — try breaking it into smaller steps, or describe your request differently.",
                         )
                 except Exception as e:
                     logger.warning(f"Failed to get summary from LLM: {e}")
-                    final_response = (
-                        f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。"
-                        "任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。"
+                    final_response = _t(
+                        f"我已经执行了{turn}个决策步骤，达到了单次运行的步数上限。任务可能还未完全完成，建议你将任务拆分成更小的步骤，或者换一种方式描述需求。",
+                        f"I've taken {turn} decision steps and reached the per-run limit. The task may not be fully complete — try breaking it into smaller steps, or describe your request differently.",
                     )
                 finally:
                     # Remove the injected user prompt from history to avoid polluting
@@ -466,14 +678,27 @@ class AgentStreamExecutor:
                         self.messages.pop(prompt_insert_idx)
                         logger.debug("[Agent] Removed injected max-steps prompt from message history")
 
+        except AgentCancelledError:
+            # User-initiated stop: wind down message history cleanly so the
+            # next turn is unaffected; channels emit a "cancelled" UI event.
+            cancelled = True
+            logger.info(f"[Agent] 🛑 Cancelled by user (turn {turn})")
+            self._handle_cancelled(final_response)
+            if not final_response or not final_response.strip():
+                final_response = "_(Cancelled)_"
+
         except Exception as e:
-            logger.error(f"❌ Agent执行错误: {e}")
+            logger.error(f"❌ Agent execution error: {e}")
             self._emit_event("error", {"error": str(e)})
             raise
 
         finally:
-            logger.info(f"[Agent] 🏁 完成 ({turn}轮)")
-            self._emit_event("agent_end", {"final_response": final_response})
+            final_response = final_response.strip() if final_response else final_response
+            if cancelled:
+                # Emit before agent_end so channels can mark UI as cancelled
+                self._emit_event("agent_cancelled", {"final_response": final_response})
+            logger.info(f"[Agent] 🏁 Done ({turn} turns)" + (" [cancelled]" if cancelled else ""))
+            self._emit_event("agent_end", {"final_response": final_response, "cancelled": cancelled})
 
         return final_response
 
@@ -502,16 +727,50 @@ class AgentStreamExecutor:
         turns = self._identify_complete_turns()
         logger.info(f"Sending {len(messages)} messages ({len(turns)} turns) to LLM")
 
-        # Prepare tool definitions (OpenAI/Claude format)
+        # Pull in any MCP tools that finished loading since this turn started.
+        # Cheap dict reconciliation (microseconds) — lets the agent pick up
+        # newly available MCP tools mid-conversation without a session restart.
+        try:
+            from agent.tools import ToolManager
+            ToolManager().sync_mcp_into_agent(self)
+        except Exception as e:
+            logger.debug(f"[Agent] MCP sync skipped: {e}")
+
+        # Prepare tool definitions. Prefer get_json_schema() when it yields
+        # real properties (lets tools augment schema at runtime), otherwise
+        # fall back to the static `tool.params` (MCP tools rely on this).
         tools_schema = None
         if self.tools:
             tools_schema = []
             for tool in self.tools.values():
+                input_schema = tool.params
+                try:
+                    dynamic = (tool.get_json_schema() or {}).get("parameters") or {}
+                    if dynamic.get("properties"):
+                        input_schema = dynamic
+                except Exception:
+                    pass
                 tools_schema.append({
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.params  # Claude uses input_schema
+                    "input_schema": input_schema,
                 })
+
+        # Debug: dump the full system prompt and messages sent to the LLM.
+        # Gated behind `debug` config to avoid flooding normal logs.
+        # try:
+        #     from config import conf
+        #     if conf().get("debug", False):
+        #         logger.debug(
+        #             "[Agent][debug] system_prompt sent to LLM "
+        #             f"({len(self.system_prompt or '')} chars):\n"
+        #             "================ SYSTEM PROMPT BEGIN ================\n"
+        #             f"{self.system_prompt}\n"
+        #             "================ SYSTEM PROMPT END =================="
+        #         )
+        #         logger.info(f"[Agent][debug] messages sent to LLM: {messages}")
+        # except Exception:
+        #     pass
 
         # Create request
         request = LLMRequest(
@@ -526,6 +785,7 @@ class AgentStreamExecutor:
 
         # Streaming response
         full_content = ""
+        full_reasoning = ""
         tool_calls_buffer = {}  # {index: {id, name, arguments}}
         gemini_raw_parts = None  # Preserve Gemini thoughtSignature for round-trip
         stop_reason = None  # Track why the stream stopped
@@ -533,7 +793,32 @@ class AgentStreamExecutor:
         try:
             stream = self.model.call_stream(request)
 
+            # Probe cancel every N chunks to bound reaction time without
+            # checking on every token.
+            _cancel_probe_counter = 0
+            _CANCEL_PROBE_EVERY = 8
+
             for chunk in stream:
+                _cancel_probe_counter += 1
+                if _cancel_probe_counter >= _CANCEL_PROBE_EVERY:
+                    _cancel_probe_counter = 0
+                    if self.cancel_event is not None and self.cancel_event.is_set():
+                        # Persist partial text only; tool_use args may be
+                        # truncated mid-stream and would fail validation.
+                        logger.info("[Agent] cancel detected mid-stream, aborting LLM call")
+                        if full_content:
+                            partial_msg = {
+                                "role": "assistant",
+                                "content": [{"type": "text", "text": full_content}],
+                            }
+                            self.messages.append(partial_msg)
+                        self._emit_event("message_end", {
+                            "content": full_content,
+                            "tool_calls": [],
+                            "cancelled": True,
+                        })
+                        raise AgentCancelledError("cancelled during LLM streaming")
+
                 # Check for errors
                 if isinstance(chunk, dict) and chunk.get("error"):
                     # Extract error message from nested structure
@@ -583,10 +868,11 @@ class AgentStreamExecutor:
                     if finish_reason:
                         stop_reason = finish_reason
 
-                    # Skip reasoning_content (internal thinking from models like GLM-5)
                     reasoning_delta = delta.get("reasoning_content") or ""
-                    # if reasoning_delta:
-                    #     logger.debug(f"🧠 [thinking] {reasoning_delta[:100]}...")
+                    if reasoning_delta:
+                        full_reasoning += reasoning_delta
+                        if self._is_thinking_enabled():
+                            self._emit_event("reasoning_update", {"delta": reasoning_delta})
 
                     # Handle text content
                     content_delta = delta.get("content") or ""
@@ -620,8 +906,15 @@ class AgentStreamExecutor:
                                     tool_calls_buffer[index]["arguments"] += func["arguments"]
 
                     # Preserve _gemini_raw_parts for Gemini thoughtSignature round-trip
+                    # (direct Gemini: list of parts; LinkAI proxy: base64 string of JSON parts)
                     if "_gemini_raw_parts" in delta:
                         gemini_raw_parts = delta["_gemini_raw_parts"]
+                    elif isinstance(choice, dict) and choice.get("_gemini_raw_parts"):
+                        gemini_raw_parts = choice["_gemini_raw_parts"]
+
+        except AgentCancelledError:
+            # Must propagate untouched; never treat as a retryable error.
+            raise
 
         except Exception as e:
             error_str = str(e)
@@ -685,13 +978,15 @@ class AgentStreamExecutor:
                 self.messages.clear()
                 self._clear_session_db()
                 if is_context_overflow:
-                    raise Exception(
-                        "抱歉，对话历史过长导致上下文溢出。我已清空历史记录，请重新描述你的需求。"
-                    )
+                    raise Exception(_t(
+                        "抱歉，对话历史过长导致上下文溢出。我已清空历史记录，请重新描述你的需求。",
+                        "Sorry, the conversation history got too long and overflowed the context. I've cleared the history — please describe your request again.",
+                    ))
                 else:
-                    raise Exception(
-                        "抱歉，之前的对话出现了问题。我已清空历史记录，请重新发送你的消息。"
-                    )
+                    raise Exception(_t(
+                        "抱歉，之前的对话出现了问题。我已清空历史记录，请重新发送你的消息。",
+                        "Sorry, something went wrong with the earlier conversation. I've cleared the history — please send your message again.",
+                    ))
             
             # Check if error is rate limit (429)
             is_rate_limit = '429' in error_str_lower or 'rate limit' in error_str_lower
@@ -736,26 +1031,17 @@ class AgentStreamExecutor:
                 import uuid
                 tool_id = f"call_{uuid.uuid4().hex[:24]}"
 
-            try:
-                # Safely get arguments, handle None case
-                args_str = tc.get("arguments") or ""
-                arguments = json.loads(args_str) if args_str else {}
-            except json.JSONDecodeError as e:
-                # Handle None or invalid arguments safely
-                args_str = tc.get('arguments') or ""
-                args_preview = args_str[:200] if len(args_str) > 200 else args_str
-                logger.error(f"Failed to parse tool arguments for {tc['name']}")
-                logger.error(f"Arguments length: {len(args_str)} chars")
-                logger.error(f"Arguments preview: {args_preview}...")
-                logger.error(f"JSON decode error: {e}")
-
-                # Return a clear error message to the LLM instead of empty dict
-                # This helps the LLM understand what went wrong
+            args_str = tc.get("arguments") or ""
+            arguments, parse_err = _parse_tool_args(args_str, stop_reason)
+            if parse_err:
+                logger.error(
+                    f"Tool args parse failed for {tc['name']} ({len(args_str)} chars): {parse_err}"
+                )
                 tool_calls.append({
                     "id": tool_id,
                     "name": tc["name"],
                     "arguments": {},
-                    "_parse_error": f"Invalid JSON in tool arguments: {args_preview}... Error: {str(e)}. Tip: For large content, consider splitting into smaller chunks or using a different approach."
+                    "_parse_error": parse_err,
                 })
                 continue
 
@@ -787,7 +1073,18 @@ class AgentStreamExecutor:
         # Add assistant message to history (Claude format uses content blocks)
         assistant_msg = {"role": "assistant", "content": []}
 
-        # Add text content block if present
+        if full_reasoning:
+            stored_reasoning = _truncate_reasoning_for_storage(full_reasoning)
+            if len(stored_reasoning) < len(full_reasoning):
+                logger.info(
+                    f"[reasoning] truncated for storage: "
+                    f"{len(full_reasoning)} -> {len(stored_reasoning)} chars"
+                )
+            assistant_msg["content"].append({
+                "type": "thinking",
+                "thinking": stored_reasoning
+            })
+
         if full_content:
             assistant_msg["content"].append({
                 "type": "text",
@@ -832,14 +1129,11 @@ class AgentStreamExecutor:
         tool_id = tool_call["id"]
         arguments = tool_call["arguments"]
 
-        # Check if there was a JSON parse error
         if "_parse_error" in tool_call:
-            parse_error = tool_call["_parse_error"]
-            logger.error(f"Skipping tool execution due to parse error: {parse_error}")
             result = {
                 "status": "error",
-                "result": f"Failed to parse tool arguments. {parse_error}. Please ensure your tool call uses valid JSON format with all required parameters.",
-                "execution_time": 0
+                "result": tool_call["_parse_error"],
+                "execution_time": 0,
             }
             self._record_tool_result(tool_name, arguments, False)
             return result
@@ -880,10 +1174,21 @@ class AgentStreamExecutor:
             # Set tool context
             tool.model = self.model
             tool.context = self.agent
+            tool.progress_callback = lambda message: self._emit_event(
+                "tool_execution_progress",
+                {
+                    "tool_call_id": tool_id,
+                    "tool_name": tool_name,
+                    "message": message,
+                }
+            )
 
             # Execute tool
             start_time = time.time()
-            result: ToolResult = tool.execute_tool(arguments)
+            try:
+                result: ToolResult = tool.execute_tool(arguments)
+            finally:
+                tool.progress_callback = None
             execution_time = time.time() - start_time
 
             result_dict = {
@@ -1191,6 +1496,56 @@ class AgentStreamExecutor:
         logger.warning("🔧 Aggressive trim: nothing to trim, will clear history")
         return False
 
+    def _build_context_summary_callback(self, discarded_turns: list, kept_turns: list):
+        """
+        Build a callback that injects an LLM summary into the first user
+        message of *kept_turns*. Returns None if no valid injection target.
+
+        The callback is passed to flush_from_messages so that the same LLM
+        call that writes daily memory also provides the in-context summary.
+        """
+        if not kept_turns:
+            return None
+
+        # Find the first user text block in kept_turns as injection target
+        target_block = None
+        for turn in kept_turns:
+            for msg in turn["messages"]:
+                if msg.get("role") == "user":
+                    content = msg.get("content", [])
+                    if isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                target_block = block
+                                break
+                    if target_block:
+                        break
+            if target_block:
+                break
+
+        if not target_block:
+            return None
+
+        turn_count = len(discarded_turns)
+        original_text = target_block["text"]
+
+        def _on_summary_ready(summary: str):
+            if not summary or not summary.strip():
+                return
+            target_block["text"] = (
+                f"[System: Previous conversation summary — "
+                f"{turn_count} turns were compacted]\n\n"
+                f"{summary.strip()}\n\n"
+                f"The recent conversation continues below.\n\n---\n\n"
+                f"{original_text}"
+            )
+            logger.info(
+                f"📝 Context summary injected "
+                f"({len(summary)} chars, {turn_count} turns)"
+            )
+
+        return _on_summary_ready
+
     def _trim_messages(self):
         """
         智能清理消息历史，保持对话完整性
@@ -1217,24 +1572,27 @@ class AgentStreamExecutor:
             removed_count = len(turns) // 2
             keep_count = len(turns) - removed_count
             
-            # Flush discarded turns to daily memory
+            discarded_turns = turns[:removed_count]
+            turns = turns[-keep_count:]
+
+            logger.info(
+                f"💾 Context turns exceeded: {keep_count + removed_count} > {self.max_context_turns}, "
+                f"trimmed to {keep_count} turns (removed {removed_count})"
+            )
+
+            # Flush to daily memory + inject context summary (single async LLM call)
             if self.agent.memory_manager:
                 discarded_messages = []
-                for turn in turns[:removed_count]:
+                for turn in discarded_turns:
                     discarded_messages.extend(turn["messages"])
                 if discarded_messages:
                     user_id = getattr(self.agent, '_current_user_id', None)
+                    cb = self._build_context_summary_callback(discarded_turns, turns)
                     self.agent.memory_manager.flush_memory(
                         messages=discarded_messages, user_id=user_id,
-                        reason="trim", max_messages=0
+                        reason="trim", max_messages=0,
+                        context_summary_callback=cb,
                     )
-            
-            turns = turns[-keep_count:]
-            
-            logger.info(
-                f"💾 上下文轮次超限: {keep_count + removed_count} > {self.max_context_turns}，"
-                f"裁剪至 {keep_count} 轮（移除 {removed_count} 轮）"
-            )
 
         # Step 3: Token 限制 - 保留完整轮次
         # Get context window from agent (based on model)
@@ -1267,7 +1625,7 @@ class AgentStreamExecutor:
             
             # Log if we removed messages due to turn limit
             if old_count > len(self.messages):
-                logger.info(f"   重建消息列表: {old_count} -> {len(self.messages)} 条消息")
+                logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
             return
 
         # Token limit exceeded — tiered strategy based on turn count:
@@ -1300,10 +1658,10 @@ class AgentStreamExecutor:
             self.messages = new_messages
 
             logger.info(
-                f"📦 上下文tokens超限(轮次<{COMPRESS_THRESHOLD}): "
-                f"~{current_tokens + system_tokens} > {max_tokens}，"
-                f"压缩全部 {len(turns)} 轮为纯文本 "
-                f"({old_count} -> {len(self.messages)} 条消息，"
+                f"📦 Context tokens exceeded (turns<{COMPRESS_THRESHOLD}): "
+                f"~{current_tokens + system_tokens} > {max_tokens}, "
+                f"compressed all {len(turns)} turns to plain text "
+                f"({old_count} -> {len(self.messages)} messages, "
                 f"~{current_tokens + system_tokens} -> ~{new_tokens + system_tokens} tokens)"
             )
             return
@@ -1311,23 +1669,26 @@ class AgentStreamExecutor:
         # --- Many turns (>=5): discard the older half, keep the newer half ---
         removed_count = len(turns) // 2
         keep_count = len(turns) - removed_count
+        discarded_turns = turns[:removed_count]
         kept_turns = turns[-keep_count:]
         kept_tokens = sum(self._estimate_turn_tokens(t) for t in kept_turns)
 
         logger.info(
-            f"🔄 上下文tokens超限: ~{current_tokens + system_tokens} > {max_tokens}，"
-            f"裁剪至 {keep_count} 轮（移除 {removed_count} 轮）"
+            f"🔄 Context tokens exceeded: ~{current_tokens + system_tokens} > {max_tokens}, "
+            f"trimmed to {keep_count} turns (removed {removed_count})"
         )
 
         if self.agent.memory_manager:
             discarded_messages = []
-            for turn in turns[:removed_count]:
+            for turn in discarded_turns:
                 discarded_messages.extend(turn["messages"])
             if discarded_messages:
                 user_id = getattr(self.agent, '_current_user_id', None)
+                cb = self._build_context_summary_callback(discarded_turns, kept_turns)
                 self.agent.memory_manager.flush_memory(
                     messages=discarded_messages, user_id=user_id,
-                    reason="trim", max_messages=0
+                    reason="trim", max_messages=0,
+                    context_summary_callback=cb,
                 )
 
         new_messages = []
@@ -1338,8 +1699,8 @@ class AgentStreamExecutor:
         self.messages = new_messages
 
         logger.info(
-            f"   移除了 {removed_count} 轮对话 "
-            f"({old_count} -> {len(self.messages)} 条消息，"
+            f"   Removed {removed_count} turns "
+            f"({old_count} -> {len(self.messages)} messages, "
             f"~{current_tokens + system_tokens} -> ~{kept_tokens + system_tokens} tokens)"
         )
 

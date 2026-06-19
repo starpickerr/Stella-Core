@@ -1,6 +1,8 @@
 # encoding:utf-8
 
 import json
+from typing import Optional
+
 from models.bot import Bot
 from models.session_manager import SessionManager
 from bridge.context import ContextType
@@ -26,15 +28,15 @@ dashscope_models = {
 
 # Model name prefixes that require MultiModalConversation API instead of Generation API.
 # Qwen3.5+ series are omni models that only support MultiModalConversation.
-MULTIMODAL_MODEL_PREFIXES = ("qwen3.5-",)
+MULTIMODAL_MODEL_PREFIXES = ("qwen3.5-", "qwen3.6-", "qwen3.7-plus")
 
 
 # Qwen对话模型API
 class DashscopeBot(Bot):
     def __init__(self):
         super().__init__()
-        self.sessions = SessionManager(DashscopeSession, model=conf().get("model") or "qwen-plus")
-        self.model_name = conf().get("model") or "qwen-plus"
+        self.sessions = SessionManager(DashscopeSession, model=conf().get("model") or "qwen3.7-plus")
+        self.model_name = conf().get("model") or "qwen3.7-plus"
         self.client = dashscope.Generation
         api_key = conf().get("dashscope_api_key")
         if api_key:
@@ -153,6 +155,56 @@ class DashscopeBot(Bot):
             else:
                 return result
 
+    def call_vision(self, image_url: str, question: str,
+                    model: Optional[str] = None,
+                    max_tokens: int = 1000) -> dict:
+        """Analyze an image using DashScope MultiModalConversation API."""
+        try:
+            dashscope.api_key = self.api_key
+            vision_model = model or "qwen-vl-max"
+
+            # DashScope multimodal format: {"image": url} + {"text": question}
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"image": image_url},
+                    {"text": question},
+                ],
+            }]
+
+            response = MultiModalConversation.call(
+                model=vision_model,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+
+            if response.status_code != HTTPStatus.OK:
+                return {
+                    "error": True,
+                    "message": f"{response.code} - {response.message}",
+                }
+
+            resp_dict = self._response_to_dict(response)
+            choice = resp_dict["output"]["choices"][0]
+            content = choice.get("message", {}).get("content", "")
+            if isinstance(content, list):
+                content = "".join(
+                    item.get("text", "") for item in content if isinstance(item, dict)
+                )
+            usage = resp_dict.get("usage", {})
+            return {
+                "model": vision_model,
+                "content": content,
+                "usage": {
+                    "prompt_tokens": usage.get("input_tokens", 0),
+                    "completion_tokens": usage.get("output_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                },
+            }
+        except Exception as e:
+            logger.error(f"[DASHSCOPE] call_vision error: {e}")
+            return {"error": True, "message": str(e)}
+
     def call_with_tools(self, messages, tools=None, stream=False, **kwargs):
         """
         Call DashScope API with tool support for agent integration
@@ -210,20 +262,17 @@ class DashscopeBot(Bot):
                 if kwargs.get("tool_choice"):
                     parameters["tool_choice"] = kwargs["tool_choice"]
             
-            # Add thinking parameters for Qwen3 models (disabled by default for stability)
+            # Add thinking parameters for Qwen3/QwQ models
             if "qwen3" in model_name.lower() or "qwq" in model_name.lower():
-                # Only enable thinking mode if explicitly requested
-                enable_thinking = kwargs.get("enable_thinking", False)
-                if enable_thinking:
+                thinking = kwargs.get("thinking", {"type": "enabled"})
+                if thinking.get("type") == "enabled":
                     parameters["enable_thinking"] = True
-                    
-                    # Set thinking budget if specified
                     if kwargs.get("thinking_budget"):
                         parameters["thinking_budget"] = kwargs["thinking_budget"]
-                    
-                    # Qwen3 requires incremental_output=true in thinking mode
                     if stream:
                         parameters["incremental_output"] = True
+                else:
+                    parameters["enable_thinking"] = False
             
             # Always use incremental_output for streaming (for better token-by-token streaming)
             # This is especially important for tool calling to avoid incomplete responses

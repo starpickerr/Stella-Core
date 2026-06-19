@@ -1,35 +1,32 @@
 ---
-title: 技能概览
-description: CowAgent 技能系统介绍
+title: Skills Overview
+description: CowAgent skills system introduction
 ---
 
-技能（Skill）为 Agent 提供无限的扩展性。每个 Skill 由说明文件（`SKILL.md`）、运行脚本（可选）、资源（可选）组成，描述如何完成特定类型的任务。
+Skills provide infinite extensibility for the Agent. Each Skill consists of a description file (`SKILL.md`), execution scripts (optional), and resources (optional), describing how to accomplish specific types of tasks.
 
-Skill 与 Tool 的区别：Tool 是由代码实现的原子操作（如读写文件、执行命令），Skill 则是基于说明文件的高级工作流，可以组合调用多个 Tool 来完成复杂任务。
+The difference between Skills and Tools: Tools are atomic operations implemented in code (e.g., file read/write, command execution), while Skills are high-level workflows based on description files that can combine multiple Tools to complete complex tasks.
 
-## 内置技能
+## Getting Skills
 
-位于项目 `skills/` 目录下，根据依赖条件自动判断是否启用：
+CowAgent offers multiple ways to acquire skills:
 
-| 技能 | 说明 | 依赖 |
-| --- | --- | --- |
-| [`skill-creator`](/skills/skill-creator) | 通过对话创建自定义技能 | 无 |
-| [`openai-image-vision`](/skills/image-vision) | 使用 OpenAI 视觉模型识别图片 | `OPENAI_API_KEY` |
-| [`linkai-agent`](/skills/linkai-agent) | 对接 LinkAI 平台智能体 | `LINKAI_API_KEY` |
-| [`web-fetch`](/skills/web-fetch) | 抓取网页文本内容 | `curl`（默认启用） |
+- **Cow Skill Hub** — Browse and install community skills via `/skill list --remote`
+- **GitHub** — Install directly from GitHub repositories, with batch install support
+- **ClawHub** — Install ClawHub skills via `/skill install clawhub:name`
+- **URL** — Install from zip archives or SKILL.md links
+- **Conversational creation** — Let the Agent create skills through natural language conversation
 
-## 自定义技能
+See [Install Skills](/skills/install) and [Skill Management Commands](/cli/skill) for details. You can also [create skills](/skills/create) through conversation.
 
-由用户通过对话创建，存放在工作空间中（`~/cow/skills/`），可实现任何复杂的业务流程和第三方系统对接。
+## Skill Loading Priority
 
-## 技能加载优先级
+1. **Workspace skills** (highest): `~/cow/skills/`
+2. **Project built-in skills** (lowest): `skills/`
 
-1. **工作空间技能**（最高）：`~/cow/skills/`
-2. **项目内置技能**（最低）：`skills/`
+Skills with the same name are overridden by priority.
 
-同名技能按优先级覆盖。
-
-## 技能文件结构
+## Skill File Structure
 
 ```
 skills/
@@ -39,7 +36,7 @@ skills/
 │   └── resources/        # Additional resources (optional)
 ```
 
-### SKILL.md 格式
+### SKILL.md Format
 
 ```markdown
 ---
@@ -58,10 +55,10 @@ metadata:
 Detailed instructions...
 ```
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `name` | 技能名称，需与目录名一致 |
-| `description` | 技能描述，Agent 据此决定是否调用 |
-| `metadata.requires.bins` | 依赖的系统命令 |
-| `metadata.requires.env` | 依赖的环境变量 |
-| `metadata.always` | 是否始终加载（默认 false） |
+| `name` | Skill name, must match directory name |
+| `description` | Skill description, Agent decides whether to invoke based on this |
+| `metadata.requires.bins` | Required system commands |
+| `metadata.requires.env` | Required environment variables |
+| `metadata.always` | Always load (default false) |
