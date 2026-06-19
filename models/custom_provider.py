@@ -14,10 +14,10 @@ Config model
 
       {
           "id": "3f2a9c1b",               # server-generated short uuid (primary key)
-          "name": "siliconflow",           # user-facing display label (not a key)
+          "name": "my-provider",           # user-facing display label (not a key)
           "api_key": "sk-...",             # required
           "api_base": "https://...",       # required, must be OpenAI-compatible
-          "model": "deepseek-ai/DeepSeek-V3"  # optional default model
+          "model": "model-name"           # optional default model
       }
 
 Routing
