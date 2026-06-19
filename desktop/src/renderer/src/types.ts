@@ -1,3 +1,7 @@
+// ============================================================
+// Electron bridge
+// ============================================================
+
 export interface ElectronAPI {
   getBackendPort: () => Promise<number | null>
   getBackendStatus: () => Promise<string>
@@ -6,6 +10,11 @@ export interface ElectronAPI {
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>
   onBackendStatus: (callback: (data: BackendStatusEvent) => void) => void
   onBackendLog: (callback: (line: string) => void) => void
+  windowMinimize: () => Promise<void>
+  windowMaximize: () => Promise<boolean>
+  windowClose: () => Promise<void>
+  windowIsMaximized: () => Promise<boolean>
+  onMaximizeChange: (callback: (maximized: boolean) => void) => void
   platform: string
 }
 
@@ -15,30 +24,164 @@ export interface BackendStatusEvent {
   error?: string
 }
 
+// ============================================================
+// Chat / messages / streaming
+// ============================================================
+
+export type Role = 'user' | 'assistant'
+
+/** A single ordered step inside an assistant turn (matches backend history). */
+export interface MessageStep {
+  type: 'thinking' | 'content' | 'tool'
+  content?: string
+  // tool step fields
+  id?: string
+  name?: string
+  arguments?: Record<string, unknown>
+  result?: string
+  is_error?: boolean
+  status?: string
+  execution_time?: number
+}
+
+/** Local UI message model (superset of backend history message). */
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: Role
   content: string
+  /** Unix seconds. Backend history uses `created_at`; we normalize to `timestamp`. */
   timestamp: number
   attachments?: Attachment[]
+  /** Ordered steps (thinking / content / tool). Preferred over legacy toolCalls. */
+  steps?: MessageStep[]
+  /** Legacy live-stream tool events (kept for backward compat during streaming). */
   toolCalls?: ToolCall[]
+  /** Reasoning text streamed via `reasoning` SSE events. */
+  reasoning?: string
+  /** Sequence numbers from backend (for delete/regenerate). */
+  userSeq?: number
+  botSeq?: number
+  /** Self-evolution bubble flag. */
+  kind?: 'evolution'
+  extras?: Record<string, unknown>
   isStreaming?: boolean
+  isCancelled?: boolean
+  error?: string
 }
 
 export interface Attachment {
   file_path: string
   file_name: string
-  file_type: 'image' | 'video' | 'file'
+  file_type: 'image' | 'video' | 'file' | 'directory'
   preview_url?: string
 }
 
+/** Live tool event during SSE streaming. */
 export interface ToolCall {
-  type: 'tool_start' | 'tool_end'
+  type: 'tool_start' | 'tool_end' | 'tool_progress'
   tool: string
+  tool_call_id?: string
   arguments?: Record<string, unknown>
   result?: string
   status?: string
   execution_time?: number
+}
+
+/** All SSE event types emitted on /stream. */
+export type StreamEventType =
+  | 'delta'
+  | 'reasoning'
+  | 'tool_start'
+  | 'tool_progress'
+  | 'tool_end'
+  | 'message_end'
+  | 'phase'
+  | 'file_to_send'
+  | 'image'
+  | 'video'
+  | 'file'
+  | 'text'
+  | 'done'
+  | 'cancelled'
+  | 'voice_attach'
+  | 'error'
+
+export interface StreamEvent {
+  type: StreamEventType
+  content?: string
+  tool?: string
+  tool_call_id?: string
+  arguments?: Record<string, unknown>
+  status?: string
+  result?: string
+  execution_time?: number
+  has_tool_calls?: boolean
+  path?: string
+  file_name?: string
+  file_type?: string
+  web_url?: string
+  audio_url?: string
+  request_id?: string
+  timestamp?: number
+  user_seq?: number
+  bot_seq?: number
+  message?: string
+}
+
+// ============================================================
+// Sessions / history
+// ============================================================
+
+export interface SessionItem {
+  session_id: string
+  title: string
+  created_at: number
+  last_active: number
+  msg_count: number
+}
+
+export interface SessionsPage {
+  sessions: SessionItem[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+}
+
+/** Backend history message (as returned by /api/history). */
+export interface HistoryMessage {
+  role: Role
+  content: string
+  created_at: number
+  steps?: MessageStep[]
+  tool_calls?: Array<{ id?: string; name: string; arguments?: Record<string, unknown>; result?: string }>
+  reasoning?: string
+  kind?: 'evolution'
+  extras?: Record<string, unknown>
+  /** Per-message sequence number used by delete/regenerate APIs. */
+  _seq?: number
+}
+
+export interface HistoryPage {
+  messages: HistoryMessage[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+  context_start_seq?: number
+}
+
+// ============================================================
+// Config
+// ============================================================
+
+export interface ProviderMeta {
+  label: string
+  models: string[]
+  api_base_key?: string
+  api_base_default?: string
+  api_key_field?: string
+  [k: string]: unknown
 }
 
 export interface ConfigData {
@@ -51,54 +194,190 @@ export interface ConfigData {
   agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
+  enable_thinking?: boolean
+  self_evolution_enabled?: boolean
   api_bases: Record<string, string>
   api_keys: Record<string, string>
-  providers: Record<string, unknown>
+  providers: Record<string, ProviderMeta>
+  web_password_masked?: string
+}
+
+// ============================================================
+// Models console (/api/models)
+// ============================================================
+
+export interface ModelProvider {
+  id: string
+  label: string
+  configured: boolean
+  is_custom: boolean
+  custom_id?: string
+  active?: boolean
+  api_key_masked?: string
+  api_base?: string
+  models: string[]
+}
+
+export type CapabilityKey = 'chat' | 'vision' | 'asr' | 'tts' | 'embedding' | 'image' | 'search'
+
+export interface CapabilityState {
+  current_provider?: string
+  current_model?: string
+  providers?: string[]
+  provider_models?: Record<string, string[]>
+  strategy?: string
+  fallback_provider?: string
+  fallback_model?: string
+  [k: string]: unknown
+}
+
+export interface ModelsData {
+  providers: ModelProvider[]
+  capabilities: Record<CapabilityKey, CapabilityState>
+}
+
+export type ModelsAction =
+  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string }
+  | { action: 'delete_provider'; provider_id: string }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
+  | { action: 'delete_custom_provider'; id: string }
+  | { action: 'set_active_custom_provider'; id: string }
+  | { action: 'set_capability'; capability: CapabilityKey; provider_id: string; model: string; voice?: string; strategy?: string; provider?: string }
+  | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
+  | { action: 'set_search_credential'; api_key: string }
+
+// ============================================================
+// Channels
+// ============================================================
+
+export interface ChannelField {
+  key: string
+  label: string
+  type: 'text' | 'secret' | 'number' | 'bool'
+  value?: string | number | boolean
+  default?: string | number | boolean
 }
 
 export interface ChannelInfo {
   name: string
-  label: Record<string, string>
+  label: { zh: string; en: string }
   icon: string
   color: string
   active: boolean
   fields: ChannelField[]
+  login_status?: string
 }
 
-export interface ChannelField {
-  key: string
-  label: Record<string, string>
-  type: string
-  required?: boolean
-  placeholder?: Record<string, string>
+export type ChannelAction = 'save' | 'connect' | 'disconnect'
+
+// ============================================================
+// Tools / skills
+// ============================================================
+
+export interface ToolInfo {
+  name: string
+  description: string
 }
 
 export interface SkillInfo {
   name: string
-  display_name: string
   description: string
+  source?: string
   enabled: boolean
+  category?: string
 }
 
-export interface ToolInfo {
-  name: string
-  display_name: string
-  description: string
-}
+// ============================================================
+// Memory
+// ============================================================
+
+export type MemoryCategory = 'memory' | 'dream' | 'evolution'
 
 export interface MemoryItem {
   filename: string
-  modified: number
+  type: string // global | daily | dream | evolution
   size: number
+  updated_at: string
+}
+
+export interface MemoryPage {
+  list: MemoryItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+// ============================================================
+// Knowledge
+// ============================================================
+
+export interface KnowledgeNode {
+  name: string
+  path: string
+  type: 'category' | 'file'
+  children?: KnowledgeNode[]
+  count?: number
+}
+
+export interface KnowledgeList {
+  root_files?: KnowledgeNode[]
+  tree: KnowledgeNode[]
+  stats: { pages: number; size: number }
+  enabled: boolean
+}
+
+export interface KnowledgeGraph {
+  nodes: Array<{ id: string; label: string; category?: string }>
+  links: Array<{ source: string; target: string }>
+}
+
+export type KnowledgeAction =
+  | { action: 'create_category'; payload: { path: string } }
+  | { action: 'rename_category'; payload: { path: string; new_path: string } }
+  | { action: 'delete_category'; payload: { path: string; confirm?: boolean } }
+  | { action: 'delete_documents'; payload: { paths: string[] } }
+  | { action: 'move_documents'; payload: { paths: string[]; target_category: string } }
+
+// ============================================================
+// Scheduler
+// ============================================================
+
+export interface TaskSchedule {
+  type: 'cron' | 'interval' | 'once'
+  expression?: string
+  seconds?: number
+  run_at?: string
+}
+
+export interface TaskAction {
+  type: 'send_message' | 'agent_task'
+  content?: string
+  task_description?: string
+  receiver?: string
+  receiver_name?: string
+  is_group?: boolean
+  channel_type?: string
 }
 
 export interface SchedulerTask {
   id: string
   name: string
-  cron: string
   enabled: boolean
-  last_run?: string
-  next_run?: string
+  created_at: string
+  updated_at: string
+  schedule: TaskSchedule
+  action: TaskAction
+  next_run_at?: string
+}
+
+// ============================================================
+// Logs
+// ============================================================
+
+export interface LogEvent {
+  type: 'init' | 'line' | 'error'
+  content?: string
+  message?: string
 }
 
 declare global {
