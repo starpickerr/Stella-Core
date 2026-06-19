@@ -5,10 +5,13 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', '"PingFang SC"', '"Hiragino Sans GB"', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace'],
       },
       colors: {
+        'danger-soft': 'var(--danger-soft)',
+        'danger-border': 'var(--danger-border)',
+        // Brand accent (kept for backward compat + explicit accent usage)
         primary: {
           50: '#EDFDF3',
           100: '#D4FAE2',
@@ -21,6 +24,46 @@ module.exports = {
           800: '#1A5532',
           900: '#16462A',
         },
+        // Semantic tokens — driven by CSS variables, theme-aware
+        accent: {
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
+          active: 'var(--accent-active)',
+          soft: 'var(--accent-soft)',
+          contrast: 'var(--accent-contrast)',
+        },
+        base: 'var(--bg-base)',
+        surface: {
+          DEFAULT: 'var(--bg-surface)',
+          2: 'var(--bg-surface-2)',
+        },
+        elevated: 'var(--bg-elevated)',
+        inset: 'var(--bg-inset)',
+        content: {
+          DEFAULT: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          tertiary: 'var(--text-tertiary)',
+          disabled: 'var(--text-disabled)',
+        },
+        success: 'var(--success)',
+        warning: 'var(--warning)',
+        danger: 'var(--danger)',
+        info: 'var(--info)',
+      },
+      borderColor: {
+        DEFAULT: 'var(--border-default)',
+        default: 'var(--border-default)',
+        strong: 'var(--border-strong)',
+        subtle: 'var(--border-subtle)',
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+      },
+      borderRadius: {
+        card: '12px',
+        btn: '8px',
       },
       animation: {
         'pulse-dot': 'pulseDot 1.4s infinite ease-in-out both',
