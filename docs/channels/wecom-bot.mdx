@@ -69,6 +69,20 @@ Create the AI Bot in WeCom and obtain the Bot ID and Secret, then connect via th
 
 The log line `[WecomBot] Subscribe success` confirms the connection is established.
 
+<Note>
+  A **webhook (HTTP callback) mode** is also supported: when creating the bot, choose **Use URL callback**, set the receive-message URL to `http(s)://<your-domain-or-ip>:9892/wecombot`, and copy the Token and EncodingAESKey from that page. This mode needs a publicly reachable address and does not support file sending or scheduled push, so the long connection is generally recommended. The corresponding `config.json`:
+
+```json
+{
+  "channel_type": "wecom_bot",
+  "wecom_bot_mode": "webhook",
+  "wecom_bot_token": "YOUR_TOKEN",
+  "wecom_bot_encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+  "wecom_bot_port": 9892
+}
+```
+</Note>
+
 ## 2. Supported features
 
 | Feature | Status |
