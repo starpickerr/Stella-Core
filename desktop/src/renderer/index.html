@@ -1,23 +1,28 @@
 <!DOCTYPE html>
-<html lang="zh" class="dark">
+<html lang="zh">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*;" />
     <title>CowAgent</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Local fonts & icons (offline, no CDN) served from publicDir -->
+    <link rel="stylesheet" href="./vendor/fonts/inter/inter.css" />
+    <link rel="stylesheet" href="./vendor/fontawesome/css/all.min.css" />
     <script>
-    (function() {
-        var theme = localStorage.getItem('cow_theme') || 'dark';
-        if (theme === 'dark') document.documentElement.classList.add('dark');
+    // Resolve theme before first paint to avoid flash-of-wrong-theme.
+    (function () {
+      try {
+        var pref = localStorage.getItem('cow_theme') || 'dark';
+        var resolved = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : pref;
+        if (resolved === 'dark') document.documentElement.classList.add('dark');
         else document.documentElement.classList.remove('dark');
+      } catch (e) {
+        document.documentElement.classList.add('dark');
+      }
     })();
     </script>
-    <style>
-      body { margin: 0; }
-    </style>
 </head>
 <body class="h-screen overflow-hidden">
     <div id="root"></div>

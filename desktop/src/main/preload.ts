@@ -15,5 +15,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('backend-log', (_event, line) => callback(line))
   },
 
+  // Window controls (custom titlebar on Windows)
+  windowMinimize: () => ipcRenderer.invoke('window-minimize'),
+  windowMaximize: () => ipcRenderer.invoke('window-maximize'),
+  windowClose: () => ipcRenderer.invoke('window-close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onMaximizeChange: (callback: (maximized: boolean) => void) => {
+    ipcRenderer.on('window-maximize-changed', (_event, max) => callback(max))
+  },
+
   platform: process.platform,
 })

@@ -38,15 +38,50 @@ function getIconPath(ext: string = 'png'): string | undefined {
   return undefined
 }
 
+const isMac = process.platform === 'darwin'
+const isWin = process.platform === 'win32'
+
+// Persisted window bounds
+const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json')
+
+function loadWindowState(): { width: number; height: number; x?: number; y?: number } {
+  try {
+    const raw = fs.readFileSync(windowStateFile(), 'utf-8')
+    const s = JSON.parse(raw)
+    if (typeof s.width === 'number' && typeof s.height === 'number') return s
+  } catch {
+    /* first run or unreadable */
+  }
+  return { width: 1280, height: 800 }
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized() || mainWindow.isFullScreen()) return
+  const b = mainWindow.getBounds()
+  try {
+    fs.writeFileSync(windowStateFile(), JSON.stringify(b))
+  } catch {
+    /* ignore */
+  }
+}
+
 function createWindow() {
+  const state = loadWindowState()
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
     minWidth: 900,
     minHeight: 600,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 18 },
-    backgroundColor: '#111111',
+    // macOS: native traffic lights inset into our custom titlebar.
+    // Windows: fully frameless; we render custom window controls in-app.
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: isMac ? { x: 14, y: 16 } : undefined,
+    frame: isMac ? undefined : false,
+    backgroundColor: '#0e0e10',
     icon: getIconPath(),
     show: false,
     webPreferences: {
@@ -55,6 +90,12 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
+
+  const persist = () => saveWindowState()
+  mainWindow.on('resize', persist)
+  mainWindow.on('move', persist)
+  mainWindow.on('maximize', emitMaximizeState)
+  mainWindow.on('unmaximize', emitMaximizeState)
 
   const rendererHtml = path.join(__dirname, '../renderer/index.html')
 
@@ -143,6 +184,22 @@ function setupIPC() {
     })
     return result.canceled ? null : result.filePaths[0]
   })
+
+  // Custom window controls (used by Windows frameless titlebar)
+  ipcMain.handle('window-minimize', () => mainWindow?.minimize())
+  ipcMain.handle('window-maximize', () => {
+    if (!mainWindow) return false
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+    return mainWindow.isMaximized()
+  })
+  ipcMain.handle('window-close', () => mainWindow?.close())
+  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+}
+
+function emitMaximizeState() {
+  const max = mainWindow?.isMaximized() ?? false
+  mainWindow?.webContents.send('window-maximize-changed', max)
 }
 
 app.whenReady().then(async () => {
@@ -180,5 +237,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  saveWindowState()
   pythonBackend?.stop()
 })
