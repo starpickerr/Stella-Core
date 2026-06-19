@@ -395,7 +395,13 @@ class AgentInitializer:
         from agent.memory.embedding import EMBEDDING_VENDORS
         from config import conf
 
-        meta = EMBEDDING_VENDORS.get(provider_key)
+        # Custom providers ("custom:<id>") resolve credentials
+        # from the custom_providers list.
+        resolved_provider_key = provider_key
+        if provider_key.startswith("custom:"):
+            resolved_provider_key = "custom"
+
+        meta = EMBEDDING_VENDORS.get(resolved_provider_key)
         if meta is None:
             logger.error(
                 f"[AgentInitializer] Unknown embedding_provider '{provider_key}'. "
@@ -414,7 +420,17 @@ class AgentInitializer:
             )
             return None
 
-        model = (conf().get("embedding_model") or "").strip() or meta["default_model"]
+        model = (conf().get("embedding_model") or "").strip()
+        # Custom providers without a model fall back to the provider's default.
+        if not model and resolved_provider_key == "custom":
+            from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+            _, custom_id = parse_custom_bot_type(provider_key)
+            if custom_id:
+                entry = _find_provider_by_id(get_custom_providers(), custom_id)
+                if entry and entry.get("model"):
+                    model = entry["model"]
+        if not model and resolved_provider_key != "custom":
+            model = meta["default_model"]
         try:
             cfg_dim = int(conf().get("embedding_dimensions") or 0)
         except (TypeError, ValueError):
@@ -423,7 +439,7 @@ class AgentInitializer:
 
         try:
             provider = create_embedding_provider(
-                provider=provider_key,
+                provider=resolved_provider_key,
                 model=model,
                 api_key=api_key,
                 api_base=api_base,
@@ -450,6 +466,17 @@ class AgentInitializer:
         """Pick the API key for an explicit embedding provider from config."""
         from config import conf
 
+        # Custom providers ("custom:<id>") resolve from the custom_providers list.
+        if provider_key.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+            _, custom_id = parse_custom_bot_type(provider_key)
+            if custom_id:
+                providers = get_custom_providers()
+                entry = _find_provider_by_id(providers, custom_id)
+                if entry:
+                    return entry.get("api_key", "")
+            return ""
+
         key_map = {
             "openai":    "open_ai_api_key",
             "linkai":    "linkai_api_key",
@@ -469,6 +496,17 @@ class AgentInitializer:
     def _resolve_embedding_api_base(provider_key: str, default_base: str) -> str:
         """Pick the API base for an explicit embedding provider from config."""
         from config import conf
+
+        # Custom providers ("custom:<id>") resolve from the custom_providers list.
+        if provider_key.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+            _, custom_id = parse_custom_bot_type(provider_key)
+            if custom_id:
+                providers = get_custom_providers()
+                entry = _find_provider_by_id(providers, custom_id)
+                if entry and entry.get("api_base"):
+                    return entry["api_base"]
+            return default_base
 
         base_map = {
             "openai":    "open_ai_api_base",

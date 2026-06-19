@@ -331,6 +331,12 @@ class Vision(BaseTool):
           - None       : unknown provider id, or the bot can't be created.
                          Caller falls through to model-name-based routing.
         """
+        # Custom OpenAI-compatible providers — read credentials from
+        # custom_providers list, same pattern as embedding.
+        if provider_id.startswith("custom:"):
+            p = self._build_custom_provider(provider_id, user_model)
+            return [p] if p else None
+
         display_name = _PROVIDER_ID_TO_DISPLAY.get(provider_id)
         if not display_name:
             return None
@@ -594,6 +600,34 @@ class Vision(BaseTool):
             api_base=self._ensure_v1(api_base),
             extra_headers=extra,
             model_override=preferred_model,
+        )
+
+    def _build_custom_provider(self, provider_id: str, preferred_model: Optional[str] = None) -> Optional[VisionProvider]:
+        """Build a VisionProvider from a custom:<id> entry in custom_providers.
+        Uses the standard OpenAI /chat/completions endpoint — any
+        OpenAI-compatible multimodal endpoint works."""
+        from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+        _, custom_id = parse_custom_bot_type(provider_id)
+        if not custom_id:
+            return None
+        entry = _find_provider_by_id(get_custom_providers(), custom_id)
+        if not entry:
+            logger.warning(f"[Vision] custom provider '{provider_id}' not found in custom_providers")
+            return None
+        api_key = (entry.get("api_key") or "").strip()
+        api_base = (entry.get("api_base") or "").strip()
+        if not api_key or not api_base:
+            logger.warning(f"[Vision] custom provider '{provider_id}' missing api_key or api_base")
+            return None
+        model = preferred_model or entry.get("model") or ""
+        if not model:
+            logger.warning(f"[Vision] custom provider '{provider_id}' has no model configured")
+            return None
+        return VisionProvider(
+            name=entry.get("name") or provider_id,
+            api_key=api_key,
+            api_base=self._ensure_v1(api_base.rstrip("/")),
+            model_override=model,
         )
 
     def _call_via_bot(self, model: str, question: str, image_content: dict,
