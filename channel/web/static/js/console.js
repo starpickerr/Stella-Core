@@ -4884,7 +4884,7 @@ const MODELS_CAPABILITY_DEFS = [
       iconChip: 'bg-amber-50 dark:bg-amber-900/30',      iconGlyph: 'text-amber-500' },
     { id: 'tts',       icon: 'fa-volume-high',      editable: true,  needsModel: true,  titleKey: 'models_capability_tts',       descKey: 'models_capability_tts_desc',
       iconChip: 'bg-amber-50 dark:bg-amber-900/30',      iconGlyph: 'text-amber-500' },
-    { id: 'embedding', icon: 'fa-vector-square',    editable: true,  needsModel: false, titleKey: 'models_capability_embedding', descKey: 'models_capability_embedding_desc',
+    { id: 'embedding', icon: 'fa-vector-square',    editable: true,  needsModel: true,  titleKey: 'models_capability_embedding', descKey: 'models_capability_embedding_desc',
       iconChip: 'bg-purple-50 dark:bg-purple-900/30',    iconGlyph: 'text-purple-500' },
     { id: 'search',    icon: 'fa-magnifying-glass', editable: true,  needsModel: false, titleKey: 'models_capability_search',    descKey: 'models_capability_search_desc',
       iconChip: 'bg-orange-50 dark:bg-orange-900/30',    iconGlyph: 'text-orange-500' },
@@ -5605,8 +5605,10 @@ function renderCapabilityBody(def, cap, body) {
 
     if (def.needsModel) {
         rebuildCapabilityModelDropdown(def, initialProviderValue, cap.current_model || '', body);
-        // Hide model picker in auto mode — fallback hint below covers it.
-        setCapabilityModelPickerVisible(def, initialProviderValue !== '' || !capabilitySupportsAuto(def.id), body);
+        // Embedding: hide model picker when no provider is selected.
+        const showModel = def.id === 'embedding' ? initialProviderValue !== '' :
+            (initialProviderValue !== '' || !capabilitySupportsAuto(def.id));
+        setCapabilityModelPickerVisible(def, showModel, body);
     }
 
     if (def.id === 'tts') {
@@ -5901,6 +5903,9 @@ function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
     let rawList;
     if (capModelMap[providerId]) {
         rawList = capModelMap[providerId].slice();
+    } else if (providerId.startsWith('custom:') && capModelMap['custom']) {
+        // Expanded custom:<id> entries share the same preset model list
+        rawList = capModelMap['custom'].slice();
     } else {
         const provider = modelsState.providers.find(p => p.id === providerId);
         rawList = (provider && provider.models) ? provider.models.slice() : [];
@@ -6031,12 +6036,13 @@ function rebuildCapabilityVoiceDropdown(providerId, selectedVoice, scope, modelI
 
 function onCapabilityProviderChange(def, providerId, scope) {
     if (def.needsModel) {
-        // Empty sentinel hides the model picker (capability is in auto mode).
-        const isAuto = providerId === '' && capabilitySupportsAuto(def.id);
-        if (!isAuto) {
+        // Embedding: hide model picker when no provider is selected.
+        const showModel = def.id === 'embedding' ? providerId !== '' :
+            !(providerId === '' && capabilitySupportsAuto(def.id));
+        if (showModel) {
             rebuildCapabilityModelDropdown(def, providerId, '', scope);
         }
-        setCapabilityModelPickerVisible(def, !isAuto, scope);
+        setCapabilityModelPickerVisible(def, showModel, scope);
     }
     if (def.id === 'tts') {
         rebuildCapabilityVoiceDropdown(providerId, '', scope);
@@ -6071,7 +6077,9 @@ function saveCapability(capId) {
     // hidden and any value left in it is stale; persist an empty model so
     // the backend treats this as "fall back to the runtime chain".
     const isAuto = provider === '' && capabilitySupportsAuto(capId);
-    const model = isAuto ? '' : getCapabilityModelValue(def);
+    // Embedding without a provider similarly means "cleared" — don't leak
+    // a stale model value into config.
+    const model = (isAuto || (capId === 'embedding' && !provider)) ? '' : getCapabilityModelValue(def);
     // TTS carries an extra voice timbre (supports free-text custom ids).
     let voice = '';
     if (capId === 'tts' && !isAuto) {
