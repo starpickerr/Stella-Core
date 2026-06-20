@@ -12,12 +12,12 @@ import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
 import SettingsPage from './pages/SettingsPage'
+import KnowledgePage from './pages/KnowledgePage'
 import SkillsPage from './pages/SkillsPage'
 import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import LogsPage from './pages/LogsPage'
-import PlaceholderPage from './pages/PlaceholderPage'
 
 const App: React.FC = () => {
   const backend = useBackend()
@@ -65,7 +65,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-base">
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
-            <Route path="/knowledge" element={<PlaceholderPage title={t('menu_knowledge')} />} />
+            <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
