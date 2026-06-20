@@ -51,19 +51,44 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   }, [activeId, ensureSession, loadHistory])
 
   const scrollToBottom = useCallback((smooth = true) => {
-    bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' })
+    const el = scrollRef.current
+    if (!el) return
+    // Jump straight to the bottom; instant for session switches, smooth for streaming.
+    if (smooth) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    } else {
+      el.scrollTop = el.scrollHeight
+    }
   }, [])
 
-  // Auto-scroll on new content while near the bottom.
+  // Snap to the bottom instantly when switching sessions (no top-to-bottom animation).
+  // History may load a frame later, so keep snapping instantly until content arrives.
+  const lastSessionRef = useRef('')
   const lastLenRef = useRef(0)
+  const pendingSnapRef = useRef(false)
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+
+    if (lastSessionRef.current !== activeId) {
+      lastSessionRef.current = activeId
+      lastLenRef.current = messages.length
+      pendingSnapRef.current = true
+    }
+
+    if (pendingSnapRef.current) {
+      // Instant snap on switch and on the first content that lands afterwards.
+      lastLenRef.current = messages.length
+      requestAnimationFrame(() => scrollToBottom(false))
+      if (messages.length > 0) pendingSnapRef.current = false
+      return
+    }
+
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
     const grew = messages.length !== lastLenRef.current
     lastLenRef.current = messages.length
     if (nearBottom || grew) scrollToBottom(true)
-  }, [messages, scrollToBottom])
+  }, [messages, activeId, scrollToBottom])
 
   const handleSend = useCallback(
     async (text: string, attachments: Attachment[]) => {
