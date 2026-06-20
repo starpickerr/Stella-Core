@@ -424,6 +424,11 @@ def run_evolution_for_session(
             enable_skills=True,
             runtime_info=getattr(agent, "runtime_info", None),
         )
+        # Mark this as a restricted review agent so runtime MCP reconciliation
+        # (ToolManager.sync_mcp_into_agent) will NOT silently re-inject MCP tools
+        # that _select_tools()/_guard_tools() intentionally withheld. Without this
+        # flag the review boundary would be re-opened on the first LLM turn.
+        review_agent._evolution_restricted = True
         # Reuse the live model so it follows the user's configured model.
         review_agent.model = agent.model
         # Inject the evolution task brief AFTER the full system prompt: the agent
