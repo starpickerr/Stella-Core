@@ -1,142 +1,256 @@
-import React, { useState, useEffect } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Loader2, ArrowLeft, Brain, Sprout, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
-import type { MemoryItem } from '../types'
+import type { MemoryItem, MemoryCategory } from '../types'
+import Markdown from '../components/Markdown'
 
 interface MemoryPageProps {
   baseUrl: string
 }
 
+type Tab = 'files' | 'evolution'
+const PAGE_SIZE = 10
+
 const formatSize = (bytes: number): string => {
   if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / 1024).toFixed(1) + ' KB'
 }
 
-const formatTime = (ts: number): string => {
-  return new Date(ts * 1000).toLocaleString()
+// Map a file's `type` to its display badge.
+const typeBadge = (type: string): { label: string; cls: string } => {
+  switch (type) {
+    case 'global':
+      return { label: t('memory_type_global'), cls: 'bg-accent-soft text-accent' }
+    case 'evolution':
+      return { label: t('memory_type_evolution'), cls: 'bg-inset text-success' }
+    case 'dream':
+      return { label: t('memory_type_dream'), cls: 'bg-inset text-info' }
+    default:
+      return { label: t('memory_type_daily'), cls: 'bg-inset text-content-secondary' }
+  }
 }
 
 const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
+  const [tab, setTab] = useState<Tab>('files')
   const [items, setItems] = useState<MemoryItem[]>([])
   const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+
   const [viewing, setViewing] = useState<string | null>(null)
   const [content, setContent] = useState('')
-  const [loadingContent, setLoadingContent] = useState(false)
+  const [docLoading, setDocLoading] = useState(false)
+
+  const category: MemoryCategory = tab === 'evolution' ? 'evolution' : 'memory'
+
+  const loadList = useCallback(
+    async (cat: MemoryCategory, p: number) => {
+      try {
+        setLoading(true)
+        const data = await apiClient.getMemoryList(p, PAGE_SIZE, cat)
+        setItems(data.list || [])
+        setTotal(data.total || 0)
+        setPage(data.page || p)
+      } catch (err) {
+        console.error('Failed to load memory:', err)
+        setItems([])
+        setTotal(0)
+      } finally {
+        setLoading(false)
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
-    loadMemory()
-  }, [baseUrl])
+    void loadList(category, 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl, tab])
 
-  const loadMemory = async () => {
+  const openFile = async (item: MemoryItem) => {
+    // In the evolution tab a file lives in its own dir (dream vs evolution).
+    const fileCategory: MemoryCategory =
+      item.type === 'dream' || item.type === 'evolution' ? (item.type as MemoryCategory) : category
+    setViewing(item.filename)
+    setDocLoading(true)
+    setContent('')
     try {
-      setLoading(true)
-      const data = await apiClient.getMemoryList()
-      setItems(data.list || [])
-      setTotal(data.total)
-    } catch (err) {
-      console.error('Failed to load memory:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const viewFile = async (filename: string) => {
-    setViewing(filename)
-    setLoadingContent(true)
-    try {
-      const text = await apiClient.getMemoryContent(filename)
+      const text = await apiClient.getMemoryContent(item.filename, fileCategory)
       setContent(text)
-    } catch (err) {
-      setContent(`Failed to load: ${err}`)
+    } catch {
+      setContent(`> ${t('memory_doc_load_error')}`)
     } finally {
-      setLoadingContent(false)
+      setDocLoading(false)
     }
   }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-4xl mx-auto">
-        {!viewing ? (
-          /* List panel */
-          <>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t('memory_title')}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('memory_desc')}</p>
-              </div>
-            </div>
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center mb-4">
-                  <i className="fas fa-brain text-purple-400 text-xl" />
-                </div>
-                <p className="text-slate-500 dark:text-slate-400 font-medium">{t('memory_loading')}</p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">{t('memory_loading_desc')}</p>
-              </div>
-            ) : items.length > 0 ? (
-              <div className="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-white/10">
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('memory_col_name')}</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('memory_col_size')}</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('memory_col_updated')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr
-                        key={item.filename}
-                        onClick={() => viewFile(item.filename)}
-                        className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                      >
-                        <td className="px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 font-mono">{item.filename}</td>
-                        <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{formatSize(item.size)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{item.updated_at}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center mb-4">
-                  <i className="fas fa-brain text-purple-400 text-xl" />
-                </div>
-                <p className="text-slate-500 dark:text-slate-400 font-medium">{t('memory_loading')}</p>
-              </div>
-            )}
-          </>
-        ) : (
-          /* File viewer */
-          <>
-            <div className="flex items-center gap-3 mb-6">
-              <button
-                onClick={() => setViewing(null)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-colors cursor-pointer"
-              >
-                <i className="fas fa-arrow-left text-xs" />
-                <span>{t('memory_back')}</span>
-              </button>
-              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100 font-mono truncate">{viewing}</h2>
-            </div>
-            <div className="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
-              <div className="p-5 overflow-y-auto text-sm msg-content text-slate-700 dark:text-slate-200" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-                {loadingContent ? (
-                  <div className="text-slate-400"><i className="fas fa-spinner fa-spin mr-2" />Loading...</div>
-                ) : (
-                  <pre className="whitespace-pre-wrap">{content}</pre>
-                )}
-              </div>
-            </div>
-          </>
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0">
+        <div>
+          <h2 className="text-xl font-bold text-content">{t('memory_title')}</h2>
+          <p className="text-xs text-content-tertiary mt-1">{t('memory_desc')}</p>
+        </div>
+        {!viewing && (
+          <div className="flex items-center gap-1 bg-inset rounded-btn p-0.5">
+            <TabBtn icon={Brain} label={t('memory_tab_files')} active={tab === 'files'} onClick={() => setTab('files')} />
+            <TabBtn
+              icon={Sprout}
+              label={t('memory_tab_dreams')}
+              active={tab === 'evolution'}
+              onClick={() => setTab('evolution')}
+            />
+          </div>
         )}
       </div>
+
+      {viewing ? (
+        /* File viewer */
+        <div className="flex-1 flex flex-col min-h-0 border-t border-default">
+          <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
+            <button
+              onClick={() => setViewing(null)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-sm text-content-secondary hover:bg-inset border border-strong transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={14} />
+              {t('memory_back')}
+            </button>
+            <h3 className="text-sm font-semibold text-content font-mono truncate">{viewing}</h3>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-3xl mx-auto px-6 py-6">
+              {docLoading ? (
+                <div className="flex items-center text-content-tertiary py-8">
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                </div>
+              ) : (
+                <Markdown content={content} />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* List */
+        <div className="flex-1 overflow-y-auto border-t border-default">
+          <div className="max-w-4xl mx-auto px-6 py-5">
+            {loading ? (
+              <div className="flex items-center justify-center py-20 text-content-tertiary">
+                <Loader2 size={18} className="animate-spin mr-2" />
+                {t('memory_loading')}
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-content-tertiary">
+                {tab === 'evolution' ? <Sprout size={28} className="mb-3 opacity-60" /> : <Brain size={28} className="mb-3 opacity-60" />}
+                <p className="text-sm">{tab === 'evolution' ? t('memory_empty_evolution') : t('memory_empty_files')}</p>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-card border border-default overflow-hidden bg-surface">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-default">
+                        <Th>{t('memory_col_name')}</Th>
+                        <Th>{t('memory_col_type')}</Th>
+                        <Th>{t('memory_col_size')}</Th>
+                        <Th>{t('memory_col_updated')}</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const badge = typeBadge(item.type)
+                        return (
+                          <tr
+                            key={item.filename}
+                            onClick={() => openFile(item)}
+                            className="border-b border-subtle last:border-0 hover:bg-inset cursor-pointer transition-colors"
+                          >
+                            <td className="px-4 py-3 text-sm font-mono text-content-secondary">
+                              <span className="inline-flex items-center gap-2">
+                                <FileText size={13} className="text-content-tertiary flex-shrink-0" />
+                                {item.filename}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badge.label}</span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-content-tertiary">{formatSize(item.size)}</td>
+                            <td className="px-4 py-3 text-sm text-content-tertiary">{item.updated_at}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 text-sm text-content-tertiary">
+                    <span>
+                      {page} / {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                      <PageBtn icon={ChevronLeft} label={t('memory_prev')} disabled={page <= 1} onClick={() => loadList(category, page - 1)} />
+                      <PageBtn
+                        icon={ChevronRight}
+                        label={t('memory_next')}
+                        disabled={page >= totalPages}
+                        onClick={() => loadList(category, page + 1)}
+                        iconRight
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const Th: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-content-tertiary">{children}</th>
+)
+
+const TabBtn: React.FC<{ icon: LucideIcon; label: string; active: boolean; onClick: () => void }> = ({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}) => (
+  <button
+    onClick={onClick}
+    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-sm font-medium cursor-pointer transition-colors ${
+      active ? 'bg-surface text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
+    }`}
+  >
+    <Icon size={14} />
+    {label}
+  </button>
+)
+
+const PageBtn: React.FC<{
+  icon: LucideIcon
+  label: string
+  disabled: boolean
+  onClick: () => void
+  iconRight?: boolean
+}> = ({ icon: Icon, label, disabled, onClick, iconRight }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className="inline-flex items-center gap-1 px-3 py-1 rounded-btn border border-strong text-xs text-content-secondary hover:bg-inset disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+  >
+    {!iconRight && <Icon size={13} />}
+    {label}
+    {iconRight && <Icon size={13} />}
+  </button>
+)
 
 export default MemoryPage
