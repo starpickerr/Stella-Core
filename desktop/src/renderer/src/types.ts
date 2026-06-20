@@ -376,17 +376,22 @@ export interface MemoryPage {
 // Knowledge
 // ============================================================
 
-export interface KnowledgeNode {
+export interface KnowledgeFile {
   name: string
-  path: string
-  type: 'category' | 'file'
-  children?: KnowledgeNode[]
-  count?: number
+  title: string
+  size: number
+}
+
+// A directory node in the knowledge tree (recursive).
+export interface KnowledgeDir {
+  dir: string
+  files: KnowledgeFile[]
+  children: KnowledgeDir[]
 }
 
 export interface KnowledgeList {
-  root_files?: KnowledgeNode[]
-  tree: KnowledgeNode[]
+  root_files?: KnowledgeFile[]
+  tree: KnowledgeDir[]
   stats: { pages: number; size: number }
   enabled: boolean
 }
