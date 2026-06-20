@@ -175,12 +175,16 @@ export interface HistoryPage {
 // Config
 // ============================================================
 
+/** A label that may be localized (some providers/channels return {zh,en}). */
+export type LocalizedLabel = string | { zh: string; en: string }
+
 export interface ProviderMeta {
-  label: string
+  label: LocalizedLabel
   models: string[]
-  api_base_key?: string
-  api_base_default?: string
-  api_key_field?: string
+  api_base_key?: string | null
+  api_base_default?: string | null
+  api_base_placeholder?: string
+  api_key_field?: string | null
   [k: string]: unknown
 }
 
@@ -206,34 +210,95 @@ export interface ConfigData {
 // Models console (/api/models)
 // ============================================================
 
+// A model/voice entry can be a bare id or an annotated {value, hint} object.
+export interface ModelOption {
+  value: string
+  hint?: string
+}
+export type ModelEntry = string | ModelOption
+
 export interface ModelProvider {
   id: string
-  label: string
+  label: LocalizedLabel
   configured: boolean
   is_custom: boolean
   custom_id?: string
+  custom_name?: string
   active?: boolean
+  api_key_field?: string | null
+  api_base_field?: string | null
   api_key_masked?: string
   api_base?: string
-  models: string[]
+  api_base_default?: string
+  api_base_placeholder?: string
+  models: ModelEntry[]
 }
 
 export type CapabilityKey = 'chat' | 'vision' | 'asr' | 'tts' | 'embedding' | 'image' | 'search'
 
+// Search providers are described as objects (unlike other capabilities which
+// list provider ids only).
+export interface SearchProviderMeta {
+  id: string
+  label: LocalizedLabel
+  configured: boolean
+  needs_dedicated_key: boolean
+  api_key_masked?: string
+}
+
 export interface CapabilityState {
+  editable?: boolean
   current_provider?: string
   current_model?: string
+  current_voice?: string
+  current_dim?: number | null
+  suggested_provider?: string
   providers?: string[]
-  provider_models?: Record<string, string[]>
+  // provider_models entries are string | {value,hint}
+  provider_models?: Record<string, ModelEntry[]>
+  // tts only: voices keyed by provider; linkai keyed further by model id
+  provider_voices?: Record<string, ModelEntry[] | Record<string, ModelEntry[]>>
+  // vision/image
   strategy?: string
+  user_specified_model?: string
   fallback_provider?: string
   fallback_model?: string
+  // tts
+  reply_mode?: 'off' | 'voice_if_voice' | 'always'
+  use_linkai?: boolean
+  // image
+  runtime_active?: boolean
+  note?: string
+  // search
+  fixed_provider?: string
+  configured_providers?: string[]
+  available?: boolean
   [k: string]: unknown
 }
 
+export interface SearchCapabilityState {
+  editable?: boolean
+  providers: SearchProviderMeta[]
+  strategy?: 'auto' | 'fixed' | string
+  current_provider?: string
+  fixed_provider?: string
+  configured_providers?: string[]
+  available?: boolean
+}
+
 export interface ModelsData {
+  status?: string
   providers: ModelProvider[]
-  capabilities: Record<CapabilityKey, CapabilityState>
+  capabilities: {
+    chat: CapabilityState
+    vision: CapabilityState
+    asr: CapabilityState
+    tts: CapabilityState
+    embedding: CapabilityState
+    image: CapabilityState
+    // search has a richer providers[] shape
+    search: SearchCapabilityState
+  }
 }
 
 export type ModelsAction =
@@ -242,7 +307,7 @@ export type ModelsAction =
   | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
-  | { action: 'set_capability'; capability: CapabilityKey; provider_id: string; model: string; voice?: string; strategy?: string; provider?: string }
+  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 

@@ -11,7 +11,7 @@ import { useUIStore } from './store/uiStore'
 import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
-import ConfigPage from './pages/ConfigPage'
+import SettingsPage from './pages/SettingsPage'
 import SkillsPage from './pages/SkillsPage'
 import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
@@ -68,10 +68,11 @@ const App: React.FC = () => {
             <Route path="/knowledge" element={<PlaceholderPage title={t('menu_knowledge')} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
-            <Route path="/models" element={<PlaceholderPage title={t('menu_models')} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
-            <Route path="/settings" element={<ConfigPage baseUrl={backend.baseUrl} />} />
+            <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
+            {/* Legacy /models route now lives as a tab inside settings */}
+            <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             <Route path="/logs" element={<LogsPage baseUrl={backend.baseUrl} />} />
           </Routes>
         </div>
