@@ -346,6 +346,7 @@ export interface ToolInfo {
 
 export interface SkillInfo {
   name: string
+  display_name?: string
   description: string
   source?: string
   enabled: boolean
