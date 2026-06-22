@@ -8,14 +8,15 @@ export interface ElectronAPI {
   restartBackend: () => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>
-  onBackendStatus: (callback: (data: BackendStatusEvent) => void) => void
-  onBackendLog: (callback: (line: string) => void) => void
+  // Listener registrars return an unsubscribe fn for cleanup.
+  onBackendStatus: (callback: (data: BackendStatusEvent) => void) => () => void
+  onBackendLog: (callback: (line: string) => void) => () => void
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<boolean>
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
-  onMaximizeChange: (callback: (maximized: boolean) => void) => void
-  onMenuAction?: (callback: (action: string) => void) => void
+  onMaximizeChange: (callback: (maximized: boolean) => void) => () => void
+  onMenuAction?: (callback: (action: string) => void) => () => void
   platform: string
 }
 

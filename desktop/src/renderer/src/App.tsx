@@ -34,7 +34,7 @@ const App: React.FC = () => {
 
   // Handle app-menu / shortcut actions forwarded from the main process.
   useEffect(() => {
-    window.electronAPI?.onMenuAction?.((action) => {
+    const off = window.electronAPI?.onMenuAction?.((action) => {
       if (action === 'new-chat') {
         useSessionStore.getState().newSession()
         navigate('/')
@@ -42,6 +42,7 @@ const App: React.FC = () => {
         navigate('/settings')
       }
     })
+    return off
   }, [navigate])
 
   const handleLangChange = useCallback(() => forceUpdate((n) => n + 1), [])

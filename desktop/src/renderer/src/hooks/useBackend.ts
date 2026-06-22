@@ -26,6 +26,7 @@ export function useBackend() {
 
   useEffect(() => {
     let cancelled = false
+    let offStatus: (() => void) | undefined
     const api = window.electronAPI
 
     const startPolling = async (port: number) => {
@@ -62,7 +63,7 @@ export function useBackend() {
         startPolling(p)
       })
 
-      api.onBackendStatus((data) => {
+      offStatus = api.onBackendStatus((data) => {
         if (data.status === 'ready' && data.port) {
           setState({ status: 'ready', port: data.port })
           if (pollingRef.current) {
@@ -82,6 +83,7 @@ export function useBackend() {
       if (pollingRef.current) {
         clearTimeout(pollingRef.current)
       }
+      offStatus?.()
     }
   }, [probeBackend])
 
