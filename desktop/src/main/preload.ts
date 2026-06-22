@@ -24,5 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('window-maximize-changed', (_event, max) => callback(max))
   },
 
+  // App menu / shortcut actions forwarded from the main process.
+  onMenuAction: (callback: (action: string) => void) => {
+    ipcRenderer.on('menu-action', (_event, action: string) => callback(action))
+  },
+
   platform: process.platform,
 })

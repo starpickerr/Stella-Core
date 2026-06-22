@@ -3,9 +3,13 @@ import path from 'path'
 import fs from 'fs'
 import http from 'http'
 import { PythonBackend } from './python-manager'
+import { buildAppMenu } from './menu'
+import { createTray, destroyTray } from './tray'
 
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
+// True once the user explicitly quits (menu/tray), so close-to-tray is bypassed.
+let isQuitting = false
 
 const isDev = !app.isPackaged
 const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
@@ -125,6 +129,15 @@ function createWindow() {
     return { action: 'deny' }
   })
 
+  // Close-to-tray: hide the window instead of destroying it, so the tray's
+  // "Show" can bring it back. Only a real Quit (menu/tray/Cmd+Q) destroys it.
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -202,6 +215,20 @@ function emitMaximizeState() {
   mainWindow?.webContents.send('window-maximize-changed', max)
 }
 
+// Single-instance lock: focus the existing window instead of opening a second app.
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
   // Set Dock icon on macOS (PNG is most reliable for nativeImage)
   if (process.platform === 'darwin') {
@@ -221,11 +248,22 @@ app.whenReady().then(async () => {
 
   setupIPC()
   createWindow()
+  buildAppMenu(() => mainWindow)
+  createTray({
+    getWindow: () => mainWindow,
+    iconPath: getIconPath('png'),
+    onQuit: () => {
+      isQuitting = true
+      app.quit()
+    },
+  })
   await startBackend()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
+    } else {
+      mainWindow?.show()
     }
   })
 })
@@ -237,6 +275,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   saveWindowState()
+  destroyTray()
   pythonBackend?.stop()
 })
