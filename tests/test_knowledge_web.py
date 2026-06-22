@@ -114,6 +114,7 @@ def test_knowledge_import_handler_delegates_to_dispatch(tmp_path):
 def test_knowledge_import_handler_rejects_large_content_length(tmp_path):
     from channel.web.web_channel import KnowledgeImportHandler
     from agent.knowledge.service import KnowledgeService
+    assert KnowledgeService.MAX_IMPORT_TOTAL_SIZE == 200 * 1024 * 1024
 
     with patch("channel.web.web_channel._require_auth"), \
          patch("channel.web.web_channel.web.header"), \

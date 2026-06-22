@@ -7547,7 +7547,7 @@ let _knowledgeCurrentFile = null;
 let _knowledgeGraphLoaded = false;
 const KNOWLEDGE_IMPORT_MAX_FILES = 100;
 const KNOWLEDGE_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
-const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 50 * 1024 * 1024;
+const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
 function loadKnowledgeView() {
     // Reset to docs tab
@@ -7959,7 +7959,7 @@ function validateKnowledgeImportFiles(files) {
         }
     }
     if (total > KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE) {
-        return currentLang === 'zh' ? '单次导入总大小不能超过 50MB' : 'Total import size cannot exceed 50MB';
+        return currentLang === 'zh' ? '单次导入总大小不能超过 200MB' : 'Total import size cannot exceed 200MB';
     }
     return '';
 }

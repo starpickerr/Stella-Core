@@ -280,6 +280,7 @@ def test_import_documents_skip_overwrite_and_failures(tmp_path):
 def test_import_documents_rejects_large_files_and_batches(tmp_path):
     svc, manager = service(tmp_path)
     (tmp_path / "knowledge/notes").mkdir()
+    assert svc.MAX_IMPORT_TOTAL_SIZE == 200 * 1024 * 1024
 
     too_large = svc.dispatch("import_documents", {
         "target_category": "notes",
