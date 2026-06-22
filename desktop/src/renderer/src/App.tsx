@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import NavRail from './layout/NavRail'
 import SessionList from './layout/SessionList'
@@ -8,6 +8,7 @@ import StatusScreen from './components/StatusScreen'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { useUIStore } from './store/uiStore'
+import { useSessionStore } from './store/sessionStore'
 import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
@@ -22,6 +23,7 @@ import LogsPage from './pages/LogsPage'
 const App: React.FC = () => {
   const backend = useBackend()
   const location = useLocation()
+  const navigate = useNavigate()
   const { isWin } = usePlatform()
   const { sessionsCollapsed, toggleSessions } = useUIStore()
   const [, forceUpdate] = useState(0)
@@ -29,6 +31,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
   }, [backend.status, backend.baseUrl])
+
+  // Handle app-menu / shortcut actions forwarded from the main process.
+  useEffect(() => {
+    window.electronAPI?.onMenuAction?.((action) => {
+      if (action === 'new-chat') {
+        useSessionStore.getState().newSession()
+        navigate('/')
+      } else if (action === 'open-settings') {
+        navigate('/settings')
+      }
+    })
+  }, [navigate])
 
   const handleLangChange = useCallback(() => forceUpdate((n) => n + 1), [])
 

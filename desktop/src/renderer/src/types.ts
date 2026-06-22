@@ -15,6 +15,7 @@ export interface ElectronAPI {
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onMaximizeChange: (callback: (maximized: boolean) => void) => void
+  onMenuAction?: (callback: (action: string) => void) => void
   platform: string
 }
 
