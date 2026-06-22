@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   Sun,
   Moon,
+  ScrollText,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { t, getLang, setLang, Lang } from '../i18n'
@@ -88,6 +89,14 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
       {/* Footer actions */}
       <div className={`flex-shrink-0 px-2 py-2 border-t border-subtle ${collapsed ? 'space-y-0.5' : 'flex items-center gap-1'}`}>
+        <FooterBtn
+          collapsed={collapsed}
+          onClick={() => navigate('/logs')}
+          title={t('menu_logs')}
+          active={location.pathname === '/logs'}
+        >
+          <ScrollText size={17} />
+        </FooterBtn>
         <FooterBtn collapsed={collapsed} onClick={toggleTheme} title={theme === 'dark' ? 'Light' : 'Dark'}>
           {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </FooterBtn>
@@ -108,14 +117,17 @@ const FooterBtn: React.FC<{
   collapsed: boolean
   onClick: () => void
   title: string
+  active?: boolean
   children: React.ReactNode
-}> = ({ collapsed, onClick, title, children }) => (
+}> = ({ collapsed, onClick, title, active, children }) => (
   <button
     onClick={onClick}
     title={title}
-    className={`inline-flex items-center gap-1.5 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${
-      collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2'
-    }`}
+    className={`inline-flex items-center gap-1.5 rounded-btn cursor-pointer transition-colors ${
+      active
+        ? 'bg-accent-soft text-accent'
+        : 'text-content-tertiary hover:text-content hover:bg-surface-2'
+    } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2'}`}
   >
     {children}
   </button>
