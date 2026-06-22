@@ -35,7 +35,7 @@ class KnowledgeService:
     IMPORT_EXTENSIONS = {".md", ".txt"}
     MAX_IMPORT_FILES = 100
     MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
-    MAX_IMPORT_TOTAL_SIZE = 50 * 1024 * 1024
+    MAX_IMPORT_TOTAL_SIZE = 200 * 1024 * 1024
 
     def __init__(self, workspace_root: str, memory_manager=None):
         self.workspace_root = os.path.abspath(workspace_root)
