@@ -40,6 +40,8 @@ const App: React.FC = () => {
         navigate('/')
       } else if (action === 'open-settings') {
         navigate('/settings')
+      } else if (action === 'view-logs') {
+        navigate('/logs')
       }
     })
     return off
