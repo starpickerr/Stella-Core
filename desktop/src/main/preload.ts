@@ -7,12 +7,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   selectFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('select-file', filters),
 
+  // Each listener registrar returns an unsubscribe fn so renderers can clean
+  // up on unmount / effect re-run and avoid accumulating duplicate handlers.
   onBackendStatus: (callback: (data: { status: string; port?: number; error?: string }) => void) => {
-    ipcRenderer.on('backend-status', (_event, data) => callback(data))
+    const handler = (_event: unknown, data: { status: string; port?: number; error?: string }) => callback(data)
+    ipcRenderer.on('backend-status', handler)
+    return () => ipcRenderer.removeListener('backend-status', handler)
   },
 
   onBackendLog: (callback: (line: string) => void) => {
-    ipcRenderer.on('backend-log', (_event, line) => callback(line))
+    const handler = (_event: unknown, line: string) => callback(line)
+    ipcRenderer.on('backend-log', handler)
+    return () => ipcRenderer.removeListener('backend-log', handler)
   },
 
   // Window controls (custom titlebar on Windows)
@@ -21,12 +27,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onMaximizeChange: (callback: (maximized: boolean) => void) => {
-    ipcRenderer.on('window-maximize-changed', (_event, max) => callback(max))
+    const handler = (_event: unknown, max: boolean) => callback(max)
+    ipcRenderer.on('window-maximize-changed', handler)
+    return () => ipcRenderer.removeListener('window-maximize-changed', handler)
   },
 
   // App menu / shortcut actions forwarded from the main process.
   onMenuAction: (callback: (action: string) => void) => {
-    ipcRenderer.on('menu-action', (_event, action: string) => callback(action))
+    const handler = (_event: unknown, action: string) => callback(action)
+    ipcRenderer.on('menu-action', handler)
+    return () => ipcRenderer.removeListener('menu-action', handler)
   },
 
   platform: process.platform,

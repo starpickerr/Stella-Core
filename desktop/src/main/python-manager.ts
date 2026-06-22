@@ -176,11 +176,15 @@ export class PythonBackend extends EventEmitter {
   }
 
   stop(): void {
-    if (this.process) {
-      this.process.kill('SIGTERM')
+    const proc = this.process
+    if (proc) {
+      proc.kill('SIGTERM')
+      // Keep a local ref so the SIGKILL fallback can still reach the process
+      // even after we clear `this.process`; otherwise a stuck backend would
+      // never be force-killed and leak as a zombie.
       setTimeout(() => {
-        if (this.process && !this.process.killed) {
-          this.process.kill('SIGKILL')
+        if (!proc.killed) {
+          proc.kill('SIGKILL')
         }
       }, 5000)
       this.process = null

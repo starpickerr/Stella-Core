@@ -11,7 +11,8 @@ const WindowControls: React.FC = () => {
 
   useEffect(() => {
     api?.windowIsMaximized().then(setMaximized)
-    api?.onMaximizeChange(setMaximized)
+    const off = api?.onMaximizeChange(setMaximized)
+    return off
   }, [api])
 
   if (api?.platform === 'darwin') return null
