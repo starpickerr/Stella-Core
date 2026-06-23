@@ -18,6 +18,7 @@ import type { LucideIcon } from 'lucide-react'
 import { t, getLang, setLang, Lang } from '../i18n'
 import { useUIStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
+import UpdateBanner from '../components/UpdateBanner'
 
 interface NavItem {
   path: string
@@ -86,6 +87,11 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
           )
         })}
       </nav>
+
+      {/* Update banner floats above the footer when a new version is pending */}
+      <div className="relative">
+        {!collapsed && <UpdateBanner />}
+      </div>
 
       {/* Footer actions */}
       <div className={`flex-shrink-0 px-2 py-2 border-t border-subtle ${collapsed ? 'space-y-0.5' : 'flex items-center gap-1'}`}>

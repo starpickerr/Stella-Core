@@ -17,8 +17,22 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   onMaximizeChange: (callback: (maximized: boolean) => void) => () => void
   onMenuAction?: (callback: (action: string) => void) => () => void
+  // Auto-update
+  checkForUpdate?: () => Promise<void>
+  downloadUpdate?: () => Promise<void>
+  installUpdate?: () => Promise<void>
+  onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   platform: string
 }
+
+// Mirrors UpdateStatus in src/main/updater.ts.
+export type UpdateStatus =
+  | { state: 'checking' }
+  | { state: 'available'; version: string; notes?: string }
+  | { state: 'not-available' }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
 
 export interface BackendStatusEvent {
   status: 'ready' | 'error' | 'starting'

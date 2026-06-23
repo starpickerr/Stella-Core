@@ -9,6 +9,7 @@ import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
+import { initUpdateListener } from './store/updateStore'
 import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
@@ -31,6 +32,9 @@ const App: React.FC = () => {
   useEffect(() => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
   }, [backend.status, backend.baseUrl])
+
+  // Subscribe to auto-update status from the main process (no-op in dev).
+  useEffect(() => initUpdateListener(), [])
 
   // Handle app-menu / shortcut actions forwarded from the main process.
   useEffect(() => {
