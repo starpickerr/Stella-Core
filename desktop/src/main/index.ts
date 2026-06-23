@@ -5,6 +5,7 @@ import http from 'http'
 import { PythonBackend } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray } from './tray'
+import { initUpdater, checkForUpdates, startDownload, quitAndInstall } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
@@ -208,6 +209,11 @@ function setupIPC() {
   })
   ipcMain.handle('window-close', () => mainWindow?.close())
   ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+
+  // Auto-update controls (renderer-driven: check, then opt-in download/install)
+  ipcMain.handle('update-check', () => checkForUpdates())
+  ipcMain.handle('update-download', () => startDownload())
+  ipcMain.handle('update-install', () => quitAndInstall())
 }
 
 function emitMaximizeState() {
@@ -258,6 +264,11 @@ app.whenReady().then(async () => {
     },
   })
   await startBackend()
+
+  // Wire auto-update and do a first silent check a few seconds after launch so
+  // it doesn't compete with backend startup for resources.
+  initUpdater(() => mainWindow)
+  setTimeout(() => checkForUpdates(), 5000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
