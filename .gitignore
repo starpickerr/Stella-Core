@@ -45,3 +45,12 @@ dist/
 build/
 *.egg-info/
 .cow.pid
+
+# Desktop backend packaging: keep the source files (spec/requirements/script)
+# tracked even though the generic build/ rule above ignores them, but never
+# track the build outputs or local venv.
+!desktop/build/
+desktop/build/*
+!desktop/build/cowagent-backend.spec
+!desktop/build/requirements-desktop.txt
+!desktop/build/build-backend.sh
