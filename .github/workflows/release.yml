@@ -102,18 +102,32 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing/notarization (no-ops when the secrets are unset, so
-          # unsigned builds still succeed until certificates are provisioned).
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Signing secrets are passed through as-is; we only export them to the
+          # environment below when non-empty. An empty CSC_LINK would make
+          # electron-builder try to load a bogus certificate and fail, so unset
+          # is the correct state for unsigned builds.
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows signing (also a no-op when unset).
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           npm run build
+
+          # Only export signing vars when provided. Empty strings are NOT the
+          # same as unset to electron-builder: an empty CSC_LINK is treated as
+          # a (broken) certificate path and aborts the build. Leaving them
+          # unset makes electron-builder fall back to an unsigned build.
+          if [ -n "$MAC_CSC_LINK" ]; then
+            export CSC_LINK="$MAC_CSC_LINK"
+            export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+          fi
+          if [ -z "$WIN_CSC_LINK" ]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          fi
+
           # Publish to the GitHub Release on tag pushes; otherwise build only.
           if [ "${{ github.event_name }}" = "push" ]; then
             PUBLISH=always
