@@ -46,11 +46,26 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
 
+  // A provider is configured when it has credentials (custom providers always
+  // carry their own). Unconfigured ones stay selectable but are flagged so the
+  // user is guided to set up the API key.
+  const isConfigured = (id: string): boolean => {
+    const p = data?.providers?.find((x) => x.id === id)
+    if (!p) return true
+    return p.configured || (p.is_custom && !!p.custom_name)
+  }
+
   const providerOptions: DropdownOption[] = useMemo(() => {
-    const opts = (state.providers || []).map((id) => ({ value: id, label: providerLabel(data, id) }))
+    const opts = (state.providers || []).map((id) => ({
+      value: id,
+      label: providerLabel(data, id),
+      hint: isConfigured(id) ? undefined : t('config_provider_unconfigured'),
+    }))
     if (allowAuto) return [{ value: '', label: autoLabel || t('models_auto') }, ...opts]
     return opts
   }, [state.providers, data, allowAuto, autoLabel])
+
+  const currentUnconfigured = !!provider && !isConfigured(provider)
 
   const modelOptions: DropdownOption[] = useMemo(() => {
     const list = resolveModels(data, provider, state.provider_models).map((o) => ({
@@ -98,6 +113,11 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
             placeholder={t('models_select_provider')}
             onChange={handleProvider}
           />
+          {/* The provider's API key is configured in the vendor cards above on
+              this same tab, so warn instead of linking elsewhere. */}
+          {currentUnconfigured && (
+            <p className="text-xs text-danger mt-1.5">{t('config_provider_unconfigured_hint')}</p>
+          )}
         </Field>
         {!isAuto && (
           <Field label={t('models_model')}>

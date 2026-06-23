@@ -24,7 +24,7 @@ from common import const
 from common import i18n
 from common.log import logger
 from common.singleton import singleton
-from config import conf
+from config import conf, get_data_root, get_weixin_credentials_path
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -1114,18 +1114,25 @@ class WebChannel(ChatChannel):
         else:
             logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
 
-        try:
-            import webbrowser
-            webbrowser.open(f"http://localhost:{port}")
-            logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
-        except Exception as e:
-            logger.debug(f"[WebChannel] Could not open browser: {e}")
+        # In desktop mode the Electron shell renders the UI, so don't pop a
+        # browser window (also avoids issues when running detached/headless).
+        if os.environ.get("COW_DESKTOP") != "1":
+            try:
+                import webbrowser
+                webbrowser.open(f"http://localhost:{port}")
+                logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
+            except Exception as e:
+                logger.debug(f"[WebChannel] Could not open browser: {e}")
 
-        # 确保静态文件目录存在
+        # Ensure the static dir exists. In a packaged build it ships read-only
+        # inside the bundle, so swallow errors instead of failing startup.
         static_dir = os.path.join(os.path.dirname(__file__), 'static')
         if not os.path.exists(static_dir):
-            os.makedirs(static_dir)
-            logger.debug(f"[WebChannel] Created static directory: {static_dir}")
+            try:
+                os.makedirs(static_dir)
+                logger.debug(f"[WebChannel] Created static directory: {static_dir}")
+            except OSError as e:
+                logger.debug(f"[WebChannel] Skipped creating static dir (read-only bundle?): {e}")
 
         urls = (
             '/', 'RootHandler',
@@ -1730,8 +1737,7 @@ class ConfigHandler:
             if not applied:
                 return json.dumps({"status": "error", "message": "no valid keys to update"})
 
-            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__)))), "config.json")
+            config_path = os.path.join(get_data_root(), "config.json")
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     file_cfg = json.load(f)
@@ -2164,10 +2170,7 @@ class ModelsHandler:
 
     @staticmethod
     def _config_path() -> str:
-        return os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "config.json",
-        )
+        return os.path.join(get_data_root(), "config.json")
 
     @classmethod
     def _read_file_config(cls) -> dict:
@@ -3550,8 +3553,12 @@ class ChannelsHandler:
         try:
             local_config = conf()
             active_channels = self._active_channel_set()
+            # Desktop build ships without lark-oapi, so hide Feishu from the list.
+            desktop_mode = os.environ.get("COW_DESKTOP") == "1"
             channels = []
             for ch_name, ch_def in self.CHANNEL_DEFS.items():
+                if desktop_mode and ch_name == "feishu":
+                    continue
                 fields_out = []
                 for f in ch_def["fields"]:
                     raw_val = local_config.get(f["key"], f.get("default", ""))
@@ -3633,8 +3640,7 @@ class ChannelsHandler:
         if not applied:
             return json.dumps({"status": "error", "message": "no valid fields to update"})
 
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), "config.json")
+        config_path = os.path.join(get_data_root(), "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
@@ -3704,8 +3710,7 @@ class ChannelsHandler:
         new_channel_type = ",".join(existing)
         local_config["channel_type"] = new_channel_type
 
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), "config.json")
+        config_path = os.path.join(get_data_root(), "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
@@ -3760,8 +3765,7 @@ class ChannelsHandler:
         local_config = conf()
         local_config["channel_type"] = new_channel_type
 
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), "config.json")
+        config_path = os.path.join(get_data_root(), "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
@@ -3911,9 +3915,7 @@ class WeixinQrHandler:
             if not bot_token or not bot_id:
                 return json.dumps({"status": "error", "message": "Login confirmed but missing token"})
 
-            cred_path = os.path.expanduser(
-                conf().get("weixin_credentials_path", "~/.weixin_cow_credentials.json")
-            )
+            cred_path = get_weixin_credentials_path()
             from channel.weixin.weixin_channel import _save_credentials
             _save_credentials(cred_path, {
                 "token": bot_token,
@@ -4577,8 +4579,7 @@ class LogsHandler:
         web.header('Cache-Control', 'no-cache')
         web.header('X-Accel-Buffering', 'no')
 
-        from config import get_root
-        log_path = os.path.join(get_root(), "run.log")
+        log_path = os.path.join(get_data_root(), "run.log")
 
         def generate():
             if not os.path.isfile(log_path):

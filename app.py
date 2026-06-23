@@ -15,6 +15,11 @@ import threading
 
 _channel_mgr = None
 
+# Desktop mode: a lighter runtime for the packaged Electron client. The plugin
+# framework is still bundled (it's tiny and on the web channel's import path),
+# but we skip loading actual plugins and MCP tools to keep startup fast.
+DESKTOP_MODE = os.environ.get("COW_DESKTOP") == "1"
+
 
 def get_channel_manager():
     return _channel_mgr
@@ -75,7 +80,7 @@ class ChannelManager:
             if self._primary_channel is None and channels:
                 self._primary_channel = channels[0][1]
 
-            if first_start:
+            if first_start and not DESKTOP_MODE:
                 PluginManager().load_plugins()
 
                 # Cloud client is optional. It is only started when
@@ -364,10 +369,18 @@ def run():
         _sync_builtin_skills()
 
         # Kick off MCP server loading in the background so first-message
-        # latency isn't dominated by npx package downloads.
-        _warmup_mcp_tools()
+        # latency isn't dominated by npx package downloads. Skipped in desktop
+        # mode (MCP relies on external npx/uvx runtimes that aren't bundled).
+        if not DESKTOP_MODE:
+            _warmup_mcp_tools()
 
-        _warmup_scheduler()
+        if DESKTOP_MODE:
+            # Defer the (heavy) AgentBridge/scheduler warmup to a background
+            # thread so the web API becomes available within a couple seconds.
+            # The scheduler still starts; it just doesn't block UI readiness.
+            threading.Thread(target=_warmup_scheduler, daemon=True).start()
+        else:
+            _warmup_scheduler()
 
         logger.info(f"[App] Starting channels: {channel_names}")
 
