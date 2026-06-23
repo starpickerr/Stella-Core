@@ -74,8 +74,8 @@ class TestSetCustomProvider(unittest.TestCase):
 
     def test_create_provider_does_not_hijack_bot_type(self):
         """Creating a provider without make_active must not change bot_type."""
-        res = self.h.call(action="set_custom_provider", name="siliconflow",
-                          api_base="https://api.siliconflow.cn/v1", api_key="sf-key")
+        res = self.h.call(action="set_custom_provider", name="my-provider",
+                          api_base="https://api.example.com/v1", api_key="key-a")
         self.assertEqual(res["status"], "success")
         self.assertTrue(res["created"])
         self.assertIn("id", res)
@@ -85,13 +85,13 @@ class TestSetCustomProvider(unittest.TestCase):
         providers = config_module.conf().get("custom_providers")
         self.assertEqual(len(providers), 1)
         self.assertEqual(providers[0]["id"], res["id"])
-        self.assertEqual(providers[0]["name"], "siliconflow")
+        self.assertEqual(providers[0]["name"], "my-provider")
         self.assertEqual(self.h.bridge_resets, 1)
 
     def test_create_with_make_active_switches_bot_type(self):
         """Creating a provider with make_active=true must switch bot_type."""
-        res = self.h.call(action="set_custom_provider", name="siliconflow",
-                          api_base="https://api.siliconflow.cn/v1", api_key="sf-key",
+        res = self.h.call(action="set_custom_provider", name="my-provider",
+                          api_base="https://api.example.com/v1", api_key="key-a",
                           make_active=True)
         self.assertEqual(res["status"], "success")
         bot_type = config_module.conf().get("bot_type")

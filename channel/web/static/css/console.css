@@ -244,6 +244,52 @@
 }
 .dark .session-delete:hover { background: rgba(239, 68, 68, 0.15); }
 
+/* Rename button: shares the look of the delete button, sits to its left.
+   Negative right margin tightens the gap to the delete button only. */
+.session-rename {
+    flex-shrink: 0;
+    margin-right: -6px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: #9ca3af;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+}
+.session-item:hover .session-rename { opacity: 1; }
+.session-rename:hover {
+    color: #4ABE6E;
+    background: rgba(74, 190, 110, 0.12);
+}
+.dark .session-rename:hover { background: rgba(74, 190, 110, 0.18); }
+
+/* Inline title editor */
+.session-title-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-family: inherit;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #4ABE6E;
+    border-radius: 6px;
+    padding: 2px 6px;
+    outline: none;
+}
+.dark .session-title-input {
+    color: #e5e5e5;
+    background: rgba(255, 255, 255, 0.06);
+    border-color: #4ABE6E;
+}
+
 /* Context Divider */
 .context-divider {
     display: flex;

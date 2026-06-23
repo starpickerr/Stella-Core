@@ -607,6 +607,9 @@ class CowCliPlugin(Plugin):
         "agent_max_steps",
         "knowledge",
         "enable_thinking",
+        "self_evolution_enabled",
+        "self_evolution_idle_minutes",
+        "self_evolution_min_turns",
     }
 
     _CONFIG_READABLE = _CONFIG_WRITABLE | {"channel_type"}
@@ -1331,8 +1334,19 @@ class CowCliPlugin(Plugin):
                 return "linkai (legacy)", "text-embedding-3-small", 1536
             return "(legacy)", None, None
 
-        meta = EMBEDDING_VENDORS.get(provider_key) or {}
+        # Since we have added support for custom providers for vector models, this part should be modified accordingly:
+        # Custom providers ("custom:<id>") resolve to the "custom" vendor key.
+        resolved_key = "custom" if provider_key.startswith("custom:") else provider_key
+        meta = EMBEDDING_VENDORS.get(resolved_key) or {}
         model = cfg_model or meta.get("default_model")
+        # Custom provider model fallback: read from custom_providers entry.
+        if not model and provider_key.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+            _, custom_id = parse_custom_bot_type(provider_key)
+            if custom_id:
+                entry = _find_provider_by_id(get_custom_providers(), custom_id)
+                if entry and entry.get("model"):
+                    model = entry["model"]
         dim = cfg_dim if cfg_dim > 0 else meta.get("default_dimensions")
         return provider_key, model, dim
 

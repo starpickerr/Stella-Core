@@ -524,6 +524,15 @@ class AgentBridge:
                 session_id, query, context, clear_history
             )
 
+            # Mark this session as mid-run so the self-evolution idle scan does
+            # not fire concurrently when a single turn runs longer than
+            # idle_minutes.
+            try:
+                from agent.evolution.trigger import mark_run_active
+                mark_run_active(agent, True)
+            except Exception:
+                pass
+
             try:
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
@@ -533,6 +542,13 @@ class AgentBridge:
                     cancel_event=cancel_event,
                 )
             finally:
+                # Clear the mid-run flag so idle scans can review this session.
+                try:
+                    from agent.evolution.trigger import mark_run_active
+                    mark_run_active(agent, False)
+                except Exception:
+                    pass
+
                 # Restore original tools
                 if context and context.get("is_scheduled_task"):
                     agent.tools = original_tools

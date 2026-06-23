@@ -17,18 +17,16 @@ Provider resolution:
 """
 
 import base64
-import ipaddress
 import os
-import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 import requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from agent.tools.utils.url_safety import validate_url_safe
 from common import const
 from common.log import logger
 from config import conf
@@ -333,6 +331,12 @@ class Vision(BaseTool):
           - None       : unknown provider id, or the bot can't be created.
                          Caller falls through to model-name-based routing.
         """
+        # Custom OpenAI-compatible providers — read credentials from
+        # custom_providers list, same pattern as embedding.
+        if provider_id.startswith("custom:"):
+            p = self._build_custom_provider(provider_id, user_model)
+            return [p] if p else None
+
         display_name = _PROVIDER_ID_TO_DISPLAY.get(provider_id)
         if not display_name:
             return None
@@ -598,6 +602,34 @@ class Vision(BaseTool):
             model_override=preferred_model,
         )
 
+    def _build_custom_provider(self, provider_id: str, preferred_model: Optional[str] = None) -> Optional[VisionProvider]:
+        """Build a VisionProvider from a custom:<id> entry in custom_providers.
+        Uses the standard OpenAI /chat/completions endpoint — any
+        OpenAI-compatible multimodal endpoint works."""
+        from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+        _, custom_id = parse_custom_bot_type(provider_id)
+        if not custom_id:
+            return None
+        entry = _find_provider_by_id(get_custom_providers(), custom_id)
+        if not entry:
+            logger.warning(f"[Vision] custom provider '{provider_id}' not found in custom_providers")
+            return None
+        api_key = (entry.get("api_key") or "").strip()
+        api_base = (entry.get("api_base") or "").strip()
+        if not api_key or not api_base:
+            logger.warning(f"[Vision] custom provider '{provider_id}' missing api_key or api_base")
+            return None
+        model = preferred_model or entry.get("model") or ""
+        if not model:
+            logger.warning(f"[Vision] custom provider '{provider_id}' has no model configured")
+            return None
+        return VisionProvider(
+            name=entry.get("name") or provider_id,
+            api_key=api_key,
+            api_base=self._ensure_v1(api_base.rstrip("/")),
+            model_override=model,
+        )
+
     def _call_via_bot(self, model: str, question: str, image_content: dict,
                       provider: Optional[VisionProvider] = None) -> ToolResult:
         """
@@ -665,31 +697,13 @@ class Vision(BaseTool):
         into non-public ranges.  Also rejects URLs with no host, non-HTTP(S)
         schemes, or hosts that fail DNS resolution.
 
+        Delegates to the shared ``agent.tools.utils.url_safety`` helper so the
+        same guard protects every tool that fetches model-supplied URLs.
+
         Raises:
             ValueError: if the URL targets a disallowed address.
         """
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
-
-        hostname = parsed.hostname
-        if not hostname:
-            raise ValueError("URL has no hostname")
-
-        try:
-            # Resolve all addresses for the hostname.
-            addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        except socket.gaierror:
-            raise ValueError(f"Cannot resolve hostname: {hostname}")
-
-        for family, _, _, _, sockaddr in addr_infos:
-            ip_str = sockaddr[0]
-            ip = ipaddress.ip_address(ip_str)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                raise ValueError(
-                    f"URL resolves to a non-public address ({ip_str}), "
-                    f"request blocked for security"
-                )
+        validate_url_safe(url)
 
     def _build_image_content(self, image: str) -> dict:
         """
