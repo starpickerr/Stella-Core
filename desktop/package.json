@@ -52,18 +52,8 @@
     ],
     "extraResources": [
       {
-        "from": "../",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!desktop/**",
-          "!.git/**",
-          "!__pycache__/**",
-          "!**/__pycache__/**",
-          "!*.pyc",
-          "!run.log",
-          "!workspace/**"
-        ]
+        "from": "build/dist/cowagent-backend",
+        "to": "backend/cowagent-backend"
       }
     ],
     "mac": {
@@ -73,7 +63,7 @@
         {
           "target": "dmg",
           "arch": [
-            "universal"
+            "arm64"
           ]
         }
       ]

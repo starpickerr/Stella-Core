@@ -21,7 +21,7 @@ from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
 from linkai import LinkAIClient, PushMsg
-from config import conf, pconf, plugin_config, available_setting, write_plugin_config, get_root
+from config import conf, pconf, plugin_config, available_setting, write_plugin_config, get_root, get_weixin_credentials_path
 from plugins import PluginManager
 import threading
 import time
@@ -336,9 +336,7 @@ class CloudClient(LinkAIClient):
     @staticmethod
     def _remove_weixin_credentials():
         """Remove the weixin token credentials file so next connect triggers QR login."""
-        cred_path = os.path.expanduser(
-            conf().get("weixin_credentials_path", "~/.weixin_cow_credentials.json")
-        )
+        cred_path = get_weixin_credentials_path()
         try:
             if os.path.exists(cred_path):
                 os.remove(cred_path)
