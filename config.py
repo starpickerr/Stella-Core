@@ -27,7 +27,7 @@ available_setting = {
     "custom_api_key": "",  # custom OpenAI-compatible provider api key (used when bot_type is "custom"); legacy single-provider field
     "custom_api_base": "",  # custom OpenAI-compatible provider api base (used when bot_type is "custom"); legacy single-provider field
     # Multiple custom (OpenAI-compatible) providers. Activated via bot_type: "custom:<id>".
-    # Each item: {"id": "3f2a9c1b", "name": "siliconflow", "api_key": "sk-...", "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"}
+    # Each item: {"id": "3f2a9c1b", "name": "my-provider", "api_key": "sk-...", "api_base": "https://api.example.com/v1", "model": "model-name"}
     "custom_providers": [],
     "proxy": "",  # proxy used by openai
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
@@ -183,6 +183,11 @@ available_setting = {
     # WeCom smart bot config (long connection mode)
     "wecom_bot_id": "",  # WeCom smart bot BotID
     "wecom_bot_secret": "",  # WeCom smart bot long-connection secret
+    # WeCom smart bot transport mode: "websocket" (long connection) or "webhook" (HTTP callback)
+    "wecom_bot_mode": "websocket",
+    "wecom_bot_token": "",  # webhook mode: Token configured on the bot's receive-message URL
+    "wecom_bot_encoding_aes_key": "",  # webhook mode: EncodingAESKey configured on the bot's receive-message URL
+    "wecom_bot_port": 9892,  # webhook mode: local HTTP server port for the receive-message URL
     # Telegram config
     "telegram_token": "",  # Bot token from @BotFather
     "telegram_proxy": "",  # Optional HTTP/SOCKS5 proxy, e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080 (empty falls back to env vars)

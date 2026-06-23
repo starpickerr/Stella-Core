@@ -1180,6 +1180,9 @@ class WebChannel(ChatChannel):
             '/api/knowledge/action', 'KnowledgeActionHandler',
             '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
+            '/api/scheduler/toggle', 'SchedulerToggleHandler',
+            '/api/scheduler/update', 'SchedulerUpdateHandler',
+            '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
@@ -1500,10 +1503,10 @@ class ConfigHandler:
         const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_FABLE_5, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
+        const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
         const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE,
-        const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
+        const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
         const.MIMO_V2_5_PRO, const.MIMO_V2_5,
     ]
@@ -1566,7 +1569,7 @@ class ConfigHandler:
             "api_base_key": "zhipu_ai_api_base",
             "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
             "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
+            "models": [const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
         }),
         ("dashscope", {
             "label": {"zh": "通义千问", "en": "Qwen"},
@@ -1590,7 +1593,7 @@ class ConfigHandler:
             "api_base_key": "moonshot_base_url",
             "api_base_default": "https://api.moonshot.cn/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
+            "models": [const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
         }),
         ("qianfan", {
             "label": {"zh": "百度千帆", "en": "ERNIE"},
@@ -2083,7 +2086,20 @@ class ModelsHandler:
             ],
         },
     }
-    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai"]
+    _EMBEDDING_PROVIDERS = ["openai", "dashscope", "doubao", "zhipu", "linkai", "custom"]
+
+    # Embedding model catalog per provider. Mirrors the default_model in
+    # agent/memory/embedding/provider.py::EMBEDDING_VENDORS.
+    # Custom providers have no preset list — model names vary per vendor,
+    # so the user always types the model id manually.
+    _EMBEDDING_PROVIDER_MODELS = {
+        "openai":    ["text-embedding-3-small", "text-embedding-3-large"],
+        "dashscope": ["text-embedding-v4"],
+        "doubao":    ["doubao-embedding-vision-251215"],
+        "zhipu":     ["embedding-3"],
+        "linkai":    ["text-embedding-3-small"],
+        "custom":    [],
+    }
 
     # Capability-scoped model catalogs. The chat dropdown can reuse the
     # provider's generic model list, but vision and image generation are
@@ -2133,6 +2149,9 @@ class ModelsHandler:
             const.CLAUDE_4_6_SONNET,
             const.GEMINI_31_FLASH_LITE_PRE,
         ],
+        # Custom OpenAI-compatible providers have no preset list — model
+        # names vary per vendor, so the user types the model id manually.
+        "custom": [],
     }
 
     # Image-generation catalog. Source of truth: skills/image-generation/SKILL.md.
@@ -2446,18 +2465,31 @@ class ModelsHandler:
         user_specified = (vision_conf.get("model") or "").strip()
         explicit_provider = (vision_conf.get("provider") or "").strip()
 
+        # Build provider list: built-in providers + expanded custom:<id> entries.
+        # Same pattern as _embedding_capability — each user-created custom
+        # provider gets its own dropdown entry showing the user-chosen name.
+        providers = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in cls._VISION_PROVIDER_MODELS:
+            if pid == "custom":
+                if custom_cards:
+                    providers.extend(c["id"] for c in custom_cards)
+            else:
+                providers.append(pid)
+
         # Provider resolution priority:
         #   1. Explicit `tools.vision.provider` (persisted via UI; supports
         #      custom model names that prefix-inference can't recognize).
         #   2. Scan per-provider model lists by model name.
         # Empty provider keeps the dropdown on "auto" when we can't tell.
         inferred_provider = ""
-        if explicit_provider and explicit_provider in cls._VISION_PROVIDER_MODELS:
+        if explicit_provider and explicit_provider in providers:
             inferred_provider = explicit_provider
         elif user_specified:
             for pid, models in cls._VISION_PROVIDER_MODELS.items():
                 if user_specified in models:
-                    inferred_provider = pid
+                    # For "custom" key, map to the first custom card
+                    inferred_provider = custom_cards[0]["id"] if pid == "custom" and custom_cards else pid
                     break
 
         # In auto mode the hint should reflect what vision.py will actually
@@ -2473,7 +2505,7 @@ class ModelsHandler:
             "current_model": user_specified,
             "fallback_provider": predicted["provider"],
             "fallback_model": predicted["model"],
-            "providers": list(cls._VISION_PROVIDER_MODELS.keys()),
+            "providers": providers,
             "provider_models": cls._VISION_PROVIDER_MODELS,
         }
 
@@ -2546,18 +2578,40 @@ class ModelsHandler:
         suggested = ""
         if not explicit:
             for pid in cls._EMBEDDING_PROVIDERS:
+                if pid == "custom":
+                    continue
                 meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
                 key_field = meta.get("api_key_field")
                 if key_field and cls._is_real_key(local_config.get(key_field, "")):
                     suggested = pid
                     break
+            if not suggested:
+                custom_cards = cls._custom_provider_cards(local_config)
+                if custom_cards:
+                    suggested = custom_cards[0]["id"]
+
+        # Build provider list: built-in providers + expanded custom:<id> entries
+        # Same pattern as _chat_capability — each user-created custom provider
+        # gets its own dropdown entry showing the user-chosen name.
+        providers = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for pid in cls._EMBEDDING_PROVIDERS:
+            if pid == "custom":
+                if custom_cards:
+                    providers.extend(c["id"] for c in custom_cards)
+                # No custom providers configured — skip the bare "custom" entry
+                # since the runtime cannot resolve its credentials.
+            else:
+                providers.append(pid)
+
         return {
             "editable": True,
             "current_provider": explicit,
             "suggested_provider": suggested,
             "current_model": local_config.get("embedding_model", "") or "",
             "current_dim": int(local_config.get("embedding_dimensions") or 0) or None,
-            "providers": cls._EMBEDDING_PROVIDERS,
+            "providers": providers,
+            "provider_models": cls._EMBEDDING_PROVIDER_MODELS,
         }
 
     # Auto-fallback order for image generation. Mirrors the global priority
@@ -2919,10 +2973,10 @@ class ModelsHandler:
             {
               "action": "set_custom_provider",
               "id": "3f2a9c1b",             # required for edit; omit for create
-              "name": "siliconflow",         # required, display label
+              "name": "my-provider",         # required, display label
               "api_base": "https://...",     # required when creating
               "api_key": "sk-...",           # optional on edit (keep existing)
-              "model": "deepseek-ai/...",    # optional default model
+              "model": "model-name",         # optional default model
               "make_active": true            # optional, also activate it
             }
         """
@@ -3143,6 +3197,25 @@ class ModelsHandler:
         # is persisted so users picking a custom model under a specific vendor
         # still get routed there — runtime falls back to model-name prefix
         # inference only when provider is empty.
+        # Validate provider_id — mirrors _set_chat / _set_embedding pattern.
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+            if not model:
+                model = custom_provider.get("model") or ""
+        elif provider_id and provider_id not in {k for k in ModelsHandler._VISION_PROVIDER_MODELS if k != "custom"}:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        if provider_id and not model:
+            return json.dumps({
+                "status": "error",
+                "message": "vision model is required when a provider is selected",
+            })
+
         local_config = conf()
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
@@ -3268,7 +3341,20 @@ class ModelsHandler:
             logger.warning(f"[ModelsHandler] Bridge voice refresh failed: {e}")
 
     def _set_embedding(self, provider_id: str, model: str) -> str:
-        # Two valid states: both empty (reset to pick-or-empty) OR both set.
+        # Validate provider_id — mirrors _set_chat's validation pattern.
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+            # Fall back to the custom provider's default model when none is given.
+            if not model:
+                model = custom_provider.get("model") or ""
+        elif provider_id and provider_id not in {p for p in ModelsHandler._EMBEDDING_PROVIDERS if p != "custom"}:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
         # A provider without a model leaves the runtime in a broken half-state,
         # so reject that explicitly instead of silently writing it through.
         if provider_id and not model:
@@ -4186,6 +4272,141 @@ class SchedulerHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+class SchedulerToggleHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            enabled = body.get("enabled", True)
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            from agent.tools.scheduler.task_store import TaskStore
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            store.enable_task(task_id, enabled)
+            task = store.get_task(task_id)
+            return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler toggle error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerUpdateHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            
+            from agent.tools.scheduler.task_store import TaskStore
+            from agent.tools.scheduler.scheduler_service import SchedulerService
+            from datetime import datetime
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            
+            # Get original task (single query to avoid repeated I/O)
+            original_task = store.get_task(task_id)
+            if not original_task:
+                return json.dumps({"status": "error", "message": f"Task '{task_id}' not found"})
+            
+            # Build updates dict
+            updates = {}
+            if "name" in body:
+                updates["name"] = body["name"]
+            if "enabled" in body:
+                updates["enabled"] = body["enabled"]
+            
+            # Update schedule
+            if "schedule" in body:
+                updates["schedule"] = body["schedule"]
+                # If schedule config changed, recalculate next_run_at
+                # Build merged temp task data for calculation (without modifying the original object)
+                merged = dict(original_task)
+                merged.update(updates)
+                if "action" in body:
+                    merged["action"] = body["action"]
+                temp_service = SchedulerService(store, lambda t: None)
+                next_run = temp_service._calculate_next_run(merged, datetime.now())
+                if next_run:
+                    updates["next_run_at"] = next_run.isoformat()
+                else:
+                    # Cannot calculate next run time, schedule config may be invalid
+                    return json.dumps({
+                        "status": "error", 
+                        "message": "Cannot calculate next run time. Please check the schedule config (e.g., cron expression format, or whether the one-time task time has already passed)."
+                    }, ensure_ascii=False)
+            
+            # Update action
+            if "action" in body:
+                action = body["action"]
+                channel_type = action.get("channel_type", "web")
+                
+                # Get the task's original channel_type
+                old_channel = original_task.get("action", {}).get("channel_type", "web")
+                
+                # If channel type changed or no receiver, reject the update.
+                # Note: the web UI disables the channel selector, so this branch
+                # is only reachable via direct API calls. Changing a task's channel
+                # after creation is not supported because the receiver identity is
+                # channel-bound and cannot be trivially re-populated (e.g. weixin
+                # requires a valid context_token tied to the original user-session).
+                if old_channel and old_channel != channel_type:
+                    return json.dumps({
+                        "status": "error",
+                        "message": f"Cannot change channel type from '{old_channel}' to '{channel_type}'. Please create a new task on the target channel instead."
+                    }, ensure_ascii=False)
+                if not action.get("receiver"):
+                    return json.dumps({
+                        "status": "error",
+                        "message": "Receiver is required. Please create a new task through the chat interface."
+                    }, ensure_ascii=False)
+                updates["action"] = action
+                
+                # If schedule was not updated but action was, ensure next_run_at exists
+                if "schedule" not in body and "next_run_at" not in original_task:
+                    merged = dict(original_task)
+                    merged.update(updates)
+                    temp_service = SchedulerService(store, lambda t: None)
+                    next_run = temp_service._calculate_next_run(merged, datetime.now())
+                    if next_run:
+                        updates["next_run_at"] = next_run.isoformat()
+            
+            store.update_task(task_id, updates)
+            task = store.get_task(task_id)
+            return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler update error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerDeleteHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+            
+            from agent.tools.scheduler.task_store import TaskStore
+            workspace_root = _get_workspace_root()
+            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+            store = TaskStore(store_path)
+            store.delete_task(task_id)
+            return json.dumps({"status": "success"}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler delete error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
 class SessionsHandler:
     def GET(self):
         _require_auth()
@@ -4362,7 +4583,7 @@ class MessageDeleteHandler:
             # 2. Sync agent's in-memory context so its next turn sees the
             # same history as the DB. Handled by the agent_bridge helper.
             try:
-                from bridge import Bridge
+                from bridge.bridge import Bridge
                 Bridge().get_agent_bridge().sync_session_messages_from_store(session_id)
             except Exception as sync_err:
                 logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")

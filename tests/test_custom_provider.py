@@ -88,15 +88,15 @@ class TestResolveCustomCredentials(unittest.TestCase):
         set_conf({
             "bot_type": "custom:abc12345",
             "custom_providers": [
-                {"id": "sf001", "name": "siliconflow", "api_key": "sf-key",
-                 "api_base": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3"},
-                {"id": "abc12345", "name": "qiniu", "api_key": "qn-key",
-                 "api_base": "https://api.qnaigc.com/v1", "model": "deepseek-v3"},
+                {"id": "sf001", "name": "provider-a", "api_key": "key-a",
+                 "api_base": "https://api.example.com/v1", "model": "model-a"},
+                {"id": "abc12345", "name": "provider-b", "api_key": "key-b",
+                 "api_base": "https://api.example.org/v1", "model": "model-b"},
             ],
         })
         self.assertEqual(
             self.resolve(),
-            ("qn-key", "https://api.qnaigc.com/v1", "deepseek-v3"),
+            ("key-b", "https://api.example.org/v1", "model-b"),
         )
 
     def test_id_not_found_falls_back_to_legacy(self):
@@ -105,8 +105,8 @@ class TestResolveCustomCredentials(unittest.TestCase):
             "custom_api_key": "legacy-key",
             "custom_api_base": "https://legacy.example.com/v1",
             "custom_providers": [
-                {"id": "sf001", "name": "siliconflow", "api_key": "sf-key",
-                 "api_base": "https://api.siliconflow.cn/v1"},
+                {"id": "sf001", "name": "provider-a", "api_key": "key-a",
+                 "api_base": "https://api.example.com/v1"},
             ],
         })
         self.assertEqual(
