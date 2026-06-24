@@ -60,9 +60,7 @@
         "from": "resources",
         "to": ".",
         "filter": [
-          "icon.png",
-          "trayTemplate.png",
-          "trayTemplate@2x.png"
+          "icon.png"
         ]
       }
     ],

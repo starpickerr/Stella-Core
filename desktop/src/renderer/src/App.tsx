@@ -10,6 +10,8 @@ import { usePlatform } from './hooks/usePlatform'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
 import { initUpdateListener } from './store/updateStore'
+import { useOnboardingStore } from './store/onboardingStore'
+import OnboardingWizard from './components/OnboardingWizard'
 import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
@@ -27,11 +29,43 @@ const App: React.FC = () => {
   const navigate = useNavigate()
   const { isWin } = usePlatform()
   const { sessionsCollapsed, toggleSessions } = useUIStore()
+  const onboardingOpen = useOnboardingStore((s) => s.open)
+  const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
 
   useEffect(() => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
   }, [backend.status, backend.baseUrl])
+
+  // First-run check: once the backend is ready, decide whether to show the
+  // onboarding wizard. It's config-driven — shown whenever the chat model isn't
+  // configured (and not dismissed earlier this session); no persisted flag.
+  useEffect(() => {
+    if (backend.status !== 'ready') return
+    let cancelled = false
+    apiClient
+      .getModels()
+      .then((data) => {
+        if (cancelled) return
+        const chat = data.capabilities?.chat
+        // "Configured" needs a chat provider+model AND that provider's API key
+        // set. A default config can ship a model name with no key, which
+        // shouldn't count as ready — otherwise we'd skip onboarding for users
+        // who still need to enter a key.
+        const providerId = chat?.current_provider
+        const provider = data.providers?.find((p) => p.id === providerId)
+        const keyReady = !!provider && (provider.configured || (provider.is_custom && !!provider.custom_name))
+        const configured = !!providerId && !!chat?.current_model && keyReady
+        maybeOpenOnboarding(configured)
+      })
+      .catch(() => {
+        // If models can't be loaded, fall back to the flag-only decision.
+        if (!cancelled) maybeOpenOnboarding(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [backend.status, maybeOpenOnboarding])
 
   // Subscribe to auto-update status from the main process (no-op in dev).
   useEffect(() => initUpdateListener(), [])
@@ -62,6 +96,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-base text-content">
+      {onboardingOpen && <OnboardingWizard onDone={handleLangChange} />}
       <NavRail onLangChange={handleLangChange} />
 
       {showSessions && <SessionList />}

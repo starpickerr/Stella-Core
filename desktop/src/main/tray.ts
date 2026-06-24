@@ -6,31 +6,21 @@ interface TrayDeps {
   getWindow: () => BrowserWindow | null
   // Colored icon used on Windows/Linux trays.
   iconPath?: string
-  // Monochrome (black + alpha) template icon for the macOS menu bar; renders
-  // correctly in both light and dark menu bars when set as a template image.
-  templateIconPath?: string
   // Called when the user picks "Quit" so the app can fully exit.
   onQuit: () => void
 }
 
-// Build a system tray icon with a minimal menu. The tray lets users restore the
-// window after closing it to the background and start a new chat quickly.
-export function createTray({ getWindow, iconPath, templateIconPath, onQuit }: TrayDeps): Tray | null {
+// Build a system tray icon with a minimal menu (Windows/Linux only — macOS
+// uses the Dock instead). Lets users restore the window after closing it to the
+// background and start a new chat quickly.
+export function createTray({ getWindow, iconPath, onQuit }: TrayDeps): Tray | null {
   if (tray) return tray
+  if (!iconPath) return null
 
-  const isMac = process.platform === 'darwin'
-  // Prefer the monochrome template icon on macOS (menu-bar convention).
-  const sourcePath = isMac && templateIconPath ? templateIconPath : iconPath
-  if (!sourcePath) return null
-
-  let image = nativeImage.createFromPath(sourcePath)
+  let image = nativeImage.createFromPath(iconPath)
   if (image.isEmpty()) return null
   // Tray icons render small; resize to avoid an oversized image on some platforms.
   image = image.resize({ width: 18, height: 18 })
-  // A template image must be pure black + alpha; macOS then auto-inverts it for
-  // light/dark menu bars. Only mark it as such when we actually loaded the
-  // dedicated template asset (a colored icon as template would render as a blob).
-  if (isMac && templateIconPath) image.setTemplateImage(true)
 
   tray = new Tray(image)
   tray.setToolTip(app.name)
