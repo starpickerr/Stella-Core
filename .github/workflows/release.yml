@@ -157,10 +157,17 @@ jobs:
     name: Publish to R2 + D1
     needs: build
     runs-on: ubuntu-latest
-    # Run on a tag push, or on a manual dispatch when publish_r2 is checked.
+    # Publish whatever platforms succeeded, even if others failed or are still
+    # queued (e.g. a scarce macOS x64 runner). always() lets this run after a
+    # partial matrix; the D1 writes use INSERT OR REPLACE so a later run for the
+    # missing platform backfills cleanly. We still require the trigger to be a
+    # tag push or an explicit publish_r2 dispatch.
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_r2 == 'true')
+      always() &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_r2 == 'true')
+      )
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -203,9 +210,17 @@ jobs:
           # GitHub Release, which electron-updater reads directly).
           find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) -exec cp {} dist/ \;
           echo "Staged files:"; ls -la dist
+          # When the whole matrix failed there's nothing to publish; flag it so
+          # the R2/D1 steps skip instead of writing an empty/partial release.
+          if [ -n "$(ls -A dist 2>/dev/null)" ]; then
+            echo "has_files=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No installers found in any artifact — skipping R2/D1 publish."
+          fi
 
       - name: Upload installers to R2
-        if: steps.guard.outputs.enabled == 'true'
+        if: steps.guard.outputs.enabled == 'true' && steps.stage.outputs.has_files == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -222,7 +237,7 @@ jobs:
           done
 
       - name: Register release rows in D1
-        if: steps.guard.outputs.enabled == 'true'
+        if: steps.guard.outputs.enabled == 'true' && steps.stage.outputs.has_files == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -231,8 +246,12 @@ jobs:
           # Map each installer filename to a platform id. dmg arch is in the
           # name (…-arm64.dmg / …-x64.dmg); .exe is the Windows installer.
           sql_file="$(mktemp)"
-          # Clear the latest flag first; we re-set it for this version below.
-          echo "UPDATE releases SET is_latest = 0;" >> "$sql_file"
+          # Clear the latest flag PER PLATFORM (only for the platforms we're
+          # publishing now). A global "SET is_latest = 0" would wipe the latest
+          # flag of platforms missing from this partial run (e.g. mac x64 still
+          # queued), and they'd never get re-set until their own run — leaving
+          # them un-downloadable. Scoping by platform keeps already-published
+          # platforms intact while a later run backfills the missing one.
           for f in dist/*; do
             base="$(basename "$f")"
             size="$(stat -c%s "$f")"
@@ -243,6 +262,7 @@ jobs:
               *) echo "Skipping unrecognized artifact: $base"; continue ;;
             esac
             key="v${VER}/${base}"
+            echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
             echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, 1);" >> "$sql_file"
           done
           echo "==> D1 statements:"; cat "$sql_file"
