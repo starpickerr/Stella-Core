@@ -1,8 +1,9 @@
 import { app, BrowserWindow } from 'electron'
-import pkg from 'electron-updater'
-
-// electron-updater ships as CommonJS; grab autoUpdater from the default export.
-const { autoUpdater } = pkg
+// electron-updater is CommonJS: its members live on module.exports, with no
+// meaningful default export. Under module=commonjs + esModuleInterop, a named
+// import compiles to `electron_updater_1.autoUpdater` and resolves correctly,
+// whereas `import pkg from 'electron-updater'` yields undefined.
+import { autoUpdater } from 'electron-updater'
 
 // Status payloads pushed to the renderer over the 'update-status' channel.
 // The renderer drives the NavRail badge + update panel from these.
