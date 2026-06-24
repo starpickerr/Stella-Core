@@ -24,29 +24,46 @@ export function useBackend() {
     }
   }, [])
 
+  // True once the backend has answered at least once. After this we never flip
+  // back to "error" from polling — a hidden/backgrounded window throttles JS
+  // timers, so attempt counters are unreliable and would otherwise produce a
+  // false "failed to start" even though the backend is alive.
+  const readyRef = useRef(false)
+  // Holds the latest resolved port so the visibility handler (registered once)
+  // always probes the correct port without re-running the effect.
+  const portRef = useRef(9899)
+
   useEffect(() => {
     let cancelled = false
     let offStatus: (() => void) | undefined
     const api = window.electronAPI
 
+    // Use a wall-clock deadline instead of an attempt counter so timer
+    // throttling (when the window is in the background) can't fast-forward us
+    // into a false failure. Only give up if we genuinely can't reach the
+    // backend for this long.
     const startPolling = async (port: number) => {
-      let attempts = 0
-      const maxAttempts = 90
+      portRef.current = port
+      const deadline = Date.now() + 90_000
 
       const poll = async () => {
         if (cancelled) return
-        attempts++
 
         const ready = await probeBackend(port)
         if (cancelled) return
 
         if (ready) {
+          readyRef.current = true
           setState({ status: 'ready', port })
           return
         }
 
-        if (attempts >= maxAttempts) {
-          setState({ status: 'error', port, error: 'Backend failed to start. Check if Python and dependencies are installed.' })
+        // Backend already answered before but is briefly unreachable (e.g.
+        // window was asleep): keep retrying, never surface an error.
+        if (!readyRef.current && Date.now() >= deadline) {
+          // Leave error undefined so StatusScreen shows the localized,
+          // user-friendly message instead of a raw technical string.
+          setState({ status: 'error', port })
           return
         }
 
@@ -59,24 +76,43 @@ export function useBackend() {
     if (api) {
       api.getBackendPort().then((port) => {
         const p = port || 9899
+        portRef.current = p
         setState((prev) => ({ ...prev, port: p }))
         startPolling(p)
       })
 
       offStatus = api.onBackendStatus((data) => {
         if (data.status === 'ready' && data.port) {
+          readyRef.current = true
+          portRef.current = data.port
           setState({ status: 'ready', port: data.port })
           if (pollingRef.current) {
             clearTimeout(pollingRef.current)
             pollingRef.current = null
           }
-        } else if (data.status === 'error') {
-          setState((prev) => ({ ...prev, status: 'error', error: data.error }))
+        } else if (data.status === 'error' && !readyRef.current) {
+          // Ignore late "error" from the main process once we've been ready —
+          // it usually means the window was backgrounded, not a real failure.
+          // Drop the raw technical message; StatusScreen shows a localized one.
+          setState((prev) => ({ ...prev, status: 'error' }))
         }
       })
     } else {
       startPolling(9899)
     }
+
+    // When the window comes back to the foreground, re-probe immediately so a
+    // user returning after a while sees the real (ready) state right away
+    // instead of waiting for the throttled timer to catch up.
+    const onVisible = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      probeBackend(portRef.current).then((ready) => {
+        if (cancelled || !ready) return
+        readyRef.current = true
+        setState((prev) => ({ ...prev, status: 'ready' }))
+      })
+    }
+    document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       cancelled = true
@@ -84,6 +120,7 @@ export function useBackend() {
         clearTimeout(pollingRef.current)
       }
       offStatus?.()
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [probeBackend])
 
