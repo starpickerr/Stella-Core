@@ -187,19 +187,17 @@ export class PythonBackend extends EventEmitter {
 
   private waitForReady(): Promise<void> {
     return new Promise((resolve) => {
-      const maxAttempts = 120
-      let attempts = 0
+      // Wall-clock deadline rather than an attempt counter: if the machine
+      // sleeps/suspends, the 1s timers stretch out and a counter would give up
+      // far too early. Time-based bounding tracks real elapsed time instead.
+      const timeoutMs = 120_000
+      const startedAt = Date.now()
 
       const check = () => {
-        attempts++
-        if (attempts % 10 === 0) {
-          this.emit('log', `Waiting for backend... (${attempts}s)`)
-        }
-
         const req = http.get(`http://127.0.0.1:${this.port}/config`, (res) => {
           if (res.statusCode === 200) {
             this.status = 'ready'
-            this.emit('log', `Backend ready on port ${this.port} after ${attempts}s`)
+            this.emit('log', `Backend ready on port ${this.port}`)
             this.emit('ready', this.port)
             resolve()
           } else {
@@ -215,13 +213,13 @@ export class PythonBackend extends EventEmitter {
       }
 
       const retry = () => {
-        if (this.status === 'stopped') {
+        if (this.status === 'stopped' || this.status === 'ready') {
           resolve()
           return
         }
-        if (attempts >= maxAttempts) {
+        if (Date.now() - startedAt >= timeoutMs) {
           this.status = 'error'
-          this.emit('error', `Backend failed to start within ${maxAttempts} seconds`)
+          this.emit('error', `Backend failed to start within ${Math.round(timeoutMs / 1000)} seconds`)
           resolve()
           return
         }
