@@ -12,6 +12,7 @@ from dashscope import MultiModalConversation
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from common.tmp_dir import TmpDir
 from config import conf
 from voice import audio_convert
 from voice.voice import Voice
@@ -121,8 +122,7 @@ class DashScopeVoice(Voice):
     @staticmethod
     def _download_audio(url: str) -> Optional[str]:
         try:
-            tmp_dir = os.path.join(os.getcwd(), "tmp")
-            os.makedirs(tmp_dir, exist_ok=True)
+            tmp_dir = TmpDir().path()
             ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             ext = os.path.splitext(url.split("?", 1)[0])[1].lower() or ".wav"
             if ext not in (".mp3", ".wav", ".m4a", ".aac", ".opus"):

@@ -24,7 +24,7 @@ from channel.weixin.weixin_message import WeixinMessage
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
-from config import conf
+from config import conf, get_weixin_credentials_path
 
 MAX_CONSECUTIVE_FAILURES = 3
 BACKOFF_DELAY = 30
@@ -96,9 +96,7 @@ class WeixinChannel(ChatChannel):
         cdn_base_url = conf().get("weixin_cdn_base_url", CDN_BASE_URL)
         token = conf().get("weixin_token", "")
 
-        self._credentials_path = os.path.expanduser(
-            conf().get("weixin_credentials_path", "~/.weixin_cow_credentials.json")
-        )
+        self._credentials_path = get_weixin_credentials_path()
 
         # Always load credentials so we can restore context_tokens even when
         # the bot token itself comes from config.

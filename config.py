@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import pickle
+import sys
 
 from common.log import logger
 from common import i18n
@@ -377,10 +378,16 @@ def load_config():
     logger.info(" \\____\\___/ \\_/\\_//_/   \\_\\__, |\\___|_| |_|\\__|")
     logger.info("                          |___/                 ")
     logger.info("")
-    config_path = "./config.json"
+    # User config lives in the data root: source deployments use CWD (./), while
+    # the desktop build points COW_DATA_DIR at ~/.cow so config survives updates.
+    config_path = os.path.join(get_data_root(), "config.json")
     if not os.path.exists(config_path):
         logger.info("config file not found, falling back to config-template.json")
-        config_path = "./config-template.json"
+        # Resolve the template via get_resource_root() so it works both from
+        # source and from a frozen (PyInstaller) bundle, where the template
+        # ships inside the bundle (sys._MEIPASS) and CWD may differ.
+        template_path = os.path.join(get_resource_root(), "config-template.json")
+        config_path = template_path if os.path.exists(template_path) else "./config-template.json"
 
     config_str = read_file(config_path)
     logger.debug("[INIT] config str: {}".format(drag_sensitive(config_str)))
@@ -620,6 +627,34 @@ def get_root():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def get_resource_root():
+    """Directory holding bundled read-only resources (e.g. config-template.json).
+
+    Under PyInstaller, data files live in sys._MEIPASS (the onedir _internal
+    folder), which differs from get_root() — the latter is used for writable
+    user data and should stay next to the executable, not inside the bundle.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_data_root():
+    """Directory for writable user data (config.json, user_datas.pkl, run.log).
+
+    The desktop build sets COW_DATA_DIR (e.g. ~/.cow) so data lives in the
+    user's home rather than inside the read-only app bundle and survives app
+    updates. When unset (source deployment), it falls back to get_root(), so
+    existing behavior is unchanged.
+    """
+    data_dir = os.environ.get("COW_DATA_DIR")
+    if data_dir:
+        data_dir = os.path.expanduser(data_dir)
+        os.makedirs(data_dir, exist_ok=True)
+        return data_dir
+    return get_root()
+
+
 def read_file(path):
     with open(path, mode="r", encoding="utf-8-sig") as f:
         return f.read()
@@ -630,11 +665,27 @@ def conf():
 
 
 def get_appdata_dir():
-    data_path = os.path.join(get_root(), conf().get("appdata_dir", ""))
+    data_path = os.path.join(get_data_root(), conf().get("appdata_dir", ""))
     if not os.path.exists(data_path):
         logger.info("[INIT] data path not exists, create it: {}".format(data_path))
         os.makedirs(data_path)
     return data_path
+
+
+def get_weixin_credentials_path():
+    """Resolve the Weixin credentials (token) file path.
+
+    Honors an explicit ``weixin_credentials_path`` from config. Otherwise the
+    packaged desktop build (COW_DATA_DIR set) keeps it under the data dir
+    (~/.cow) so all user data stays together, while source deployments retain
+    the legacy ~/.weixin_cow_credentials.json default unchanged.
+    """
+    configured = conf().get("weixin_credentials_path")
+    if configured:
+        return os.path.expanduser(configured)
+    if os.environ.get("COW_DATA_DIR"):
+        return os.path.join(get_data_root(), "weixin_credentials.json")
+    return os.path.expanduser("~/.weixin_cow_credentials.json")
 
 
 def subscribe_msg():

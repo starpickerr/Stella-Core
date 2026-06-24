@@ -1,6 +1,19 @@
 import logging
+import os
 import sys
 import io
+
+
+def _log_path():
+    # Mirror config.get_data_root() without importing config (avoids a circular
+    # import, since config imports this module). The desktop build sets
+    # COW_DATA_DIR (e.g. ~/.cow); source deployments fall back to CWD.
+    data_dir = os.environ.get("COW_DATA_DIR")
+    if data_dir:
+        data_dir = os.path.expanduser(data_dir)
+        os.makedirs(data_dir, exist_ok=True)
+        return os.path.join(data_dir, "run.log")
+    return "run.log"
 
 
 def _reset_logger(log):
@@ -20,7 +33,7 @@ def _reset_logger(log):
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
-    file_handle = logging.FileHandler("run.log", encoding="utf-8")
+    file_handle = logging.FileHandler(_log_path(), encoding="utf-8")
     file_handle.setFormatter(
         logging.Formatter(
             "[%(levelname)s][%(asctime)s][%(filename)s:%(lineno)d] - %(message)s",
