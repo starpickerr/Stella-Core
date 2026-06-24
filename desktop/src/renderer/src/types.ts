@@ -23,6 +23,8 @@ export interface ElectronAPI {
   installUpdate?: () => Promise<void>
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   platform: string
+  // OS UI language (e.g. "zh-CN"); used to default the language on first run.
+  systemLocale?: string
 }
 
 // Mirrors UpdateStatus in src/main/updater.ts.

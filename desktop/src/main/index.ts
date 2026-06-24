@@ -7,6 +7,10 @@ import { buildAppMenu } from './menu'
 import { createTray, destroyTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall } from './updater'
 
+// Force the product name so the Dock/menu shows "CowAgent" even in dev mode,
+// where the default Electron binary would otherwise report "Electron".
+app.setName('CowAgent')
+
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
 // True once the user explicitly quits (menu/tray), so close-to-tray is bypassed.
@@ -41,16 +45,6 @@ function getIconPath(ext: string = 'png'): string | undefined {
     : path.join(process.resourcesPath, iconFile)
   if (fs.existsSync(iconPath)) return iconPath
   return undefined
-}
-
-// Resolve the optional monochrome macOS menu-bar template icon. Returns
-// undefined when the asset isn't present, so the tray falls back gracefully.
-function getTrayTemplatePath(): string | undefined {
-  const file = 'trayTemplate.png'
-  const p = isDev
-    ? path.resolve(__dirname, '../../resources', file)
-    : path.join(process.resourcesPath, file)
-  return fs.existsSync(p) ? p : undefined
 }
 
 const isMac = process.platform === 'darwin'
@@ -224,6 +218,12 @@ function setupIPC() {
   ipcMain.handle('update-check', () => checkForUpdates())
   ipcMain.handle('update-download', () => startDownload())
   ipcMain.handle('update-install', () => quitAndInstall())
+
+  // Synchronous OS locale lookup (e.g. "zh-CN", "en-US"). Used by the renderer
+  // to pick a sensible default UI language on first run before any paint.
+  ipcMain.on('get-system-locale', (event) => {
+    event.returnValue = app.getLocale() || app.getSystemLocale?.() || ''
+  })
 }
 
 function emitMaximizeState() {
@@ -265,17 +265,18 @@ app.whenReady().then(async () => {
   setupIPC()
   createWindow()
   buildAppMenu(() => mainWindow)
-  createTray({
-    getWindow: () => mainWindow,
-    iconPath: getIconPath('png'),
-    // Monochrome menu-bar icon for macOS; falls back to the colored icon when
-    // the template asset is absent (see createTray).
-    templateIconPath: getTrayTemplatePath(),
-    onQuit: () => {
-      isQuitting = true
-      app.quit()
-    },
-  })
+  // No menu-bar tray on macOS — the Dock + window controls are enough there.
+  // Keep the tray on Windows/Linux where minimizing to a tray icon is expected.
+  if (!isMac) {
+    createTray({
+      getWindow: () => mainWindow,
+      iconPath: getIconPath('png'),
+      onQuit: () => {
+        isQuitting = true
+        app.quit()
+      },
+    })
+  }
   await startBackend()
 
   // Wire auto-update and do a first silent check a few seconds after launch so

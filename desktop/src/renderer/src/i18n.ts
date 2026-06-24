@@ -37,6 +37,29 @@ const translations: Record<string, Record<string, string>> = {
     update_restart: '重启以更新',
     update_later: '稍后',
     update_latest: '已是最新版本',
+    // onboarding
+    onboarding_welcome_title: '欢迎使用 CowAgent',
+    onboarding_welcome_desc: '你的私人超级 AI 助手。几步设置，即可开始对话。',
+    onboarding_lang_label: '界面语言',
+    onboarding_model_title: '配置对话模型',
+    onboarding_model_desc: '选择模型厂商并填入 API Key，即可开始使用。',
+    onboarding_provider: '模型厂商',
+    onboarding_select_provider: '选择厂商',
+    onboarding_apikey: 'API Key',
+    onboarding_apikey_placeholder: '输入 API 密钥',
+    onboarding_key_guide: '没有秘钥？前往创建',
+    onboarding_apibase: 'API 地址（可选）',
+    onboarding_model: '模型',
+    onboarding_select_model: '选择模型',
+    onboarding_done_title: '一切就绪',
+    onboarding_done_desc: '配置完成，开始你的第一次对话吧。',
+    onboarding_next: '下一步',
+    onboarding_back: '上一步',
+    onboarding_skip: '跳过',
+    onboarding_finish: '开始对话',
+    onboarding_step: '第 {n} / {total} 步',
+    onboarding_saving: '保存中...',
+    onboarding_save_failed: '保存失败，请检查后重试',
     sessions_title: '会话',
     session_new: '新对话',
     session_rename: '重命名',
@@ -310,6 +333,29 @@ const translations: Record<string, Record<string, string>> = {
     update_restart: 'Restart to update',
     update_later: 'Later',
     update_latest: 'You are up to date',
+    // onboarding
+    onboarding_welcome_title: 'Welcome to CowAgent',
+    onboarding_welcome_desc: 'Your personal super AI assistant. A few quick steps and you are ready to chat.',
+    onboarding_lang_label: 'Language',
+    onboarding_model_title: 'Set up your chat model',
+    onboarding_model_desc: 'Pick a provider and paste its API key to get started.',
+    onboarding_provider: 'Provider',
+    onboarding_select_provider: 'Select a provider',
+    onboarding_apikey: 'API Key',
+    onboarding_apikey_placeholder: 'Enter your API key',
+    onboarding_key_guide: 'No key yet? Create one',
+    onboarding_apibase: 'API base (optional)',
+    onboarding_model: 'Model',
+    onboarding_select_model: 'Select a model',
+    onboarding_done_title: 'All set',
+    onboarding_done_desc: 'Setup complete. Start your first conversation.',
+    onboarding_next: 'Next',
+    onboarding_back: 'Back',
+    onboarding_skip: 'Skip',
+    onboarding_finish: 'Start chatting',
+    onboarding_step: 'Step {n} of {total}',
+    onboarding_saving: 'Saving...',
+    onboarding_save_failed: 'Save failed, please check and retry',
     sessions_title: 'Chats',
     session_new: 'New chat',
     session_rename: 'Rename',
@@ -549,7 +595,16 @@ const translations: Record<string, Record<string, string>> = {
 
 export type Lang = 'zh' | 'en'
 
-let currentLang: Lang = (localStorage.getItem('cow_lang') as Lang) || 'zh'
+// First-run default: follow the OS language so zh-* systems start in Chinese
+// and everyone else in English. Once the user picks a language it's persisted
+// in cow_lang and always wins. Falls back to 'en' when the locale is unknown.
+function detectDefaultLang(): Lang {
+  const locale = (window.electronAPI?.systemLocale || navigator.language || '').toLowerCase()
+  return locale.startsWith('zh') ? 'zh' : 'en'
+}
+
+const savedLang = localStorage.getItem('cow_lang') as Lang | null
+let currentLang: Lang = savedLang === 'zh' || savedLang === 'en' ? savedLang : detectDefaultLang()
 
 export function t(key: string): string {
   return translations[currentLang]?.[key] || translations['en']?.[key] || key

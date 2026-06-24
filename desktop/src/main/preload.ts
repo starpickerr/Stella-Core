@@ -50,4 +50,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   platform: process.platform,
+  // OS UI language (e.g. "zh-CN"), read synchronously so the renderer can pick
+  // a default language on first run. Falls back to '' if unavailable.
+  systemLocale: (() => {
+    try {
+      return ipcRenderer.sendSync('get-system-locale') as string
+    } catch {
+      return ''
+    }
+  })(),
 })
