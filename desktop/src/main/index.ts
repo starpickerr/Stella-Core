@@ -43,6 +43,16 @@ function getIconPath(ext: string = 'png'): string | undefined {
   return undefined
 }
 
+// Resolve the optional monochrome macOS menu-bar template icon. Returns
+// undefined when the asset isn't present, so the tray falls back gracefully.
+function getTrayTemplatePath(): string | undefined {
+  const file = 'trayTemplate.png'
+  const p = isDev
+    ? path.resolve(__dirname, '../../resources', file)
+    : path.join(process.resourcesPath, file)
+  return fs.existsSync(p) ? p : undefined
+}
+
 const isMac = process.platform === 'darwin'
 const isWin = process.platform === 'win32'
 
@@ -258,6 +268,9 @@ app.whenReady().then(async () => {
   createTray({
     getWindow: () => mainWindow,
     iconPath: getIconPath('png'),
+    // Monochrome menu-bar icon for macOS; falls back to the colored icon when
+    // the template asset is absent (see createTray).
+    templateIconPath: getTrayTemplatePath(),
     onQuit: () => {
       isQuitting = true
       app.quit()

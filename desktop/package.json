@@ -55,6 +55,15 @@
       {
         "from": "build/dist/cowagent-backend",
         "to": "backend/cowagent-backend"
+      },
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "icon.png",
+          "trayTemplate.png",
+          "trayTemplate@2x.png"
+        ]
       }
     ],
     "mac": {
