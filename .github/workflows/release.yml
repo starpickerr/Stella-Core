@@ -39,7 +39,7 @@ jobs:
             arch: arm64
             eb_flags: --mac --arm64
           - name: macOS x64
-            os: macos-13
+            os: macos-15-intel
             platform: mac
             arch: x64
             eb_flags: --mac --x64
