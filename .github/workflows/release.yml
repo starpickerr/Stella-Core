@@ -155,19 +155,15 @@ jobs:
   # are configured, so it never blocks unsigned/dry builds.
   publish-r2:
     name: Publish to R2 + D1
+    # Require every platform in the build matrix to succeed before publishing,
+    # so a release on R2/D1 is always complete (all installers present) rather
+    # than partial. needs: build already gates on all matrix jobs succeeding.
     needs: build
     runs-on: ubuntu-latest
-    # Publish whatever platforms succeeded, even if others failed or are still
-    # queued (e.g. a scarce macOS x64 runner). always() lets this run after a
-    # partial matrix; the D1 writes use INSERT OR REPLACE so a later run for the
-    # missing platform backfills cleanly. We still require the trigger to be a
-    # tag push or an explicit publish_r2 dispatch.
+    # Run on a tag push, or on a manual dispatch when publish_r2 is checked.
     if: >-
-      always() &&
-      (
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_r2 == 'true')
-      )
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_r2 == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -246,12 +242,17 @@ jobs:
           # Map each installer filename to a platform id. dmg arch is in the
           # name (…-arm64.dmg / …-x64.dmg); .exe is the Windows installer.
           sql_file="$(mktemp)"
-          # Clear the latest flag PER PLATFORM (only for the platforms we're
-          # publishing now). A global "SET is_latest = 0" would wipe the latest
-          # flag of platforms missing from this partial run (e.g. mac x64 still
-          # queued), and they'd never get re-set until their own run — leaving
-          # them un-downloadable. Scoping by platform keeps already-published
-          # platforms intact while a later run backfills the missing one.
+
+          # Pre-releases (e.g. 1.0.0-test / -beta / -rc.1 / -alpha / -dev) are
+          # recorded but NEVER marked latest, so /download/<p>/latest keeps
+          # serving the last stable build. They also must not clear an existing
+          # stable's latest flag. Only a final version (no pre-release suffix)
+          # becomes the new latest and clears the previous one per platform.
+          case "$VER" in
+            *-*) is_latest=0; echo "==> $VER is a pre-release; not marking latest." ;;
+            *)   is_latest=1; echo "==> $VER is a stable release; marking latest." ;;
+          esac
+
           for f in dist/*; do
             base="$(basename "$f")"
             size="$(stat -c%s "$f")"
@@ -262,8 +263,12 @@ jobs:
               *) echo "Skipping unrecognized artifact: $base"; continue ;;
             esac
             key="v${VER}/${base}"
-            echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
-            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, 1);" >> "$sql_file"
+            # Stable only: clear the previous latest for THIS platform first, so
+            # a partial backfill never wipes other platforms' latest flag.
+            if [ "$is_latest" = "1" ]; then
+              echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
+            fi
+            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, ${is_latest});" >> "$sql_file"
           done
           echo "==> D1 statements:"; cat "$sql_file"
           npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"
