@@ -25,11 +25,23 @@ if "requests" not in sys.modules:
 # =============================================================================
 
 class TestVisionSSRFValidation(unittest.TestCase):
-    """Test that _validate_url_safe blocks internal/private URLs."""
+    """Test that _validate_url_safe blocks internal/private URLs.
+
+    SSRF protection is opt-in (disabled by default); enable it via env for
+    the duration of these tests.
+    """
 
     def setUp(self):
+        self._prev_ssrf_env = os.environ.get("WEB_SECURITY_SSRF_PROTECTION")
+        os.environ["WEB_SECURITY_SSRF_PROTECTION"] = "true"
         from agent.tools.vision.vision import Vision
         self.validate = Vision._validate_url_safe
+
+    def tearDown(self):
+        if self._prev_ssrf_env is None:
+            os.environ.pop("WEB_SECURITY_SSRF_PROTECTION", None)
+        else:
+            os.environ["WEB_SECURITY_SSRF_PROTECTION"] = self._prev_ssrf_env
 
     def test_loopback_ipv4_blocked(self):
         """127.0.0.1 must be rejected."""

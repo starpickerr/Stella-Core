@@ -74,11 +74,23 @@ def _fake_ok_response(body=b"<html><head><title>internal</title></head><body>sec
 
 
 class TestWebFetchSSRF(unittest.TestCase):
-    """web_fetch must refuse internal targets and never connect to them."""
+    """web_fetch must refuse internal targets and never connect to them.
+
+    SSRF protection is opt-in (disabled by default), so these tests enable it
+    via the WEB_SECURITY_SSRF_PROTECTION env var for the duration of the test.
+    """
 
     def setUp(self):
+        self._prev_ssrf_env = os.environ.get("WEB_SECURITY_SSRF_PROTECTION")
+        os.environ["WEB_SECURITY_SSRF_PROTECTION"] = "true"
         from agent.tools.web_fetch.web_fetch import WebFetch
         self.tool = WebFetch()
+
+    def tearDown(self):
+        if self._prev_ssrf_env is None:
+            os.environ.pop("WEB_SECURITY_SSRF_PROTECTION", None)
+        else:
+            os.environ["WEB_SECURITY_SSRF_PROTECTION"] = self._prev_ssrf_env
 
     # --- Literal internal IPs: rejected before any socket call ---
 
@@ -182,6 +194,30 @@ class TestWebFetchSSRF(unittest.TestCase):
         self.assertEqual(result.status, "success")
         mock_get.assert_called_once()
         self.assertEqual(mock_get.call_args[0][0], "http://example.com/page")
+
+
+class TestWebFetchSSRFDisabledByDefault(unittest.TestCase):
+    """With protection disabled (default), local/internal targets are reachable."""
+
+    def setUp(self):
+        self._prev_ssrf_env = os.environ.get("WEB_SECURITY_SSRF_PROTECTION")
+        os.environ.pop("WEB_SECURITY_SSRF_PROTECTION", None)
+        from agent.tools.web_fetch.web_fetch import WebFetch
+        self.tool = WebFetch()
+
+    def tearDown(self):
+        if self._prev_ssrf_env is None:
+            os.environ.pop("WEB_SECURITY_SSRF_PROTECTION", None)
+        else:
+            os.environ["WEB_SECURITY_SSRF_PROTECTION"] = self._prev_ssrf_env
+
+    def test_loopback_allowed_when_disabled(self):
+        """http://127.0.0.1/x must be fetched when protection is off (default)."""
+        with patch("socket.getaddrinfo", return_value=_gai("127.0.0.1")), \
+                patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+            result = self.tool.execute({"url": "http://127.0.0.1:8080/local"})
+        self.assertEqual(result.status, "success")
+        mock_get.assert_called_once()
 
 
 if __name__ == "__main__":
