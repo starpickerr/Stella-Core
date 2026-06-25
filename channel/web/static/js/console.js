@@ -93,6 +93,7 @@ const I18N = {
         knowledge_select_hint: '选择一个文档查看', knowledge_empty_hint: '暂无知识页面',
         knowledge_empty_guide: '在对话中发送文档、链接或主题给 Agent，它会自动整理到你的知识库中。',
         knowledge_go_chat: '开始对话',
+        knowledge_new: '新建',
         knowledge_new_category: '新建分类',
         knowledge_new_document: '新建文档',
         knowledge_import_documents: '导入文档',
@@ -336,9 +337,10 @@ const I18N = {
         knowledge_select_hint: 'Select a document to view', knowledge_empty_hint: 'No knowledge pages yet',
         knowledge_empty_guide: 'Send documents, links or topics to the agent in chat, and it will automatically organize them into your knowledge base.',
         knowledge_go_chat: 'Start a conversation',
-        knowledge_new_category: 'Category',
-        knowledge_new_document: 'Document',
-        knowledge_import_documents: 'Import',
+        knowledge_new: 'New',
+        knowledge_new_category: 'New category',
+        knowledge_new_document: 'New document',
+        knowledge_import_documents: 'Import documents',
         welcome_subtitle: 'I can help you answer questions, manage your computer, create and execute skills, and keep growing through <br> long-term memory and a personal knowledge base.',
         example_sys_title: 'System', example_sys_text: 'Show me the files in the workspace',
         example_task_title: 'Scheduler', example_task_text: 'Remind me to check the server in 5 minutes',
@@ -8085,6 +8087,30 @@ function openKnowledgeDialog(options) {
     input.onkeydown = event => { if (event.key === 'Enter') submitAction(); };
     overlay.classList.remove('hidden');
     setTimeout(() => (options.type === 'select' ? select : (options.type === 'textarea' ? textarea : (options.type === 'document' ? documentFilename : input))).focus(), 0);
+}
+
+function closeKnowledgeNewMenu() {
+    const list = document.getElementById('knowledge-new-menu-list');
+    if (list) list.classList.add('hidden');
+    document.removeEventListener('click', _knowledgeNewMenuOutside, true);
+}
+
+function _knowledgeNewMenuOutside(event) {
+    const menu = document.getElementById('knowledge-new-menu');
+    if (menu && !menu.contains(event.target)) closeKnowledgeNewMenu();
+}
+
+function toggleKnowledgeNewMenu(event) {
+    if (event) event.stopPropagation();
+    const list = document.getElementById('knowledge-new-menu-list');
+    if (!list) return;
+    const willOpen = list.classList.contains('hidden');
+    list.classList.toggle('hidden');
+    if (willOpen) {
+        document.addEventListener('click', _knowledgeNewMenuOutside, true);
+    } else {
+        document.removeEventListener('click', _knowledgeNewMenuOutside, true);
+    }
 }
 
 function createKnowledgeCategory() {
