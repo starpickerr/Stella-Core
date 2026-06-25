@@ -422,10 +422,26 @@ export interface KnowledgeGraph {
 
 export type KnowledgeAction =
   | { action: 'create_category'; payload: { path: string } }
+  | { action: 'create_document'; payload: { path: string; content: string; overwrite?: boolean } }
   | { action: 'rename_category'; payload: { path: string; new_path: string } }
   | { action: 'delete_category'; payload: { path: string; confirm?: boolean } }
   | { action: 'delete_documents'; payload: { paths: string[] } }
   | { action: 'move_documents'; payload: { paths: string[]; target_category: string } }
+
+// Result row from a bulk import (one per uploaded file).
+export interface KnowledgeImportResult {
+  status: 'imported' | 'skipped' | 'failed'
+  path?: string
+  name?: string
+  message?: string
+}
+
+export interface KnowledgeImportPayload {
+  imported: number
+  skipped: number
+  failed: number
+  results: KnowledgeImportResult[]
+}
 
 // ============================================================
 // Scheduler

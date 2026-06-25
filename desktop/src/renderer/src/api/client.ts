@@ -16,6 +16,7 @@ import type {
   KnowledgeList,
   KnowledgeGraph,
   KnowledgeAction,
+  KnowledgeImportPayload,
 } from '../types'
 
 interface ApiResult {
@@ -313,6 +314,23 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(req),
     })
+  }
+
+  // Bulk import: upload .md/.txt files into a target category (multipart).
+  async importKnowledge(
+    files: File[],
+    targetCategory: string
+  ): Promise<{ status: string; message?: string; payload?: KnowledgeImportPayload }> {
+    const formData = new FormData()
+    formData.append('target_category', targetCategory)
+    formData.append('conflict_strategy', 'rename')
+    files.forEach((file) => formData.append('files', file, file.name))
+    const res = await fetch(`${this.baseUrl}/api/knowledge/import`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    return res.json()
   }
 
   // ---------------------------------------------------------
