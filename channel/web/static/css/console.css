@@ -1293,6 +1293,18 @@
     background: rgba(74, 190, 110, 0.1);
     color: #4ABE6E;
 }
+.knowledge-import-drag-over {
+    outline: 2px dashed rgba(74, 190, 110, 0.55);
+    outline-offset: 4px;
+    border-radius: 14px;
+}
+#knowledge-dialog-card.knowledge-document-dialog {
+    max-width: 760px;
+}
+#knowledge-document-content {
+    min-height: 320px;
+    line-height: 1.55;
+}
 
 /* Graph legend */
 .knowledge-graph-legend {

@@ -94,6 +94,8 @@ const I18N = {
         knowledge_empty_guide: '在对话中发送文档、链接或主题给 Agent，它会自动整理到你的知识库中。',
         knowledge_go_chat: '开始对话',
         knowledge_new_category: '新建分类',
+        knowledge_new_document: '新建文档',
+        knowledge_import_documents: '导入文档',
         welcome_subtitle: '我可以帮你解答问题、管理计算机、创造和执行技能，并通过<br>长期记忆和知识库不断成长',
         example_sys_title: '系统管理', example_sys_text: '查看工作空间里有哪些文件',
         example_task_title: '定时任务', example_task_text: '1分钟后提醒我检查服务器',
@@ -334,7 +336,9 @@ const I18N = {
         knowledge_select_hint: 'Select a document to view', knowledge_empty_hint: 'No knowledge pages yet',
         knowledge_empty_guide: 'Send documents, links or topics to the agent in chat, and it will automatically organize them into your knowledge base.',
         knowledge_go_chat: 'Start a conversation',
-        knowledge_new_category: 'New category',
+        knowledge_new_category: 'Category',
+        knowledge_new_document: 'Document',
+        knowledge_import_documents: 'Import',
         welcome_subtitle: 'I can help you answer questions, manage your computer, create and execute skills, and keep growing through <br> long-term memory and a personal knowledge base.',
         example_sys_title: 'System', example_sys_text: 'Show me the files in the workspace',
         example_task_title: 'Scheduler', example_task_text: 'Remind me to check the server in 5 minutes',
@@ -7763,8 +7767,11 @@ let _knowledgeTreeData = [];
 let _knowledgeRootFiles = [];
 let _knowledgeCurrentFile = null;
 let _knowledgeGraphLoaded = false;
+const KNOWLEDGE_IMPORT_MAX_FILES = 100;
+const KNOWLEDGE_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
-function loadKnowledgeView() {
+function loadKnowledgeView(targetPath) {
     // Reset to docs tab
     switchKnowledgeTab('docs');
     _knowledgeGraphLoaded = false;
@@ -7772,6 +7779,7 @@ function loadKnowledgeView() {
 
     fetch('/api/knowledge/list').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
+        initKnowledgeImportDropZone();
 
         const emptyEl = document.getElementById('knowledge-empty');
         const docsPanel = document.getElementById('knowledge-panel-docs');
@@ -7800,6 +7808,15 @@ function loadKnowledgeView() {
 
         renderKnowledgeTree(tree, rootFiles);
 
+        // Prefer opening the just created/imported file; ensure its group is
+        // expanded so the active item is visible in the tree.
+        const targetTitle = targetPath ? _findKnowledgeFileTitle(targetPath) : null;
+        if (targetTitle !== null) {
+            _expandKnowledgeGroupFor(targetPath);
+            openKnowledgeFile(targetPath, targetTitle);
+            return;
+        }
+
         // Auto-select the first file (desktop only)
         if (window.innerWidth >= 768) {
             const firstFile = rootFiles.length > 0 ? rootFiles[0] : null;
@@ -7815,6 +7832,36 @@ function loadKnowledgeView() {
             document.getElementById('knowledge-content-viewer').classList.add('hidden');
         }
     }).catch(() => {});
+}
+
+// Find a file's display title by its relative path within the knowledge tree.
+// Returns the title, or null when the path is not present.
+function _findKnowledgeFileTitle(path) {
+    if (!path) return null;
+    const rootHit = (_knowledgeRootFiles || []).find(f => f.name === path);
+    if (rootHit) return rootHit.title || rootHit.name;
+    const walk = (groups, parentPath) => {
+        for (const group of groups || []) {
+            const groupPath = parentPath ? `${parentPath}/${group.dir}` : group.dir;
+            const hit = (group.files || []).find(f => `${groupPath}/${f.name}` === path);
+            if (hit) return hit.title || hit.name;
+            const childHit = walk(group.children, groupPath);
+            if (childHit !== null) return childHit;
+        }
+        return null;
+    };
+    return walk(_knowledgeTreeData, '');
+}
+
+// Open every ancestor group of the given file path so it is visible.
+function _expandKnowledgeGroupFor(path) {
+    if (!path || !path.includes('/')) return;
+    const target = document.querySelector(`.knowledge-tree-file[data-path="${CSS.escape(path)}"]`);
+    let node = target ? target.closest('.knowledge-tree-group') : null;
+    while (node) {
+        node.classList.add('open');
+        node = node.parentElement ? node.parentElement.closest('.knowledge-tree-group') : null;
+    }
 }
 
 function renderKnowledgeTree(tree, rootFilesOrFilter, filter) {
@@ -7898,7 +7945,7 @@ function _knowledgeCategoryActions(path) {
     return `<span class="knowledge-actions">${_knowledgeActionButton('fa-pen', '重命名', `renameKnowledgeCategory(${value})`)}${_knowledgeActionButton('fa-trash', '删除', `deleteKnowledgeCategory(${value})`)}</span>`;
 }
 
-async function dispatchKnowledgeAction(action, payload) {
+async function dispatchKnowledgeAction(action, payload, openPathResolver) {
     _setKnowledgeStatus(currentLang === 'zh' ? '处理中...' : 'Working...', false, true);
     try {
         const response = await fetch('/api/knowledge/action', {
@@ -7913,7 +7960,9 @@ async function dispatchKnowledgeAction(action, payload) {
             return null;
         }
         _setKnowledgeStatus(_knowledgeResultMessage(action, result.payload), false);
-        loadKnowledgeView();
+        // Optionally auto-open the affected file after the tree refreshes.
+        const openPath = openPathResolver ? openPathResolver(result.payload) : null;
+        loadKnowledgeView(openPath || undefined);
         return result.payload;
     } catch (error) {
         _setKnowledgeStatus(currentLang === 'zh' ? '请求失败，请稍后重试' : 'Request failed, please try again', true);
@@ -7933,14 +7982,18 @@ function _setKnowledgeStatus(message, isError, persistent) {
 function _knowledgeResultMessage(action, payload) {
     if (currentLang !== 'zh') {
         return action === 'create_category' ? 'Category created' :
+            action === 'create_document' ? 'Document created' :
             action === 'rename_category' ? 'Category renamed' :
             action === 'delete_category' ? 'Category deleted' :
+            action === 'import_documents' ? `${payload?.imported || 0} imported · ${payload?.skipped || 0} skipped · ${payload?.failed || 0} failed` :
             action === 'move_documents' ? `${payload?.moved || 0} document moved` :
             `${payload?.deleted || 0} document deleted`;
     }
     return action === 'create_category' ? '分类已创建' :
+        action === 'create_document' ? '文档已创建' :
         action === 'rename_category' ? '分类已重命名' :
         action === 'delete_category' ? '分类已删除' :
+        action === 'import_documents' ? `导入 ${payload?.imported || 0} 个，跳过 ${payload?.skipped || 0} 个，失败 ${payload?.failed || 0} 个` :
         action === 'move_documents' ? `已移动 ${payload?.moved || 0} 个文档` :
         `已删除 ${payload?.deleted || 0} 个文档`;
 }
@@ -7956,8 +8009,15 @@ function _knowledgeCategoryPaths(groups, parent = '') {
 
 function openKnowledgeDialog(options) {
     const overlay = document.getElementById('knowledge-dialog-overlay');
+    const card = document.getElementById('knowledge-dialog-card');
     const input = document.getElementById('knowledge-dialog-input');
     const select = document.getElementById('knowledge-dialog-select');
+    const textarea = document.getElementById('knowledge-dialog-textarea');
+    const documentForm = document.getElementById('knowledge-document-form');
+    const documentFilename = document.getElementById('knowledge-document-filename');
+    const documentContent = document.getElementById('knowledge-document-content');
+    const templateBtn = document.getElementById('knowledge-document-template');
+    const documentPathPreview = document.getElementById('knowledge-document-path-preview');
     const submit = document.getElementById('knowledge-dialog-submit');
     const cancel = document.getElementById('knowledge-dialog-cancel');
     document.getElementById('knowledge-dialog-title').textContent = options.title;
@@ -7966,9 +8026,31 @@ function openKnowledgeDialog(options) {
     document.getElementById('knowledge-dialog-hint').textContent = options.hint || '';
     document.getElementById('knowledge-dialog-error').classList.add('hidden');
     document.getElementById('knowledge-dialog-icon').className = `fas ${options.icon || 'fa-folder'} text-emerald-500`;
-    input.classList.toggle('hidden', options.type === 'select');
+    card.classList.toggle('knowledge-document-dialog', options.type === 'document');
+    input.classList.toggle('hidden', options.type === 'select' || options.type === 'textarea' || options.type === 'document');
     select.classList.toggle('hidden', options.type !== 'select');
+    textarea.classList.toggle('hidden', options.type !== 'textarea');
+    documentForm.classList.toggle('hidden', options.type !== 'document');
     input.value = options.value || '';
+    textarea.value = options.value || '';
+    documentFilename.value = options.filename || '';
+    documentContent.value = options.content || '';
+    document.getElementById('knowledge-document-category-label').textContent = currentLang === 'zh' ? '目标分类' : 'Destination category';
+    documentPathPreview.textContent = options.category
+        ? `knowledge/${options.category}/`
+        : 'knowledge/';
+    documentFilename.oninput = null;
+    document.getElementById('knowledge-document-filename-label').textContent = currentLang === 'zh' ? '文件名' : 'Filename';
+    document.getElementById('knowledge-document-content-label').textContent = currentLang === 'zh' ? 'Markdown 内容' : 'Markdown content';
+    templateBtn.textContent = currentLang === 'zh' ? '插入模板' : 'Insert template';
+    templateBtn.onclick = () => {
+        if (documentContent.value.trim()) return;
+        const title = (documentFilename.value || 'untitled').replace(/\.md$/i, '');
+        documentContent.value = currentLang === 'zh'
+            ? `# ${title}\n\n## 摘要\n\n\n## 关键点\n\n- \n\n## 参考\n\n`
+            : `# ${title}\n\n## Summary\n\n\n## Key points\n\n- \n\n## References\n\n`;
+        documentContent.focus();
+    };
     if (options.type === 'select') {
         select.innerHTML = (options.choices || []).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
     }
@@ -7978,7 +8060,13 @@ function openKnowledgeDialog(options) {
 
     const close = () => overlay.classList.add('hidden');
     const submitAction = async () => {
-        const value = (options.type === 'select' ? select.value : input.value).trim();
+        const rawValue = options.type === 'select' ? select.value :
+            (options.type === 'textarea' ? textarea.value :
+            (options.type === 'document' ? {
+                filename: documentFilename.value.trim(),
+                content: documentContent.value,
+            } : input.value));
+        const value = options.type === 'textarea' || options.type === 'document' ? rawValue : rawValue.trim();
         const error = options.validate ? options.validate(value) : (!value ? (currentLang === 'zh' ? '此项不能为空' : 'This field is required') : '');
         if (error) {
             const errorEl = document.getElementById('knowledge-dialog-error');
@@ -7996,7 +8084,7 @@ function openKnowledgeDialog(options) {
     overlay.onclick = event => { if (event.target === overlay) close(); };
     input.onkeydown = event => { if (event.key === 'Enter') submitAction(); };
     overlay.classList.remove('hidden');
-    setTimeout(() => (options.type === 'select' ? select : input).focus(), 0);
+    setTimeout(() => (options.type === 'select' ? select : (options.type === 'textarea' ? textarea : (options.type === 'document' ? documentFilename : input))).focus(), 0);
 }
 
 function createKnowledgeCategory() {
@@ -8007,6 +8095,166 @@ function createKnowledgeCategory() {
         hint: currentLang === 'zh' ? '支持嵌套路径，例如 research/ai' : 'Nested paths are supported, e.g. research/ai',
         icon: 'fa-folder-plus',
         onSubmit: path => dispatchKnowledgeAction('create_category', {path}),
+    });
+}
+
+function createKnowledgeDocument() {
+    const categories = _knowledgeCategoryPaths(_knowledgeTreeData);
+    if (!categories.length) {
+        _setKnowledgeStatus(currentLang === 'zh' ? '请先创建分类' : 'Create a category first', true);
+        return;
+    }
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '新建文档' : 'New document',
+        subtitle: currentLang === 'zh' ? '先选择分类，然后输入文件名' : 'Choose a category, then enter a filename',
+        label: currentLang === 'zh' ? '目标分类' : 'Destination category',
+        type: 'select',
+        choices: categories,
+        icon: 'fa-file-circle-plus',
+        onSubmit: category => {
+            openKnowledgeDocumentEditor(category);
+            return null;
+        },
+    });
+}
+
+function openKnowledgeDocumentEditor(category) {
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '新建文档' : 'New document',
+        subtitle: currentLang === 'zh' ? `保存到 ${category}` : `Save to ${category}`,
+        label: '',
+        hint: currentLang === 'zh' ? '文件名可省略 .md 后缀；保存后会自动同步索引。' : 'The .md suffix is optional. Index sync runs after saving.',
+        type: 'document',
+        category,
+        filename: '',
+        content: '',
+        icon: 'fa-file-circle-plus',
+        validate: value => {
+            if (!value.filename) return currentLang === 'zh' ? '文件名不能为空' : 'Filename is required';
+            if (/\.[^.]+$/i.test(value.filename) && !/\.md$/i.test(value.filename)) {
+                return currentLang === 'zh' ? '新建文档仅支持 .md 文件名' : 'New documents must be .md files';
+            }
+            if (!value.content.trim()) return currentLang === 'zh' ? '内容不能为空' : 'Content is required';
+            if (new Blob([value.content]).size > KNOWLEDGE_IMPORT_MAX_FILE_SIZE) {
+                return currentLang === 'zh' ? '内容不能超过 10MB' : 'Content cannot exceed 10MB';
+            }
+            return '';
+        },
+        onSubmit: value => {
+            const safeName = value.filename.endsWith('.md') ? value.filename : `${value.filename}.md`;
+            return dispatchKnowledgeAction('create_document', {
+                path: `${category}/${safeName}`,
+                content: value.content,
+                overwrite: false,
+            }, payload => payload?.path || `${category}/${safeName}`);
+        },
+    });
+}
+
+function selectKnowledgeImportFiles() {
+    const input = document.getElementById('knowledge-import-input');
+    input.value = '';
+    input.onchange = () => {
+        if (input.files && input.files.length) openKnowledgeImportDialog(Array.from(input.files));
+    };
+    input.click();
+}
+
+function openKnowledgeImportDialog(files) {
+    const validationError = validateKnowledgeImportFiles(files);
+    if (validationError) {
+        _setKnowledgeStatus(validationError, true);
+        return;
+    }
+    const choices = _knowledgeCategoryPaths(_knowledgeTreeData);
+    openKnowledgeDialog({
+        title: currentLang === 'zh' ? '导入文档' : 'Import documents',
+        subtitle: currentLang === 'zh' ? `已选择 ${files.length} 个文件` : `${files.length} file(s) selected`,
+        label: currentLang === 'zh' ? '目标分类' : 'Destination category',
+        hint: choices.length ? (currentLang === 'zh' ? '支持 Markdown 和 TXT，TXT 会转成 Markdown 文档' : 'Markdown and TXT are supported. TXT is converted to Markdown.') :
+            (currentLang === 'zh' ? '请先创建一个分类' : 'Create a category first'),
+        type: 'select',
+        choices,
+        icon: 'fa-file-arrow-up',
+        onSubmit: target => importKnowledgeDocuments(files, target),
+    });
+}
+
+async function importKnowledgeDocuments(files, targetCategory) {
+    const validationError = validateKnowledgeImportFiles(files);
+    if (validationError) {
+        _setKnowledgeStatus(validationError, true);
+        return null;
+    }
+    const supported = files.filter(file => /\.(md|txt)$/i.test(file.name || ''));
+    if (!supported.length) {
+        _setKnowledgeStatus(currentLang === 'zh' ? '请选择 .md 或 .txt 文件' : 'Choose .md or .txt files', true);
+        return null;
+    }
+    const formData = new FormData();
+    formData.append('target_category', targetCategory);
+    formData.append('conflict_strategy', 'rename');
+    supported.forEach(file => formData.append('files', file, file.name));
+    _setKnowledgeStatus(currentLang === 'zh' ? '正在导入...' : 'Importing...', false, true);
+    try {
+        const response = await fetch('/api/knowledge/import', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (result.status !== 'success') {
+            _setKnowledgeStatus(result.message || (currentLang === 'zh' ? '导入失败' : 'Import failed'), true);
+            loadKnowledgeView();
+            return null;
+        }
+        _setKnowledgeStatus(_knowledgeResultMessage('import_documents', result.payload), false);
+        // Auto-open the first successfully imported document.
+        const firstImported = (result.payload?.results || []).find(item => item.status === 'imported');
+        loadKnowledgeView(firstImported ? firstImported.path : undefined);
+        return result.payload;
+    } catch (error) {
+        _setKnowledgeStatus(currentLang === 'zh' ? '导入请求失败' : 'Import request failed', true);
+        return null;
+    }
+}
+
+function validateKnowledgeImportFiles(files) {
+    if (!files || !files.length) return currentLang === 'zh' ? '请选择文件' : 'Choose files';
+    if (files.length > KNOWLEDGE_IMPORT_MAX_FILES) {
+        return currentLang === 'zh' ? `一次最多导入 ${KNOWLEDGE_IMPORT_MAX_FILES} 个文件` : `Import at most ${KNOWLEDGE_IMPORT_MAX_FILES} files at a time`;
+    }
+    let total = 0;
+    for (const file of files) {
+        total += file.size || 0;
+        if ((file.size || 0) > KNOWLEDGE_IMPORT_MAX_FILE_SIZE) {
+            return currentLang === 'zh' ? `${file.name} 超过 10MB` : `${file.name} exceeds 10MB`;
+        }
+    }
+    if (total > KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE) {
+        return currentLang === 'zh' ? '单次导入总大小不能超过 200MB' : 'Total import size cannot exceed 200MB';
+    }
+    return '';
+}
+
+let _knowledgeImportDropReady = false;
+function initKnowledgeImportDropZone() {
+    if (_knowledgeImportDropReady) return;
+    const panel = document.getElementById('knowledge-panel-docs');
+    if (!panel) return;
+    _knowledgeImportDropReady = true;
+    ['dragenter', 'dragover'].forEach(name => {
+        panel.addEventListener(name, event => {
+            if (!event.dataTransfer || !event.dataTransfer.types.includes('Files')) return;
+            event.preventDefault();
+            panel.classList.add('knowledge-import-drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+        panel.addEventListener(name, event => {
+            if (event.type === 'drop') {
+                event.preventDefault();
+                const files = Array.from(event.dataTransfer?.files || []);
+                if (files.length) openKnowledgeImportDialog(files);
+            }
+            panel.classList.remove('knowledge-import-drag-over');
+        });
     });
 }
 
