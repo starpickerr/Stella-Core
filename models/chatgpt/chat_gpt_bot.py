@@ -462,3 +462,10 @@ class _AzureChatHTTPClient(OpenAIHTTPClient):
         eq.setdefault("api-version", self._api_version)
         kwargs["extra_query"] = eq
         return super().chat_completions(**kwargs)
+    
+    def get_api_config(self):
+        config = super().get_api_config()
+        # The Azure HTTP client already stores the deployment-scoped base URL.
+        # Passing the raw endpoint again would override it in call_with_tools().
+        config["api_base"] = None
+        return config
