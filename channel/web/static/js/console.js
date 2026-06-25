@@ -8054,7 +8054,10 @@ function openKnowledgeDialog(options) {
         documentContent.focus();
     };
     if (options.type === 'select') {
-        select.innerHTML = (options.choices || []).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+        // Use the shared custom dropdown component instead of a native
+        // <select> so the arrow / menu match the rest of the console.
+        const ddOptions = (options.choices || []).map(value => ({ value, label: value }));
+        initDropdown(select, ddOptions, (options.choices || [])[0] || '', null);
     }
     submit.textContent = currentLang === 'zh' ? '确定' : 'Confirm';
     cancel.textContent = currentLang === 'zh' ? '取消' : 'Cancel';
@@ -8062,7 +8065,7 @@ function openKnowledgeDialog(options) {
 
     const close = () => overlay.classList.add('hidden');
     const submitAction = async () => {
-        const rawValue = options.type === 'select' ? select.value :
+        const rawValue = options.type === 'select' ? getDropdownValue(select) :
             (options.type === 'textarea' ? textarea.value :
             (options.type === 'document' ? {
                 filename: documentFilename.value.trim(),
