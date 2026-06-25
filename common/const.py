@@ -153,6 +153,8 @@ MIMO_V2_FLASH = "mimo-v2-flash"      # MiMo V2 Flash - high-speed
 
 # Doubao (Volcengine Ark)
 DOUBAO = "doubao"
+DOUBAO_SEED_2_1_PRO = "doubao-seed-2-1-pro-260628"
+DOUBAO_SEED_2_1_TURBO = "doubao-seed-2-1-turbo-260628"
 DOUBAO_SEED_2_CODE = "doubao-seed-2-0-code-preview-260215"
 DOUBAO_SEED_2_PRO = "doubao-seed-2-0-pro-260215"
 DOUBAO_SEED_2_LITE = "doubao-seed-2-0-lite-260215"
@@ -223,7 +225,8 @@ MODEL_LIST = [
               QWEN37_PLUS, QWEN37_MAX, QWEN36_PLUS, QWEN35_PLUS, QWEN3_MAX, QWEN_MAX, QWEN_PLUS, QWEN_TURBO, QWEN_LONG,
 
               # Doubao
-              DOUBAO, DOUBAO_SEED_2_CODE, DOUBAO_SEED_2_PRO, DOUBAO_SEED_2_LITE, DOUBAO_SEED_2_MINI,
+              DOUBAO, DOUBAO_SEED_2_1_PRO, DOUBAO_SEED_2_1_TURBO,
+              DOUBAO_SEED_2_CODE, DOUBAO_SEED_2_PRO, DOUBAO_SEED_2_LITE, DOUBAO_SEED_2_MINI,
 
               # Kimi (Moonshot)
               MOONSHOT, "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",

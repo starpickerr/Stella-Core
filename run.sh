@@ -603,7 +603,7 @@ select_model() {
         "MiniMax (MiniMax-M3, etc.)" \
         "GLM (glm-5.2, etc.)" \
         "Qwen (qwen3.7-plus, qwen3.7-max, etc.)" \
-        "Doubao (doubao-seed-2.0, etc.)" \
+        "Doubao (doubao-seed-2.1, etc.)" \
         "Kimi (kimi-k2.7-code, etc.)" \
         "MiMo (mimo-v2.5-pro, etc.)" \
         "LinkAI ($(t "一个 Key 接入所有模型" "access all models via one API"))" \
@@ -635,7 +635,7 @@ configure_model() {
         5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
         6) read_model_config "GLM" "glm-5.2" "ZHIPU_KEY" ;;
         7) read_model_config "Qwen (DashScope)" "qwen3.7-plus" "DASHSCOPE_KEY" ;;
-        8) read_model_config "Doubao (Volcengine Ark)" "doubao-seed-2-0-code-preview-260215" "ARK_KEY" ;;
+        8) read_model_config "Doubao (Volcengine Ark)" "doubao-seed-2-1-pro-260628" "ARK_KEY" ;;
         9) read_model_config "Kimi (Moonshot)" "kimi-k2.7-code" "MOONSHOT_KEY" ;;
         10) read_model_config "MiMo" "mimo-v2.5-pro" "MIMO_KEY" ;;
         11)
