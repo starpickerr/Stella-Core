@@ -181,6 +181,29 @@ def _read_uploaded_file_bytes(file_obj) -> bytes:
     raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
 
 
+def _read_uploaded_file_bytes_limited(file_obj, max_bytes: int) -> bytes:
+    """Read uploaded content and fail once it exceeds max_bytes."""
+    if isinstance(file_obj, bytes):
+        content = file_obj
+    elif isinstance(file_obj, str):
+        content = file_obj.encode("utf-8")
+    elif hasattr(file_obj, "file") and hasattr(file_obj.file, "read"):
+        content = file_obj.file.read(max_bytes + 1)
+    elif hasattr(file_obj, "read"):
+        content = file_obj.read(max_bytes + 1)
+    elif hasattr(file_obj, "value"):
+        content = file_obj.value
+    else:
+        raise ValueError("Unable to read uploaded file content")
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    if not isinstance(content, bytes):
+        raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
+    if len(content) > max_bytes:
+        raise ValueError("file too large")
+    return content
+
+
 def _raw_web_input():
     """Return unprocessed multipart form data when web.py exposes rawinput."""
     rawinput = getattr(getattr(web, "webapi", None), "rawinput", None)
@@ -1162,6 +1185,7 @@ class WebChannel(ChatChannel):
             '/api/knowledge/read', 'KnowledgeReadHandler',
             '/api/knowledge/graph', 'KnowledgeGraphHandler',
             '/api/knowledge/action', 'KnowledgeActionHandler',
+            '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -4728,6 +4752,71 @@ class KnowledgeActionHandler:
             }, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Knowledge action error: {e}")
+            return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
+
+
+class KnowledgeImportHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.knowledge.service import KnowledgeService
+            content_length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
+            if content_length > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+                return json.dumps({
+                    "status": "error",
+                    "code": 413,
+                    "message": "import batch too large",
+                    "payload": None,
+                })
+            params = _raw_web_input()
+            target_category = params.get("target_category", "")
+            conflict_strategy = params.get("conflict_strategy", "skip")
+            uploaded = _ensure_list(params.get("files"))
+            single = params.get("file")
+            if single is not None:
+                uploaded.append(single)
+            if not uploaded:
+                return json.dumps({"status": "error", "code": 400, "message": "No files uploaded", "payload": None})
+            if len(uploaded) > KnowledgeService.MAX_IMPORT_FILES:
+                return json.dumps({
+                    "status": "error",
+                    "code": 400,
+                    "message": f"too many files: max {KnowledgeService.MAX_IMPORT_FILES}",
+                    "payload": None,
+                })
+
+            files = []
+            total_size = 0
+            for file_obj in uploaded:
+                if file_obj is None:
+                    continue
+                filename = getattr(file_obj, "filename", "") or getattr(file_obj, "name", "")
+                content = _read_uploaded_file_bytes_limited(file_obj, KnowledgeService.MAX_IMPORT_FILE_SIZE)
+                total_size += len(content)
+                if total_size > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+                    return json.dumps({
+                        "status": "error",
+                        "code": 413,
+                        "message": "import batch too large",
+                        "payload": None,
+                    })
+                files.append({
+                    "filename": filename,
+                    "content": content,
+                })
+
+            result = KnowledgeService(_get_workspace_root()).dispatch("import_documents", {
+                "target_category": target_category,
+                "conflict_strategy": conflict_strategy,
+                "files": files,
+            })
+            return json.dumps({
+                "status": "success" if result["code"] < 300 else "error",
+                **result,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Knowledge import error: {e}", exc_info=True)
             return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
 
 

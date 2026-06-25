@@ -209,3 +209,90 @@ def test_move_does_not_overwrite_target_created_concurrently(tmp_path):
     assert source.read_text(encoding="utf-8") == "source"
     assert target.read_text(encoding="utf-8") == "concurrent"
     assert manager.storage.deleted == []
+
+
+def test_create_document_writes_and_syncs(tmp_path):
+    svc, manager = service(tmp_path)
+    (tmp_path / "knowledge/notes").mkdir()
+
+    result = svc.dispatch("create_document", {
+        "path": "notes/new.md", "content": "# New\nBody",
+    })
+
+    assert result["code"] == 200
+    assert (tmp_path / "knowledge/notes/new.md").read_text(encoding="utf-8") == "# New\nBody"
+    assert manager.dirty == 1
+    assert manager.synced == 1
+
+
+def test_import_documents_supports_md_txt_and_rename_conflicts(tmp_path):
+    svc, manager = service(tmp_path)
+    (tmp_path / "knowledge/notes").mkdir()
+    (tmp_path / "knowledge/notes/a.md").write_text("existing", encoding="utf-8")
+
+    result = svc.dispatch("import_documents", {
+        "target_category": "notes",
+        "conflict_strategy": "rename",
+        "files": [
+            {"filename": "a.md", "content": b"# A"},
+            {"filename": "plain.txt", "content": "plain text"},
+        ],
+    })
+
+    assert result["code"] == 200
+    assert result["payload"]["imported"] == 2
+    assert (tmp_path / "knowledge/notes/a-1.md").read_text(encoding="utf-8") == "# A"
+    assert (tmp_path / "knowledge/notes/plain.md").read_text(encoding="utf-8") == "plain text"
+    assert manager.storage.deleted == []
+    assert manager.synced == 1
+
+
+def test_import_documents_skip_overwrite_and_failures(tmp_path):
+    svc, manager = service(tmp_path)
+    (tmp_path / "knowledge/notes").mkdir()
+    existing = tmp_path / "knowledge/notes/a.md"
+    existing.write_text("old", encoding="utf-8")
+
+    skipped = svc.dispatch("import_documents", {
+        "target_category": "notes",
+        "conflict_strategy": "skip",
+        "files": [{"filename": "a.md", "content": b"new"}],
+    })
+    assert skipped["payload"]["skipped"] == 1
+    assert existing.read_text(encoding="utf-8") == "old"
+    assert manager.synced == 0
+
+    overwritten = svc.dispatch("import_documents", {
+        "target_category": "notes",
+        "conflict_strategy": "overwrite",
+        "files": [
+            {"filename": "a.md", "content": b"new"},
+            {"filename": "bad.pdf", "content": b"%PDF"},
+        ],
+    })
+    assert overwritten["payload"]["imported"] == 1
+    assert overwritten["payload"]["failed"] == 1
+    assert existing.read_text(encoding="utf-8") == "new"
+    assert manager.storage.deleted == ["knowledge/notes/a.md"]
+    assert manager.synced == 1
+
+
+def test_import_documents_rejects_large_files_and_batches(tmp_path):
+    svc, manager = service(tmp_path)
+    (tmp_path / "knowledge/notes").mkdir()
+    assert svc.MAX_IMPORT_TOTAL_SIZE == 200 * 1024 * 1024
+
+    too_large = svc.dispatch("import_documents", {
+        "target_category": "notes",
+        "files": [{"filename": "big.md", "content": b"x" * (svc.MAX_IMPORT_FILE_SIZE + 1)}],
+    })
+    assert too_large["payload"]["failed"] == 1
+    assert too_large["payload"]["results"][0]["reason"] == "file too large"
+
+    too_many = svc.dispatch("import_documents", {
+        "target_category": "notes",
+        "files": [{"filename": f"{i}.md", "content": b"x"} for i in range(svc.MAX_IMPORT_FILES + 1)],
+    })
+    assert too_many["code"] == 403
+    assert "too many files" in too_many["message"]
+    assert manager.synced == 0
