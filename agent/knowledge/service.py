@@ -17,6 +17,7 @@ import shutil
 import threading
 from pathlib import Path
 from typing import Optional, Iterable
+from urllib.parse import quote
 
 from common.log import logger
 from config import conf
@@ -79,7 +80,14 @@ class KnowledgeService:
 
     def _manager(self):
         if self._memory_manager is None:
-            self._memory_manager = MemoryManager(MemoryConfig(workspace_root=self.workspace_root))
+            # Reuse the shared embedding provider selection so knowledge index
+            # sync gets vectors too, instead of degrading to keyword-only.
+            from agent.memory.embedding import create_default_embedding_provider
+            embedding_provider = create_default_embedding_provider()
+            self._memory_manager = MemoryManager(
+                MemoryConfig(workspace_root=self.workspace_root),
+                embedding_provider=embedding_provider,
+            )
         return self._memory_manager
 
     @staticmethod
@@ -113,6 +121,84 @@ class KnowledgeService:
             manager.storage.delete_by_path(f"knowledge/{rel_path}")
         manager.mark_dirty()
         self._run_sync(manager.sync())
+
+    @staticmethod
+    def _extract_title(md_path: Path, fallback: str) -> str:
+        """Read a markdown file's H1 title, falling back to the file stem."""
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                for _ in range(20):
+                    line = f.readline()
+                    if not line:
+                        break
+                    stripped = line.strip()
+                    if stripped.startswith("# "):
+                        return stripped[2:].strip() or fallback
+        except Exception:
+            pass
+        return fallback
+
+    def rebuild_index_md(self) -> bool:
+        """Regenerate knowledge/index.md from the actual directory tree.
+
+        Keeps the index in sync with real files so it never drifts or loses
+        documents. Returns True when the file was (re)written.
+        """
+        root = Path(self.knowledge_dir)
+        if not root.is_dir():
+            return False
+
+        def collect(dir_path: Path) -> list:
+            # Return sorted (rel_path, title) tuples for *.md under dir_path,
+            # excluding protected files at the knowledge root and dot files.
+            entries = []
+            for md in sorted(dir_path.rglob("*.md")):
+                rel = md.relative_to(root).as_posix()
+                if any(part.startswith(".") for part in md.relative_to(root).parts):
+                    continue
+                if rel in self.PROTECTED_FILES:
+                    continue
+                entries.append((rel, self._extract_title(md, md.stem)))
+            return entries
+
+        all_entries = collect(root)
+
+        def link(rel: str) -> str:
+            # Encode each path segment so spaces / special chars stay valid in
+            # markdown links, while keeping the slashes between segments.
+            encoded = "/".join(quote(part) for part in rel.split("/"))
+            return f"./{encoded}"
+
+        lines = ["# 知识库目录", ""]
+        # Root-level documents first (no category dir).
+        root_docs = [(rel, title) for rel, title in all_entries if "/" not in rel]
+        for rel, title in root_docs:
+            lines.append(f"- [{title}]({link(rel)})")
+        if root_docs:
+            lines.append("")
+
+        # Group remaining documents by their top-level category.
+        categories = {}
+        for rel, title in all_entries:
+            if "/" not in rel:
+                continue
+            category = rel.split("/", 1)[0]
+            categories.setdefault(category, []).append((rel, title))
+
+        for category in sorted(categories.keys()):
+            lines.append(f"## {category}")
+            for rel, title in categories[category]:
+                lines.append(f"- [{title}]({link(rel)})")
+            lines.append("")
+
+        content = "\n".join(lines).rstrip() + "\n"
+        index_path = root / "index.md"
+        try:
+            index_path.write_text(content, encoding="utf-8")
+            return True
+        except Exception as exc:
+            logger.warning(f"[KnowledgeService] Failed to rebuild index.md: {exc}")
+            return False
 
     def _sanitize_document_name(self, filename: str) -> str:
         name = os.path.basename((filename or "").replace("\\", "/")).strip()
@@ -171,6 +257,8 @@ class KnowledgeService:
         old_paths = [rel_path] if full_path.exists() else []
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content or "", encoding="utf-8")
+        # Keep index.md in sync before reindexing so it is indexed too.
+        self.rebuild_index_md()
         self._sync_index(old_paths, force=True)
         return {"path": rel_path, "created": True, "overwritten": bool(old_paths)}
 
@@ -218,6 +306,8 @@ class KnowledgeService:
                 results.append({"filename": filename or "", "status": "failed", "reason": str(exc)})
 
         if imported:
+            # Keep index.md in sync before reindexing so it is indexed too.
+            self.rebuild_index_md()
             self._sync_index(old_paths, force=True)
         return {"results": results, "imported": imported, "skipped": skipped, "failed": failed}
 
@@ -394,14 +484,18 @@ class KnowledgeService:
                 if not is_root:
                     stats["pages"] += 1
                     stats["size"] += size
-                title = name.replace(".md", "")
-                try:
-                    with open(full, "r", encoding="utf-8") as f:
-                        first_line = f.readline().strip()
-                    if first_line.startswith("# "):
-                        title = first_line[2:].strip()
-                except Exception:
-                    pass
+                # Prefer the H1 heading as a readable title for normal docs.
+                # System files (index.md / log.md) keep their filename so the
+                # tree never hides what they actually are.
+                title = name[:-3]
+                if name not in self.PROTECTED_FILES:
+                    try:
+                        with open(full, "r", encoding="utf-8") as f:
+                            first_line = f.readline().strip()
+                        if first_line.startswith("# "):
+                            title = first_line[2:].strip() or title
+                    except Exception:
+                        pass
                 files.append({"name": name, "title": title, "size": size})
         return files, children
 

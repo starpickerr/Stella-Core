@@ -336,9 +336,9 @@ const I18N = {
         knowledge_select_hint: 'Select a document to view', knowledge_empty_hint: 'No knowledge pages yet',
         knowledge_empty_guide: 'Send documents, links or topics to the agent in chat, and it will automatically organize them into your knowledge base.',
         knowledge_go_chat: 'Start a conversation',
-        knowledge_new_category: 'New category',
-        knowledge_new_document: 'New document',
-        knowledge_import_documents: 'Import documents',
+        knowledge_new_category: 'Category',
+        knowledge_new_document: 'Document',
+        knowledge_import_documents: 'Import',
         welcome_subtitle: 'I can help you answer questions, manage your computer, create and execute skills, and keep growing through <br> long-term memory and a personal knowledge base.',
         example_sys_title: 'System', example_sys_text: 'Show me the files in the workspace',
         example_task_title: 'Scheduler', example_task_text: 'Remind me to check the server in 5 minutes',
@@ -7771,7 +7771,7 @@ const KNOWLEDGE_IMPORT_MAX_FILES = 100;
 const KNOWLEDGE_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
-function loadKnowledgeView() {
+function loadKnowledgeView(targetPath) {
     // Reset to docs tab
     switchKnowledgeTab('docs');
     _knowledgeGraphLoaded = false;
@@ -7808,6 +7808,15 @@ function loadKnowledgeView() {
 
         renderKnowledgeTree(tree, rootFiles);
 
+        // Prefer opening the just created/imported file; ensure its group is
+        // expanded so the active item is visible in the tree.
+        const targetTitle = targetPath ? _findKnowledgeFileTitle(targetPath) : null;
+        if (targetTitle !== null) {
+            _expandKnowledgeGroupFor(targetPath);
+            openKnowledgeFile(targetPath, targetTitle);
+            return;
+        }
+
         // Auto-select the first file (desktop only)
         if (window.innerWidth >= 768) {
             const firstFile = rootFiles.length > 0 ? rootFiles[0] : null;
@@ -7823,6 +7832,36 @@ function loadKnowledgeView() {
             document.getElementById('knowledge-content-viewer').classList.add('hidden');
         }
     }).catch(() => {});
+}
+
+// Find a file's display title by its relative path within the knowledge tree.
+// Returns the title, or null when the path is not present.
+function _findKnowledgeFileTitle(path) {
+    if (!path) return null;
+    const rootHit = (_knowledgeRootFiles || []).find(f => f.name === path);
+    if (rootHit) return rootHit.title || rootHit.name;
+    const walk = (groups, parentPath) => {
+        for (const group of groups || []) {
+            const groupPath = parentPath ? `${parentPath}/${group.dir}` : group.dir;
+            const hit = (group.files || []).find(f => `${groupPath}/${f.name}` === path);
+            if (hit) return hit.title || hit.name;
+            const childHit = walk(group.children, groupPath);
+            if (childHit !== null) return childHit;
+        }
+        return null;
+    };
+    return walk(_knowledgeTreeData, '');
+}
+
+// Open every ancestor group of the given file path so it is visible.
+function _expandKnowledgeGroupFor(path) {
+    if (!path || !path.includes('/')) return;
+    const target = document.querySelector(`.knowledge-tree-file[data-path="${CSS.escape(path)}"]`);
+    let node = target ? target.closest('.knowledge-tree-group') : null;
+    while (node) {
+        node.classList.add('open');
+        node = node.parentElement ? node.parentElement.closest('.knowledge-tree-group') : null;
+    }
 }
 
 function renderKnowledgeTree(tree, rootFilesOrFilter, filter) {
@@ -7906,7 +7945,7 @@ function _knowledgeCategoryActions(path) {
     return `<span class="knowledge-actions">${_knowledgeActionButton('fa-pen', '重命名', `renameKnowledgeCategory(${value})`)}${_knowledgeActionButton('fa-trash', '删除', `deleteKnowledgeCategory(${value})`)}</span>`;
 }
 
-async function dispatchKnowledgeAction(action, payload) {
+async function dispatchKnowledgeAction(action, payload, openPathResolver) {
     _setKnowledgeStatus(currentLang === 'zh' ? '处理中...' : 'Working...', false, true);
     try {
         const response = await fetch('/api/knowledge/action', {
@@ -7921,7 +7960,9 @@ async function dispatchKnowledgeAction(action, payload) {
             return null;
         }
         _setKnowledgeStatus(_knowledgeResultMessage(action, result.payload), false);
-        loadKnowledgeView();
+        // Optionally auto-open the affected file after the tree refreshes.
+        const openPath = openPathResolver ? openPathResolver(result.payload) : null;
+        loadKnowledgeView(openPath || undefined);
         return result.payload;
     } catch (error) {
         _setKnowledgeStatus(currentLang === 'zh' ? '请求失败，请稍后重试' : 'Request failed, please try again', true);
@@ -7941,6 +7982,7 @@ function _setKnowledgeStatus(message, isError, persistent) {
 function _knowledgeResultMessage(action, payload) {
     if (currentLang !== 'zh') {
         return action === 'create_category' ? 'Category created' :
+            action === 'create_document' ? 'Document created' :
             action === 'rename_category' ? 'Category renamed' :
             action === 'delete_category' ? 'Category deleted' :
             action === 'import_documents' ? `${payload?.imported || 0} imported · ${payload?.skipped || 0} skipped · ${payload?.failed || 0} failed` :
@@ -7948,6 +7990,7 @@ function _knowledgeResultMessage(action, payload) {
             `${payload?.deleted || 0} document deleted`;
     }
     return action === 'create_category' ? '分类已创建' :
+        action === 'create_document' ? '文档已创建' :
         action === 'rename_category' ? '分类已重命名' :
         action === 'delete_category' ? '分类已删除' :
         action === 'import_documents' ? `导入 ${payload?.imported || 0} 个，跳过 ${payload?.skipped || 0} 个，失败 ${payload?.failed || 0} 个` :
@@ -8003,7 +8046,9 @@ function openKnowledgeDialog(options) {
     templateBtn.onclick = () => {
         if (documentContent.value.trim()) return;
         const title = (documentFilename.value || 'untitled').replace(/\.md$/i, '');
-        documentContent.value = `# ${title}\n\n## 摘要\n\n\n## 关键点\n\n- \n\n## 参考\n\n`;
+        documentContent.value = currentLang === 'zh'
+            ? `# ${title}\n\n## 摘要\n\n\n## 关键点\n\n- \n\n## 参考\n\n`
+            : `# ${title}\n\n## Summary\n\n\n## Key points\n\n- \n\n## References\n\n`;
         documentContent.focus();
     };
     if (options.type === 'select') {
@@ -8101,7 +8146,7 @@ function openKnowledgeDocumentEditor(category) {
                 path: `${category}/${safeName}`,
                 content: value.content,
                 overwrite: false,
-            });
+            }, payload => payload?.path || `${category}/${safeName}`);
         },
     });
 }
@@ -8160,7 +8205,9 @@ async function importKnowledgeDocuments(files, targetCategory) {
             return null;
         }
         _setKnowledgeStatus(_knowledgeResultMessage('import_documents', result.payload), false);
-        loadKnowledgeView();
+        // Auto-open the first successfully imported document.
+        const firstImported = (result.payload?.results || []).find(item => item.status === 'imported');
+        loadKnowledgeView(firstImported ? firstImported.path : undefined);
         return result.payload;
     } catch (error) {
         _setKnowledgeStatus(currentLang === 'zh' ? '导入请求失败' : 'Import request failed', true);
