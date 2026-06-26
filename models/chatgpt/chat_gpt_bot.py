@@ -430,6 +430,13 @@ class AzureChatGPTBot(ChatGPTBot):
         else:
             return False, _t("图片生成失败，未配置text_to_image参数", "Image generation failed: text_to_image is not configured")
 
+    def get_api_config(self):
+        config = super().get_api_config()
+        # The Azure HTTP client already stores the deployment-scoped base URL.
+        # Passing the raw endpoint again would override it in call_with_tools().
+        config["api_base"] = None
+        return config
+
 
 class _AzureChatHTTPClient(OpenAIHTTPClient):
     """Subclass that injects Azure's ``api-version`` query param and ``api-key``
@@ -463,9 +470,3 @@ class _AzureChatHTTPClient(OpenAIHTTPClient):
         kwargs["extra_query"] = eq
         return super().chat_completions(**kwargs)
     
-    def get_api_config(self):
-        config = super().get_api_config()
-        # The Azure HTTP client already stores the deployment-scoped base URL.
-        # Passing the raw endpoint again would override it in call_with_tools().
-        config["api_base"] = None
-        return config
