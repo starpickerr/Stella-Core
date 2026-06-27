@@ -114,9 +114,19 @@ export class PythonBackend extends EventEmitter {
     if (bundled) {
       command = bundled
       args = []
-      // The onedir bundle reads data files relative to the executable's dir.
-      cwd = path.dirname(bundled)
-      this.emit('log', `Starting bundled backend: ${bundled}`)
+      // Run from the writable data dir (~/.cow), NOT the install dir. When the
+      // app is installed under Program Files, a non-admin user has no write
+      // permission to the executable's folder, so any relative-path write
+      // during startup would crash the backend (works only as admin). The
+      // bundle reads its read-only resources via sys._MEIPASS, so cwd is free
+      // to point elsewhere.
+      try {
+        fs.mkdirSync(COW_DATA_DIR, { recursive: true })
+      } catch {
+        // ignore — get_data_root() also ensures the dir on the Python side
+      }
+      cwd = COW_DATA_DIR
+      this.emit('log', `Starting bundled backend: ${bundled} (cwd=${cwd})`)
     } else {
       const pythonPath = this.findPython()
       const appPath = path.join(this.backendPath, 'app.py')
