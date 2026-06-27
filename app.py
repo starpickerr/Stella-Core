@@ -15,9 +15,9 @@ import threading
 
 _channel_mgr = None
 
-# Desktop mode: a lighter runtime for the packaged Electron client. The plugin
-# framework is still bundled (it's tiny and on the web channel's import path),
-# but we skip loading actual plugins and MCP tools to keep startup fast.
+# Desktop mode: a lighter runtime for the packaged Electron client. Plugins are
+# loaded in a background thread (so command plugins like cow_cli/godcmd work
+# without slowing startup), while MCP warmup is still skipped to keep it fast.
 DESKTOP_MODE = os.environ.get("COW_DESKTOP") == "1"
 
 
@@ -80,8 +80,16 @@ class ChannelManager:
             if self._primary_channel is None and channels:
                 self._primary_channel = channels[0][1]
 
-            if first_start and not DESKTOP_MODE:
-                PluginManager().load_plugins()
+            if first_start:
+                if DESKTOP_MODE:
+                    # Load plugins in the background so command plugins
+                    # (cow_cli / godcmd, e.g. /status, #help) work in the
+                    # desktop client, without blocking web-service readiness.
+                    threading.Thread(
+                        target=PluginManager().load_plugins, daemon=True
+                    ).start()
+                else:
+                    PluginManager().load_plugins()
 
                 # Cloud client is optional. It is only started when
                 # use_linkai=True AND cloud_deployment_id is set.
