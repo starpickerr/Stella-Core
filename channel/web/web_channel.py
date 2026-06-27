@@ -263,7 +263,13 @@ class WebChannel(ChatChannel):
         self.session_queues = {}  # session_id -> Queue (fallback polling)
         self.request_to_session = {}  # request_id -> session_id
         self.sse_queues = {}  # request_id -> Queue (SSE streaming)
+        # request_id -> last-active timestamp. Refreshed while the SSE
+        # generator is being consumed (client still connected). The janitor
+        # only reclaims queues whose generator stopped refreshing this, so a
+        # long-running but still-streaming reply is never wrongly killed.
+        self.sse_last_active = {}
         self._http_server = None
+        self._sse_janitor_started = False
 
     def _generate_msg_id(self):
         """生成唯一的消息ID"""
@@ -888,6 +894,7 @@ class WebChannel(ChatChannel):
 
             if use_sse:
                 self.sse_queues[request_id] = Queue()
+                self.sse_last_active[request_id] = time.time()
 
             trigger_prefixs = conf().get("single_chat_prefix", [""])
             if check_prefix(prompt, trigger_prefixs) is None:
@@ -902,8 +909,7 @@ class WebChannel(ChatChannel):
 
             if context is None:
                 logger.warning(f"[WebChannel] Context is None for session {session_id}, message may be filtered")
-                if request_id in self.sse_queues:
-                    del self.sse_queues[request_id]
+                self._drop_sse_request(request_id)
                 return json.dumps({"status": "error", "message": "Message was filtered"})
 
             context["session_id"] = session_id
@@ -925,6 +931,60 @@ class WebChannel(ChatChannel):
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+    def _drop_sse_request(self, request_id: str):
+        """Reclaim all state tied to an SSE request to prevent fd/memory leaks.
+
+        Removing the queue lets the WSGI generator and its socket be released,
+        and dropping request_to_session avoids unbounded map growth.
+        """
+        self.sse_queues.pop(request_id, None)
+        self.sse_last_active.pop(request_id, None)
+        self.request_to_session.pop(request_id, None)
+
+    def _start_sse_janitor(self):
+        """Start a background thread that reclaims orphaned SSE queues.
+
+        When a client disconnects before the "done" event arrives (browser
+        closed, session switched, network drop), the generator may keep the
+        queue around to allow reconnection. Without a sweep these orphans
+        accumulate, leaking file descriptors until cheroot raises
+        "[Errno 24] Too many open files".
+
+        Reclamation is based on idle time, not total age: an active stream
+        refreshes ``sse_last_active`` every second while its generator is being
+        consumed, so a long-running reply (even hours long) is never killed
+        while the client stays connected. Only queues that stopped refreshing
+        (client gone) past SSE_IDLE_TIMEOUT are reclaimed.
+        """
+        if self._sse_janitor_started:
+            return
+        self._sse_janitor_started = True
+
+        SSE_IDLE_TIMEOUT = 1800  # 30 minutes with no client consumption
+        SWEEP_INTERVAL = 60
+
+        def _sweep():
+            while True:
+                time.sleep(SWEEP_INTERVAL)
+                try:
+                    now = time.time()
+                    stale = [
+                        rid for rid, ts in list(self.sse_last_active.items())
+                        if now - ts > SSE_IDLE_TIMEOUT
+                    ]
+                    for rid in stale:
+                        self._drop_sse_request(rid)
+                    if stale:
+                        logger.info(
+                            f"[WebChannel] SSE janitor reclaimed {len(stale)} "
+                            f"idle stream(s)"
+                        )
+                except Exception as e:
+                    logger.warning(f"[WebChannel] SSE janitor error: {e}")
+
+        t = threading.Thread(target=_sweep, name="sse-janitor", daemon=True)
+        t.start()
 
     def stream_response(self, request_id: str):
         """
@@ -950,6 +1010,10 @@ class WebChannel(ChatChannel):
 
         try:
             while time.time() < deadline:
+                # Mark the stream alive on every loop. While the client keeps
+                # consuming, the generator runs and refreshes this, so the
+                # janitor won't reclaim a long-running but active stream.
+                self.sse_last_active[request_id] = time.time()
                 try:
                     item = q.get(timeout=1)
                 except Empty:
@@ -978,13 +1042,21 @@ class WebChannel(ChatChannel):
                     # voice_attach payload through to the browser.
                     post_done = True
                     post_deadline = time.time() + 2  # 2s post-attach tail
+        except GeneratorExit:
+            # Client disconnected (WSGI closed the generator). If the reply is
+            # already complete there is nothing to resume, so reclaim now to
+            # release the socket fd. Otherwise keep the queue briefly so a
+            # reconnect with the same request_id can resume; the janitor will
+            # reclaim it if no reconnect happens.
+            if post_done:
+                self._drop_sse_request(request_id)
+            raise
         finally:
-            # Only drop the queue once the reply is actually complete. If the
-            # client disconnected early (e.g. switched sessions and will
-            # re-attach with the same request_id), keep the queue so the new
-            # connection can resume reading the remaining events.
+            # Drop the queue once the reply is actually complete or the idle
+            # deadline has passed. Early client disconnects are handled by the
+            # GeneratorExit branch above and the background janitor.
             if post_done or time.time() >= deadline:
-                self.sse_queues.pop(request_id, None)
+                self._drop_sse_request(request_id)
 
     def cancel_request(self):
         """
@@ -1222,6 +1294,8 @@ class WebChannel(ChatChannel):
         server.requests.min = 20
         server.requests.max = 80
         self._http_server = server
+        # Reclaim orphaned SSE queues so disconnected clients don't leak fds.
+        self._start_sse_janitor()
         try:
             server.start()
         except (KeyboardInterrupt, SystemExit):
