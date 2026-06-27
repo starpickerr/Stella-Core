@@ -9,7 +9,9 @@ export type ChatInputHandle = (text: string, attachments: Attachment[]) => void
 interface SlashCommand {
   cmd: string
   desc: string
-  action: 'new' | 'clear'
+  // 'new'/'clear' run a local action; 'send' (default) is a completion that
+  // gets sent to the backend as a normal message (handled by command plugins).
+  action?: 'new' | 'clear'
 }
 
 interface ChatInputProps {
@@ -35,9 +37,25 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Local actions ('new'/'clear') plus completion commands handled by backend
+  // command plugins (cow_cli/godcmd). Commands ending with a space expect an
+  // argument, so selecting them keeps focus in the input instead of sending.
   const slashCommands: SlashCommand[] = [
-    { cmd: '/new', desc: t('session_new'), action: 'new' },
-    { cmd: '/clear', desc: t('chat_clear_context'), action: 'clear' },
+    { cmd: '/new', desc: t('slash_new'), action: 'new' },
+    { cmd: '/clear', desc: t('slash_clear'), action: 'clear' },
+    { cmd: '/help', desc: t('slash_help') },
+    { cmd: '/status', desc: t('slash_status') },
+    { cmd: '/context', desc: t('slash_context') },
+    { cmd: '/skill list', desc: t('slash_skill_list') },
+    { cmd: '/skill search ', desc: t('slash_skill_search') },
+    { cmd: '/skill install ', desc: t('slash_skill_install') },
+    { cmd: '/memory dream ', desc: t('slash_memory_dream') },
+    { cmd: '/knowledge', desc: t('slash_knowledge') },
+    { cmd: '/knowledge list', desc: t('slash_knowledge_list') },
+    { cmd: '/config', desc: t('slash_config') },
+    { cmd: '/cancel', desc: t('slash_cancel') },
+    { cmd: '/logs', desc: t('slash_logs') },
+    { cmd: '/version', desc: t('slash_version') },
   ]
   const filtered = slashCommands.filter((c) => c.cmd.startsWith(text.trim().toLowerCase()))
 
@@ -60,11 +78,30 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   })
 
   const runSlash = (c: SlashCommand) => {
-    setText('')
     setSlashOpen(false)
-    resetHeight()
-    if (c.action === 'new') onNewChat()
-    else if (c.action === 'clear') onClearContext()
+    if (c.action === 'new') {
+      setText('')
+      resetHeight()
+      onNewChat()
+      return
+    }
+    if (c.action === 'clear') {
+      setText('')
+      resetHeight()
+      onClearContext()
+      return
+    }
+    // Completion command. If it expects an argument (trailing space), keep it
+    // in the input so the user can type the argument; otherwise send it now.
+    const needsArg = c.cmd.endsWith(' ')
+    if (needsArg) {
+      setText(c.cmd)
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    } else {
+      onSend(c.cmd.trim(), [])
+      setText('')
+      resetHeight()
+    }
   }
 
   const handleSubmit = useCallback(() => {
@@ -205,18 +242,27 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
 
         {/* Slash command menu */}
         {slashOpen && filtered.length > 0 && (
-          <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-default bg-elevated shadow-lg overflow-hidden z-30">
+          <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-80 overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
+            <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
+              {t('slash_menu_title')}
+            </div>
             {filtered.map((c, i) => (
               <button
                 key={c.cmd}
                 onMouseEnter={() => setSlashIndex(i)}
                 onClick={() => runSlash(c)}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left cursor-pointer transition-colors ${
+                className={`w-full flex items-center justify-between gap-3 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
                   i === slashIndex ? 'bg-accent-soft' : 'hover:bg-surface-2'
                 }`}
               >
-                <span className="text-sm font-medium text-accent">{c.cmd}</span>
-                <span className="text-xs text-content-tertiary">{c.desc}</span>
+                <span
+                  className={`text-[13px] font-medium font-mono whitespace-nowrap ${
+                    i === slashIndex ? 'text-accent' : 'text-content-secondary'
+                  }`}
+                >
+                  {c.cmd}
+                </span>
+                <span className="text-xs text-content-tertiary whitespace-nowrap truncate">{c.desc}</span>
               </button>
             ))}
           </div>

@@ -9,9 +9,28 @@ import sys
 from common.log import logger
 from common.singleton import singleton
 from common.sorted_dict import SortedDict
-from config import conf, remove_plugin_config, write_plugin_config
+from config import conf, remove_plugin_config, write_plugin_config, get_data_root, get_resource_root
 
 from .event import *
+
+
+def _plugins_resource_dir():
+    """Read-only plugins source dir. In a frozen bundle it lives under the
+    resource root (sys._MEIPASS); from source it's the CWD-relative ./plugins."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(get_resource_root(), "plugins")
+    return "./plugins"
+
+
+def _plugins_data_dir():
+    """Writable dir for plugin runtime config (plugins.json). In a frozen
+    bundle the resource dir is read-only, so redirect writes to the data root
+    (~/.cow); from source it stays the CWD-relative ./plugins."""
+    if getattr(sys, "frozen", False):
+        d = os.path.join(get_data_root(), "plugins")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return "./plugins"
 
 
 @singleton
@@ -45,15 +64,21 @@ class PluginManager:
         return wrapper
 
     def save_config(self):
-        with open("./plugins/plugins.json", "w", encoding="utf-8") as f:
+        cfg_path = os.path.join(_plugins_data_dir(), "plugins.json")
+        with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(self.pconf, f, indent=4, ensure_ascii=False)
 
     def load_config(self):
         logger.debug("Loading plugins config...")
 
         modified = False
-        if os.path.exists("./plugins/plugins.json"):
-            with open("./plugins/plugins.json", "r", encoding="utf-8") as f:
+        # Prefer the writable copy (data dir); fall back to the one shipped in
+        # the resource dir (first run in a frozen bundle, before any save).
+        data_cfg = os.path.join(_plugins_data_dir(), "plugins.json")
+        res_cfg = os.path.join(_plugins_resource_dir(), "plugins.json")
+        cfg_path = data_cfg if os.path.exists(data_cfg) else res_cfg
+        if os.path.exists(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
                 pconf = json.load(f)
                 pconf["plugins"] = SortedDict(lambda k, v: v["priority"], pconf["plugins"], reverse=True)
         else:
@@ -73,7 +98,7 @@ class PluginManager:
         从 plugins/config.json 中加载所有插件的配置并写入 config.py 的全局配置中，供插件中使用
         插件实例中通过 config.pconf(plugin_name) 即可获取该插件的配置
         """
-        all_config_path = "./plugins/config.json"
+        all_config_path = os.path.join(_plugins_resource_dir(), "config.json")
         try:
             if os.path.exists(all_config_path):
                 # read from all plugins config
@@ -88,7 +113,7 @@ class PluginManager:
 
     def scan_plugins(self):
         logger.debug("Scanning plugins ...")
-        plugins_dir = "./plugins"
+        plugins_dir = _plugins_resource_dir()
         raws = [self.plugins[name] for name in self.plugins]
         for plugin_name in os.listdir(plugins_dir):
             plugin_path = os.path.join(plugins_dir, plugin_name)

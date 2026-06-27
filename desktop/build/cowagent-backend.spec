@@ -52,15 +52,19 @@ hiddenimports += collect_submodules('models')
 hiddenimports += collect_submodules('voice')
 hiddenimports += collect_submodules('bridge')
 
-# Plugin framework: WebChannel -> ChatChannel imports `from plugins import *`,
-# so the framework package must be present even though desktop mode never loads
-# actual plugins (it's only ~tens of KB of code).
+# Plugin framework + plugins. WebChannel -> ChatChannel imports
+# `from plugins import *`, and desktop mode loads plugins (in a background
+# thread) so command plugins like cow_cli/godcmd (/status, #help) work. Plugin
+# modules are imported dynamically by name in scan_plugins(), so list them
+# explicitly. The `cli` package is a cow_cli dependency (`from cli import ...`).
 hiddenimports += [
     'plugins',
     'plugins.event',
     'plugins.plugin',
     'plugins.plugin_manager',
 ]
+hiddenimports += collect_submodules('plugins')
+hiddenimports += collect_submodules('cli')
 
 # Third-party SDKs that use lazy/conditional imports internally.
 hiddenimports += collect_submodules('dashscope')
@@ -75,6 +79,9 @@ hiddenimports += [
 datas = [
     (rp('config-template.json'), '.'),
     (rp('skills'), 'skills'),
+    # PluginManager.scan_plugins() walks the on-disk ./plugins dir at runtime
+    # (it doesn't rely solely on imports), so ship the package directory too.
+    (rp('plugins'), 'plugins'),
     # Web console served on the backend port: ship chat.html plus its static
     # assets (~1.9MB) so the browser-based console works as a debug/fallback
     # entry alongside the Electron UI.
