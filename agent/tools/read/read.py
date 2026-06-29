@@ -16,7 +16,7 @@ class Read(BaseTool):
     """Tool for reading file contents"""
     
     name: str = "read"
-    description: str = f"Read or inspect file contents. For text/PDF files, returns content (truncated to {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB). For images/videos/audio, returns metadata only (file info, size, type). Use offset/limit for large text files."
+    description: str = f"Read or inspect file contents. For text/PDF/Word/Excel/PPT files, returns content (truncated to {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB). For images/videos/audio, returns metadata only (file info, size, type). Use offset/limit for large text files."
     
     params: dict = {
         "type": "object",

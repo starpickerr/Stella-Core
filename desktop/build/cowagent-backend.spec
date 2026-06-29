@@ -73,6 +73,21 @@ hiddenimports += [
     'tiktoken_ext.openai_public',
 ]
 
+# Document parsing libs. The read / web_fetch tools import these lazily inside
+# functions (e.g. `from pypdf import PdfReader`), so PyInstaller's static
+# analysis misses them and they'd be dropped from the bundle — leaving the
+# desktop client unable to read PDF/Word/Excel/PPT. List them explicitly.
+hiddenimports += [
+    'pypdf',
+    'docx',           # python-docx
+    'pptx',           # python-pptx
+    'openpyxl',
+]
+hiddenimports += collect_submodules('pypdf')
+hiddenimports += collect_submodules('docx')
+hiddenimports += collect_submodules('pptx')
+hiddenimports += collect_submodules('openpyxl')
+
 # --- Data files -----------------------------------------------------------
 # Runtime-read files/dirs that must travel with the executable. Paths are
 # (source, dest_dir_in_bundle).
@@ -91,6 +106,12 @@ datas = [
 
 # Some libraries (tiktoken encodings, etc.) ship data files.
 datas += collect_data_files('tiktoken_ext', include_py_files=False)
+
+# python-docx / python-pptx bundle template files (default.docx / default.pptx,
+# content-type XML) inside their packages; they're loaded at import/parse time,
+# so ship them or document parsing fails in the frozen build.
+datas += collect_data_files('docx')
+datas += collect_data_files('pptx')
 
 # --- Excludes -------------------------------------------------------------
 # Keep the bundle lean: drop Feishu's heavy SDK, plugins (disabled in desktop
