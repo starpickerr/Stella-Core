@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronRight, Loader2, Check, X, Brain, Wrench } from 'lucide-react'
+import { ChevronRight, Loader2, Check, X, Brain } from 'lucide-react'
 import type { MessageStep } from '../types'
 import Markdown from './Markdown'
 
@@ -49,7 +49,6 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
         onClick={() => setExpanded((v) => !v)}
       >
         <span className="flex-shrink-0">{icon}</span>
-        <Wrench size={11} className="flex-shrink-0 opacity-70" />
         <span className={`font-medium ${isError ? 'text-danger' : ''}`}>{step.name}</span>
         {step.execution_time !== undefined && (
           <span className="opacity-60">{step.execution_time}s</span>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Plus, Paperclip, Send, Square, X, File as FileIcon, Loader2 } from 'lucide-react'
+import { Plus, Paperclip, Send, Square, X, File as FileIcon, Loader2, Trash2 } from 'lucide-react'
 import { t } from '../i18n'
 import type { Attachment } from '../types'
 import apiClient from '../api/client'
@@ -59,9 +59,30 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   ]
   const filtered = slashCommands.filter((c) => c.cmd.startsWith(text.trim().toLowerCase()))
 
-  const resetHeight = () => {
-    if (textareaRef.current) textareaRef.current.style.height = '42px'
+  // Resize the textarea to fit its content (single line = 42px, capped at
+  // 180px). Keep overflow hidden until we hit the cap, so an empty/short input
+  // never shows a scrollbar (matches the web console behavior).
+  const autoSize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return
+    el.style.height = '42px'
+    const h = Math.min(el.scrollHeight, 180)
+    el.style.height = h + 'px'
+    el.style.overflowY = el.scrollHeight > 180 ? 'auto' : 'hidden'
   }
+
+  const resetHeight = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = '42px'
+    el.style.overflowY = 'hidden'
+  }
+
+  // Sync the height once on mount so the very first render matches the 42px
+  // single-line height instead of the browser's default textarea size.
+  useEffect(() => {
+    autoSize(textareaRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Allow the parent to load a draft (e.g. when editing a past user message).
   useImperativeHandle(ref, () => (draft: string, atts: Attachment[]) => {
@@ -71,8 +92,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
       const el = textareaRef.current
       if (el) {
         el.focus()
-        el.style.height = '42px'
-        el.style.height = Math.min(el.scrollHeight, 180) + 'px'
+        autoSize(el)
       }
     })
   })
@@ -148,9 +168,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value
     setText(v)
-    const el = e.target
-    el.style.height = '42px'
-    el.style.height = Math.min(el.scrollHeight, 180) + 'px'
+    autoSize(e.target)
     // open slash menu when the input starts with "/" and has no space
     setSlashOpen(v.startsWith('/') && !v.includes(' '))
     setSlashIndex(0)
@@ -321,6 +339,13 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             >
               {uploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
             </button>
+            <button
+              onClick={onClearContext}
+              className="w-9 h-9 flex items-center justify-center rounded-btn text-content-secondary hover:text-danger hover:bg-danger-soft cursor-pointer transition-colors"
+              title={t('chat_clear_context')}
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
           <input
             ref={fileInputRef}
@@ -342,7 +367,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             onCompositionEnd={() => (composingRef.current = false)}
             placeholder={t('input_placeholder')}
             rows={1}
-            className="flex-1 min-w-0 px-4 py-[10px] rounded-xl border border-strong bg-inset text-content placeholder:text-content-tertiary focus:outline-none focus:border-accent text-sm leading-relaxed transition-colors resize-none"
+            className="flex-1 min-w-0 px-4 py-[10px] rounded-xl border border-strong bg-inset text-content placeholder:text-content-tertiary focus:outline-none focus:border-accent text-sm leading-relaxed transition-colors resize-none overflow-y-hidden"
           />
 
           {isStreaming ? (
@@ -357,7 +382,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             <button
               onClick={handleSubmit}
               disabled={!canSend}
-              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-disabled disabled:cursor-not-allowed cursor-pointer transition-colors"
               title={t('chat_send')}
             >
               <Send size={17} />

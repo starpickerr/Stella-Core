@@ -68,7 +68,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
             )}
           </div>
         )}
-        <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-[var(--user-bubble-bg)] text-content">
+        <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-accent text-white">
           <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">

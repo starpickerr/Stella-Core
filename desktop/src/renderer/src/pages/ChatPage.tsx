@@ -12,7 +12,17 @@ interface ChatPageProps {
   baseUrl: string
 }
 
-const SUGGESTIONS = ['example_sys', 'example_task', 'example_code'] as const
+// Welcome-screen suggestion cards (aligned with the web console: 6 cards).
+// `send` overrides the text dropped into the input (e.g. show "查看全部命令"
+// but fill "/help"); otherwise the card's *_text is used.
+const SUGGESTIONS: { key: string; send?: string }[] = [
+  { key: 'example_sys' },
+  { key: 'example_task' },
+  { key: 'example_code' },
+  { key: 'example_knowledge' },
+  { key: 'example_skill' },
+  { key: 'example_web', send: '/help' },
+]
 
 const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const activeId = useSessionStore((s) => s.activeId)
@@ -210,11 +220,15 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8">{t('chat_empty_hint')}</p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl">
-              {SUGGESTIONS.map((key) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
+              {SUGGESTIONS.map(({ key, send }) => (
                 <button
                   key={key}
-                  onClick={() => handleSend(t(`${key}_text` as Parameters<typeof t>[0]), [])}
+                  onClick={() => {
+                    // Fill the input (don't auto-send) so the user can tweak it first.
+                    const draft = send ?? t(`${key}_text` as Parameters<typeof t>[0])
+                    inputResetRef.current?.(draft, [])
+                  }}
                   className="text-left bg-surface border border-default rounded-xl p-3.5 cursor-pointer hover:border-accent hover:shadow-sm transition-all"
                 >
                   <div className="font-medium text-sm text-content mb-1">
