@@ -57,9 +57,9 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   return (
     <aside className={`${width} flex flex-col flex-shrink-0 h-full bg-base transition-[width] duration-200`}>
-      {/* Top: full-width drag strip; reserve space for macOS traffic lights.
-          No right border here so the divider doesn't cut across the traffic lights. */}
-      <div className="titlebar-drag h-[44px] flex-shrink-0" />
+      {/* Top: full-width drag strip; bottom border continues the header divider
+          across the whole window. No right border so it doesn't cut the lights. */}
+      <div className="titlebar-drag h-[44px] flex-shrink-0 border-b border-default" />
 
       {/* Content area carries the right divider, starting below the titlebar */}
       <div className="flex-1 flex flex-col min-h-0 border-r border-default">
