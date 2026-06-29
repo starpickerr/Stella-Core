@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, MessageSquare, Pencil, Trash2, Check, X, PanelLeftClose } from 'lucide-react'
+import { Plus, MessageSquare, Pencil, Trash2, Check, X, History } from 'lucide-react'
 import { t } from '../i18n'
 import { useSessionStore } from '../store/sessionStore'
 import { useUIStore } from '../store/uiStore'
+import { usePlatform } from '../hooks/usePlatform'
 import type { SessionItem } from '../types'
 
 function groupByTime(sessions: SessionItem[]): { label: string; items: SessionItem[] }[] {
@@ -32,6 +33,14 @@ const SessionList: React.FC = () => {
   const { sessions, activeId, loading, loadSessions, loadMore, hasMore, setActive, newSession, rename, remove } =
     useSessionStore()
   const toggleSessions = useUIStore((s) => s.toggleSessions)
+  const navCollapsed = useUIStore((s) => s.navCollapsed)
+  const { isMac } = usePlatform()
+  // When the nav rail is collapsed on macOS, the native traffic lights spill
+  // past it, so nudge the history button right to keep it (and its sibling in
+  // the main header) clear of the lights and aligned across states.
+  const trafficOffset = isMac && navCollapsed ? 'ml-2' : ''
+  // Nudge header buttons down a touch to sit level with the macOS traffic lights.
+  const trafficDrop = isMac ? 'mt-1' : ''
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
@@ -56,18 +65,18 @@ const SessionList: React.FC = () => {
   return (
     <div className="w-[240px] flex-shrink-0 flex flex-col h-full bg-surface border-r border-default">
       {/* Header */}
-      <div className="flex items-center justify-between px-2 h-[44px] flex-shrink-0 titlebar-drag">
+      <div className="flex items-center justify-between px-2 h-[44px] flex-shrink-0 titlebar-drag border-b border-default">
         <button
           onClick={toggleSessions}
-          title={t('nav_collapse')}
-          className="titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors"
+          title={t('session_history')}
+          className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${trafficDrop} ${trafficOffset}`}
         >
-          <PanelLeftClose size={16} />
+          <History size={16} />
         </button>
         <button
           onClick={() => newSession()}
           title={t('session_new')}
-          className="titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent hover:bg-accent-soft cursor-pointer transition-colors"
+          className={`titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent hover:bg-accent-soft cursor-pointer transition-colors ${trafficDrop}`}
         >
           <Plus size={15} />
           {t('session_new')}

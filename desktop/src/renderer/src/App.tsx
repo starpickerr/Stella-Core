@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { PanelLeftOpen } from 'lucide-react'
+import { History } from 'lucide-react'
 import NavRail from './layout/NavRail'
 import SessionList from './layout/SessionList'
 import WindowControls from './layout/WindowControls'
@@ -27,8 +27,8 @@ const App: React.FC = () => {
   const backend = useBackend()
   const location = useLocation()
   const navigate = useNavigate()
-  const { isWin } = usePlatform()
-  const { sessionsCollapsed, toggleSessions } = useUIStore()
+  const { isWin, isMac } = usePlatform()
+  const { sessionsCollapsed, toggleSessions, navCollapsed } = useUIStore()
   const onboardingOpen = useOnboardingStore((s) => s.open)
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
@@ -107,10 +107,13 @@ const App: React.FC = () => {
           {isChat && sessionsCollapsed && (
             <button
               onClick={toggleSessions}
-              title={t('nav_expand')}
-              className="titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors"
+              title={t('session_history')}
+              // Keep aligned with the SessionList history button: only nudge
+              // right of the macOS traffic lights when the nav rail is collapsed
+              // (otherwise the lights stay within the rail and don't overlap).
+              className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${isMac ? 'mt-1' : ''} ${isMac && navCollapsed ? 'ml-2' : ''}`}
             >
-              <PanelLeftOpen size={16} />
+              <History size={16} />
             </button>
           )}
           <div className="flex-1 min-w-0" />
