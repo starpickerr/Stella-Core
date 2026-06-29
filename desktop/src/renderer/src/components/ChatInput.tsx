@@ -390,7 +390,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             <button
               onClick={handleSubmit}
               disabled={!canSend}
-              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-btn bg-accent text-white hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-disabled disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="flex-shrink-0 w-[42px] h-[42px] flex items-center justify-center rounded-btn bg-accent text-white hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-disabled disabled:cursor-not-allowed cursor-pointer transition-none [&_*]:transition-none"
               title={t('chat_send')}
             >
               <PaperPlaneIcon size={15} />
