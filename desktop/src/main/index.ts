@@ -125,6 +125,16 @@ function createWindow() {
     mainWindow.loadFile(rendererHtml)
   }
 
+  // Surface renderer-side console output and load failures to the main-process
+  // stdout. Without this, "stuck on initializing" hangs are invisible from the
+  // terminal because all renderer logs stay in the (closed) devtools.
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
+  })
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[renderer] did-fail-load ${code} ${desc} ${url}`)
+  })
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
@@ -160,14 +170,20 @@ async function startBackend() {
   pythonBackend = new PythonBackend(backendPath)
 
   pythonBackend.on('ready', (port: number) => {
+    console.log(`[backend] ready on port ${port}`)
     mainWindow?.webContents.send('backend-status', { status: 'ready', port })
   })
 
   pythonBackend.on('error', (error: string) => {
+    // Mirror to the main-process stdout too: otherwise backend startup errors
+    // are only visible in the renderer devtools, making `npm run dev` hangs
+    // impossible to diagnose from the terminal.
+    console.error(`[backend] error: ${error}`)
     mainWindow?.webContents.send('backend-status', { status: 'error', error })
   })
 
   pythonBackend.on('log', (line: string) => {
+    console.log(`[backend] ${line}`)
     mainWindow?.webContents.send('backend-log', line)
   })
 
@@ -213,6 +229,9 @@ function setupIPC() {
   })
   ipcMain.handle('window-close', () => mainWindow?.close())
   ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+
+  // Current app version, shown in the NavRail footer.
+  ipcMain.handle('get-app-version', () => app.getVersion())
 
   // Auto-update controls (renderer-driven: check, then opt-in download/install)
   ipcMain.handle('update-check', () => checkForUpdates())
@@ -279,10 +298,14 @@ app.whenReady().then(async () => {
   }
   await startBackend()
 
-  // Wire auto-update and do a first silent check a few seconds after launch so
-  // it doesn't compete with backend startup for resources.
+  // Wire auto-update: a first silent check a few seconds after launch (so it
+  // doesn't compete with backend startup), then poll every 4 hours so a
+  // long-running window still surfaces new releases. autoDownload is off, so a
+  // found update only lights the badge + opens the panel for the user to opt in.
   initUpdater(() => mainWindow)
   setTimeout(() => checkForUpdates(), 5000)
+  const UPDATE_POLL_MS = 4 * 60 * 60 * 1000
+  setInterval(() => checkForUpdates(), UPDATE_POLL_MS)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

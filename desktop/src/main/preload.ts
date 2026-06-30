@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('menu-action', handler)
   },
 
+  // Current app version (e.g. "0.0.5"), shown in the NavRail footer.
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
   // Auto-update: trigger checks/download/install and subscribe to status.
   checkForUpdate: () => ipcRenderer.invoke('update-check'),
   downloadUpdate: () => ipcRenderer.invoke('update-download'),

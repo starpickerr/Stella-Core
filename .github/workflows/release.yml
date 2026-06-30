@@ -128,13 +128,11 @@ jobs:
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
           fi
 
-          # Publish to the GitHub Release on tag pushes; otherwise build only.
-          if [ "${{ github.event_name }}" = "push" ]; then
-            PUBLISH=always
-          else
-            PUBLISH=never
-          fi
-          npx electron-builder ${{ matrix.eb_flags }} --publish "$PUBLISH"
+          # Never let electron-builder publish: our publish target is a generic
+          # (read-only) feed served from R2/D1, which it can't upload to. We mirror
+          # installers to R2 and register them in D1 ourselves (publish-r2 job).
+          # `--publish never` still emits the latest*.yml files we parse for sha512.
+          npx electron-builder ${{ matrix.eb_flags }} --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -201,10 +199,11 @@ jobs:
         id: stage
         run: |
           mkdir -p dist
-          # Flatten installers from every per-platform artifact dir; only the
-          # user-facing installers go to R2 (updater .yml/.blockmap stay on the
-          # GitHub Release, which electron-updater reads directly).
-          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) -exec cp {} dist/ \;
+          # Flatten installers + their .blockmap (used by electron-updater for
+          # differential downloads) from every per-platform artifact dir. The
+          # .yml feed is generated dynamically by the /update Function from D1,
+          # so the yml files themselves don't need to go to R2.
+          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.blockmap' \) -exec cp {} dist/ \;
           echo "Staged files:"; ls -la dist
           # When the whole matrix failed there's nothing to publish; flag it so
           # the R2/D1 steps skip instead of writing an empty/partial release.
@@ -253,6 +252,37 @@ jobs:
             *)   is_latest=1; echo "==> $VER is a stable release; marking latest." ;;
           esac
 
+          # The updater yml files (in the per-platform artifacts) carry the
+          # sha512 electron-updater validates against; read it from there so the
+          # /update feed serves the exact same hash. Build a name->sha512 map.
+          python3 - "$VER" <<'PY' > sha_map.txt
+          import os, re, sys, glob
+          # Parse electron-builder's latest*.yml file lists: pairs of
+          #   - url: <name>
+          #     sha512: <b64>
+          out = {}
+          for yml in glob.glob('artifacts/**/*.yml', recursive=True):
+              try:
+                  text = open(yml, encoding='utf-8').read()
+              except Exception:
+                  continue
+              cur = None
+              for line in text.splitlines():
+                  m = re.match(r'\s*-?\s*url:\s*(\S+)', line)
+                  if m:
+                      cur = m.group(1).strip()
+                      continue
+                  m = re.match(r'\s*sha512:\s*(\S+)', line)
+                  if m and cur:
+                      out[os.path.basename(cur)] = m.group(1).strip()
+                      cur = None
+          for name, sha in out.items():
+              print(f"{name}\t{sha}")
+          PY
+          echo "==> sha512 map:"; cat sha_map.txt || true
+
+          sha_for() { awk -F'\t' -v n="$1" '$1==n{print $2; exit}' sha_map.txt; }
+
           for f in dist/*; do
             base="$(basename "$f")"
             size="$(stat -c%s "$f")"
@@ -263,12 +293,15 @@ jobs:
               *) echo "Skipping unrecognized artifact: $base"; continue ;;
             esac
             key="v${VER}/${base}"
+            sha="$(sha_for "$base")"
+            # SQL-escape single quotes defensively (base64 has none, but be safe).
+            sha="${sha//\'/\'\'}"
             # Stable only: clear the previous latest for THIS platform first, so
             # a partial backfill never wipes other platforms' latest flag.
             if [ "$is_latest" = "1" ]; then
               echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
             fi
-            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, ${is_latest});" >> "$sql_file"
+            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, sha512, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, '${sha}', ${is_latest});" >> "$sql_file"
           done
           echo "==> D1 statements:"; cat "$sql_file"
           npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"

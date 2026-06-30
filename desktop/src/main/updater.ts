@@ -51,9 +51,14 @@ export function initUpdater(windowGetter: () => BrowserWindow | null): void {
   )
 }
 
-// Silent check shortly after launch; safe to call when not packaged (no-op).
+// Silent check shortly after launch. When not packaged there's no update feed,
+// but a manual click should still get visible feedback instead of looking dead:
+// reply "not-available" so the menu can show "up to date".
 export function checkForUpdates(): void {
-  if (!app.isPackaged) return
+  if (!app.isPackaged) {
+    send({ state: 'not-available' })
+    return
+  }
   autoUpdater.checkForUpdates().catch((err) => {
     send({ state: 'error', message: err?.message || String(err) })
   })
