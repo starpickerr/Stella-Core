@@ -9,7 +9,7 @@ interface BackendState {
 export function useBackend() {
   const [state, setState] = useState<BackendState>({
     status: 'connecting',
-    port: 9899,
+    port: 9876,
   })
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -31,7 +31,7 @@ export function useBackend() {
   const readyRef = useRef(false)
   // Holds the latest resolved port so the visibility handler (registered once)
   // always probes the correct port without re-running the effect.
-  const portRef = useRef(9899)
+  const portRef = useRef(9876)
 
   useEffect(() => {
     let cancelled = false
@@ -75,7 +75,7 @@ export function useBackend() {
 
     if (api) {
       api.getBackendPort().then((port) => {
-        const p = port || 9899
+        const p = port || 9876
         portRef.current = p
         setState((prev) => ({ ...prev, port: p }))
         startPolling(p)
@@ -98,7 +98,7 @@ export function useBackend() {
         }
       })
     } else {
-      startPolling(9899)
+      startPolling(9876)
     }
 
     // When the window comes back to the foreground, re-probe immediately so a
