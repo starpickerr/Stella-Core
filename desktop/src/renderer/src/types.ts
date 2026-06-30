@@ -17,6 +17,8 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   onMaximizeChange: (callback: (maximized: boolean) => void) => () => void
   onMenuAction?: (callback: (action: string) => void) => () => void
+  // Current app version string (e.g. "0.0.5").
+  getAppVersion?: () => Promise<string>
   // Auto-update
   checkForUpdate?: () => Promise<void>
   downloadUpdate?: () => Promise<void>

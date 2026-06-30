@@ -1,6 +1,6 @@
 {
   "name": "cowagent-desktop",
-  "version": "1.0.0",
+  "version": "2.1.3",
   "description": "CowAgent Desktop Client - AI Agent on your desktop",
   "main": "dist/main/index.js",
   "author": "CowAgent",
@@ -95,9 +95,8 @@
       "createStartMenuShortcut": true
     },
     "publish": {
-      "provider": "github",
-      "owner": "zhayujie",
-      "repo": "chatgpt-on-wechat"
+      "provider": "generic",
+      "url": "https://cowagent.ai/update/"
     }
   }
 }

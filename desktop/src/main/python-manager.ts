@@ -11,16 +11,19 @@ import net from 'net'
 // the read-only app bundle. Source/dev runs keep using the repo CWD instead.
 const COW_DATA_DIR = path.join(os.homedir(), '.cow')
 
-// Preferred port for the desktop backend. Deliberately not 9899 (the web
-// console's default) so a source-run `python app.py` never collides with the
-// packaged app. It's only a *preference*: if it's taken we bind a free port
-// chosen by the OS, so we never hard-depend on any single port being free.
-const PREFERRED_PORT = 9876
+// Fixed port for the desktop backend. Deliberately not 9899 (the web console's
+// default) so a source-run `python app.py` never collides with the packaged
+// app. This is a SINGLE SOURCE OF TRUTH shared with the renderer (see
+// useBackend.ts BACKEND_PORT): the backend is always told to bind exactly here
+// via COW_WEB_PORT, and the renderer always talks to exactly here. We do NOT
+// fall back to an OS-random port, because the renderer could never guess it —
+// instead we proactively free this port before launch (see freePort()).
+export const DESKTOP_BACKEND_PORT = 9876
 
 export class PythonBackend extends EventEmitter {
   private process: ChildProcess | null = null
   private backendPath: string
-  private port: number = PREFERRED_PORT
+  private port: number = DESKTOP_BACKEND_PORT
   private status: 'stopped' | 'starting' | 'ready' | 'error' = 'stopped'
 
   constructor(backendPath: string) {
@@ -95,21 +98,16 @@ export class PythonBackend extends EventEmitter {
   }
 
   /**
-   * Resolve a usable port without hard-depending on any specific one:
-   *   1. A user-pinned web_port is honored as-is (their explicit choice).
-   *   2. Otherwise try PREFERRED_PORT; if free, use it.
-   *   3. If taken, let the OS hand us a guaranteed-free ephemeral port.
-   * This never throws on a busy port — it just moves on to a free one.
+   * Resolve the port to bind. The whole point is determinism: the renderer must
+   * be able to reach the backend WITHOUT guessing, so we use exactly one fixed
+   * port (DESKTOP_BACKEND_PORT) unless the user explicitly pinned a web_port.
+   * We never auto-roll to a random port — instead start() proactively frees the
+   * fixed port. The returned value is the single source of truth handed to both
+   * the backend (COW_WEB_PORT) and the renderer (getBackendPort IPC).
    */
-  private async resolvePort(dataDir: string): Promise<number> {
+  private resolvePort(dataDir: string): number {
     const pinned = this.readConfiguredPort(dataDir)
-    if (pinned !== null) {
-      return pinned
-    }
-    if (await this.isPortFree(PREFERRED_PORT)) {
-      return PREFERRED_PORT
-    }
-    return this.findFreePort()
+    return pinned !== null ? pinned : DESKTOP_BACKEND_PORT
   }
 
   /** True if we can bind 127.0.0.1:port right now (i.e. it's free). */
@@ -125,16 +123,77 @@ export class PythonBackend extends EventEmitter {
     })
   }
 
-  /** Ask the OS for a free ephemeral port (listen on 0, read the assigned one). */
-  private findFreePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const srv = net.createServer()
-      srv.once('error', reject)
-      srv.listen(0, '127.0.0.1', () => {
-        const addr = srv.address()
-        const port = typeof addr === 'object' && addr ? addr.port : PREFERRED_PORT
-        srv.close(() => resolve(port))
-      })
+  /**
+   * Make sure our fixed port is usable before launch by killing whatever is
+   * holding it (almost always a stale backend from a previous run that didn't
+   * shut down cleanly). We only ever target a process actually listening on
+   * 127.0.0.1:<port>, so we won't touch unrelated apps. Best-effort: if we
+   * can't free it we still try to bind and let the backend surface EADDRINUSE.
+   */
+  private async freePort(port: number): Promise<void> {
+    if (await this.isPortFree(port)) {
+      return
+    }
+    this.emit('log', `Port ${port} is busy — clearing stale process before launch`)
+    const pids = await this.findListenerPids(port)
+    for (const pid of pids) {
+      // Never signal ourselves (Electron could, in theory, be the listener).
+      if (pid === process.pid) continue
+      try {
+        process.kill(pid, 'SIGTERM')
+      } catch {
+        // already gone / no permission — ignore
+      }
+    }
+    // Give the OS a beat to release the socket, then force-kill leftovers.
+    await new Promise((r) => setTimeout(r, 600))
+    if (!(await this.isPortFree(port))) {
+      for (const pid of await this.findListenerPids(port)) {
+        if (pid === process.pid) continue
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          // ignore
+        }
+      }
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  }
+
+  /** PIDs listening on 127.0.0.1:<port>, via lsof (POSIX) / netstat (Windows). */
+  private findListenerPids(port: number): Promise<number[]> {
+    return new Promise((resolve) => {
+      const isWin = process.platform === 'win32'
+      const cmd = isWin ? 'netstat' : 'lsof'
+      const args = isWin
+        ? ['-ano', '-p', 'tcp']
+        : ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']
+      let out = ''
+      try {
+        const child = spawn(cmd, args)
+        child.stdout?.on('data', (d: Buffer) => (out += d.toString()))
+        child.on('error', () => resolve([]))
+        child.on('close', () => {
+          const pids = new Set<number>()
+          if (isWin) {
+            // Match lines like: TCP 127.0.0.1:9876 ... LISTENING  12345
+            for (const line of out.split('\n')) {
+              if (!/LISTENING/i.test(line)) continue
+              if (!new RegExp(`[:.]${port}\\b`).test(line)) continue
+              const pid = Number(line.trim().split(/\s+/).pop())
+              if (Number.isInteger(pid) && pid > 0) pids.add(pid)
+            }
+          } else {
+            for (const tok of out.split(/\s+/)) {
+              const pid = Number(tok)
+              if (Number.isInteger(pid) && pid > 0) pids.add(pid)
+            }
+          }
+          resolve([...pids])
+        })
+      } catch {
+        resolve([])
+      }
     })
   }
 
@@ -151,17 +210,15 @@ export class PythonBackend extends EventEmitter {
     // Packaged app stores writable data in ~/.cow; dev keeps it in the repo.
     const dataDir = bundled ? COW_DATA_DIR : this.backendPath
 
-    // Always launch our OWN backend (re-entrancy is guarded above by the
-    // status check, so we never double-spawn for this instance). We don't reuse
-    // whatever happens to be on the port: that's how the app previously
-    // attached to a source-run web console and read the wrong config. Pick a
-    // usable port instead — honoring a user-pinned web_port, else PREFERRED_PORT
-    // when free, else an OS-assigned free port. This never depends on a probe.
-    try {
-      this.port = await this.resolvePort(dataDir)
-    } catch {
-      this.port = PREFERRED_PORT
-    }
+    // Always launch our OWN backend (re-entrancy is guarded above by the status
+    // check, so we never double-spawn for this instance). We don't reuse
+    // whatever happens to be on the port: that's how the app previously attached
+    // to a source-run web console and read the wrong config. The port is fixed
+    // (or the user's pinned web_port) — never random — so the renderer always
+    // knows it. We then proactively free that port (kill stale listeners)
+    // before spawning, so a leftover process from a previous run can't block us.
+    this.port = this.resolvePort(dataDir)
+    await this.freePort(this.port)
 
     let command: string
     let args: string[]
@@ -229,10 +286,15 @@ export class PythonBackend extends EventEmitter {
     })
 
     this.process.on('exit', (code) => {
+      // If the backend dies before it ever became ready, surface an error now
+      // instead of letting waitForReady spin for the full timeout. A clean exit
+      // (code 0/null, e.g. our own stop()) just marks stopped.
+      const wasReady = this.status === 'ready'
       this.status = 'stopped'
       this.emit('log', `Python process exited with code ${code}`)
-      if (code !== 0 && code !== null) {
-        this.emit('error', `Python process exited with code ${code}`)
+      if (!wasReady && code !== 0 && code !== null) {
+        this.status = 'error'
+        this.emit('error', `Backend exited during startup (code ${code})`)
       }
     })
 
@@ -272,7 +334,9 @@ export class PythonBackend extends EventEmitter {
       }
 
       const retry = () => {
-        if (this.status === 'stopped' || this.status === 'ready') {
+        // Backend already settled: ready (done), or stopped/errored by the exit
+        // handler (don't keep polling a dead process — the error was emitted).
+        if (this.status === 'ready' || this.status === 'stopped' || this.status === 'error') {
           resolve()
           return
         }

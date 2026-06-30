@@ -12,8 +12,8 @@ function getSystemTheme(): ResolvedTheme {
 function readStored(): ThemePref {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved === 'dark' || saved === 'light' || saved === 'system') return saved
-  // Default to dark to match the app's flagship look
-  return 'dark'
+  // First run: follow the OS appearance rather than forcing a fixed theme.
+  return 'system'
 }
 
 function applyTheme(resolved: ResolvedTheme) {

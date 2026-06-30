@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
+// Fixed default port — MUST match DESKTOP_BACKEND_PORT in main/python-manager.ts.
+// The backend is launched on exactly this port (the main process frees it first
+// and passes it via COW_WEB_PORT), so probing it works even before the
+// getBackendPort IPC resolves. Keeping both sides on one constant means the
+// renderer can never end up talking to the wrong port.
+const BACKEND_PORT = 9876
+
 interface BackendState {
   status: 'connecting' | 'ready' | 'error'
   port: number
@@ -9,7 +16,7 @@ interface BackendState {
 export function useBackend() {
   const [state, setState] = useState<BackendState>({
     status: 'connecting',
-    port: 9876,
+    port: BACKEND_PORT,
   })
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -31,7 +38,7 @@ export function useBackend() {
   const readyRef = useRef(false)
   // Holds the latest resolved port so the visibility handler (registered once)
   // always probes the correct port without re-running the effect.
-  const portRef = useRef(9876)
+  const portRef = useRef(BACKEND_PORT)
 
   useEffect(() => {
     let cancelled = false
@@ -74,12 +81,21 @@ export function useBackend() {
     }
 
     if (api) {
-      api.getBackendPort().then((port) => {
-        const p = port || 9876
-        portRef.current = p
-        setState((prev) => ({ ...prev, port: p }))
-        startPolling(p)
-      })
+      // Always start polling, even if getBackendPort rejects or the ready event
+      // was already emitted before we subscribed: polling /config is the
+      // self-sufficient path to "ready" and must never depend on the IPC round
+      // trip succeeding (otherwise the app can hang forever on "connecting").
+      api
+        .getBackendPort()
+        .then((port) => {
+          const p = port || BACKEND_PORT
+          portRef.current = p
+          setState((prev) => ({ ...prev, port: p }))
+          startPolling(p)
+        })
+        .catch(() => {
+          startPolling(BACKEND_PORT)
+        })
 
       offStatus = api.onBackendStatus((data) => {
         if (data.status === 'ready' && data.port) {
@@ -98,7 +114,7 @@ export function useBackend() {
         }
       })
     } else {
-      startPolling(9876)
+      startPolling(BACKEND_PORT)
     }
 
     // When the window comes back to the foreground, re-probe immediately so a

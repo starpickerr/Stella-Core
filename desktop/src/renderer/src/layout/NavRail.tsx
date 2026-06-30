@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
@@ -13,12 +13,38 @@ import {
   Sun,
   Moon,
   ScrollText,
+  MoreHorizontal,
+  Languages,
+  Download,
+  Loader2,
+  Globe,
+  FileText,
+  Store,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { t, getLang, setLang, Lang } from '../i18n'
 import { useUIStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
+import { useUpdateStore, hasPendingUpdate } from '../store/updateStore'
 import UpdateBanner from '../components/UpdateBanner'
+
+// Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
+// in sync with desktop/package.json "version"; the packaged app overrides this
+// with the real value via IPC, so it only matters outside a packaged build.
+const FALLBACK_VERSION = '2.1.3'
+
+// External links opened in the user's default browser. The window-open handler
+// in the main process routes window.open() through shell.openExternal.
+// English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
+// language-agnostic.
+const SKILL_HUB_URL = 'https://skills.cowagent.ai/'
+
+const websiteUrl = () => (getLang() === 'zh' ? 'https://cowagent.ai/zh' : 'https://cowagent.ai')
+const docsUrl = () => (getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai')
+
+const openExternal = (url: string) => {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 
 interface NavItem {
   path: string
@@ -49,10 +75,73 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
   const collapsed = navCollapsed
   const width = collapsed ? 'w-[56px]' : 'w-[208px]'
 
+  const updateState = useUpdateStore()
+  const pendingUpdate = hasPendingUpdate(updateState)
+  const checking = updateState.status?.state === 'checking'
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  // Local fallback so a version always shows even if the main-process IPC is
+  // unavailable (e.g. dev/web preview). The real value comes from
+  // app.getVersion() (packaged package.json), never from a remote service.
+  const [version, setVersion] = useState(FALLBACK_VERSION)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    window.electronAPI
+      ?.getAppVersion?.()
+      .then((v) => v && setVersion(v))
+      .catch(() => {})
+  }, [])
+
+  // Close the popover on any outside click / Escape.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
   const toggleLanguage = () => {
     const next: Lang = getLang() === 'zh' ? 'en' : 'zh'
     setLang(next)
     onLangChange()
+  }
+
+  // Track a user-initiated check so we can show "up to date" feedback in the
+  // menu when the result comes back as not-available (the auto poll stays
+  // silent). Cleared shortly after, and whenever the menu closes.
+  const [checkedManually, setCheckedManually] = useState(false)
+  const updateStatusState = updateState.status?.state
+
+  useEffect(() => {
+    if (!checkedManually) return
+    if (updateStatusState === 'not-available') {
+      const id = setTimeout(() => setCheckedManually(false), 4000)
+      return () => clearTimeout(id)
+    }
+    // A pending update opens its own panel; no need for the inline hint.
+    if (updateStatusState === 'available' || updateStatusState === 'downloaded') {
+      setCheckedManually(false)
+    }
+    return
+  }, [checkedManually, updateStatusState])
+
+  useEffect(() => {
+    if (!menuOpen) setCheckedManually(false)
+  }, [menuOpen])
+
+  const checkUpdate = () => {
+    setCheckedManually(true)
+    window.electronAPI?.checkForUpdate?.()
   }
 
   return (
@@ -93,26 +182,56 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
         {!collapsed && <UpdateBanner />}
       </div>
 
-      {/* Footer actions */}
-      <div className={`flex-shrink-0 px-2 py-2 border-t border-subtle ${collapsed ? 'space-y-0.5' : 'flex items-center gap-1'}`}>
-        <FooterBtn
-          collapsed={collapsed}
-          onClick={() => navigate('/logs')}
-          title={t('menu_logs')}
-          active={location.pathname === '/logs'}
-        >
-          <ScrollText size={17} />
-        </FooterBtn>
-        <FooterBtn collapsed={collapsed} onClick={toggleTheme} title={theme === 'dark' ? 'Light' : 'Dark'}>
-          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        </FooterBtn>
-        <FooterBtn collapsed={collapsed} onClick={toggleLanguage} title="Language">
-          <span className="text-[13px] font-medium w-[18px] text-center">{getLang() === 'zh' ? 'EN' : '中'}</span>
-        </FooterBtn>
-        <div className={collapsed ? '' : 'flex-1'} />
-        <FooterBtn collapsed={collapsed} onClick={toggleNav} title={collapsed ? t('nav_expand') : t('nav_collapse')}>
-          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-        </FooterBtn>
+      {/* Footer actions: a single "more" entry (with version + update dot) that
+          opens an upward popover, plus the always-visible collapse toggle. */}
+      <div className="flex-shrink-0 px-2 py-2 border-t border-subtle relative" ref={menuRef}>
+        {menuOpen && (
+          <FooterMenu
+            theme={theme}
+            checking={checking}
+            pendingUpdate={pendingUpdate}
+            upToDate={checkedManually && updateStatusState === 'not-available'}
+            onLogs={() => {
+              setMenuOpen(false)
+              navigate('/logs')
+            }}
+            onTheme={toggleTheme}
+            onLanguage={toggleLanguage}
+            onCheckUpdate={checkUpdate}
+            onOpenLink={(url) => {
+              setMenuOpen(false)
+              openExternal(url)
+            }}
+          />
+        )}
+
+        <div className={collapsed ? 'space-y-0.5' : 'flex items-center gap-1'}>
+          {/* Single clickable entry: version label (left) + the three dots
+              (right) form one button; the whole block opens the popover. The
+              version is the packaged app version, also what auto-update
+              compares against. Collapsed: dots only, version hidden. */}
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            title={t('menu_more')}
+            className={`relative inline-flex items-center rounded-btn cursor-pointer transition-colors ${
+              menuOpen ? 'bg-surface-2 text-content' : 'text-content-tertiary hover:text-content hover:bg-surface-2'
+            } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2 gap-1.5'}`}
+          >
+            {!collapsed && version && (
+              <span className="text-[12px] truncate">{`v${version}`}</span>
+            )}
+            <MoreHorizontal size={17} className="flex-shrink-0" />
+            {pendingUpdate && (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-danger" />
+            )}
+          </button>
+
+          {!collapsed && <div className="flex-1" />}
+
+          <FooterBtn collapsed={collapsed} onClick={toggleNav} title={collapsed ? t('nav_expand') : t('nav_collapse')}>
+            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </FooterBtn>
+        </div>
       </div>
       </div>
     </aside>
@@ -136,6 +255,80 @@ const FooterBtn: React.FC<{
     } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2'}`}
   >
     {children}
+  </button>
+)
+
+// Upward popover holding the secondary actions previously crammed into the
+// footer (theme, language, logs, update check). Keeps the footer to a single
+// entry so new items can be added here without cluttering the rail.
+const FooterMenu: React.FC<{
+  theme: string
+  checking: boolean
+  pendingUpdate: boolean
+  upToDate: boolean
+  onLogs: () => void
+  onTheme: () => void
+  onLanguage: () => void
+  onCheckUpdate: () => void
+  onOpenLink: (url: string) => void
+}> = ({ theme, checking, pendingUpdate, upToDate, onLogs, onTheme, onLanguage, onCheckUpdate, onOpenLink }) => {
+  const updateLabel = checking
+    ? t('update_checking')
+    : upToDate
+      ? t('update_latest')
+      : t('update_check')
+  return (
+  <div className="absolute bottom-full left-2 right-2 mb-2 z-50 rounded-lg border border-default bg-elevated shadow-lg py-1">
+    {/* External destinations first (skill hub, docs, website) */}
+    <MenuItem icon={<Store size={16} />} label={t('menu_skill_hub')} onClick={() => onOpenLink(SKILL_HUB_URL)} />
+    <MenuItem icon={<FileText size={16} />} label={t('menu_docs')} onClick={() => onOpenLink(docsUrl())} />
+    <MenuItem icon={<Globe size={16} />} label={t('menu_website')} onClick={() => onOpenLink(websiteUrl())} />
+
+    <div className="my-1 border-t border-subtle" />
+
+    {/* App actions below: update, theme, language, logs */}
+    <MenuItem
+      icon={checking ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+      label={updateLabel}
+      onClick={onCheckUpdate}
+      dot={pendingUpdate}
+      disabled={checking || upToDate}
+    />
+    <MenuItem
+      icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+      label={theme === 'dark' ? t('menu_theme_light') : t('menu_theme_dark')}
+      onClick={onTheme}
+    />
+    <MenuItem
+      icon={<Languages size={16} />}
+      label={t('menu_language')}
+      trailing={getLang() === 'zh' ? 'EN' : '中'}
+      onClick={onLanguage}
+    />
+    <MenuItem icon={<ScrollText size={16} />} label={t('menu_logs')} onClick={onLogs} />
+  </div>
+  )
+}
+
+const MenuItem: React.FC<{
+  icon: React.ReactNode
+  label: string
+  trailing?: string
+  dot?: boolean
+  disabled?: boolean
+  onClick: () => void
+}> = ({ icon, label, trailing, dot, disabled, onClick }) => (
+  <button
+    disabled={disabled}
+    onClick={onClick}
+    className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-content-secondary hover:bg-surface-2 hover:text-content cursor-pointer transition-colors disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-content-secondary"
+  >
+    <span className="flex-shrink-0 text-content-tertiary relative">
+      {icon}
+      {dot && <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-danger" />}
+    </span>
+    <span className="flex-1 text-left truncate">{label}</span>
+    {trailing && <span className="text-[11px] font-medium text-content-tertiary">{trailing}</span>}
   </button>
 )
 
