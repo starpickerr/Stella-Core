@@ -64,7 +64,24 @@ hiddenimports += [
     'plugins.plugin_manager',
 ]
 hiddenimports += collect_submodules('plugins')
+
+# `cli` powers cow_cli's slash commands (`cow skill install`, `cow status`, …).
+# Its command modules are imported lazily inside functions, so static analysis
+# misses them. collect_submodules('cli') alone proved unreliable (a build can
+# end up with `cli` but not `cli.commands`), so list the command modules
+# explicitly AND ship the package as data (see datas) as a belt-and-suspenders.
 hiddenimports += collect_submodules('cli')
+hiddenimports += [
+    'cli',
+    'cli.cli',
+    'cli.utils',
+    'cli.commands',
+    'cli.commands.skill',
+    'cli.commands.process',
+    'cli.commands.context',
+    'cli.commands.install',
+    'cli.commands.knowledge',
+]
 
 # Third-party SDKs that use lazy/conditional imports internally.
 hiddenimports += collect_submodules('dashscope')
@@ -97,6 +114,10 @@ datas = [
     # PluginManager.scan_plugins() walks the on-disk ./plugins dir at runtime
     # (it doesn't rely solely on imports), so ship the package directory too.
     (rp('plugins'), 'plugins'),
+    # Ship the `cli` package as loose files too: onedir adds _internal to
+    # sys.path, so `import cli.commands.*` resolves even if PyInstaller's
+    # submodule collection misses the lazily-imported command modules.
+    (rp('cli'), 'cli'),
     # Web console served on the backend port: ship chat.html plus its static
     # assets (~1.9MB) so the browser-based console works as a debug/fallback
     # entry alongside the Electron UI.
