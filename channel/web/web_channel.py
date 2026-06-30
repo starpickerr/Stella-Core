@@ -1157,7 +1157,10 @@ class WebChannel(ChatChannel):
     def startup(self):
         configured_host = conf().get("web_host", "")
         host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
-        port = conf().get("web_port", 9899)
+        # The desktop app passes its chosen port via COW_WEB_PORT so its backend
+        # never collides with a source-run web console (default 9899). This makes
+        # the port a single source of truth owned by the Electron shell.
+        port = int(os.environ.get("COW_WEB_PORT") or conf().get("web_port", 9899))
         is_public_bind = host in ("0.0.0.0", "::")
 
         self._cleanup_stale_voice_recordings()
