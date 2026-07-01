@@ -46,24 +46,26 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
 
-  // A provider is configured when it has credentials (custom providers always
-  // carry their own). Unconfigured ones stay selectable but are flagged so the
-  // user is guided to set up the API key.
+  // A provider is configured when it has credentials (a custom provider counts
+  // only once it actually carries a name/key, not as an empty placeholder).
   const isConfigured = (id: string): boolean => {
     const p = data?.providers?.find((x) => x.id === id)
     if (!p) return true
     return p.configured || (p.is_custom && !!p.custom_name)
   }
 
+  // Only surface providers that are actually configured (built-in or custom).
+  // An unconfigured vendor has no usable credentials, so listing it — and
+  // flagging it "unconfigured" — only adds noise. The currently-selected
+  // provider is always kept so a saved value never silently disappears.
   const providerOptions: DropdownOption[] = useMemo(() => {
-    const opts = (state.providers || []).map((id) => ({
-      value: id,
-      label: providerLabel(data, id),
-      hint: isConfigured(id) ? undefined : t('config_provider_unconfigured'),
-    }))
+    const opts = (state.providers || [])
+      .filter((id) => isConfigured(id) || id === provider)
+      .map((id) => ({ value: id, label: providerLabel(data, id) }))
     if (allowAuto) return [{ value: '', label: autoLabel || t('models_auto') }, ...opts]
     return opts
-  }, [state.providers, data, allowAuto, autoLabel])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.providers, data, allowAuto, autoLabel, provider])
 
   const currentUnconfigured = !!provider && !isConfigured(provider)
 

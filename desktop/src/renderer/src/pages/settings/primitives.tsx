@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { t } from '../../i18n'
 
@@ -50,13 +51,42 @@ export const Dropdown: React.FC<{
 }> = ({ value, display, placeholder, options, disabled, onChange }) => {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // The menu is rendered in a portal with fixed positioning so it's never
+  // clipped by an ancestor's `overflow` (e.g. a modal's scroll container).
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null)
+
+  const place = () => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setRect({ left: r.left, top: r.bottom + 4, width: r.width })
+  }
+
+  useLayoutEffect(() => {
+    if (open) place()
+  }, [open])
+
   useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
     }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
+    // Keep the fixed menu anchored to the trigger on scroll/resize by
+    // re-measuring — NOT closing. Closing on scroll makes the dropdown vanish
+    // the moment the user scrolls the settings page.
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('resize', place, true)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('resize', place, true)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open])
+
   const current = display ?? options.find((o) => o.value === value)?.label ?? ''
   return (
     <div ref={ref} className="relative">
@@ -73,28 +103,35 @@ export const Dropdown: React.FC<{
         <span className={`truncate ${current ? '' : 'text-content-tertiary'}`}>{current || placeholder || '--'}</span>
         <ChevronDown size={15} className={`text-content-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-64 overflow-y-auto rounded-btn border border-default bg-elevated shadow-lg py-1">
-          {options.length === 0 && (
-            <div className="px-3 py-2 text-sm text-content-tertiary">{t('models_no_options')}</div>
-          )}
-          {options.map((o) => (
-            <div
-              key={o.value}
-              onClick={() => {
-                onChange(o.value)
-                setOpen(false)
-              }}
-              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                o.value === value ? 'bg-accent-soft text-accent' : 'text-content-secondary hover:bg-surface-2'
-              }`}
-            >
-              <div className="truncate">{o.label}</div>
-              {o.hint && <div className="text-xs text-content-tertiary mt-0.5 truncate">{o.hint}</div>}
-            </div>
-          ))}
-        </div>
-      )}
+      {open &&
+        rect &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width }}
+            className="z-[100] max-h-64 overflow-y-auto rounded-btn border border-default bg-elevated shadow-lg py-1"
+          >
+            {options.length === 0 && (
+              <div className="px-3 py-2 text-sm text-content-tertiary">{t('models_no_options')}</div>
+            )}
+            {options.map((o) => (
+              <div
+                key={o.value}
+                onClick={() => {
+                  onChange(o.value)
+                  setOpen(false)
+                }}
+                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  o.value === value ? 'bg-accent-soft text-accent' : 'text-content-secondary hover:bg-surface-2'
+                }`}
+              >
+                <div className="truncate">{o.label}</div>
+                {o.hint && <div className="text-xs text-content-tertiary mt-0.5 truncate">{o.hint}</div>}
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

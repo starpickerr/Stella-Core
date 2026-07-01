@@ -294,8 +294,11 @@ const VendorModal: React.FC<{
   const open = !!provider || addMode
 
   // In add-mode the user first picks a built-in provider; that selection
-  // becomes the effective provider whose key/base fields we edit.
-  const builtins = useMemo(() => data.providers.filter((p) => !(p.is_custom && p.custom_name)), [data.providers])
+  // becomes the effective provider whose key/base fields we edit. Exclude ALL
+  // custom providers (named or empty placeholder): custom vendors are added via
+  // the single "custom vendor" option below, so an empty custom placeholder must
+  // not show up here as a second, duplicate custom entry.
+  const builtins = useMemo(() => data.providers.filter((p) => !p.is_custom), [data.providers])
   const firstUnconfigured = builtins.find((p) => !p.configured) || builtins[0]
   const [pickId, setPickId] = useState('')
 
