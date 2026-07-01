@@ -170,12 +170,16 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     return !!config?.api_keys?.[f]
   }
 
+  // Only list configured providers (built-in or custom). Unconfigured vendors
+  // have no usable credentials, so showing them — flagged "unconfigured" — is
+  // just noise. Keep the current selection so a saved value never disappears.
   const providerIds = config?.providers ? Object.keys(config.providers) : []
-  const providerOptions = providerIds.map((id) => ({
-    value: id,
-    label: localizedLabel(providerMeta(id)?.label) || id,
-    hint: isConfigured(id) ? undefined : t('config_provider_unconfigured'),
-  }))
+  const providerOptions = providerIds
+    .filter((id) => isConfigured(id) || id === provider)
+    .map((id) => ({
+      value: id,
+      label: localizedLabel(providerMeta(id)?.label) || id,
+    }))
   const currentMeta = providerMeta(provider)
   const currentUnconfigured = !!provider && !isConfigured(provider)
   const modelOptions = [
