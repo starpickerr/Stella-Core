@@ -1582,9 +1582,9 @@ class ConfigHandler:
     _RECOMMENDED_MODELS = [
         const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
         const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
-        # claude-fable-5 is placed after claude-opus-4-7 (not as the Claude
-        # default) since it is often unavailable due to policy restrictions.
-        const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_FABLE_5, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
+        # claude-sonnet-5 is the Claude default; claude-fable-5 is dropped
+        # from this web console list for now.
+        const.CLAUDE_SONNET_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
@@ -1629,7 +1629,7 @@ class ConfigHandler:
             "api_base_key": "claude_api_base",
             "api_base_default": "https://api.anthropic.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_FABLE_5, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
+            "models": [const.CLAUDE_SONNET_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
         }),
         ("gemini", {
             "label": "Gemini",
@@ -2206,7 +2206,7 @@ class ModelsHandler:
         "doubao":    [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO],
         "moonshot":  [const.KIMI_K2_6],
         "dashscope": [const.QWEN37_PLUS, const.QWEN36_PLUS],
-        "claudeAPI": [const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
+        "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
         "gemini":    [const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         "qianfan":   [const.ERNIE_45_TURBO_VL],
         # Zhipu's bot hard-codes the call to glm-5v-turbo regardless of what
@@ -2229,7 +2229,7 @@ class ModelsHandler:
             const.QWEN37_PLUS,
             const.DOUBAO_SEED_2_1_PRO,
             const.KIMI_K2_6,
-            const.CLAUDE_4_6_SONNET,
+            const.CLAUDE_SONNET_5,
             const.GEMINI_31_FLASH_LITE_PRE,
         ],
         # Custom OpenAI-compatible providers have no preset list — model
@@ -2458,7 +2458,7 @@ class ModelsHandler:
         ("moonshot",  "moonshot_api_key",  const.KIMI_K2_6),
         ("doubao",    "ark_api_key",       const.DOUBAO_SEED_2_PRO),
         ("dashscope", "dashscope_api_key", const.QWEN37_PLUS),
-        ("claudeAPI", "claude_api_key",    const.CLAUDE_4_6_SONNET),
+        ("claudeAPI", "claude_api_key",    const.CLAUDE_SONNET_5),
         ("gemini",    "gemini_api_key",    const.GEMINI_35_FLASH),
         ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
         ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
