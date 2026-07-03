@@ -108,6 +108,8 @@ jobs:
           # is the correct state for unsigned builds.
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Signing identity name for the backend-signing afterPack hook.
+          MAC_CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -123,6 +125,9 @@ jobs:
           if [ -n "$MAC_CSC_LINK" ]; then
             export CSC_LINK="$MAC_CSC_LINK"
             export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+            # Identity name used by the afterPack hook to sign the embedded
+            # PyInstaller backend (extraResources aren't signed by default).
+            export CSC_NAME="$MAC_CSC_NAME"
           fi
           if [ -z "$WIN_CSC_LINK" ]; then
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
