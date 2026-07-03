@@ -108,8 +108,6 @@ jobs:
           # is the correct state for unsigned builds.
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # Signing identity name for the backend-signing afterPack hook.
-          MAC_CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -125,9 +123,6 @@ jobs:
           if [ -n "$MAC_CSC_LINK" ]; then
             export CSC_LINK="$MAC_CSC_LINK"
             export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
-            # Identity name used by the afterPack hook to sign the embedded
-            # PyInstaller backend (extraResources aren't signed by default).
-            export CSC_NAME="$MAC_CSC_NAME"
           fi
           if [ -z "$WIN_CSC_LINK" ]; then
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
@@ -137,7 +132,9 @@ jobs:
           # (read-only) feed served from R2/D1, which it can't upload to. We mirror
           # installers to R2 and register them in D1 ourselves (publish-r2 job).
           # `--publish never` still emits the latest*.yml files we parse for sha512.
-          npx electron-builder ${{ matrix.eb_flags }} --publish never
+          # Use the dynamic config (electron-builder.js) so mac.binaries is
+          # populated with the embedded backend's Mach-O files for signing.
+          npx electron-builder ${{ matrix.eb_flags }} --config electron-builder.js --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

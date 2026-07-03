@@ -44,7 +44,6 @@
   "build": {
     "appId": "com.cowagent.desktop",
     "productName": "CowAgent",
-    "afterPack": "build/sign-backend.js",
     "directories": {
       "output": "release"
     },
