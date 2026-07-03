@@ -54,7 +54,6 @@ desktop/build/*
 !desktop/build/cowagent-backend.spec
 !desktop/build/requirements-desktop.txt
 !desktop/build/build-backend.sh
-!desktop/build/sign-backend.js
 !desktop/build/entitlements.mac.plist
 
 # Icon authoring scratch dir: intermediate assets used to produce the final
