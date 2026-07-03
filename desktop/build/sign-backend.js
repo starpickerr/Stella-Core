@@ -21,11 +21,38 @@ exports.default = async function signBackend(context) {
   // Signing identity comes from CSC_NAME (set in CI and, for local builds,
   // your shell). No identity => unsigned build (e.g. dry runs), so skip the
   // backend signing rather than fail.
-  const identity = process.env.CSC_NAME
-  if (!identity) {
+  const cscName = process.env.CSC_NAME
+  if (!cscName) {
     console.log('[sign-backend] CSC_NAME not set — unsigned build, skipping backend signing')
     return
   }
+
+  // Resolve CSC_NAME to a certificate SHA-1 hash. In CI electron-builder
+  // imports the cert into a temporary keychain (not login.keychain), so
+  // matching by name is unreliable — `codesign` may not find it. The SHA-1 is
+  // unambiguous and works across the whole keychain search list.
+  //
+  // `security find-identity -v -p codesigning` searches every keychain on the
+  // user search list (including the temp one electron-builder registers) and
+  // prints lines like:  1) <SHA1>  "Developer ID Application: ... (TEAMID)"
+  let identity = cscName
+  try {
+    const idList = execFileSync(
+      'security',
+      ['find-identity', '-v', '-p', 'codesigning'],
+      { encoding: 'utf8' }
+    )
+    for (const line of idList.split('\n')) {
+      const m = line.match(/\)\s+([0-9A-F]{40})\s+"(.+)"/i)
+      if (m && m[2] === cscName) {
+        identity = m[1]
+        break
+      }
+    }
+  } catch (e) {
+    console.warn('[sign-backend] could not resolve identity hash, falling back to name')
+  }
+  console.log(`[sign-backend] using signing identity: ${identity}`)
 
   const appName = packager.appInfo.productFilename
   const backendDir = path.join(
