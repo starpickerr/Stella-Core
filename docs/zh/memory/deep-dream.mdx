@@ -83,6 +83,22 @@ Deep Dream 遵循以下整理规则：
   首次部署后可以手动执行一次 `/memory dream 30`，将历史天级记忆全量蒸馏到 MEMORY.md。
 </Tip>
 
+## 配置开关
+
+通过 `config.json` 中的 `deep_dream_enabled` 控制每晚的自动蒸馏：
+
+```json
+{
+  "deep_dream_enabled": true
+}
+```
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `deep_dream_enabled` | 是否启用每日定时蒸馏 | `true` |
+
+默认开启，保持与现有行为一致。关闭后每晚不再自动执行蒸馏，适合希望手动维护 MEMORY.md 或减少一次 LLM 调用的场景（每日记忆总结不受影响）。手动命令 `/memory dream` 也不受此开关影响，仍可随时触发。
+
 ## 安全机制
 
 | 机制 | 说明 |

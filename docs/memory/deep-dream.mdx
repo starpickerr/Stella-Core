@@ -79,6 +79,22 @@ In addition to the automatic daily run, you can manually trigger distillation in
   After first deployment, it's recommended to run `/memory dream 30` once to distill all historical daily memories into MEMORY.md.
 </Tip>
 
+## Config Toggle
+
+Control the nightly automatic distillation via `deep_dream_enabled` in `config.json`:
+
+```json
+{
+  "deep_dream_enabled": true
+}
+```
+
+| Key | Description | Default |
+| --- | --- | --- |
+| `deep_dream_enabled` | Enable the daily scheduled distillation | `true` |
+
+Enabled by default to keep existing behavior. When disabled, the nightly distillation no longer runs — useful if you prefer to maintain MEMORY.md manually or want to save an LLM call (daily memory summarization is not affected). The manual `/memory dream` command is also unaffected and can still be triggered anytime.
+
 ## Safety Mechanisms
 
 | Mechanism | Description |
