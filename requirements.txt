@@ -36,3 +36,7 @@ discord.py
 web.py; python_version < "3.13"
 web.py @ git+https://github.com/webpy/webpy.git ; python_version >= "3.13"
 legacy-cgi; python_version >= "3.13"
+
+# i18n translation mapping
+opencc-python-reimplemented
+

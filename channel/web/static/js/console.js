@@ -254,7 +254,254 @@ const I18N = {
         regenerate_response: '重新生成',
         edit_save: '保存并发送',
         edit_cancel: '取消',
+        logout: '退出',
     },
+    'zh-tw': {
+
+        console: '控制台',
+        nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
+        menu_chat: '對話', menu_config: '設定', menu_models: '模型', menu_skills: '技能',
+        menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
+        menu_logs: '日誌',
+        models_title: '模型管理',
+        models_desc: '統一管理對話、影像、語音、向量、搜尋能力',
+        models_section_vendors: '廠商憑據',
+        models_section_vendors_desc: '一處設定，多個模型能力共享',
+        models_section_capabilities: '模型能力',
+        models_add_vendor: '新增廠商',
+        models_provider: '廠商',
+        models_model: '模型',
+        models_voice: '音色',
+        models_configured: '已設定',
+        models_not_configured: '未設定',
+        models_pick_to_configure: '選擇以設定',
+        models_clear_credential: '清除憑據',
+        models_base_default_hint: '留空將使用官方預設地址',
+        models_base_default: '預設',
+        models_custom_vendor_label: '自定義',
+        models_custom_name: '名稱',
+        models_custom_delete: '刪除',
+        models_custom_delete_confirm_title: '刪除自定義廠商',
+        models_custom_delete_confirm_msg: '確定刪除該自定義廠商嗎？此操作無法撤銷。',
+        models_custom_name_required: '請填寫名稱',
+        models_custom_base_required: '請填寫 API Base',
+        models_custom_edit_title: '編輯自定義廠商',
+        models_custom_add_title: '新增自定義廠商',
+        models_capability_chat: '主模型',
+        models_capability_chat_desc: '用於基礎對話和 Agent 推理',
+        models_capability_vision: '影像理解',
+        models_capability_vision_desc: '識別圖片內容，用於影像識別工具',
+        models_capability_image: '影像生成',
+        models_capability_image_desc: '生成圖片，用於影像生成技能',
+        models_auto_using: '當前優先使用',
+        models_capability_asr: '語音識別',
+        models_capability_asr_desc: '語音轉文字',
+        models_capability_tts: '語音合成',
+        models_capability_tts_desc: '文字轉語音',
+        models_capability_embedding: '向量',
+        models_capability_embedding_desc: '用於記憶與知識的向量化檢索',
+        models_capability_search: '聯網搜尋',
+        models_capability_search_desc: '實時網頁檢索能力，用於搜尋工具',
+        models_strategy_auto: '自動',
+        models_search_strategy_label: '策略',
+        models_search_strategy_fixed: '指定',
+        models_search_strategy_auto_hint: '從已設定廠商中自動選擇',
+        models_search_strategy_fixed_hint: '指定使用搜尋廠商',
+        models_pending_config: '待設定',
+        models_search_available_label: '可用搜尋廠商：',
+        models_search_none_configured: '暫未啟用任何搜尋廠商，點選新增',
+        models_search_add_provider: '新增廠商',
+        models_search_add_desc: '選擇一個搜尋廠商進行設定',
+        models_search_bocha_title: '設定博查 API Key',
+        models_search_bocha_desc: '前往博查開放平臺建立 API Key',
+        models_search_edit_hint: '點選修改設定',
+        models_unavailable: '不可用',
+        models_set_via_env: '透過環境變數啟用',
+        models_dim_label: '維度',
+        models_save_success: '已儲存',
+        models_save_failed: '儲存失敗',
+        models_cleared: '已清除',
+        models_clear_failed: '清除失敗',
+        models_embedding_change_title: '更改向量模型',
+        models_embedding_change_msg: '切換向量模型後，已有索引將失效，需要重建。是否繼續？',
+        models_embedding_saved_title: '向量模型已更新',
+        models_embedding_saved_msg: '請在聊天框輸入 /memory rebuild-index 重建索引。',
+        models_embedding_saved_ok: '去執行',
+        models_pick_provider: '待選擇',
+        models_clear_confirm_title: '清除廠商憑據',
+        models_clear_confirm_msg: '確認清除該廠商的 API Key 與 Base URL 嗎？相關能力將不再可用。',
+        cancel: '取消',
+        save: '儲存',
+        ok: '確定',
+        knowledge_title: '知識庫', knowledge_desc: '瀏覽和探索你的知識庫',
+        knowledge_tab_docs: '檔案', knowledge_tab_graph: '圖譜',
+        knowledge_loading: '載入知識庫中...', knowledge_loading_desc: '知識頁面將顯示在這裡',
+        knowledge_select_hint: '選擇一個檔案檢視', knowledge_empty_hint: '暫無知識頁面',
+        knowledge_empty_guide: '在對話中傳送檔案、連結或主題給 Agent，它會自動整理到你的知識庫中。',
+        knowledge_go_chat: '開始對話',
+        knowledge_new: '新建',
+        knowledge_new_category: '新建分類',
+        knowledge_new_document: '新建檔案',
+        knowledge_import_documents: '匯入檔案',
+        welcome_subtitle: '我可以幫你解答問題、管理電腦、創造和執行技能，並透過<br>長期記憶和知識庫不斷成長',
+        example_sys_title: '系統管理', example_sys_text: '檢視工作空間裡有哪些檔案',
+        example_task_title: '定時任務', example_task_text: '1分鐘後提醒我檢查伺服器',
+        example_code_title: '程式設計助手', example_code_text: '搜尋AI資訊並生成視覺化網頁報告',
+        example_knowledge_title: '知識庫', example_knowledge_text: '檢視知識庫當前檔案情況',
+        example_skill_title: '技能系統', example_skill_text: '檢視所有支援的工具和技能',
+        example_web_title: '指令中心', example_web_text: '檢視全部命令',
+        slash_help: '顯示命令幫助',
+        slash_status: '檢視執行狀態',
+        slash_context: '檢視對話上下文',
+        slash_context_clear: '清除對話上下文',
+        slash_skill_list: '檢視已安裝技能',
+        slash_skill_list_remote: '瀏覽技能廣場',
+        slash_skill_search: '搜尋技能',
+        slash_skill_install: '安裝技能 (名稱或 GitHub URL)',
+        slash_skill_uninstall: '解除安裝技能',
+        slash_skill_info: '檢視技能詳情',
+        slash_skill_enable: '啟用技能',
+        slash_skill_disable: '禁用技能',
+        slash_memory_dream: '手動觸發記憶蒸餾 (可指定天數, 預設3)',
+        slash_knowledge: '檢視知識庫統計',
+        slash_knowledge_list: '檢視知識庫檔案樹',
+        slash_knowledge_on: '開啟知識庫',
+        slash_knowledge_off: '關閉知識庫',
+        slash_config: '檢視當前設定',
+        slash_cancel: '中止當前正在執行的 Agent 任務',
+        slash_logs: '檢視最近日誌',
+        slash_version: '檢視版本',
+        input_placeholder: '輸入訊息，或輸入 / 使用指令',
+        config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
+        config_model: '模型設定', config_agent: 'Agent 設定',
+        config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
+        config_model_advanced: '高階設定',
+        config_channel: '管道設定',
+        config_agent_enabled: 'Agent 模式',
+        config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '對話中 Agent 能輸入的最大 Token 長度，超過後會智慧壓縮處理',
+        config_max_turns: '最大記憶輪次', config_max_turns_hint: '一問一答為一輪，超過後會智慧壓縮處理',
+        config_max_steps: '最大執行步數', config_max_steps_hint: '單次對話中 Agent 最多呼叫工具的次數',
+        config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否啟用深度思考模式',
+        config_self_evolution: '自主進化', config_self_evolution_hint: '會話空閒後自動覆盤，沉澱記憶、最佳化技能、處理未完成事項',
+        evolution_badge: '自主學習',
+        config_channel_type: '管道型別',
+        config_provider: '模型廠商', config_model_name: '模型',
+        config_custom_model_hint: '輸入自定義模型名稱',
+        config_save: '儲存', config_saved: '已儲存',
+        config_save_error: '儲存失敗',
+        config_custom_option: '自定義',
+        config_custom_tip: '介面需遵循 OpenAI API 協議',
+        config_security: '安全設定', config_password: '訪問密碼',
+        config_password_hint: '留空則不啟用密碼保護',
+        config_password_changed: '密碼已更新，請重新登入',
+        config_password_cleared: '密碼已清除',
+        skills_title: '技能管理', skills_desc: '檢視、啟用或禁用 Agent 工具和技能', skills_hub_btn: '探索技能廣場',
+        skills_loading: '載入技能中...', skills_loading_desc: '技能載入後將顯示在此處',
+        tools_section_title: '內建工具', tools_loading: '載入工具中...',
+        skills_section_title: '技能', skill_enable: '啟用', skill_disable: '禁用',
+        skill_toggle_error: '操作失敗，請稍後再試',
+        memory_title: '記憶管理', memory_desc: '檢視 Agent 記憶檔案和內容',
+        memory_tab_files: '記憶檔案', memory_tab_dreams: '自主進化',
+        memory_loading: '載入記憶檔案中...', memory_loading_desc: '記憶檔案將顯示在此處',
+        memory_back: '返回列表',
+        memory_col_name: '檔名', memory_col_type: '型別', memory_col_size: '大小', memory_col_updated: '更新時間',
+        channels_title: '管道管理', channels_desc: '管理已接入的訊息管道',
+        channels_add: '接入管道', channels_disconnect: '斷開',
+        channels_save: '儲存設定', channels_saved: '已儲存', channels_save_error: '儲存失敗',
+        channels_restarted: '已儲存並重啟',
+        channels_connect_btn: '接入', channels_cancel: '取消',
+        channels_select_placeholder: '選擇要接入的管道...',
+        channels_empty: '暫未接入任何管道', channels_empty_desc: '點選右上角「接入管道」按鈕開始設定',
+        channels_disconnect_confirm: '確認斷開該管道？設定將保留但管道會停止執行。',
+        channels_connected: '已接入', channels_connecting: '接入中...',
+        weixin_scan_title: '微信掃碼登入', weixin_scan_desc: '請使用微信掃描下方二維碼',
+        weixin_scan_loading: '正在獲取二維碼...', weixin_scan_waiting: '等待掃碼...',
+        weixin_scan_scanned: '已掃碼，請在手機上確認', weixin_scan_expired: '二維碼已過期，正在重新整理...',
+        weixin_scan_success: '登入成功，正在啟動管道...', weixin_scan_fail: '獲取二維碼失敗',
+        weixin_qr_tip: '二維碼約2分鐘後過期',
+        wecom_scan_btn: '掃碼建立企微機器人', wecom_scan_desc: '使用企業微信掃碼，一鍵建立智慧機器人',
+        wecom_scan_success: '建立成功，正在啟動管道...',
+        wecom_scan_fail: '建立失敗',
+        wecom_mode_scan: '掃碼接入', wecom_mode_manual: '手動填寫',
+        feishu_scan_btn: '一鍵建立飛書應用',
+        feishu_scan_desc: '使用飛書 App 掃碼，自動建立應用並預置全部許可權與事件訂閱',
+        feishu_scan_replace_desc: '使用飛書 App 掃碼建立新機器人，將覆蓋當前的 App ID / Secret',
+        feishu_scan_loading: '正在向飛書申請二維碼...',
+        feishu_scan_waiting: '等待掃碼...',
+        feishu_scan_tip: '二維碼 10 分鐘內有效，僅供一次掃描',
+        feishu_scan_open_link: '或點選此處在瀏覽器中開啟',
+        feishu_scan_success: '應用建立成功，正在啟動管道...',
+        feishu_scan_expired: '二維碼已過期，請重試',
+        feishu_scan_denied: '已取消授權',
+        feishu_scan_fail: '建立失敗',
+        feishu_scan_retry: '重試',
+        feishu_mode_scan: '掃碼建立', feishu_mode_manual: '手動填寫',
+        tasks_title: '定時任務', tasks_desc: '檢視和管理定時任務',
+        tasks_coming: '即將推出', tasks_coming_desc: '定時任務管理功能即將在此提供',
+        task_add_btn: '新增任務',
+        task_edit_title: '編輯定時任務',
+        task_add_title: '新增定時任務',
+        task_name: '任務名稱',
+        task_enabled: '啟用任務',
+        task_schedule_type: '排程型別',
+        task_schedule_cron: 'Cron 表示式',
+        task_schedule_interval: '固定間隔',
+        task_schedule_once: '一次性任務',
+        task_cron_expression: 'Cron 表示式',
+        task_cron_hint: '格式: 分 時 日 月 周，例如 "0 9 * * *" 表示每天 9:00',
+        task_interval_seconds: '間隔秒數',
+        task_interval_hint: '最小 60 秒，例如 3600 表示每小時執行一次',
+        task_once_time: '執行時間',
+        task_action_type: '動作型別',
+        task_action_send_message: '傳送訊息',
+        task_action_agent_task: 'AI 任務',
+        task_channel_type: '管道型別',
+        task_channel_hint: '選擇定時訊息傳送的管道',
+        task_message_content: '訊息內容',
+        task_task_description: '任務描述',
+        task_delete_btn: '刪除任務',
+        task_delete_confirm_title: '刪除定時任務',
+        task_delete_confirm_msg: '確定刪除該定時任務嗎？此操作無法撤銷。',
+        logs_title: '日誌', logs_desc: '實時日誌輸出 (run.log)',
+        logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
+        new_chat: '新對話',
+        session_history: '歷史會話',
+        today: '今天', yesterday: '昨天', earlier: '更早',
+        delete_session_confirm: '確認刪除該會話？所有訊息將被清除。',
+        delete_session_title: '刪除會話',
+        rename_session: '重新命名',
+        delete_message_confirm: '確認刪除這條訊息？',
+        delete_message_title: '刪除訊息',
+        edit_disabled_reply_active: '正在生成回覆，暫時無法編輯。',
+        delete_disabled_reply_active: '正在生成回覆，暫時無法刪除。',
+        untitled_session: '新對話',
+        context_cleared: '— 以上內容已從上下文中移除 —',
+        tip_new_chat: '新建對話',
+        tip_clear_context: '清除上下文',
+        tip_attach: '新增附件',
+        attach_menu_file: '上傳檔案',
+        mic_idle_title: '點選錄音 / 再按一次結束',
+        mic_recording_title: '錄音中，再次點選結束',
+        mic_busy_title: '識別中…',
+        mic_permission_denied: '無法訪問麥克風，請檢查瀏覽器許可權',
+        mic_too_short: '錄音太短，請重試',
+        mic_error: '語音識別失敗',
+        speak_msg: '朗讀這段回覆',
+        voice_reply_mode_label: '語音回覆策略',
+        voice_reply_off: '關閉',
+        voice_reply_if_voice: '僅語音問/語音答',
+        voice_reply_always: '總是語音回覆',
+        attach_menu_folder: '上傳資料夾',
+        confirm_yes: '確認',
+        confirm_cancel: '取消',
+        error_send: '傳送失敗，請稍後再試。', error_timeout: '請求超時，請再試一次。',
+        thinking_in_progress: '思考中...', thinking_done: '已深度思考', thinking_duration: '耗時',
+        edit_message: '編輯訊息',
+        regenerate_response: '重新生成',
+        edit_save: '儲存併傳送',
+        edit_cancel: '取消',
+        logout: '登出',
+        },
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
@@ -498,6 +745,7 @@ const I18N = {
         regenerate_response: 'Regenerate',
         edit_save: 'Save and send',
         edit_cancel: 'Cancel',
+        logout: 'Logout',
     }
 };
 
@@ -544,12 +792,19 @@ function applyI18n() {
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         el.placeholder = t(el.dataset['i18nPlaceholder']);
     });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        el.title = t(el.dataset['i18nTitle']);
+    });
     document.querySelectorAll('[data-tip-key]').forEach(el => {
         el.setAttribute('data-tooltip', t(el.dataset.tipKey));
     });
     installCfgTipPortal();
     const langLabel = document.getElementById('lang-label');
-    if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
+    if (langLabel) {
+        if (currentLang === 'zh-tw') langLabel.textContent = '繁中';
+        else if (currentLang === 'zh') langLabel.textContent = '簡中';
+        else langLabel.textContent = 'EN';
+    }
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
     if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
@@ -559,7 +814,7 @@ function applyI18n() {
 // persists the user choice locally, re-renders the UI, and binds the choice to
 // the backend `cow_lang` config so logs / agent replies / CLI follow suit.
 function setLanguage(lang) {
-    const next = (lang === 'en') ? 'en' : 'zh';
+    const next = (lang === 'en' || lang === 'zh' || lang === 'zh-tw') ? lang : 'zh';
     if (next === currentLang) {
         // Still persist + sync in case storage/backend drifted from the UI.
         syncLanguageToBackend(next);
@@ -569,38 +824,52 @@ function setLanguage(lang) {
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
-    // Re-render views whose DOM is built in JS (data-i18n alone does not
-    // cover strings interpolated via t() into innerHTML).
-    try { rerenderDynamicViews(); } catch (e) {}
     // Keep the language switch button and config selector visually in sync.
     try { updateLangControls(); } catch (e) {}
-    syncLanguageToBackend(currentLang);
+    
+    // Sync language choice to backend first, then trigger dynamic views reload
+    // to avoid race conditions on API endpoints.
+    syncLanguageToBackend(currentLang, () => {
+        try { rerenderDynamicViews(); } catch (e) {}
+    });
 }
 
 // Persist the language to the backend `cow_lang` config (best-effort; the UI
 // has already switched locally, so a network failure is non-blocking).
-function syncLanguageToBackend(lang) {
+function syncLanguageToBackend(lang, callback) {
     try {
         fetch('/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ updates: { cow_lang: lang } })
-        }).catch(() => {});
-    } catch (e) {}
+        })
+        .then(() => { if (callback) callback(); })
+        .catch(() => { if (callback) callback(); });
+    } catch (e) {
+        if (callback) callback();
+    }
 }
 
 // Reflect the current language on both the top-right toggle and the config
 // selector (if present), so the two entry points stay synchronized.
 function updateLangControls() {
     const langLabel = document.getElementById('lang-label');
-    if (langLabel) langLabel.textContent = currentLang === 'zh' ? '中文' : 'EN';
+    if (langLabel) {
+        if (currentLang === 'zh-tw') langLabel.textContent = '繁體';
+        else if (currentLang === 'zh') langLabel.textContent = '簡體';
+        else langLabel.textContent = 'EN';
+    }
     // The config language picker is the custom .cfg-dropdown component. Only
     // sync it once it has been initialized (i.e. the config panel was opened).
     const sel = document.getElementById('cfg-lang-select');
     if (sel && sel._ddValue !== undefined && sel._ddValue !== currentLang) {
         sel._ddValue = currentLang;
         const textEl = sel.querySelector('.cfg-dropdown-text');
-        if (textEl) textEl.textContent = currentLang === 'zh' ? '中文' : 'English';
+        if (textEl) {
+            if (currentLang === 'zh-tw') textEl.textContent = '繁體中文';
+            else if (currentLang === 'zh') textEl.textContent = '简体中文';
+            else textEl.textContent = 'English';
+        }
         sel.querySelectorAll('.cfg-dropdown-item').forEach(i => {
             i.classList.toggle('active', i.dataset.value === currentLang);
         });
@@ -608,7 +877,13 @@ function updateLangControls() {
 }
 
 function toggleLanguage() {
-    setLanguage(currentLang === 'zh' ? 'en' : 'zh');
+    if (currentLang === 'zh') {
+        setLanguage('zh-tw');
+    } else if (currentLang === 'zh-tw') {
+        setLanguage('en');
+    } else {
+        setLanguage('zh');
+    }
 }
 
 // Refresh JS-rendered views after a language switch. Each branch uses the
@@ -622,6 +897,19 @@ function rerenderDynamicViews() {
     if (currentView === 'tasks') {
         tasksLoaded = false;
         loadTasksView();
+    }
+    // Reload skills and tools after language switch
+    if (currentView === 'skills') {
+        toolsLoaded = false;
+        loadSkillsView();
+    }
+    // Reload channels after language switch
+    if (currentView === 'channels') {
+        loadChannelsView();
+    }
+    // Reload config after language switch
+    if (currentView === 'config') {
+        loadConfigView();
     }
 }
 
@@ -4266,7 +4554,7 @@ function initConfigView(data) {
     if (langSel) {
         initDropdown(
             langSel,
-            [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }],
+            [{ value: 'zh', label: '简体中文' }, { value: 'zh-tw', label: '繁體中文' }, { value: 'en', label: 'English' }],
             currentLang,
             (val) => setLanguage(val)
         );
@@ -4561,6 +4849,9 @@ function savePasswordConfig() {
                 input.dataset.maskedVal = '';
                 input.classList.remove('cfg-key-masked');
                 showStatus('cfg-password-status', 'config_password_cleared', false);
+                const logoutBtn = document.getElementById('logout-btn-header');
+                if (logoutBtn) logoutBtn.classList.add('hidden');
+                setTimeout(() => { window.location.reload(); }, 1500);
             }
         } else {
             showStatus('cfg-password-status', 'config_save_error', true);
@@ -8728,6 +9019,9 @@ function showLoginScreen() {
     if (currentLang === 'en') {
         subtitle.textContent = 'Enter password to access the console';
         loginBtn.textContent = 'Login';
+    } else if (currentLang === 'zh-tw') {
+        subtitle.textContent = '請輸入密碼以存取控制台';
+        loginBtn.textContent = '登入';
     } else {
         subtitle.textContent = '请输入密码以访问控制台';
         loginBtn.textContent = '登录';
@@ -8754,22 +9048,49 @@ function showLoginScreen() {
             if (data.status === 'success') {
                 overlay.classList.add('hidden');
                 document.getElementById('app').classList.remove('hidden');
+                const logoutBtn = document.getElementById('logout-btn-header');
+                if (logoutBtn) logoutBtn.classList.remove('hidden');
                 initApp();
             } else {
-                errEl.textContent = currentLang === 'zh' ? '密码错误' : 'Wrong password';
+                if (currentLang === 'zh-tw') {
+                    errEl.textContent = '密碼錯誤';
+                } else if (currentLang === 'zh') {
+                    errEl.textContent = '密码错误';
+                } else {
+                    errEl.textContent = 'Wrong password';
+                }
                 errEl.classList.remove('hidden');
                 pwdInput.value = '';
                 pwdInput.focus();
             }
             btn.disabled = false;
         }).catch(() => {
-            errEl.textContent = currentLang === 'zh' ? '网络错误，请重试' : 'Network error, please retry';
+            if (currentLang === 'zh-tw') {
+                errEl.textContent = '網路錯誤，請重試';
+            } else if (currentLang === 'zh') {
+                errEl.textContent = '网络错误，请重试';
+            } else {
+                errEl.textContent = 'Network error, please retry';
+            }
             errEl.classList.remove('hidden');
             btn.disabled = false;
         });
         return false;
     };
 }
+
+function handleLogout() {
+    fetch('/auth/logout', {
+        method: 'POST'
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            window.location.reload();
+        }
+    }).catch(() => {
+        window.location.reload();
+    });
+}
+window.handleLogout = handleLogout;
 
 // Intercept 401 responses globally to show login screen on session expiry
 const _originalFetch = window.fetch;
@@ -8816,6 +9137,10 @@ fetch('/auth/check').then(r => r.json()).then(data => {
     if (data.auth_required && !data.authenticated) {
         showLoginScreen();
     } else {
+        if (data.auth_required) {
+            const logoutBtn = document.getElementById('logout-btn-header');
+            if (logoutBtn) logoutBtn.classList.remove('hidden');
+        }
         initApp();
     }
 }).catch(() => {
