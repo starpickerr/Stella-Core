@@ -1,5 +1,6 @@
 # encoding:utf-8
 
+import ast
 import copy
 import json
 import logging
@@ -427,9 +428,12 @@ def load_config():
                 # ast.literal_eval only parses Python literals (strings, numbers,
                 # tuples, lists, dicts, booleans, None) and CANNOT execute
                 # arbitrary code, preventing environment-variable injection.
-                import ast
                 config[name] = ast.literal_eval(value)
-            except (ValueError, SyntaxError):
+            except Exception:
+                # literal_eval can raise ValueError/SyntaxError for non-literal
+                # strings, but also TypeError/RecursionError on malformed input
+                # (e.g. unhashable dict keys); catch broadly to avoid crashing
+                # startup, and fall back to treating the value as a plain string.
                 if value.lower() == "false":
                     config[name] = False
                 elif value.lower() == "true":
