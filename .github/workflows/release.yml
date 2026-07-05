@@ -298,36 +298,12 @@ jobs:
             *)   is_latest=1; echo "==> $VER is a stable release; marking latest." ;;
           esac
 
-          # The updater yml files (in the per-platform artifacts) carry the
-          # sha512 electron-updater validates against; read it from there so the
-          # /update feed serves the exact same hash. Build a name->sha512 map.
-          python3 - "$VER" <<'PY' > sha_map.txt
-          import os, re, sys, glob
-          # Parse electron-builder's latest*.yml file lists: pairs of
-          #   - url: <name>
-          #     sha512: <b64>
-          out = {}
-          for yml in glob.glob('artifacts/**/*.yml', recursive=True):
-              try:
-                  text = open(yml, encoding='utf-8').read()
-              except Exception:
-                  continue
-              cur = None
-              for line in text.splitlines():
-                  m = re.match(r'\s*-?\s*url:\s*(\S+)', line)
-                  if m:
-                      cur = m.group(1).strip()
-                      continue
-                  m = re.match(r'\s*sha512:\s*(\S+)', line)
-                  if m and cur:
-                      out[os.path.basename(cur)] = m.group(1).strip()
-                      cur = None
-          for name, sha in out.items():
-              print(f"{name}\t{sha}")
-          PY
-          echo "==> sha512 map:"; cat sha_map.txt || true
-
-          sha_for() { awk -F'\t' -v n="$1" '$1==n{print $2; exit}' sha_map.txt; }
+          # Compute sha512 (base64, the format electron-updater validates) from
+          # the actual staged files rather than electron-builder's latest*.yml:
+          # stapling rewrites the dmg AFTER those yml files are generated, so
+          # the yml hashes are stale for mac. Hashing the real bytes keeps the
+          # /update feed (generated from D1) consistent with what R2 serves.
+          sha_for_file() { openssl dgst -sha512 -binary "$1" | openssl base64 -A; }
 
           for f in dist/*; do
             base="$(basename "$f")"
@@ -339,7 +315,7 @@ jobs:
               *) echo "Skipping unrecognized artifact: $base"; continue ;;
             esac
             key="v${VER}/${base}"
-            sha="$(sha_for "$base")"
+            sha="$(sha_for_file "$f")"
             # SQL-escape single quotes defensively (base64 has none, but be safe).
             sha="${sha//\'/\'\'}"
             # Stable only: clear the previous latest for THIS platform first, so
@@ -351,3 +327,26 @@ jobs:
           done
           echo "==> D1 statements:"; cat "$sql_file"
           npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"
+
+      # Attach installers to the GitHub Release for the tag. Only on tag
+      # pushes (manual dispatch has no tag to attach to). Pre-release suffix
+      # (e.g. 1.2.0-beta) marks the Release as a pre-release.
+      - name: Upload GitHub Release assets
+        if: github.event_name == 'push' && steps.stage.outputs.has_files == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          tag="v${VER}"
+          case "$VER" in
+            *-*) prerelease="--prerelease" ;;
+            *)   prerelease="" ;;
+          esac
+          # Create the release if it doesn't exist yet; keep it if it does.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$tag" --generate-notes $prerelease
+          fi
+          # --clobber so re-runs (e.g. after a notarization retry) overwrite.
+          gh release upload "$tag" dist/*.dmg dist/*.exe \
+            --repo "$GITHUB_REPOSITORY" --clobber
