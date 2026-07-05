@@ -419,6 +419,17 @@ class MemoryFlushManager:
             lookback_days: How many days of daily files to read (default 1 for scheduled, 3 for manual)
             force: Skip input-hash dedup check (used by manual /memory dream trigger)
         """
+        # Config guard for scheduled runs. Manual trigger (force=True) always
+        # runs since it is an explicit user action.
+        if not force:
+            try:
+                from config import conf
+                if not conf().get("deep_dream_enabled", True):
+                    logger.info("[DeepDream] deep_dream_enabled=false, skipping")
+                    return False
+            except Exception:
+                pass
+
         if not self.llm_model:
             logger.warning("[DeepDream] No LLM model available, skipping")
             return False
