@@ -71,7 +71,13 @@ function collectBackendBinaries() {
 if (process.platform === 'darwin') {
   const binaries = collectBackendBinaries()
   console.log(`[electron-builder.js] injecting ${binaries.length} backend binaries into mac.binaries`)
-  config.mac = { ...config.mac, binaries }
+  // Sign the app (+ backend binaries) here, but do NOT notarize inline.
+  // electron-builder runs `notarytool submit --wait`, which aborts the whole
+  // build on a single status-polling timeout (NSURLErrorDomain -1001) — a
+  // frequent transient failure on the runner -> Apple link. Notarization still
+  // happens: a dedicated CI step submits + staples the dmg with a retry loop,
+  // so a flaky poll retries instead of throwing away the signed build.
+  config.mac = { ...config.mac, binaries, notarize: false }
 }
 
 module.exports = config
