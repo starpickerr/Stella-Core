@@ -152,10 +152,9 @@ jobs:
             echo "::notice::MAC_CSC_LINK not set — skipping notarization (unsigned build)."
           fi
 
-      # Notarize + staple the dmg in a separate, retryable step. electron-builder's
-      # inline notarize aborts the whole build on a single notarytool poll timeout
-      # (NSURLErrorDomain -1001); this step retries so a flaky poll doesn't discard
-      # the signed build. Skipped for Windows and for unsigned builds (no cert).
+      # Notarize + staple the dmg: submit ONCE, then poll that submission id
+      # until Accepted/Invalid (see notarize-dmg.sh — never resubmits).
+      # Skipped for Windows and for unsigned builds (no cert).
       - name: Notarize macOS dmg
         if: matrix.platform == 'mac' && steps.macsign.outputs.enabled == 'true'
         working-directory: desktop
@@ -175,7 +174,13 @@ jobs:
             bash build/notarize-dmg.sh "$dmg"
           done
 
+      # Always upload artifacts, even when notarization timed out. The
+      # notarization ticket is keyed to the dmg's hash on Apple's servers: if
+      # the submission is eventually Accepted, THIS exact dmg becomes valid
+      # as-is (download it, `xcrun stapler staple`, publish manually) — no
+      # rebuild needed. Rebuilding would change the hash and waste the ticket.
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           # One bundle per platform/arch so the publish job can collect them all.
