@@ -62,6 +62,47 @@ function stripCancelMarker(text: string): string {
     .trim()
 }
 
+/**
+ * Rebuild attachments from `send`-tool results persisted in the message steps.
+ * SSE `file_to_send` events aren't stored, so on history reload the only record
+ * of a sent image/file is the tool result JSON. Mirrors the web console's
+ * `_renderSentFileFromToolResult` so media survives an app restart.
+ */
+function attachmentsFromSteps(steps: MessageStep[]): Attachment[] {
+  const out: Attachment[] = []
+  for (const s of steps) {
+    if (s.type !== 'tool' || !s.result) continue
+    let payload: Record<string, unknown>
+    try {
+      payload = typeof s.result === 'string' ? JSON.parse(s.result) : (s.result as unknown as Record<string, unknown>)
+    } catch {
+      continue
+    }
+    if (!payload || payload.type !== 'file_to_send') continue
+    const rawPath = (payload.path as string) || ''
+    const url = (payload.url as string) || ''
+    if (!rawPath && !url) continue
+    const isRemote = url.toLowerCase().startsWith('http://') || url.toLowerCase().startsWith('https://')
+    // Local files are served via /api/file; remote URLs are used directly.
+    const previewUrl = isRemote
+      ? url
+      : rawPath.toLowerCase().startsWith('http')
+        ? rawPath
+        : apiClient.getServeFileUrl(rawPath)
+    const kind = (payload.file_type as string) || 'file'
+    const fileType: Attachment['file_type'] =
+      kind === 'image' ? 'image' : kind === 'video' ? 'video' : 'file'
+    out.push({
+      file_path: previewUrl,
+      file_name: (payload.file_name as string) || 'file',
+      file_type: fileType,
+      preview_url: previewUrl,
+      abs_path: isRemote ? undefined : rawPath,
+    })
+  }
+  return out
+}
+
 /** Convert a backend history message into a UI ChatMessage. */
 function historyToMessage(m: HistoryMessage): ChatMessage {
   if (m.role === 'user') {
@@ -89,6 +130,7 @@ function historyToMessage(m: HistoryMessage): ChatMessage {
     .filter((_, i) => i !== lastContentIdx)
     .map((s) => ({ ...s }))
   const finalContent = m.content || (lastContentIdx >= 0 ? raw[lastContentIdx].content || '' : '')
+  const attachments = attachmentsFromSteps(raw)
 
   return {
     id: uid('assistant'),
@@ -100,6 +142,7 @@ function historyToMessage(m: HistoryMessage): ChatMessage {
     kind: m.kind,
     extras: m.extras,
     botSeq: m._seq,
+    attachments: attachments.length > 0 ? attachments : undefined,
   }
 }
 
