@@ -71,13 +71,13 @@ function collectBackendBinaries() {
 if (process.platform === 'darwin') {
   const binaries = collectBackendBinaries()
   console.log(`[electron-builder.js] injecting ${binaries.length} backend binaries into mac.binaries`)
-  // Sign the app (+ backend binaries) here, but do NOT notarize inline.
-  // electron-builder runs `notarytool submit --wait`, which aborts the whole
-  // build on a single status-polling timeout (NSURLErrorDomain -1001) — a
-  // frequent transient failure on the runner -> Apple link. Notarization still
-  // happens: a dedicated CI step submits + staples the dmg with a retry loop,
-  // so a flaky poll retries instead of throwing away the signed build.
-  config.mac = { ...config.mac, binaries, notarize: false }
+  // Notarize via electron-builder's built-in flow, which zips the .app and
+  // submits THAT (then staples the .app and packs the dmg around it).
+  // Submitting the .app-zip is the path that actually gets Accepted by Apple's
+  // notary service; submitting the dmg directly got stuck "In Progress"
+  // indefinitely for this large PyInstaller bundle. notarize needs APPLE_ID /
+  // APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID in the environment.
+  config.mac = { ...config.mac, binaries, notarize: true }
 }
 
 module.exports = config
