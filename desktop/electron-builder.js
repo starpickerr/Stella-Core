@@ -71,15 +71,13 @@ function collectBackendBinaries() {
 if (process.platform === 'darwin') {
   const binaries = collectBackendBinaries()
   console.log(`[electron-builder.js] injecting ${binaries.length} backend binaries into mac.binaries`)
-  // Disable the built-in notarize: it runs `notarytool submit --wait`, which
-  // aborts the whole build on any network blip during polling (-1001/-1009)
-  // and re-submits fresh uploads on failure. Instead we notarize in an
-  // afterSign hook (build/notarize-app.js) that zips the .app (the payload
-  // Apple accepts for this bundle), submits ONCE, and polls the same id with
-  // network-fault tolerance. The hook runs after signing, before the dmg is
-  // built, and staples the .app so the dmg ships an offline-valid ticket.
+  // Sign the backend binaries here, but do NOT notarize in CI: Apple's notary
+  // service routinely keeps this large PyInstaller bundle "In Progress" for
+  // hours, which no CI job can afford to block on. Notarization is decoupled
+  // into a manual local step (build/notarize-dmg.sh) run after the CI produces
+  // the signed dmg. The dmg is code-signed and hardened-runtime enabled here,
+  // so it only needs the notarization ticket stapled afterwards.
   config.mac = { ...config.mac, binaries, notarize: false }
-  config.afterSign = 'build/notarize-app.js'
 }
 
 module.exports = config
