@@ -1,9 +1,20 @@
 name: Release Desktop
 
-# Tag-driven release: push a tag like `v1.2.0` to build and publish the
-# desktop client for macOS (arm64 + x64) and Windows (x64). The tag is the
-# single source of truth for the version — it's written into package.json at
-# build time, so the maintainer never edits the version by hand.
+# STAGE 1 of the decoupled release pipeline: BUILD ONLY.
+# Builds the desktop client for macOS (arm64 + x64) and Windows (x64), mirrors
+# the installers to R2, and registers them in D1 as UNPUBLISHED (is_latest=0)
+# so the website keeps serving the previous release. It does NOT notarize
+# (Apple's notary service stalls this large bundle for hours) and does NOT
+# create a GitHub Release.
+#
+# Full flow:
+#   1. (this workflow) build + upload to R2 + D1 as unpublished.
+#   2. (local) download the mac dmgs, run desktop/build/notarize-dmg.sh to
+#      notarize + staple + re-upload the stapled dmgs to R2.
+#   3. (Publish Desktop workflow) flip D1 is_latest=1 and attach GitHub
+#      Release assets — makes the version live on the site.
+#
+# Push a tag like `v1.2.0` (or use workflow_dispatch) to run stage 1.
 on:
   push:
     tags:
@@ -108,10 +119,6 @@ jobs:
           # is the correct state for unsigned builds.
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # electron-builder's built-in notarization reads these.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
@@ -134,9 +141,12 @@ jobs:
           # installers to R2 and register them in D1 ourselves (publish-r2 job).
           # `--publish never` still emits the latest*.yml files.
           # Use the dynamic config (electron-builder.js): it populates
-          # mac.binaries (backend Mach-O files to sign) and enables built-in
-          # notarization, which zips the .app and submits that (the path Apple
-          # actually accepts for this large bundle) then staples + packs the dmg.
+          # mac.binaries (backend Mach-O files to sign). Notarization is NOT done
+          # here — Apple's notary service keeps this large bundle "In Progress"
+          # for hours, so it's decoupled into a manual local step
+          # (desktop/build/notarize-dmg.sh) run after this build produces the
+          # signed dmg. The dmg is signed + hardened-runtime, so it only needs a
+          # ticket stapled later.
           npx electron-builder ${{ matrix.eb_flags }} --config electron-builder.js --publish never
 
       # Upload artifacts regardless of outcome, so a failed run still surfaces
@@ -250,21 +260,19 @@ jobs:
           # name (…-arm64.dmg / …-x64.dmg); .exe is the Windows installer.
           sql_file="$(mktemp)"
 
-          # Pre-releases (e.g. 1.0.0-test / -beta / -rc.1 / -alpha / -dev) are
-          # recorded but NEVER marked latest, so /download/<p>/latest keeps
-          # serving the last stable build. They also must not clear an existing
-          # stable's latest flag. Only a final version (no pre-release suffix)
-          # becomes the new latest and clears the previous one per platform.
-          case "$VER" in
-            *-*) is_latest=0; echo "==> $VER is a pre-release; not marking latest." ;;
-            *)   is_latest=1; echo "==> $VER is a stable release; marking latest." ;;
-          esac
+          # This build job ALWAYS registers rows as unpublished (is_latest=0), so
+          # /download/<p>/latest keeps serving the previous release and the new
+          # version stays invisible on the site. macOS dmgs still need to be
+          # notarized+stapled locally (build/notarize-dmg.sh) before they're
+          # safe to ship. Promotion to latest happens later, only after
+          # notarization, via the separate "Publish Desktop" workflow.
+          echo "==> Registering $VER as unpublished (is_latest=0)."
 
           # Compute sha512 (base64, the format electron-updater validates) from
-          # the actual staged files rather than electron-builder's latest*.yml:
-          # stapling rewrites the dmg AFTER those yml files are generated, so
-          # the yml hashes are stale for mac. Hashing the real bytes keeps the
-          # /update feed (generated from D1) consistent with what R2 serves.
+          # the actual staged files rather than electron-builder's latest*.yml.
+          # NOTE: for macOS the dmg is re-hashed later by the publish workflow
+          # after stapling (stapling rewrites the dmg bytes), so the sha stored
+          # here is a placeholder for mac and authoritative only for win.
           sha_for_file() { openssl dgst -sha512 -binary "$1" | openssl base64 -A; }
 
           for f in dist/*; do
@@ -280,35 +288,9 @@ jobs:
             sha="$(sha_for_file "$f")"
             # SQL-escape single quotes defensively (base64 has none, but be safe).
             sha="${sha//\'/\'\'}"
-            # Stable only: clear the previous latest for THIS platform first, so
-            # a partial backfill never wipes other platforms' latest flag.
-            if [ "$is_latest" = "1" ]; then
-              echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
-            fi
-            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, sha512, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, '${sha}', ${is_latest});" >> "$sql_file"
+            # Never mark latest here — the row is unpublished until the separate
+            # publish workflow promotes it after notarization.
+            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, sha512, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, '${sha}', 0);" >> "$sql_file"
           done
           echo "==> D1 statements:"; cat "$sql_file"
           npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"
-
-      # Attach installers to the GitHub Release for the tag. Only on tag
-      # pushes (manual dispatch has no tag to attach to). Pre-release suffix
-      # (e.g. 1.2.0-beta) marks the Release as a pre-release.
-      - name: Upload GitHub Release assets
-        if: github.event_name == 'push' && steps.stage.outputs.has_files == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VER: ${{ steps.ver.outputs.version }}
-        run: |
-          tag="v${VER}"
-          case "$VER" in
-            *-*) prerelease="--prerelease" ;;
-            *)   prerelease="" ;;
-          esac
-          # Create the release if it doesn't exist yet; keep it if it does.
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-              --title "$tag" --generate-notes $prerelease
-          fi
-          # --clobber so re-runs (e.g. after a notarization retry) overwrite.
-          gh release upload "$tag" dist/*.dmg dist/*.exe \
-            --repo "$GITHUB_REPOSITORY" --clobber
