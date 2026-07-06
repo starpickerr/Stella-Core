@@ -55,6 +55,7 @@ desktop/build/*
 !desktop/build/requirements-desktop.txt
 !desktop/build/build-backend.sh
 !desktop/build/entitlements.mac.plist
+!desktop/build/notarize-app.js
 
 # Icon authoring scratch dir: intermediate assets used to produce the final
 # icons. Only the finished icons under desktop/resources/ should be committed.
