@@ -684,11 +684,21 @@ class AgentBridge:
         """
         file_type = file_info.get("file_type", "file")
         file_path = file_info.get("path")
-        
+        # Remote URLs are passed through as-is; local paths get a file:// prefix
+        # so the channel can read them from disk.
+        remote_url = file_info.get("url", "")
+        is_remote = bool(remote_url) and remote_url.lower().startswith(("http://", "https://"))
+
+        def _to_channel_url(p: str) -> str:
+            if is_remote:
+                return remote_url
+            if p and p.lower().startswith(("http://", "https://")):
+                return p
+            return f"file://{p}"
+
         # For images, use IMAGE_URL type (channel will handle upload)
         if file_type == "image":
-            # Convert local path to file:// URL for channel processing
-            file_url = f"file://{file_path}"
+            file_url = _to_channel_url(file_path)
             logger.info(f"[AgentBridge] Sending image: {file_url}")
             reply = Reply(ReplyType.IMAGE_URL, file_url)
             # Attach text message if present (for channels that support text+image)
@@ -698,7 +708,7 @@ class AgentBridge:
         
         # For all file types (document, video, audio), use FILE type
         if file_type in ["document", "video", "audio"]:
-            file_url = f"file://{file_path}"
+            file_url = _to_channel_url(file_path)
             logger.info(f"[AgentBridge] Sending {file_type}: {file_url}")
             reply = Reply(ReplyType.FILE, file_url)
             reply.file_name = file_info.get("file_name", os.path.basename(file_path))
@@ -708,7 +718,7 @@ class AgentBridge:
             return reply
         
         # For all other file types (tar.gz, zip, etc.), also use FILE type
-        file_url = f"file://{file_path}"
+        file_url = _to_channel_url(file_path)
         logger.info(f"[AgentBridge] Sending generic file: {file_url}")
         reply = Reply(ReplyType.FILE, file_url)
         reply.file_name = file_info.get("file_name", os.path.basename(file_path))

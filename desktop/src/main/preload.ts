@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   selectFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('select-file', filters),
+  openPath: (targetPath: string) => ipcRenderer.invoke('open-path', targetPath) as Promise<string>,
 
   // Each listener registrar returns an unsubscribe fn so renderers can clean
   // up on unmount / effect re-run and avoid accumulating duplicate handlers.

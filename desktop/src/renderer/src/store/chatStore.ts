@@ -218,6 +218,31 @@ export const useChatStore = create<ChatState>((set, get) => {
           }))
           break
 
+        case 'image':
+        case 'file': {
+          // Media pushed by the `send` tool (file_to_send). `content` is either
+          // a backend /api/file?path=... URL or a passed-through http(s) URL.
+          const url = data.content || ''
+          if (!url) break
+          // Prefer the concrete media kind from the backend (image/video/...);
+          // fall back to the coarse SSE event type.
+          const kind = data.file_type || (data.type === 'image' ? 'image' : 'file')
+          const attType: Attachment['file_type'] =
+            kind === 'image' ? 'image' : kind === 'video' ? 'video' : 'file'
+          const att: Attachment = {
+            file_path: url,
+            file_name: data.file_name || 'file',
+            file_type: attType,
+            preview_url: url,
+            abs_path: data.abs_path,
+          }
+          updateMsg(sid, botId, (m) => ({
+            ...m,
+            attachments: [...(m.attachments || []), att],
+          }))
+          break
+        }
+
         case 'cancelled':
           updateMsg(sid, botId, (m) => ({ ...m, isCancelled: true }))
           break

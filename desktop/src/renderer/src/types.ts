@@ -8,6 +8,8 @@ export interface ElectronAPI {
   restartBackend: () => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>
+  /** Open a local file with the OS default app. Resolves to '' on success. */
+  openPath: (targetPath: string) => Promise<string>
   // Listener registrars return an unsubscribe fn for cleanup.
   onBackendStatus: (callback: (data: BackendStatusEvent) => void) => () => void
   onBackendLog: (callback: (line: string) => void) => () => void
@@ -94,6 +96,9 @@ export interface Attachment {
   file_name: string
   file_type: 'image' | 'video' | 'file' | 'directory'
   preview_url?: string
+  /** Local absolute path (set for files sent via the `send` tool) so the
+   *  desktop client can open them directly with the OS default app. */
+  abs_path?: string
 }
 
 /** Live tool event during SSE streaming. */
@@ -137,6 +142,7 @@ export interface StreamEvent {
   execution_time?: number
   has_tool_calls?: boolean
   path?: string
+  abs_path?: string
   file_name?: string
   file_type?: string
   web_url?: string
