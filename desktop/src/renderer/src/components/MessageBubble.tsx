@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Copy, Check, RefreshCw, Pencil, Trash2, File as FileIcon, Sprout } from 'lucide-react'
+import { Copy, Check, RefreshCw, Trash2, File as FileIcon, Sprout } from 'lucide-react'
 import type { ChatMessage } from '../types'
 import { t } from '../i18n'
 import apiClient from '../api/client'
@@ -11,6 +11,9 @@ interface MessageBubbleProps {
   onRegenerate?: (id: string) => void
   onEdit?: (id: string) => void
   onDelete?: (msg: ChatMessage) => void
+  /** Fired when an inline image/video finishes loading, so the parent can
+   *  re-scroll to the bottom (async media changes bubble height after mount). */
+  onMediaLoad?: () => void
 }
 
 function fmtTime(ts: number): string {
@@ -36,7 +39,7 @@ const HoverAction: React.FC<{ onClick: () => void; title: string; danger?: boole
   </button>
 )
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, onEdit, onDelete }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, onEdit, onDelete, onMediaLoad }) => {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
 
@@ -44,6 +47,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
     navigator.clipboard.writeText(message.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
+  }
+
+  // Open a sent file: prefer the local path via Electron (Finder / default
+  // app); fall back to the served URL in a browser when unavailable.
+  const openAttachment = (att: { abs_path?: string; preview_url?: string; file_path: string }) => {
+    if (att.abs_path && window.electronAPI?.openPath) {
+      window.electronAPI.openPath(att.abs_path)
+      return
+    }
+    window.open(apiClient.getFileUrl(att.preview_url || att.file_path), '_blank')
   }
 
   if (isUser) {
@@ -73,11 +86,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <span className="text-[11px] text-content-tertiary mr-1">{fmtTime(message.timestamp)}</span>
-          {onEdit && message.userSeq != null && (
-            <HoverAction onClick={() => onEdit(message.id)} title={t('msg_edit')}>
-              <Pencil size={13} />
-            </HoverAction>
-          )}
+          {/* Edit entry hidden: editing a past question cascade-deletes all
+              subsequent turns, which surprises users. Kept off until we support
+              non-destructive editing. */}
           {onDelete && message.userSeq != null && (
             <HoverAction onClick={() => onDelete(message)} title={t('msg_delete')} danger>
               <Trash2 size={13} />
@@ -117,6 +128,42 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
 
           {/* Final answer */}
           {message.content && <Markdown content={message.content} />}
+
+          {/* Media attachments sent via the `send` tool (images / files). */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {message.attachments.map((att, i) =>
+                att.file_type === 'image' ? (
+                  <img
+                    key={i}
+                    src={apiClient.getFileUrl(att.preview_url || att.file_path)}
+                    alt={att.file_name}
+                    onLoad={() => onMediaLoad?.()}
+                    onClick={() => window.open(apiClient.getFileUrl(att.preview_url || att.file_path), '_blank')}
+                    className="max-w-[320px] w-full rounded-xl border border-default cursor-zoom-in"
+                  />
+                ) : att.file_type === 'video' ? (
+                  <video
+                    key={i}
+                    src={apiClient.getFileUrl(att.preview_url || att.file_path)}
+                    controls
+                    onLoadedData={() => onMediaLoad?.()}
+                    className="max-w-[360px] w-full rounded-xl border border-default"
+                  />
+                ) : (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => openAttachment(att)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-surface-2 rounded-xl text-xs text-content-secondary hover:text-content cursor-pointer"
+                  >
+                    <FileIcon size={13} />
+                    {att.file_name}
+                  </button>
+                )
+              )}
+            </div>
+          )}
 
           {showCursor && (
             <div className="flex items-center gap-1 py-0.5">

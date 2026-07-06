@@ -556,14 +556,29 @@ class WebChannel(ChatChannel):
                 file_path = data.get("path", "")
                 file_name = data.get("file_name", os.path.basename(file_path))
                 file_type = data.get("file_type", "file")
-                from urllib.parse import quote
-                web_url = f"/api/file?path={quote(file_path)}"
+                # Remote URLs are passed through as-is; local files are served
+                # via the backend /api/file endpoint.
+                remote_url = data.get("url", "")
+                is_remote = bool(remote_url) and remote_url.lower().startswith(("http://", "https://"))
+                if is_remote:
+                    web_url = remote_url
+                else:
+                    from urllib.parse import quote
+                    web_url = f"/api/file?path={quote(file_path)}"
                 is_image = file_type == "image"
-                q.put({
+                payload = {
                     "type": "image" if is_image else "file",
                     "content": web_url,
                     "file_name": file_name,
-                })
+                    # Preserve the concrete media kind (image/video/audio/...)
+                    # so richer clients can render an inline player.
+                    "file_type": file_type,
+                }
+                # Expose the local absolute path so the desktop client can open
+                # the file directly (Finder / default app) instead of the browser.
+                if not is_remote and file_path:
+                    payload["abs_path"] = file_path
+                q.put(payload)
 
         return on_event
 

@@ -219,6 +219,15 @@ function setupIPC() {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  // Open a local file with the OS default app; falls back to revealing it in
+  // the file manager when no handler exists. Returns '' on success.
+  ipcMain.handle('open-path', async (_event, targetPath: string) => {
+    if (!targetPath) return 'empty path'
+    const err = await shell.openPath(targetPath)
+    if (err) shell.showItemInFolder(targetPath)
+    return err
+  })
+
   // Custom window controls (used by Windows frameless titlebar)
   ipcMain.handle('window-minimize', () => mainWindow?.minimize())
   ipcMain.handle('window-maximize', () => {

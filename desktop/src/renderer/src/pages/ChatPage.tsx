@@ -182,6 +182,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
     [deleteMessage, activeId]
   )
 
+  // Inline images/videos load asynchronously and grow the bubble after mount,
+  // so a scroll triggered on message change fires before the final height is
+  // known. Re-scroll once media loads, but only while following the bottom.
+  const handleMediaLoad = useCallback(() => {
+    if (followBottomRef.current) scrollToBottom(false)
+  }, [scrollToBottom])
+
   const handleScroll = useCallback(
     async (e: React.UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget
@@ -250,6 +257,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                 onRegenerate={handleRegenerate}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onMediaLoad={handleMediaLoad}
               />
             ))}
             <div ref={bottomRef} />
