@@ -233,15 +233,13 @@ export function quitAndInstall(): void {
   // process alive and stop the installer from replacing files / relaunching
   // (a documented electron-updater gotcha, esp. on Windows NSIS).
   app.removeAllListeners('window-all-closed')
-  // isSilent=FALSE on Windows. Our installer is oneClick (package.json
-  // nsis.oneClick=true), so a non-silent install is still wizard-less/quick —
-  // but crucially, with isSilent=true the isForceRunAfter flag is unreliable and
-  // the app often installs yet never relaunches (electron-builder #1746: exactly
-  // the "update succeeds but app doesn't reopen" symptom we hit on 0.9.7->0.9.8).
-  // With isSilent=false, isForceRunAfter is ignored and relaunch is instead
-  // governed by autoRunAppAfterInstall (default true), which reliably reopens the
-  // app after a oneClick install. macOS ignores isSilent entirely.
-  // setImmediate lets the current IPC callstack unwind and the app fully settle
-  // into quit before the installer takes over — without it relaunch is flaky.
-  setImmediate(() => autoUpdater.quitAndInstall(false, true))
+  // isSilent=TRUE on Windows. Our installer is now ASSISTED (nsis.oneClick=false
+  // + allowToChangeInstallationDirectory) so the FIRST install shows the
+  // directory/mode wizard. But an UPDATE must NOT re-show that wizard — isSilent
+  // skips it and updates in place. isForceRunAfter=true relaunches after the
+  // silent update. (The old assisted+silent force-run bug, #2179, was fixed
+  // upstream in PR #2278; we're on electron-updater 6.8.9, well past it.)
+  // setImmediate + removeAllListeners are the documented prerequisites for the
+  // relaunch to fire reliably. macOS ignores isSilent entirely.
+  setImmediate(() => autoUpdater.quitAndInstall(true, true))
 }
