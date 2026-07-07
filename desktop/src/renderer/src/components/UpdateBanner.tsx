@@ -14,14 +14,32 @@ const UpdateBanner: React.FC = () => {
   const status = state.status
   const errored = status?.state === 'error'
 
+  // Full-screen "installing…" overlay: bridges the otherwise blank window
+  // between clicking "restart to install" and the app actually quitting to
+  // swap the bundle. (The gap AFTER quit, before relaunch, is OS-level and
+  // can't be covered.)
+  if (state.installing) {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-base/90 backdrop-blur-sm">
+        <Loader2 size={28} className="animate-spin text-accent" />
+        <p className="text-sm text-content-secondary">{t('update_installing')}</p>
+      </div>
+    )
+  }
+
   // Show the panel when it's open AND we either know of an update or hit an
   // error. Keeping it up on error is important: a failed download must surface
   // a visible message instead of silently doing nothing.
   if (!open || (!available && !errored)) return null
 
   const version = state.version
+  const preparing = state.preparing
   const downloading = status?.state === 'downloading'
   const downloaded = status?.state === 'downloaded'
+  // macOS emits a second progress pass (verify) after hitting 100%; show it as
+  // an indeterminate "verifying" state rather than a bar restarting from 0.
+  const verifying = downloading && state.progressPeaked
+  const busy = preparing || downloading
 
   return (
     <div className="absolute bottom-2 left-2 right-2 z-40">
@@ -62,7 +80,21 @@ const UpdateBanner: React.FC = () => {
             </div>
           )}
 
-          {!errored && downloading && (
+          {!errored && preparing && (
+            <div className="flex items-center gap-2 text-xs text-content-secondary py-1">
+              <Loader2 size={13} className="animate-spin" />
+              <span>{t('update_preparing')}</span>
+            </div>
+          )}
+
+          {!errored && downloading && verifying && (
+            <div className="flex items-center gap-2 text-xs text-content-secondary py-1">
+              <Loader2 size={13} className="animate-spin" />
+              <span>{t('update_verifying')}</span>
+            </div>
+          )}
+
+          {!errored && downloading && !verifying && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-xs text-content-secondary">
                 <Loader2 size={13} className="animate-spin" />
@@ -74,7 +106,7 @@ const UpdateBanner: React.FC = () => {
             </div>
           )}
 
-          {!errored && !downloading && !downloaded && (
+          {!errored && !busy && !downloaded && (
             <button
               onClick={() => state.download()}
               className="w-full inline-flex items-center justify-center gap-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover px-3 py-2 text-[13px] font-medium cursor-pointer transition-colors"
