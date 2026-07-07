@@ -142,7 +142,7 @@ const translations: Record<string, Record<string, string>> = {
     example_task_title: '定时任务',
     example_task_text: '1分钟后提醒我检查服务器',
     example_code_title: '编程助手',
-    example_code_text: '搜索AI资讯并生成可视化网页报告',
+    example_code_text: '搜索AI资讯生成可视化网页报告',
     example_knowledge_title: '知识库',
     example_knowledge_text: '查看知识库当前文档情况',
     example_skill_title: '技能系统',
