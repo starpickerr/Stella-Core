@@ -41,5 +41,8 @@
   "enable_thinking": false,
   "reasoning_effort": "high",
   "knowledge": true,
-  "self_evolution_enabled": true
+  "self_evolution_enabled": true,
+  "mcp_tool_retrieval_enabled": false,
+  "mcp_tool_retrieval_threshold": 20,
+  "mcp_tool_retrieval_top_k": 10
 }
