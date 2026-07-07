@@ -202,8 +202,12 @@ SAFETY:
             total_bytes = len(output.encode('utf-8'))
 
             if total_bytes > DEFAULT_MAX_BYTES:
-                # Save full output to temp file
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log', prefix='bash-') as f:
+                # Save full output to temp file. encoding='utf-8' is required:
+                # the default text-mode encoding is the platform locale (e.g.
+                # cp936/GBK on Chinese Windows), which raises UnicodeEncodeError
+                # for output containing emoji or other non-locale characters and
+                # would discard an otherwise successful command result.
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log', prefix='bash-', encoding='utf-8') as f:
                     f.write(output)
                     temp_file_path = f.name
 
