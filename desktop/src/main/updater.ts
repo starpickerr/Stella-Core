@@ -229,16 +229,19 @@ function attemptDownload(): void {
 export function quitAndInstall(): void {
   if (!app.isPackaged) return
   log('quitAndInstall: relaunching to install update')
-  // isSilent MUST be true on Windows: our NSIS installer is an "assisted"
-  // installer (oneClick:false + allowToChangeInstallationDirectory), so a
-  // non-silent update re-shows the install-dir / install-mode wizard instead of
-  // updating in place. Silent skips the wizard and updates directly. macOS
-  // (Squirrel.Mac) ignores isSilent, so false there is fine.
-  // isForceRunAfter=true relaunches the app once the install finishes.
-  // Drop window-all-closed handlers first: with an assisted NSIS installer a
-  // lingering handler can keep the process alive and stop the installer from
-  // replacing files / relaunching (a documented electron-updater gotcha).
+  // Drop window-all-closed handlers first: a lingering handler can keep the
+  // process alive and stop the installer from replacing files / relaunching
+  // (a documented electron-updater gotcha, esp. on Windows NSIS).
   app.removeAllListeners('window-all-closed')
-  const isSilent = process.platform === 'win32'
-  autoUpdater.quitAndInstall(isSilent, true)
+  // isSilent=true, isForceRunAfter=true: our Windows installer is now a oneClick
+  // NSIS installer (package.json nsis.oneClick=true), which is the combination
+  // electron-updater actually supports for silent auto-update + auto-relaunch.
+  // The previous assisted installer (oneClick:false) with silent install is a
+  // long-standing broken combo: it would delete the old install but not fully
+  // reinstall / not relaunch, leaving a black screen on next launch
+  // (electron-builder issues #2179 / #1746). macOS ignores isSilent.
+  // setImmediate lets the current IPC callstack unwind and the app fully settle
+  // into quit before the installer takes over — without it the relaunch is
+  // flaky on Windows.
+  setImmediate(() => autoUpdater.quitAndInstall(true, true))
 }
