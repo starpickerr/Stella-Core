@@ -19,6 +19,40 @@ export type UpdateStatus =
 
 let getWindow: () => BrowserWindow | null = () => null
 
+// The update feed. Both entries hit the same Pages Function
+// (https://cowagent.ai/update/); the ?lang=zh query tells it to 302 installer
+// downloads to the China CDN mirror instead of R2. The feed metadata is
+// identical either way, so we can freely switch the feed URL between attempts
+// to fall back from one download origin to the other.
+const FEED_BASE = 'https://cowagent.ai/update/'
+const feedUrlFor = (china: boolean) => (china ? `${FEED_BASE}?lang=zh` : FEED_BASE)
+
+// Which origin the current session prefers, derived from the app UI language
+// (zh -> China mirror). Downloads that fail on the preferred origin retry once
+// on the other one before surfacing an error.
+let preferChina = false
+// Guard so a single download only ever falls back once (avoids ping-pong).
+let downloadFellBack = false
+
+function applyFeedUrl(): void {
+  const url = feedUrlFor(preferChina)
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url })
+    log(`feed url set: ${url} (preferChina=${preferChina})`)
+  } catch (err) {
+    log(`feed url set failed: ${(err as Error)?.message || String(err)}`)
+  }
+}
+
+// Called from the check/download IPC with the renderer's current UI language.
+export function setUpdateLanguage(lang: string | undefined): void {
+  const china = (lang || '').toLowerCase().startsWith('zh')
+  if (china !== preferChina) {
+    preferChina = china
+    if (app.isPackaged) applyFeedUrl()
+  }
+}
+
 // Persist update logs to a file so a user hitting a silent "spinner never
 // resolves" can just send us userData/logs/updater.log. We can't rely on a
 // logging dep, so this is a tiny append-only writer, plus console for the
@@ -86,6 +120,9 @@ export function initUpdater(windowGetter: () => BrowserWindow | null): void {
   // "not-available" fires — the UI just spins forever.
   autoUpdater.allowPrerelease = true
   autoUpdater.allowDowngrade = false
+  // Point at the preferred origin up front (defaults to R2; switched to the CN
+  // mirror once the renderer reports a zh UI language via setUpdateLanguage).
+  applyFeedUrl()
   // Route electron-updater's own internal logging to our file too, so we
   // capture the feed URL, parsed versions and any stack traces it logs.
   autoUpdater.logger = {
@@ -154,10 +191,37 @@ export function checkForUpdates(): void {
 
 export function startDownload(): void {
   if (!app.isPackaged) return
-  log('startDownload: user requested download')
+  downloadFellBack = false
+  log(`startDownload: user requested download (preferChina=${preferChina})`)
+  attemptDownload()
+}
+
+// Download from the current origin; on failure, switch to the OTHER origin once
+// and retry. This is the client-side "mirrors back each other" fallback: R2 and
+// the China CDN hold identical bytes, so a slow/blocked origin can be swapped
+// transparently without the user noticing.
+function attemptDownload(): void {
   autoUpdater.downloadUpdate().catch((err) => {
     const message = err?.message || String(err)
-    log(`startDownload: failed: ${message}`, err instanceof Error && err.stack ? err.stack : '')
+    log(`startDownload: failed on ${preferChina ? 'CN' : 'R2'}: ${message}`, err instanceof Error && err.stack ? err.stack : '')
+    if (!downloadFellBack) {
+      downloadFellBack = true
+      preferChina = !preferChina
+      applyFeedUrl()
+      log(`startDownload: retrying on ${preferChina ? 'CN' : 'R2'} mirror`)
+      // Re-check first so electron-updater re-reads the feed from the new origin
+      // before downloading (its cached updateInfo is origin-agnostic here, but a
+      // fresh check keeps the internal state consistent).
+      autoUpdater
+        .checkForUpdates()
+        .then(() => autoUpdater.downloadUpdate())
+        .catch((err2) => {
+          const m2 = err2?.message || String(err2)
+          log(`startDownload: fallback also failed: ${m2}`, err2 instanceof Error && err2.stack ? err2.stack : '')
+          send({ state: 'error', message: m2 })
+        })
+      return
+    }
     send({ state: 'error', message })
   })
 }

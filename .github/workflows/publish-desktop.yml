@@ -62,7 +62,7 @@ jobs:
           # The build stage inserted one row per artifact with filename = v<VER>/<base>.
           # Read them back so we know exactly which objects to pull from R2.
           out="$(npx --yes wrangler@latest d1 execute cow-desktop --remote --json \
-            --command "SELECT platform, filename FROM releases WHERE version = '${VER}';")"
+            --command "SELECT platform, filename, update_filename FROM releases WHERE version = '${VER}';")"
           echo "$out"
           echo "$out" | node -e '
             const fs = require("fs");
@@ -84,12 +84,14 @@ jobs:
           R2_BUCKET: ${{ vars.R2_BUCKET != '' && vars.R2_BUCKET || 'cow-skills' }}
         run: |
           mkdir -p dist
-          # filename is "v<VER>/<base>"; the R2 key is "desktop/<filename>".
-          for filename in $(node -e 'JSON.parse(require("fs").readFileSync("rows.json")).forEach(r => console.log(r.filename))'); do
-            base="$(basename "$filename")"
-            key="desktop/${filename}"
-            echo "==> Downloading r2://${R2_BUCKET}/${key} -> dist/${base}"
-            npx --yes wrangler@latest r2 object get "${R2_BUCKET}/${key}" \
+          # Pull BOTH the manual-download file (filename: dmg/exe) and the mac
+          # auto-update file (update_filename: zip) for every row. Keys are
+          # "v<VER>/<base>"; the R2 key is "desktop/<key>".
+          for key in $(node -e 'JSON.parse(require("fs").readFileSync("rows.json")).forEach(r => { if (r.filename) console.log(r.filename); if (r.update_filename) console.log(r.update_filename); })'); do
+            base="$(basename "$key")"
+            r2key="desktop/${key}"
+            echo "==> Downloading r2://${R2_BUCKET}/${r2key} -> dist/${base}"
+            npx --yes wrangler@latest r2 object get "${R2_BUCKET}/${r2key}" \
               --file "dist/${base}" --remote
           done
           echo "Downloaded:"; ls -la dist
@@ -110,9 +112,6 @@ jobs:
           VER: ${{ github.event.inputs.version }}
           MAKE_LATEST: ${{ github.event.inputs.make_latest }}
         run: |
-          sql_file="$(mktemp)"
-          sha_for_file() { openssl dgst -sha512 -binary "$1" | openssl base64 -A; }
-
           # Pre-releases (e.g. 1.2.0-beta / -rc.1 / -test) are recorded but never
           # become latest, so the site keeps serving the last stable build.
           case "$VER" in
@@ -120,32 +119,17 @@ jobs:
             *)   is_pre=0 ;;
           esac
           if [ "$MAKE_LATEST" = "true" ] && [ "$is_pre" = "0" ]; then
-            do_latest=1; echo "==> Publishing $VER as latest."
+            latest_flag="--latest"; echo "==> Publishing $VER as latest."
           else
-            do_latest=0; echo "==> Publishing $VER without latest flag (pre-release or dry re-hash)."
+            latest_flag=""; echo "==> Publishing $VER without latest flag (pre-release or dry re-hash)."
           fi
 
-          for f in dist/*; do
-            base="$(basename "$f")"
-            size="$(stat -c%s "$f")"
-            case "$base" in
-              *arm64.dmg) platform="mac-arm64" ;;
-              *x64.dmg)   platform="mac-x64" ;;
-              *.exe)      platform="win" ;;
-              *) echo "Skipping unrecognized artifact: $base"; continue ;;
-            esac
-            key="v${VER}/${base}"
-            sha="$(sha_for_file "$f")"
-            sha="${sha//\'/\'\'}"
-            if [ "$do_latest" = "1" ]; then
-              echo "UPDATE releases SET is_latest = 0 WHERE platform = '${platform}';" >> "$sql_file"
-            fi
-            # Re-store the row with the authoritative (post-staple) sha and the
-            # resolved latest flag.
-            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, sha512, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, '${sha}', ${do_latest});" >> "$sql_file"
-          done
-          echo "==> D1 statements:"; cat "$sql_file"
-          npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"
+          # Re-hash the real (stapled) bytes and re-store every row with both the
+          # dmg (manual) and mac zip (auto-update) columns. Same script as the
+          # build stage; --latest also clears the previous latest per platform.
+          node .github/scripts/register-releases.mjs --dir dist --version "$VER" --sql d1.sql $latest_flag
+          echo "==> D1 statements:"; cat d1.sql
+          npx --yes wrangler@latest d1 execute cow-desktop --remote --file d1.sql
 
       - name: Create/update GitHub Release and attach installers
         if: github.event.inputs.github_release == 'true'
@@ -162,6 +146,9 @@ jobs:
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
               --title "$tag" --generate-notes $prerelease
           fi
-          # --clobber so re-runs overwrite the stapled/updated assets.
-          gh release upload "$tag" dist/*.dmg dist/*.exe \
+          # --clobber so re-runs overwrite the stapled/updated assets. The mac
+          # zip is the auto-update artifact; attach it too so the GitHub Release
+          # is a complete mirror (nullglob avoids errors when a type is absent).
+          shopt -s nullglob
+          gh release upload "$tag" dist/*.dmg dist/*.zip dist/*.exe \
             --repo "$GITHUB_REPOSITORY" --clobber

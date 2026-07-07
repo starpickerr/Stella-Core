@@ -43,9 +43,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Current app version (e.g. "0.0.5"), shown in the NavRail footer.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
-  // Auto-update: trigger checks/download/install and subscribe to status.
-  checkForUpdate: () => ipcRenderer.invoke('update-check'),
-  downloadUpdate: () => ipcRenderer.invoke('update-download'),
+  // Auto-update: trigger checks/download/install and subscribe to status. The
+  // optional lang routes installer downloads to the China CDN mirror (zh) or R2.
+  checkForUpdate: (lang?: string) => ipcRenderer.invoke('update-check', lang),
+  downloadUpdate: (lang?: string) => ipcRenderer.invoke('update-download', lang),
   installUpdate: () => ipcRenderer.invoke('update-install'),
   onUpdateStatus: (callback: (status: unknown) => void) => {
     const handler = (_event: unknown, status: unknown) => callback(status)
