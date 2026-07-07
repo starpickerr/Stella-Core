@@ -72,6 +72,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -84,6 +85,7 @@
     },
     "win": {
       "icon": "resources/icon.ico",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
