@@ -50,13 +50,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   closePanel: () => set({ panelOpen: false }),
 
   recheck: () => {
-    const st = get()
-    // If we already know about an available/downloaded update, just re-open the
-    // panel (clearing the dismiss for this version) instead of waiting on a
-    // network round-trip — the user asked to see it.
-    if (hasAvailableUpdate(st)) {
-      set({ dismissedVersion: null, panelOpen: true })
-    }
+    // Open the panel and clear any dismiss so the result of this explicit check
+    // is always visible — available, error, or (via the menu label) up-to-date.
+    // Previously the panel only opened when an update was already known, so a
+    // download/check error rendered nothing and looked like a dead click.
+    set({ dismissedVersion: null, panelOpen: true })
     // Always kick a fresh check too (picks up newer versions / recovers errors).
     // Pass the UI language so downloads route to the China CDN / R2 accordingly.
     window.electronAPI?.checkForUpdate?.(getLang())

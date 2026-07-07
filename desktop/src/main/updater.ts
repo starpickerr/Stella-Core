@@ -229,6 +229,16 @@ function attemptDownload(): void {
 export function quitAndInstall(): void {
   if (!app.isPackaged) return
   log('quitAndInstall: relaunching to install update')
-  // isSilent=false (show installer), isForceRunAfter=true (relaunch after).
-  autoUpdater.quitAndInstall(false, true)
+  // isSilent MUST be true on Windows: our NSIS installer is an "assisted"
+  // installer (oneClick:false + allowToChangeInstallationDirectory), so a
+  // non-silent update re-shows the install-dir / install-mode wizard instead of
+  // updating in place. Silent skips the wizard and updates directly. macOS
+  // (Squirrel.Mac) ignores isSilent, so false there is fine.
+  // isForceRunAfter=true relaunches the app once the install finishes.
+  // Drop window-all-closed handlers first: with an assisted NSIS installer a
+  // lingering handler can keep the process alive and stop the installer from
+  // replacing files / relaunching (a documented electron-updater gotcha).
+  app.removeAllListeners('window-all-closed')
+  const isSilent = process.platform === 'win32'
+  autoUpdater.quitAndInstall(isSilent, true)
 }
