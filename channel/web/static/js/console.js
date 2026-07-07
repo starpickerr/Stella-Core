@@ -147,8 +147,9 @@ const I18N = {
         config_custom_tip: '接口需遵循 OpenAI API 协议',
         config_security: '安全设置', config_password: '访问密码',
         config_password_hint: '留空则不启用密码保护',
-        config_password_changed: '密码已更新，请重新登录',
+        config_password_changed: '密码已更新',
         config_password_cleared: '密码已清除',
+        config_password_security_warning: '⚠️ 警告：目前密码为空且对外连接埠开放，建议重启服务，或检查是否调整监听位址绑定。',
         skills_title: '技能管理', skills_desc: '查看、启用或禁用 Agent 工具和技能', skills_hub_btn: '探索技能广场',
         skills_loading: '加载技能中...', skills_loading_desc: '技能加载后将显示在此处',
         tools_section_title: '内置工具', tools_loading: '加载工具中...',
@@ -256,7 +257,7 @@ const I18N = {
         edit_cancel: '取消',
         logout: '退出',
     },
-    'zh-tw': {
+    'zh-Hant': {
 
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
@@ -393,8 +394,9 @@ const I18N = {
         config_custom_tip: '介面需遵循 OpenAI API 協議',
         config_security: '安全設定', config_password: '訪問密碼',
         config_password_hint: '留空則不啟用密碼保護',
-        config_password_changed: '密碼已更新，請重新登入',
+        config_password_changed: '密碼已更新',
         config_password_cleared: '密碼已清除',
+        config_password_security_warning: '⚠️ 警告：目前密碼為空且對外連接埠開放，建議重啟服務，或檢查是否調整監聽位址綁定。',
         skills_title: '技能管理', skills_desc: '檢視、啟用或禁用 Agent 工具和技能', skills_hub_btn: '探索技能廣場',
         skills_loading: '載入技能中...', skills_loading_desc: '技能載入後將顯示在此處',
         tools_section_title: '內建工具', tools_loading: '載入工具中...',
@@ -638,8 +640,9 @@ const I18N = {
         config_custom_tip: 'API must follow OpenAI protocol.',
         config_security: 'Security', config_password: 'Password',
         config_password_hint: 'Leave empty to disable password protection',
-        config_password_changed: 'Password updated, please re-login',
+        config_password_changed: 'Password updated',
         config_password_cleared: 'Password cleared',
+        config_password_security_warning: '⚠️ Warning: Password is now empty and the port is exposed. Consider restarting the service or adjusting the listening address binding.',
         skills_title: 'Skills', skills_desc: 'View, enable, or disable agent tools and skills', skills_hub_btn: 'Skill Hub',
         skills_loading: 'Loading skills...', skills_loading_desc: 'Skills will be displayed here after loading',
         tools_section_title: 'Built-in Tools', tools_loading: 'Loading tools...',
@@ -759,6 +762,9 @@ let currentLang = (typeof window.__cowResolveLang__ === 'function')
             if (!raw) return '';
             const v = String(raw).trim().toLowerCase();
             if (v === 'auto') return '';
+            // Handle Traditional Chinese variants first (more specific)
+            if (v === 'zh-hant' || v.startsWith('zh-hant-') || v === 'zh-tw' || v === 'zh-hk') return 'zh-Hant';
+            // Then Simplified Chinese
             if (v.indexOf('zh') === 0) return 'zh';
             if (v.indexOf('en') === 0) return 'en';
             return '';
@@ -799,9 +805,15 @@ function applyI18n() {
         el.setAttribute('data-tooltip', t(el.dataset.tipKey));
     });
     installCfgTipPortal();
+    
+    // Clear any status messages when language changes
+    document.querySelectorAll('[id$="-status"]').forEach(el => {
+        el.classList.add('opacity-0');
+    });
+    
     const langLabel = document.getElementById('lang-label');
     if (langLabel) {
-        if (currentLang === 'zh-tw') langLabel.textContent = '繁中';
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁中';
         else if (currentLang === 'zh') langLabel.textContent = '簡中';
         else langLabel.textContent = 'EN';
     }
@@ -814,7 +826,7 @@ function applyI18n() {
 // persists the user choice locally, re-renders the UI, and binds the choice to
 // the backend `cow_lang` config so logs / agent replies / CLI follow suit.
 function setLanguage(lang) {
-    const next = (lang === 'en' || lang === 'zh' || lang === 'zh-tw') ? lang : 'zh';
+    const next = (lang === 'en' || lang === 'zh' || lang === 'zh-Hant') ? lang : 'zh';
     if (next === currentLang) {
         // Still persist + sync in case storage/backend drifted from the UI.
         syncLanguageToBackend(next);
@@ -855,7 +867,7 @@ function syncLanguageToBackend(lang, callback) {
 function updateLangControls() {
     const langLabel = document.getElementById('lang-label');
     if (langLabel) {
-        if (currentLang === 'zh-tw') langLabel.textContent = '繁體';
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁體';
         else if (currentLang === 'zh') langLabel.textContent = '簡體';
         else langLabel.textContent = 'EN';
     }
@@ -866,7 +878,7 @@ function updateLangControls() {
         sel._ddValue = currentLang;
         const textEl = sel.querySelector('.cfg-dropdown-text');
         if (textEl) {
-            if (currentLang === 'zh-tw') textEl.textContent = '繁體中文';
+            if (currentLang === 'zh-Hant') textEl.textContent = '繁體中文';
             else if (currentLang === 'zh') textEl.textContent = '简体中文';
             else textEl.textContent = 'English';
         }
@@ -878,8 +890,8 @@ function updateLangControls() {
 
 function toggleLanguage() {
     if (currentLang === 'zh') {
-        setLanguage('zh-tw');
-    } else if (currentLang === 'zh-tw') {
+        setLanguage('zh-Hant');
+    } else if (currentLang === 'zh-Hant') {
         setLanguage('en');
     } else {
         setLanguage('zh');
@@ -1018,6 +1030,12 @@ function navigateTo(viewId) {
     document.getElementById('breadcrumb-page').textContent = t(meta.page);
     document.getElementById('breadcrumb-page').dataset.i18n = meta.page;
     currentView = viewId;
+    
+    // Clear status messages when navigating away
+    document.querySelectorAll('[id$="-status"]').forEach(el => {
+        el.classList.add('opacity-0');
+    });
+    
     if (window.innerWidth < 1024) closeSidebar();
 }
 
@@ -4554,7 +4572,7 @@ function initConfigView(data) {
     if (langSel) {
         initDropdown(
             langSel,
-            [{ value: 'zh', label: '简体中文' }, { value: 'zh-tw', label: '繁體中文' }, { value: 'en', label: 'English' }],
+            [{ value: 'zh', label: '简体中文' }, { value: 'zh-Hant', label: '繁體中文' }, { value: 'en', label: 'English' }],
             currentLang,
             (val) => setLanguage(val)
         );
@@ -4727,7 +4745,10 @@ function showStatus(elId, msgKey, isError) {
     el.classList.toggle('text-red-500', !!isError);
     el.classList.toggle('text-primary-500', !isError);
     el.classList.remove('opacity-0');
-    setTimeout(() => el.classList.add('opacity-0'), 2500);
+    // Warning messages (errors) should stay visible, success messages auto-hide
+    if (!isError) {
+        setTimeout(() => el.classList.add('opacity-0'), 2500);
+    }
 }
 
 function saveModelConfig() {
@@ -4840,18 +4861,33 @@ function savePasswordConfig() {
     })
     .then(r => r.json())
     .then(data => {
+        console.log('[Password Config] Response:', data); // Debug
         if (data.status === 'success') {
             if (newPwd) {
                 showStatus('cfg-password-status', 'config_password_changed', false);
-                setTimeout(() => { window.location.reload(); }, 1500);
+                // Mark as masked so user needs to re-enter to change again
+                input.dataset.masked = '1';
+                input.dataset.maskedVal = newPwd;
+                input.value = '••••••••';
+                input.classList.add('cfg-key-masked');
+                
+                // Show logout button since password is now enabled
+                const logoutBtn = document.getElementById('logout-btn-header');
+                if (logoutBtn) logoutBtn.classList.remove('hidden');
             } else {
                 input.dataset.masked = '';
                 input.dataset.maskedVal = '';
                 input.classList.remove('cfg-key-masked');
-                showStatus('cfg-password-status', 'config_password_cleared', false);
+                
+                // Show security warning if password was cleared with public host
+                if (data.warning === 'password_cleared_with_public_host') {
+                    showStatus('cfg-password-status', 'config_password_security_warning', true);
+                } else {
+                    showStatus('cfg-password-status', 'config_password_cleared', false);
+                }
+                
                 const logoutBtn = document.getElementById('logout-btn-header');
                 if (logoutBtn) logoutBtn.classList.add('hidden');
-                setTimeout(() => { window.location.reload(); }, 1500);
             }
         } else {
             showStatus('cfg-password-status', 'config_save_error', true);
@@ -9019,7 +9055,7 @@ function showLoginScreen() {
     if (currentLang === 'en') {
         subtitle.textContent = 'Enter password to access the console';
         loginBtn.textContent = 'Login';
-    } else if (currentLang === 'zh-tw') {
+    } else if (currentLang === 'zh-Hant') {
         subtitle.textContent = '請輸入密碼以存取控制台';
         loginBtn.textContent = '登入';
     } else {
@@ -9052,7 +9088,7 @@ function showLoginScreen() {
                 if (logoutBtn) logoutBtn.classList.remove('hidden');
                 initApp();
             } else {
-                if (currentLang === 'zh-tw') {
+                if (currentLang === 'zh-Hant') {
                     errEl.textContent = '密碼錯誤';
                 } else if (currentLang === 'zh') {
                     errEl.textContent = '密码错误';
@@ -9065,7 +9101,7 @@ function showLoginScreen() {
             }
             btn.disabled = false;
         }).catch(() => {
-            if (currentLang === 'zh-tw') {
+            if (currentLang === 'zh-Hant') {
                 errEl.textContent = '網路錯誤，請重試';
             } else if (currentLang === 'zh') {
                 errEl.textContent = '网络错误，请重试';

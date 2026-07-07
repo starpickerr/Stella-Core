@@ -1854,9 +1854,13 @@ class ConfigHandler:
                 return json.dumps({"status": "error", "message": "no valid keys to update"})
 
             config_path = os.path.join(get_data_root(), "config.json")
+            old_password = ""  # Store old password before update
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     file_cfg = json.load(f)
+                    # Capture old password before updating
+                    if "web_password" in applied:
+                        old_password = file_cfg.get("web_password", "")
             else:
                 file_cfg = {}
             file_cfg.update(applied)
@@ -1864,7 +1868,6 @@ class ConfigHandler:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
             logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
-            restarted = False
 
             # Apply a language change immediately so backend logs, agent
             # replies and CLI output switch without a restart.
@@ -1875,25 +1878,25 @@ class ConfigHandler:
                 except Exception as lang_err:
                     logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
 
-            # Trigger a dynamic restart of the web channel if web_password is changed,
-            # so the socket re-binds to either 127.0.0.1 or 0.0.0.0 immediately.
+            # Check if password was cleared: if there was a password before clearing,
+            # the service is likely bound to 0.0.0.0 (public), so warn the user.
+            password_warning = None
             if "web_password" in applied:
-                try:
-                    import sys
-                    app_module = sys.modules.get('__main__') or sys.modules.get('app')
-                    mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
-                    if mgr:
-                        def delay_restart():
-                            time.sleep(0.5)
-                            mgr.restart("web")
-                        threading.Thread(
-                            target=delay_restart,
-                            daemon=True,
-                        ).start()
-                        restarted = True
-                        logger.info("[WebChannel] Web channel restart scheduled due to password change")
-                except Exception as restart_err:
-                    logger.warning(f"[WebChannel] Failed to trigger web channel restart: {restart_err}")
+                new_password = applied["web_password"]
+                configured_host = file_cfg.get("web_host", "")
+                
+                # If password was cleared and there was a password before
+                if not new_password and old_password:
+                    # If web_host is not explicitly set, the service auto-binds based on password
+                    # With password → 0.0.0.0 (public), without password → 127.0.0.1 (local)
+                    # So clearing password when it was previously set means going from public to local
+                    if not configured_host or configured_host == "0.0.0.0":
+                        password_warning = "password_cleared_with_public_host"
+                        logger.warning(
+                            "[WebChannel] Password cleared while service is likely bound to 0.0.0.0. "
+                            "Consider restarting the service to rebind to 127.0.0.1 "
+                            "or explicitly set web_host in config to prevent unauthorized access."
+                        )
 
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)
@@ -1907,7 +1910,7 @@ class ConfigHandler:
                 except Exception as reset_err:
                     logger.warning(f"[WebChannel] Failed to reset bridge: {reset_err}")
 
-            return json.dumps({"status": "success", "applied": applied, "restarted": restarted}, ensure_ascii=False)
+            return json.dumps({"status": "success", "applied": applied, "warning": password_warning}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -3694,7 +3697,7 @@ class ChannelsHandler:
             # Desktop build ships without lark-oapi, so hide Feishu from the list.
             desktop_mode = os.environ.get("COW_DESKTOP") == "1"
             channels = []
-            is_tw = i18n.get_language() == i18n.ZH_TW
+            is_hant = i18n.get_language() == i18n.ZH_HANT
             for ch_name, ch_def in self.CHANNEL_DEFS.items():
                 if desktop_mode and ch_name == "feishu":
                     continue
@@ -3707,11 +3710,11 @@ class ChannelsHandler:
                         display_val = raw_val
                     
                     label_val = f["label"]
-                    if is_tw and isinstance(label_val, str):
+                    if is_hant and isinstance(label_val, str):
                         label_val = i18n.to_traditional(label_val)
-                    elif is_tw and isinstance(label_val, dict):
+                    elif is_hant and isinstance(label_val, dict):
                         label_val = label_val.copy()
-                        label_val["zh-tw"] = i18n.to_traditional(label_val.get("zh", ""))
+                        label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
 
                     fields_out.append({
                         "key": f["key"],
@@ -3722,11 +3725,11 @@ class ChannelsHandler:
                     })
                 
                 label_val = ch_def["label"]
-                if is_tw and isinstance(label_val, str):
+                if is_hant and isinstance(label_val, str):
                     label_val = i18n.to_traditional(label_val)
-                elif is_tw and isinstance(label_val, dict):
+                elif is_hant and isinstance(label_val, dict):
                     label_val = label_val.copy()
-                    label_val["zh-tw"] = i18n.to_traditional(label_val.get("zh", ""))
+                    label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
 
                 ch_info = {
                     "name": ch_name,
@@ -4297,7 +4300,7 @@ class ToolsHandler:
                 try:
                     instance = cls()
                     desc = instance.description
-                    if lang == i18n.ZH_TW and desc:
+                    if lang == i18n.ZH_HANT and desc:
                         desc = i18n.to_traditional(desc)
                     elif lang == "en" and name == "scheduler":
                         desc = (
@@ -4328,7 +4331,7 @@ class SkillsHandler:
             manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
             service = SkillService(manager)
             skills = service.query()
-            if i18n.get_language() == i18n.ZH_TW:
+            if i18n.get_language() == i18n.ZH_HANT:
                 for skill in skills:
                     if isinstance(skill, dict):
                         for k, v in list(skill.items()):

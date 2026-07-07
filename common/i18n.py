@@ -7,6 +7,11 @@ across the CLI, startup logs, error messages, agent prompts and channel
 replies. It must NOT import project config (to avoid circular imports) and
 must stay dependency-free so it can run at the earliest startup phase.
 
+Supported language codes (BCP 47 compliant):
+  - "zh" (Simplified Chinese)
+  - "zh-Hant" (Traditional Chinese, script-based tag per Unicode CLDR)
+  - "en" (English)
+
 Resolution priority (highest first):
   1. Explicit `cow_lang` from config.json — also covers Docker/CI, since any
      config key is overridable via its uppercase env var (e.g. COW_LANG=zh),
@@ -19,7 +24,10 @@ Resolution priority (highest first):
   5. Default -> English
 
 A value of "auto" (the default) triggers detection (steps 2-5). Explicitly
-setting "zh" or "en" locks the language and skips detection.
+setting "zh", "zh-Hant", or "en" locks the language and skips detection.
+
+Note: For backwards compatibility, zh-tw, zh-hk, and other regional variants
+are automatically normalized to zh-Hant during detection.
 """
 
 import os
@@ -28,9 +36,9 @@ import sys
 
 # Supported language codes
 ZH = "zh"
-ZH_TW = "zh-tw"
+ZH_HANT = "zh-Hant"
 EN = "en"
-SUPPORTED = (ZH, ZH_TW, EN)
+SUPPORTED = (ZH, ZH_HANT, EN)
 DEFAULT_LANG = EN
 
 # Mapped Simplified to Traditional characters in this codebase
@@ -71,6 +79,20 @@ _PHRASE_MAP = {
 
 
 def to_traditional(text):
+    """Convert Simplified Chinese text to Traditional Chinese.
+    
+    Uses a two-tier approach:
+    1. Phrase-level mapping for project-specific terms (e.g., "配置" → "設定")
+    2. OpenCC library (opencc-python-reimplemented) if available for high-quality
+       context-aware conversion, with fallback to built-in character mapping
+    
+    This function is designed to work without external dependencies. If OpenCC
+    is not installed, it falls back to a curated 450-character mapping table
+    plus 30+ technical term mappings that cover common project vocabulary.
+    
+    For production use with zh-Hant language, installing OpenCC is recommended:
+        pip install opencc-python-reimplemented
+    """
     if not text:
         return text
 
@@ -111,7 +133,7 @@ def _normalize(raw):
         return None
     # Traditional Chinese variants: zh-tw, zh-hk, zh-hant, zh-hant-tw, zh-hant-hk...
     if value.startswith("zh-tw") or value.startswith("zh-hk") or "hant" in value:
-        return ZH_TW
+        return ZH_HANT
     # General or Simplified Chinese variants: zh, zh-cn, zh-hans...
     if value.startswith("zh") or value.startswith("chinese"):
         return ZH
@@ -231,7 +253,7 @@ def get_language():
 
 
 def is_zh():
-    return get_language() in (ZH, ZH_TW)
+    return get_language() in (ZH, ZH_HANT)
 
 
 def t(zh_text, en_text):
@@ -241,6 +263,6 @@ def t(zh_text, en_text):
         t("已中止", "Cancelled")
     """
     lang = get_language()
-    if lang == ZH_TW:
+    if lang == ZH_HANT:
         return to_traditional(zh_text)
     return zh_text if lang == ZH else en_text

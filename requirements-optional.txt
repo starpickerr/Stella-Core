@@ -20,3 +20,7 @@ pypdf
 python-docx
 openpyxl
 python-pptx
+
+# i18n: Traditional Chinese (zh-Hant) high-quality conversion
+# Built-in fallback provides basic conversion without this dependency
+opencc-python-reimplemented

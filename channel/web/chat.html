@@ -47,13 +47,15 @@
          This runs synchronously in <head> so the correct class is on <html>
          before any CSS or body rendering occurs. -->
     <script>
-    // Map an arbitrary locale string (zh-CN, en-US, fr ...) to 'zh' / 'zh-tw' / 'en',
+    // Map an arbitrary locale string (zh-CN, en-US, fr ...) to 'zh' / 'zh-Hant' / 'en',
     // or '' when unrecognized so callers can fall through to the next source.
     window.__cowNormalizeLang__ = function(raw) {
         if (!raw) return '';
         var v = String(raw).trim().toLowerCase().replace('_', '-');
         if (v === 'auto') return '';
-        if (v.indexOf('zh-tw') === 0 || v.indexOf('zh-hk') === 0 || v.indexOf('zh-hant') >= 0) return 'zh-tw';
+        // Handle Traditional Chinese variants first (more specific)
+        if (v === 'zh-hant' || v.indexOf('zh-hant-') === 0 || v === 'zh-tw' || v === 'zh-hk') return 'zh-Hant';
+        // Then Simplified Chinese
         if (v.indexOf('zh') === 0) return 'zh';
         if (v.indexOf('en') === 0) return 'en';
         return '';
