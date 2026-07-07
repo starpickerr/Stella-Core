@@ -108,6 +108,17 @@ jobs:
         shell: bash
         run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
 
+      # Compile renderer + main in its OWN step. On Windows, `npm run build`
+      # is `npm.cmd` (a batch wrapper); when it runs as a non-final command in a
+      # Git Bash script it hijacks/terminates the parent bash after the child
+      # npm scripts finish, so any commands AFTER it (the electron-builder call)
+      # never run yet the step still exits 0 — which is exactly why past Windows
+      # runs "succeeded" but produced no installer. Keeping it alone in a step
+      # sidesteps that entirely.
+      - name: Compile (vite + tsc)
+        working-directory: desktop
+        run: npm run build
+
       - name: Build & publish (electron-builder)
         working-directory: desktop
         shell: bash
@@ -122,8 +133,6 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
-          npm run build
-
           # Pick the signing cert for THIS platform only. The mac and win secrets
           # are both present in the job env, but a mac cert must never leak into a
           # Windows build (electron-builder would try to load it and fail), and
