@@ -20,6 +20,7 @@ import {
   Globe,
   FileText,
   Store,
+  MessageSquareWarning,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 // The desktop app's own brand icon (transparent PNG), bundled by Vite.
@@ -41,6 +42,8 @@ const FALLBACK_VERSION = '2.1.3'
 // English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
 // language-agnostic.
 const SKILL_HUB_URL = 'https://skills.cowagent.ai/'
+// GitHub issues — where users report bugs / request features.
+const FEEDBACK_URL = 'https://github.com/zhayujie/CowAgent/issues'
 
 const websiteUrl = () => (getLang() === 'zh' ? 'https://cowagent.ai/zh' : 'https://cowagent.ai')
 const docsUrl = () => (getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai')
@@ -324,6 +327,11 @@ const FooterMenu: React.FC<{
     <MenuItem icon={<Store size={16} />} label={t('menu_skill_hub')} onClick={() => onOpenLink(SKILL_HUB_URL)} />
     <MenuItem icon={<FileText size={16} />} label={t('menu_docs')} onClick={() => onOpenLink(docsUrl())} />
     <MenuItem icon={<Globe size={16} />} label={t('menu_website')} onClick={() => onOpenLink(websiteUrl())} />
+    <MenuItem
+      icon={<MessageSquareWarning size={16} />}
+      label={t('menu_feedback')}
+      onClick={() => onOpenLink(FEEDBACK_URL)}
+    />
 
     <div className="my-1 border-t border-subtle" />
 

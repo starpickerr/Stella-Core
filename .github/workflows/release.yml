@@ -246,7 +246,9 @@ jobs:
           # differential downloads) from every per-platform artifact dir. The
           # .yml feed is generated dynamically by the /update Function from D1,
           # so the yml files themselves don't need to go to R2.
-          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.blockmap' \) -exec cp {} dist/ \;
+          # .zip is the mac auto-update artifact (electron-updater's MacUpdater
+          # can ONLY consume zip, not dmg — the dmg is for manual downloads).
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' \) -exec cp {} dist/ \;
           echo "Staged files:"; ls -la dist
           # When the whole matrix failed there's nothing to publish; flag it so
           # the R2/D1 steps skip instead of writing an empty/partial release.
@@ -281,10 +283,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VER: ${{ steps.ver.outputs.version }}
         run: |
-          # Map each installer filename to a platform id. dmg arch is in the
-          # name (…-arm64.dmg / …-x64.dmg); .exe is the Windows installer.
-          sql_file="$(mktemp)"
-
           # This build job ALWAYS registers rows as unpublished (is_latest=0), so
           # /download/<p>/latest keeps serving the previous release and the new
           # version stays invisible on the site. macOS dmgs still need to be
@@ -293,29 +291,10 @@ jobs:
           # notarization, via the separate "Publish Desktop" workflow.
           echo "==> Registering $VER as unpublished (is_latest=0)."
 
-          # Compute sha512 (base64, the format electron-updater validates) from
-          # the actual staged files rather than electron-builder's latest*.yml.
-          # NOTE: for macOS the dmg is re-hashed later by the publish workflow
-          # after stapling (stapling rewrites the dmg bytes), so the sha stored
-          # here is a placeholder for mac and authoritative only for win.
-          sha_for_file() { openssl dgst -sha512 -binary "$1" | openssl base64 -A; }
-
-          for f in dist/*; do
-            base="$(basename "$f")"
-            size="$(stat -c%s "$f")"
-            case "$base" in
-              *arm64.dmg) platform="mac-arm64" ;;
-              *x64.dmg)   platform="mac-x64" ;;
-              *.exe)      platform="win" ;;
-              *) echo "Skipping unrecognized artifact: $base"; continue ;;
-            esac
-            key="v${VER}/${base}"
-            sha="$(sha_for_file "$f")"
-            # SQL-escape single quotes defensively (base64 has none, but be safe).
-            sha="${sha//\'/\'\'}"
-            # Never mark latest here — the row is unpublished until the separate
-            # publish workflow promotes it after notarization.
-            echo "INSERT OR REPLACE INTO releases (version, platform, filename, size, sha512, is_latest) VALUES ('${VER}', '${platform}', '${key}', ${size}, '${sha}', 0);" >> "$sql_file"
-          done
-          echo "==> D1 statements:"; cat "$sql_file"
-          npx --yes wrangler@latest d1 execute cow-desktop --remote --file "$sql_file"
+          # Build one upsert per (version, platform) carrying both the dmg
+          # (manual download) and the mac zip (auto-update) columns. See
+          # .github/scripts/register-releases.mjs for the mapping. No --latest
+          # here: rows stay unpublished until the publish workflow promotes them.
+          node .github/scripts/register-releases.mjs --dir dist --version "$VER" --sql d1.sql
+          echo "==> D1 statements:"; cat d1.sql
+          npx --yes wrangler@latest d1 execute cow-desktop --remote --file d1.sql

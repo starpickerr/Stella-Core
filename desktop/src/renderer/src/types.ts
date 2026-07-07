@@ -21,9 +21,9 @@ export interface ElectronAPI {
   onMenuAction?: (callback: (action: string) => void) => () => void
   // Current app version string (e.g. "0.0.5").
   getAppVersion?: () => Promise<string>
-  // Auto-update
-  checkForUpdate?: () => Promise<void>
-  downloadUpdate?: () => Promise<void>
+  // Auto-update. lang (e.g. "zh") routes installer downloads to the China CDN.
+  checkForUpdate?: (lang?: string) => Promise<void>
+  downloadUpdate?: (lang?: string) => Promise<void>
   installUpdate?: () => Promise<void>
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   platform: string

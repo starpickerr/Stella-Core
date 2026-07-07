@@ -5,7 +5,7 @@ import http from 'http'
 import { PythonBackend } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray } from './tray'
-import { initUpdater, checkForUpdates, startDownload, quitAndInstall } from './updater'
+import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
 
 // Force the product name so the Dock/menu shows "CowAgent" even in dev mode,
 // where the default Electron binary would otherwise report "Electron".
@@ -242,9 +242,17 @@ function setupIPC() {
   // Current app version, shown in the NavRail footer.
   ipcMain.handle('get-app-version', () => app.getVersion())
 
-  // Auto-update controls (renderer-driven: check, then opt-in download/install)
-  ipcMain.handle('update-check', () => checkForUpdates())
-  ipcMain.handle('update-download', () => startDownload())
+  // Auto-update controls (renderer-driven: check, then opt-in download/install).
+  // The renderer passes its current UI language so downloads can be routed to
+  // the China CDN mirror (zh) or R2 (others).
+  ipcMain.handle('update-check', (_event, lang?: string) => {
+    setUpdateLanguage(lang)
+    checkForUpdates()
+  })
+  ipcMain.handle('update-download', (_event, lang?: string) => {
+    setUpdateLanguage(lang)
+    startDownload()
+  })
   ipcMain.handle('update-install', () => quitAndInstall())
 
   // Synchronous OS locale lookup (e.g. "zh-CN", "en-US"). Used by the renderer

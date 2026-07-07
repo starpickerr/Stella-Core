@@ -84,6 +84,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_website: '官网',
     menu_docs: '文档中心',
     menu_skill_hub: '技能广场',
+    menu_feedback: '反馈',
     // onboarding
     onboarding_welcome_title: '欢迎使用 CowAgent',
     onboarding_welcome_desc: '你的私人超级 AI 助手。几步设置，即可开始对话。',
@@ -453,6 +454,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_website: 'Website',
     menu_docs: 'Documentation',
     menu_skill_hub: 'Skill Hub',
+    menu_feedback: 'Feedback',
     // onboarding
     onboarding_welcome_title: 'Welcome to CowAgent',
     onboarding_welcome_desc: 'Your personal super AI assistant. A few quick steps and you are ready to chat.',

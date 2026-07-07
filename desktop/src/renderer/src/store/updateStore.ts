@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { UpdateStatus } from '../types'
+import { getLang } from '../i18n'
 
 interface UpdateState {
   status: UpdateStatus | null
@@ -57,10 +58,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       set({ dismissedVersion: null, panelOpen: true })
     }
     // Always kick a fresh check too (picks up newer versions / recovers errors).
-    window.electronAPI?.checkForUpdate?.()
+    // Pass the UI language so downloads route to the China CDN / R2 accordingly.
+    window.electronAPI?.checkForUpdate?.(getLang())
   },
 
-  download: () => window.electronAPI?.downloadUpdate?.(),
+  download: () => window.electronAPI?.downloadUpdate?.(getLang()),
   install: () => window.electronAPI?.installUpdate?.(),
 }))
 
