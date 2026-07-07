@@ -111,20 +111,39 @@ def fuzzy_find_text(content: str, old_text: str) -> FuzzyMatchResult:
             content_for_replacement=content
         )
     
-    # Try fuzzy match
-    fuzzy_content = normalize_for_fuzzy_match(content)
-    fuzzy_old_text = normalize_for_fuzzy_match(old_text)
-    
-    index = fuzzy_content.find(fuzzy_old_text)
-    if index != -1:
-        # Fuzzy match successful, use normalized content for replacement
-        return FuzzyMatchResult(
-            found=True,
-            index=index,
-            match_length=len(fuzzy_old_text),
-            content_for_replacement=fuzzy_content
-        )
-    
+    # Fuzzy match: the exact substring was not found, most likely because the
+    # whitespace differs (indentation, spaces around operators, trailing
+    # spaces). Locate the region in the ORIGINAL content using a
+    # whitespace-flexible pattern and return offsets into that original
+    # content.
+    #
+    # This must NOT replace inside a whitespace-normalized copy of the file:
+    # doing so previously returned the normalized copy as
+    # content_for_replacement, which caused the whole file to be rewritten
+    # with collapsed indentation (every untouched line got reformatted).
+    stripped = old_text.strip('\n')
+    if stripped.strip():
+        line_patterns = []
+        for line in stripped.split('\n'):
+            tokens = line.split()
+            if tokens:
+                # Tolerate flexible indentation and any run of blanks between
+                # tokens, matching the leniency of the old normalized compare.
+                line_patterns.append(
+                    r'[ \t]*' + r'[ \t]+'.join(re.escape(tok) for tok in tokens) + r'[ \t]*'
+                )
+            else:
+                line_patterns.append(r'[ \t]*')
+        pattern = '\n'.join(line_patterns)
+        match = re.search(pattern, content)
+        if match:
+            return FuzzyMatchResult(
+                found=True,
+                index=match.start(),
+                match_length=match.end() - match.start(),
+                content_for_replacement=content
+            )
+
     # Not found
     return FuzzyMatchResult(found=False)
 
