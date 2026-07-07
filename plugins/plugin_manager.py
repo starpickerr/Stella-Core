@@ -202,6 +202,26 @@ class PluginManager:
             return True
         return False
 
+    # IM-channel-only plugins that make no sense in the single-user desktop app
+    # and, worse, write config.json into their bundle dir on init — which breaks
+    # the macOS code-signature seal of the packaged .app. cow_cli stays enabled
+    # so desktop chat commands (/status, /help, ...) keep working.
+    DESKTOP_DISABLED_PLUGINS = {
+        "GODCMD", "KEYWORD", "BANWORDS", "ROLE", "DUNGEON", "HELLO", "FINISH",
+    }
+
+    def _apply_desktop_plugin_denylist(self):
+        """In desktop mode, force-disable IM-only plugins regardless of what
+        plugins.json (bundle default or user copy) says. Runs after scan (which
+        syncs enabled from plugins.json) and before activate, so denied plugins
+        are never instantiated and never write into the read-only bundle."""
+        if os.environ.get("COW_DESKTOP") != "1":
+            return
+        for name in list(self.plugins.keys()):
+            if name.upper() in self.DESKTOP_DISABLED_PLUGINS and self.plugins[name].enabled:
+                self.plugins[name].enabled = False
+                logger.info("[desktop] plugin %s disabled (not needed in desktop client)" % name)
+
     def load_plugins(self):
         self.load_config()
         self.scan_plugins()
@@ -212,6 +232,7 @@ class PluginManager:
         for name, plugin in pconf["plugins"].items():
             if name.upper() not in self.plugins:
                 logger.error("Plugin %s not found, but found in plugins.json" % name)
+        self._apply_desktop_plugin_denylist()
         self.activate_plugins()
 
     def emit_event(self, e_context: EventContext, *args, **kwargs):
