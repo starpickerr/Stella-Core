@@ -379,6 +379,12 @@ class AgentStreamExecutor:
 
         self._emit_event("agent_start")
 
+        # Reset the run-scoped MCP tool-retrieval accumulator. On-demand tool
+        # retrieval only grows this set within a run, so a tool that already
+        # produced a tool_use never disappears from the schema mid-run (which
+        # would make Claude/MiniMax raise a message-format error).
+        self._retrieved_mcp_names = set()
+
         final_response = ""
         turn = 0
 
@@ -702,6 +708,70 @@ class AgentStreamExecutor:
 
         return final_response
 
+    def _select_tools_for_injection(self) -> list:
+        """Decide which tools to inject into the current LLM turn.
+
+        Built-in tools are ALWAYS injected in full (skills and core flows hard
+        depend on them). MCP tools are also injected in full UNLESS on-demand
+        retrieval is enabled AND the MCP tool count exceeds the configured
+        threshold — then only the most relevant MCP tools are injected, unioned
+        with those already selected earlier in this run (only-grows, so a tool
+        that already produced a tool_use never vanishes from the schema).
+
+        Degrades safely: disabled feature, no embedding provider, embedding
+        failure, count below threshold, or any error → inject all tools. Tools
+        are never silently dropped.
+        """
+        all_tools = list(self.tools.values())
+        try:
+            from config import conf
+            if not conf().get("mcp_tool_retrieval_enabled", False):
+                return all_tools
+
+            from agent.tools.mcp.mcp_tool import McpTool
+            mcp_tools = [t for t in all_tools if isinstance(t, McpTool)]
+            builtin_tools = [t for t in all_tools if not isinstance(t, McpTool)]
+
+            threshold = int(conf().get("mcp_tool_retrieval_threshold", 20) or 20)
+            if len(mcp_tools) <= threshold:
+                return all_tools
+
+            top_k = int(conf().get("mcp_tool_retrieval_top_k", 10) or 10)
+
+            from agent.tools import ToolManager
+            from agent.tools.mcp.tool_retrieval import (
+                build_retrieval_query,
+                select_mcp_tools,
+            )
+
+            tm = ToolManager()
+            tool_vectors = tm.get_mcp_tool_vectors()
+            query = build_retrieval_query(self.messages)
+            query_vector = tm.embed_query(query)
+
+            selected = select_mcp_tools(
+                query_vector,
+                tool_vectors,
+                top_k,
+                getattr(self, "_retrieved_mcp_names", set()),
+            )
+            if selected is None:
+                # No provider / empty index / error → full injection.
+                return all_tools
+
+            # Persist the accumulated selection for subsequent turns.
+            self._retrieved_mcp_names = selected
+
+            selected_mcp = [t for t in mcp_tools if t.name in selected]
+            logger.info(
+                f"[ToolRetrieval] Injecting {len(builtin_tools)} built-in + "
+                f"{len(selected_mcp)}/{len(mcp_tools)} MCP tool(s) (top_k={top_k})"
+            )
+            return builtin_tools + selected_mcp
+        except Exception as e:
+            logger.debug(f"[ToolRetrieval] full injection (retrieval skipped): {e}")
+            return all_tools
+
     def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
                          _overflow_retry: bool = False) -> Tuple[str, List[Dict]]:
         """
@@ -742,7 +812,7 @@ class AgentStreamExecutor:
         tools_schema = None
         if self.tools:
             tools_schema = []
-            for tool in self.tools.values():
+            for tool in self._select_tools_for_injection():
                 input_schema = tool.params
                 try:
                     dynamic = (tool.get_json_schema() or {}).get("parameters") or {}

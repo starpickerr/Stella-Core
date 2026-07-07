@@ -155,9 +155,11 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const checkUpdate = () => {
     setCheckedManually(true)
-    // Re-open the update panel if an update is already known; also kicks a
-    // fresh check. Closing the menu so the re-opened panel is visible.
-    setMenuOpen(false)
+    // If an update is already known, recheck() re-opens its panel, so close the
+    // menu to reveal it. Otherwise keep the menu OPEN: the "up to date" result
+    // shows inline as the menu label — closing it (which resets checkedManually)
+    // is exactly what made the box flash and never show "up to date".
+    if (availableUpdate) setMenuOpen(false)
     updateState.recheck()
   }
 

@@ -253,7 +253,14 @@ function setupIPC() {
     setUpdateLanguage(lang)
     startDownload()
   })
-  ipcMain.handle('update-install', () => quitAndInstall())
+  ipcMain.handle('update-install', () => {
+    // Let the window actually close so the app can fully quit — otherwise the
+    // close-to-tray handler preventDefault()s it, the process stays alive, and
+    // Squirrel.Mac can't swap the app bundle (the update silently no-ops and
+    // relaunching still shows the old version).
+    isQuitting = true
+    quitAndInstall()
+  })
 
   // Synchronous OS locale lookup (e.g. "zh-CN", "en-US"). Used by the renderer
   // to pick a sensible default UI language on first run before any paint.
