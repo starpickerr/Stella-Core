@@ -1,5 +1,15 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { ChevronUp, Loader2 } from 'lucide-react'
+import {
+  ChevronUp,
+  Loader2,
+  FolderOpen,
+  Clock,
+  Code2,
+  BookOpen,
+  Puzzle,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
 import { t } from '../i18n'
@@ -15,13 +25,20 @@ interface ChatPageProps {
 // Welcome-screen suggestion cards (aligned with the web console: 6 cards).
 // `send` overrides the text dropped into the input (e.g. show "查看全部命令"
 // but fill "/help"); otherwise the card's *_text is used.
-const SUGGESTIONS: { key: string; send?: string }[] = [
-  { key: 'example_sys' },
-  { key: 'example_task' },
-  { key: 'example_code' },
-  { key: 'example_knowledge' },
-  { key: 'example_skill' },
-  { key: 'example_web', send: '/help' },
+// Icon + accent color per card, aligned with the web console palette.
+const SUGGESTIONS: {
+  key: string
+  send?: string
+  icon: LucideIcon
+  iconClass: string
+  bgClass: string
+}[] = [
+  { key: 'example_sys', icon: FolderOpen, iconClass: 'text-blue-500', bgClass: 'bg-blue-500/10' },
+  { key: 'example_task', icon: Clock, iconClass: 'text-amber-500', bgClass: 'bg-amber-500/10' },
+  { key: 'example_code', icon: Code2, iconClass: 'text-emerald-500', bgClass: 'bg-emerald-500/10' },
+  { key: 'example_knowledge', icon: BookOpen, iconClass: 'text-violet-500', bgClass: 'bg-violet-500/10' },
+  { key: 'example_skill', icon: Puzzle, iconClass: 'text-rose-500', bgClass: 'bg-rose-500/10' },
+  { key: 'example_web', send: '/help', icon: Terminal, iconClass: 'text-content-tertiary', bgClass: 'bg-content-tertiary/10' },
 ]
 
 const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
@@ -228,7 +245,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8">{t('chat_empty_hint')}</p>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
-              {SUGGESTIONS.map(({ key, send }) => (
+              {SUGGESTIONS.map(({ key, send, icon: Icon, iconClass, bgClass }) => (
                 <button
                   key={key}
                   onClick={() => {
@@ -236,10 +253,17 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                     const draft = send ?? t(`${key}_text` as Parameters<typeof t>[0])
                     inputResetRef.current?.(draft, [])
                   }}
-                  className="text-left bg-surface border border-default rounded-xl p-3.5 cursor-pointer hover:border-accent hover:shadow-sm transition-all"
+                  className="group text-left bg-surface border border-default rounded-xl p-3.5 cursor-pointer hover:border-accent hover:shadow-sm transition-all"
                 >
-                  <div className="font-medium text-sm text-content mb-1">
-                    {t(`${key}_title` as Parameters<typeof t>[0])}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${bgClass}`}
+                    >
+                      <Icon size={15} className={iconClass} />
+                    </span>
+                    <span className="font-medium text-sm text-content">
+                      {t(`${key}_title` as Parameters<typeof t>[0])}
+                    </span>
                   </div>
                   <p className="text-xs text-content-tertiary leading-relaxed line-clamp-2">
                     {t(`${key}_text` as Parameters<typeof t>[0])}

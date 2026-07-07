@@ -269,6 +269,13 @@ available_setting = {
     "deep_dream_enabled": True,             # scheduled deep dream switch; manual /memory dream is unaffected
     "skill": {},  # Per-skill runtime config; nested keys flatten to SKILL_<NAME>_<KEY> env vars at startup
     "mcp_servers": [],  # MCP server list; each entry supports type "stdio" (local process) or "sse" (remote URL)
+    # On-demand MCP tool retrieval: when many MCP tools are connected, inject
+    # only the most query-relevant ones instead of all of them. Built-in tools
+    # are always injected in full; degrades to full injection when disabled,
+    # below threshold, or when no embedding provider is available.
+    "mcp_tool_retrieval_enabled": False,    # switch for on-demand MCP tool retrieval
+    "mcp_tool_retrieval_threshold": 20,     # only retrieve when MCP tool count exceeds this
+    "mcp_tool_retrieval_top_k": 10,         # max relevant MCP tools injected per turn
 }
 
 
