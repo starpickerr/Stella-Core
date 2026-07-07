@@ -233,15 +233,15 @@ export function quitAndInstall(): void {
   // process alive and stop the installer from replacing files / relaunching
   // (a documented electron-updater gotcha, esp. on Windows NSIS).
   app.removeAllListeners('window-all-closed')
-  // isSilent=true, isForceRunAfter=true: our Windows installer is now a oneClick
-  // NSIS installer (package.json nsis.oneClick=true), which is the combination
-  // electron-updater actually supports for silent auto-update + auto-relaunch.
-  // The previous assisted installer (oneClick:false) with silent install is a
-  // long-standing broken combo: it would delete the old install but not fully
-  // reinstall / not relaunch, leaving a black screen on next launch
-  // (electron-builder issues #2179 / #1746). macOS ignores isSilent.
+  // isSilent=FALSE on Windows. Our installer is oneClick (package.json
+  // nsis.oneClick=true), so a non-silent install is still wizard-less/quick —
+  // but crucially, with isSilent=true the isForceRunAfter flag is unreliable and
+  // the app often installs yet never relaunches (electron-builder #1746: exactly
+  // the "update succeeds but app doesn't reopen" symptom we hit on 0.9.7->0.9.8).
+  // With isSilent=false, isForceRunAfter is ignored and relaunch is instead
+  // governed by autoRunAppAfterInstall (default true), which reliably reopens the
+  // app after a oneClick install. macOS ignores isSilent entirely.
   // setImmediate lets the current IPC callstack unwind and the app fully settle
-  // into quit before the installer takes over — without it the relaunch is
-  // flaky on Windows.
-  setImmediate(() => autoUpdater.quitAndInstall(true, true))
+  // into quit before the installer takes over — without it relaunch is flaky.
+  setImmediate(() => autoUpdater.quitAndInstall(false, true))
 }
