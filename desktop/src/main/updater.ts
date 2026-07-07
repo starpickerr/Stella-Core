@@ -131,6 +131,15 @@ export function initUpdater(windowGetter: () => BrowserWindow | null): void {
 // reply "not-available" so the menu can show "up to date".
 export function checkForUpdates(): void {
   if (!app.isPackaged) {
+    // Dev-only UI harness: set COW_MOCK_UPDATE=1 to simulate an available
+    // update so the update panel/menu interactions can be exercised in
+    // `npm run dev` (where there's no real feed). Never runs in a packaged app.
+    if (process.env.COW_MOCK_UPDATE) {
+      const version = process.env.COW_MOCK_UPDATE_VERSION || '9.9.9'
+      log(`checkForUpdates: not packaged, MOCK available version=${version}`)
+      send({ state: 'available', version })
+      return
+    }
     log('checkForUpdates: not packaged, replying not-available')
     send({ state: 'not-available' })
     return
