@@ -1,5 +1,5 @@
 import React from 'react'
-import { Download, RefreshCw, X, Loader2 } from 'lucide-react'
+import { Download, RefreshCw, X, Loader2, AlertTriangle } from 'lucide-react'
 import { t } from '../i18n'
 import { useUpdateStore, hasAvailableUpdate } from '../store/updateStore'
 
@@ -12,9 +12,12 @@ const UpdateBanner: React.FC = () => {
 
   const available = hasAvailableUpdate(state)
   const status = state.status
+  const errored = status?.state === 'error'
 
-  // Render nothing when there's no update, or the panel is closed (dismissed).
-  if (!available || !open) return null
+  // Show the panel when it's open AND we either know of an update or hit an
+  // error. Keeping it up on error is important: a failed download must surface
+  // a visible message instead of silently doing nothing.
+  if (!open || (!available && !errored)) return null
 
   const version = state.version
   const downloading = status?.state === 'downloading'
@@ -25,8 +28,12 @@ const UpdateBanner: React.FC = () => {
       <div className="rounded-lg border border-default bg-elevated shadow-lg p-3 space-y-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-content">{t('update_available')}</p>
-            {version && <p className="text-xs text-content-tertiary mt-0.5">v{version}</p>}
+            <p className="text-[13px] font-semibold text-content">
+              {errored ? t('update_failed') : t('update_available')}
+            </p>
+            {!errored && version && (
+              <p className="text-xs text-content-tertiary mt-0.5">v{version}</p>
+            )}
           </div>
           <button
             onClick={() => state.dismiss()}
@@ -37,7 +44,25 @@ const UpdateBanner: React.FC = () => {
           </button>
         </div>
 
-          {downloading && (
+          {errored && (
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-2 text-xs text-content-secondary">
+                <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <span className="break-words">
+                  {status?.state === 'error' ? status.message : ''}
+                </span>
+              </div>
+              <button
+                onClick={() => state.download()}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover px-3 py-2 text-[13px] font-medium cursor-pointer transition-colors"
+              >
+                <RefreshCw size={15} />
+                {t('update_retry')}
+              </button>
+            </div>
+          )}
+
+          {!errored && downloading && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-xs text-content-secondary">
                 <Loader2 size={13} className="animate-spin" />
@@ -49,7 +74,7 @@ const UpdateBanner: React.FC = () => {
             </div>
           )}
 
-          {!downloading && !downloaded && (
+          {!errored && !downloading && !downloaded && (
             <button
               onClick={() => state.download()}
               className="w-full inline-flex items-center justify-center gap-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover px-3 py-2 text-[13px] font-medium cursor-pointer transition-colors"
@@ -59,7 +84,7 @@ const UpdateBanner: React.FC = () => {
             </button>
           )}
 
-          {downloaded && (
+          {!errored && downloaded && (
             <button
               onClick={() => state.install()}
               className="w-full inline-flex items-center justify-center gap-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover px-3 py-2 text-[13px] font-medium cursor-pointer transition-colors"
