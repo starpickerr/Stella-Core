@@ -108,15 +108,12 @@ jobs:
         shell: bash
         run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
 
-      # Compile renderer + main in its OWN step. On Windows, `npm run build`
-      # is `npm.cmd` (a batch wrapper); when it runs as a non-final command in a
-      # Git Bash script it hijacks/terminates the parent bash after the child
-      # npm scripts finish, so any commands AFTER it (the electron-builder call)
-      # never run yet the step still exits 0 — which is exactly why past Windows
-      # runs "succeeded" but produced no installer. Keeping it alone in a step
-      # sidesteps that entirely.
+      # Compile renderer + main in its OWN step, alone, so the npm.cmd batch
+      # wrapper (see the note on the build step below) can't take out anything
+      # after it.
       - name: Compile (vite + tsc)
         working-directory: desktop
+        shell: bash
         run: npm run build
 
       - name: Build & publish (electron-builder)
@@ -141,11 +138,8 @@ jobs:
           # electron-builder as a broken cert path, so we leave it entirely unset
           # for an unsigned build.
           #
-          # NOTE: no `set -e`/`unset` on env-injected vars here — under Git Bash
-          # on Windows, `unset` of a GitHub-injected env var can return non-zero
-          # and, with pipefail/errexit, silently abort the script BEFORE
-          # electron-builder runs (which is exactly how a past run produced no
-          # installer yet still reported success). We only ever set, never unset.
+          # NOTE: we only ever `export`, never `unset`, GitHub-injected env vars
+          # (an `unset` can return non-zero and abort under errexit).
           case "${{ matrix.platform }}" in
             mac)
               if [ -n "$MAC_CSC_LINK" ]; then
@@ -165,14 +159,23 @@ jobs:
           # (read-only) feed served from R2/D1, which it can't upload to. We mirror
           # installers to R2 and register them in D1 ourselves (publish-r2 job).
           # `--publish never` still emits the latest*.yml files.
-          # Use the dynamic config (electron-builder.js): it populates
-          # mac.binaries (backend Mach-O files to sign). Notarization is NOT done
-          # here — Apple's notary service keeps this large bundle "In Progress"
-          # for hours, so it's decoupled into a manual local step
-          # (desktop/build/notarize-dmg.sh) run after this build produces the
-          # signed dmg. The dmg is signed + hardened-runtime, so it only needs a
-          # ticket stapled later.
-          npx electron-builder ${{ matrix.eb_flags }} --config electron-builder.js --publish never
+          #
+          # CONFIG PER PLATFORM: the dynamic electron-builder.js only exists to
+          # inject mac.binaries (the backend Mach-O files to hardened-sign for
+          # notarization) — it's a pure no-op on Windows. Passing --config on
+          # Windows was what silently broke the Windows build (it produced no
+          # installer while the job still reported success; Windows worked fine
+          # before --config was introduced). So Windows uses the plain
+          # package.json build config and only mac uses the dynamic one.
+          #
+          # Invoke via `node <cli.js>` rather than `npx`: on Windows `npx` is
+          # npx.cmd (a batch wrapper) and running it from this Git Bash step can
+          # make bash return before the wrapped process finishes. node skips it.
+          case "${{ matrix.platform }}" in
+            mac) config_arg="--config electron-builder.js" ;;
+            *)   config_arg="" ;;
+          esac
+          node node_modules/electron-builder/cli.js ${{ matrix.eb_flags }} $config_arg --publish never
 
       # Upload artifacts regardless of outcome, so a failed run still surfaces
       # the built installers (and, on success, the notarized+stapled dmg).
@@ -184,6 +187,7 @@ jobs:
           name: cowagent-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             desktop/release/*.dmg
+            desktop/release/*.zip
             desktop/release/*.exe
             desktop/release/*.yml
             desktop/release/*.blockmap
