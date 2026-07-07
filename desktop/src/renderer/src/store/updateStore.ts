@@ -9,9 +9,19 @@ interface UpdateState {
   percent: number
   /** User dismissed the badge for this version (don't nag again until next). */
   dismissedVersion: string | null
+  /** Whether the update panel is currently shown. Lifted here so the "check
+   *  for update" menu item can re-open it on demand. */
+  panelOpen: boolean
 
   setStatus: (s: UpdateStatus) => void
+  /** Dismiss the floating badge/panel for the current version (footer dot goes
+   *  away), but keep the update itself known so the menu can still surface it. */
   dismiss: () => void
+  openPanel: () => void
+  closePanel: () => void
+  /** User explicitly clicked "check for update": ask main to re-check, and if
+   *  an update is already known, re-open the panel immediately (undismiss). */
+  recheck: () => void
 
   // Actions proxied to the main process via the preload bridge.
   download: () => void
@@ -23,16 +33,32 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   version: null,
   percent: 0,
   dismissedVersion: null,
+  panelOpen: false,
 
   setStatus: (s) =>
     set(() => {
-      if (s.state === 'available') return { status: s, version: s.version, percent: 0 }
+      // A newly detected version auto-opens the panel.
+      if (s.state === 'available') return { status: s, version: s.version, percent: 0, panelOpen: true }
       if (s.state === 'downloading') return { status: s, percent: s.percent }
       if (s.state === 'downloaded') return { status: s, version: s.version, percent: 100 }
       return { status: s }
     }),
 
-  dismiss: () => set((st) => ({ dismissedVersion: st.version })),
+  dismiss: () => set((st) => ({ dismissedVersion: st.version, panelOpen: false })),
+  openPanel: () => set({ panelOpen: true }),
+  closePanel: () => set({ panelOpen: false }),
+
+  recheck: () => {
+    const st = get()
+    // If we already know about an available/downloaded update, just re-open the
+    // panel (clearing the dismiss for this version) instead of waiting on a
+    // network round-trip — the user asked to see it.
+    if (hasAvailableUpdate(st)) {
+      set({ dismissedVersion: null, panelOpen: true })
+    }
+    // Always kick a fresh check too (picks up newer versions / recovers errors).
+    window.electronAPI?.checkForUpdate?.()
+  },
 
   download: () => window.electronAPI?.downloadUpdate?.(),
   install: () => window.electronAPI?.installUpdate?.(),
@@ -45,11 +71,18 @@ export function initUpdateListener(): (() => void) | undefined {
   })
 }
 
-// Whether a new version should be surfaced (available/downloading/downloaded
-// and not dismissed for that version).
-export function hasPendingUpdate(state: UpdateState): boolean {
+// Whether an update exists at all (available/downloading/downloaded),
+// regardless of dismiss. Drives the "check for update" menu item's dot, which
+// should persist as long as an update is actually available.
+export function hasAvailableUpdate(state: UpdateState): boolean {
   const s = state.status
   if (!s) return false
-  const active = s.state === 'available' || s.state === 'downloading' || s.state === 'downloaded'
-  return active && state.dismissedVersion !== state.version
+  return s.state === 'available' || s.state === 'downloading' || s.state === 'downloaded'
+}
+
+// Whether a new version should be surfaced in the floating footer badge:
+// available and not dismissed for that version. Dismissing hides only this,
+// not the menu dot (hasAvailableUpdate).
+export function hasPendingUpdate(state: UpdateState): boolean {
+  return hasAvailableUpdate(state) && state.dismissedVersion !== state.version
 }

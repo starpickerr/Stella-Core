@@ -28,7 +28,7 @@ import { t, getLang, setLang, Lang } from '../i18n'
 import { useUIStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
-import { useUpdateStore, hasPendingUpdate } from '../store/updateStore'
+import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/updateStore'
 import UpdateBanner from '../components/UpdateBanner'
 
 // Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
@@ -83,7 +83,11 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
   const width = collapsed ? 'w-[56px]' : 'w-[208px]'
 
   const updateState = useUpdateStore()
+  // Footer dot: hidden once dismissed for this version (user asked for this).
   const pendingUpdate = hasPendingUpdate(updateState)
+  // Menu "check for update" dot: stays as long as an update actually exists,
+  // even after dismissing the footer badge.
+  const availableUpdate = hasAvailableUpdate(updateState)
   const checking = updateState.status?.state === 'checking'
 
   const [menuOpen, setMenuOpen] = useState(false)
@@ -148,7 +152,10 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const checkUpdate = () => {
     setCheckedManually(true)
-    window.electronAPI?.checkForUpdate?.()
+    // Re-open the update panel if an update is already known; also kicks a
+    // fresh check. Closing the menu so the re-opened panel is visible.
+    setMenuOpen(false)
+    updateState.recheck()
   }
 
   return (
@@ -211,8 +218,8 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
           <FooterMenu
             theme={theme}
             checking={checking}
-            pendingUpdate={pendingUpdate}
-            upToDate={checkedManually && updateStatusState === 'not-available'}
+            pendingUpdate={availableUpdate}
+            upToDate={checkedManually && updateStatusState === 'not-available' && !availableUpdate}
             onLogs={() => {
               setMenuOpen(false)
               navigate('/logs')
