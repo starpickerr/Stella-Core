@@ -80,6 +80,24 @@ class TestEditFuzzyPreservesWhitespace(unittest.TestCase):
             "def foo():\n    x = 9\n    y = 8\n    return x + y\n",
         )
 
+    def test_fuzzy_match_with_unindented_oldtext_preserves_file_indent(self):
+        # oldText has NO leading indentation (and loose spacing around '='), so
+        # the exact match fails and the fuzzy path runs against an indented file
+        # line. The file's indentation must be preserved -- kept OUTSIDE the
+        # replaced region -- instead of being swallowed into the match and
+        # dropped (which would break the file's indentation). newText is
+        # likewise unindented, mirroring exact-substring replacement.
+        result = self.tool.execute({
+            "path": self.path,
+            "oldText": "x  =  1",
+            "newText": "x = 100",
+        })
+        self.assertEqual(result.status, "success", result.result)
+        self.assertEqual(
+            self._read(),
+            "def foo():\n    x = 100\n    y = 2\n    return x + y\n",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

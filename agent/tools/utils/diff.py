@@ -123,17 +123,24 @@ def fuzzy_find_text(content: str, old_text: str) -> FuzzyMatchResult:
     # with collapsed indentation (every untouched line got reformatted).
     stripped = old_text.strip('\n')
     if stripped.strip():
+        source_lines = stripped.split('\n')
         line_patterns = []
-        for line in stripped.split('\n'):
+        for i, line in enumerate(source_lines):
             tokens = line.split()
-            if tokens:
-                # Tolerate flexible indentation and any run of blanks between
-                # tokens, matching the leniency of the old normalized compare.
-                line_patterns.append(
-                    r'[ \t]*' + r'[ \t]+'.join(re.escape(tok) for tok in tokens) + r'[ \t]*'
-                )
-            else:
+            if not tokens:
                 line_patterns.append(r'[ \t]*')
+                continue
+            # Tolerate any run of blanks between tokens.
+            core = r'[ \t]+'.join(re.escape(tok) for tok in tokens)
+            # First-line leading whitespace is folded into the match only when
+            # old_text itself was indented here; otherwise it stays OUTSIDE the
+            # match so a no-indent old_text preserves (does not swallow and drop)
+            # the file's existing indentation -- mirroring an exact substring
+            # match. Inner lines always tolerate indentation: it sits inside the
+            # matched region and is re-supplied by new_text.
+            if i > 0 or line[:1] in (' ', '\t'):
+                core = r'[ \t]*' + core
+            line_patterns.append(core + r'[ \t]*')
         pattern = '\n'.join(line_patterns)
         match = re.search(pattern, content)
         if match:
