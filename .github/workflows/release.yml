@@ -124,17 +124,33 @@ jobs:
         run: |
           npm run build
 
-          # Only export signing vars when provided. Empty strings are NOT the
-          # same as unset to electron-builder: an empty CSC_LINK is treated as
-          # a (broken) certificate path and aborts the build. Leaving them
-          # unset makes electron-builder fall back to an unsigned build.
-          if [ -n "$MAC_CSC_LINK" ]; then
-            export CSC_LINK="$MAC_CSC_LINK"
-            export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
-          fi
-          if [ -z "$WIN_CSC_LINK" ]; then
-            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
-          fi
+          # Pick the signing cert for THIS platform only. The mac and win secrets
+          # are both present in the job env, but a mac cert must never leak into a
+          # Windows build (electron-builder would try to load it and fail), and
+          # vice versa. electron-builder reads a single CSC_LINK/CSC_KEY_PASSWORD
+          # pair, so we set it per-platform. An empty CSC_LINK is treated by
+          # electron-builder as a broken cert path, so we leave it entirely unset
+          # for an unsigned build.
+          #
+          # NOTE: no `set -e`/`unset` on env-injected vars here — under Git Bash
+          # on Windows, `unset` of a GitHub-injected env var can return non-zero
+          # and, with pipefail/errexit, silently abort the script BEFORE
+          # electron-builder runs (which is exactly how a past run produced no
+          # installer yet still reported success). We only ever set, never unset.
+          case "${{ matrix.platform }}" in
+            mac)
+              if [ -n "$MAC_CSC_LINK" ]; then
+                export CSC_LINK="$MAC_CSC_LINK"
+                export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+              fi
+              ;;
+            win)
+              if [ -n "$WIN_CSC_LINK" ]; then
+                export CSC_LINK="$WIN_CSC_LINK"
+                export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"
+              fi
+              ;;
+          esac
 
           # Never let electron-builder publish: our publish target is a generic
           # (read-only) feed served from R2/D1, which it can't upload to. We mirror
