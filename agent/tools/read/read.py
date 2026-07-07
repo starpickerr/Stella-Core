@@ -297,8 +297,15 @@ class Read(BaseTool):
             if offset is not None:
                 if offset < 0:
                     # Negative offset: read from end
-                    # -20 means "last 20 lines" → start from (total - 20)
-                    start_line = max(0, total_file_lines + offset)
+                    # -20 means "last 20 lines" → start from (total - 20).
+                    # A file ending in "\n" produces a trailing empty element
+                    # from split('\n'); exclude it so offset=-1 returns the
+                    # real last line instead of the empty string after the
+                    # final newline (and -N returns N real lines).
+                    effective_lines = total_file_lines
+                    if all_lines and all_lines[-1] == '':
+                        effective_lines -= 1
+                    start_line = max(0, effective_lines + offset)
                 else:
                     # Positive offset: read from start (1-indexed)
                     start_line = max(0, offset - 1)  # Convert to 0-indexed
