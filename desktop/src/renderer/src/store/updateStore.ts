@@ -8,6 +8,18 @@ interface UpdateState {
   version: string | null
   /** Download progress 0-100 while state === 'downloading'. */
   percent: number
+  /** User clicked "download" but no progress event has arrived yet. Gives the
+   *  button an instant busy state so it can't be clicked again during the 1-2s
+   *  lead-up to the first progress event. Cleared on the first 'downloading'. */
+  preparing: boolean
+  /** The download progress already reached ~100% once. macOS (Squirrel.Mac)
+   *  emits a SECOND progress pass (verify / block-map) after the first, which
+   *  used to make the bar visibly restart from 0. Once peaked we render an
+   *  indeterminate "verifying" state instead of a confusing second bar. */
+  progressPeaked: boolean
+  /** User clicked "restart to install"; show a full-screen "installing…"
+   *  overlay for the brief window before the app quits to swap the bundle. */
+  installing: boolean
   /** User dismissed the badge for this version (don't nag again until next). */
   dismissedVersion: string | null
   /** Whether the update panel is currently shown. Lifted here so the "check
@@ -33,15 +45,27 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   status: null,
   version: null,
   percent: 0,
+  preparing: false,
+  progressPeaked: false,
+  installing: false,
   dismissedVersion: null,
   panelOpen: false,
 
   setStatus: (s) =>
-    set(() => {
+    set((st) => {
       // A newly detected version auto-opens the panel.
-      if (s.state === 'available') return { status: s, version: s.version, percent: 0, panelOpen: true }
-      if (s.state === 'downloading') return { status: s, percent: s.percent }
-      if (s.state === 'downloaded') return { status: s, version: s.version, percent: 100 }
+      if (s.state === 'available')
+        return { status: s, version: s.version, percent: 0, preparing: false, progressPeaked: false, panelOpen: true }
+      if (s.state === 'downloading') {
+        // First real progress event clears the "preparing" busy state. Track
+        // when we've hit ~100% so the Squirrel.Mac second pass renders as an
+        // indeterminate "verifying" state instead of a bar restarting from 0.
+        const peaked = st.progressPeaked || s.percent >= 99
+        return { status: s, percent: s.percent, preparing: false, progressPeaked: peaked }
+      }
+      if (s.state === 'downloaded')
+        return { status: s, version: s.version, percent: 100, preparing: false }
+      if (s.state === 'error') return { status: s, preparing: false, installing: false }
       return { status: s }
     }),
 
@@ -50,18 +74,29 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   closePanel: () => set({ panelOpen: false }),
 
   recheck: () => {
-    // Open the panel and clear any dismiss so the result of this explicit check
-    // is always visible — available, error, or (via the menu label) up-to-date.
-    // Previously the panel only opened when an update was already known, so a
-    // download/check error rendered nothing and looked like a dead click.
-    set({ dismissedVersion: null, panelOpen: true })
+    // Clear any dismiss so a known update surfaces again. Only re-open the panel
+    // when an update actually exists — if we're already up to date, opening the
+    // panel would just flash it (the banner renders nothing for not-available)
+    // and the "up to date" feedback belongs in the menu, not a panel. The menu
+    // (NavRail) decides whether to close itself + show the panel based on this.
+    const known = hasAvailableUpdate(get())
+    set({ dismissedVersion: null, panelOpen: known })
     // Always kick a fresh check too (picks up newer versions / recovers errors).
     // Pass the UI language so downloads route to the China CDN / R2 accordingly.
     window.electronAPI?.checkForUpdate?.(getLang())
   },
 
-  download: () => window.electronAPI?.downloadUpdate?.(getLang()),
-  install: () => window.electronAPI?.installUpdate?.(),
+  download: () => {
+    // Enter a busy state immediately so the button can't be clicked twice while
+    // we wait (1-2s) for the first download-progress event to arrive.
+    set({ preparing: true, progressPeaked: false })
+    window.electronAPI?.downloadUpdate?.(getLang())
+  },
+  install: () => {
+    // Show the "installing…" overlay before the app quits to swap the bundle.
+    set({ installing: true })
+    window.electronAPI?.installUpdate?.()
+  },
 }))
 
 // Subscribe to main-process update events. Returns an unsubscribe fn.
