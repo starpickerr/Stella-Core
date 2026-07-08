@@ -813,10 +813,17 @@ function applyI18n() {
     
     const langLabel = document.getElementById('lang-label');
     if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁中';
-        else if (currentLang === 'zh') langLabel.textContent = '簡中';
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
+        else if (currentLang === 'zh') langLabel.textContent = '简体';
         else langLabel.textContent = 'EN';
     }
+    // Highlight the active option in the header language dropdown menu.
+    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
+        const active = item.dataset.lang === currentLang;
+        item.classList.toggle('text-blue-600', active);
+        item.classList.toggle('dark:text-blue-400', active);
+        item.classList.toggle('font-medium', active);
+    });
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
     if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
@@ -867,10 +874,17 @@ function syncLanguageToBackend(lang, callback) {
 function updateLangControls() {
     const langLabel = document.getElementById('lang-label');
     if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁體';
-        else if (currentLang === 'zh') langLabel.textContent = '簡體';
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
+        else if (currentLang === 'zh') langLabel.textContent = '简体';
         else langLabel.textContent = 'EN';
     }
+    // Highlight the active option in the header language dropdown menu.
+    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
+        const active = item.dataset.lang === currentLang;
+        item.classList.toggle('text-blue-600', active);
+        item.classList.toggle('dark:text-blue-400', active);
+        item.classList.toggle('font-medium', active);
+    });
     // The config language picker is the custom .cfg-dropdown component. Only
     // sync it once it has been initialized (i.e. the config panel was opened).
     const sel = document.getElementById('cfg-lang-select');
@@ -888,15 +902,30 @@ function updateLangControls() {
     }
 }
 
-function toggleLanguage() {
-    if (currentLang === 'zh') {
-        setLanguage('zh-Hant');
-    } else if (currentLang === 'zh-Hant') {
-        setLanguage('en');
-    } else {
-        setLanguage('zh');
-    }
+// Toggle the header language dropdown menu open/closed.
+function toggleLangMenu(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('lang-menu');
+    if (menu) menu.classList.toggle('hidden');
 }
+
+// Pick a language from the dropdown, then close the menu.
+function selectLanguage(lang) {
+    const menu = document.getElementById('lang-menu');
+    if (menu) menu.classList.add('hidden');
+    setLanguage(lang);
+}
+window.toggleLangMenu = toggleLangMenu;
+window.selectLanguage = selectLanguage;
+
+// Close the language menu when clicking outside of it.
+document.addEventListener('click', (e) => {
+    const selector = document.getElementById('lang-selector');
+    const menu = document.getElementById('lang-menu');
+    if (menu && !menu.classList.contains('hidden') && selector && !selector.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+});
 
 // Refresh JS-rendered views after a language switch. Each branch uses the
 // lightweight in-memory re-render path (no extra network round-trips).

@@ -270,14 +270,29 @@
 
                 <div class="flex-1"></div>
 
-                <!-- Language Toggle -->
-                <button id="lang-toggle" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
-                                                 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10
-                                                 cursor-pointer transition-colors duration-150"
-                        onclick="toggleLanguage()">
-                    <i class="fas fa-globe text-xs"></i>
-                    <span id="lang-label">EN</span>
-                </button>
+                <!-- Language Selector (dropdown) -->
+                <div id="lang-selector" class="relative">
+                    <button id="lang-toggle" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                                                     text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10
+                                                     cursor-pointer transition-colors duration-150"
+                            onclick="toggleLangMenu(event)">
+                        <i class="fas fa-globe text-xs"></i>
+                        <span id="lang-label">EN</span>
+                        <i class="fas fa-chevron-down text-[10px] opacity-60"></i>
+                    </button>
+                    <div id="lang-menu" class="hidden absolute right-0 mt-1 min-w-[120px] py-1 rounded-lg z-50
+                                               bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-white/10">
+                        <button class="lang-menu-item w-full text-left px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300
+                                       hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer" data-lang="zh"
+                                onclick="selectLanguage('zh')">简体中文</button>
+                        <button class="lang-menu-item w-full text-left px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300
+                                       hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer" data-lang="zh-Hant"
+                                onclick="selectLanguage('zh-Hant')">繁體中文</button>
+                        <button class="lang-menu-item w-full text-left px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300
+                                       hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer" data-lang="en"
+                                onclick="selectLanguage('en')">English</button>
+                    </div>
+                </div>
 
                 <!-- Theme Toggle -->
                 <button id="theme-toggle" class="p-2 rounded-lg text-slate-500 dark:text-slate-400
