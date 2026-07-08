@@ -1854,9 +1854,13 @@ class ConfigHandler:
                 return json.dumps({"status": "error", "message": "no valid keys to update"})
 
             config_path = os.path.join(get_data_root(), "config.json")
+            old_password = ""  # Store old password before update
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     file_cfg = json.load(f)
+                    # Capture old password before updating
+                    if "web_password" in applied:
+                        old_password = file_cfg.get("web_password", "")
             else:
                 file_cfg = {}
             file_cfg.update(applied)
@@ -1874,6 +1878,26 @@ class ConfigHandler:
                 except Exception as lang_err:
                     logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
 
+            # Check if password was cleared: if there was a password before clearing,
+            # the service is likely bound to 0.0.0.0 (public), so warn the user.
+            password_warning = None
+            if "web_password" in applied:
+                new_password = applied["web_password"]
+                configured_host = file_cfg.get("web_host", "")
+                
+                # If password was cleared and there was a password before
+                if not new_password and old_password:
+                    # If web_host is not explicitly set, the service auto-binds based on password
+                    # With password → 0.0.0.0 (public), without password → 127.0.0.1 (local)
+                    # So clearing password when it was previously set means going from public to local
+                    if not configured_host or configured_host == "0.0.0.0":
+                        password_warning = "password_cleared_with_public_host"
+                        logger.warning(
+                            "[WebChannel] Password cleared while service is likely bound to 0.0.0.0. "
+                            "Consider restarting the service to rebind to 127.0.0.1 "
+                            "or explicitly set web_host in config to prevent unauthorized access."
+                        )
+
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)
             # even after the user switches bot_type / use_linkai / model in UI.
@@ -1886,7 +1910,7 @@ class ConfigHandler:
                 except Exception as reset_err:
                     logger.warning(f"[WebChannel] Failed to reset bridge: {reset_err}")
 
-            return json.dumps({"status": "success", "applied": applied}, ensure_ascii=False)
+            return json.dumps({"status": "success", "applied": applied, "warning": password_warning}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -3667,11 +3691,13 @@ class ChannelsHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
+            from common import i18n
             local_config = conf()
             active_channels = self._active_channel_set()
             # Desktop build ships without lark-oapi, so hide Feishu from the list.
             desktop_mode = os.environ.get("COW_DESKTOP") == "1"
             channels = []
+            is_hant = i18n.get_language() == i18n.ZH_HANT
             for ch_name, ch_def in self.CHANNEL_DEFS.items():
                 if desktop_mode and ch_name == "feishu":
                     continue
@@ -3682,16 +3708,32 @@ class ChannelsHandler:
                         display_val = self._mask_secret(str(raw_val))
                     else:
                         display_val = raw_val
+                    
+                    label_val = f["label"]
+                    if is_hant and isinstance(label_val, str):
+                        label_val = i18n.to_traditional(label_val)
+                    elif is_hant and isinstance(label_val, dict):
+                        label_val = label_val.copy()
+                        label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+
                     fields_out.append({
                         "key": f["key"],
-                        "label": f["label"],
+                        "label": label_val,
                         "type": f["type"],
                         "value": display_val,
                         "default": f.get("default", ""),
                     })
+                
+                label_val = ch_def["label"]
+                if is_hant and isinstance(label_val, str):
+                    label_val = i18n.to_traditional(label_val)
+                elif is_hant and isinstance(label_val, dict):
+                    label_val = label_val.copy()
+                    label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+
                 ch_info = {
                     "name": ch_name,
-                    "label": ch_def["label"],
+                    "label": label_val,
                     "icon": ch_def["icon"],
                     "color": ch_def["color"],
                     "active": ch_name in active_channels,
@@ -4248,16 +4290,26 @@ class ToolsHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.tools.tool_manager import ToolManager
+            from common import i18n
             tm = ToolManager()
             if not tm.tool_classes:
                 tm.load_tools()
             tools = []
+            lang = i18n.get_language()
             for name, cls in tm.tool_classes.items():
                 try:
                     instance = cls()
+                    desc = instance.description
+                    if lang == i18n.ZH_HANT and desc:
+                        desc = i18n.to_traditional(desc)
+                    elif lang == "en" and name == "scheduler":
+                        desc = (
+                            "Create, query and manage scheduled tasks (reminders, periodic tasks, etc.).\n\n"
+                            "⚠️ IMPORTANT: Only use this tool when delayed or periodic execution is needed."
+                        )
                     tools.append({
                         "name": name,
-                        "description": instance.description,
+                        "description": desc,
                     })
                 except Exception:
                     tools.append({"name": name, "description": ""})
@@ -4274,10 +4326,17 @@ class SkillsHandler:
         try:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
+            from common import i18n
             workspace_root = _get_workspace_root()
             manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
             service = SkillService(manager)
             skills = service.query()
+            if i18n.get_language() == i18n.ZH_HANT:
+                for skill in skills:
+                    if isinstance(skill, dict):
+                        for k, v in list(skill.items()):
+                            if k in ("name", "description", "display_name") and isinstance(v, str):
+                                skill[k] = i18n.to_traditional(v)
             return json.dumps({"status": "success", "skills": skills}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Skills API error: {e}")
