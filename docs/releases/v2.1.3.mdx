@@ -53,15 +53,15 @@ Docs: [Models](https://docs.cowagent.ai/models)
 ## 🔒 Security Hardening
 
 - **Sensitive file read protection**: hardened access to credential and other sensitive files to prevent bypass reads. Thanks @fengyl07 (#2913)
-- **Browser access protection**: blocks browser requests targeting internal network and cloud server internal endpoints, reducing the risk of being tricked into reaching internal services. Thanks @christop
+- **Browser access protection**: blocks browser requests targeting internal network and cloud server internal endpoints, reducing the risk of being tricked into reaching internal services. Thanks @Jiangrong-W
 - **Safer config parsing**: config content is parsed in a safer way to avoid potential code execution risks. Thanks @shunfeng8421
 
 ## 🛠 Improvements & Fixes
 
 - **Custom provider support**: embedding and vision models can now use custom providers; also fixed a memory query issue on Windows. Thanks @HnBigVolibear
-- **More reliable file editing**: better preserves original indentation, and fuzzy matching no longer touches unrelated content. Thanks @xiaweiwei67-stack (#2942)
-- **Command output encoding fix**: fixed garbled Chinese characters when a command produces large output. Thanks @xiaweiwei67-stack (#2941)
-- **Azure OpenAI fixes**: fixed streaming output and related configuration issues for Azure OpenAI. Thanks @Eric L
+- **More reliable file editing**: better preserves original indentation, and fuzzy matching no longer touches unrelated content. Thanks @weijun-xia (#2942)
+- **Command output encoding fix**: fixed garbled Chinese characters when a command produces large output. Thanks @weijun-xia (#2941)
+- **Azure OpenAI fixes**: fixed streaming output and related configuration issues for Azure OpenAI. Thanks @Tunnello
 - **WeCom Smart Bot**: added channel docs for the webhook (callback) mode. Thanks @6vision
 - **Deep Dream toggle**: added a dedicated `deep_dream_enabled` switch to enable or disable Deep Dream distillation independently.
 - **Stability**: improved connection recycling in the Web service and fixed several Self-Evolution issues (#2924, #2904)
