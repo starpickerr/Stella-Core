@@ -230,6 +230,9 @@ export interface ConfigData {
   api_keys: Record<string, string>
   providers: Record<string, ProviderMeta>
   web_password_masked?: string
+  // Real password, only returned to the desktop app (trusted local machine) so
+  // it can be edited in place. Undefined for browser access.
+  web_password?: string
 }
 
 // ============================================================

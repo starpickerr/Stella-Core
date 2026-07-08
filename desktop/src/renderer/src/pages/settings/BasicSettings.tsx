@@ -55,7 +55,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setMaxSteps(data.agent_max_steps ?? 20)
       setThinking(!!data.enable_thinking)
       setEvolution(!!data.self_evolution_enabled)
-      setPassword(data.web_password_masked || '')
+      // Prefer the real password (desktop only) so it can be edited in place;
+      // fall back to the masked value for browser access.
+      setPassword(data.web_password ?? data.web_password_masked ?? '')
       setPwDirty(false)
 
       const ids = data.providers ? Object.keys(data.providers) : []
@@ -130,8 +132,14 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setTimeout(() => setAgentStatus(''), 2000)
   }
 
+  // Desktop returns the real password, so the field holds plaintext and can be
+  // saved (including cleared) directly. Browser access only has the masked
+  // value, where a masked string must never be saved as the real password.
+  const hasRealPassword = config?.web_password !== undefined
+
   const savePassword = async () => {
-    if (!pwDirty || MASK_RE.test(password)) return
+    if (!pwDirty) return
+    if (!hasRealPassword && MASK_RE.test(password)) return
     try {
       await apiClient.updateConfig({ web_password: password })
       setPwStatus(password ? t('config_password_saved') : t('config_password_cleared'))
@@ -292,10 +300,13 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
                 value={password}
                 placeholder={t('config_password_placeholder')}
                 onFocus={() => {
-                  if (!pwDirty && MASK_RE.test(password)) setPassword('')
+                  // Browser access shows a mask; clear it on focus so the user
+                  // types a fresh password. Desktop holds the real password and
+                  // must stay editable in place (cursor at the end).
+                  if (!hasRealPassword && !pwDirty && MASK_RE.test(password)) setPassword('')
                 }}
                 onBlur={() => {
-                  if (!pwDirty) setPassword(config?.web_password_masked || '')
+                  if (!hasRealPassword && !pwDirty) setPassword(config?.web_password_masked || '')
                 }}
                 onChange={(e) => {
                   setPassword(e.target.value)

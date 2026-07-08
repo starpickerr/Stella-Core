@@ -356,6 +356,13 @@ const translations: Record<string, Record<string, string>> = {
     status_error: '初始化失败',
     status_error_desc: '客户端初始化失败，请重试',
     status_retry: '重试',
+    // login (web_password)
+    login_title: '请输入访问密码',
+    login_desc: '此客户端已设置访问密码，请输入以继续',
+    login_placeholder: '访问密码',
+    login_submit: '进入',
+    login_error: '密码错误，请重试',
+    login_checking: '验证中...',
     // slash command descriptions
     slash_menu_title: '命令',
     slash_new: '新建对话',
@@ -731,6 +738,13 @@ const translations: Record<string, Record<string, string>> = {
     status_error: 'Initialization Failed',
     status_error_desc: 'Failed to initialize the client, please retry',
     status_retry: 'Retry',
+    // login (web_password)
+    login_title: 'Enter access password',
+    login_desc: 'This client is password-protected. Enter the password to continue.',
+    login_placeholder: 'Access password',
+    login_submit: 'Enter',
+    login_error: 'Wrong password, please try again',
+    login_checking: 'Verifying...',
     // slash command descriptions
     slash_menu_title: 'Commands',
     slash_new: 'New chat',

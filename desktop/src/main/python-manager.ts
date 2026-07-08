@@ -315,7 +315,10 @@ export class PythonBackend extends EventEmitter {
       const startedAt = Date.now()
 
       const check = () => {
-        const req = http.get(`http://127.0.0.1:${this.port}/config`, (res) => {
+        // Probe the unauthenticated health endpoint, NOT /config: /config
+        // requires auth once a web_password is set, which would make this poll
+        // 401 forever and hang startup.
+        const req = http.get(`http://127.0.0.1:${this.port}/api/health`, (res) => {
           if (res.statusCode === 200) {
             this.status = 'ready'
             this.emit('log', `Backend ready on port ${this.port}`)
