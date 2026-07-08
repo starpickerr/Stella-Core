@@ -14,12 +14,9 @@ name: Release Desktop
 #   3. (Publish Desktop workflow) flip D1 is_latest=1 and attach GitHub
 #      Release assets — makes the version live on the site.
 #
-# Push a tag like `v1.2.0` (or use workflow_dispatch) to run stage 1.
+# Manual only: run stage 1 via workflow_dispatch. Tag pushes do NOT trigger a
+# build, so cutting a release tag never rebuilds installers or overwrites R2.
 on:
-  push:
-    tags:
-      - "v*"
-  # Manual trigger for testing the full pipeline without cutting a real tag.
   workflow_dispatch:
     inputs:
       version:
