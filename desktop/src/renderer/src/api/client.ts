@@ -24,8 +24,16 @@ interface ApiResult {
   message?: string
 }
 
+const AUTH_TOKEN_KEY = 'cow_auth_token'
+
 class ApiClient {
   private baseUrl = 'http://127.0.0.1:9876'
+  // Bearer token for web_password-protected backends. The desktop renderer
+  // runs from a file:// origin, where cross-origin cookies to http://127.0.0.1
+  // aren't sent reliably, so we authenticate via an Authorization header
+  // instead. Persisted in localStorage so it survives reloads.
+  private authToken: string | null =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null
 
   setBaseUrl(url: string) {
     this.baseUrl = url
@@ -35,13 +43,25 @@ class ApiClient {
     return this.baseUrl
   }
 
+  setAuthToken(token: string | null) {
+    this.authToken = token
+    try {
+      if (token) localStorage.setItem(AUTH_TOKEN_KEY, token)
+      else localStorage.removeItem(AUTH_TOKEN_KEY)
+    } catch {
+      // localStorage may be unavailable; in-memory token still works this session
+    }
+  }
+
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
-      // Send cookies for future web_password auth support
+      // Cookies still work for browser access; the desktop app relies on the
+      // Authorization header below.
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
         ...options?.headers,
       },
     })
@@ -93,8 +113,16 @@ class ApiClient {
     })
   }
 
+  // EventSource can't set an Authorization header, so append the auth token as
+  // a query param for SSE endpoints (the backend accepts it there).
+  private withToken(url: string): string {
+    if (!this.authToken) return url
+    const sep = url.includes('?') ? '&' : '?'
+    return `${url}${sep}token=${encodeURIComponent(this.authToken)}`
+  }
+
   createSSEStream(requestId: string): EventSource {
-    return new EventSource(`${this.baseUrl}/stream?request_id=${requestId}`)
+    return new EventSource(this.withToken(`${this.baseUrl}/stream?request_id=${requestId}`))
   }
 
   async deleteMessage(opts: {
@@ -138,11 +166,13 @@ class ApiClient {
 
   getFileUrl(previewUrl: string): string {
     if (/^https?:\/\//.test(previewUrl)) return previewUrl
-    return `${this.baseUrl}${previewUrl}`
+    // Served via <img src>, which can't set headers — carry the token in the
+    // query so protected file endpoints load under web_password.
+    return this.withToken(`${this.baseUrl}${previewUrl}`)
   }
 
   getServeFileUrl(absPath: string): string {
-    return `${this.baseUrl}/api/file?path=${encodeURIComponent(absPath)}`
+    return this.withToken(`${this.baseUrl}/api/file?path=${encodeURIComponent(absPath)}`)
   }
 
   // ---------------------------------------------------------
@@ -390,7 +420,7 @@ class ApiClient {
   // ---------------------------------------------------------
 
   createLogStream(): EventSource {
-    return new EventSource(`${this.baseUrl}/api/logs`)
+    return new EventSource(this.withToken(`${this.baseUrl}/api/logs`))
   }
 
   async getVersion(): Promise<string> {
@@ -406,14 +436,19 @@ class ApiClient {
     return this.request('/auth/check')
   }
 
-  async authLogin(password: string): Promise<ApiResult> {
-    return this.request('/auth/login', {
+  async authLogin(password: string): Promise<ApiResult & { token?: string }> {
+    const res = await this.request<ApiResult & { token?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ password }),
     })
+    if (res.status === 'success' && res.token) {
+      this.setAuthToken(res.token)
+    }
+    return res
   }
 
   async authLogout(): Promise<ApiResult> {
+    this.setAuthToken(null)
     return this.request('/auth/logout', { method: 'POST' })
   }
 }

@@ -22,7 +22,10 @@ export function useBackend() {
 
   const probeBackend = useCallback(async (port: number): Promise<boolean> => {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/config`, {
+      // Probe the unauthenticated health endpoint, NOT /config: once a
+      // web_password is set, /config returns 401 and we'd wrongly treat the
+      // (healthy) backend as unreachable, hanging on "connecting".
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
         signal: AbortSignal.timeout(3000),
       })
       return res.ok

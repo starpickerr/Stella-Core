@@ -5,6 +5,7 @@ import NavRail from './layout/NavRail'
 import SessionList from './layout/SessionList'
 import WindowControls from './layout/WindowControls'
 import StatusScreen from './components/StatusScreen'
+import LoginGate from './components/LoginGate'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { useUIStore } from './store/uiStore'
@@ -32,16 +33,45 @@ const App: React.FC = () => {
   const onboardingOpen = useOnboardingStore((s) => s.open)
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
+  // Auth gate for web_password-protected backends. 'checking' until we know
+  // whether login is needed; 'need_login' shows the password screen; 'ok' lets
+  // the main UI render.
+  const [authState, setAuthState] = useState<'checking' | 'need_login' | 'ok'>('checking')
 
   useEffect(() => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
+  }, [backend.status, backend.baseUrl])
+
+  // Once the backend is ready, check whether a web_password is set. If so and
+  // this session isn't authenticated, show the login gate before the app.
+  useEffect(() => {
+    if (backend.status !== 'ready') {
+      setAuthState('checking')
+      return
+    }
+    let cancelled = false
+    apiClient
+      .authCheck()
+      .then((res) => {
+        if (cancelled) return
+        const needLogin = res.auth_required && !res.authenticated
+        setAuthState(needLogin ? 'need_login' : 'ok')
+      })
+      .catch(() => {
+        // If the check itself fails, don't hard-block the user — assume no auth
+        // is required (backends without web_password never return errors here).
+        if (!cancelled) setAuthState('ok')
+      })
+    return () => {
+      cancelled = true
+    }
   }, [backend.status, backend.baseUrl])
 
   // First-run check: once the backend is ready, decide whether to show the
   // onboarding wizard. It's config-driven — shown whenever the chat model isn't
   // configured (and not dismissed earlier this session); no persisted flag.
   useEffect(() => {
-    if (backend.status !== 'ready') return
+    if (backend.status !== 'ready' || authState !== 'ok') return
     let cancelled = false
     apiClient
       .getModels()
@@ -65,7 +95,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [backend.status, maybeOpenOnboarding])
+  }, [backend.status, authState, maybeOpenOnboarding])
 
   // Subscribe to auto-update status from the main process (no-op in dev).
   useEffect(() => initUpdateListener(), [])
@@ -89,6 +119,15 @@ const App: React.FC = () => {
 
   if (backend.status !== 'ready') {
     return <StatusScreen status={backend.status} error={backend.error} onRetry={backend.restart} />
+  }
+
+  // Backend is up but we're still resolving auth — keep the loading screen.
+  if (authState === 'checking') {
+    return <StatusScreen status="connecting" onRetry={backend.restart} />
+  }
+
+  if (authState === 'need_login') {
+    return <LoginGate onAuthenticated={() => setAuthState('ok')} />
   }
 
   const isChat = location.pathname === '/'

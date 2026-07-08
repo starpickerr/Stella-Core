@@ -79,11 +79,42 @@ def _verify_auth_token(token):
     return hmac.compare_digest(sig, expected)
 
 
+def _get_bearer_token():
+    """Extract the token from an `Authorization: Bearer <token>` header.
+
+    The desktop client renders from a file:// origin, so cross-origin cookies
+    to http://127.0.0.1 are unreliable (SameSite=Lax cookies aren't sent). It
+    therefore authenticates via this header instead; browsers keep using the
+    cookie set by /auth/login.
+    """
+    auth = web.ctx.env.get("HTTP_AUTHORIZATION", "") or ""
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return ""
+
+
+def _get_query_token():
+    """Extract a token from the `token` query param.
+
+    Needed for SSE endpoints: EventSource can't set an Authorization header,
+    and file:// cookies are unreliable, so the desktop client passes the token
+    in the query string for /stream and /api/logs.
+    """
+    try:
+        return web.input(token="").token or ""
+    except Exception:
+        return ""
+
+
 def _check_auth():
     """Return True if request is authenticated or password not enabled."""
     if not _is_password_enabled():
         return True
-    return _verify_auth_token(web.cookies().get("cow_auth_token", ""))
+    if _verify_auth_token(web.cookies().get("cow_auth_token", "")):
+        return True
+    if _verify_auth_token(_get_bearer_token()):
+        return True
+    return _verify_auth_token(_get_query_token())
 
 
 def _require_auth():
@@ -1249,6 +1280,7 @@ class WebChannel(ChatChannel):
 
         urls = (
             '/', 'RootHandler',
+            '/api/health', 'HealthHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
             '/auth/logout', 'AuthLogoutHandler',
@@ -1341,6 +1373,16 @@ class RootHandler:
         raise web.seeother('/chat')
 
 
+class HealthHandler:
+    # Unauthenticated liveness probe. The desktop shell polls this to know the
+    # backend is up; it must never require auth (a set web_password would
+    # otherwise make startup hang). Returns no sensitive data.
+    def GET(self):
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        return json.dumps({"status": "ok"})
+
+
 class AuthCheckHandler:
     def GET(self):
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -1368,7 +1410,9 @@ class AuthLoginHandler:
         token = _create_auth_token()
         web.setcookie("cow_auth_token", token, expires=_session_expire_seconds(),
                        path="/", httponly=True, samesite="Lax")
-        return json.dumps({"status": "success"})
+        # Also return the token in the body: the desktop client (file:// origin)
+        # can't rely on the cookie and sends it back via an Authorization header.
+        return json.dumps({"status": "success", "token": token})
 
 
 class AuthLogoutHandler:
@@ -1807,7 +1851,7 @@ class ConfigHandler:
             raw_pwd = str(local_config.get("web_password", "") or "")
             masked_pwd = ("*" * len(raw_pwd)) if raw_pwd else ""
 
-            return json.dumps({
+            result = {
                 "status": "success",
                 "use_agent": use_agent,
                 "title": title,
@@ -1824,7 +1868,13 @@ class ConfigHandler:
                 "api_keys": api_keys_masked,
                 "providers": providers,
                 "web_password_masked": masked_pwd,
-            }, ensure_ascii=False)
+            }
+            # The desktop app runs on the local trusted machine, so it can edit
+            # the real password in place (cursor at the end, delete to clear).
+            # Browser access only ever sees the masked value.
+            if os.environ.get("COW_DESKTOP") == "1":
+                result["web_password"] = raw_pwd
+            return json.dumps(result, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error getting config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
