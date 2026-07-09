@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process'
+import { ChildProcess, spawn, execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
 import path from 'path'
 import os from 'os'
@@ -37,6 +37,77 @@ export class PythonBackend extends EventEmitter {
 
   getStatus(): string {
     return this.status
+  }
+
+  // Cache the resolved PATH so we only spawn a login shell once per process.
+  private resolvedPath: string | null = null
+
+  /**
+   * Build the PATH the backend should run with.
+   *
+   * When launched from Finder/Dock, a GUI app inherits launchd's minimal PATH
+   * (/usr/bin:/bin:...) and never loads ~/.zshrc, so user-installed CLIs like
+   * `linkai`, `node`, or Homebrew tools are invisible to the agent's bash tool.
+   * We recover the real login-shell PATH (macOS/Linux) and merge in common bin
+   * dirs, so the agent can find these commands regardless of how the app started.
+   */
+  private resolveEnvPath(): string {
+    if (this.resolvedPath !== null) {
+      return this.resolvedPath
+    }
+
+    const sep = path.delimiter
+    const existing = process.env.PATH || ''
+    const parts: string[] = existing ? existing.split(sep) : []
+
+    // Windows GUI apps already inherit the full system PATH; nothing to fix.
+    if (process.platform !== 'win32') {
+      // Ask the user's login shell for its PATH. `-ilc` runs an interactive
+      // login shell so it sources ~/.zshrc / ~/.zprofile etc.
+      try {
+        const shell = process.env.SHELL || '/bin/zsh'
+        const out = execFileSync(shell, ['-ilc', 'echo -n "__PATH__$PATH"'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
+        const marker = out.lastIndexOf('__PATH__')
+        if (marker !== -1) {
+          const shellPath = out.slice(marker + '__PATH__'.length).trim()
+          if (shellPath) {
+            parts.push(...shellPath.split(sep))
+          }
+        }
+      } catch {
+        // Shell probe failed (unusual shell, timeout). Fall back to the
+        // common dirs below so at least the typical install paths work.
+      }
+
+      const home = os.homedir()
+      parts.push(
+        path.join(home, '.local/bin'),
+        '/usr/local/bin',
+        '/opt/homebrew/bin',
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+      )
+    }
+
+    // De-duplicate while preserving order (first occurrence wins).
+    const seen = new Set<string>()
+    const merged: string[] = []
+    for (const p of parts) {
+      const dir = p.trim()
+      if (dir && !seen.has(dir)) {
+        seen.add(dir)
+        merged.push(dir)
+      }
+    }
+
+    this.resolvedPath = merged.join(sep)
+    return this.resolvedPath
   }
 
   /**
@@ -261,6 +332,10 @@ export class PythonBackend extends EventEmitter {
       // app bundle stays read-only; dev runs omit it and keep using the repo.
       env: {
         ...process.env,
+        // Recover the user's real PATH (login shell + common bin dirs) so the
+        // agent's bash tool can find CLIs like `linkai`/`node` even when the
+        // app is launched from Finder/Dock with launchd's minimal PATH.
+        PATH: this.resolveEnvPath(),
         PYTHONUNBUFFERED: '1',
         COW_DESKTOP: '1',
         // The shell owns the port: tell the backend to bind exactly here so the
