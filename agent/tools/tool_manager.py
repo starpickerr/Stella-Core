@@ -466,21 +466,30 @@ class ToolManager:
         the others, and never raises out of the worker thread.
         """
         try:
-            from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry
+            from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry, set_reload_callback
             from agent.tools.mcp.mcp_tool import McpTool
 
             registry = McpClientRegistry()
             self._mcp_registry = registry
+            # Let the OAuth web callback bring a server online once authorized.
+            set_reload_callback(self.reload_mcp_server)
 
             for cfg in mcp_servers_config:
                 server_name = cfg.get("name", "<unnamed>")
                 try:
                     client = McpClient(cfg)
                     if not client.initialize():
-                        self._mcp_status[server_name] = "failed"
-                        logger.warning(
-                            f"[MCP] Server '{server_name}' failed to initialize — skipping"
-                        )
+                        if getattr(client, "needs_auth", False):
+                            self._mcp_status[server_name] = "needs_auth"
+                            logger.info(
+                                f"[MCP] Server '{server_name}' needs authorization — "
+                                f"waiting for the user to complete the OAuth flow"
+                            )
+                        else:
+                            self._mcp_status[server_name] = "failed"
+                            logger.warning(
+                                f"[MCP] Server '{server_name}' failed to initialize — skipping"
+                            )
                         continue
 
                     tool_schemas = client.list_tools()
@@ -517,6 +526,28 @@ class ToolManager:
             )
         except Exception as e:
             logger.warning(f"[ToolManager] MCP background loader crashed: {e}")
+
+    def reload_mcp_server(self, server_name: str) -> None:
+        """Re-initialize a single MCP server (e.g. after OAuth authorization).
+
+        Tears down any existing client for the server and starts it again in
+        the background, so a freshly-stored access token is picked up and the
+        server's tools become available on the next message.
+        """
+        with self._mcp_lock:
+            cfg = self._mcp_active_configs.get(server_name)
+        if not cfg:
+            logger.warning(f"[MCP] reload requested for unknown server '{server_name}'")
+            return
+        logger.info(f"[MCP] Reloading server '{server_name}' after authorization")
+        self._teardown_mcp_server(server_name)
+        self._mcp_status[server_name] = "pending"
+        threading.Thread(
+            target=self._load_mcp_tools_async,
+            args=([cfg],),
+            daemon=True,
+            name=f"mcp-reload-{server_name}",
+        ).start()
 
     def list_mcp_status(self) -> dict:
         """Return {server_name: status} snapshot for UI / debugging."""
