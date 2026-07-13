@@ -113,11 +113,11 @@ jobs:
         shell: bash
         run: npm run build
 
-      # Download the Windows remote-signing CLI (vendor-neutral: the URL comes
-      # from a repo variable, so a public workflow never names the signing
-      # vendor). Only runs on the Windows leg and only when a URL is set;
-      # otherwise the build stays unsigned. SIGNTOOL_PATH is exported for the
-      # next step's electron-builder.win.js to invoke.
+      # Download the Windows signing CLI. The URL comes from a repo variable, so
+      # nothing about the signing setup is hardcoded in a public workflow. Only
+      # runs on the Windows leg and only when a URL is set; otherwise the build
+      # stays unsigned. SIGNTOOL_PATH is exported for the next step's
+      # electron-builder.win.js to invoke.
       - name: Download Windows signing CLI
         if: matrix.platform == 'win' && vars.SIGNTOOL_CLI_URL != ''
         shell: bash
@@ -149,7 +149,7 @@ jobs:
           # is the correct state for unsigned builds.
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # Windows remote code signing (Racent-style CLI). Credentials are
+          # Windows code signing via the signing CLI. Credentials are
           # secrets; SIGNTOOL_PATH was exported by the download step above.
           # COW_SIGN_DRY_RUN (repo variable) lets us validate the whole pipeline
           # with a self-signed cert before buying a real one — no quota used.
@@ -170,8 +170,8 @@ jobs:
           # (an `unset` can return non-zero and abort under errexit).
           # macOS keeps the classic CSC_LINK (.p12) flow. Windows no longer uses
           # a local .pfx (EV private keys can't be exported since 2023); it signs
-          # via the remote CLI wired into electron-builder.win.js instead, using
-          # the SIGNTOOL_* env already set above — nothing to export here.
+          # via the CLI wired into electron-builder.win.js instead, using the
+          # SIGNTOOL_* env already set above — nothing to export here.
           case "${{ matrix.platform }}" in
             mac)
               if [ -n "$MAC_CSC_LINK" ]; then
@@ -188,8 +188,8 @@ jobs:
           #
           # CONFIG PER PLATFORM: each platform loads its OWN dynamic config.
           #   mac -> electron-builder.js     (injects mac.binaries for signing)
-          #   win -> electron-builder.win.js (wires the remote sign hook +
-          #                                   afterPack to sign the backend exe)
+          #   win -> electron-builder.win.js (wires the sign hook; electron-builder
+          #                                   signs the app, backend and installer)
           # HISTORY: passing --config on Windows previously broke the build (no
           # installer, job still green). That happened because the MAC config
           # (electron-builder.js) was a no-op on Windows yet still disturbed the

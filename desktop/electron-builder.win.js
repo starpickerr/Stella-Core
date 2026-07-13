@@ -2,22 +2,19 @@
  * Dynamic electron-builder config for WINDOWS code signing.
  *
  * Mirrors electron-builder.js (which handles mac.binaries) but for Windows.
- * It wires the Racent remote code-signing CLI into electron-builder so that
- * every produced .exe (the app launcher + the NSIS installer) is signed in the
- * cloud — the EV private key never leaves the CA's HSM, satisfying the post-2023
- * "private key must live in hardware" rule.
+ * It wires a signing CLI into electron-builder so that every .exe is signed,
+ * with the private key kept in hardware per the post-2023 code-signing rules.
  *
- * Two signing passes are needed:
- *   1. win.signtoolOptions.sign (customSign) — electron-builder calls this for
- *      each artifact it produces (app .exe, uninstaller, NSIS installer).
- *   2. afterPack — signs the PyInstaller backend (cowagent-backend.exe) that is
- *      copied in via extraResources. electron-builder's sign hook only touches
- *      its OWN outputs, so the nested backend exe must be signed here, BEFORE
- *      the installer is assembled, so the signed backend ends up inside it.
+ * A SINGLE sign hook (win.signtoolOptions.sign) covers everything: electron-
+ * builder calls it for EVERY .exe it processes, which includes the app
+ * launcher, the packaged PyInstaller backend (extraResources/backend/
+ * cowagent-backend.exe) and the NSIS installer. We deliberately do NOT add an
+ * afterPack pass — that would sign the backend a second time and waste a paid
+ * signing call on every release.
  *
- * VENDOR PRIVACY: the CLI path and all credentials come from env vars only.
- * Nothing in this file (or the public workflow) names the reseller, so a public
- * repo never leaks which signing vendor we use.
+ * PRIVACY: the CLI path and all credentials come from env vars only. Nothing in
+ * this file (or the public workflow) is hardcoded, so a public repo never leaks
+ * any signing configuration.
  *
  * DRY-RUN / SKIP: when SIGNTOOL_CERT_CODE is absent we skip signing entirely
  * (unsigned dev/dry builds keep working). When COW_SIGN_DRY_RUN=1 we pass
@@ -30,15 +27,21 @@ const path = require('path')
 
 const config = require('./package.json').build
 
-// Absolute path to the Racent signtool CLI on the runner. Injected by CI so
-// this file never hardcodes a vendor download URL. e.g. C:\signtool\signtool.exe
+// Absolute path to the signing CLI on the runner. Injected by CI so this file
+// never hardcodes a download URL. e.g. C:\signtool\signtool.exe
 const SIGNTOOL = process.env.SIGNTOOL_PATH || ''
-const ACCESS_KEY = process.env.SIGNTOOL_ACCESS_KEY || ''
-const ACCESS_SECRET = process.env.SIGNTOOL_ACCESS_SECRET || ''
-const CERT_CODE = process.env.SIGNTOOL_CERT_CODE || ''
 // Dry-run validates the pipeline with a self-signed cert (no quota, no real
 // cert needed). Any truthy value enables it.
 const DRY_RUN = !!process.env.COW_SIGN_DRY_RUN
+
+// In dry-run the CLI still requires these flags to be NON-EMPTY (it validates
+// presence, not the value, and signs with a self-signed cert). So when no real
+// credentials are provided during a dry-run, fall back to harmless placeholders
+// to satisfy the CLI's arg check. Real runs pass the actual secrets through.
+const PLACEHOLDER = DRY_RUN ? 'dry-run' : ''
+const ACCESS_KEY = process.env.SIGNTOOL_ACCESS_KEY || PLACEHOLDER
+const ACCESS_SECRET = process.env.SIGNTOOL_ACCESS_SECRET || PLACEHOLDER
+const CERT_CODE = process.env.SIGNTOOL_CERT_CODE || PLACEHOLDER
 
 // RFC3161 timestamp server for SHA256. Microsoft's is reliable from CI runners
 // worldwide; overridable via env if needed.
@@ -53,7 +56,7 @@ function canSign() {
 }
 
 /**
- * Sign a single file in place using the Racent CLI. The CLI writes to a
+ * Sign a single file in place using the signing CLI. The CLI writes to a
  * separate --out path (it refuses to overwrite an existing file), so we sign to
  * a temp file and atomically move it back over the original.
  */
@@ -103,44 +106,17 @@ async function customSign(configuration) {
   signFile(configuration.path)
 }
 
-// Recursively collect .exe/.dll under the packed backend dir so nested native
-// binaries get signed too (Defender flags PyInstaller bundles most often).
-function collectSignables(dir) {
-  const out = []
-  const walk = (d) => {
-    for (const name of fs.readdirSync(d)) {
-      const full = path.join(d, name)
-      const st = fs.lstatSync(full)
-      if (st.isSymbolicLink()) continue
-      if (st.isDirectory()) {
-        walk(full)
-        continue
-      }
-      if (/\.(exe|dll)$/i.test(name)) out.push(full)
-    }
-  }
-  walk(dir)
-  return out
-}
-
-// Sign the PyInstaller backend BEFORE the installer is built, so the signed
-// backend is what gets packaged. context.appOutDir is the unpacked app dir.
-async function afterPack(context) {
-  if (process.platform !== 'win32') return
-  if (!canSign()) return
-  const backendDir = path.join(context.appOutDir, 'resources', 'backend', 'cowagent-backend')
-  if (!fs.existsSync(backendDir)) {
-    console.warn(`[win-sign] backend dir not found, skipping backend signing: ${backendDir}`)
-    return
-  }
-  const files = collectSignables(backendDir)
-  console.log(`[win-sign] signing ${files.length} backend binaries`)
-  for (const f of files) signFile(f)
-}
-
-// Extend the base config: attach the sign hook + afterPack. Only meaningful on
-// Windows builds (this config is only passed via --config on the win matrix leg).
+// Extend the base config: attach the sign hook. Only meaningful on Windows
+// builds (this config is only passed via --config on the win matrix leg).
+//
+// electron-builder invokes customSign for EVERY .exe it touches — that already
+// includes the packaged backend (extraResources/backend/cowagent-backend.exe)
+// and the NSIS installer, not just the app launcher. So there's no separate
+// afterPack pass: adding one would sign the backend twice (wasting a paid
+// signing call per release). Nested PyInstaller .dll/.pyd files are left
+// unsigned, which Windows Authenticode tolerates (unlike macOS, it doesn't
+// require deep-signing every nested lib — a signed top-level exe is enough for
+// SmartScreen/Defender to attribute the publisher).
 config.win = { ...config.win, signtoolOptions: { sign: customSign, signingHashAlgorithms: ['sha256'] } }
-config.afterPack = afterPack
 
 module.exports = config
