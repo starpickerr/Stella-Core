@@ -255,6 +255,12 @@ def _execute_agent_task(task: dict, agent_bridge) -> bool:
                 logger.error(f"[Scheduler] Task {task['id']}: No result from agent execution")
                 return True  # agent ran but produced nothing; don't loop
 
+            if action.get("silent", False):
+                logger.info(
+                    f"[Scheduler] Task {task['id']} executed successfully in silent mode"
+                )
+                return True
+
             from channel.channel_factory import create_channel
             channel = create_channel(channel_type)
             if not channel:

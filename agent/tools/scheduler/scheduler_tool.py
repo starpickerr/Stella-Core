@@ -24,6 +24,7 @@ class SchedulerTool(BaseTool):
         "⚠️ 重要：仅当需要「定时/提醒/每天/每周/X分钟后/X点」等延迟或周期执行时才使用此工具。"
         "使用方法：\n"
         "- 创建：action='create', name='任务名', message/ai_task='内容', schedule_type='once/interval/cron', schedule_value='...'\n"
+        "- 静默AI任务：创建 ai_task 时设置 silent=true，任务会正常执行但不向聊天发送结果\n"
         "- 查询：action='list' / action='get', task_id='任务ID'\n"
         "- 管理：action='delete/enable/disable', task_id='任务ID'\n\n"
         "调度类型：\n"
@@ -64,6 +65,11 @@ class SchedulerTool(BaseTool):
             "schedule_value": {
                 "type": "string",
                 "description": "调度值: cron表达式/间隔秒数/时间(+5s,+10m,+1h或ISO格式)"
+            },
+            "silent": {
+                "type": "boolean",
+                "default": False,
+                "description": "静默模式（仅用于AI任务）: true时正常执行AI任务，但不向用户会话发送结果"
             }
         },
         "required": ["action"]
@@ -184,6 +190,8 @@ class SchedulerTool(BaseTool):
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
             }
+            if kwargs.get("silent", False):
+                action["silent"] = True
         
         # 针对钉钉单聊，额外存储 sender_staff_id
         msg = context.kwargs.get("msg")
