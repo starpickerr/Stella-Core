@@ -110,7 +110,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 | [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-sonnet-5 / fable-5 | ✅ | ✅ | | | | |
 | [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
-| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.5、o 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [智譜 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.2、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [通義千問](https://docs.cowagent.ai/zh/models/qwen) | qwen3.7-plus | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [豆包 Doubao](https://docs.cowagent.ai/zh/models/doubao) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |

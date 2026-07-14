@@ -1703,7 +1703,7 @@ class ConfigHandler:
         # claude-sonnet-5 is the Claude default; claude-fable-5 follows right after it.
         const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
+        const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
         const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
@@ -1762,7 +1762,7 @@ class ConfigHandler:
             "api_base_key": "open_ai_api_base",
             "api_base_default": "https://api.openai.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
+            "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
         ("zhipu", {
             "label": {"zh": "智谱AI", "en": "GLM"},
@@ -2338,9 +2338,12 @@ class ModelsHandler:
     # Anything not listed here intentionally hides the model dropdown so
     # users cannot pin a chat-only model and silently get a 4xx at runtime.
     _VISION_PROVIDER_MODELS = {
-        # OpenAI ordering matches the recommended GPT-5.4 family first, then
+        # OpenAI ordering puts the GPT-5.6 family first, then GPT-5.5/5.4,
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
+            const.GPT_56_LUNA,
+            const.GPT_56_TERRA,
+            const.GPT_56_SOL,
             const.GPT_55,
             const.GPT_54,
             const.GPT_54_MINI,
