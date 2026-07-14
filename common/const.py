@@ -30,7 +30,7 @@ CLAUDE_35_SONNET = "claude-3-5-sonnet-latest"  # "latest" tag always points to t
 CLAUDE_35_SONNET_1022 = "claude-3-5-sonnet-20241022"  # dated name pinned to a specific release
 CLAUDE_35_SONNET_0620 = "claude-3-5-sonnet-20240620"
 CLAUDE_4_OPUS = "claude-opus-4-0"
-CLAUDE_FABLE_5 = "claude-fable-5"        # Claude Fable 5 (often restricted by policy)
+CLAUDE_FABLE_5 = "claude-fable-5"        # Claude Fable 5 - alternative Claude 5 flagship
 CLAUDE_4_8_OPUS = "claude-opus-4-8"      # Claude Opus 4.8 - Agent recommended model
 CLAUDE_4_7_OPUS = "claude-opus-4-7"      # Claude Opus 4.7
 CLAUDE_4_6_OPUS = "claude-opus-4-6"      # Claude Opus 4.6
@@ -200,7 +200,7 @@ MODEL_LIST = [
               MIMO, MIMO_V2_5_PRO, MIMO_V2_5, MIMO_V2_PRO, MIMO_V2_OMNI, MIMO_V2_FLASH,
 
               # Claude
-              CLAUDE_SONNET_5, CLAUDE3, CLAUDE_4_8_OPUS, CLAUDE_4_7_OPUS, CLAUDE_FABLE_5, CLAUDE_4_6_SONNET, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
+              CLAUDE_SONNET_5, CLAUDE_FABLE_5, CLAUDE3, CLAUDE_4_8_OPUS, CLAUDE_4_7_OPUS, CLAUDE_4_6_SONNET, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
               CLAUDE_35_SONNET, CLAUDE_35_SONNET_1022, CLAUDE_35_SONNET_0620, CLAUDE_3_SONNET, CLAUDE_3_HAIKU,
               "claude", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3.5-sonnet",
 
