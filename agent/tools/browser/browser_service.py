@@ -463,7 +463,18 @@ class BrowserService:
             headless_cfg = self._config.get("headless")
             self._headless = headless_cfg if headless_cfg is not None else _should_use_headless()
 
-        launch_args = ["--disable-dev-shm-usage"]
+        launch_args = [
+            "--disable-dev-shm-usage",
+            # Trim first-launch overhead: skip the first-run wizard, the default
+            # browser prompt, and Chrome's background/component network chatter.
+            # These have no effect on page interaction but noticeably speed up
+            # cold starts and each navigation.
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-features=Translate,OptimizationHints",
+        ]
         if self._headless:
             launch_args.append("--no-sandbox")
 
@@ -733,11 +744,15 @@ class BrowserService:
         except Exception as e:
             return {"error": f"Navigation failed: {e}"}
 
+        # SPAs keep long-lived connections (websockets, polling, analytics) and
+        # rarely reach true "networkidle", so waiting the full timeout is wasted
+        # time. domcontentloaded already gives a usable DOM; give the page a
+        # short grace period for initial render/XHR, then proceed.
         try:
-            page.wait_for_load_state("networkidle", timeout=8000)
+            page.wait_for_load_state("networkidle", timeout=1500)
         except Exception:
             pass
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(300)
 
         try:
             title = page.title()

@@ -100,29 +100,53 @@ md.renderer.rules.fence = function (tokens, idx, options, env, self) {
 
 interface MarkdownProps {
   content: string
+  /**
+   * Intercept clicks on internal document links (relative `.md` hrefs). When
+   * provided, such links open in-app instead of being handed to the OS. Used by
+   * the knowledge viewer so index links open the target doc rather than firing
+   * an "application cannot be opened (-120)" error in Electron.
+   */
+  onInternalLink?: (href: string) => void
 }
 
-const Markdown: React.FC<MarkdownProps> = ({ content }) => {
+const Markdown: React.FC<MarkdownProps> = ({ content, onInternalLink }) => {
   const rootRef = useRef<HTMLDivElement>(null)
 
   const html = useMemo(() => md.render(content || ''), [content])
 
-  // Delegate copy clicks on code blocks (buttons are injected as raw HTML).
-  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement
-    const btn = target.closest('.code-copy-btn') as HTMLElement | null
-    if (!btn) return
-    const pre = btn.closest('.code-block-wrapper')?.querySelector('pre')
-    if (!pre) return
-    navigator.clipboard.writeText(pre.textContent || '')
-    const original = btn.textContent
-    btn.textContent = t('msg_copied')
-    btn.classList.add('copied')
-    setTimeout(() => {
-      btn.textContent = original
-      btn.classList.remove('copied')
-    }, 1600)
-  }, [])
+  // Delegate clicks: copy buttons on code blocks, and internal doc links.
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement
+
+      // Internal knowledge links (relative *.md), when a handler is provided.
+      if (onInternalLink) {
+        const a = target.closest('a') as HTMLAnchorElement | null
+        if (a) {
+          const href = a.getAttribute('href') || ''
+          if (href.endsWith('.md') && !/^https?:\/\//i.test(href)) {
+            e.preventDefault()
+            onInternalLink(href)
+            return
+          }
+        }
+      }
+
+      const btn = target.closest('.code-copy-btn') as HTMLElement | null
+      if (!btn) return
+      const pre = btn.closest('.code-block-wrapper')?.querySelector('pre')
+      if (!pre) return
+      navigator.clipboard.writeText(pre.textContent || '')
+      const original = btn.textContent
+      btn.textContent = t('msg_copied')
+      btn.classList.add('copied')
+      setTimeout(() => {
+        btn.textContent = original
+        btn.classList.remove('copied')
+      }, 1600)
+    },
+    [onInternalLink]
+  )
 
   return (
     <div
