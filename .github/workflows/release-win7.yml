@@ -57,10 +57,14 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          # Deps are mostly unpinned, so pip will resolve the newest versions
-          # that still ship a Python 3.8 wheel. This is exactly what we want for
-          # a Win7-targeted backend.
-          pip install -r desktop/build/requirements-desktop.txt
+          # Most deps are unpinned, so pip auto-picks the newest Python-3.8 wheel.
+          # But a few are pinned to versions with NO 3.8 wheel and must be relaxed
+          # for this legacy build. We rewrite them into a throwaway requirements
+          # file so the repo's source stays untouched (main pipeline keeps its
+          # pins). playwright 1.48.0 is the last release with a cp38 wheel.
+          sed 's/^playwright==.*/playwright==1.48.0/' \
+            desktop/build/requirements-desktop.txt > /tmp/requirements-win7.txt
+          pip install -r /tmp/requirements-win7.txt
           pip install pyinstaller
           # Run from repo root so the spec's relative datas resolve correctly.
           pyinstaller desktop/build/cowagent-backend.spec \
