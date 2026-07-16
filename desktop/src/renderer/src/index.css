@@ -27,21 +27,21 @@
   --danger-border: rgba(239, 68, 68, 0.3);
   --info: #3b82f6;
 
-  /* Light theme — layered neutral surfaces */
-  --bg-base: #fafafa;        /* app background */
+  /* Light theme — aligned with the web console (Tailwind gray/slate palette) */
+  --bg-base: #f9fafb;        /* app background (gray-50) */
   --bg-surface: #ffffff;     /* panels, cards */
-  --bg-surface-2: #f4f4f5;   /* nested surfaces, hover fills */
+  --bg-surface-2: #f1f5f9;   /* nested surfaces, hover fills (slate-100) */
   --bg-elevated: #ffffff;    /* popovers, menus, modals */
-  --bg-inset: #f4f4f5;       /* inputs, code blocks */
+  --bg-inset: #f1f5f9;       /* inputs, code blocks (slate-100) */
 
-  --text-primary: #18181b;   /* headings, primary text (contrast > 4.5:1) */
-  --text-secondary: #52525b; /* body, labels */
-  --text-tertiary: #71717a;  /* hints, captions */
-  --text-disabled: #a1a1aa;
+  --text-primary: #1e293b;   /* headings, primary text (slate-800) */
+  --text-secondary: #475569; /* body, labels (slate-600) */
+  --text-tertiary: #64748b;  /* hints, captions (slate-500) */
+  --text-disabled: #94a3b8;  /* slate-400 */
 
-  --border-default: #e4e4e7;
-  --border-strong: #d4d4d8;
-  --border-subtle: #f0f0f1;
+  --border-default: #e2e8f0; /* slate-200 */
+  --border-strong: #cbd5e1;  /* slate-300 */
+  --border-subtle: #f1f5f9;  /* slate-100 */
 
   --overlay: rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
