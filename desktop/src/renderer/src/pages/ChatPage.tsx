@@ -278,16 +278,30 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
           </div>
         ) : (
           <div className="py-3 max-w-3xl mx-auto">
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                onRegenerate={handleRegenerate}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onMediaLoad={handleMediaLoad}
-              />
-            ))}
+            {messages.map((msg) =>
+              msg.kind === 'divider' ? (
+                <div key={msg.id} className="flex items-center gap-3 px-6 py-3 text-content-tertiary">
+                  <span
+                    className="flex-1 h-px"
+                    style={{ background: 'linear-gradient(to right, transparent, var(--border-strong), transparent)' }}
+                  />
+                  <span className="text-xs whitespace-nowrap">{t('context_cleared')}</span>
+                  <span
+                    className="flex-1 h-px"
+                    style={{ background: 'linear-gradient(to right, transparent, var(--border-strong), transparent)' }}
+                  />
+                </div>
+              ) : (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  onRegenerate={handleRegenerate}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onMediaLoad={handleMediaLoad}
+                />
+              )
+            )}
             <div ref={bottomRef} />
           </div>
         )}
