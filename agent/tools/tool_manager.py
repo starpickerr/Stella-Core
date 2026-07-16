@@ -152,14 +152,7 @@ class ToolManager:
                                 except ImportError as e:
                                     # Handle missing dependencies with helpful messages
                                     error_msg = str(e)
-                                    if "playwright" in error_msg:
-                                        logger.warning(
-                                            f"[ToolManager] Browser tool not loaded - missing dependencies.\n"
-                                            f"  To enable browser tool, run:\n"
-                                            f"    pip install playwright\n"
-                                            f"    playwright install chromium"
-                                        )
-                                    elif "markdownify" in error_msg:
+                                    if "markdownify" in error_msg:
                                         logger.warning(
                                             f"[ToolManager] {cls.__name__} not loaded - missing markdownify.\n"
                                             f"  Install with: pip install markdownify"
@@ -222,14 +215,7 @@ class ToolManager:
                             except ImportError as e:
                                 # Handle missing dependencies with helpful messages
                                 error_msg = str(e)
-                                if "playwright" in error_msg:
-                                    logger.warning(
-                                        f"[ToolManager] Browser tool not loaded - missing dependencies.\n"
-                                        f"  To enable browser tool, run:\n"
-                                        f"    pip install playwright\n"
-                                        f"    playwright install chromium"
-                                    )
-                                elif "markdownify" in error_msg:
+                                if "markdownify" in error_msg:
                                     logger.warning(
                                         f"[ToolManager] {cls.__name__} not loaded - missing markdownify.\n"
                                         f"  Install with: pip install markdownify"
@@ -261,14 +247,7 @@ class ToolManager:
             # If there are missing tools, record warnings
             if missing_tools:
                 for tool_name in missing_tools:
-                    if tool_name == "browser":
-                        logger.warning(
-                            f"[ToolManager] Browser tool is configured but not loaded.\n"
-                            f"  To enable browser tool, run:\n"
-                            f"    pip install playwright\n"
-                            f"    playwright install chromium"
-                        )
-                    elif tool_name == "google_search":
+                    if tool_name == "google_search":
                         logger.warning(
                             f"[ToolManager] Google Search tool is configured but may need API key.\n"
                             f"  Get API key from: https://serper.dev\n"
