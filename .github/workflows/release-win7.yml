@@ -117,27 +117,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # Mirror the installer to R2 so it downloads fast (GitHub artifacts are
-      # painfully slow from China). Reuses the same cow-skills bucket +
-      # cdn.cowagent.ai domain as the main pipeline, but under a dedicated
-      # desktop/win7/<version>/ prefix. NO D1 write: this is an unpublished test
-      # build. Skips cleanly when Cloudflare secrets aren't configured.
+  # Mirror the installer to R2 so it downloads fast (GitHub artifacts are
+  # painfully slow from China). Mirrors the MAIN pipeline's publish-r2 job:
+  # a SEPARATE ubuntu-latest job with NO setup-node, so it uses the runner's
+  # built-in Node 22+ and wrangler@latest works (the build job runs Node 20 for
+  # Electron, where wrangler@latest — which needs Node >=22 — would abort).
+  # Reuses the same cow-skills bucket + cdn.cowagent.ai domain, under a
+  # dedicated desktop/win7/<version>/ prefix. NO D1 write: this is an
+  # unpublished test build. Skips cleanly when Cloudflare secrets are absent.
+  publish-r2:
+    name: Publish to R2
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard on Cloudflare secrets
+        id: guard
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$CF_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLOUDFLARE_API_TOKEN not set — skipping R2 upload (use the artifact instead)."
+          fi
+
+      - name: Download build artifact
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: cowagent-win7-x64
+          path: dist
+
       - name: Upload installer to R2
-        shell: bash
+        if: steps.guard.outputs.enabled == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET != '' && vars.R2_BUCKET || 'cow-skills' }}
           VER: ${{ github.event.inputs.version }}
         run: |
-          # Skip cleanly when Cloudflare isn't configured (secrets are only
-          # readable inside run:, so we gate here rather than in the step `if`).
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::notice::CLOUDFLARE_API_TOKEN not set — skipping R2 upload (use the artifact instead)."
-            exit 0
-          fi
           shopt -s nullglob
-          for f in desktop/release/*.exe; do
+          for f in dist/*.exe; do
             base="$(basename "$f")"
             key="desktop/win7/v${VER}/${base}"
             echo "==> Uploading $base -> r2://${R2_BUCKET}/${key}"
