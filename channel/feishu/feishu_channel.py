@@ -28,6 +28,11 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
+from channel.feishu.feishu_scheduler_card import (
+    build_scheduler_card,
+    handle_scheduler_action,
+    tasks_for_receivers,
+)
 from common import utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -350,6 +355,10 @@ class FeiShuChanel(ChatChannel):
     def _startup_websocket(self):
         """启动长连接接收事件(websocket模式)"""
         _ensure_lark_imported()
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            P2CardActionTriggerResponse,
+        )
+
         logger.debug("[FeiShu] Starting in websocket mode...")
 
         # 创建事件处理器
@@ -372,10 +381,25 @@ class FeiShuChanel(ChatChannel):
             except Exception as e:
                 logger.error(f"[FeiShu] websocket handle message error: {e}", exc_info=True)
 
+        def handle_card_action(data):
+            """Handle Card 2.0 button callbacks and update the card in place."""
+            try:
+                event_dict = json.loads(lark.JSON.marshal(data))
+                response = self._handle_card_action_event(event_dict.get("event", {}))
+                return P2CardActionTriggerResponse(response)
+            except Exception as e:
+                logger.error(f"[FeiShu] websocket handle card action error: {e}", exc_info=True)
+                return P2CardActionTriggerResponse(
+                    {"toast": {"type": "error", "content": "Task update failed"}}
+                )
+
         # 构建事件分发器
-        event_handler = lark.EventDispatcherHandler.builder("", "") \
-            .register_p2_im_message_receive_v1(handle_message_event) \
+        event_handler = (
+            lark.EventDispatcherHandler.builder("", "")
+            .register_p2_im_message_receive_v1(handle_message_event)
+            .register_p2_card_action_trigger(handle_card_action)
             .build()
+        )
 
         def start_client_with_retry():
             """Run ws client in this thread with its own event loop to avoid conflicts."""
@@ -470,6 +494,97 @@ class FeiShuChanel(ChatChannel):
         # so reaching here means the bot was indeed mentioned.
         return True
 
+    def _get_scheduler_task_store(self):
+        """Reuse the live scheduler store, with a path-compatible fallback."""
+        from agent.tools.scheduler.integration import get_task_store
+
+        task_store = get_task_store()
+        if task_store is not None:
+            return task_store
+
+        from agent.tools.scheduler.task_store import TaskStore
+
+        workspace_root = utils.expand_path(conf().get("agent_workspace", "~/cow"))
+        return TaskStore(os.path.join(workspace_root, "scheduler", "tasks.json"))
+
+    def _send_scheduler_card(self, feishu_msg, is_group: bool, receive_id_type: str) -> bool:
+        """Reply to ``/tasks`` with tasks scoped to the current chat."""
+        task_store = self._get_scheduler_task_store()
+        receivers = {feishu_msg.other_user_id}
+        tasks = tasks_for_receivers(task_store.list_tasks(), receivers)
+        card = build_scheduler_card(tasks)
+        headers = {
+            "Authorization": "Bearer " + feishu_msg.access_token,
+            "Content-Type": "application/json",
+        }
+        content = json.dumps(card, ensure_ascii=False)
+
+        if is_group and feishu_msg.msg_id:
+            url = (
+                "https://open.feishu.cn/open-apis/im/v1/messages/"
+                f"{feishu_msg.msg_id}/reply"
+            )
+            response = requests.post(
+                url,
+                headers=headers,
+                json={"msg_type": "interactive", "content": content},
+                timeout=(5, 10),
+            )
+        else:
+            url = "https://open.feishu.cn/open-apis/im/v1/messages"
+            response = requests.post(
+                url,
+                headers=headers,
+                params={"receive_id_type": receive_id_type},
+                json={
+                    "receive_id": feishu_msg.other_user_id,
+                    "msg_type": "interactive",
+                    "content": content,
+                },
+                timeout=(5, 10),
+            )
+
+        result = response.json()
+        if result.get("code") == 0:
+            logger.info("[FeiShu] scheduler card sent")
+            return True
+        logger.error(
+            "[FeiShu] scheduler card failed, "
+            f"code={result.get('code')}, msg={result.get('msg')}"
+        )
+        return False
+
+    def _handle_card_action_event(self, event: dict) -> dict:
+        """Apply a scheduler card action within its chat/operator ownership scope."""
+        action = event.get("action") or {}
+        value = action.get("value") or {}
+        if value.get("cowagent") != "scheduler":
+            return {}
+
+        context = event.get("context") or {}
+        operator = event.get("operator") or {}
+        callback_receivers = {
+            receiver
+            for receiver in (context.get("open_chat_id"), operator.get("open_id"))
+            if receiver
+        }
+        target_receiver = value.get("receiver")
+        allowed_receivers = (
+            {target_receiver}
+            if target_receiver and target_receiver in callback_receivers
+            else set()
+        )
+        response = handle_scheduler_action(
+            value,
+            self._get_scheduler_task_store(),
+            allowed_receivers,
+        )
+        logger.info(
+            "[FeiShu] scheduler card action handled, "
+            f"action={value.get('action')}, task_id={value.get('task_id')}"
+        )
+        return response
+
     def _handle_message_event(self, event: dict):
         """
         处理消息事件的核心逻辑
@@ -519,6 +634,11 @@ class FeiShuChanel(ChatChannel):
         # 构造飞书消息对象
         feishu_msg = FeishuMessage(event, is_group=is_group, access_token=self.fetch_access_token())
         if not feishu_msg:
+            return
+
+        if feishu_msg.ctype == ContextType.TEXT and feishu_msg.content.strip().lower() == "/tasks":
+            if not self._send_scheduler_card(feishu_msg, is_group, receive_id_type):
+                logger.warning("[FeiShu] /tasks card delivery failed")
             return
 
         # 处理文件缓存逻辑
@@ -1565,6 +1685,7 @@ class FeishuController:
     FAILED_MSG = '{"success": false}'
     SUCCESS_MSG = '{"success": true}'
     MESSAGE_RECEIVE_TYPE = "im.message.receive_v1"
+    CARD_ACTION_TYPE = "card.action.trigger"
 
     def GET(self):
         return "Feishu service start success!"
@@ -1581,15 +1702,27 @@ class FeishuController:
                 varify_res = {"challenge": request.get("challenge")}
                 return json.dumps(varify_res)
 
-            # 2.消息接收处理
-            # token 校验
-            header = request.get("header")
-            if not header or header.get("token") != channel.feishu_token:
+            # 2. Verify callbacks. Card callbacks may carry the verification
+            # token in event.token while message events carry it in the header.
+            header = request.get("header") or {}
+            event = request.get("event") or {}
+            event_type = header.get("event_type") or request.get("type")
+            callback_token = (
+                header.get("token")
+                or event.get("token")
+                or request.get("token")
+            )
+            if callback_token != channel.feishu_token:
                 return self.FAILED_MSG
 
-            # 处理消息事件
-            event = request.get("event")
-            if header.get("event_type") == self.MESSAGE_RECEIVE_TYPE and event:
+            if event_type == self.CARD_ACTION_TYPE and event:
+                return json.dumps(
+                    channel._handle_card_action_event(event),
+                    ensure_ascii=False,
+                )
+
+            # 3. Handle message events.
+            if event_type == self.MESSAGE_RECEIVE_TYPE and event:
                 channel._handle_message_event(event)
 
             return self.SUCCESS_MSG
