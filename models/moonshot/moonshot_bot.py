@@ -61,7 +61,7 @@ class MoonshotBot(Bot):
         m = model_name.lower()
         if cls._is_builtin_reasoning_model(m):
             return False
-        return m.startswith("kimi-k2") or m.startswith("kimi-k1.5")
+        return m.startswith("kimi-k3") or m.startswith("kimi-k2") or m.startswith("kimi-k1.5")
 
     def _build_headers(self) -> dict:
         """Build HTTP headers, adding Coding-Agent User-Agent for Kimi Coding Plan."""

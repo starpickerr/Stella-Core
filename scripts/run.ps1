@@ -461,7 +461,7 @@ $ModelChoices = @{
     6  = @{ Provider = "GLM";                     Default = "glm-5.2";                             Field = "zhipu_ai_api_key" }
     7  = @{ Provider = "Qwen (DashScope)";        Default = "qwen3.7-plus";                        Field = "dashscope_api_key" }
     8  = @{ Provider = "Doubao (Volcengine Ark)"; Default = "doubao-seed-2-1-pro-260628"; Field = "ark_api_key" }
-    9  = @{ Provider = "Kimi (Moonshot)";         Default = "kimi-k2.7-code";                      Field = "moonshot_api_key" }
+    9  = @{ Provider = "Kimi (Moonshot)";         Default = "kimi-k3";                             Field = "moonshot_api_key" }
     10 = @{ Provider = "MiMo";                    Default = "mimo-v2.5-pro";                       Field = "mimo_api_key" }
     11 = @{ Provider = "LinkAI";                  Default = "deepseek-v4-flash";                   Field = "linkai_api_key";    Linkai = $true }
 }
@@ -478,7 +478,7 @@ function Select-Model {
         "GLM (glm-5.2, etc.)",
         "Qwen (qwen3.7-plus, qwen3.7-max, etc.)",
         "Doubao (doubao-seed-2.1, etc.)",
-        "Kimi (kimi-k2.7-code, etc.)",
+        "Kimi (kimi-k3, etc.)",
         "MiMo (mimo-v2.5-pro, etc.)",
         ("LinkAI (" + (T "一个 Key 接入所有模型" "access all models via one API") + ")"),
         (T "⏭  跳过（稍后在 Web 控制台配置）" "⏭  Skip (configure later in the web console)")

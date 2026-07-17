@@ -142,7 +142,8 @@ GLM_4_7 = "glm-4.7"  # GLM-4.7 - Agent recommended model
 
 # Kimi (Moonshot)
 MOONSHOT = "moonshot"
-KIMI_K2_7_CODE = "kimi-k2.7-code"  # Kimi K2.7 Code - Agent recommended model (default)
+KIMI_K3 = "kimi-k3"  # Kimi K3 - Agent recommended model (default)
+KIMI_K2_7_CODE = "kimi-k2.7-code"  # Kimi K2.7 Code
 KIMI_K2_7_CODE_HIGHSPEED = "kimi-k2.7-code-highspeed"  # Kimi K2.7 Code highspeed
 KIMI_K2 = "kimi-k2"
 KIMI_K2_5 = "kimi-k2.5"
@@ -235,7 +236,7 @@ MODEL_LIST = [
 
               # Kimi (Moonshot)
               MOONSHOT, "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
-              KIMI_K2_7_CODE, KIMI_K2_7_CODE_HIGHSPEED, KIMI_K2_6, KIMI_K2_5, KIMI_K2,
+              KIMI_K3, KIMI_K2_7_CODE, KIMI_K2_7_CODE_HIGHSPEED, KIMI_K2_6, KIMI_K2_5, KIMI_K2,
 
               # ModelScope
               MODELSCOPE,

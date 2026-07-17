@@ -113,7 +113,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | [Qwen](https://docs.cowagent.ai/models/qwen) | qwen3.7-plus | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [GLM](https://docs.cowagent.ai/models/glm) | glm-5.2, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Doubao](https://docs.cowagent.ai/models/doubao) | doubao-seed-2.1 series | ✅ | ✅ | ✅ | | | ✅ |
-| [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k2.7-code | ✅ | ✅ | | | | |
+| [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
 | [MiniMax](https://docs.cowagent.ai/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [ERNIE](https://docs.cowagent.ai/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [MiMo](https://docs.cowagent.ai/models/mimo) | mimo-v2.5 / pro | ✅ | ✅ | | | ✅ | |

@@ -114,7 +114,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 | [智譜 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.2、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [通義千問](https://docs.cowagent.ai/zh/models/qwen) | qwen3.7-plus | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [豆包 Doubao](https://docs.cowagent.ai/zh/models/doubao) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [Kimi](https://docs.cowagent.ai/zh/models/kimi) | kimi-k2.7-code | ✅ | ✅ | | | | |
+| [Kimi](https://docs.cowagent.ai/zh/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
 | [百度ERNIE](https://docs.cowagent.ai/zh/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [小米 MiMo](https://docs.cowagent.ai/zh/models/mimo) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
 | [LinkAI](https://docs.cowagent.ai/zh/models/linkai) | 一個 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
