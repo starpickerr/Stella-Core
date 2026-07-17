@@ -29,6 +29,7 @@ from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
 from channel.feishu.feishu_static_card import build_text_delivery
+from channel.feishu.feishu_progress_card import FeishuProgressState
 from common import utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -762,6 +763,340 @@ class FeiShuChanel(ChatChannel):
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
 
     def _make_feishu_stream_callback(self, context, access_token):
+        """Route to progress or plain streaming callback based on config.
+
+        feishu_progress_card 默认关闭：普通对话走原有的打字机文本卡片
+        (_make_feishu_stream_callback_plain)。开启后才使用带状态头、
+        Reasoning/Tools 面板与耗时的富进度卡片。
+        """
+        if conf().get("feishu_progress_card", False):
+            return self._make_feishu_stream_callback_progress(context, access_token)
+        return self._make_feishu_stream_callback_plain(context, access_token)
+
+    def _make_feishu_stream_callback_progress(self, context, access_token):
+        """
+        基于飞书官方"流式更新卡片"API 实现打字机回复。
+
+        流程：
+        1. agent_start → POST /cardkit/v1/cards 创建带 streaming_mode 的状态卡片，
+           随后用 POST /im/v1/messages（或 reply）以 card_id 把卡片发出去
+        2. 后续 message_update → PUT /cardkit/v1/cards/{id}/elements/{eid}/content
+           传入"当前轮"的全量文本，飞书平台自动计算增量并以打字机效果上屏
+           （流式模式下不受 10 QPS 限制）
+        3. message_end（本轮触发工具调用）→ 原地刷新 Reasoning / Tools 面板，
+           后续 turn 继续复用同一张卡片
+        4. agent_end → 用 final_response、最终状态和耗时整卡更新，关闭 streaming_mode，
+           标记 context["feishu_streamed"]=True 让 chat_channel 跳过普通 send()
+
+        前提条件：
+        - 机器人已开通 cardkit:card:write 权限
+        - 飞书客户端 7.20+
+
+        失败降级：
+        - 创建卡片实体失败（缺权限、网络等）→ 不设置 feishu_streamed 标记，让 chat_channel
+          走普通文本回复路径，用户收到完整回复但无打字机效果，并打 warning 日志
+        """
+        # 共享状态（受 lock 保护）。一个 agent run 始终复用同一张卡片；
+        # reasoning、tools、最终正文和状态头均由 progress_state 统一渲染。
+        progress_state = FeishuProgressState()
+        card_id = [None]
+        message_id = [None]
+        # 占位发送是同步进行的，但用一个 in-flight 标记防止并发的多条 message_update
+        # 事件各自触发一次创建+发送，导致发出多张卡片。
+        init_in_flight = [False]
+        # 一旦初始化失败就长期标记为 disabled，本次回复不再尝试任何流式调用
+        disabled = [False]
+        lock = threading.Lock()
+
+        # ---- 异步推送队列 ----------------------------------------------------
+        # 同步 requests.put 单次 100~300ms，会阻塞 LLM stream 线程读下一个 chunk。
+        # 把推送丢给独立 worker 线程消费 queue，回调本身只做内存追加，立即返回。
+        # 队列里只放"最新累积文本"的快照；worker 用 deduplication 避免重复推同一个
+        # 内容（高频 chunk 场景下队列会堆积，只推最后一个就够了）。
+        import queue as _queue
+        push_queue: "_queue.Queue[str | None]" = _queue.Queue()
+
+        def _push_worker():
+            while True:
+                snapshot = push_queue.get()
+                if snapshot is None:
+                    push_queue.task_done()
+                    return
+                # 合并队列中已堆积的快照：只推最后一个，省 PUT 次数同时降低延迟
+                merged_count = 1
+                stop = False
+                while True:
+                    try:
+                        nxt = push_queue.get_nowait()
+                    except _queue.Empty:
+                        break
+                    merged_count += 1
+                    if nxt is None:
+                        stop = True
+                        break
+                    snapshot = nxt
+                try:
+                    _stream_update_text(snapshot)
+                finally:
+                    for _ in range(merged_count):
+                        push_queue.task_done()
+                if stop:
+                    return
+
+        push_thread = threading.Thread(target=_push_worker, daemon=True, name="feishu-stream-push")
+        push_thread.start()
+
+        def _drain_push_queue():
+            """等当前队列里所有 PUT 都完成。message_end/agent_end 在做最终定型前必须 drain，
+            否则 worker 里堆积的旧快照可能在 final_text PUT 之后到达，把最终内容覆盖掉。"""
+            try:
+                push_queue.join()
+            except Exception:
+                pass
+
+        msg = context.get("msg")
+        is_group = context.get("isgroup", False)
+        receiver = context.get("receiver")
+        receive_id_type = context.get("receive_id_type", "open_id")
+        headers = {
+            "Authorization": "Bearer " + access_token,
+            "Content-Type": "application/json; charset=utf-8",
+        }
+        # 卡片中富文本组件的 element_id，后续所有 PUT 流式更新都打到这个组件
+        ELEMENT_ID = "stream_md"
+        # 操作序号，每次 PUT 必须严格递增（飞书要求）
+        sequence = [0]
+
+        def _next_sequence():
+            with lock:
+                sequence[0] += 1
+                return sequence[0]
+
+        def _build_card_json():
+            """Build the initial streaming Card 2.0 payload."""
+            with lock:
+                card = progress_state.build_card(streaming=True)
+            return json.dumps(card, ensure_ascii=False)
+
+        def _create_and_send_card():
+            """同步执行：创建卡片实体 → 发送消息。任意一步失败则 disabled=True 触发降级"""
+            try:
+                # 步骤 1: 创建卡片实体
+                create_url = "https://open.feishu.cn/open-apis/cardkit/v1/cards"
+                create_body = {"type": "card_json", "data": _build_card_json()}
+                res = requests.post(
+                    create_url, headers=headers, json=create_body, timeout=(5, 10)
+                )
+                res_json = res.json()
+                if res_json.get("code") != 0:
+                    logger.warning(
+                        f"[FeiShu] Stream: create card failed "
+                        f"(code={res_json.get('code')}, msg={res_json.get('msg')}). "
+                        f"本次回复已自动降级为普通文本回复（一次性返回完整内容）。"
+                        f"如需开启流式打字机效果与完整 Markdown 渲染，请到飞书开放平台 "
+                        f"https://open.feishu.cn/app 给机器人开通 cardkit:card:write 权限"
+                        f"（创建与更新卡片）并重新发布版本，同时确保飞书客户端 >= 7.20。"
+                    )
+                    with lock:
+                        disabled[0] = True
+                    return
+                cid = res_json["data"]["card_id"]
+                with lock:
+                    card_id[0] = cid
+
+                # 步骤 2: 通过 card_id 发送消息（群聊优先用 reply，单聊直接 send）
+                content_payload = json.dumps(
+                    {"type": "card", "data": {"card_id": cid}}, ensure_ascii=False
+                )
+                can_reply = is_group and msg and hasattr(msg, "msg_id") and msg.msg_id
+                if can_reply:
+                    send_url = (
+                        f"https://open.feishu.cn/open-apis/im/v1/messages/"
+                        f"{msg.msg_id}/reply"
+                    )
+                    send_body = {"msg_type": "interactive", "content": content_payload}
+                    send_res = requests.post(
+                        send_url, headers=headers, json=send_body, timeout=(5, 10)
+                    )
+                else:
+                    send_url = "https://open.feishu.cn/open-apis/im/v1/messages"
+                    params = {"receive_id_type": receive_id_type}
+                    send_body = {
+                        "receive_id": receiver,
+                        "msg_type": "interactive",
+                        "content": content_payload,
+                    }
+                    send_res = requests.post(
+                        send_url, headers=headers, params=params, json=send_body,
+                        timeout=(5, 10),
+                    )
+                send_json = send_res.json()
+                if send_json.get("code") != 0:
+                    logger.warning(
+                        f"[FeiShu] Stream: send card failed: {send_json}. 降级为普通文本。"
+                    )
+                    with lock:
+                        disabled[0] = True
+                    return
+                mid = send_json["data"]["message_id"]
+                with lock:
+                    message_id[0] = mid
+                logger.info(
+                    f"[FeiShu] Stream: card created and sent, "
+                    f"card_id={cid}, message_id={mid}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[FeiShu] Stream: create/send card exception: {e}. 降级为普通文本。"
+                )
+                with lock:
+                    disabled[0] = True
+            finally:
+                with lock:
+                    init_in_flight[0] = False
+
+        def _stream_update_text(full_text):
+            """PUT 流式更新文本组件。content 必须是当前组件的全量文本。"""
+            with lock:
+                cid = card_id[0]
+            if not cid:
+                return
+            url = (
+                f"https://open.feishu.cn/open-apis/cardkit/v1/cards/"
+                f"{cid}/elements/{ELEMENT_ID}/content"
+            )
+            body = {
+                "content": full_text,
+                "sequence": _next_sequence(),
+            }
+            try:
+                res = requests.put(url, headers=headers, json=body, timeout=(5, 10))
+                res_json = res.json()
+                if res_json.get("code") != 0:
+                    logger.warning(
+                        f"[FeiShu] Stream: update text failed: {res_json}"
+                    )
+            except Exception as e:
+                logger.warning(f"[FeiShu] Stream: update text exception: {e}")
+
+        def _update_full_card(streaming: bool):
+            """Refresh panels, header, footer and streaming state in one update."""
+            with lock:
+                cid = card_id[0]
+                full_card = progress_state.build_card(streaming=streaming)
+            if not cid:
+                return
+            put_url = f"https://open.feishu.cn/open-apis/cardkit/v1/cards/{cid}"
+            put_body = {
+                "card": {"type": "card_json", "data": json.dumps(full_card, ensure_ascii=False)},
+                "sequence": _next_sequence(),
+            }
+            try:
+                res = requests.put(put_url, headers=headers, json=put_body, timeout=(5, 10))
+                res_json = res.json()
+                if res_json.get("code") != 0:
+                    logger.warning(
+                        f"[FeiShu] Stream: full card update failed: {res_json}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[FeiShu] Stream: full card update exception: {e}"
+                )
+
+        def on_event(event: dict):
+            event_type = event.get("type")
+            data = event.get("data", {})
+
+            # 一旦降级，本次回复不再做任何流式操作
+            with lock:
+                if disabled[0]:
+                    return
+
+            if event_type == "agent_start":
+                with lock:
+                    progress_state.consume(event)
+                    if card_id[0] is None and not init_in_flight[0]:
+                        init_in_flight[0] = True
+                _create_and_send_card()
+                return
+
+            if event_type in ("turn_start", "reasoning_update"):
+                with lock:
+                    progress_state.consume(event)
+                return
+
+            if event_type == "message_update":
+                delta = data.get("delta", "")
+                if not delta:
+                    return
+
+                # 第一段：判断是否需要初始化（创建卡片 + 发送）
+                need_init = False
+                with lock:
+                    if card_id[0] is None and not init_in_flight[0]:
+                        init_in_flight[0] = True
+                        need_init = True
+
+                if need_init:
+                    _create_and_send_card()
+                    # 初始化失败已标记 disabled，下次循环直接 return
+                    with lock:
+                        if disabled[0]:
+                            return
+
+                # 第二段：累加文本，把快照丢给 push worker 异步推送。
+                # 这里不能直接 requests.put，否则会阻塞 LLM stream 线程读下一个 chunk
+                # （实测 DeepSeek 高频小 chunk 场景每个 PUT ~150ms，累积起来非常卡）。
+                snapshot = ""
+                should_push = False
+                with lock:
+                    progress_state.consume(event)
+                    if card_id[0]:
+                        snapshot = progress_state.current_text
+                        should_push = True
+
+                if should_push:
+                    push_queue.put(snapshot)
+
+            elif event_type == "message_end":
+                # 工具轮结束后原地刷新 Reasoning / Tools 面板，保留同一张卡片。
+                tool_calls = data.get("tool_calls", []) or []
+                with lock:
+                    progress_state.consume(event)
+                if not tool_calls:
+                    return
+                _drain_push_queue()
+                _update_full_card(streaming=True)
+
+            elif event_type == "agent_cancelled":
+                with lock:
+                    progress_state.consume(event)
+
+            elif event_type == "agent_end":
+                # Finalize the same card with a status header and elapsed footer.
+                with lock:
+                    progress_state.consume(event)
+                    final_text = progress_state.current_text
+                    has_card = card_id[0] is not None
+                    init_busy = init_in_flight[0]
+                context["feishu_streamed"] = True
+
+                if not has_card and not init_busy:
+                    with lock:
+                        init_in_flight[0] = True
+                    _create_and_send_card()
+                    with lock:
+                        if disabled[0]:
+                            return
+
+                _drain_push_queue()
+                _stream_update_text(final_text)
+                _update_full_card(streaming=False)
+                push_queue.put(None)
+
+        return on_event
+
+    def _make_feishu_stream_callback_plain(self, context, access_token):
         """
         基于飞书官方"流式更新卡片"API 实现打字机回复。
 
