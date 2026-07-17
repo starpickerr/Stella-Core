@@ -713,7 +713,7 @@ class FeiShuChanel(ChatChannel):
 
         context = self._compose_context(
             feishu_msg.ctype,
-            feishu_msg.content,
+            feishu_msg.content_with_quote(),
             isgroup=is_group,
             msg=feishu_msg,
             receive_id_type=receive_id_type,
