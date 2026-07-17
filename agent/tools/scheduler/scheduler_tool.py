@@ -64,6 +64,11 @@ class SchedulerTool(BaseTool):
             "schedule_value": {
                 "type": "string",
                 "description": "调度值: cron表达式/间隔秒数/时间(+5s,+10m,+1h或ISO格式)"
+            },
+            "silent": {
+                "type": "boolean",
+                "default": False,
+                "description": "Silent mode (default false): when true, the task runs normally but its result is not pushed. Set true only when the user explicitly says they don't need the result; reminder, notification and broadcast tasks must keep it false"
             }
         },
         "required": ["action"]
@@ -184,6 +189,9 @@ class SchedulerTool(BaseTool):
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
             }
+            # silent only applies to ai_task; fixed messages always deliver
+            if kwargs.get("silent", False):
+                action["silent"] = True
         
         # 针对钉钉单聊，额外存储 sender_staff_id
         msg = context.kwargs.get("msg")
@@ -216,14 +224,17 @@ class SchedulerTool(BaseTool):
             content_desc = f"💬 固定消息: {message}"
         else:
             content_desc = f"🤖 AI任务: {ai_task}"
-        
+
+        # Warn the user at creation time so a mistaken silent flag is easy to spot
+        silent_desc = "\n🔇 静默模式: 执行后不会推送结果" if action.get("silent") else ""
+
         return (
             f"✅ 定时任务创建成功\n\n"
             f"📋 任务ID: {task_id}\n"
             f"📝 名称: {name}\n"
             f"⏰ 调度: {schedule_desc}\n"
             f"👤 接收者: {receiver_desc}\n"
-            f"{content_desc}\n"
+            f"{content_desc}{silent_desc}\n"
             f"🕐 下次执行: {next_run.strftime('%Y-%m-%d %H:%M:%S') if next_run else '未知'}"
         )
     
