@@ -1,0 +1,54 @@
+---
+title: v2.1.4
+description: CowAgent 2.1.4：桌面客户端浏览器与体验优化，MCP 远程服务支持 OAuth 授权，定时任务新增静默模式，并新增多款模型
+---
+
+🌐 [English](https://docs.cowagent.ai/releases/v2.1.4) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.4)
+
+## 🖥 桌面客户端
+
+在 2.1.3 正式推出桌面客户端后，本次围绕浏览器能力、系统兼容与使用体验做了进一步打磨。
+
+- **浏览器复用系统 Chrome/Edge**：内置浏览器工具优先复用系统已安装的 Chrome / Edge，同时为客户端内置 Playwright，无需额外手动安装浏览器即可使用网页访问、信息检索等能力。
+- **浏览器访问提速**：优化页面导航流程，网页打开与内容抓取更快更稳。
+- **新增 Win7 客户端**：新增对 Windows 7 等旧版系统的客户端支持，覆盖更多使用环境。
+- **Windows 代码签名**：Windows 安装包新增代码签名，降低安装时的安全告警。
+- **知识库文档跳转修复**：修复桌面端知识库文档内链接无法正常跳转的问题。
+- **界面样式优化**：优化对话界面、消息气泡、工具调用步骤与通道页面的视觉与交互细节。
+
+下载地址：[CowAgent客户端](https://cowagent.ai/zh/download/)
+
+相关文档：[桌面客户端](https://docs.cowagent.ai/zh/guide/desktop)
+
+## 🔌 MCP 远程服务 OAuth 授权
+
+远程 MCP 服务新增 **OAuth 授权** 支持，接入需要登录授权的第三方 MCP 服务时，可通过标准 OAuth 流程完成认证，无需再手动配置和维护令牌。
+
+相关文档：[MCP 工具](https://docs.cowagent.ai/zh/tools/mcp)
+
+## ⏰ 定时任务静默模式
+
+定时任务新增 **静默模式**，任务在后台执行时不再主动推送中间过程，仅在需要时输出结果，避免打扰。同时修正了对消息投递类任务的误判，让任务标记更准确。Thanks @AaronZ345 (#2954)
+
+此外，修复了在 Web 界面编辑定时任务时可能丢失静默模式等隐藏配置的问题，编辑后任务设置得以完整保留。Thanks @AaronZ345 (#2959)
+
+相关文档：[定时任务](https://docs.cowagent.ai/zh/tools/scheduler)
+
+## 🤖 模型新增
+
+- 新增支持 **kimi-k3**
+- 新增支持 **gpt-5.6-luna**、**gpt-5.6-terra**、**gpt-5.6-sol**
+
+相关文档：[模型概览](https://docs.cowagent.ai/zh/models)
+
+## 🛠 体验优化与修复
+
+- **文件编辑更稳**：统一模糊匹配的唯一性校验逻辑，编辑文件时的定位更可靠。Thanks @weijun-xia (#2945)
+- **稳定性提升**：清理浏览器工具中的冗余逻辑分支，优化整体运行稳定性。
+
+## 📦 升级方式
+
+- **源码部署**：执行 `cow update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
+- **桌面客户端**：可在客户端内自动检查并一键更新，或前往 [下载页](https://cowagent.ai/zh/download/) 获取最新版本。
+
+**发布日期**：2026.07.17 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.3...2.1.4)
