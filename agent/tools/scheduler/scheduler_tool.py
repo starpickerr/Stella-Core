@@ -24,6 +24,7 @@ class SchedulerTool(BaseTool):
         "⚠️ 重要：仅当需要「定时/提醒/每天/每周/X分钟后/X点」等延迟或周期执行时才使用此工具。"
         "使用方法：\n"
         "- 创建：action='create', name='任务名', message/ai_task='内容', schedule_type='once/interval/cron', schedule_value='...'\n"
+        "- 立即执行：action='run', task_id='任务ID'（不改变原调度时间）\n"
         "- 查询：action='list' / action='get', task_id='任务ID'\n"
         "- 管理：action='delete/enable/disable', task_id='任务ID'\n\n"
         "调度类型：\n"
@@ -37,12 +38,12 @@ class SchedulerTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "list", "get", "delete", "enable", "disable"],
-                "description": "操作类型: create(创建), list(列表), get(查询), delete(删除), enable(启用), disable(禁用)"
+                "enum": ["create", "run", "list", "get", "delete", "enable", "disable"],
+                "description": "操作类型: create(创建), run(立即执行), list(列表), get(查询), delete(删除), enable(启用), disable(禁用)"
             },
             "task_id": {
                 "type": "string",
-                "description": "任务ID (用于 get/delete/enable/disable 操作)"
+                "description": "任务ID (用于 run/get/delete/enable/disable 操作)"
             },
             "name": {
                 "type": "string",
@@ -88,7 +89,7 @@ class SchedulerTool(BaseTool):
         
         Args:
             params: Dictionary containing:
-                - action: Operation type (create/list/get/delete/enable/disable)
+                - action: Operation type (create/run/list/get/delete/enable/disable)
                 - Other parameters depending on action
             
         Returns:
@@ -104,6 +105,9 @@ class SchedulerTool(BaseTool):
         try:
             if action == "create":
                 result = self._create_task(**kwargs)
+                return ToolResult.success(result)
+            elif action == "run":
+                result = self._run_task(**kwargs)
                 return ToolResult.success(result)
             elif action == "list":
                 result = self._list_tasks(**kwargs)
@@ -303,6 +307,24 @@ class SchedulerTool(BaseTool):
         
         self.task_store.delete_task(task_id)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已删除"
+
+    def _run_task(self, **kwargs) -> str:
+        """Queue an existing task for immediate execution."""
+        task_id = kwargs.get("task_id")
+        if not task_id:
+            return "错误: 缺少任务ID (task_id)"
+
+        task = self.task_store.get_task(task_id)
+        if not task:
+            return f"错误: 任务 '{task_id}' 不存在"
+
+        from agent.tools.scheduler.integration import get_scheduler_service
+        service = get_scheduler_service()
+        if not service:
+            return "错误: 定时任务系统未运行"
+
+        service.run_task_now(task_id)
+        return f"✅ 任务 '{task['name']}' ({task_id}) 已开始立即执行，原调度时间保持不变"
     
     def _enable_task(self, **kwargs) -> str:
         """Enable a task"""
