@@ -65,7 +65,8 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
       "channel_type": "feishu",
       "feishu_app_id": "YOUR_APP_ID",
       "feishu_app_secret": "YOUR_APP_SECRET",
-      "feishu_stream_reply": true
+      "feishu_stream_reply": true,
+      "feishu_markdown_card": true
     }
     ```
 
@@ -74,6 +75,7 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
     | `feishu_app_id` | 飞书应用 App ID | - |
     | `feishu_app_secret` | 飞书应用 App Secret | - |
     | `feishu_stream_reply` | 是否开启流式打字机回复 | `true` |
+    | `feishu_markdown_card` | 将非流式 Markdown 与定时推送渲染为 Card 2.0 | `true` |
   </Tab>
 </Tabs>
 
@@ -99,6 +101,7 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
 | 图片消息 | ✅ 收发 |
 | 语音消息 | ✅ 收发 |
 | 流式回复 | ✅（通过 `feishu_stream_reply` 配置控制，默认开启） |
+| Markdown 卡片 | ✅ 非流式回复与定时推送 |
 
 <Note>
   流式回复需要机器人具备 `cardkit:card:write` 权限（一键创建已默认开通），且接收方飞书客户端版本 ≥ 7.20。低版本客户端会显示升级提示，权限或版本不满足时自动降级为普通文本回复。

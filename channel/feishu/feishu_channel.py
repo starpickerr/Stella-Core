@@ -28,6 +28,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
+from channel.feishu.feishu_static_card import build_text_delivery
 from common import utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -628,7 +629,13 @@ class FeiShuChanel(ChatChannel):
         logger.debug(f"[FeiShu] sending reply, type={context.type}, content={reply.content[:100]}...")
         reply_content = reply.content
         content_key = "text"
-        if reply.type == ReplyType.IMAGE_URL:
+        prepared_content_json = None
+        if reply.type == ReplyType.TEXT:
+            msg_type, prepared_content_json = build_text_delivery(
+                reply.content,
+                enabled=conf().get("feishu_markdown_card", True),
+            )
+        elif reply.type == ReplyType.IMAGE_URL:
             # 图片上传
             reply_content = self._upload_image_url(reply.content, access_token)
             if not reply_content:
@@ -690,7 +697,11 @@ class FeiShuChanel(ChatChannel):
         can_reply = is_group and msg and hasattr(msg, 'msg_id') and msg.msg_id
 
         # Build content JSON
-        content_json = json.dumps(reply_content, ensure_ascii=False) if content_key is None else json.dumps({content_key: reply_content}, ensure_ascii=False)
+        content_json = prepared_content_json or (
+            json.dumps(reply_content, ensure_ascii=False)
+            if content_key is None
+            else json.dumps({content_key: reply_content}, ensure_ascii=False)
+        )
         logger.debug(f"[FeiShu] Sending message: msg_type={msg_type}, content={content_json[:200]}")
 
         if can_reply:
@@ -714,6 +725,39 @@ class FeiShuChanel(ChatChannel):
         res = res.json()
         if res.get("code") == 0:
             logger.info(f"[FeiShu] send message success")
+        elif msg_type == "interactive" and reply.type == ReplyType.TEXT:
+            logger.warning(
+                "[FeiShu] Markdown card failed, falling back to text, "
+                f"code={res.get('code')}, msg={res.get('msg')}"
+            )
+            fallback_data = {
+                "msg_type": "text",
+                "content": json.dumps({"text": reply.content}, ensure_ascii=False),
+            }
+            if can_reply:
+                fallback_res = requests.post(
+                    url=url,
+                    headers=headers,
+                    json=fallback_data,
+                    timeout=(5, 10),
+                )
+            else:
+                fallback_data["receive_id"] = context.get("receiver")
+                fallback_res = requests.post(
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    json=fallback_data,
+                    timeout=(5, 10),
+                )
+            fallback_body = fallback_res.json()
+            if fallback_body.get("code") == 0:
+                logger.info("[FeiShu] text fallback sent successfully")
+            else:
+                logger.error(
+                    "[FeiShu] text fallback failed, "
+                    f"code={fallback_body.get('code')}, msg={fallback_body.get('msg')}"
+                )
         else:
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
 
