@@ -35,7 +35,7 @@ KNOWN_COMMANDS = {
     "help", "version", "status", "logs",
     "start", "stop", "restart",
     "cancel",
-    "skill", "context", "config",
+    "skill", "context", "config", "tasks",
     "knowledge", "memory",
     "install-browser",
 }
@@ -357,6 +357,7 @@ class CowCliPlugin(Plugin):
                 "/logs [N]: Show the last N log lines (default 20)",
                 "/context: Show current conversation context",
                 "/context clear: Clear current conversation context",
+                "/tasks: List scheduled tasks for this chat",
                 "/skill list: List installed skills",
                 "/skill list --remote: Browse Skill Hub",
                 "/skill search <keyword>: Search skills",
@@ -385,6 +386,7 @@ class CowCliPlugin(Plugin):
                 "/logs [N]: 查看最近N条日志 (默认20)",
                 "/context: 查看当前对话上下文信息",
                 "/context clear: 清除当前对话上下文",
+                "/tasks: 查看当前会话的定时任务",
                 "/skill list: 查看已安装的技能",
                 "/skill list --remote: 浏览技能广场",
                 "/skill search <关键词>: 搜索技能",
@@ -406,6 +408,85 @@ class CowCliPlugin(Plugin):
 
     def _cmd_version(self, args: str, e_context, **_) -> str:
         return f"CowAgent v{__version__}"
+
+    # ------------------------------------------------------------------
+    # tasks — read-only scheduler list scoped to the current chat.
+    # Feishu intercepts /tasks before this plugin to keep its interactive card;
+    # every other channel receives this plain-text view.
+    # ------------------------------------------------------------------
+
+    def _cmd_tasks(self, args: str, e_context, session_id: str = "", **_) -> str:
+        from agent.tools.scheduler.integration import get_task_store
+
+        task_store = get_task_store()
+        if task_store is None:
+            from agent.tools.scheduler.task_store import TaskStore
+            from common.utils import expand_path
+
+            workspace = expand_path(conf().get("agent_workspace", "~/cow"))
+            task_store = TaskStore(os.path.join(workspace, "scheduler", "tasks.json"))
+
+        channel_type = ""
+        receiver = ""
+        if e_context is not None:
+            context = e_context["context"]
+            channel_type = context.get("channel_type", "") or ""
+            receiver = context.get("receiver", "") or ""
+            session_id = context.get("session_id", "") or session_id
+
+        visible = []
+        for task in task_store.list_tasks():
+            action = task.get("action") or {}
+            if receiver:
+                if action.get("receiver") != receiver:
+                    continue
+                if channel_type and action.get("channel_type") != channel_type:
+                    continue
+            elif session_id not in {
+                action.get("receiver"),
+                action.get("notify_session_id"),
+            }:
+                continue
+            visible.append(task)
+
+        return self._format_tasks(visible)
+
+    @staticmethod
+    def _format_tasks(tasks) -> str:
+        if not tasks:
+            return _t(
+                "📅 当前会话暂无定时任务。",
+                "📅 No scheduled tasks in this chat.",
+            )
+
+        lines = [_t("📅 当前会话的定时任务", "📅 Scheduled tasks in this chat"), ""]
+        for index, task in enumerate(tasks[:20], 1):
+            enabled = task.get("enabled", True)
+            status = "✅" if enabled else "⏸️"
+            schedule = task.get("schedule") or {}
+            schedule_type = schedule.get("type")
+            if schedule_type == "cron":
+                schedule_text = "cron {}".format(schedule.get("expression") or "?")
+            elif schedule_type == "interval":
+                schedule_text = "every {}s".format(schedule.get("seconds") or "?")
+            elif schedule_type == "once":
+                schedule_text = "once at {}".format(schedule.get("run_at") or "?")
+            else:
+                schedule_text = str(schedule_type or "unknown")
+
+            next_run = str(task.get("next_run_at") or "-").replace("T", " ")
+            lines.extend(
+                [
+                    "{}. {} {}".format(index, status, task.get("name") or "Unnamed task"),
+                    "   ID: {}".format(task.get("id") or "-"),
+                    "   {} · Next: {}".format(schedule_text, next_run),
+                ]
+            )
+
+        hidden = len(tasks) - 20
+        if hidden > 0:
+            lines.append(_t("\n另有 {} 个任务未显示。", "\n{} more tasks are hidden.").format(hidden))
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # cancel — abort the in-flight agent run for the current session.
