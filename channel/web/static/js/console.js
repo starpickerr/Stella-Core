@@ -217,6 +217,11 @@ const I18N = {
         task_delete_btn: '删除任务',
         task_delete_confirm_title: '删除定时任务',
         task_delete_confirm_msg: '确定删除该定时任务吗？此操作无法撤销。',
+        task_run_now: '立即执行',
+        task_run_confirm_title: '立即执行任务',
+        task_run_confirm_msg: '该任务会立即向已配置的通道和接收者发送内容。是否继续？',
+        task_run_started: '已开始执行',
+        task_run_failed: '执行失败',
         logs_title: '日志', logs_desc: '实时日志输出 (run.log)',
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
@@ -464,6 +469,11 @@ const I18N = {
         task_delete_btn: '刪除任務',
         task_delete_confirm_title: '刪除定時任務',
         task_delete_confirm_msg: '確定刪除該定時任務嗎？此操作無法撤銷。',
+        task_run_now: '立即執行',
+        task_run_confirm_title: '立即執行任務',
+        task_run_confirm_msg: '該任務會立即向已設定的通道和接收者傳送內容。是否繼續？',
+        task_run_started: '已開始執行',
+        task_run_failed: '執行失敗',
         logs_title: '日誌', logs_desc: '實時日誌輸出 (run.log)',
         logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
         new_chat: '新對話',
@@ -710,6 +720,11 @@ const I18N = {
         task_delete_btn: 'Delete Task',
         task_delete_confirm_title: 'Delete Task',
         task_delete_confirm_msg: 'Delete this scheduled task? This action cannot be undone.',
+        task_run_now: 'Run now',
+        task_run_confirm_title: 'Run task now',
+        task_run_confirm_msg: 'This task will immediately send to its configured channel and receiver. Continue?',
+        task_run_started: 'Run started',
+        task_run_failed: 'Run failed',
         logs_title: 'Logs', logs_desc: 'Real-time log output (run.log)',
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
@@ -7935,6 +7950,38 @@ function refreshTasksView() {
         btn.disabled = false;
     }, 500);
 }
+
+function runTaskNow(task, button) {
+    showConfirmDialog({
+        title: t('task_run_confirm_title'),
+        message: `${task.name || task.id}: ${t('task_run_confirm_msg')}`,
+        okText: t('task_run_now'),
+        onConfirm: () => {
+            const originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>${t('task_run_now')}`;
+            fetch('/api/scheduler/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_id: task.id})
+            }).then(r => r.json()).then(res => {
+                if (res.status !== 'success') throw new Error(res.message || t('task_run_failed'));
+                button.innerHTML = `<i class="fas fa-check mr-1"></i>${t('task_run_started')}`;
+                setTimeout(() => {
+                    button.innerHTML = originalHtml;
+                    button.disabled = false;
+                }, 1500);
+            }).catch(() => {
+                button.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>${t('task_run_failed')}`;
+                setTimeout(() => {
+                    button.innerHTML = originalHtml;
+                    button.disabled = false;
+                }, 2000);
+            });
+        }
+    });
+}
+
 function loadTasksView() {
     if (tasksLoaded) return;
     fetch('/api/scheduler').then(r => r.json()).then(data => {
@@ -7996,11 +8043,19 @@ function loadTasksView() {
                 <div class="flex items-center gap-4 text-xs text-slate-400 dark:text-slate-500">
                     <span><i class="fas fa-clock mr-1"></i>${currentLang === 'zh' ? '下次执行' : 'Next run'}: ${nextRun}</span>
                     <div class="flex-1"></div>
+                    <button type="button" class="task-run-now px-2 py-1 rounded-md text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors">
+                        <i class="fas fa-play mr-1"></i>${t('task_run_now')}
+                    </button>
                     <label class="relative inline-flex items-center cursor-pointer" for="${toggleId}">
                         <input type="checkbox" id="${toggleId}" class="sr-only peer" ${isEnabled ? 'checked' : ''}>
                         <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-500 dark:bg-slate-600 dark:peer-checked:bg-primary-500"></div>
                     </label>
                 </div>`;
+            const runButton = card.querySelector('.task-run-now');
+            runButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                runTaskNow(task, runButton);
+            });
             const checkbox = card.querySelector('#' + toggleId);
             checkbox.addEventListener('change', function() {
                 const newEnabled = this.checked;

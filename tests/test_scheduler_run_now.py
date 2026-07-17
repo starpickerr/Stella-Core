@@ -3,7 +3,6 @@
 import threading
 import time
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
 
 import pytest
 
@@ -72,18 +71,7 @@ def test_manual_run_rejects_duplicate_execution(tmp_path):
     release.set()
 
 
-def test_scheduler_tool_queues_existing_task():
-    store = Mock()
-    store.get_task.return_value = {"id": "task-1", "name": "refresh index"}
-    service = Mock()
-    tool = SchedulerTool()
-    tool.task_store = store
+def test_scheduler_tool_does_not_expose_manual_execution():
+    actions = SchedulerTool.params["properties"]["action"]["enum"]
 
-    with patch(
-        "agent.tools.scheduler.integration.get_scheduler_service",
-        return_value=service,
-    ):
-        result = tool.execute({"action": "run", "task_id": "task-1"})
-
-    assert result.status == "success"
-    service.run_task_now.assert_called_once_with("task-1")
+    assert "run" not in actions
