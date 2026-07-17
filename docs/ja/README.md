@@ -113,7 +113,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 | [Qwen](https://docs.cowagent.ai/ja/models/qwen) | qwen3.7-plus | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [GLM](https://docs.cowagent.ai/ja/models/glm) | glm-5.2、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Doubao](https://docs.cowagent.ai/ja/models/doubao) | doubao-seed-2.1 シリーズ | ✅ | ✅ | ✅ | | | ✅ |
-| [Kimi](https://docs.cowagent.ai/ja/models/kimi) | kimi-k2.7-code | ✅ | ✅ | | | | |
+| [Kimi](https://docs.cowagent.ai/ja/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
 | [MiniMax](https://docs.cowagent.ai/ja/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [ERNIE](https://docs.cowagent.ai/ja/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [MiMo](https://docs.cowagent.ai/ja/models/mimo) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
