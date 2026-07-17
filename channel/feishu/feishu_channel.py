@@ -28,6 +28,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
+from channel.feishu.feishu_progress_card import FeishuProgressState
 from common import utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -722,15 +723,15 @@ class FeiShuChanel(ChatChannel):
         基于飞书官方"流式更新卡片"API 实现打字机回复。
 
         流程：
-        1. message_update 首次到达 → POST /cardkit/v1/cards 创建带 streaming_mode 的卡片实体，
+        1. agent_start → POST /cardkit/v1/cards 创建带 streaming_mode 的状态卡片，
            随后用 POST /im/v1/messages（或 reply）以 card_id 把卡片发出去
         2. 后续 message_update → PUT /cardkit/v1/cards/{id}/elements/{eid}/content
            传入"当前轮"的全量文本，飞书平台自动计算增量并以打字机效果上屏
            （流式模式下不受 10 QPS 限制）
-        3. message_end（一轮 LLM 输出结束，且本轮触发了工具调用）→ 把 current 累计到 committed
-           并加入分隔符；下一轮 message_update 又从空白开始，避免多轮内容串到一起
-        4. agent_end → 用 final_response 强制覆盖卡片，再 PATCH /cardkit/v1/cards/{id}/settings
-           关闭 streaming_mode，标记 context["feishu_streamed"]=True 让 chat_channel 跳过普通 send()
+        3. message_end（本轮触发工具调用）→ 原地刷新 Reasoning / Tools 面板，
+           后续 turn 继续复用同一张卡片
+        4. agent_end → 用 final_response、最终状态和耗时整卡更新，关闭 streaming_mode，
+           标记 context["feishu_streamed"]=True 让 chat_channel 跳过普通 send()
 
         前提条件：
         - 机器人已开通 cardkit:card:write 权限
@@ -740,21 +741,16 @@ class FeiShuChanel(ChatChannel):
         - 创建卡片实体失败（缺权限、网络等）→ 不设置 feishu_streamed 标记，让 chat_channel
           走普通文本回复路径，用户收到完整回复但无打字机效果，并打 warning 日志
         """
-        # 共享状态（受 lock 保护）
-        # 多轮 agent 模式下，每个"中间过场消息"会作为一张独立卡片发送。
-        # current_text 只承载当前正在流式渲染的那张卡片的内容；message_end / agent_end
-        # 时会把它定型并 reset。
-        current_text = [""]                # 当前卡片正在累加的 LLM 输出
-        card_id = [None]                   # 当前流式卡片的实体 ID（每段独立）
-        message_id = [None]                # 当前卡片发送后的消息 ID（仅日志用）
+        # 共享状态（受 lock 保护）。一个 agent run 始终复用同一张卡片；
+        # reasoning、tools、最终正文和状态头均由 progress_state 统一渲染。
+        progress_state = FeishuProgressState()
+        card_id = [None]
+        message_id = [None]
         # 占位发送是同步进行的，但用一个 in-flight 标记防止并发的多条 message_update
         # 事件各自触发一次创建+发送，导致发出多张卡片。
         init_in_flight = [False]
         # 一旦初始化失败就长期标记为 disabled，本次回复不再尝试任何流式调用
         disabled = [False]
-        # True after agent_cancelled: agent_end stops rewriting the card
-        # with stale final_response and just finalizes current content.
-        cancelled = [False]
         lock = threading.Lock()
 
         # ---- 异步推送队列 ----------------------------------------------------
@@ -807,14 +803,6 @@ class FeiShuChanel(ChatChannel):
         is_group = context.get("isgroup", False)
         receiver = context.get("receiver")
         receive_id_type = context.get("receive_id_type", "open_id")
-        # 客户端打字机渲染参数（飞书 App 侧实际"出字"速度）：
-        #   - print_freq_ms：每次刷新的间隔
-        #   - print_step：每次刷新出多少个字符
-        # 当前 40ms × 4 字 ≈ 100 字/秒，接近 ChatGPT/DeepSeek 网页端的节奏。
-        print_freq_ms = 40
-        print_step = 4
-        print_strategy = "fast"
-
         headers = {
             "Authorization": "Bearer " + access_token,
             "Content-Type": "application/json; charset=utf-8",
@@ -825,34 +813,15 @@ class FeiShuChanel(ChatChannel):
         sequence = [0]
 
         def _next_sequence():
-            sequence[0] += 1
-            return sequence[0]
+            with lock:
+                sequence[0] += 1
+                return sequence[0]
 
         def _build_card_json():
-            """卡片 JSON 2.0 结构 + streaming_mode + 单 markdown 组件"""
-            return json.dumps({
-                "schema": "2.0",
-                "config": {
-                    "streaming_mode": True,
-                    "summary": {"content": "[正在生成回复...]"},
-                    "streaming_config": {
-                        "print_frequency_ms": {"default": print_freq_ms},
-                        "print_step": {"default": print_step},
-                        "print_strategy": print_strategy,
-                    },
-                },
-                "body": {
-                    "elements": [
-                        {
-                            "tag": "markdown",
-                            "content": "...",
-                            "element_id": ELEMENT_ID,
-                        }
-                    ],
-                },
-                # 注意：JSON 2.0 不支持自定义 fallback 字段（传入会报错）。
-                # 客户端 < 7.20 时，飞书会自动展示"请升级客户端"占位，无需配置。
-            }, ensure_ascii=False)
+            """Build the initial streaming Card 2.0 payload."""
+            with lock:
+                card = progress_state.build_card(streaming=True)
+            return json.dumps(card, ensure_ascii=False)
 
         def _create_and_send_card():
             """同步执行：创建卡片实体 → 发送消息。任意一步失败则 disabled=True 触发降级"""
@@ -955,37 +924,13 @@ class FeiShuChanel(ChatChannel):
             except Exception as e:
                 logger.warning(f"[FeiShu] Stream: update text exception: {e}")
 
-        def _close_streaming_mode(final_text: str = ""):
-            """关闭流式模式（卡片转入"普通"状态，可被转发）。
-
-            同时通过整卡更新接口把 summary 改成最终内容的预览，否则飞书会话列表
-            会一直显示创建卡片时的占位摘要（"[正在生成回复...]"）。
-            """
+        def _update_full_card(streaming: bool):
+            """Refresh panels, header, footer and streaming state in one update."""
             with lock:
                 cid = card_id[0]
+                full_card = progress_state.build_card(streaming=streaming)
             if not cid:
                 return
-
-            # 1) 通过整卡更新接口把 streaming_mode 关掉，并改写 summary
-            #    （settings 接口的 config 不接受 summary 字段，会报 code=2200）
-            preview_src = (final_text or "").strip().replace("\n", " ")
-            preview = preview_src[:30] if preview_src else ""
-            full_card = {
-                "schema": "2.0",
-                "config": {
-                    "streaming_mode": False,
-                    "summary": {"content": preview or " "},
-                },
-                "body": {
-                    "elements": [
-                        {
-                            "tag": "markdown",
-                            "content": final_text or " ",
-                            "element_id": ELEMENT_ID,
-                        }
-                    ],
-                },
-            }
             put_url = f"https://open.feishu.cn/open-apis/cardkit/v1/cards/{cid}"
             put_body = {
                 "card": {"type": "card_json", "data": json.dumps(full_card, ensure_ascii=False)},
@@ -996,11 +941,11 @@ class FeiShuChanel(ChatChannel):
                 res_json = res.json()
                 if res_json.get("code") != 0:
                     logger.warning(
-                        f"[FeiShu] Stream: finalize card (close+summary) failed: {res_json}"
+                        f"[FeiShu] Stream: full card update failed: {res_json}"
                     )
             except Exception as e:
                 logger.warning(
-                    f"[FeiShu] Stream: finalize card exception: {e}"
+                    f"[FeiShu] Stream: full card update exception: {e}"
                 )
 
         def on_event(event: dict):
@@ -1011,6 +956,19 @@ class FeiShuChanel(ChatChannel):
             with lock:
                 if disabled[0]:
                     return
+
+            if event_type == "agent_start":
+                with lock:
+                    progress_state.consume(event)
+                    if card_id[0] is None and not init_in_flight[0]:
+                        init_in_flight[0] = True
+                _create_and_send_card()
+                return
+
+            if event_type in ("turn_start", "reasoning_update"):
+                with lock:
+                    progress_state.consume(event)
+                return
 
             if event_type == "message_update":
                 delta = data.get("delta", "")
@@ -1037,87 +995,37 @@ class FeiShuChanel(ChatChannel):
                 snapshot = ""
                 should_push = False
                 with lock:
-                    current_text[0] += delta
+                    progress_state.consume(event)
                     if card_id[0]:
-                        snapshot = current_text[0]
+                        snapshot = progress_state.current_text
                         should_push = True
 
                 if should_push:
                     push_queue.put(snapshot)
 
             elif event_type == "message_end":
-                # 一轮 LLM 输出结束。如果本轮触发了工具调用，说明当前轮的文本是
-                # "中间过场消息"（如"来看看！"），应该作为独立卡片定型，然后为下一轮
-                # 重新创建一张新卡片。这样最终用户看到的是：
-                #   [卡片1: 中间过场1]
-                #   [卡片2: 中间过场2]
-                #   ...
-                #   [卡片N: 最终回复]
-                # 与 wecom_bot 的多消息流式体验对齐。
+                # 工具轮结束后原地刷新 Reasoning / Tools 面板，保留同一张卡片。
                 tool_calls = data.get("tool_calls", []) or []
+                with lock:
+                    progress_state.consume(event)
                 if not tool_calls:
-                    # 没有工具调用：本轮即最终回复，留给 agent_end 统一处理。
                     return
-
-                with lock:
-                    text_to_finalize = current_text[0].rstrip()
-                    current_text[0] = ""
-
-                if not text_to_finalize:
-                    return
-
-                # 等异步队列里堆积的快照都推完，避免它们晚于 final 文本到达把内容覆盖掉
                 _drain_push_queue()
-                # 用最终文本覆盖当前卡片并关闭流式模式（凝固成普通卡片，
-                # 同时把会话列表的 summary 改成预览，不再显示"正在生成回复..."）
-                _stream_update_text(text_to_finalize)
-                _close_streaming_mode(text_to_finalize)
-
-                # 重置卡片状态，下一段 message_update 会触发新卡片的创建
-                with lock:
-                    card_id[0] = None
-                    message_id[0] = None
-                    sequence[0] = 0
+                _update_full_card(streaming=True)
 
             elif event_type == "agent_cancelled":
-                # Lock channel into "no-rewrite" mode: the subsequent
-                # agent_end's final_response is from the last *completed*
-                # turn (the user already saw it), so rewriting the card
-                # would duplicate it visually.
                 with lock:
-                    cancelled[0] = True
+                    progress_state.consume(event)
 
             elif event_type == "agent_end":
-                # 最终回复：用 final_response 覆盖当前流式卡片，然后关闭流式模式。
-                final_response = data.get("final_response", "")
-                # 标记 streamed 让 chat_channel 跳过 send()
-                context["feishu_streamed"] = True
-
+                # Finalize the same card with a status header and elapsed footer.
                 with lock:
-                    was_cancelled = cancelled[0]
+                    progress_state.consume(event)
+                    final_text = progress_state.current_text
                     has_card = card_id[0] is not None
                     init_busy = init_in_flight[0]
-                    pending_text = current_text[0]
+                context["feishu_streamed"] = True
 
-                if was_cancelled:
-                    # Cancelled path: finalize the in-flight card with
-                    # partial output (or a short marker if empty); drop
-                    # stale final_response to avoid duplicating last turn.
-                    if has_card:
-                        _drain_push_queue()
-                        partial = (pending_text or "").rstrip()
-                        final_text = partial or "_(已中止)_"
-                        _stream_update_text(final_text)
-                        _close_streaming_mode(final_text)
-                    push_queue.put(None)
-                    return
-
-                if not final_response:
-                    return
-                final_text = str(final_response)
-
-                # 罕见情况：agent_end 触发时还没创建过卡片（极快返回 / 没有
-                # message_update），主动创建一张承载 final_text。
                 if not has_card and not init_busy:
                     with lock:
                         init_in_flight[0] = True
@@ -1128,8 +1036,7 @@ class FeiShuChanel(ChatChannel):
 
                 _drain_push_queue()
                 _stream_update_text(final_text)
-                _close_streaming_mode(final_text)
-                # 通知 push worker 退出（本次回复彻底结束）
+                _update_full_card(streaming=False)
                 push_queue.put(None)
 
         return on_event
