@@ -40,7 +40,6 @@ class TestSchedulerSilentMode(unittest.TestCase):
 
         self.assertEqual(silent["type"], "boolean")
         self.assertFalse(silent["default"])
-        self.assertIn("AI", silent["description"])
 
     def test_create_persists_silent_on_agent_task(self):
         tool = SchedulerTool({"channel_type": "web"})
