@@ -34,6 +34,14 @@ Create and manage scheduled tasks with natural language:
 - "Check server status every 2 hours"
 - "Remind me about the meeting tomorrow at 3 PM"
 - "Show all scheduled tasks"
+- "Run task a1b2c3d4 now"
+
+## Run an existing task now
+
+Use `action="run"` with a task ID to queue an immediate test run. Manual
+execution works for disabled tasks and does not enable, delete, or reschedule
+the task. Its original `next_run_at` remains unchanged. A task cannot be run
+manually while the same task is already executing on schedule.
 
 <Frame>
   <img src="https://cdn.link-ai.tech/doc/20260202195402.png" width="800" />
