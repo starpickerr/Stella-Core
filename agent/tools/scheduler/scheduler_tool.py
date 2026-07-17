@@ -24,7 +24,6 @@ class SchedulerTool(BaseTool):
         "⚠️ 重要：仅当需要「定时/提醒/每天/每周/X分钟后/X点」等延迟或周期执行时才使用此工具。"
         "使用方法：\n"
         "- 创建：action='create', name='任务名', message/ai_task='内容', schedule_type='once/interval/cron', schedule_value='...'\n"
-        "- 静默AI任务：创建 ai_task 时设置 silent=true，任务会正常执行但不向聊天发送结果\n"
         "- 查询：action='list' / action='get', task_id='任务ID'\n"
         "- 管理：action='delete/enable/disable', task_id='任务ID'\n\n"
         "调度类型：\n"
@@ -69,7 +68,7 @@ class SchedulerTool(BaseTool):
             "silent": {
                 "type": "boolean",
                 "default": False,
-                "description": "静默模式（仅用于AI任务）: true时正常执行AI任务，但不向用户会话发送结果"
+                "description": "Silent mode (default false): when true, the task runs normally but its result is not pushed. Set true only when the user explicitly says they don't need the result; reminder, notification and broadcast tasks must keep it false"
             }
         },
         "required": ["action"]
@@ -190,6 +189,7 @@ class SchedulerTool(BaseTool):
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
             }
+            # silent only applies to ai_task; fixed messages always deliver
             if kwargs.get("silent", False):
                 action["silent"] = True
         
@@ -224,14 +224,17 @@ class SchedulerTool(BaseTool):
             content_desc = f"💬 固定消息: {message}"
         else:
             content_desc = f"🤖 AI任务: {ai_task}"
-        
+
+        # Warn the user at creation time so a mistaken silent flag is easy to spot
+        silent_desc = "\n🔇 静默模式: 执行后不会推送结果" if action.get("silent") else ""
+
         return (
             f"✅ 定时任务创建成功\n\n"
             f"📋 任务ID: {task_id}\n"
             f"📝 名称: {name}\n"
             f"⏰ 调度: {schedule_desc}\n"
             f"👤 接收者: {receiver_desc}\n"
-            f"{content_desc}\n"
+            f"{content_desc}{silent_desc}\n"
             f"🕐 下次执行: {next_run.strftime('%Y-%m-%d %H:%M:%S') if next_run else '未知'}"
         )
     
