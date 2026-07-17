@@ -4610,11 +4610,33 @@ class SchedulerUpdateHandler:
             
             # Update action
             if "action" in body:
-                action = body["action"]
-                channel_type = action.get("channel_type", "web")
-                
                 # Get the task's original channel_type
-                old_channel = original_task.get("action", {}).get("channel_type", "web")
+                original_action = original_task.get("action", {})
+                if not isinstance(original_action, dict):
+                    original_action = {}
+                action_patch = body["action"]
+                if not isinstance(action_patch, dict):
+                    return json.dumps({
+                        "status": "error",
+                        "message": "Action must be an object."
+                    }, ensure_ascii=False)
+
+                # The Web editor only exposes a subset of action fields. Merge
+                # that patch into the stored action so scheduler metadata such
+                # as notify_session_id, silent, and channel-specific delivery
+                # fields survive unrelated edits.
+                action = dict(original_action)
+                action.update(action_patch)
+                action_type = action.get("type")
+                if action_type == "send_message":
+                    action.pop("task_description", None)
+                    action.pop("silent", None)
+                elif action_type == "agent_task":
+                    action.pop("content", None)
+
+                old_channel = original_action.get("channel_type", "web")
+                channel_type = action.get("channel_type") or old_channel
+                action["channel_type"] = channel_type
                 
                 # If channel type changed or no receiver, reject the update.
                 # Note: the web UI disables the channel selector, so this branch
