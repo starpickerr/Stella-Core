@@ -48,9 +48,9 @@ def build_markdown_card(text: str) -> dict:
     }
 
 
-def build_text_delivery(text: str, enabled: bool = True) -> Tuple[str, str]:
+def build_text_delivery(text: str) -> Tuple[str, str]:
     """Return the Feishu ``msg_type`` and serialized content for a text reply."""
-    if enabled and contains_markdown(text):
+    if contains_markdown(text):
         return "interactive", json.dumps(build_markdown_card(text), ensure_ascii=False)
     return "text", json.dumps({"text": text}, ensure_ascii=False)
 

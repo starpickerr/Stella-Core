@@ -21,13 +21,6 @@ def test_markdown_reply_uses_card_2_markdown_element():
     ]
 
 
-def test_markdown_cards_can_be_disabled():
-    msg_type, content = build_text_delivery("# Status", enabled=False)
-
-    assert msg_type == "text"
-    assert json.loads(content) == {"text": "# Status"}
-
-
 def test_markdown_detection_avoids_common_plain_text_punctuation():
     assert contains_markdown("release 1.2.0 - all checks passed") is False
     assert contains_markdown("Use `cow --help` for details") is True

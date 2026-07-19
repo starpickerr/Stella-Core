@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from common import i18n
+
 
 _MAX_PANEL_STEPS = 10
 _MAX_STEP_CHARS = 800
@@ -20,7 +22,8 @@ class FeishuProgressState:
         self.current_text = ""
         self._reasoning_buffer = ""
         self.reasoning_steps: List[str] = []
-        self.tool_steps: List[Dict[str, str]] = []
+        self.tool_steps: List[Dict[str, Any]] = []
+        self._tool_index: Dict[str, Dict[str, Any]] = {}
         self.cancelled = False
 
     def consume(self, event: Dict[str, Any]) -> None:
@@ -49,13 +52,33 @@ class FeishuProgressState:
 
         if event_type == "message_end":
             self._commit_reasoning()
-            for tool_call in data.get("tool_calls") or []:
-                self.tool_steps.append(
-                    {
-                        "summary": _format_tool_call(tool_call),
-                        "status": "running",
-                    }
-                )
+            return
+
+        if event_type == "tool_execution_start":
+            tool_id = data.get("tool_call_id")
+            step = {
+                "summary": str(data.get("tool_name") or "tool"),
+                "status": "running",
+                "started_at": time.monotonic(),
+                "elapsed": None,
+            }
+            self.tool_steps.append(step)
+            if tool_id:
+                self._tool_index[tool_id] = step
+            return
+
+        if event_type == "tool_execution_end":
+            tool_id = data.get("tool_call_id")
+            step = self._tool_index.get(tool_id) if tool_id else None
+            if step is None:
+                # Fall back to the most recent running step when no id match.
+                step = next((s for s in reversed(self.tool_steps) if s["status"] == "running"), None)
+            if step is not None:
+                step["status"] = "error" if data.get("status") not in (None, "success") else "done"
+                elapsed = data.get("execution_time")
+                if elapsed is None and step.get("started_at") is not None:
+                    elapsed = time.monotonic() - step["started_at"]
+                step["elapsed"] = elapsed
             return
 
         if event_type == "agent_cancelled":
@@ -78,35 +101,35 @@ class FeishuProgressState:
 
     def build_card(self, streaming: bool, now: Optional[float] = None) -> Dict[str, Any]:
         """Render the current state as a Feishu Card 2.0 object."""
+        # Localized status header text; en/zh/zh-Hant via i18n.t.
         title, template = {
-            "running": ("Working", "blue"),
-            "done": ("Done", "green"),
-            "stopped": ("Stopped", "grey"),
-            "error": ("Error", "red"),
-        }.get(self.status, ("Working", "blue"))
+            "running": (i18n.t("处理中", "Working"), "blue"),
+            "done": (i18n.t("完成", "Done"), "green"),
+            "stopped": (i18n.t("已停止", "Stopped"), "grey"),
+            "error": (i18n.t("出错", "Error"), "red"),
+        }.get(self.status, (i18n.t("处理中", "Working"), "blue"))
 
         main_text = self.current_text or "..."
         elements: List[Dict[str, Any]] = []
 
+        # Only render the Reasoning panel when there is real reasoning content.
+        # Upstream emits reasoning_update only when deep thinking is enabled, so
+        # an empty reasoning_steps means we should show no panel at all.
         if self.reasoning_steps:
             elements.append(
                 _panel(
-                    "Reasoning ({})".format(len(self.reasoning_steps)),
+                    "🤔 {}".format(i18n.t("思考", "Thinking")),
                     [_text_row(step, muted=True) for step in self.reasoning_steps[-_MAX_PANEL_STEPS:]],
                     expanded=streaming,
                 )
-            )
-        elif streaming:
-            elements.append(
-                _panel("Reasoning", [_text_row("Thinking...", muted=True)], expanded=True)
             )
 
         if self.tool_steps:
             elements.append(
                 _panel(
-                    "Tools ({})".format(len(self.tool_steps)),
+                    "🔧 {} ({})".format(i18n.t("工具", "Tools"), len(self.tool_steps)),
                     [
-                        _text_row("{} · {}".format(step["summary"], step["status"]))
+                        _text_row(_format_tool_step(step))
                         for step in self.tool_steps[-_MAX_PANEL_STEPS:]
                     ],
                     expanded=streaming,
@@ -122,7 +145,7 @@ class FeishuProgressState:
         )
 
         elapsed = max(0.0, (time.monotonic() if now is None else now) - self.started_at)
-        turn_label = "turn" if self.turns == 1 else "turns"
+        turn_label = i18n.t("轮", "turn" if self.turns == 1 else "turns")
         elements.extend(
             [
                 {"tag": "hr"},
@@ -147,15 +170,20 @@ class FeishuProgressState:
                 "print_strategy": "fast",
             }
 
-        return {
+        card: Dict[str, Any] = {
             "schema": "2.0",
             "config": config,
-            "header": {
-                "template": template,
-                "title": {"tag": "plain_text", "content": title},
-            },
             "body": {"elements": elements},
         }
+        # Hide the status header once the run has finished successfully; a plain
+        # answer needs no "Done" banner. Keep the header for running/stopped/error
+        # so users still get progress and failure signals.
+        if self.status != "done":
+            card["header"] = {
+                "template": template,
+                "title": {"tag": "plain_text", "content": title},
+            }
+        return card
 
     def _commit_reasoning(self) -> None:
         reasoning = self._reasoning_buffer.strip()
@@ -167,12 +195,25 @@ class FeishuProgressState:
         for step in self.tool_steps:
             if step["status"] == "running":
                 step["status"] = "done"
+                if step.get("elapsed") is None and step.get("started_at") is not None:
+                    step["elapsed"] = time.monotonic() - step["started_at"]
 
 
-def _format_tool_call(tool_call: Dict[str, Any]) -> str:
-    # Tool arguments can contain user data or credentials. The progress card
-    # only needs an activity label, so never echo raw arguments into chat.
-    return str(tool_call.get("name") or "tool")
+def _tool_status_label(status: str) -> str:
+    if status == "running":
+        return i18n.t("执行中", "running")
+    if status == "error":
+        return i18n.t("失败", "error")
+    return i18n.t("完成", "done")
+
+
+def _format_tool_step(step: Dict[str, Any]) -> str:
+    # Tool name plus its own status and elapsed time, e.g. "search · done · 1.2s".
+    parts = [str(step.get("summary") or "tool"), _tool_status_label(step["status"])]
+    elapsed = step.get("elapsed")
+    if isinstance(elapsed, (int, float)):
+        parts.append("{:.1f}s".format(max(0.0, float(elapsed))))
+    return " · ".join(parts)
 
 
 def _panel(title: str, elements: List[Dict[str, Any]], expanded: bool) -> Dict[str, Any]:
@@ -180,7 +221,9 @@ def _panel(title: str, elements: List[Dict[str, Any]], expanded: bool) -> Dict[s
         "tag": "collapsible_panel",
         "expanded": expanded,
         "background_color": "grey",
-        "header": {"title": {"tag": "plain_text", "content": title}},
+        # Panel title uses markdown so we can shrink the font via text_size
+        # (plain_text titles ignore text_size and break card rendering).
+        "header": {"title": {"tag": "markdown", "content": title, "text_size": "notation"}},
         "border": {"color": "grey"},
         "vertical_spacing": "8px",
         "padding": "4px 8px",
