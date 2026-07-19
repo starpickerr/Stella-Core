@@ -28,8 +28,6 @@
   "feishu_app_id": "",
   "feishu_app_secret": "",
   "feishu_stream_reply": true,
-  "feishu_markdown_card": true,
-  "feishu_progress_card": false,
   "dingtalk_client_id": "",
   "dingtalk_client_secret": "",
   "wecom_bot_id": "",
@@ -44,7 +42,5 @@
   "reasoning_effort": "high",
   "knowledge": true,
   "self_evolution_enabled": true,
-  "mcp_tool_retrieval_enabled": false,
-  "mcp_tool_retrieval_threshold": 20,
-  "mcp_tool_retrieval_top_k": 10
+  "mcp_tool_retrieval_enabled": false
 }

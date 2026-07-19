@@ -1,4 +1,9 @@
 from channel.feishu.feishu_progress_card import FeishuProgressState
+from common import i18n
+
+# Card text is localized via i18n.t; lock English so assertions are stable
+# regardless of the host machine locale.
+i18n.set_language("en")
 
 
 def _panels(card):
@@ -9,7 +14,7 @@ def _panels(card):
     ]
 
 
-def test_running_card_has_status_reasoning_lane_and_stream_target():
+def test_running_card_has_status_header_and_stream_target():
     state = FeishuProgressState(started_at=100.0)
 
     card = state.build_card(streaming=True, now=102.0)
@@ -17,7 +22,8 @@ def test_running_card_has_status_reasoning_lane_and_stream_target():
     assert card["header"]["template"] == "blue"
     assert card["header"]["title"]["content"] == "Working"
     assert card["config"]["streaming_mode"] is True
-    assert _panels(card)[0]["header"]["title"]["content"] == "Reasoning"
+    # No reasoning yet: the Reasoning panel must not be rendered.
+    assert _panels(card) == []
     stream = next(
         element
         for element in card["body"]["elements"]
@@ -31,30 +37,33 @@ def test_tool_turn_populates_reasoning_and_tools_lanes():
     state.consume({"type": "turn_start", "data": {"turn": 1}})
     state.consume({"type": "reasoning_update", "data": {"delta": "Need the latest files."}})
     state.consume({"type": "message_update", "data": {"delta": "Checking now."}})
+    state.consume({"type": "message_end", "data": {"tool_calls": [{"name": "read_file"}]}})
     state.consume(
         {
-            "type": "message_end",
-            "data": {
-                "tool_calls": [
-                    {"name": "read_file", "arguments": {"path": "README.md"}}
-                ]
-            },
+            "type": "tool_execution_start",
+            "data": {"tool_call_id": "t1", "tool_name": "read_file"},
         }
     )
 
     card = state.build_card(streaming=True, now=103.0)
     panels = _panels(card)
-    assert [panel["header"]["title"]["content"] for panel in panels] == [
-        "Reasoning (1)",
-        "Tools (1)",
-    ]
+    assert panels[0]["header"]["title"]["content"] == "🤔 Thinking"
+    assert panels[1]["header"]["title"]["content"] == "🔧 Tools (1)"
     assert panels[0]["elements"][0]["text"]["content"] == "Need the latest files."
     assert "read_file" in panels[1]["elements"][0]["text"]["content"]
     assert "running" in panels[1]["elements"][0]["text"]["content"]
 
-    state.consume({"type": "turn_start", "data": {"turn": 2}})
+    # Tool end marks the step done and shows its own elapsed time.
+    state.consume(
+        {
+            "type": "tool_execution_end",
+            "data": {"tool_call_id": "t1", "status": "success", "execution_time": 1.2},
+        }
+    )
     done_card = state.build_card(streaming=True, now=104.0)
-    assert "done" in _panels(done_card)[1]["elements"][0]["text"]["content"]
+    tool_row = _panels(done_card)[1]["elements"][0]["text"]["content"]
+    assert "done" in tool_row
+    assert "1.2s" in tool_row
 
 
 def test_agent_end_finalizes_status_body_and_footer():
@@ -69,8 +78,8 @@ def test_agent_end_finalizes_status_body_and_footer():
 
     card = state.build_card(streaming=False, now=105.2)
 
-    assert card["header"]["template"] == "green"
-    assert card["header"]["title"]["content"] == "Done"
+    # Successful completion hides the status header entirely.
+    assert "header" not in card
     assert card["config"]["streaming_mode"] is False
     assert next(
         element["content"]
@@ -101,3 +110,30 @@ def test_cancelled_agent_uses_partial_output_and_stopped_status():
         for element in card["body"]["elements"]
         if element.get("element_id") == "stream_md"
     ) == "partial"
+
+
+def test_card_text_is_localized_in_chinese():
+    try:
+        i18n.set_language("zh")
+        state = FeishuProgressState(started_at=100.0)
+        state.consume({"type": "turn_start", "data": {"turn": 1}})
+        state.consume({"type": "reasoning_update", "data": {"delta": "思考"}})
+        state.consume({"type": "message_end", "data": {"tool_calls": [{"name": "read_file"}]}})
+        state.consume(
+            {
+                "type": "tool_execution_start",
+                "data": {"tool_call_id": "t1", "tool_name": "read_file"},
+            }
+        )
+
+        card = state.build_card(streaming=True, now=102.0)
+
+        assert card["header"]["title"]["content"] == "处理中"
+        panels = _panels(card)
+        assert panels[0]["header"]["title"]["content"] == "🤔 思考"
+        assert panels[1]["header"]["title"]["content"] == "🔧 工具 (1)"
+        assert "执行中" in panels[1]["elements"][0]["text"]["content"]
+        footer = card["body"]["elements"][-1]
+        assert footer["content"] == "2.0s · 1 轮"
+    finally:
+        i18n.set_language("en")

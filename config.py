@@ -178,8 +178,7 @@ available_setting = {
     "feishu_event_mode": "websocket",  # Feishu event mode: webhook(HTTP server) or websocket(long connection)
     # Feishu streaming reply (based on the official cardkit streaming-card API; requires the cardkit:card:write permission and Feishu client 7.20+)
     "feishu_stream_reply": True,  # whether to enable streaming reply (typewriter effect); auto-downgrades to non-streaming or shows an upgrade prompt on failure/old clients
-    "feishu_markdown_card": True,  # render non-streaming Markdown replies (including scheduled messages) as Card 2.0; falls back to text on failure
-    "feishu_progress_card": False,  # render normal chat streaming as a rich progress card (status header, reasoning/tool panels, elapsed time); off by default keeps the plain typewriter card
+    "feishu_detailed_card": True,  # render normal chat streaming as a detailed card (status header, thinking/tool panels, elapsed time); off keeps the plain typewriter card
     # DingTalk config
     "dingtalk_client_id": "",  # DingTalk bot Client ID
     "dingtalk_client_secret": "",  # DingTalk bot Client Secret

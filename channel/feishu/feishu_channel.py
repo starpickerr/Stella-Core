@@ -756,20 +756,15 @@ class FeiShuChanel(ChatChannel):
         content_key = "text"
         prepared_content_json = None
         if reply.type == ReplyType.TEXT:
-            delivery_text = reply.content
-            markdown_cards_enabled = conf().get("feishu_markdown_card", True)
-            if markdown_cards_enabled:
-                delivery_text = resolve_markdown_images(
-                    delivery_text,
-                    lambda url: upload_public_image_to_feishu(
-                        url,
-                        access_token,
-                    ),
-                )
-            msg_type, prepared_content_json = build_text_delivery(
-                delivery_text,
-                enabled=markdown_cards_enabled,
+            # Render Markdown text replies as Feishu cards; falls back to plain text automatically.
+            delivery_text = resolve_markdown_images(
+                reply.content,
+                lambda url: upload_public_image_to_feishu(
+                    url,
+                    access_token,
+                ),
             )
+            msg_type, prepared_content_json = build_text_delivery(delivery_text)
         elif reply.type == ReplyType.IMAGE_URL:
             # 图片上传
             reply_content = self._upload_image_url(reply.content, access_token)
@@ -897,13 +892,13 @@ class FeiShuChanel(ChatChannel):
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
 
     def _make_feishu_stream_callback(self, context, access_token):
-        """Route to progress or plain streaming callback based on config.
+        """Route to detailed or plain streaming callback based on config.
 
-        feishu_progress_card 默认关闭：普通对话走原有的打字机文本卡片
-        (_make_feishu_stream_callback_plain)。开启后才使用带状态头、
-        Reasoning/Tools 面板与耗时的富进度卡片。
+        feishu_detailed_card 默认开启：普通对话使用带状态头、
+        思考/工具面板与耗时的详细卡片。关闭后回退到原有的打字机文本卡片
+        (_make_feishu_stream_callback_plain)。
         """
-        if conf().get("feishu_progress_card", False):
+        if conf().get("feishu_detailed_card", True):
             return self._make_feishu_stream_callback_progress(context, access_token)
         return self._make_feishu_stream_callback_plain(context, access_token)
 
@@ -1191,6 +1186,16 @@ class FeiShuChanel(ChatChannel):
 
                 if should_push:
                     push_queue.put(snapshot)
+
+            elif event_type in ("tool_execution_start", "tool_execution_end"):
+                # Refresh the Tools panel as each tool starts/finishes so users
+                # see live status and per-tool elapsed time.
+                with lock:
+                    progress_state.consume(event)
+                    has_card = card_id[0] is not None
+                if has_card:
+                    _drain_push_queue()
+                    _update_full_card(streaming=True)
 
             elif event_type == "message_end":
                 # 工具轮结束后原地刷新 Reasoning / Tools 面板，保留同一张卡片。
