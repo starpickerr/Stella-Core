@@ -52,6 +52,27 @@
   --ai-bubble-bg: transparent;
   --message-gap: 16px;
 
+  /* Shape tokens — themable (radius / fonts). Kept as variables so a
+     theme can reshape the whole UI without touching components. */
+  --radius-card: 12px;
+  --radius-btn: 8px;
+  --radius-sm: 6px;
+  --font-sans: 'Inter', system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  /* Wallpaper layer — empty by default (solid theme). A theme sets these
+     to render an ambient background image behind the app. */
+  --wallpaper-image: none;
+  --wallpaper-position: 50% 50%;
+  --wallpaper-overlay: rgba(255, 255, 255, 0);
+  /* Panel fill used by .glass surfaces; opaque by default so non-glass
+     themes look identical to today. */
+  --glass-fill: var(--bg-surface);
+  --glass-blur: 0px;
+  /* 1 = fully opaque surfaces (default). A glass wallpaper theme lowers this
+     so bg-surface panels turn translucent and reveal the wallpaper. */
+  --surface-alpha: 1;
+
   color-scheme: light;
 }
 
@@ -105,6 +126,93 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* ============================================================
+   Wallpaper layer — ambient background behind the whole app.
+   Rendered as a fixed pseudo-element so it never scrolls and
+   sits under all content. Invisible unless a theme sets
+   --wallpaper-image (default 'none').
+   ============================================================ */
+#root {
+  position: relative;
+  isolation: isolate;
+}
+
+body[data-wallpaper='on']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--wallpaper-image);
+  background-size: cover;
+  background-position: var(--wallpaper-position);
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* Scrim over the wallpaper to keep foreground readable. */
+body[data-wallpaper='on']::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--wallpaper-overlay);
+  pointer-events: none;
+}
+
+/* When a wallpaper is active, let the app base show it through. The three
+   structural panels use bg-base; make that fill translucent so the ambient
+   image reads behind the UI. Surfaces/cards stay controlled by their own
+   tokens (or .glass) for readability. Zero component changes needed. */
+body[data-wallpaper='on'] {
+  background: transparent;
+}
+
+body[data-wallpaper='on'] .bg-base {
+  background-color: color-mix(in srgb, var(--bg-base) 45%, transparent);
+}
+
+/* Glass mode (wallpaper + glass theme): turn the common surface panels
+   translucent + blurred so the wallpaper reads behind the whole UI, with a
+   subtle top border-highlight for a premium, layered material feel. All via
+   CSS only — components keep using bg-surface / bg-elevated unchanged. */
+body[data-wallpaper='on'] .bg-surface,
+body[data-wallpaper='on'] .bg-elevated {
+  background-color: color-mix(in srgb, var(--bg-surface) calc(var(--surface-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+}
+
+/* Slightly brighten default borders over a wallpaper so panels keep clean
+   edges against the artwork. Kept subtle — no inset shadows on every bordered
+   element (that would look noisy on inputs/dividers). */
+body[data-wallpaper='on'] .border-default {
+  border-color: color-mix(in srgb, var(--border-default) 78%, rgba(255, 255, 255, 0.12));
+}
+
+/* ---- New-chat home page under a wallpaper ------------------------
+   When a wallpaper is active, the empty chat home keeps its original
+   centered layout; the suggestion cards just get a premium frosted-glass
+   treatment so they read cleanly over the artwork. Only the empty state. */
+body[data-wallpaper='on'] .chat-home .bg-surface {
+  background-color: color-mix(in srgb, var(--bg-surface) calc(var(--surface-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Frosted-glass panel: translucent fill + blur so the wallpaper shows
+   through. Opt-in via the .glass class; a theme toggles the fill/blur
+   variables. Falls back to a solid surface when glass is off. */
+.glass {
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
 }
 
 /* Smooth theme transition (respect reduced motion) */

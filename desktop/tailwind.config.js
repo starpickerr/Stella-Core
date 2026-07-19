@@ -5,8 +5,9 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace'],
+        // Driven by CSS variables so a skin can restyle typography.
+        sans: 'var(--font-sans)',
+        mono: 'var(--font-mono)',
       },
       colors: {
         'danger-soft': 'var(--danger-soft)',
@@ -62,8 +63,9 @@ module.exports = {
         lg: 'var(--shadow-lg)',
       },
       borderRadius: {
-        card: '12px',
-        btn: '8px',
+        card: 'var(--radius-card)',
+        btn: 'var(--radius-btn)',
+        sm: 'var(--radius-sm)',
       },
       animation: {
         'pulse-dot': 'pulseDot 1.4s infinite ease-in-out both',

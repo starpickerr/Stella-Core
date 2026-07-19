@@ -241,7 +241,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         )}
 
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full px-6 py-12">
+          <div data-home className="chat-home flex flex-col items-center justify-center h-full px-6 py-12">
             <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8 leading-relaxed whitespace-pre-line">
