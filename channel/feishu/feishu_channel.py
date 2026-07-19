@@ -28,7 +28,11 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
-from channel.feishu.feishu_static_card import build_text_delivery
+from channel.feishu.feishu_static_card import (
+    build_text_delivery,
+    resolve_markdown_images,
+    upload_public_image_to_feishu,
+)
 from channel.feishu.feishu_progress_card import FeishuProgressState
 from channel.feishu.feishu_scheduler_card import (
     build_scheduler_card,
@@ -752,9 +756,19 @@ class FeiShuChanel(ChatChannel):
         content_key = "text"
         prepared_content_json = None
         if reply.type == ReplyType.TEXT:
+            delivery_text = reply.content
+            markdown_cards_enabled = conf().get("feishu_markdown_card", True)
+            if markdown_cards_enabled:
+                delivery_text = resolve_markdown_images(
+                    delivery_text,
+                    lambda url: upload_public_image_to_feishu(
+                        url,
+                        access_token,
+                    ),
+                )
             msg_type, prepared_content_json = build_text_delivery(
-                reply.content,
-                enabled=conf().get("feishu_markdown_card", True),
+                delivery_text,
+                enabled=markdown_cards_enabled,
             )
         elif reply.type == ReplyType.IMAGE_URL:
             # 图片上传
@@ -1199,6 +1213,12 @@ class FeiShuChanel(ChatChannel):
                     final_text = progress_state.current_text
                     has_card = card_id[0] is not None
                     init_busy = init_in_flight[0]
+                final_text = resolve_markdown_images(
+                    final_text,
+                    lambda url: upload_public_image_to_feishu(url, access_token),
+                )
+                with lock:
+                    progress_state.current_text = final_text
                 context["feishu_streamed"] = True
 
                 if not has_card and not init_busy:
@@ -1465,9 +1485,15 @@ class FeiShuChanel(ChatChannel):
             if not cid:
                 return
 
+            preview_text = final_text
+            final_text = resolve_markdown_images(
+                final_text,
+                lambda url: upload_public_image_to_feishu(url, access_token),
+            )
+
             # 1) 通过整卡更新接口把 streaming_mode 关掉，并改写 summary
             #    （settings 接口的 config 不接受 summary 字段，会报 code=2200）
-            preview_src = (final_text or "").strip().replace("\n", " ")
+            preview_src = (preview_text or "").strip().replace("\n", " ")
             preview = preview_src[:30] if preview_src else ""
             full_card = {
                 "schema": "2.0",
