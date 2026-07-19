@@ -246,6 +246,7 @@
                   "cli/process",
                   "cli/skill",
                   "cli/memory-knowledge",
+                  "cli/backup",
                   "cli/general"
                 ]
               }
@@ -473,6 +474,7 @@
                   "zh/cli/process",
                   "zh/cli/skill",
                   "zh/cli/memory-knowledge",
+                  "zh/cli/backup",
                   "zh/cli/general"
                 ]
               }
