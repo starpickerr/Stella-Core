@@ -183,9 +183,15 @@ class ChatService:
 
         # Register a cancel token so /cancel can abort this in-flight run.
         # IM channels key on session_id (no per-turn request_id here).
-        from agent.protocol import get_cancel_registry
+        from agent.protocol import get_cancel_registry, get_steer_registry
         registry = get_cancel_registry()
+        steer_registry = get_steer_registry()
         cancel_event = registry.register(session_id, session_id=session_id) if session_id else None
+        steer_inbox = (
+            steer_registry.register(session_id)
+            if session_id
+            else None
+        )
 
         executor = AgentStreamExecutor(
             agent=agent,
@@ -197,6 +203,7 @@ class ChatService:
             messages=messages_copy,
             max_context_turns=max_context_turns,
             cancel_event=cancel_event,
+            steer_inbox=steer_inbox,
         )
 
         try:
@@ -217,6 +224,8 @@ class ChatService:
                     registry.unregister(session_id)
                 except Exception:
                     pass
+            if session_id and steer_inbox is not None:
+                steer_registry.unregister(session_id, steer_inbox)
 
         # Sync executor messages back to agent (thread-safe).
         # The executor may have trimmed context, making its list shorter than

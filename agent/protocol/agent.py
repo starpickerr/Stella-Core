@@ -381,7 +381,7 @@ class Agent:
         return action
 
     def run_stream(self, user_message: str, on_event=None, clear_history: bool = False,
-                   skill_filter=None, cancel_event=None) -> str:
+                   skill_filter=None, cancel_event=None, steer_inbox=None) -> str:
         """
         Execute single agent task with streaming (based on tool-call)
 
@@ -391,6 +391,7 @@ class Agent:
         - Event callbacks
         - Persistent conversation history across calls
         - User-initiated cancellation via ``cancel_event``
+        - Explicit active-turn guidance via ``steer_inbox``
 
         Args:
             user_message: User message
@@ -403,6 +404,8 @@ class Agent:
                 "[Interrupted by user]" assistant note, and returns the
                 partial response. ``messages`` stays in a valid state
                 (tool_use/tool_result pairs preserved).
+            steer_inbox: Optional SteerInbox drained at safe checkpoints. New
+                instructions guide this run without entering the normal queue.
 
         Returns:
             Final response text
@@ -448,6 +451,7 @@ class Agent:
             messages=messages_copy,  # Pass copied message history
             max_context_turns=max_context_turns,
             cancel_event=cancel_event,
+            steer_inbox=steer_inbox,
         )
 
         # Execute

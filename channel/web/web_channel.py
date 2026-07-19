@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import random
+import re
 import shutil
 import threading
 import time
@@ -132,6 +133,36 @@ def _cancel_reply_text(cancelled: int, lang: str) -> str:
     if cancelled > 0:
         return "🛑 Cancelled" if en else "🛑 已中止"
     return "Nothing to cancel." if en else "当前没有可中止的任务。"
+
+
+def _steer_reply_text(status, lang: str) -> str:
+    from agent.protocol import SteerStatus
+
+    en = (lang or "").lower().startswith("en")
+    messages = {
+        SteerStatus.ACCEPTED: (
+            "↪️ Active task redirected.", "↪️ 已引导当前任务。"
+        ),
+        SteerStatus.INACTIVE: (
+            "No active task to steer.", "当前没有可引导的任务。"
+        ),
+        SteerStatus.CLOSING: (
+            "The active task is already finishing.", "当前任务已结束，无法再引导。"
+        ),
+        SteerStatus.AMBIGUOUS: (
+            "Multiple tasks are active in this session; the steering target is ambiguous.",
+            "当前会话有多个任务在运行，无法确定引导目标。",
+        ),
+        SteerStatus.FULL: (
+            "Too many steering updates are pending; try again after the agent processes them.",
+            "引导指令过多，请等待当前任务处理后再试。",
+        ),
+        SteerStatus.INVALID: (
+            "Usage: /steer <instruction>", "用法：/steer <引导指令>"
+        ),
+    }
+    english, chinese = messages[status]
+    return english if en else chinese
 
 
 def _get_upload_dir() -> str:
@@ -911,6 +942,37 @@ class WebChannel(ChatChannel):
                     "stream": False,
                     "inline_reply": msg_text,
                 })
+
+            # Explicit steering also bypasses the normal session queue. The
+            # Web button sends ``steer: true`` with raw input; typed /steer
+            # commands use the same endpoint and semantics as IM channels.
+            steer_requested = bool(json_data.get("steer", False))
+            is_steer_command = (
+                re.match(r"^/steer(?:\s|$)", stripped_prompt) is not None
+            )
+            if steer_requested or is_steer_command:
+                instruction = (
+                    (prompt or "").strip()[len("/steer"):].strip()
+                    if is_steer_command
+                    else (prompt or "").strip()
+                )
+                from bridge.bridge import Bridge
+                result = Bridge().get_agent_bridge().steer_session(
+                    session_id, instruction
+                )
+                lang = (json_data.get("lang") or "zh").lower()
+                msg_text = _steer_reply_text(result.status, lang)
+                logger.info(
+                    f"[WebChannel] steer fast-path: session={session_id}, "
+                    f"status={result.status.value}, lang={lang}"
+                )
+                return json.dumps({
+                    "status": "success",
+                    "request_id": "",
+                    "stream": False,
+                    "steered": result.accepted,
+                    "inline_reply": msg_text,
+                }, ensure_ascii=False)
 
             # Append file references to the prompt (same format as QQ channel)
             if attachments:

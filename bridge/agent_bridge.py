@@ -5,7 +5,13 @@ Agent Bridge - Integrates Agent system with existing COW bridge
 import os
 from typing import Optional, List
 
-from agent.protocol import Agent, LLMModel, LLMRequest, get_cancel_registry
+from agent.protocol import (
+    Agent,
+    LLMModel,
+    LLMRequest,
+    get_cancel_registry,
+    get_steer_registry,
+)
 from bridge.agent_event_handler import AgentEventHandler
 from bridge.agent_initializer import AgentInitializer
 from bridge.bridge import Bridge
@@ -360,6 +366,10 @@ class AgentBridge:
 
         return agent
     
+    def steer_session(self, session_id: str, instruction: str):
+        """Inject an explicit instruction into one active session."""
+        return get_steer_registry().submit(session_id, instruction)
+
     def get_agent(self, session_id: str = None) -> Optional[Agent]:
         """
         Get agent instance for the given session
@@ -452,6 +462,8 @@ class AgentBridge:
         agent = None
         request_id = None
         cancel_event = None
+        token_key = None
+        steer_inbox = None
         try:
             # Extract session_id from context for user isolation
             if context:
@@ -534,12 +546,15 @@ class AgentBridge:
                 pass
 
             try:
+                if session_id:
+                    steer_inbox = get_steer_registry().register(session_id)
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
                     user_message=query,
                     on_event=event_handler.handle_event,
                     clear_history=clear_history,
                     cancel_event=cancel_event,
+                    steer_inbox=steer_inbox,
                 )
             finally:
                 # Clear the mid-run flag so idle scans can review this session.
@@ -562,6 +577,8 @@ class AgentBridge:
                         registry.unregister(token_key)
                     except Exception:
                         pass
+                if session_id and steer_inbox is not None:
+                    get_steer_registry().unregister(session_id, steer_inbox)
 
             # Persist new messages generated during this run
             if session_id:
@@ -641,6 +658,11 @@ class AgentBridge:
             if cancel_event is not None and (request_id or session_id):
                 try:
                     get_cancel_registry().unregister(request_id or session_id)
+                except Exception:
+                    pass
+            if session_id and steer_inbox is not None:
+                try:
+                    get_steer_registry().unregister(session_id, steer_inbox)
                 except Exception:
                     pass
             return Reply(ReplyType.ERROR, f"Agent error: {str(e)}")

@@ -123,6 +123,8 @@ const I18N = {
         slash_knowledge_off: '关闭知识库',
         slash_config: '查看当前配置',
         slash_cancel: '中止当前正在运行的 Agent 任务',
+        slash_steer: '向当前正在运行的 Agent 任务注入引导指令',
+        steer_active: '引导当前任务',
         slash_logs: '查看最近日志',
         slash_version: '查看版本',
         input_placeholder: '输入消息，或输入 / 使用指令',
@@ -375,6 +377,8 @@ const I18N = {
         slash_knowledge_off: '關閉知識庫',
         slash_config: '檢視當前設定',
         slash_cancel: '中止當前正在執行的 Agent 任務',
+        slash_steer: '向當前正在執行的 Agent 任務注入引導指令',
+        steer_active: '引導當前任務',
         slash_logs: '檢視最近日誌',
         slash_version: '檢視版本',
         input_placeholder: '輸入訊息，或輸入 / 使用指令',
@@ -626,6 +630,8 @@ const I18N = {
         slash_knowledge_off: 'Disable knowledge base',
         slash_config: 'Show current config',
         slash_cancel: 'Abort the running Agent task',
+        slash_steer: 'Inject guidance into the running Agent task',
+        steer_active: 'Steer active task',
         slash_logs: 'Show recent logs',
         slash_version: 'Show version',
         input_placeholder: 'Type a message, or press / for commands',
@@ -815,6 +821,9 @@ function applyI18n() {
     });
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
         el.title = t(el.dataset['i18nTitle']);
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+        el.setAttribute('aria-label', t(el.dataset['i18nAriaLabel']));
     });
     document.querySelectorAll('[data-tip-key]').forEach(el => {
         el.setAttribute('data-tooltip', t(el.dataset.tipKey));
@@ -1415,6 +1424,7 @@ startPolling();
 
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
+const steerBtn = document.getElementById('steer-btn');
 const messagesDiv = document.getElementById('chat-messages');
 const fileInput = document.getElementById('file-input');
 const folderInput = document.getElementById('folder-input');
@@ -1749,6 +1759,7 @@ function setSendBtnCancelMode(requestId) {
     sendBtn.classList.add('send-btn-cancel');
     sendBtn.title = (currentLang === 'zh' ? '中止' : 'Cancel');
     sendBtn.innerHTML = '<i class="fas fa-stop text-sm"></i>';
+    updateSteerBtnState();
 }
 
 function resetSendBtnSendMode() {
@@ -1757,8 +1768,60 @@ function resetSendBtnSendMode() {
     sendBtn.classList.remove('send-btn-cancel');
     sendBtn.title = '';
     sendBtn.innerHTML = '<i class="fas fa-paper-plane text-sm"></i>';
+    steerBtn.classList.add('hidden');
+    steerBtn.classList.remove('flex');
+    steerBtn.disabled = true;
     updateSendBtnState();
 }
+
+function updateSteerBtnState() {
+    const active = sendBtnMode === 'cancel' && !!activeRequestId;
+    steerBtn.classList.toggle('hidden', !active);
+    steerBtn.classList.toggle('flex', active);
+    steerBtn.disabled = !active || uploadingCount > 0 || !chatInput.value.trim();
+}
+
+function steerActiveTask() {
+    const instruction = chatInput.value.trim();
+    if (!instruction || sendBtnMode !== 'cancel' || !activeRequestId) return;
+
+    inputHistory.push(instruction);
+    historyIdx = -1;
+    historySavedDraft = '';
+    addUserMessage(`↪ ${instruction}`, new Date());
+
+    chatInput.value = '';
+    chatInput.style.height = '42px';
+    chatInput.style.overflowY = 'hidden';
+    updateSteerBtnState();
+
+    fetch('/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            session_id: sessionId,
+            message: instruction,
+            steer: true,
+            stream: false,
+            lang: currentLang,
+        }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success' && data.inline_reply) {
+            addBotMessage(data.inline_reply, new Date());
+        } else {
+            addBotMessage(t('error_send'), new Date());
+        }
+    })
+    .catch(err => {
+        console.warn('[steer] request failed', err);
+        addBotMessage(t('error_send'), new Date());
+    })
+    .finally(updateSteerBtnState);
+}
+
+steerBtn.addEventListener('click', steerActiveTask);
 
 function requestCancel() {
     const reqId = activeRequestId;
@@ -1795,10 +1858,12 @@ function updateSendBtnState() {
             resetSendBtnSendMode();
         } else {
             // Don't downgrade a genuinely active Cancel button on input edits.
+            updateSteerBtnState();
             return;
         }
     }
     sendBtn.disabled = uploadingCount > 0 || (!chatInput.value.trim() && pendingAttachments.length === 0);
+    updateSteerBtnState();
 }
 
 function renderAttachmentPreview() {
@@ -2117,6 +2182,7 @@ const SLASH_COMMANDS = [
     { cmd: '/knowledge off',       desc: 'slash_knowledge_off' },
     { cmd: '/config',              desc: 'slash_config' },
     { cmd: '/cancel',              desc: 'slash_cancel' },
+    { cmd: '/steer ',              desc: 'slash_steer' },
     { cmd: '/logs',                desc: 'slash_logs' },
     { cmd: '/version',             desc: 'slash_version' },
 ];
