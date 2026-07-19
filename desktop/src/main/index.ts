@@ -6,6 +6,7 @@ import { PythonBackend } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
+import { setupThemeIPC } from './themes'
 
 // Force the product name so the Dock/menu shows "CowAgent" even in dev mode,
 // where the default Electron binary would otherwise report "Electron".
@@ -306,6 +307,7 @@ app.whenReady().then(async () => {
   }
 
   setupIPC()
+  setupThemeIPC()
   createWindow()
   buildAppMenu(() => mainWindow)
   // No menu-bar tray on macOS — the Dock + window controls are enough there.

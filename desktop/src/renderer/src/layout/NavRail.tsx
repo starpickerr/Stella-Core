@@ -21,8 +21,11 @@ import {
   FileText,
   Store,
   MessageSquareWarning,
+  Palette,
+  Check,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { Theme } from '../theme/themes'
 // The desktop app's own brand icon (transparent PNG), bundled by Vite.
 import brandLogo from '../assets/logo.png'
 import { t, getLang, setLang, Lang } from '../i18n'
@@ -76,7 +79,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const { navCollapsed, toggleNav } = useUIStore()
-  const { theme, toggleTheme } = useTheme()
+  const { theme, toggleTheme, themeId, themes, appName, setThemeId } = useTheme()
   // On macOS the top-left is occupied by the native traffic lights, so the
   // brand mark is only shown on Windows/Linux where that corner is otherwise
   // empty (mirrors the web console's sidebar logo).
@@ -178,7 +181,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
           <div className="flex items-center gap-2 min-w-0 select-none">
             <BrandLogo />
             {!collapsed && (
-              <span className="text-[14px] font-semibold text-content truncate">CowAgent</span>
+              <span className="text-[14px] font-semibold text-content truncate">{appName}</span>
             )}
           </div>
         )}
@@ -230,6 +233,9 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
               navigate('/logs')
             }}
             onTheme={toggleTheme}
+            themeId={themeId}
+            themes={themes}
+            onThemeId={setThemeId}
             onLanguage={toggleLanguage}
             onCheckUpdate={checkUpdate}
             onOpenLink={(url) => {
@@ -312,12 +318,16 @@ const FooterMenu: React.FC<{
   checking: boolean
   pendingUpdate: boolean
   upToDate: boolean
+  themeId: string
+  themes: Theme[]
+  onThemeId: (id: string) => void
   onLogs: () => void
   onTheme: () => void
   onLanguage: () => void
   onCheckUpdate: () => void
   onOpenLink: (url: string) => void
-}> = ({ theme, checking, pendingUpdate, upToDate, onLogs, onTheme, onLanguage, onCheckUpdate, onOpenLink }) => {
+}> = ({ theme, checking, pendingUpdate, upToDate, themeId, themes, onThemeId, onLogs, onTheme, onLanguage, onCheckUpdate, onOpenLink }) => {
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const updateLabel = checking
     ? t('update_checking')
     : upToDate
@@ -351,6 +361,24 @@ const FooterMenu: React.FC<{
       onClick={onTheme}
     />
     <MenuItem
+      icon={<Palette size={16} />}
+      label={t('menu_theme_picker')}
+      trailing={themeMenuOpen ? '▾' : '▸'}
+      onClick={() => setThemeMenuOpen((o) => !o)}
+    />
+    {themeMenuOpen &&
+      themes.map((th) => (
+        <button
+          key={th.id}
+          onClick={() => onThemeId(th.id)}
+          className="w-full flex items-center gap-2.5 pl-8 pr-3 h-9 text-[13px] text-content-secondary hover:bg-surface-2 hover:text-content cursor-pointer transition-colors"
+        >
+          <ThemeSwatch preview={th.preview ?? { accent: '#4abe6e', bg: '#111', surface: '#1c1c1f' }} />
+          <span className="flex-1 text-left truncate">{th.name}</span>
+          {themeId === th.id && <Check size={14} className="flex-shrink-0 text-accent" />}
+        </button>
+      ))}
+    <MenuItem
       icon={<Languages size={16} />}
       label={t('menu_language')}
       trailing={getLang() === 'zh' ? 'EN' : '中'}
@@ -360,6 +388,17 @@ const FooterMenu: React.FC<{
   </div>
   )
 }
+
+// Tiny 3-color preview (bg / surface / accent) for the theme picker.
+const ThemeSwatch: React.FC<{ preview: { accent: string; bg: string; surface: string } }> = ({
+  preview,
+}) => (
+  <span className="flex-shrink-0 inline-flex h-4 w-4 rounded-full overflow-hidden border border-default">
+    <span className="w-1/3 h-full" style={{ background: preview.bg }} />
+    <span className="w-1/3 h-full" style={{ background: preview.surface }} />
+    <span className="w-1/3 h-full" style={{ background: preview.accent }} />
+  </span>
+)
 
 const MenuItem: React.FC<{
   icon: React.ReactNode

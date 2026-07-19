@@ -21,6 +21,12 @@ export interface ElectronAPI {
   onMenuAction?: (callback: (action: string) => void) => () => void
   // Current app version string (e.g. "0.0.5").
   getAppVersion?: () => Promise<string>
+  // Themes (bundled + user themes from ~/.cow/themes), images inlined.
+  listThemes?: () => Promise<Record<string, unknown>[]>
+  getThemesDir?: () => Promise<string>
+  // Optional app config: first-run default theme + display name. Null when
+  // the build ships no app config (standard build).
+  getAppConfig?: () => Promise<{ defaultTheme?: string; appName?: string } | null>
   // Auto-update. lang (e.g. "zh") routes installer downloads to the China CDN.
   checkForUpdate?: (lang?: string) => Promise<void>
   downloadUpdate?: (lang?: string) => Promise<void>
