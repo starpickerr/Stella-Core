@@ -33,6 +33,16 @@ Abort the agent task currently running in this session. When the agent is busy w
 /cancel
 ```
 
+## steer
+
+Redirect the Agent task currently running in this session without cancelling it. The instruction is injected at the next safe checkpoint; a tool that is already running may finish, while tools that have not started are skipped. If no task is active, `/steer` does not start or queue a new one. Available across all chat channels.
+
+```text
+/steer focus on the failing tests first
+```
+
+In the Web console, enter an instruction while a reply is running and click **Steer active task**. Sending an ordinary message still uses the session queue.
+
 ## config
 
 View or modify runtime configuration. Changes take effect immediately without restarting.

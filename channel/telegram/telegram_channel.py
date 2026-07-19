@@ -42,6 +42,7 @@ TELEGRAM_BOT_COMMANDS = [
     ("knowledge", "Manage knowledge base (list/on/off)"),
     ("config", "Show current config"),
     ("cancel", "Cancel running agent task"),
+    ("steer", "Guide the running agent task"),
     ("logs", "Show recent logs"),
     ("version", "Show version"),
 ]

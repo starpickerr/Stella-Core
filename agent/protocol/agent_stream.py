@@ -99,6 +99,7 @@ class AgentStreamExecutor:
             messages: Optional[List[Dict]] = None,
             max_context_turns: int = 30,
             cancel_event=None,
+            steer_inbox=None,
     ):
         """
         Initialize stream executor
@@ -116,6 +117,8 @@ class AgentStreamExecutor:
                 Checked at every safe point (turn boundary, before tool execution,
                 during LLM streaming). When set, raises AgentCancelledError which
                 run_stream catches to gracefully wind down.
+            steer_inbox: Optional SteerInbox for explicit instructions sent to
+                this active run. Drained only at message-safe checkpoints.
         """
         self.agent = agent
         self.model = model
@@ -126,6 +129,7 @@ class AgentStreamExecutor:
         self.on_event = on_event
         self.max_context_turns = max_context_turns
         self.cancel_event = cancel_event
+        self.steer_inbox = steer_inbox
 
         # Message history - use provided messages or create new list
         self.messages = messages if messages is not None else []
@@ -144,6 +148,72 @@ class AgentStreamExecutor:
         """
         if self.cancel_event is not None and self.cancel_event.is_set():
             raise AgentCancelledError("agent cancelled by user")
+
+    def _drain_steering(self) -> List[str]:
+        if self.steer_inbox is None:
+            return []
+        return self.steer_inbox.drain()
+
+    @staticmethod
+    def _steering_text(updates: List[str]) -> str:
+        if len(updates) == 1:
+            body = updates[0]
+        else:
+            body = "\n".join(f"{idx}. {text}" for idx, text in enumerate(updates, 1))
+        return (
+            "[Steering update for the active task]\n"
+            "Use this new instruction for the current task before continuing.\n\n"
+            f"{body}"
+        )
+
+    def _append_steering(
+        self,
+        updates: List[str],
+        pending_tool_calls: Optional[List[Dict]] = None,
+        content_blocks: Optional[List[Dict]] = None,
+    ) -> None:
+        """Append guidance, closing any tool_use blocks that will be skipped."""
+        if not updates:
+            return
+        blocks = content_blocks if content_blocks is not None else []
+        for tool_call in pending_tool_calls or []:
+            blocks.append({
+                "type": "tool_result",
+                "tool_use_id": tool_call["id"],
+                "content": "Skipped because the user redirected the active task.",
+                "is_error": True,
+            })
+        blocks.append({"type": "text", "text": self._steering_text(updates)})
+        if content_blocks is None:
+            self.messages.append({"role": "user", "content": blocks})
+        self._emit_event("agent_steered", {"count": len(updates)})
+        logger.info(f"[Agent] Applied {len(updates)} steering update(s)")
+
+    def _close_or_apply_final_steering(self) -> bool:
+        """Return True only when the run can finish without losing a steer."""
+        updates = self._drain_steering()
+        if updates:
+            self._append_steering(updates)
+            return False
+        if self.steer_inbox is None:
+            return True
+        if self.steer_inbox.close_if_empty():
+            return True
+        updates = self._drain_steering()
+        if updates:
+            self._append_steering(updates)
+        return False
+
+    def _drain_and_close_steering(self) -> None:
+        """Preserve any final guidance before the max-step summary call."""
+        if self.steer_inbox is None:
+            return
+        while True:
+            updates = self._drain_steering()
+            if updates:
+                self._append_steering(updates)
+            if self.steer_inbox.close_if_empty():
+                return
 
     def _handle_cancelled(self, partial_response: str) -> None:
         """Wind down ``self.messages`` after a user-initiated cancel.
@@ -395,6 +465,10 @@ class AgentStreamExecutor:
                 # between turns short-circuits cleanly.
                 self._check_cancelled()
 
+                steering_updates = self._drain_steering()
+                if steering_updates:
+                    self._append_steering(steering_updates)
+
                 turn += 1
                 logger.info(f"[Agent] Turn {turn}")
                 self._emit_event("turn_start", {"turn": turn})
@@ -402,6 +476,24 @@ class AgentStreamExecutor:
                 # Call LLM (enable retry_on_empty for better reliability)
                 assistant_msg, tool_calls = self._call_llm_stream(retry_on_empty=True)
                 final_response = assistant_msg
+
+                # A steer that arrived while the model was streaming takes
+                # precedence over its proposed continuation. Tool calls have
+                # already been written to history, so close every one with a
+                # synthetic result before asking the model to reconsider.
+                steering_updates = self._drain_steering()
+                if steering_updates:
+                    self._append_steering(
+                        steering_updates,
+                        pending_tool_calls=tool_calls,
+                    )
+                    self._emit_event("turn_end", {
+                        "turn": turn,
+                        "has_tool_calls": bool(tool_calls),
+                        "tool_count": len(tool_calls),
+                        "steered": True,
+                    })
+                    continue
 
                 # No tool calls, end loop
                 if not tool_calls:
@@ -467,6 +559,22 @@ class AgentStreamExecutor:
                     # If the explicit-response retry produced tool_calls, skip the break
                     # and continue down to the tool execution branch in this same iteration.
                     if not tool_calls:
+                        steering_updates = self._drain_steering()
+                        if steering_updates:
+                            self._append_steering(steering_updates)
+                            self._emit_event("turn_end", {
+                                "turn": turn,
+                                "has_tool_calls": False,
+                                "steered": True,
+                            })
+                            continue
+                        if not self._close_or_apply_final_steering():
+                            self._emit_event("turn_end", {
+                                "turn": turn,
+                                "has_tool_calls": False,
+                                "steered": True,
+                            })
+                            continue
                         logger.debug(f"✅ Done (no tool calls)")
                         self._emit_event("turn_end", {
                             "turn": turn,
@@ -499,9 +607,17 @@ class AgentStreamExecutor:
                 tool_result_blocks = []
 
                 try:
-                    for tool_call in tool_calls:
+                    for tool_index, tool_call in enumerate(tool_calls):
                         # Honour cancel between tool invocations within the same turn
                         self._check_cancelled()
+                        steering_updates = self._drain_steering()
+                        if steering_updates:
+                            self._append_steering(
+                                steering_updates,
+                                pending_tool_calls=tool_calls[tool_index:],
+                                content_blocks=tool_result_blocks,
+                            )
+                            break
                         result = self._execute_tool(tool_call)
                         tool_results.append(result)
                         
@@ -641,6 +757,7 @@ class AgentStreamExecutor:
 
             if turn >= self.max_turns:
                 logger.warning(f"⚠️  Reached max decision step limit: {self.max_turns}")
+                self._drain_and_close_steering()
                 
                 # Force model to summarize without tool calls
                 logger.info(f"[Agent] Requesting summary from LLM after reaching max steps...")
@@ -699,6 +816,8 @@ class AgentStreamExecutor:
             raise
 
         finally:
+            if self.steer_inbox is not None:
+                self.steer_inbox.close()
             final_response = final_response.strip() if final_response else final_response
             if cancelled:
                 # Emit before agent_end so channels can mark UI as cancelled
