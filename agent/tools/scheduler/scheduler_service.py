@@ -41,6 +41,8 @@ class SchedulerService:
         self.running = False
         self.thread = None
         self._lock = threading.Lock()
+        self._execution_lock = threading.Lock()
+        self._active_task_ids = set()
     
     def start(self):
         """Start the scheduler service"""
@@ -85,7 +87,15 @@ class SchedulerService:
             try:
                 if self._is_task_due(task, now):
                     logger.info(f"[Scheduler] Executing task: {task['id']} - {task['name']}")
-                    ok = self._execute_task(task)
+                    if not self._claim_task(task['id']):
+                        logger.info(
+                            f"[Scheduler] Task {task['id']} is already running; skipping this tick"
+                        )
+                        continue
+                    try:
+                        ok = self._execute_task(task)
+                    finally:
+                        self._release_task(task['id'])
                     if not ok:
                         # Leave next_run_at as-is so the next loop retries.
                         # Cron tasks within the catch-up window will keep
@@ -106,6 +116,57 @@ class SchedulerService:
                         logger.info(f"[Scheduler] One-time task completed and removed: {task['id']}")
             except Exception as e:
                 logger.error(f"[Scheduler] Error processing task {task.get('id')}: {e}")
+
+    def run_task_now(self, task_id: str) -> None:
+        """Queue one immediate execution without changing the task schedule.
+
+        Disabled and one-time tasks may be run manually for testing. The
+        stored ``next_run_at`` remains unchanged, so a manual run never
+        consumes or delays the next scheduled occurrence.
+
+        Raises:
+            ValueError: if the task does not exist.
+            RuntimeError: if the same task is already executing.
+        """
+        task = self.task_store.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found")
+        if not self._claim_task(task_id):
+            raise RuntimeError(f"Task '{task_id}' is already running")
+
+        def _run():
+            now = datetime.now()
+            try:
+                logger.info(f"[Scheduler] Manually executing task: {task_id} - {task.get('name', '')}")
+                ok = self._execute_task(task)
+                if ok:
+                    self.task_store.update_task(task_id, {
+                        "last_run_at": now.isoformat(),
+                        "last_manual_run_at": now.isoformat(),
+                    })
+                    logger.info(f"[Scheduler] Manual execution completed: {task_id}")
+                else:
+                    logger.warning(f"[Scheduler] Manual execution failed: {task_id}")
+            finally:
+                self._release_task(task_id)
+
+        threading.Thread(
+            target=_run,
+            daemon=True,
+            name=f"scheduler-manual-{task_id}",
+        ).start()
+
+    def _claim_task(self, task_id: str) -> bool:
+        """Prevent scheduled and manual runs of the same task from overlapping."""
+        with self._execution_lock:
+            if task_id in self._active_task_ids:
+                return False
+            self._active_task_ids.add(task_id)
+            return True
+
+    def _release_task(self, task_id: str) -> None:
+        with self._execution_lock:
+            self._active_task_ids.discard(task_id)
     
     def _is_task_due(self, task: dict, now: datetime) -> bool:
         """

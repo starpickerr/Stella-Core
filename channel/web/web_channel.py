@@ -1309,6 +1309,7 @@ class WebChannel(ChatChannel):
             '/api/knowledge/action', 'KnowledgeActionHandler',
             '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
+            '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
@@ -4534,6 +4535,34 @@ class SchedulerHandler:
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerRunHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            task_id = body.get("task_id")
+            if not task_id:
+                return json.dumps({"status": "error", "message": "task_id required"})
+
+            from agent.tools.scheduler.integration import get_scheduler_service
+            service = get_scheduler_service()
+            if service is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": "Scheduler service is not running",
+                })
+
+            service.run_task_now(task_id)
+            return json.dumps({
+                "status": "success",
+                "message": f"Task '{task_id}' queued for immediate execution",
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler manual run error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Clock, CalendarClock } from 'lucide-react'
+import { Loader2, Clock, CalendarClock, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { t } from '../i18n'
 import apiClient from '../api/client'
@@ -165,6 +165,8 @@ const TaskEditModal: React.FC<{
   const [actionType, setActionType] = useState<TaskAction['type']>(task.action.type || 'send_message')
   const [content, setContent] = useState(task.action.content || task.action.task_description || '')
   const [saving, setSaving] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runStatus, setRunStatus] = useState('')
   const [error, setError] = useState('')
 
   const buildSchedule = (): TaskSchedule => {
@@ -209,6 +211,22 @@ const TaskEditModal: React.FC<{
     }
   }
 
+  const runNow = async () => {
+    if (!window.confirm(t('task_run_confirm'))) return
+    setRunning(true)
+    setRunStatus('')
+    setError('')
+    try {
+      const result = await apiClient.runTask(task.id)
+      if (result.status !== 'success') throw new Error(result.message || t('task_run_error'))
+      setRunStatus(t('task_run_started'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('task_run_error'))
+    } finally {
+      setRunning(false)
+    }
+  }
+
   return (
     <Modal
       open
@@ -218,6 +236,10 @@ const TaskEditModal: React.FC<{
         <>
           <Btn variant="danger" onClick={del} disabled={saving} className="mr-auto">
             {t('task_delete')}
+          </Btn>
+          <Btn variant="ghost" onClick={runNow} disabled={saving || running}>
+            {running ? <Loader2 size={14} className="inline animate-spin mr-1" /> : <Play size={14} className="inline mr-1" />}
+            {t('task_run_now')}
           </Btn>
           <Btn variant="ghost" onClick={onClose} disabled={saving}>
             {t('task_cancel')}
@@ -298,6 +320,7 @@ const TaskEditModal: React.FC<{
       )}
       <p className="text-xs text-content-tertiary">{t('task_channel_locked')}</p>
 
+      {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
     </Modal>
   )

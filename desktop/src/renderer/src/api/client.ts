@@ -372,6 +372,13 @@ class ApiClient {
     return data.tasks
   }
 
+  async runTask(taskId: string): Promise<ApiResult> {
+    return this.request('/api/scheduler/run', {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId }),
+    })
+  }
+
   async toggleTask(taskId: string, enabled: boolean): Promise<{ status: string; task: SchedulerTask }> {
     return this.request('/api/scheduler/toggle', {
       method: 'POST',
