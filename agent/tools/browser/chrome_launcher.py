@@ -51,6 +51,28 @@ class ChromeLauncher:
         finally:
             s.close()
 
+    def _clear_stale_singleton_locks(self):
+        """Remove leftover Chrome Singleton* locks from a crashed/killed run.
+
+        Chrome allows only one instance per user_data_dir and enforces it with
+        SingletonLock / SingletonSocket / SingletonCookie. On a clean exit these
+        are removed, but a crash or force-quit leaves them behind — the next
+        spawn then hands off to the (dead) "existing" instance and exits without
+        opening the debug port, so CDP never comes up (a permanent, non
+        self-healing failure). This profile is private to us, so clearing stale
+        locks before launch is safe: if our own browser were truly alive, the
+        service would still be connected and we wouldn't be re-launching.
+        """
+        for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            p = os.path.join(self._user_data_dir, name)
+            try:
+                # These are symlinks; use lexists so a dangling link is caught.
+                if os.path.lexists(p):
+                    os.remove(p)
+                    logger.info(f"[Browser] cleared stale Chrome lock: {name}")
+            except OSError as e:
+                logger.debug(f"[Browser] could not remove {name}: {e}")
+
     def launch(self, ready_timeout: float = 25.0) -> str:
         """Spawn Chrome and block until its CDP endpoint answers.
 
@@ -58,6 +80,7 @@ class ChromeLauncher:
         comes up (the child process is killed in that case).
         """
         os.makedirs(self._user_data_dir, exist_ok=True)
+        self._clear_stale_singleton_locks()
         self._port = self._free_port()
 
         args = [
@@ -99,9 +122,11 @@ class ChromeLauncher:
         )
 
         if not self._wait_ready(ready_timeout):
+            # Capture the port before close() clears it, so the error is useful.
+            port = self._port
             self.close()
             raise RuntimeError(
-                f"Chrome did not expose a CDP endpoint on port {self._port} "
+                f"Chrome did not expose a CDP endpoint on port {port} "
                 f"within {ready_timeout:.0f}s"
             )
         return self.endpoint

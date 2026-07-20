@@ -9,6 +9,7 @@ period of inactivity to free resources.
 
 import os
 import sys
+import json
 import uuid
 import queue
 import threading
@@ -214,6 +215,14 @@ _SNAPSHOT_JS = """
     str(list(_KEEP_TAGS)),
     str(list(_INTERACTIVE_TAGS)),
 )
+
+# Returning the snapshot as ONE JSON string instead of a nested object is a big
+# win in the frozen desktop build: Playwright serializes a nested return value
+# node-by-node over many driver<->python protocol round trips, and each round
+# trip carries fixed overhead that is dramatically amplified in the frozen
+# bundle (a ~300-node tree can take 20s+). JSON.stringify in-page collapses it
+# to a single string transfer; Python then json.loads it. Behaviour identical.
+_SNAPSHOT_JS_STR = "() => JSON.stringify((%s)())" % _SNAPSHOT_JS.strip()
 
 
 _BROWSER_DEAD_HINTS = (
@@ -846,7 +855,11 @@ class BrowserService:
     def _do_snapshot(self, selector: Optional[str] = None) -> str:
         page = self._page
         try:
-            result = page.evaluate(_SNAPSHOT_JS)
+            # Return a single JSON string (not a nested object) to avoid
+            # Playwright's per-node serialization round trips, which are slow
+            # in the frozen build. See _SNAPSHOT_JS_STR.
+            raw = page.evaluate(_SNAPSHOT_JS_STR)
+            result = json.loads(raw) if isinstance(raw, str) else raw
         except Exception as e:
             return f"[Snapshot error: {e}]"
 
