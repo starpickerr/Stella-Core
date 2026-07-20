@@ -1775,10 +1775,13 @@ function resetSendBtnSendMode() {
 }
 
 function updateSteerBtnState() {
+    // Keep the steer button enabled whenever a task is running so users can
+    // fire successive guidance. Empty-input is guarded in steerActiveTask,
+    // avoiding a jarring disabled/not-allowed state right after each steer.
     const active = sendBtnMode === 'cancel' && !!activeRequestId;
     steerBtn.classList.toggle('hidden', !active);
     steerBtn.classList.toggle('flex', active);
-    steerBtn.disabled = !active || uploadingCount > 0 || !chatInput.value.trim();
+    steerBtn.disabled = !active || uploadingCount > 0;
 }
 
 function steerActiveTask() {

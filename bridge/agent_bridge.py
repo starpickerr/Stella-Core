@@ -368,6 +368,7 @@ class AgentBridge:
     
     def steer_session(self, session_id: str, instruction: str):
         """Inject an explicit instruction into one active session."""
+        logger.info(f"[AgentBridge] steer new instruction: session={session_id}, content={instruction}")
         return get_steer_registry().submit(session_id, instruction)
 
     def get_agent(self, session_id: str = None) -> Optional[Agent]:
