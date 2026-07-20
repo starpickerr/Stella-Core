@@ -251,6 +251,8 @@ class FeiShuChanel(ChatChannel):
         super().__init__()
         # 历史消息id暂存，用于幂等控制
         self.receivedMsgs = ExpiredDict(60 * 60 * 7.1)
+        # Route recall events back to the session that accepted the message.
+        self._message_sessions = ExpiredDict(60 * 60 * 7.1)
         self._http_server = None
         self._ws_client = None
         self._ws_thread = None
@@ -387,6 +389,19 @@ class FeiShuChanel(ChatChannel):
             except Exception as e:
                 logger.error(f"[FeiShu] websocket handle message error: {e}", exc_info=True)
 
+        def handle_message_recalled_event(
+            data: lark.im.v1.P2ImMessageRecalledV1,
+        ) -> None:
+            """Cancel only the task created by the recalled Feishu message."""
+            try:
+                event_dict = json.loads(lark.JSON.marshal(data))
+                self._handle_message_recalled_event(event_dict.get("event", {}))
+            except Exception as e:
+                logger.error(
+                    f"[FeiShu] websocket handle message recall error: {e}",
+                    exc_info=True,
+                )
+
         def handle_card_action(data):
             """Handle Card 2.0 button callbacks and update the card in place."""
             try:
@@ -403,6 +418,7 @@ class FeiShuChanel(ChatChannel):
         event_handler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_im_message_receive_v1(handle_message_event)
+            .register_p2_im_message_recalled_v1(handle_message_recalled_event)
             .register_p2_card_action_trigger(handle_card_action)
             .build()
         )
@@ -591,6 +607,29 @@ class FeiShuChanel(ChatChannel):
         )
         return response
 
+    def _handle_message_recalled_event(self, event: dict):
+        """Cancel one recalled message while preserving later queued messages."""
+        message_id = event.get("message_id")
+        if not message_id:
+            logger.warning(f"[FeiShu] invalid message recall event: {event}")
+            return 0, False
+
+        session_id = self._message_sessions.get(message_id)
+        if not session_id:
+            logger.info(
+                f"[FeiShu] ignored recall for unknown message, message_id={message_id}"
+            )
+            return 0, False
+
+        result = self.cancel_message(session_id, message_id)
+        self._message_sessions.pop(message_id, None)
+        logger.info(
+            "[FeiShu] recalled message cancelled, "
+            f"message_id={message_id}, session_id={session_id}, "
+            f"queued={result[0]}, active={result[1]}"
+        )
+        return result
+
     def _handle_message_event(self, event: dict):
         """
         处理消息事件的核心逻辑
@@ -724,6 +763,10 @@ class FeiShuChanel(ChatChannel):
             no_need_at=True
         )
         if context:
+            # Feishu recall events only include message_id/chat_id. Keep the
+            # accepted route and use message_id as the agent cancellation key.
+            context["request_id"] = msg_id
+            self._message_sessions[msg_id] = context["session_id"]
             # 流式回复模式：向 context 注入 on_event 回调，agent 每产出一段文字时会调用它。
             # 回调内部先发送一条占位消息获取 message_id，之后通过 PATCH 接口原地更新内容，
             # 实现打字机效果。回调结束时设置 context["feishu_streamed"]=True，
@@ -2095,6 +2138,7 @@ class FeishuController:
     FAILED_MSG = '{"success": false}'
     SUCCESS_MSG = '{"success": true}'
     MESSAGE_RECEIVE_TYPE = "im.message.receive_v1"
+    MESSAGE_RECALLED_TYPE = "im.message.recalled_v1"
     CARD_ACTION_TYPE = "card.action.trigger"
 
     def GET(self):
@@ -2134,6 +2178,8 @@ class FeishuController:
             # 3. Handle message events.
             if event_type == self.MESSAGE_RECEIVE_TYPE and event:
                 channel._handle_message_event(event)
+            elif event_type == self.MESSAGE_RECALLED_TYPE and event:
+                channel._handle_message_recalled_event(event)
 
             return self.SUCCESS_MSG
 
