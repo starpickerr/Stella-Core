@@ -394,6 +394,7 @@ class FeiShuChanel(ChatChannel):
         ) -> None:
             """Cancel only the task created by the recalled Feishu message."""
             try:
+                logger.info("[FeiShu] websocket received message recall event")
                 event_dict = json.loads(lark.JSON.marshal(data))
                 self._handle_message_recalled_event(event_dict.get("event", {}))
             except Exception as e:
