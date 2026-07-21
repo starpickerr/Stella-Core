@@ -51,6 +51,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppConfig: () =>
     ipcRenderer.invoke('app-config-get') as Promise<{ defaultTheme?: string; appName?: string } | null>,
 
+  // Generic HTTPS relay via the main process (bypasses the renderer's CORS
+  // restrictions for external endpoints). Optional extensions may use it.
+  httpRelay: (req: {
+    url: string
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }) =>
+    ipcRenderer.invoke('http-relay', req) as Promise<{
+      ok: boolean
+      status: number
+      headers: Record<string, string>
+      body: string
+    }>,
+
   // Auto-update: trigger checks/download/install and subscribe to status. The
   // optional lang routes installer downloads to the China CDN mirror (zh) or R2.
   checkForUpdate: (lang?: string) => ipcRenderer.invoke('update-check', lang),

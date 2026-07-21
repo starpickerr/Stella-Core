@@ -20,6 +20,10 @@ import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState 
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
+import { product } from '@product'
+
+// Whether the "add custom provider" entry is available. Defaults to true.
+const allowCustomProviders = product.models?.allowCustomProviders !== false
 
 interface ModelsTabProps {
   baseUrl: string
@@ -330,7 +334,9 @@ const VendorModal: React.FC<{
       label: localizedLabel(p.label),
       hint: p.configured ? t('models_configured') : undefined,
     })),
-    { value: CUSTOM_PICK, label: t('models_custom_vendor'), hint: t('models_add_custom_hint') },
+    ...(allowCustomProviders
+      ? [{ value: CUSTOM_PICK, label: t('models_custom_vendor'), hint: t('models_add_custom_hint') }]
+      : []),
   ]
 
   const onPick = (val: string) => {
