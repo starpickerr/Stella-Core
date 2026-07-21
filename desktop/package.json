@@ -15,7 +15,10 @@
     "build:renderer": "vite build",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "npm run build && electron-builder --win",
+    "flavor:apply": "node scripts/apply-flavor.mjs",
+    "flavor:clear": "node scripts/apply-flavor.mjs --clear",
+    "dist:flavor": "node scripts/apply-flavor.mjs $FLAVOR && npm run build && electron-builder && node scripts/apply-flavor.mjs --clear"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
@@ -60,7 +63,9 @@
         "from": "resources",
         "to": ".",
         "filter": [
-          "icon.png"
+          "icon.png",
+          "app-config.json",
+          "themes/**"
         ]
       }
     ],

@@ -43,6 +43,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Current app version (e.g. "0.0.5"), shown in the NavRail footer.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
+  // Themes (bundled + user themes from ~/.cow/themes), assets inlined.
+  listThemes: () => ipcRenderer.invoke('themes-list') as Promise<Record<string, unknown>[]>,
+  getThemesDir: () => ipcRenderer.invoke('themes-dir') as Promise<string>,
+  // Optional app config (first-run default theme + display name). Null in
+  // the standard build.
+  getAppConfig: () =>
+    ipcRenderer.invoke('app-config-get') as Promise<{ defaultTheme?: string; appName?: string } | null>,
+
+  // Generic HTTPS relay via the main process (bypasses the renderer's CORS
+  // restrictions for external endpoints). Optional extensions may use it.
+  httpRelay: (req: {
+    url: string
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }) =>
+    ipcRenderer.invoke('http-relay', req) as Promise<{
+      ok: boolean
+      status: number
+      headers: Record<string, string>
+      body: string
+    }>,
+
   // Auto-update: trigger checks/download/install and subscribe to status. The
   // optional lang routes installer downloads to the China CDN mirror (zh) or R2.
   checkForUpdate: (lang?: string) => ipcRenderer.invoke('update-check', lang),
