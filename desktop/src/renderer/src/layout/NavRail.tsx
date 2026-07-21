@@ -34,6 +34,7 @@ import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/updateStore'
 import UpdateBanner from '../components/UpdateBanner'
+import { product } from '@product'
 
 // Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
 // in sync with desktop/package.json "version"; the packaged app overrides this
@@ -220,7 +221,9 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
       </div>
 
       {/* Footer actions: a single "more" entry (with version + update dot) that
-          opens an upward popover, plus the always-visible collapse toggle. */}
+          opens an upward popover, plus the always-visible collapse toggle. An
+          optional '@product' slot sits on the left (e.g. an account avatar),
+          taking the spot the "more" entry would otherwise occupy. */}
       <div className="flex-shrink-0 px-2 py-2 border-t border-subtle relative" ref={menuRef}>
         {menuOpen && (
           <FooterMenu
@@ -246,27 +249,36 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
         )}
 
         <div className={collapsed ? 'space-y-0.5' : 'flex items-center gap-1'}>
-          {/* Single clickable entry: version label (left) + the three dots
-              (right) form one button; the whole block opens the popover. The
-              version is the packaged app version, also what auto-update
-              compares against. Collapsed: dots only, version hidden. */}
-          <button
-            onClick={() => setMenuOpen((o) => !o)}
-            title={t('menu_more')}
-            className={`relative inline-flex items-center rounded-btn cursor-pointer transition-colors ${
-              menuOpen ? 'bg-surface-2 text-content' : 'text-content-tertiary hover:text-content hover:bg-surface-2'
-            } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2 gap-1.5'}`}
-          >
-            {!collapsed && version && (
-              <span className="text-[12px] truncate">{`v${version}`}</span>
-            )}
-            <MoreHorizontal size={17} className="flex-shrink-0" />
-            {pendingUpdate && (
-              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-danger" />
-            )}
-          </button>
+          {/* Left side: either the built-in "more" entry (version + dots) or,
+              when an extension provides one and hides the built-in menu, its
+              footer slot (e.g. an account avatar). */}
+          {product.slots?.NavRailFooter && product.nav?.hideFooterMenu ? (
+            <div className={collapsed ? '' : 'flex-1 min-w-0'}>
+              <product.slots.NavRailFooter />
+            </div>
+          ) : (
+            !product.nav?.hideFooterMenu && (
+              <button
+                onClick={() => setMenuOpen((o) => !o)}
+                title={t('menu_more')}
+                className={`relative inline-flex items-center rounded-btn cursor-pointer transition-colors ${
+                  menuOpen ? 'bg-surface-2 text-content' : 'text-content-tertiary hover:text-content hover:bg-surface-2'
+                } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2 gap-1.5'}`}
+              >
+                {!collapsed && version && (
+                  <span className="text-[12px] truncate">{`v${version}`}</span>
+                )}
+                <MoreHorizontal size={17} className="flex-shrink-0" />
+                {pendingUpdate && (
+                  <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-danger" />
+                )}
+              </button>
+            )
+          )}
 
-          {!collapsed && <div className="flex-1" />}
+          {!collapsed && !(product.slots?.NavRailFooter && product.nav?.hideFooterMenu) && (
+            <div className="flex-1" />
+          )}
 
           <FooterBtn collapsed={collapsed} onClick={toggleNav} title={collapsed ? t('nav_expand') : t('nav_collapse')}>
             {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
@@ -335,17 +347,21 @@ const FooterMenu: React.FC<{
       : t('update_check')
   return (
   <div className="absolute bottom-full left-2 right-2 mb-2 z-50 rounded-lg border border-default bg-elevated shadow-lg py-1">
-    {/* External destinations first (skill hub, docs, website) */}
-    <MenuItem icon={<Store size={16} />} label={t('menu_skill_hub')} onClick={() => onOpenLink(SKILL_HUB_URL)} />
-    <MenuItem icon={<FileText size={16} />} label={t('menu_docs')} onClick={() => onOpenLink(docsUrl())} />
-    <MenuItem icon={<Globe size={16} />} label={t('menu_website')} onClick={() => onOpenLink(websiteUrl())} />
-    <MenuItem
-      icon={<MessageSquareWarning size={16} />}
-      label={t('menu_feedback')}
-      onClick={() => onOpenLink(FEEDBACK_URL)}
-    />
-
-    <div className="my-1 border-t border-subtle" />
+    {/* External destinations (skill hub, docs, website, feedback). An
+        extension may hide this group to keep the menu to app actions only. */}
+    {!product.nav?.hideExternalLinks && (
+      <>
+        <MenuItem icon={<Store size={16} />} label={t('menu_skill_hub')} onClick={() => onOpenLink(SKILL_HUB_URL)} />
+        <MenuItem icon={<FileText size={16} />} label={t('menu_docs')} onClick={() => onOpenLink(docsUrl())} />
+        <MenuItem icon={<Globe size={16} />} label={t('menu_website')} onClick={() => onOpenLink(websiteUrl())} />
+        <MenuItem
+          icon={<MessageSquareWarning size={16} />}
+          label={t('menu_feedback')}
+          onClick={() => onOpenLink(FEEDBACK_URL)}
+        />
+        <div className="my-1 border-t border-subtle" />
+      </>
+    )}
 
     {/* App actions below: update, theme, language, logs */}
     <MenuItem

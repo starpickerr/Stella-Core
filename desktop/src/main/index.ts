@@ -6,11 +6,13 @@ import { PythonBackend } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
-import { setupThemeIPC } from './themes'
+import { setupThemeIPC, loadAppConfig } from './themes'
+import { setupHttpRelayIPC } from './http-relay'
 
-// Force the product name so the Dock/menu shows "CowAgent" even in dev mode,
-// where the default Electron binary would otherwise report "Electron".
-app.setName('CowAgent')
+// Force the product name so the Dock/menu shows the app name even in dev mode,
+// where the default Electron binary would otherwise report "Electron". The name
+// can be overridden by the bundled app-config (appName); defaults to CowAgent.
+app.setName(loadAppConfig()?.appName || 'CowAgent')
 
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
@@ -308,6 +310,7 @@ app.whenReady().then(async () => {
 
   setupIPC()
   setupThemeIPC()
+  setupHttpRelayIPC()
   createWindow()
   buildAppMenu(() => mainWindow)
   // No menu-bar tray on macOS — the Dock + window controls are enough there.
