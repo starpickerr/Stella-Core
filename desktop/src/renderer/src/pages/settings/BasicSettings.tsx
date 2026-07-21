@@ -2,8 +2,13 @@ import React, { useState, useEffect } from 'react'
 import { Cpu, Bot, ShieldCheck, Languages, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
 import { t, getLang, setLang, localizedLabel, type Lang } from '../../i18n'
 import apiClient from '../../api/client'
+import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
+
+const CustomModelPicker = product.models?.ModelPicker
+const hideProviderSelect = product.models?.hideProviderSelect === true
+const showManagedApiKey = product.models?.showManagedApiKey === true
 
 interface BasicSettingsProps {
   baseUrl: string
@@ -21,6 +26,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [modelStatus, setModelStatus] = useState('')
+
+  // managed API key (shown only when the standalone models tab is hidden)
+  const [apiKey, setApiKey] = useState('')
+  const [apiKeyDirty, setApiKeyDirty] = useState(false)
+  const [apiKeyVisible, setApiKeyVisible] = useState(false)
 
   // agent card
   const [maxTokens, setMaxTokens] = useState(100000)
@@ -64,6 +74,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       const current = data.use_linkai ? 'linkai' : data.bot_type || ids[0] || ''
       setProvider(current)
       const meta = data.providers?.[current] as ProviderMeta | undefined
+      // Managed key: show the masked value for the current provider's key field.
+      const keyField = meta?.api_key_field
+      setApiKey((keyField && data.api_keys?.[keyField]) || '')
+      setApiKeyDirty(false)
       const presets = meta?.models || []
       if (data.model && presets.length && !presets.includes(data.model)) {
         setShowCustom(true)
@@ -99,8 +113,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   }
 
   const saveModelConfig = async () => {
-    const finalModel = showCustom ? customModel.trim() : model
-    const isLinkai = provider === 'linkai'
+    const finalModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+    // With a managed model source the provider selector is hidden; route through
+    // the managed provider so credentials resolve consistently.
+    const isLinkai = CustomModelPicker ? true : provider === 'linkai'
     try {
       await apiClient.updateConfig({
         model: finalModel,
@@ -110,6 +126,27 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setModelStatus(t('config_saved'))
       const fresh = await apiClient.getConfig()
       setConfig(fresh)
+    } catch {
+      setModelStatus(t('config_save_error'))
+    }
+    setTimeout(() => setModelStatus(''), 2000)
+  }
+
+  const currentKeyField = (config?.providers?.[provider] as ProviderMeta | undefined)?.api_key_field
+
+  const saveApiKey = async () => {
+    if (!apiKeyDirty || !currentKeyField) return
+    // Never save a masked value back as the real key.
+    if (MASK_RE.test(apiKey)) return
+    try {
+      await apiClient.updateConfig({ [currentKeyField]: apiKey })
+      setModelStatus(t('config_saved'))
+      setApiKeyDirty(false)
+      const fresh = await apiClient.getConfig()
+      setConfig(fresh)
+      const meta = fresh.providers?.[provider] as ProviderMeta | undefined
+      const keyField = meta?.api_key_field
+      setApiKey((keyField && fresh.api_keys?.[keyField]) || '')
     } catch {
       setModelStatus(t('config_save_error'))
     }
@@ -200,20 +237,59 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       {/* Model — provider/model selection only; credentials live in Models tab */}
       <Card icon={<Cpu size={16} />} title={t('config_model')}>
         <div className="space-y-4">
-          <Field label={t('config_provider')}>
-            <Dropdown value={provider} options={providerOptions} onChange={handleProviderChange} />
-          </Field>
+          {!hideProviderSelect && (
+            <Field label={t('config_provider')}>
+              <Dropdown value={provider} options={providerOptions} onChange={handleProviderChange} />
+            </Field>
+          )}
           <Field label={t('config_model_name')}>
-            <Dropdown value={showCustom ? '__custom__' : model} options={modelOptions} onChange={handleModelChange} />
-            {showCustom && (
-              <TextInput
-                className="mt-2 font-mono"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={t('config_custom_model_hint')}
-              />
+            {CustomModelPicker ? (
+              <CustomModelPicker value={model} onChange={setModel} />
+            ) : (
+              <>
+                <Dropdown
+                  value={showCustom ? '__custom__' : model}
+                  options={modelOptions}
+                  onChange={handleModelChange}
+                />
+                {showCustom && (
+                  <TextInput
+                    className="mt-2 font-mono"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder={t('config_custom_model_hint')}
+                  />
+                )}
+              </>
             )}
           </Field>
+
+          {/* Managed API key: hidden by default, click the eye to reveal the
+              partially-masked value (e.g. sk-1****9aL7). Editable in place; if
+              left untouched (still contains a mask char) it is not overwritten. */}
+          {showManagedApiKey && currentKeyField && (
+            <Field label={t('onboarding_apikey')}>
+              <div className="relative">
+                <TextInput
+                  type={apiKeyVisible ? 'text' : 'password'}
+                  className="pr-10 font-mono"
+                  value={apiKey}
+                  placeholder="sk-..."
+                  onChange={(e) => {
+                    setApiKey(e.target.value.trim())
+                    setApiKeyDirty(true)
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setApiKeyVisible((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary cursor-pointer p-1"
+                >
+                  {apiKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </Field>
+          )}
 
           {/* Guide users to the Models tab for API key / base config.
               When the selected provider has no credentials, surface a warning. */}
@@ -240,7 +316,13 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             </button>
           )}
 
-          <SaveRow status={modelStatus} onSave={saveModelConfig} />
+          <SaveRow
+            status={modelStatus}
+            onSave={async () => {
+              await saveModelConfig()
+              if (showManagedApiKey && apiKeyDirty) await saveApiKey()
+            }}
+          />
         </div>
       </Card>
 

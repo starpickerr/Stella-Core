@@ -23,6 +23,7 @@ import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import LogsPage from './pages/LogsPage'
+import { product } from '@product'
 
 const App: React.FC = () => {
   const backend = useBackend()
@@ -37,6 +38,11 @@ const App: React.FC = () => {
   // whether login is needed; 'need_login' shows the password screen; 'ok' lets
   // the main UI render.
   const [authState, setAuthState] = useState<'checking' | 'need_login' | 'ok'>('checking')
+  const [productAuthed, setProductAuthed] = useState(false)
+  // Optional gate provided by '@product'. `product.auth` is constant for the
+  // whole build, so calling its hook conditionally is stable across renders.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const productRequiresAuth = product.auth ? product.auth.useRequiresAuth() : false
 
   useEffect(() => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
@@ -72,6 +78,8 @@ const App: React.FC = () => {
   // configured (and not dismissed earlier this session); no persisted flag.
   useEffect(() => {
     if (backend.status !== 'ready' || authState !== 'ok') return
+    // An extension may opt out of the built-in setup wizard.
+    if (product.onboarding?.enabled === false) return
     let cancelled = false
     apiClient
       .getModels()
@@ -130,8 +138,14 @@ const App: React.FC = () => {
     return <LoginGate onAuthenticated={() => setAuthState('ok')} />
   }
 
+  // Optional gate from '@product', shown after the local auth check passes.
+  // Rendered inside the layout (nav rail stays visible) so the app's features
+  // are on display while the login card sits in the content area.
+  const ProductGate = product.auth?.Gate
+  const showProductGate = !!(ProductGate && productRequiresAuth && !productAuthed)
+
   const isChat = location.pathname === '/'
-  const showSessions = isChat && !sessionsCollapsed
+  const showSessions = isChat && !sessionsCollapsed && !showProductGate
 
   return (
     <div className="flex h-screen overflow-hidden bg-base text-content">
@@ -156,11 +170,19 @@ const App: React.FC = () => {
             </button>
           )}
           <div className="flex-1 min-w-0" />
+          {product.slots?.HeaderRight && (
+            <div className="titlebar-no-drag flex items-center">
+              <product.slots.HeaderRight />
+            </div>
+          )}
           {isWin && <WindowControls />}
         </header>
 
         {/* Content */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-base">
+          {showProductGate && ProductGate ? (
+            <ProductGate onAuthenticated={() => setProductAuthed(true)} />
+          ) : (
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
@@ -172,7 +194,11 @@ const App: React.FC = () => {
             {/* Legacy /models route now lives as a tab inside settings */}
             <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             <Route path="/logs" element={<LogsPage baseUrl={backend.baseUrl} />} />
+            {product.routes?.map((r) => (
+              <Route key={r.path} path={r.path} element={r.element} />
+            ))}
           </Routes>
+          )}
         </div>
       </div>
     </div>

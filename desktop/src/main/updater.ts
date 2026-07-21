@@ -7,6 +7,7 @@ import path from 'path'
 // import compiles to `electron_updater_1.autoUpdater` and resolves correctly,
 // whereas `import pkg from 'electron-updater'` yields undefined.
 import { autoUpdater } from 'electron-updater'
+import { loadAppConfig } from './themes'
 
 // Status payloads pushed to the renderer over the 'update-status' channel.
 // The renderer drives the NavRail badge + update panel from these.
@@ -33,6 +34,11 @@ function isLegacyWindows(): boolean {
   return Number.isFinite(major) && major < 10
 }
 
+// A bundled app-config may point the updater at a different feed origin. When
+// set, that single URL is used as-is (no China/R2 dual-origin switching, which
+// is specific to the default build's infrastructure). Absent -> default feed.
+const CONFIGURED_FEED = (loadAppConfig()?.updateFeedUrl || '').trim()
+
 // The update feed. Both entries hit the same Pages Function
 // (https://cowagent.ai/update/); the ?lang=zh query tells it to 302 installer
 // downloads to the China CDN mirror instead of R2. The feed metadata is
@@ -40,7 +46,10 @@ function isLegacyWindows(): boolean {
 // to fall back from one download origin to the other. Legacy Windows appends a
 // /legacy/ segment so it gets the win-legacy release instead of the standard.
 const FEED_BASE = 'https://cowagent.ai/update/' + (isLegacyWindows() ? 'legacy/' : '')
-const feedUrlFor = (china: boolean) => (china ? `${FEED_BASE}?lang=zh` : FEED_BASE)
+const feedUrlFor = (china: boolean) => {
+  if (CONFIGURED_FEED) return CONFIGURED_FEED
+  return china ? `${FEED_BASE}?lang=zh` : FEED_BASE
+}
 
 // Which origin the current session prefers, derived from the app UI language
 // (zh -> China mirror). Downloads that fail on the preferred origin retry once
