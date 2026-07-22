@@ -23,6 +23,8 @@ export const COLOR_KEYS = [
   'accentActive',
   'accentSoft',
   'accentContrast',
+  'bubbleUserBg',
+  'bubbleUserText',
   'bgBase',
   'bgSurface',
   'bgSurface2',
@@ -101,7 +103,7 @@ export const DEFAULT_THEME_ID = 'default'
 // ~/.cow/themes. This keeps the app bundle free of theme assets.
 export const DEFAULT_THEME: Theme = {
   id: DEFAULT_THEME_ID,
-  name: 'CowAgent',
+  name: 'Meadow',
   preview: { accent: '#4abe6e', bg: '#f9fafb', surface: '#ffffff' },
 }
 

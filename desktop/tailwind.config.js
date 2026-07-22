@@ -41,6 +41,9 @@ module.exports = {
           soft: 'var(--accent-soft)',
           contrast: 'var(--accent-contrast)',
         },
+        // User message bubble (theme-overridable, falls back to accent)
+        'bubble-user': 'var(--bubble-user-bg)',
+        'bubble-user-text': 'var(--bubble-user-text)',
         base: 'var(--bg-base)',
         surface: {
           DEFAULT: 'var(--bg-surface)',

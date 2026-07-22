@@ -19,6 +19,10 @@
   --accent-soft: rgba(74, 190, 110, 0.12);
   --accent-contrast: #ffffff;
 
+  /* User message bubble (defaults to solid accent; themes may override) */
+  --bubble-user-bg: var(--accent);
+  --bubble-user-text: #ffffff;
+
   /* Status colors */
   --success: #4abe6e;
   --warning: #f59e0b;
