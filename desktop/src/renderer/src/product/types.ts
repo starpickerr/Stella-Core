@@ -25,6 +25,10 @@ export interface ProductSlots {
   NavRailFooter?: React.FC
   // Rendered on the right side of the top titlebar strip.
   HeaderRight?: React.FC
+  // Rendered in the nav-rail brand area (top-left, Windows/Linux only) in place
+  // of the default logo + app name. Receives whether the rail is collapsed so
+  // it can render a compact mark. Lets a build show a custom wordmark.
+  NavRailBrand?: React.FC<{ collapsed: boolean }>
 }
 
 // Extra routes appended to the core <Routes>. Path is a HashRouter path.
