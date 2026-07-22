@@ -178,14 +178,18 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
           collapsed ? 'justify-center px-0' : 'px-3'
         }`}
       >
-        {!isMac && (
-          <div className="flex items-center gap-2 min-w-0 select-none">
-            <BrandLogo />
-            {!collapsed && (
-              <span className="text-[14px] font-semibold text-content truncate">{appName}</span>
-            )}
-          </div>
-        )}
+        {!isMac &&
+          (product.slots?.NavRailBrand ? (
+            // A build may render its own wordmark in the brand area.
+            <product.slots.NavRailBrand collapsed={collapsed} />
+          ) : (
+            <div className="flex items-center gap-2 min-w-0 select-none">
+              <BrandLogo />
+              {!collapsed && (
+                <span className="text-[14px] font-semibold text-content truncate">{appName}</span>
+              )}
+            </div>
+          ))}
       </div>
 
       {/* Content area carries the right divider, starting below the titlebar */}

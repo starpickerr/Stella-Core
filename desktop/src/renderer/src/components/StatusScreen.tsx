@@ -11,7 +11,7 @@ const StatusScreen: React.FC<StatusScreenProps> = ({ status, error, onRetry }) =
   return (
     <div className="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-[#111111]">
       <div className="text-center space-y-6 max-w-md px-8">
-        <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
+        <img src="./logo.jpg" alt="Agent" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
 
         {status === 'connecting' && (
           <>
