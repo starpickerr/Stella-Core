@@ -29,6 +29,9 @@ export interface ProductSlots {
   // of the default logo + app name. Receives whether the rail is collapsed so
   // it can render a compact mark. Lets a build show a custom wordmark.
   NavRailBrand?: React.FC<{ collapsed: boolean }>
+  // Rendered as the assistant message avatar in place of the default app icon.
+  // Lets a build show its own (or an OEM's) square logo next to replies.
+  AssistantAvatar?: React.FC
 }
 
 // Extra routes appended to the core <Routes>. Path is a HashRouter path.

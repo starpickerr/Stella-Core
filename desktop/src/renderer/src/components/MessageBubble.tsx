@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import Markdown from './Markdown'
 import MessageSteps, { ThinkingStep } from './MessageSteps'
+import { product } from '@product'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -81,7 +82,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
             )}
           </div>
         )}
-        <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-accent text-white">
+        <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-bubble-user text-bubble-user-text">
           <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -107,7 +108,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
 
   return (
     <div className="group flex gap-3 px-4 sm:px-6 py-2">
-      <img src="./logo.jpg" alt="CowAgent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
+      {product.slots?.AssistantAvatar ? (
+        <div className="w-7 h-7 rounded-lg flex-shrink-0 mt-1 overflow-hidden">
+          <product.slots.AssistantAvatar />
+        </div>
+      ) : (
+        <img src="./logo.jpg" alt="Agent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
+      )}
       <div className="flex-1 min-w-0 max-w-[calc(100%-2.5rem)]">
         <div className="inline-block w-full rounded-2xl border border-default bg-surface px-4 py-3">
           {message.kind === 'evolution' && (
