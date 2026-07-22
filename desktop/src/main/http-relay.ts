@@ -22,6 +22,10 @@ export interface RelayResponse {
 }
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024
+// Relay callers are all lightweight JSON endpoints (login, codes, balances,
+// model lists); a 10s cap is generous while still preventing a stalled request
+// from hanging forever (and, for pollers, piling up across ticks).
+const REQUEST_TIMEOUT_MS = 10 * 1000
 
 function relay(req: RelayRequest): Promise<RelayResponse> {
   return new Promise((resolve, reject) => {
@@ -45,16 +49,33 @@ function relay(req: RelayRequest): Promise<RelayResponse> {
       for (const [k, v] of Object.entries(req.headers)) request.setHeader(k, v)
     }
 
+    // Cap the whole request (connect + response) so a stalled endpoint can't
+    // hang forever. On timeout we abort, which surfaces as an 'error' event.
+    // `done` guards against settling twice once the timer has fired.
+    let done = false
+    const timer = setTimeout(() => {
+      if (done) return
+      request.abort()
+      reject(new Error('request timeout'))
+    }, REQUEST_TIMEOUT_MS)
+    const settle = (fn: () => void) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      fn()
+    }
+
     request.on('response', (response) => {
       const chunks: Buffer[] = []
       let size = 0
       let aborted = false
       response.on('data', (chunk: Buffer) => {
-        if (aborted) return
+        if (aborted || done) return
         size += chunk.length
         if (size > MAX_BODY_BYTES) {
           aborted = true
-          reject(new Error('response too large'))
+          request.abort()
+          settle(() => reject(new Error('response too large')))
           return
         }
         chunks.push(chunk)
@@ -66,15 +87,17 @@ function relay(req: RelayRequest): Promise<RelayResponse> {
           headers[k] = Array.isArray(v) ? v.join(', ') : String(v)
         }
         const status = response.statusCode || 0
-        resolve({
-          ok: status >= 200 && status < 300,
-          status,
-          headers,
-          body: Buffer.concat(chunks).toString('utf8'),
-        })
+        settle(() =>
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          }),
+        )
       })
     })
-    request.on('error', (err) => reject(err))
+    request.on('error', (err) => settle(() => reject(err)))
 
     if (req.body != null) request.write(req.body)
     request.end()
