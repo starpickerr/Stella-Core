@@ -47,7 +47,9 @@ export interface ElectronAPI {
 // Mirrors UpdateStatus in src/main/updater.ts.
 export type UpdateStatus =
   | { state: 'checking' }
-  | { state: 'available'; version: string; notes?: string }
+  // userInitiated: true when the check came from an explicit "check for update"
+  // click; drives whether a dismissed version re-opens the panel (see store).
+  | { state: 'available'; version: string; notes?: string; userInitiated?: boolean }
   | { state: 'not-available' }
   | { state: 'downloading'; percent: number }
   | { state: 'downloaded'; version: string }
