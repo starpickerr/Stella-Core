@@ -36,7 +36,7 @@ ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME direc
 
 SAFETY:
 - Freely create/modify/delete files within the workspace
-- For destructive commands out of workspace, explain and confirm first"""
+- For destructive commands out of workspace ({{cwd}}), explain and confirm first"""
 
     params: dict = {
         "type": "object",
@@ -62,6 +62,18 @@ SAFETY:
         self.default_timeout = self.config.get("timeout", 30)
         # Enable safety mode by default (can be disabled in config)
         self.safety_mode = self.config.get("safety_mode", True)
+        # Desktop runs on the user's own machine (often non-technical users),
+        # so require explicit confirmation for destructive ops outside the workspace.
+        if os.environ.get("COW_DESKTOP") == "1":
+            self.description = self.description.replace(
+                "- For destructive commands out of workspace ({cwd}), explain and confirm first",
+                "- For delete or destructive operations on files out of workspace ({cwd}), "
+                "be cautious and confirm with the user before executing, unless the user explicitly requested it",
+            )
+        # Show the concrete workspace path so the model knows what "the workspace" is
+        self.description = self.description.replace(
+            "{cwd}", self.cwd
+        )
 
     def execute(self, args: Dict[str, Any]) -> ToolResult:
         """
