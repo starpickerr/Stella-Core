@@ -489,3 +489,116 @@ class Agent:
         """Clear conversation history and captured actions"""
         self.messages = []
         self.captured_actions = []
+
+    def compact_context(self, keep_recent_turns: int = 2) -> dict:
+        """Manually compact the conversation history right now.
+
+        Reuses the same turn-splitting and summary-injection logic as the
+        automatic context trimming in AgentStreamExecutor (via shared helpers
+        in message_utils), the only difference being that this summarizes
+        synchronously and runs on demand regardless of token usage — so the
+        /compact command frees context immediately and consistently.
+
+        :param keep_recent_turns: How many most-recent turns to keep verbatim.
+        :return: dict with keys: ok, reason, compacted_turns, before, after.
+        """
+        from agent.protocol.message_utils import (
+            identify_complete_turns,
+            build_compaction_summary_text,
+            find_first_user_text_block,
+            _extract_text_from_content,
+        )
+
+        with self.messages_lock:
+            before = len(self.messages)
+            turns = identify_complete_turns(self.messages)
+
+            if len(turns) <= keep_recent_turns:
+                return {
+                    "ok": False,
+                    "reason": "nothing_to_compact",
+                    "compacted_turns": 0,
+                    "before": before,
+                    "after": before,
+                }
+
+            discarded_turns = turns[:-keep_recent_turns]
+            kept_turns = turns[-keep_recent_turns:]
+            discarded_messages = []
+            for turn in discarded_turns:
+                discarded_messages.extend(turn["messages"])
+
+        # Summarize discarded turns synchronously so the injected note is ready
+        # before we return. The SAME summary is reused for context injection and
+        # daily-memory persistence — one LLM call serves both (mirrors the
+        # context_summary_callback path used by automatic trimming, but sync).
+        # Falls back to a plain-text digest when no LLM is available.
+        summary = ""
+        llm_summary = False
+        flush_mgr = None
+        if self.memory_manager:
+            flush_mgr = getattr(self.memory_manager, "flush_manager", None)
+        if flush_mgr:
+            try:
+                raw = flush_mgr._summarize_messages(discarded_messages, max_messages=0) or ""
+                summary = flush_mgr._clean_summary_output(raw)
+                llm_summary = bool(summary.strip())
+            except Exception as e:
+                logger.warning(f"[Agent] compact summarize failed: {e}")
+
+        if not summary.strip():
+            fragments = []
+            for msg in discarded_messages:
+                text = _extract_text_from_content(msg.get("content", ""))
+                if text:
+                    fragments.append(f"{msg.get('role', '?')}: {text[:200]}")
+            summary = "\n".join(fragments[-20:])
+
+        # Persist the same LLM summary to daily memory (no second LLM call).
+        # Skip when we only have the plain-text fallback — it isn't worth
+        # recording as long-term memory.
+        if flush_mgr and llm_summary:
+            try:
+                user_id = getattr(self, "_current_user_id", None)
+                flush_mgr.write_daily_summary(summary, user_id=user_id, reason="trim")
+            except Exception as e:
+                logger.debug(f"[Agent] compact write_daily_summary skipped: {e}")
+
+        # Rebuild kept turns, injecting the summary into the first kept user
+        # text block (same as auto-trim) to avoid two adjacent user messages
+        # that would break strict user/assistant alternation on some providers.
+        turn_count = len(discarded_turns)
+        with self.messages_lock:
+            new_messages = []
+            for turn in kept_turns:
+                new_messages.extend(turn["messages"])
+
+            target_block = find_first_user_text_block(kept_turns)
+            if target_block is not None:
+                target_block["text"] = build_compaction_summary_text(
+                    summary, turn_count, target_block.get("text", "")
+                )
+            else:
+                # Fallback: no injectable target, prepend a standalone note.
+                new_messages.insert(0, {
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": build_compaction_summary_text(summary, turn_count, ""),
+                    }],
+                })
+
+            self.messages = new_messages
+            after = len(self.messages)
+
+        logger.info(
+            f"[Agent] Manual compact: {turn_count} turns summarized, "
+            f"{before} -> {after} messages"
+        )
+        return {
+            "ok": True,
+            "reason": "compacted",
+            "compacted_turns": turn_count,
+            "before": before,
+            "after": after,
+        }

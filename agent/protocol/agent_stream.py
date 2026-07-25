@@ -9,7 +9,13 @@ from typing import List, Dict, Any, Optional, Callable, Tuple
 
 from agent.protocol.cancel import AgentCancelledError
 from agent.protocol.models import LLMRequest, LLMModel
-from agent.protocol.message_utils import sanitize_claude_messages, compress_turn_to_text_only
+from agent.protocol.message_utils import (
+    sanitize_claude_messages,
+    compress_turn_to_text_only,
+    identify_complete_turns,
+    build_compaction_summary_text,
+    find_first_user_text_block,
+)
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
 from common.i18n import t as _t
@@ -1481,48 +1487,7 @@ class AgentStreamExecutor:
         Returns:
             List of turns, each turn is a dict with 'messages' list
         """
-        turns = []
-        current_turn = {'messages': []}
-        
-        for msg in self.messages:
-            role = msg.get('role')
-            content = msg.get('content', [])
-            
-            if role == 'user':
-                # Determine if this is a real user query (not a tool_result injection
-                # or an internal hint message injected by the agent loop).
-                is_user_query = False
-                has_tool_result = False
-                if isinstance(content, list):
-                    has_text = any(
-                        isinstance(block, dict) and block.get('type') == 'text'
-                        for block in content
-                    )
-                    has_tool_result = any(
-                        isinstance(block, dict) and block.get('type') == 'tool_result'
-                        for block in content
-                    )
-                    # A message with tool_result is always internal, even if it
-                    # also contains text blocks (shouldn't happen, but be safe).
-                    is_user_query = has_text and not has_tool_result
-                elif isinstance(content, str):
-                    is_user_query = True
-                
-                if is_user_query:
-                    if current_turn['messages']:
-                        turns.append(current_turn)
-                    current_turn = {'messages': [msg]}
-                else:
-                    current_turn['messages'].append(msg)
-            else:
-                # AI 回复，属于当前轮次
-                current_turn['messages'].append(msg)
-        
-        # 添加最后一个轮次
-        if current_turn['messages']:
-            turns.append(current_turn)
-        
-        return turns
+        return identify_complete_turns(self.messages)
     
     def _estimate_turn_tokens(self, turn: Dict) -> int:
         """估算一个轮次的 tokens"""
@@ -1697,21 +1662,7 @@ class AgentStreamExecutor:
             return None
 
         # Find the first user text block in kept_turns as injection target
-        target_block = None
-        for turn in kept_turns:
-            for msg in turn["messages"]:
-                if msg.get("role") == "user":
-                    content = msg.get("content", [])
-                    if isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                target_block = block
-                                break
-                    if target_block:
-                        break
-            if target_block:
-                break
-
+        target_block = find_first_user_text_block(kept_turns)
         if not target_block:
             return None
 
@@ -1721,12 +1672,8 @@ class AgentStreamExecutor:
         def _on_summary_ready(summary: str):
             if not summary or not summary.strip():
                 return
-            target_block["text"] = (
-                f"[System: Previous conversation summary — "
-                f"{turn_count} turns were compacted]\n\n"
-                f"{summary.strip()}\n\n"
-                f"The recent conversation continues below.\n\n---\n\n"
-                f"{original_text}"
+            target_block["text"] = build_compaction_summary_text(
+                summary, turn_count, original_text
             )
             logger.info(
                 f"📝 Context summary injected "

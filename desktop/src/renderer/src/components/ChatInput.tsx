@@ -47,6 +47,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     { cmd: '/help', desc: t('slash_help') },
     { cmd: '/status', desc: t('slash_status') },
     { cmd: '/context', desc: t('slash_context') },
+    { cmd: '/compact', desc: t('slash_compact') },
     { cmd: '/skill list', desc: t('slash_skill_list') },
     { cmd: '/skill search ', desc: t('slash_skill_search') },
     { cmd: '/skill install ', desc: t('slash_skill_install') },

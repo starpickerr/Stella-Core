@@ -335,19 +335,7 @@ class MemoryFlushManager:
                 return
 
             # --- Write daily memory ---
-            daily_file = ensure_daily_memory_file(self.workspace_dir, user_id)
-
-            headers = {
-                "overflow": f"## Context Overflow Recovery ({datetime.now().strftime('%H:%M')})",
-                "trim": f"## Trimmed Context ({datetime.now().strftime('%H:%M')})",
-                "daily_summary": f"## Daily Summary ({datetime.now().strftime('%H:%M')})",
-            }
-            header = headers.get(reason, f"## Session Notes ({datetime.now().strftime('%H:%M')})")
-
-            with open(daily_file, "a", encoding="utf-8") as f:
-                f.write(f"\n{header}\n\n{daily_part}\n")
-
-            logger.info(f"[MemoryFlush] Wrote daily memory to {daily_file.name} (reason={reason}, chars={len(daily_part)})")
+            self.write_daily_summary(daily_part, user_id=user_id, reason=reason)
 
             # --- Inject context summary into live messages (if callback provided) ---
             if context_summary_callback:
@@ -360,6 +348,43 @@ class MemoryFlushManager:
 
         except Exception as e:
             logger.warning(f"[MemoryFlush] Async flush failed (reason={reason}): {e}")
+
+    def write_daily_summary(
+        self,
+        summary: str,
+        user_id: Optional[str] = None,
+        reason: str = "trim",
+    ) -> bool:
+        """Append an already-produced summary to today's daily memory file.
+
+        Lets callers that summarized synchronously (e.g. the /compact command)
+        persist the same summary they inject into context, avoiding a second
+        LLM call just to write memory.
+
+        :param summary: Clean summary text (no [DAILY]/[MEMORY] markers).
+        :param user_id: Optional user scope for the daily file.
+        :param reason: "trim" | "overflow" | "daily_summary" | ... (picks header).
+        :return: True on success.
+        """
+        summary = (summary or "").strip()
+        if not summary:
+            return False
+        try:
+            daily_file = ensure_daily_memory_file(self.workspace_dir, user_id)
+            headers = {
+                "overflow": f"## Context Overflow Recovery ({datetime.now().strftime('%H:%M')})",
+                "trim": f"## Trimmed Context ({datetime.now().strftime('%H:%M')})",
+                "daily_summary": f"## Daily Summary ({datetime.now().strftime('%H:%M')})",
+            }
+            header = headers.get(reason, f"## Session Notes ({datetime.now().strftime('%H:%M')})")
+            with open(daily_file, "a", encoding="utf-8") as f:
+                f.write(f"\n{header}\n\n{summary}\n")
+            logger.info(f"[MemoryFlush] Wrote daily memory to {daily_file.name} (reason={reason}, chars={len(summary)})")
+            self.last_flush_timestamp = datetime.now()
+            return True
+        except Exception as e:
+            logger.warning(f"[MemoryFlush] Failed to write daily summary (reason={reason}): {e}")
+            return False
 
     @staticmethod
     def _clean_summary_output(raw: str) -> str:
