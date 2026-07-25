@@ -257,9 +257,9 @@ available_setting = {
     "mcp_oauth_redirect_base": "",  # Base URL for MCP OAuth callback (e.g. http://your-ip:9899); empty uses local web console
     "agent": True,  # whether to enable Agent mode
     "agent_workspace": "~/cow",  # agent workspace path, used to store skills, memory, etc.
-    "agent_max_context_tokens": 50000,  # max context tokens in Agent mode
-    "agent_max_context_turns": 20,  # max context memory turns in Agent mode
-    "agent_max_steps": 20,  # max decision steps per run in Agent mode
+    "agent_max_context_tokens": 64000,  # max context tokens in Agent mode
+    "agent_max_context_turns": 30,  # max context memory turns in Agent mode
+    "agent_max_steps": 30,  # max decision steps per run in Agent mode
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
     "reasoning_effort": "high",  # Reasoning depth under thinking mode: "high" or "max"
     "knowledge": True,  # whether to enable the knowledge base feature
