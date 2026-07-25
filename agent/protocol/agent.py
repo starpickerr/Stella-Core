@@ -176,7 +176,7 @@ class Agent:
             model_name = self.model.model.lower()
 
             # Claude models - 200K context
-            if 'claude-3' in model_name or 'claude-sonnet' in model_name:
+            if 'claude' in model_name:
                 return 200000
 
             # GPT-4 models
