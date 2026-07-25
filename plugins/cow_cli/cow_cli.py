@@ -36,7 +36,7 @@ KNOWN_COMMANDS = {
     "start", "stop", "restart",
     "cancel",
     "skill", "context", "config", "tasks",
-    "knowledge", "memory",
+    "knowledge", "memory", "compact", "clear",
     "install-browser",
 }
 
@@ -55,7 +55,8 @@ CHAT_ONLY_COMMANDS = set()  # context is allowed in both, but behaves differentl
 # Users may override / extend these via config.json "command_aliases".
 DEFAULT_ALIASES = {
     "c":   "cancel",
-    "cc":  "context clear",
+    "cc":  "clear",
+    "cp":  "compact",
     "ctx": "context",
     "h":   "help",
     "s":   "status",
@@ -356,7 +357,8 @@ class CowCliPlugin(Plugin):
                 "/cancel: Abort the running Agent task",
                 "/logs [N]: Show the last N log lines (default 20)",
                 "/context: Show current conversation context",
-                "/context clear: Clear current conversation context",
+                "/clear: Clear current conversation context",
+                "/compact: Summarize older turns to free up context",
                 "/tasks: List scheduled tasks for this chat",
                 "/skill list: List installed skills",
                 "/skill list --remote: Browse Skill Hub",
@@ -385,7 +387,8 @@ class CowCliPlugin(Plugin):
                 "/cancel: 中止当前正在运行的 Agent 任务",
                 "/logs [N]: 查看最近N条日志 (默认20)",
                 "/context: 查看当前对话上下文信息",
-                "/context clear: 清除当前对话上下文",
+                "/clear: 清除当前对话上下文",
+                "/compact: 总结较早的对话以释放上下文",
                 "/tasks: 查看当前会话的定时任务",
                 "/skill list: 查看已安装的技能",
                 "/skill list --remote: 浏览技能广场",
@@ -619,9 +622,16 @@ class CowCliPlugin(Plugin):
 
         sub = args.strip().lower()
         if sub == "clear":
+            # Kept for backward compatibility; /clear is the preferred form.
             return self._context_clear(agent, session_id)
         else:
             return self._context_info(agent, session_id)
+
+    def _cmd_clear(self, args: str, e_context: EventContext, session_id: str = "", **_) -> str:
+        """Clear the current conversation context (alias of /context clear)."""
+        session_id = self._get_session_id(e_context, fallback=session_id)
+        agent = self._get_agent(session_id)
+        return self._context_clear(agent, session_id)
 
     def _context_info(self, agent, session_id: str) -> str:
         if not agent:
@@ -650,7 +660,7 @@ class CowCliPlugin(Plugin):
                 f"  Tool calls: {tool_msgs}",
                 f"  Total content length: ~{total_chars} chars",
                 "",
-                "  Send /context clear to clear the conversation context",
+                "  Send /clear to clear the conversation context",
             ]
         else:
             lines = [
@@ -663,9 +673,36 @@ class CowCliPlugin(Plugin):
                 f"  工具调用: {tool_msgs}",
                 f"  内容总长度: ~{total_chars} 字符",
                 "",
-                "  发送 /context clear 可清除对话上下文",
+                "  发送 /clear 可清除对话上下文",
             ]
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # compact — summarize older turns and free up context on demand.
+    # ------------------------------------------------------------------
+
+    def _cmd_compact(self, args: str, e_context: EventContext, session_id: str = "", **_) -> str:
+        session_id = self._get_session_id(e_context, fallback=session_id)
+        agent = self._get_agent(session_id)
+        if not agent:
+            return _t("⚠️ Agent 未初始化，暂无上下文可压缩", "⚠️ Agent not initialized, no context to compact")
+
+        if not hasattr(agent, "compact_context"):
+            return _t("⚠️ 当前 Agent 不支持手动压缩", "⚠️ This Agent does not support manual compaction")
+
+        result = agent.compact_context()
+        if not result.get("ok"):
+            return _t("💬 当前上下文较短，无需压缩", "💬 Context is already short, nothing to compact")
+
+        turns = result.get("compacted_turns", 0)
+        before = result.get("before", 0)
+        after = result.get("after", 0)
+        return _t(
+            f"🗜️ 已压缩上下文\n\n  压缩轮次: {turns}\n  消息数: {before} → {after}\n\n"
+            f"较早的对话已总结保留，最近的对话保持不变。",
+            f"🗜️ Context compacted\n\n  Turns summarized: {turns}\n  Messages: {before} → {after}\n\n"
+            f"Older conversation was summarized; recent turns are kept as-is.",
+        )
 
     def _context_clear(self, agent, session_id: str) -> str:
         if not agent:
