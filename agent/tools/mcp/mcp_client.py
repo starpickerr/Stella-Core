@@ -21,6 +21,21 @@ from common.log import logger
 _STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
 
 
+# System env vars a stdio MCP subprocess legitimately needs to run
+# (node/python/npx toolchains). Everything else is dropped by default so
+# API keys living in the agent's own environment don't leak into servers.
+_STDIO_ENV_PASSTHROUGH = (
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE",
+    "TERM", "TZ", "TMPDIR", "NODE_PATH", "NVM_DIR", "PYTHONPATH", "PYTHONHOME",
+    # Windows essentials
+    "SYSTEMROOT", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "APPDATA",
+    "LOCALAPPDATA", "USERPROFILE", "PROGRAMFILES", "PROGRAMFILES(X86)",
+    "PROGRAMDATA", "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH",
+)
+# Sensitive name patterns never forwarded, even under inherit_full_env.
+_STDIO_ENV_SENSITIVE = ("_KEY", "_SECRET", "_TOKEN", "_PASSWORD", "_PASSWD", "_CREDENTIAL")
+
+
 # Optional callback invoked after an OAuth authorization completes, so the
 # tool manager can bring the newly-authorized server online. Signature:
 # reload_fn(server_name: str) -> None. Installed by the tool manager.
@@ -212,9 +227,11 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] stdio config missing 'command'")
             return False
 
+        if not self._command_allowed(command):
+            return False
+
         args = self.config.get("args", [])
-        extra_env = self.config.get("env", None)
-        env = {**os.environ, **extra_env} if extra_env else None
+        env = self._build_stdio_env(self.config.get("env", None))
 
         self._proc = subprocess.Popen(
             [command] + list(args),
@@ -235,6 +252,68 @@ class McpClient:
         ).start()
 
         return self._handshake()
+
+    def _command_allowed(self, command: str) -> bool:
+        """Check the executable against an optional command allowlist.
+
+        Disabled by default (empty allowlist = allow everything) to keep
+        existing mcp.json configs working. Set config.json's
+        ``mcp_stdio_command_allowlist`` (e.g. ["npx", "node", "python", "uvx"])
+        to restrict which executables MCP stdio servers may launch.
+        """
+        try:
+            from config import conf
+            allowlist = conf().get("mcp_stdio_command_allowlist") or []
+        except Exception:
+            allowlist = []
+        if not allowlist:
+            return True
+        base = os.path.basename(str(command)).lower()
+        if base.endswith(".exe"):
+            base = base[:-4]
+        if base in {str(c).lower() for c in allowlist}:
+            return True
+        logger.warning(
+            f"[MCP:{self.name}] command '{command}' not in "
+            f"mcp_stdio_command_allowlist, refusing to start"
+        )
+        return False
+
+    def _build_stdio_env(self, extra_env) -> dict:
+        """Build the environment for a stdio MCP subprocess.
+
+        By default only safe system vars plus the user's explicit ``env``
+        block are passed through, so API keys in the agent's own environment
+        are not leaked to the subprocess. Set the per-server config
+        ``inherit_full_env: true`` to restore full inheritance (obviously
+        sensitive names are still stripped).
+        """
+        extra_env = extra_env or {}
+        if self.config.get("inherit_full_env"):
+            env = {
+                k: v for k, v in os.environ.items()
+                if not any(p in k.upper() for p in _STDIO_ENV_SENSITIVE)
+            }
+        else:
+            env = {k: os.environ[k] for k in _STDIO_ENV_PASSTHROUGH if k in os.environ}
+        # User-declared env is explicit authorization, always applied last.
+        env.update({str(k): str(v) for k, v in extra_env.items()})
+        return env
+
+    def _url_allowed(self, url: str) -> bool:
+        """SSRF guard for remote (SSE / streamable-http) MCP endpoints.
+
+        Delegates to the shared ``validate_url_safe`` helper, which is a no-op
+        unless ``web_security_ssrf_protection`` is enabled, so local/LAN MCP
+        servers keep working by default.
+        """
+        try:
+            from agent.tools.utils.url_safety import validate_url_safe
+            validate_url_safe(url)
+            return True
+        except ValueError as e:
+            logger.warning(f"[MCP:{self.name}] url blocked: {e}")
+            return False
 
     def _drain_stderr(self):
         for line in self._proc.stderr:
@@ -311,6 +390,9 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] SSE config missing 'url'")
             return False
 
+        if not self._url_allowed(url):
+            return False
+
         self._sse_url = url
 
         # Read the first SSE event to discover the POST endpoint
@@ -328,6 +410,7 @@ class McpClient:
             self._sse_url,
             headers={"Accept": "text/event-stream"},
         )
+        endpoint = None
         with urllib.request.urlopen(req, timeout=10) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8").rstrip("\n\r")
@@ -336,14 +419,22 @@ class McpClient:
                     # Some servers send JSON with a "uri" or plain path
                     if data.startswith("{"):
                         parsed = json.loads(data)
-                        return parsed.get("uri") or parsed.get("url") or parsed.get("endpoint")
-                    # Plain relative or absolute URL
-                    if data.startswith("http"):
-                        return data
-                    # Relative path: resolve against SSE base
-                    from urllib.parse import urljoin
-                    return urljoin(self._sse_url, data)
-        raise ValueError(f"[MCP:{self.name}] No endpoint event received from SSE stream")
+                        endpoint = parsed.get("uri") or parsed.get("url") or parsed.get("endpoint")
+                    elif data.startswith("http"):
+                        # Plain absolute URL
+                        endpoint = data
+                    else:
+                        # Relative path: resolve against SSE base
+                        from urllib.parse import urljoin
+                        endpoint = urljoin(self._sse_url, data)
+                    break
+        if not endpoint:
+            raise ValueError(f"[MCP:{self.name}] No endpoint event received from SSE stream")
+        # Re-validate the server-supplied POST endpoint to block redirects
+        # into internal addresses (SSRF guard; no-op when protection is off).
+        from agent.tools.utils.url_safety import validate_url_safe
+        validate_url_safe(endpoint)
+        return endpoint
 
     def _sse_send(self, message: dict) -> dict:
         """POST a JSON-RPC message to the server and return the response."""
@@ -366,6 +457,9 @@ class McpClient:
         url = self.config.get("url")
         if not url:
             logger.warning(f"[MCP:{self.name}] streamable-http config missing 'url'")
+            return False
+
+        if not self._url_allowed(url):
             return False
 
         self._http_url = url
