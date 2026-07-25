@@ -1157,6 +1157,7 @@ class WebChannel(ChatChannel):
             '/api/scheduler', 'SchedulerHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
+            '/api/prompt/optimize', 'PromptOptimizeHandler',
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
             '/api/sessions/(.*)', 'SessionDetailHandler',
             '/api/history', 'HistoryHandler',
@@ -4259,6 +4260,32 @@ class SessionTitleHandler:
             return json.dumps({"status": "success", "title": title}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Title generation error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class PromptOptimizeHandler:
+    """Optimize a colloquial user prompt into a structured AI-ready instruction."""
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            user_input = (body.get("input") or "").strip()
+            if not user_input:
+                return json.dumps({"status": "error", "message": "input required"})
+
+            context_messages = body.get("context_messages", None)
+
+            from agent.chat.session_service import optimize_prompt
+            optimized = optimize_prompt(user_input, context_messages)
+
+            return json.dumps(
+                {"status": "success", "optimized": optimized},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Prompt optimization error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
