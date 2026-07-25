@@ -11,7 +11,6 @@
 @Date 2023/11/19
 """
 
-import importlib.util
 import json
 import logging
 import os
@@ -50,17 +49,24 @@ logging.getLogger("Lark").setLevel(logging.WARNING)
 
 URL_VERIFICATION = "url_verification"
 
-# Lazy-check for lark_oapi SDK availability without importing it at module level.
-# The full `import lark_oapi` pulls in 10k+ files and takes 4-10s, so we defer
-# the actual import to _startup_websocket() where it is needed.
-LARK_SDK_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+# Lazy import of the lark_oapi SDK. The full `import lark_oapi` pulls in 10k+
+# files and takes 4-10s, so we defer the actual import to where it is needed.
+# In desktop mode the SDK is not bundled; the first import triggers an on-demand
+# pip install into a writable per-user dir (see channel/feishu/lark_install.py).
+from channel.feishu import lark_install
+
 lark = None  # will be populated on first use via _ensure_lark_imported()
 
 
 def _ensure_lark_imported():
-    """Import lark_oapi on first use (takes 4-10s due to 10k+ source files)."""
+    """Import lark_oapi on first use (takes 4-10s due to 10k+ source files).
+
+    In desktop mode, if the SDK is missing this triggers an on-demand install
+    (requires network the first time) instead of failing outright.
+    """
     global lark
     if lark is None:
+        lark_install.ensure(allow_install=True)
         import lark_oapi as _lark
         lark = _lark
     return lark
@@ -159,14 +165,6 @@ def _register_via_qr_in_terminal() -> bool:
     Returns True if credentials were obtained AND persisted; False otherwise.
     The caller should fall back to the original "missing credentials" error in that case.
     """
-    if not LARK_SDK_AVAILABLE:
-        logger.error(
-            "[FeiShu] 缺少 feishu_app_id / feishu_app_secret。"
-            "未安装 lark-oapi SDK，无法在终端发起扫码创建。"
-            "请执行 pip install -U 'lark-oapi>=1.5.5' 后重试，或手动在 config.json 中填入凭据。"
-        )
-        return False
-
     try:
         lark_mod = _ensure_lark_imported()
     except Exception as e:
@@ -264,9 +262,12 @@ class FeiShuChanel(ChatChannel):
         conf()["single_chat_prefix"] = [""]
 
         # 验证配置
-        if self.feishu_event_mode == 'websocket' and not LARK_SDK_AVAILABLE:
-            logger.error("[FeiShu] websocket mode requires lark_oapi. Please install: pip install lark-oapi")
-            raise Exception("lark_oapi not installed")
+        if self.feishu_event_mode == 'websocket':
+            try:
+                _ensure_lark_imported()
+            except ImportError as e:
+                logger.error(f"[FeiShu] websocket mode requires lark_oapi: {e}")
+                raise Exception("lark_oapi not installed / could not be installed")
 
     def startup(self):
         self.feishu_app_id = conf().get('feishu_app_id')
