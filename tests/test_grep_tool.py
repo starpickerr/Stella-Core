@@ -4,13 +4,43 @@ import time
 import pytest
 
 from common.utils import expand_path
-from agent.tools.search_files.search_files import SearchFiles, REGEX_MATCH_TIMEOUT_SECONDS
+from agent.tools.grep.grep import Grep, REGEX_MATCH_TIMEOUT_SECONDS
 
 
 def _make_tool(tmp_path, **config_overrides):
+    # Default tool used by most tests. Forced onto the pure-Python backend so
+    # the python-layer safety guarantees (ReDoS timeout, oversized-file skip,
+    # CRLF handling, credential pruning mid-walk) are what actually gets
+    # exercised — those live only in the python backend. Cross-backend
+    # behavior parity is covered separately by the `backend` fixture below.
     config = {"cwd": str(tmp_path)}
     config.update(config_overrides)
-    return SearchFiles(config)
+    tool = Grep(config)
+    tool._pick_backend = lambda: tool._backend_python
+    return tool
+
+
+def _available_backends():
+    """Backend method names available on THIS machine (python always is)."""
+    import shutil
+    names = ["_backend_python"]
+    if shutil.which("rg"):
+        names.append("_backend_rg")
+    if shutil.which("grep"):
+        names.append("_backend_grep")
+    return names
+
+
+@pytest.fixture(params=_available_backends())
+def backend_tool(request, tmp_path):
+    """A tool pinned to one specific backend, parametrized over every backend
+    installed on this machine, so behavior-contract tests assert cross-backend
+    parity rather than only exercising whichever binary happens to be present."""
+    tool = Grep({"cwd": str(tmp_path)})
+    name = request.param
+    tool._pick_backend = lambda: getattr(tool, name)
+    tool._backend_name = name
+    return tool
 
 
 def _write(tmp_path, relpath, content):
@@ -27,35 +57,35 @@ def _matches(result):
 def test_appears_with_a_summary_in_the_system_prompt_tooling_section():
     # Every sibling file tool (read/write/edit/ls) has a one-line summary in
     # the "Tooling" section of the system prompt the model actually reads;
-    # an entry with no summary ("- search_files" and nothing after it) would
+    # an entry with no summary ("- grep" and nothing after it) would
     # be inconsistent with every other tool and silently degrade tool
     # selection quality. Only checks the integration point, not the
     # function's broader behavior (no prior test coverage of builder.py
     # exists to extend here).
     from agent.prompt.builder import _build_tooling_section
 
-    fake_tool = type("FakeTool", (), {"name": "search_files"})()
+    fake_tool = type("FakeTool", (), {"name": "grep"})()
     for language in ("en", "zh"):
         lines = _build_tooling_section([fake_tool], language)
-        tooling_line = next(l for l in lines if l.startswith("- search_files"))
-        assert tooling_line != "- search_files", f"missing summary for language={language}"
+        tooling_line = next(l for l in lines if l.startswith("- grep"))
+        assert tooling_line != "- grep", f"missing summary for language={language}"
 
 
 def test_configured_timeout_survives_the_real_tool_manager_wiring(tmp_path, monkeypatch):
     # Calls the real AgentInitializer._load_tools() — it only touches
-    # self.agent_bridge inside the env_config special case, which search_files
+    # self.agent_bridge inside the env_config special case, which grep
     # doesn't hit, so bridge=None/agent_bridge=None is enough to exercise the
     # actual merge logic instead of hand-copying it here.
     from config import conf
     from bridge.agent_initializer import AgentInitializer
 
-    monkeypatch.setitem(conf(), "tools", {"search_files": {"timeout": 5}})
+    monkeypatch.setitem(conf(), "tools", {"grep": {"timeout": 5}})
 
     initializer = AgentInitializer(bridge=None, agent_bridge=None)
     tools = initializer._load_tools(
         workspace_root=str(tmp_path), memory_manager=None, memory_tools=[], session_id="test-session"
     )
-    tool = next(t for t in tools if t.name == "search_files")
+    tool = next(t for t in tools if t.name == "grep")
     assert tool.timeout == 5
 
 
@@ -82,12 +112,16 @@ def test_nonexistent_path_returns_error(tmp_path):
     assert "not found" in str(result.result).lower()
 
 
-def test_path_must_be_a_directory(tmp_path):
-    _write(tmp_path, "file.txt", "hello")
+def test_path_may_target_a_single_file(tmp_path):
+    # Unlike the original directory-only tool, a file path is now accepted and
+    # scopes the search to that one file (matches rg/grep, which happily take a
+    # file argument). This is an intentional capability gain, not a regression.
+    _write(tmp_path, "file.txt", "hello world\nno match here\n")
     tool = _make_tool(tmp_path)
     result = tool.execute({"pattern": "hello", "path": "file.txt"})
-    assert result.status == "error"
-    assert "directory" in str(result.result).lower()
+    assert result.status == "success"
+    assert [m["file"] for m in _matches(result)] == ["file.txt"]
+    assert _matches(result)[0]["line"] == 1
 
 
 def test_invalid_max_results_returns_error(tmp_path):
@@ -129,7 +163,7 @@ def test_file_glob_must_be_a_string(tmp_path):
 # --- security & limits ---------------------------------------------------
 
 def test_max_results_above_hard_cap_is_capped_not_rejected(tmp_path, monkeypatch):
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
     monkeypatch.setattr(sf_module, "MAX_RESULTS_CAP", 3)
 
     for i in range(5):
@@ -167,7 +201,7 @@ def test_credential_directory_is_pruned_mid_walk(tmp_path, monkeypatch):
     # still prune it during traversal rather than walking into it. Points
     # expand_path("~/.cow") at a fake dir under tmp_path so this exercises
     # the real _is_credential_path logic without touching the real home dir.
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
     fake_cow = tmp_path / ".cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=leaked\n", encoding="utf-8")
@@ -199,7 +233,7 @@ def test_symlink_to_credential_file_is_skipped_not_opened(tmp_path, monkeypatch)
     # skip (matches == [] for that file, overall status stays "success"),
     # not an error that aborts the whole search — a broad search shouldn't
     # blow up just because it incidentally crosses one bad symlink.
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
@@ -225,7 +259,7 @@ def test_symlinked_directory_pointing_at_credential_dir_is_pruned(tmp_path, monk
     # test: it confirms the dirnames-pruning branch in _search() does what
     # its comment claims, rather than relying solely on an os.walk default
     # this code doesn't control.
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
@@ -287,7 +321,7 @@ def test_deadline_is_also_checked_inside_a_single_large_file(tmp_path, monkeypat
     # See _search_single_file's docstring for why this check exists. Fakes
     # time.monotonic() to advance deterministically instead of sleeping, so
     # this stays fast and doesn't depend on machine speed.
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
 
     _write(tmp_path, "big.txt", "\n".join(f"line {i}" for i in range(20)) + "\n")
     tool = _make_tool(tmp_path, timeout=1)
@@ -396,7 +430,7 @@ def test_oversized_file_is_skipped_silently_with_no_count_exposed(tmp_path, monk
     # the result. Not a bug — just locking in what the description already
     # promises ("automatic ... oversized-file skipping") so a future change
     # to add visibility here is a deliberate decision, not a silent regression.
-    import agent.tools.search_files.search_files as sf_module
+    import agent.tools.grep.grep as sf_module
     monkeypatch.setattr(sf_module, "MAX_FILE_BYTES", 10)
 
     _write(tmp_path, "huge.txt", "TARGET " * 20)
@@ -489,7 +523,7 @@ def test_absolute_path_outside_workspace_is_honored(tmp_path, tmp_path_factory):
     # to point outside the configured workspace `cwd`. Uses tmp_path_factory
     # (not tmp_path.parent, which is a shared base dir other tests may also
     # touch) so this stays isolated under parallel test execution.
-    outside = tmp_path_factory.mktemp("search_files_outside")
+    outside = tmp_path_factory.mktemp("grep_outside")
     (outside / "f.txt").write_text("TARGET\n", encoding="utf-8")
 
     tool = _make_tool(tmp_path / "unrelated_workspace")
@@ -497,3 +531,50 @@ def test_absolute_path_outside_workspace_is_honored(tmp_path, tmp_path_factory):
     result = tool.execute({"pattern": "TARGET", "path": str(outside)})
     assert result.status == "success"
     assert _matches(result)[0]["file"] == "f.txt"
+
+
+# --- cross-backend parity ----------------------------------------------
+# The whole point of the 4-tier backend design is that swapping backends must
+# not swap results. These run the same fixture against EVERY backend installed
+# on the machine (rg/grep/python) via the `backend_tool` fixture and assert
+# identical output — the guard that caught the grep -c ":0" divergence.
+
+def _fixture_tree(tmp_path):
+    _write(tmp_path, "a.py", "def handle():\n    MATCH = 1\n    return MATCH\n")
+    _write(tmp_path, "sub/b.py", "# MATCH in a comment\nMATCH = 2\n")
+    _write(tmp_path, "sub/c.txt", "MATCH here too\n")
+    _write(tmp_path, "node_modules/pkg/index.js", "MATCH should be skipped\n")
+    _write(tmp_path, "中文.py", "变量 MATCH 出现\n归属感 MATCH\n")
+
+
+def test_backend_parity_files_mode(backend_tool, tmp_path):
+    _fixture_tree(tmp_path)
+    result = backend_tool.execute({"pattern": "MATCH", "output_mode": "files"})
+    assert result.status == "success"
+    files = set(result.result["files"])
+    # node_modules excluded on every backend; all other files present.
+    assert files == {"a.py", "sub/b.py", "sub/c.txt", "中文.py"}
+
+
+def test_backend_parity_count_mode(backend_tool, tmp_path):
+    _fixture_tree(tmp_path)
+    result = backend_tool.execute({"pattern": "MATCH", "output_mode": "count"})
+    assert result.status == "success"
+    counts = {c["file"]: c["count"] for c in result.result["counts"]}
+    # No :0 rows, no node_modules; counts identical across backends.
+    assert counts == {"a.py": 2, "sub/b.py": 2, "sub/c.txt": 1, "中文.py": 2}
+
+
+def test_backend_parity_content_mode_alternation(backend_tool, tmp_path):
+    _fixture_tree(tmp_path)
+    result = backend_tool.execute({"pattern": "归属感|变量", "output_mode": "content"})
+    assert result.status == "success"
+    hits = {(m["file"], m["line"]) for m in result.result["matches"]}
+    assert hits == {("中文.py", 1), ("中文.py", 2)}
+
+
+def test_backend_parity_glob_filter(backend_tool, tmp_path):
+    _fixture_tree(tmp_path)
+    result = backend_tool.execute({"pattern": "MATCH", "file_glob": "*.py", "output_mode": "files"})
+    assert result.status == "success"
+    assert set(result.result["files"]) == {"a.py", "sub/b.py", "中文.py"}
