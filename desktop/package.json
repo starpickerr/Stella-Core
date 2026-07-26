@@ -67,14 +67,6 @@
           "app-config.json",
           "themes/**"
         ]
-      },
-      {
-        "from": "resources/bin",
-        "to": "bin",
-        "filter": [
-          "rg",
-          "rg.exe"
-        ]
       }
     ],
     "mac": {

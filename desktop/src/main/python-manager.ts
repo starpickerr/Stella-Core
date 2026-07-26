@@ -61,10 +61,11 @@ export class PythonBackend extends EventEmitter {
     const parts: string[] = existing ? existing.split(sep) : []
 
     // Prepend the bundled ripgrep dir (if shipped) so the grep tool's
-    // shutil.which("rg") finds our copy and uses the fast rg backend on every
-    // platform, instead of falling back to PowerShell/pure-Python on machines
-    // without a system rg. backendPath is <resources>/backend, so rg lives one
-    // level up at <resources>/bin. First entry wins after de-dup below.
+    // shutil.which("rg") finds our copy and uses the fast rg backend instead of
+    // the slow PowerShell fallback. Only Windows ships rg today (macOS relies on
+    // its system grep); the existsSync guard keeps this a no-op everywhere else.
+    // backendPath is <resources>/backend, so rg lives one level up at
+    // <resources>/bin. First entry wins after de-dup below.
     const rgDir = path.join(path.dirname(this.backendPath), 'bin')
     const rgExe = process.platform === 'win32' ? 'rg.exe' : 'rg'
     if (fs.existsSync(path.join(rgDir, rgExe))) {
