@@ -249,6 +249,10 @@ const I18N = {
         mic_permission_denied: '无法访问麦克风，请检查浏览器权限',
         mic_too_short: '录音太短，请重试',
         mic_error: '语音识别失败',
+        optimize_idle_title: '智能优化输入',
+        optimize_busy_title: '优化中…',
+        optimize_error: '指令优化失败',
+        optimize_empty: '输入为空，无法优化',
         speak_msg: '朗读这段回复',
         voice_reply_mode_label: '语音回复策略',
         voice_reply_off: '关闭',
@@ -758,6 +762,10 @@ const I18N = {
         mic_permission_denied: 'Cannot access microphone — check browser permissions',
         mic_too_short: 'Recording too short, please retry',
         mic_error: 'Speech recognition failed',
+        optimize_idle_title: 'Optimize prompt',
+        optimize_busy_title: 'Optimizing…',
+        optimize_error: 'Prompt optimization failed',
+        optimize_empty: 'Input is empty, nothing to optimize',
         speak_msg: 'Read this reply aloud',
         voice_reply_mode_label: 'Voice reply policy',
         voice_reply_off: 'Off',
@@ -1455,25 +1463,32 @@ if (!supportsDirectoryUpload && attachFolderOption) {
     let chunks = [];
     let recording = false;
 
+    // Use the custom CSS tooltip (data-tooltip) instead of the native title:
+    // native title has a ~1.5s hover delay and is not i18n-aware.
+    const setTip = (text) => {
+        micBtn.setAttribute('data-tooltip', text);
+        micBtn.removeAttribute('title');
+    };
+
     const setIdle = () => {
         recording = false;
         micBtn.classList.remove('text-red-500', 'animate-pulse');
         micBtn.classList.add('text-slate-400');
         micBtn.querySelector('i').className = 'fas fa-microphone text-sm';
-        micBtn.title = t('mic_idle_title');
+        setTip(t('mic_idle_title'));
     };
     const setRecording = () => {
         recording = true;
         micBtn.classList.remove('text-slate-400');
         micBtn.classList.add('text-red-500', 'animate-pulse');
         micBtn.querySelector('i').className = 'fas fa-stop text-sm';
-        micBtn.title = t('mic_recording_title');
+        setTip(t('mic_recording_title'));
     };
     const setBusy = () => {
         micBtn.classList.remove('text-red-500', 'animate-pulse', 'text-slate-400');
         micBtn.classList.add('text-primary-500');
         micBtn.querySelector('i').className = 'fas fa-spinner fa-spin text-sm';
-        micBtn.title = t('mic_busy_title');
+        setTip(t('mic_busy_title'));
     };
 
     const pickMimeType = () => {
@@ -1624,6 +1639,110 @@ if (!supportsDirectoryUpload && attachFolderOption) {
 
     setIdle();
 })();
+
+// ---------------- Optimize button: prompt optimization via AI ----------------
+(function setupOptimizeButton() {
+    const optBtn = document.getElementById('optimize-btn');
+    if (!optBtn) return;
+
+    let busy = false;
+
+    // Use the custom CSS tooltip (data-tooltip) instead of the native title:
+    // native title has a ~1.5s hover delay and is not i18n-aware.
+    const setTip = (text) => {
+        optBtn.setAttribute('data-tooltip', text);
+        optBtn.removeAttribute('title');
+    };
+
+    const setIdle = () => {
+        busy = false;
+        optBtn.classList.remove('text-primary-500', 'animate-spin');
+        optBtn.classList.add('text-slate-400');
+        optBtn.querySelector('i').className = 'fas fa-magic text-[13px]';
+        setTip(t('optimize_idle_title'));
+        optBtn.style.pointerEvents = '';
+    };
+    const setBusy = () => {
+        busy = true;
+        optBtn.classList.remove('text-slate-400');
+        optBtn.classList.add('text-primary-500');
+        optBtn.querySelector('i').className = 'fas fa-spinner fa-spin text-[13px]';
+        setTip(t('optimize_busy_title'));
+        optBtn.style.pointerEvents = 'none';
+    };
+
+    // Shared flashError from mic setup — reuse its style by injecting into the same wrapper
+    const flashError = (msg) => {
+        console.warn('[optimize]', msg);
+        const wrapper = optBtn.parentElement;
+        if (!wrapper) return;
+        let tip = wrapper.querySelector('.opt-tip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.className = 'opt-tip absolute right-9 bottom-full mb-2 px-2 py-1 rounded-md '
+                + 'text-xs text-white bg-slate-800/90 dark:bg-slate-700/90 shadow-md '
+                + 'pointer-events-none whitespace-nowrap z-10';
+            wrapper.appendChild(tip);
+        }
+        tip.textContent = msg;
+        tip.style.opacity = '1';
+        tip.style.transition = '';
+        clearTimeout(tip._timer);
+        tip._timer = setTimeout(() => {
+            tip.style.transition = 'opacity 200ms';
+            tip.style.opacity = '0';
+        }, 2500);
+    };
+
+    optBtn.addEventListener('click', async () => {
+        if (busy) return;
+        const raw = chatInput.value.trim();
+        if (!raw) {
+            flashError(t('optimize_empty'));
+            return;
+        }
+        setBusy();
+        try {
+            // Gather optional context: last few message groups visible in the chat.
+            // User and bot messages are distinguished by their group class.
+            const contextMessages = [];
+            const groups = messagesDiv.querySelectorAll('.user-message-group, .bot-message-group');
+            const recentGroups = Array.from(groups).slice(-6);
+            for (const g of recentGroups) {
+                const role = g.classList.contains('user-message-group') ? 'user' : 'assistant';
+                // Only read the main message content, not action buttons or timestamps.
+                const contentEl = g.querySelector('.msg-content');
+                const text = ((contentEl || g).textContent || '').trim().slice(0, 200);
+                if (text) {
+                    contextMessages.push({ role: role, content: text });
+                }
+            }
+
+            const resp = await fetch('/api/prompt/optimize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ input: raw, context_messages: contextMessages }),
+            });
+            const data = await resp.json();
+            if (data.status === 'success' && data.optimized) {
+                chatInput.value = data.optimized;
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                chatInput.focus();
+                // Place cursor at end
+                chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+            } else {
+                flashError(data.message || t('optimize_error'));
+            }
+        } catch (e) {
+            flashError(t('optimize_error') + ': ' + e.message);
+        } finally {
+            setIdle();
+        }
+    });
+
+    setIdle();
+})();
+
 
 // Smart auto-scroll: pause when user scrolls up, resume when near bottom
 let _autoScrollEnabled = true;
@@ -4100,6 +4219,11 @@ function _applyInputTooltips() {
     set('clear-context-btn', 'tip_clear_context');
     set('attach-btn', 'tip_attach');
     set('session-toggle-btn', 'session_history', 'bottom');
+    // Optimize / mic buttons carry state-dependent tooltips managed in their
+    // own setup, but on language switch we reset them to the idle label so the
+    // tooltip follows the current locale.
+    set('optimize-btn', 'optimize_idle_title');
+    set('mic-btn', 'mic_idle_title');
 }
 
 function _addOptimisticSessionItem(sid) {
