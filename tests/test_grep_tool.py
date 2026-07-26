@@ -21,13 +21,22 @@ def _make_tool(tmp_path, **config_overrides):
 
 
 def _available_backends():
-    """Backend method names available on THIS machine (python always is)."""
+    """Backend method names this platform would actually use (python always).
+
+    Mirrors Grep._pick_backend's platform gating so we only assert parity for
+    backends the tool can really pick here: grep is Unix-only in the tool (the
+    Windows grep from Git Bash mishandles UTF-8), and PowerShell is Windows-only.
+    """
     import shutil
+    import sys
+    is_win = sys.platform == "win32"
     names = ["_backend_python"]
     if shutil.which("rg"):
         names.append("_backend_rg")
-    if shutil.which("grep"):
+    if not is_win and shutil.which("grep"):
         names.append("_backend_grep")
+    if is_win and (shutil.which("powershell") or shutil.which("pwsh")):
+        names.append("_backend_powershell")
     return names
 
 

@@ -211,11 +211,15 @@ class Grep(BaseTool):
         return any(c == self._cow_dir or c.startswith(self._cow_dir + "/") for c in candidates)
 
     def _rel(self, file_path: str, root: str) -> str:
+        # Always emit forward slashes so paths are consistent across platforms
+        # (Windows os.path.relpath yields 'sub\\b.py') and safe to feed back
+        # into read/edit, which accept '/'.
         try:
             base = root if os.path.isdir(root) else os.path.dirname(root)
-            return os.path.relpath(file_path, base)
+            rel = os.path.relpath(file_path, base)
         except ValueError:
-            return file_path
+            rel = file_path
+        return rel.replace(os.sep, "/")
 
     # ------------------------------------------------------------- rg backend
     def _backend_rg(self, opts: "_SearchOptions") -> "_BackendResult":
@@ -267,19 +271,65 @@ class Grep(BaseTool):
     # ------------------------------------------------ powershell backend (win)
     def _backend_powershell(self, opts: "_SearchOptions") -> "_BackendResult":
         shell = shutil.which("powershell") or shutil.which("pwsh")
-        # Build a Select-String pipeline. -AllMatches keeps it line-oriented;
-        # .NET regex handles alternation/unicode that findstr cannot.
+        # Select-String has no per-mode output flags like grep's -l/-c, so it
+        # always emits `path:line:content`; files/count are aggregated from that
+        # in _parse_powershell (NOT the shared _parse_lines, whose files/count
+        # parsers assume grep-native shapes). Emit an explicit \t between path
+        # and line:content so a Windows drive-letter colon (C:\...) never gets
+        # mistaken for the field separator.
         ci = "-CaseSensitive" if not opts.ignore_case else ""
+        glob_filter = ""
+        if opts.file_glob and opts.file_glob != "*":
+            glob_filter = f"-Filter '{opts.file_glob}' "
         script = (
             f"$ErrorActionPreference='SilentlyContinue';"
-            f"Get-ChildItem -Path '{opts.root}' -Recurse -File "
+            f"Get-ChildItem -LiteralPath '{opts.root}' -Recurse -File {glob_filter}"
             f"| Where-Object {{ $_.FullName -notmatch '\\\\({'|'.join(_SKIP_DIR_NAMES)})\\\\' }} "
             f"| Select-String -Pattern @'\n{opts.pattern}\n'@ {ci} "
-            f"| ForEach-Object {{ \"$($_.Path):$($_.LineNumber):$($_.Line)\" }}"
+            f"| ForEach-Object {{ \"$($_.Path)`t$($_.LineNumber):$($_.Line)\" }}"
         )
         cmd = [shell, "-NoProfile", "-NonInteractive", "-Command", script]
-        rows, timed_out = self._run_external(cmd, opts)
-        return _BackendResult(rows, timed_out, False, True)
+        remaining = max(0.1, opts.deadline - time.monotonic())
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=remaining,
+            )
+        except subprocess.TimeoutExpired:
+            return _BackendResult([], True, False, True)
+        rows = self._parse_powershell((proc.stdout or "").splitlines(), opts)
+        return _BackendResult(rows, False, False, True)
+
+    def _parse_powershell(self, lines: List[str], opts: "_SearchOptions") -> List[dict]:
+        """Parse Select-String's `path\\tline:content` and aggregate into the
+        shape output_mode asks for. The tab guards against ':' inside a Windows
+        path (drive letter); line:content is split on the first ':' after it."""
+        content_rows: List[dict] = []
+        counts: Dict[str, int] = {}
+        for line in lines:
+            if not line or "\t" not in line:
+                continue
+            path_part, rest = line.split("\t", 1)
+            head, sep, body = rest.partition(":")
+            if not sep or not head.isdigit():
+                continue
+            rel = self._rel(path_part, opts.root)
+            counts[rel] = counts.get(rel, 0) + 1
+            truncated, _ = truncate_line(body)
+            content_rows.append({"file": rel, "line": int(head), "match": truncated})
+
+        if opts.output_mode == "files":
+            seen = []
+            for r in content_rows:
+                if r["file"] not in seen:
+                    seen.append(r["file"])
+            rows = [{"file": f} for f in sorted(seen)]
+        elif opts.output_mode == "count":
+            rows = [{"file": f, "count": c} for f, c in sorted(counts.items())]
+        else:
+            content_rows.sort(key=lambda r: (r["file"], r["line"]))
+            rows = content_rows
+        return rows[:opts.max_results]
 
     # ----------------------------------------------- external runner + parser
     def _run_external(self, cmd: List[str], opts: "_SearchOptions") -> Tuple[List[dict], bool]:
