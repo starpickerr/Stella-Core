@@ -27,7 +27,17 @@ import regex as re  # not stdlib re: .search() takes a real per-call timeout, st
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.truncate import truncate_line
+from common.log import logger
 from common.utils import expand_path
+
+# Short label per backend method, surfaced in a debug log so we can tell which
+# search engine actually ran when triaging platform-specific issues.
+_BACKEND_LABELS = {
+    "_backend_rg": "rg",
+    "_backend_grep": "grep",
+    "_backend_powershell": "powershell",
+    "_backend_python": "python",
+}
 
 DEFAULT_MAX_RESULTS = 50
 MAX_RESULTS_CAP = 500
@@ -166,16 +176,20 @@ class Grep(BaseTool):
         )
 
         backend = self._pick_backend()
+        used = _BACKEND_LABELS.get(backend.__name__, backend.__name__)
         try:
             outcome = backend(opts)
         except Exception as e:
             # Any backend failure falls through to python so the tool never
             # hard-fails just because an external binary misbehaved.
             if backend is not self._backend_python:
+                logger.warning(f"[Grep] backend '{used}' failed ({e}); falling back to python")
+                used = "python(fallback)"
                 outcome = self._backend_python(opts)
             else:
                 return ToolResult.fail(f"Error searching files: {e}")
 
+        logger.debug(f"[Grep] backend={used} mode={opts.output_mode} matches={len(outcome.rows)}")
         return self._format(outcome, opts)
 
     # ------------------------------------------------------------- backend pick

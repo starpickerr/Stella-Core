@@ -61,4 +61,8 @@ desktop/build/*
 # icons. Only the finished icons under desktop/resources/ should be committed.
 desktop/resources/.icon-work/
 
+# Bundled ripgrep binary: downloaded by CI (release workflow) at build time,
+# never committed — it's a multi-MB platform-specific executable.
+desktop/resources/bin/
+
 .wrangler/
