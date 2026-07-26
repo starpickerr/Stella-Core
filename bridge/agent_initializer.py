@@ -371,7 +371,7 @@ class AgentInitializer:
                     # config.json's `tools.<name>` section) instead of replacing
                     # it, otherwise per-tool user configs (e.g. browser.cdp_endpoint)
                     # would be silently dropped.
-                    if tool_name in ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls', 'web_fetch', 'send', 'browser', 'search_files']:
+                    if tool_name in ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls', 'web_fetch', 'send', 'browser']:
                         merged_config = dict(getattr(tool, 'config', None) or {})
                         merged_config.update(file_config)
                         tool.config = merged_config
@@ -380,7 +380,7 @@ class AgentInitializer:
                             # create_tool() builds the instance before tool_configs is
                             # merged in, so a config-derived .timeout is frozen at its
                             # __init__-time default; re-derive it here like cwd above,
-                            # for any tool that has one (not name-gated to search_files,
+                            # for any tool that has one (not name-gated to grep,
                             # so a future tool with a .timeout attribute isn't missed).
                             tool.timeout = merged_config.get("timeout", getattr(tool, 'timeout', None))
                         if 'memory_manager' in merged_config:
