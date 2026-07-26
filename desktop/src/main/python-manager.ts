@@ -60,6 +60,18 @@ export class PythonBackend extends EventEmitter {
     const existing = process.env.PATH || ''
     const parts: string[] = existing ? existing.split(sep) : []
 
+    // Prepend the bundled ripgrep dir (if shipped) so the grep tool's
+    // shutil.which("rg") finds our copy and uses the fast rg backend instead of
+    // the slow PowerShell fallback. Only Windows ships rg today (macOS relies on
+    // its system grep); the existsSync guard keeps this a no-op everywhere else.
+    // backendPath is <resources>/backend, so rg lives one level up at
+    // <resources>/bin. First entry wins after de-dup below.
+    const rgDir = path.join(path.dirname(this.backendPath), 'bin')
+    const rgExe = process.platform === 'win32' ? 'rg.exe' : 'rg'
+    if (fs.existsSync(path.join(rgDir, rgExe))) {
+      parts.unshift(rgDir)
+    }
+
     // Windows GUI apps already inherit the full system PATH; nothing to fix.
     if (process.platform !== 'win32') {
       // Ask the user's login shell for its PATH. `-ilc` runs an interactive
