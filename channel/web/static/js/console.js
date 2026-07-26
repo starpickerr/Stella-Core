@@ -1010,25 +1010,32 @@ if (!supportsDirectoryUpload && attachFolderOption) {
     let chunks = [];
     let recording = false;
 
+    // Use the custom CSS tooltip (data-tooltip) instead of the native title:
+    // native title has a ~1.5s hover delay and is not i18n-aware.
+    const setTip = (text) => {
+        micBtn.setAttribute('data-tooltip', text);
+        micBtn.removeAttribute('title');
+    };
+
     const setIdle = () => {
         recording = false;
         micBtn.classList.remove('text-red-500', 'animate-pulse');
         micBtn.classList.add('text-slate-400');
         micBtn.querySelector('i').className = 'fas fa-microphone text-sm';
-        micBtn.title = t('mic_idle_title');
+        setTip(t('mic_idle_title'));
     };
     const setRecording = () => {
         recording = true;
         micBtn.classList.remove('text-slate-400');
         micBtn.classList.add('text-red-500', 'animate-pulse');
         micBtn.querySelector('i').className = 'fas fa-stop text-sm';
-        micBtn.title = t('mic_recording_title');
+        setTip(t('mic_recording_title'));
     };
     const setBusy = () => {
         micBtn.classList.remove('text-red-500', 'animate-pulse', 'text-slate-400');
         micBtn.classList.add('text-primary-500');
         micBtn.querySelector('i').className = 'fas fa-spinner fa-spin text-sm';
-        micBtn.title = t('mic_busy_title');
+        setTip(t('mic_busy_title'));
     };
 
     const pickMimeType = () => {
@@ -1187,12 +1194,19 @@ if (!supportsDirectoryUpload && attachFolderOption) {
 
     let busy = false;
 
+    // Use the custom CSS tooltip (data-tooltip) instead of the native title:
+    // native title has a ~1.5s hover delay and is not i18n-aware.
+    const setTip = (text) => {
+        optBtn.setAttribute('data-tooltip', text);
+        optBtn.removeAttribute('title');
+    };
+
     const setIdle = () => {
         busy = false;
         optBtn.classList.remove('text-primary-500', 'animate-spin');
         optBtn.classList.add('text-slate-400');
         optBtn.querySelector('i').className = 'fas fa-magic text-[13px]';
-        optBtn.title = t('optimize_idle_title');
+        setTip(t('optimize_idle_title'));
         optBtn.style.pointerEvents = '';
     };
     const setBusy = () => {
@@ -1200,7 +1214,7 @@ if (!supportsDirectoryUpload && attachFolderOption) {
         optBtn.classList.remove('text-slate-400');
         optBtn.classList.add('text-primary-500');
         optBtn.querySelector('i').className = 'fas fa-spinner fa-spin text-[13px]';
-        optBtn.title = t('optimize_busy_title');
+        setTip(t('optimize_busy_title'));
         optBtn.style.pointerEvents = 'none';
     };
 
@@ -1236,15 +1250,16 @@ if (!supportsDirectoryUpload && attachFolderOption) {
         }
         setBusy();
         try {
-            // Gather optional context: last few messages visible in the chat
+            // Gather optional context: last few message groups visible in the chat.
+            // User and bot messages are distinguished by their group class.
             const contextMessages = [];
-            const bubbles = messagesDiv.querySelectorAll('.message-bubble');
-            // Take last 6 bubbles for context
-            const recentBubbles = Array.from(bubbles).slice(-6);
-            for (const b of recentBubbles) {
-                const roleEl = b.querySelector('[data-role]');
-                const role = roleEl ? roleEl.dataset.role : 'user';
-                const text = (b.textContent || '').trim().slice(0, 200);
+            const groups = messagesDiv.querySelectorAll('.user-message-group, .bot-message-group');
+            const recentGroups = Array.from(groups).slice(-6);
+            for (const g of recentGroups) {
+                const role = g.classList.contains('user-message-group') ? 'user' : 'assistant';
+                // Only read the main message content, not action buttons or timestamps.
+                const contentEl = g.querySelector('.msg-content');
+                const text = ((contentEl || g).textContent || '').trim().slice(0, 200);
                 if (text) {
                     contextMessages.push({ role: role, content: text });
                 }
@@ -1271,6 +1286,8 @@ if (!supportsDirectoryUpload && attachFolderOption) {
             setIdle();
         }
     });
+
+    setIdle();
 })();
 
 
@@ -3689,6 +3706,11 @@ function _applyInputTooltips() {
     set('clear-context-btn', 'tip_clear_context');
     set('attach-btn', 'tip_attach');
     set('session-toggle-btn', 'session_history', 'bottom');
+    // Optimize / mic buttons carry state-dependent tooltips managed in their
+    // own setup, but on language switch we reset them to the idle label so the
+    // tooltip follows the current locale.
+    set('optimize-btn', 'optimize_idle_title');
+    set('mic-btn', 'mic_idle_title');
 }
 
 function _addOptimisticSessionItem(sid) {

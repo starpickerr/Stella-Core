@@ -37,6 +37,6 @@
 
     "output_format": "只输出优化后的提示词文本本身，不要在前后添加任何解释、说明或对话。",
 
-    "input_wrapper": "<user_prompt>\n{user_prompt}\n</user_prompt>"
+    "input_wrapper": "<user_prompt>\n{user_prompt}\n</user_prompt>\n\n优化后的提示词："
   }
 }
