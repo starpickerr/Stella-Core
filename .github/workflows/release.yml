@@ -100,6 +100,26 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      # Bundle ripgrep on Windows so the grep tool has a fast backend out of the
+      # box instead of falling back to PowerShell (slow, and prone to encoding /
+      # path quirks). macOS is intentionally excluded: it always has a working
+      # system `grep` that the tool uses correctly, so bundling rg there would
+      # only add ~5MB for a marginal speed gain. Placed at resources/bin, wired
+      # into PATH by python-manager.
+      - name: Bundle ripgrep binary (Windows only)
+        if: matrix.platform == 'win'
+        shell: bash
+        env:
+          RG_VERSION: "15.2.0"
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/resources/bin
+          url="https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-pc-windows-msvc.zip"
+          curl -fL "$url" -o rg.zip
+          # -j flatten, -o overwrite; grab just the rg.exe from the archive.
+          unzip -j -o rg.zip '*/rg.exe' -d desktop/resources/bin
+          ls -l desktop/resources/bin
+
       - name: Write version into package.json
         working-directory: desktop
         shell: bash
