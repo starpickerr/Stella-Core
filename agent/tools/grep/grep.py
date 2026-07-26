@@ -282,6 +282,10 @@ class Grep(BaseTool):
         if opts.file_glob and opts.file_glob != "*":
             glob_filter = f"-Filter '{opts.file_glob}' "
         script = (
+            # Force UTF-8 on stdout so non-ASCII file names/content survive the
+            # trip to our subprocess reader (Windows PowerShell defaults to the
+            # system code page, e.g. cp936, which we'd misread as UTF-8 -> mojibake).
+            f"[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
             f"$ErrorActionPreference='SilentlyContinue';"
             f"Get-ChildItem -LiteralPath '{opts.root}' -Recurse -File {glob_filter}"
             f"| Where-Object {{ $_.FullName -notmatch '\\\\({'|'.join(_SKIP_DIR_NAMES)})\\\\' }} "
