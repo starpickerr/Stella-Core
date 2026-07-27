@@ -32,8 +32,9 @@ class Bash(BaseTool):
     # cmd.exe command line limit is ~8191 chars; rewrite python -c above this.
     _WIN_CMD_SAFE_LEN = 7000
     # A command that finishes early returns early, so a generous default costs
-    # nothing and spares the model a retry on every install or build. Anything
-    # genuinely longer belongs in the background.
+    # nothing and spares the model a retry on every install or build. MAX is
+    # the ceiling for waiting on a result; a long-lived process is a different
+    # thing and goes to run_in_background.
     DEFAULT_TIMEOUT = 120
     MAX_TIMEOUT = 600
 
@@ -42,8 +43,6 @@ class Bash(BaseTool):
 {'''
 PLATFORM: Windows (cmd.exe). Do NOT use Unix-only commands like head, tail, sed, awk. To search file contents or find files by name, use the search_files tool instead of this command.
 ''' if _IS_WIN else ''}
-BACKGROUND: For a server, watcher, or any job that outlives the timeout, pass run_in_background=true rather than writing `nohup ... &` yourself. You get a bash_id back; call bash(bash_id=...) to see what it has printed since your last look, and bash(bash_id=..., kill=true) to stop it. Background jobs keep running after the task ends unless you kill them.
-
 ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME directly.
 
 SAFETY:
@@ -63,7 +62,7 @@ SAFETY:
             },
             "run_in_background": {
                 "type": "boolean",
-                "description": "Start the command and return immediately with a bash_id instead of waiting. Use for servers, watchers, and anything longer than the timeout allows. Do not add '&' yourself."
+                "description": "Start the command and return immediately with a bash_id instead of waiting. For a process meant to keep running, such as a server or a watcher. A command that is merely slow should raise timeout instead, so you still get its output. No need to add '&' yourself. Background jobs keep running after the task ends unless you kill them."
             },
             "bash_id": {
                 "type": "string",
