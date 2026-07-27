@@ -1,5 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Plus, Paperclip, Square, X, File as FileIcon, Loader2, Trash2, AtSign } from 'lucide-react'
+import {
+  Plus,
+  Paperclip,
+  Square,
+  X,
+  File as FileIcon,
+  Loader2,
+  Trash2,
+  AtSign,
+  Folder
+} from 'lucide-react'
 import { t } from '../i18n'
 import type { Attachment, WorkspaceEntry } from '../types'
 import apiClient from '../api/client'
@@ -153,12 +163,20 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     setMentionIndex(0)
   }
 
-  /** Reference an existing workspace file in place instead of uploading a copy. */
+  /** Reference an existing workspace file or folder in place, not as an upload. */
   const addWorkspaceRef = (entry: WorkspaceEntry) => {
     setAttachments((prev) =>
       prev.some((a) => a.file_type === 'workspace_ref' && a.file_path === entry.path)
         ? prev
-        : [...prev, { file_path: entry.path, file_name: entry.name, file_type: 'workspace_ref' }]
+        : [
+            ...prev,
+            {
+              file_path: entry.path,
+              file_name: entry.name,
+              file_type: 'workspace_ref',
+              is_dir: entry.is_dir,
+            },
+          ]
     )
   }
 
@@ -450,7 +468,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                 ) : (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-inset border border-default rounded-lg text-xs text-content-secondary max-w-[180px] relative pr-7">
                     {att.file_type === 'workspace_ref' ? (
-                      <AtSign size={12} className="text-accent" />
+                      att.is_dir ? (
+                        <Folder size={12} className="text-accent" />
+                      ) : (
+                        <AtSign size={12} className="text-accent" />
+                      )
                     ) : (
                       <FileIcon size={12} />
                     )}

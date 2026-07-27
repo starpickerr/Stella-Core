@@ -114,6 +114,8 @@ export interface Attachment {
   /** `workspace_ref` points at an existing workspace file (dragged from the
    *  file panel or picked with `@`) and is referenced in place, not uploaded. */
   file_type: 'image' | 'video' | 'file' | 'directory' | 'workspace_ref'
+  /** For `workspace_ref`: whether the reference points at a folder. */
+  is_dir?: boolean
   preview_url?: string
   /** Local absolute path (set for files sent via the `send` tool) so the
    *  desktop client can open them directly with the OS default app. */

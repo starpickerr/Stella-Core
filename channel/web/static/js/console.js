@@ -2048,7 +2048,8 @@ function renderAttachmentPreview() {
         }
         const icon = att.file_type === 'video'
             ? 'fa-film'
-            : (att.file_type === 'directory' ? 'fa-folder-tree' : 'fa-file-alt');
+            : (att.file_type === 'directory' ? 'fa-folder-tree'
+            : (att.is_dir ? 'fa-folder' : 'fa-file-alt'));
         const suffix = att.file_type === 'directory' && att.file_count
             ? ` (${att.file_count})`
             : '';
@@ -3519,9 +3520,58 @@ function startPolling() {
     poll();
 }
 
+// Attachment markers the backend appends to the prompt, keyed by the label it
+// emitted (see the workspace_ref branch in web_channel.post_message). History
+// only persists the prompt text, so this is the only way back to a chip.
+const ATTACHMENT_MARKER_TYPES = {
+    '工作空间文件': 'workspace_ref', '工作空间檔案': 'workspace_ref', 'Workspace file': 'workspace_ref',
+    '工作空间目录': 'workspace_dir', '工作空间目錄': 'workspace_dir', 'Workspace directory': 'workspace_dir',
+    '图片': 'image', '圖片': 'image', 'Image': 'image',
+    '视频': 'video', '影片': 'video', 'Video': 'video',
+    '目录': 'directory', '目錄': 'directory', 'Directory': 'directory',
+    '文件': 'file', '檔案': 'file', 'File': 'file',
+};
+
+/**
+ * Split trailing `[label: path]` lines off a persisted user message.
+ * Returns the remaining text plus the attachments they describe.
+ */
+function parseAttachmentMarkers(content) {
+    const lines = (content || '').split('\n');
+    const found = [];
+    while (lines.length) {
+        const line = lines[lines.length - 1].trim();
+        if (!line) { lines.pop(); continue; }
+        const m = line.match(/^\[([^\]:]+):\s*(.+)\]$/);
+        const type = m && ATTACHMENT_MARKER_TYPES[m[1].trim()];
+        if (!type) break;
+        found.unshift({ type, path: m[2].trim() });
+        lines.pop();
+    }
+    if (!found.length) return { text: content, attachments: null };
+    return {
+        text: lines.join('\n').trimEnd(),
+        attachments: found.map(f => ({
+            file_path: f.path,
+            file_name: f.path.split(/[\\/]/).filter(Boolean).pop() || f.path,
+            file_type: f.type === 'workspace_dir' ? 'workspace_ref' : f.type,
+            is_dir: f.type === 'workspace_dir' || f.type === 'directory',
+        })),
+    };
+}
+
 function createUserMessageEl(content, timestamp, attachments) {
     const el = document.createElement('div');
     el.className = 'flex justify-end px-4 sm:px-6 py-3 user-message-group';
+
+    // Replaying history: recover the chips from the markers left in the text.
+    if (!attachments) {
+        const parsed = parseAttachmentMarkers(content);
+        if (parsed.attachments) {
+            attachments = parsed.attachments;
+            content = parsed.text;
+        }
+    }
 
     let attachHtml = '';
     if (attachments && attachments.length > 0) {
@@ -3531,11 +3581,17 @@ function createUserMessageEl(content, timestamp, attachments) {
             }
             const icon = a.file_type === 'video'
                 ? 'fa-film'
-                : (a.file_type === 'directory' ? 'fa-folder-tree' : 'fa-file-alt');
+                : (a.file_type === 'directory' ? 'fa-folder-tree'
+                : (a.is_dir ? 'fa-folder' : 'fa-file-alt'));
             const suffix = a.file_type === 'directory' && a.file_count
                 ? ` (${a.file_count})`
                 : '';
-            return `<div class="user-msg-file"><i class="fas ${icon}"></i> ${escapeHtml(a.file_name)}${suffix}</div>`;
+            // Workspace references stay openable in the preview panel.
+            const openable = a.file_type === 'workspace_ref'
+                ? ` data-ws-open="${escapeHtml(a.file_path)}" title="${escapeHtml(a.file_path)}"`
+                : '';
+            return `<div class="user-msg-file${openable ? ' is-openable' : ''}"${openable}>` +
+                `<i class="fas ${icon}"></i> ${escapeHtml(a.file_name)}${suffix}</div>`;
         }).join('');
         attachHtml = `<div class="user-msg-attachments">${items}</div>`;
     }

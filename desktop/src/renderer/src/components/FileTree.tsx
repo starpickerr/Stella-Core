@@ -37,9 +37,15 @@ const FileTree: React.FC = () => {
     }
   }, [])
 
+  // Initial load, plus jumps requested elsewhere (e.g. clicking a directory
+  // reference in a message). The counter also covers the case where the panel
+  // was closed, so this component mounts with the request already pending.
+  const browseDir = useWorkspaceStore((s) => s.browseDir)
+  const browseSeq = useWorkspaceStore((s) => s.browseSeq)
   useEffect(() => {
-    loadDir('')
-  }, [loadDir])
+    setQuery('')
+    loadDir(browseSeq > 0 ? browseDir || '' : '')
+  }, [browseSeq, browseDir, loadDir])
 
   // Debounce search so typing doesn't hammer the backend walk.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -143,7 +149,7 @@ const FileTree: React.FC = () => {
               return (
                 <div
                   key={entry.path}
-                  draggable={!entry.is_dir}
+                  draggable
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = 'copy'
                     e.dataTransfer.setData(WORKSPACE_DRAG_TYPE, JSON.stringify(entry))

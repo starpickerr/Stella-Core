@@ -27,6 +27,10 @@ interface WorkspaceState {
   autoOpenSuppressed: boolean
   /** Artifacts produced by the turn that is currently streaming. */
   turnArtifacts: Artifact[]
+  /** Directory the files tab should jump to, with a counter so repeated
+   *  requests for the same folder still trigger a reload. */
+  browseDir: string | null
+  browseSeq: number
 
   openPanel: (tab?: WorkspaceTab) => void
   closePanel: (byUser?: boolean) => void
@@ -64,6 +68,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   previewError: null,
   autoOpenSuppressed: false,
   turnArtifacts: [],
+  browseDir: null,
+  browseSeq: 0,
 
   openPanel: (tab) => set((s) => ({ open: true, tab: tab ?? s.tab })),
 
@@ -107,6 +113,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       entry = target
     }
 
+    // Directories have nothing to render; browse into them instead.
+    const browseIfDir = (e: WorkspaceEntry | null): boolean => {
+      if (!e?.is_dir) return false
+      set({
+        open: true,
+        tab: 'files',
+        previewError: null,
+        browseDir: e.path,
+        browseSeq: get().browseSeq + 1,
+      })
+      return true
+    }
+    if (browseIfDir(entry)) return
+
     // Cards rebuilt from history carry only a path; fetch the signed URLs.
     if (entry && !entry.preview_url) {
       try {
@@ -120,6 +140,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })
         return
       }
+      if (browseIfDir(entry)) return
     }
 
     set({ open: true, tab: 'preview', current: entry, previewError: null })

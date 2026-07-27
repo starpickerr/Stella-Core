@@ -216,6 +216,13 @@ async function openInPreview(target) {
         }
     }
     if (!meta) return;
+    // Directories have nothing to render; browse into them instead.
+    if (meta.is_dir) {
+        openWorkspacePanel('files');
+        switchWorkspaceTab('files');
+        loadWorkspaceDir(meta.path || '');
+        return;
+    }
 
     wsCurrentFile = meta;
     openWorkspacePanel('preview');
@@ -457,6 +464,14 @@ document.addEventListener('click', async (e) => {
         return;
     }
 
+    // Workspace reference chip inside a user message bubble.
+    const ref = e.target.closest('[data-ws-open]');
+    if (ref) {
+        e.preventDefault();
+        openInPreview(ref.dataset.wsOpen);
+        return;
+    }
+
     const card = e.target.closest('.file-card');
     if (!card) return;
     e.preventDefault();
@@ -545,6 +560,9 @@ async function loadWorkspaceDir(relPath) {
         const data = await wsApi(`/api/workspace/tree?path=${encodeURIComponent(relPath || '')}`);
         wsCurrentDir = data.path || '';
         wsSearchMode = false;
+        // Browsing leaves search mode; drop the stale query from the box.
+        const searchBox = document.getElementById('ws-search-input');
+        if (searchBox && searchBox.value) searchBox.value = '';
         renderWorkspaceBreadcrumb(wsCurrentDir);
         renderWorkspaceEntries(data.entries, data.truncated);
     } catch (e) {
@@ -577,10 +595,7 @@ function renderWorkspaceEntries(entries, truncated) {
     }
     const rows = entries.map(entry => {
         const meta = entry.is_dir ? '' : wsFormatSize(entry.size);
-        const payload = entry.is_dir ? '' : escapeHtml(JSON.stringify(entry));
-        return `<div class="ws-file-row" ${entry.is_dir
-                ? `data-ws-dir="${escapeHtml(entry.path)}"`
-                : `data-ws-file='${payload}' draggable="true"`}>
+        return `<div class="ws-file-row" ${wsRowAttrs(entry)}>
             <i class="${wsIconClass(entry.kind)}"></i>
             <span class="ws-file-name">${escapeHtml(entry.name)}</span>
             <span class="ws-file-meta">${escapeHtml(meta)}</span>
@@ -593,6 +608,17 @@ function renderWorkspaceEntries(entries, truncated) {
     list.innerHTML = rows.join('');
 }
 
+/**
+ * Row attributes for a tree/search entry. Everything is draggable into the
+ * composer; `data-ws-dir` additionally makes a click navigate rather than
+ * preview, since directories have nothing to render.
+ */
+function wsRowAttrs(entry) {
+    const payload = escapeHtml(JSON.stringify(entry));
+    const nav = entry.is_dir ? ` data-ws-dir="${escapeHtml(entry.path)}"` : '';
+    return `data-ws-file='${payload}' draggable="true"${nav}`;
+}
+
 function renderWorkspaceSearchResults(results) {
     const list = document.getElementById('ws-file-list');
     if (!list) return;
@@ -602,7 +628,7 @@ function renderWorkspaceSearchResults(results) {
         return;
     }
     list.innerHTML = results.map(entry => `
-        <div class="ws-file-row" data-ws-file='${escapeHtml(JSON.stringify(entry))}' draggable="true">
+        <div class="ws-file-row" ${wsRowAttrs(entry)}>
             <i class="${wsIconClass(entry.kind)}"></i>
             <span class="ws-file-name">${escapeHtml(entry.name)}</span>
             <span class="ws-file-path">${escapeHtml(entry.path)}</span>
@@ -675,6 +701,7 @@ function addWorkspaceRefAttachment(entry) {
         file_name: entry.name || entry.file_name || relPath.split('/').pop(),
         // Referenced in place; the backend must not treat it as an upload.
         file_type: 'workspace_ref',
+        is_dir: !!entry.is_dir,
     });
     renderAttachmentPreview();
 }

@@ -10,7 +10,7 @@ import {
   Folder,
   type LucideIcon,
 } from 'lucide-react'
-import type { FileKind } from '../types'
+import type { Attachment, FileKind } from '../types'
 
 const EXT_BY_KIND: Record<Exclude<FileKind, 'directory' | 'file'>, string[]> = {
   html: ['html', 'htm'],
@@ -89,6 +89,53 @@ export function formatSize(bytes?: number): string {
     n /= 1024
   }
   return `${n.toFixed(1)}TB`
+}
+
+// Attachment markers the backend appends to the prompt, keyed by the label it
+// emitted (see the workspace_ref branch in web_channel.post_message). History
+// only persists the prompt text, so this is the only way back to a chip.
+const MARKER_TYPES: Record<string, Attachment['file_type'] | 'workspace_dir'> = {
+  工作空间文件: 'workspace_ref', 工作空间檔案: 'workspace_ref', 'Workspace file': 'workspace_ref',
+  工作空间目录: 'workspace_dir', 工作空间目錄: 'workspace_dir', 'Workspace directory': 'workspace_dir',
+  图片: 'image', 圖片: 'image', Image: 'image',
+  视频: 'video', 影片: 'video', Video: 'video',
+  目录: 'directory', 目錄: 'directory', Directory: 'directory',
+  文件: 'file', 檔案: 'file', File: 'file',
+}
+
+/**
+ * Split trailing `[label: path]` lines off a persisted user message.
+ * Returns the remaining text plus the attachments they describe.
+ */
+export function parseAttachmentMarkers(content: string): {
+  text: string
+  attachments: Attachment[] | undefined
+} {
+  const lines = (content || '').split('\n')
+  const found: { type: string; path: string }[] = []
+  for (;;) {
+    if (!lines.length) break
+    const line = lines[lines.length - 1].trim()
+    if (!line) {
+      lines.pop()
+      continue
+    }
+    const m = line.match(/^\[([^\]:]+):\s*(.+)\]$/)
+    const type = m ? MARKER_TYPES[m[1].trim()] : undefined
+    if (!m || !type) break
+    found.unshift({ type, path: m[2].trim() })
+    lines.pop()
+  }
+  if (!found.length) return { text: content, attachments: undefined }
+  return {
+    text: lines.join('\n').trimEnd(),
+    attachments: found.map((f) => ({
+      file_path: f.path,
+      file_name: f.path.split(/[\\/]/).filter(Boolean).pop() || f.path,
+      file_type: (f.type === 'workspace_dir' ? 'workspace_ref' : f.type) as Attachment['file_type'],
+      is_dir: f.type === 'workspace_dir' || f.type === 'directory',
+    })),
+  }
 }
 
 // Mirrors the backend filter in agent/protocol/artifact.py, for rebuilding
