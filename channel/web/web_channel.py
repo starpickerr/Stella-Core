@@ -1888,10 +1888,14 @@ class PreviewHandler:
                 # opaque origin even when the page is opened as a top-level tab,
                 # so it can't read the console's localStorage auth token; the
                 # panel's iframe already applies the same flags.
+                #
+                # No frame-ancestors here: the desktop renderer is loaded from
+                # file:// (or the Vite dev server), so 'self' would block its
+                # preview iframe outright. The sandbox is what carries the
+                # security guarantee; framing alone reveals nothing extra.
                 web.header(
                     'Content-Security-Policy',
-                    "sandbox allow-scripts allow-popups allow-forms allow-modals; "
-                    "frame-ancestors 'self'",
+                    "sandbox allow-scripts allow-popups allow-forms allow-modals",
                 )
             with open(full_path, 'rb') as f:
                 return f.read()
