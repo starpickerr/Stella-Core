@@ -4,7 +4,7 @@ import time
 import pytest
 
 from common.utils import expand_path
-from agent.tools.grep.grep import Grep, REGEX_MATCH_TIMEOUT_SECONDS
+from agent.tools.search_files.search_files import SearchFiles, REGEX_MATCH_TIMEOUT_SECONDS
 
 
 def _make_tool(tmp_path, **config_overrides):
@@ -15,7 +15,7 @@ def _make_tool(tmp_path, **config_overrides):
     # behavior parity is covered separately by the `backend` fixture below.
     config = {"cwd": str(tmp_path)}
     config.update(config_overrides)
-    tool = Grep(config)
+    tool = SearchFiles(config)
     tool._pick_backend = lambda: tool._backend_python
     return tool
 
@@ -23,7 +23,7 @@ def _make_tool(tmp_path, **config_overrides):
 def _available_backends():
     """Backend method names this platform would actually use (python always).
 
-    Mirrors Grep._pick_backend's platform gating so we only assert parity for
+    Mirrors SearchFiles._pick_backend's platform gating so we only assert parity for
     backends the tool can really pick here: grep is Unix-only in the tool (the
     Windows grep from Git Bash mishandles UTF-8), and PowerShell is Windows-only.
     """
@@ -45,7 +45,7 @@ def backend_tool(request, tmp_path):
     """A tool pinned to one specific backend, parametrized over every backend
     installed on this machine, so behavior-contract tests assert cross-backend
     parity rather than only exercising whichever binary happens to be present."""
-    tool = Grep({"cwd": str(tmp_path)})
+    tool = SearchFiles({"cwd": str(tmp_path)})
     name = request.param
     tool._pick_backend = lambda: getattr(tool, name)
     tool._backend_name = name
@@ -73,28 +73,28 @@ def test_appears_with_a_summary_in_the_system_prompt_tooling_section():
     # exists to extend here).
     from agent.prompt.builder import _build_tooling_section
 
-    fake_tool = type("FakeTool", (), {"name": "grep"})()
+    fake_tool = type("FakeTool", (), {"name": "search_files"})()
     for language in ("en", "zh"):
         lines = _build_tooling_section([fake_tool], language)
-        tooling_line = next(l for l in lines if l.startswith("- grep"))
-        assert tooling_line != "- grep", f"missing summary for language={language}"
+        tooling_line = next(l for l in lines if l.startswith("- search_files"))
+        assert tooling_line != "- search_files", f"missing summary for language={language}"
 
 
 def test_configured_timeout_survives_the_real_tool_manager_wiring(tmp_path, monkeypatch):
     # Calls the real AgentInitializer._load_tools() — it only touches
-    # self.agent_bridge inside the env_config special case, which grep
+    # self.agent_bridge inside the env_config special case, which search_files
     # doesn't hit, so bridge=None/agent_bridge=None is enough to exercise the
     # actual merge logic instead of hand-copying it here.
     from config import conf
     from bridge.agent_initializer import AgentInitializer
 
-    monkeypatch.setitem(conf(), "tools", {"grep": {"timeout": 5}})
+    monkeypatch.setitem(conf(), "tools", {"search_files": {"timeout": 5}})
 
     initializer = AgentInitializer(bridge=None, agent_bridge=None)
     tools = initializer._load_tools(
         workspace_root=str(tmp_path), memory_manager=None, memory_tools=[], session_id="test-session"
     )
-    tool = next(t for t in tools if t.name == "grep")
+    tool = next(t for t in tools if t.name == "search_files")
     assert tool.timeout == 5
 
 
@@ -172,7 +172,7 @@ def test_file_glob_must_be_a_string(tmp_path):
 # --- security & limits ---------------------------------------------------
 
 def test_max_results_above_hard_cap_is_capped_not_rejected(tmp_path, monkeypatch):
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
     monkeypatch.setattr(sf_module, "MAX_RESULTS_CAP", 3)
 
     for i in range(5):
@@ -210,7 +210,7 @@ def test_credential_directory_is_pruned_mid_walk(tmp_path, monkeypatch):
     # still prune it during traversal rather than walking into it. Points
     # expand_path("~/.cow") at a fake dir under tmp_path so this exercises
     # the real _is_credential_path logic without touching the real home dir.
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
     fake_cow = tmp_path / ".cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=leaked\n", encoding="utf-8")
@@ -242,7 +242,7 @@ def test_symlink_to_credential_file_is_skipped_not_opened(tmp_path, monkeypatch)
     # skip (matches == [] for that file, overall status stays "success"),
     # not an error that aborts the whole search — a broad search shouldn't
     # blow up just because it incidentally crosses one bad symlink.
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
@@ -268,7 +268,7 @@ def test_symlinked_directory_pointing_at_credential_dir_is_pruned(tmp_path, monk
     # test: it confirms the dirnames-pruning branch in _search() does what
     # its comment claims, rather than relying solely on an os.walk default
     # this code doesn't control.
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
@@ -330,7 +330,7 @@ def test_deadline_is_also_checked_inside_a_single_large_file(tmp_path, monkeypat
     # See _search_single_file's docstring for why this check exists. Fakes
     # time.monotonic() to advance deterministically instead of sleeping, so
     # this stays fast and doesn't depend on machine speed.
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
 
     _write(tmp_path, "big.txt", "\n".join(f"line {i}" for i in range(20)) + "\n")
     tool = _make_tool(tmp_path, timeout=1)
@@ -439,7 +439,7 @@ def test_oversized_file_is_skipped_silently_with_no_count_exposed(tmp_path, monk
     # the result. Not a bug — just locking in what the description already
     # promises ("automatic ... oversized-file skipping") so a future change
     # to add visibility here is a deliberate decision, not a silent regression.
-    import agent.tools.grep.grep as sf_module
+    import agent.tools.search_files.search_files as sf_module
     monkeypatch.setattr(sf_module, "MAX_FILE_BYTES", 10)
 
     _write(tmp_path, "huge.txt", "TARGET " * 20)
@@ -610,3 +610,84 @@ def test_backend_parity_glob_filter(backend_tool, tmp_path):
     result = backend_tool.execute({"pattern": "MATCH", "file_glob": "*.py", "output_mode": "files"})
     assert result.status == "success"
     assert set(result.result["files"]) == {"a.py", "sub/b.py", "中文.py"}
+
+
+# --------------------------------------------------------------- target=files
+# Finding a file by NAME is a different question from searching inside files,
+# and content search cannot answer it: grepping for "report.md" only finds
+# files that mention that string, not the file itself.
+
+
+def test_finds_file_by_glob(tmp_path):
+    _write(tmp_path, "websites/ai-news-report.md", "body\n")
+    _write(tmp_path, "notes.txt", "body\n")
+
+    result = _make_tool(tmp_path).execute({"pattern": "*.md", "target": "files"})
+    assert result.status == "success"
+    assert result.result["files"] == ["websites/ai-news-report.md"]
+
+
+def test_bare_word_is_treated_as_a_contains_match(tmp_path):
+    # The real-world failure this mode exists for: the model knows part of the
+    # name and would otherwise get nothing back from an exact-match glob.
+    _write(tmp_path, "websites/ai-news-report.md", "body\n")
+
+    result = _make_tool(tmp_path).execute({"pattern": "ai-news", "target": "files"})
+    assert result.result["files"] == ["websites/ai-news-report.md"]
+
+
+def test_content_search_for_a_filename_finds_nothing(tmp_path):
+    # Documents why target='files' is needed at all.
+    _write(tmp_path, "websites/ai-news-report.md", "body\n")
+
+    result = _make_tool(tmp_path).execute({"pattern": "ai-news-report", "output_mode": "files"})
+    assert result.result["match_count"] == 0
+
+
+def test_results_are_newest_first(tmp_path):
+    import os
+    old = _write(tmp_path, "old-report.md", "a\n")
+    new = _write(tmp_path, "new-report.md", "b\n")
+    os.utime(old, (1_000_000, 1_000_000))
+    os.utime(new, (2_000_000, 2_000_000))
+
+    result = _make_tool(tmp_path).execute({"pattern": "*report*", "target": "files"})
+    assert result.result["files"] == ["new-report.md", "old-report.md"]
+
+
+def test_file_mode_skips_denylisted_dirs_unless_no_ignore(tmp_path):
+    _write(tmp_path, "node_modules/pkg/index.js", "x\n")
+
+    tool = _make_tool(tmp_path)
+    result = tool.execute({"pattern": "*.js", "target": "files"})
+    assert result.result["files"] == []
+    assert "node_modules" in result.result["notice"]
+
+    result = tool.execute({"pattern": "*.js", "target": "files", "no_ignore": True})
+    assert result.result["files"] == ["node_modules/pkg/index.js"]
+
+
+def test_file_mode_does_not_reject_glob_as_bad_regex(tmp_path):
+    # '*.py' is an invalid regex; it must not be validated as one here.
+    _write(tmp_path, "a.py", "x\n")
+
+    result = _make_tool(tmp_path).execute({"pattern": "*.py", "target": "files"})
+    assert result.status == "success"
+    assert result.result["files"] == ["a.py"]
+
+
+def test_file_mode_caps_results_and_says_so(tmp_path):
+    for i in range(5):
+        _write(tmp_path, f"f{i}.md", "x\n")
+
+    result = _make_tool(tmp_path).execute(
+        {"pattern": "*.md", "target": "files", "max_results": 2}
+    )
+    assert len(result.result["files"]) == 2
+    assert "5 files matched" in result.result["notice"]
+
+
+def test_invalid_target_is_rejected(tmp_path):
+    result = _make_tool(tmp_path).execute({"pattern": "x", "target": "nope"})
+    assert result.status == "error"
+    assert "target must be" in str(result.result)

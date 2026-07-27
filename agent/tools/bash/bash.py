@@ -30,7 +30,7 @@ class Bash(BaseTool):
     name: str = "bash"
     description: str = f"""Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file.
 {'''
-PLATFORM: Windows (cmd.exe). Do NOT use Unix-only commands like head, tail, sed, awk. To search file contents, use the grep tool instead of this command.
+PLATFORM: Windows (cmd.exe). Do NOT use Unix-only commands like head, tail, sed, awk. To search file contents or find files by name, use the search_files tool instead of this command.
 ''' if _IS_WIN else ''}
 ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME directly.
 

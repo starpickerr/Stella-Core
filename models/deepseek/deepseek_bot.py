@@ -37,6 +37,12 @@ from .deepseek_session import DeepSeekSession
 
 DEFAULT_API_BASE = "https://api.deepseek.com/v1"
 
+# Output budget for V4 models in agent mode. Omitting max_tokens leaves the API
+# on a default far below what V4 can emit (384K), which cut off tool calls
+# mid-argument on large file writes - the whole generation is then discarded.
+# This is a ceiling, not a reservation: unused budget costs nothing.
+V4_AGENT_MAX_TOKENS = 128 * 1024
+
 
 class DeepSeekBot(Bot, OpenAICompatibleBot):
     def __init__(self):
@@ -82,12 +88,16 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
         }
 
     @staticmethod
-    def _model_supports_thinking(model_name: str) -> bool:
-        """V4 series models expose the explicit `thinking` switch."""
+    def _is_v4_model(model_name: str) -> bool:
+        """V4 series: explicit `thinking` switch, and a 384K output ceiling."""
         if not model_name:
             return False
-        m = model_name.lower()
-        return m.startswith("deepseek-v4")
+        return model_name.lower().startswith("deepseek-v4")
+
+    @staticmethod
+    def _model_supports_thinking(model_name: str) -> bool:
+        """V4 series models expose the explicit `thinking` switch."""
+        return DeepSeekBot._is_v4_model(model_name)
 
     @staticmethod
     def _is_reasoner_model(model_name: str) -> bool:
@@ -227,6 +237,8 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
 
             model = kwargs.pop("model", None) or self.args["model"]
             max_tokens = kwargs.pop("max_tokens", None)
+            if max_tokens is None and self._is_v4_model(model):
+                max_tokens = V4_AGENT_MAX_TOKENS
 
             request_body = {
                 "model": model,

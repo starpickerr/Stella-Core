@@ -192,8 +192,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "write": "create or overwrite a file",
             "edit": "make precise edits to a file",
             "ls": "list directory contents",
-            "grep": "search file contents by regex (structured, workspace-aware)",
-            "find": "find files by pattern",
+            "search_files": "search inside files by regex, or find files by name",
             "bash": "run shell commands",
             "terminal": "manage background processes",
             "web_search": "web search",
@@ -212,8 +211,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "write": "创建或覆盖文件",
             "edit": "精确编辑文件",
             "ls": "列出目录内容",
-            "grep": "按正则搜索文件内容（结构化输出、工作区感知）",
-            "find": "按模式查找文件",
+            "search_files": "按正则搜索文件内容，或按文件名查找文件",
             "bash": "执行shell命令",
             "terminal": "管理后台进程",
             "web_search": "网络搜索",
@@ -229,7 +227,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
 
     # Preferred display order
     tool_order = [
-        "read", "write", "edit", "ls", "grep", "find",
+        "read", "write", "edit", "ls", "search_files",
         "bash", "terminal",
         "web_search", "web_fetch", "browser",
         "memory_search", "memory_get",

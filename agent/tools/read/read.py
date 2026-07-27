@@ -154,16 +154,26 @@ class Read(BaseTool):
         if self._is_credential_path(absolute_path):
             return ToolResult.fail(DENIED_MESSAGE)
         
-        # Check if file exists
+        # Check if file exists. Both misses below name the tool that answers
+        # the question instead - otherwise the model tends to guess at nearby
+        # paths and burn turns on more failed reads.
         if not os.path.exists(absolute_path):
+            hint = "Hint: use search_files with target='files' to locate it by name."
             # Provide helpful hint if using relative path
             if not os.path.isabs(path) and not path.startswith('~'):
                 return ToolResult.fail(
                     f"Error: File not found: {path}\n"
                     f"Resolved to: {absolute_path}\n"
-                    f"Hint: Relative paths are based on workspace ({self.cwd}). For files outside workspace, use absolute paths."
+                    f"Hint: Relative paths are based on workspace ({self.cwd}). For files outside workspace, use absolute paths.\n"
+                    f"{hint}"
                 )
-            return ToolResult.fail(f"Error: File not found: {path}")
+            return ToolResult.fail(f"Error: File not found: {path}\n{hint}")
+
+        if os.path.isdir(absolute_path):
+            return ToolResult.fail(
+                f"Error: {path} is a directory, not a file. "
+                f"Use the ls tool to list what is inside it."
+            )
         
         # Check if readable
         if not os.access(absolute_path, os.R_OK):

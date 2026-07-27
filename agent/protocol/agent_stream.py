@@ -70,8 +70,17 @@ def _parse_tool_args(args_str: str, finish_reason: Optional[str]) -> Tuple[dict,
     try:
         return json.loads(args_str), None
     except json.JSONDecodeError as e:
-        if finish_reason in ("length", "max_tokens") or not args_str.rstrip().endswith("}"):
-            return {}, "Output truncated (max_tokens reached). Split content into smaller chunks across multiple tool calls."
+        truncated_by_limit = finish_reason in ("length", "max_tokens")
+        if truncated_by_limit or not args_str.rstrip().endswith("}"):
+            cause = "the output token limit" if truncated_by_limit else "arguments ending mid-JSON"
+            return {}, (
+                f"Your tool call was cut off by {cause}, so it did not run and nothing was written. "
+                "Repeating the same call will be cut off again - send less in one call instead. "
+                "To change an existing file, use edit rather than rewriting the whole file. "
+                "To create a large file, write the first part, then append each remaining part "
+                "with edit using an empty oldText (calling write again would overwrite what you "
+                "just wrote)."
+            )
         if _HAS_JSON_REPAIR:
             try:
                 repaired = _repair_json(args_str, return_objects=True)
