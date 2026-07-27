@@ -8,6 +8,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from agent.tools.utils.credentials import is_credential_path
 from common.utils import expand_path
 
 
@@ -101,7 +102,9 @@ class Write(BaseTool):
         real = os.path.realpath(absolute)
 
         # Always block the credentials file, mirroring the bash tool's guard.
-        if real.endswith(os.path.join(".cow", ".env")):
+        # The suffix rule also covers non-home .cow/.env files; the shared guard
+        # adds symlink resolution and the /proc environ aliases.
+        if real.endswith(os.path.join(".cow", ".env")) or is_credential_path(absolute):
             raise PermissionError("writing to ~/.cow/.env is not allowed")
 
         # Optional workspace confinement. Off by default to preserve existing

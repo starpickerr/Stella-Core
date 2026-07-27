@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.utils import expand_path
+from agent.tools.utils.credentials import DENIED_MESSAGE, is_credential_path
 from agent.tools.utils.diff import (
     strip_bom,
     detect_line_ending,
@@ -65,7 +66,12 @@ class Edit(BaseTool):
         
         # Resolve path
         absolute_path = self._resolve_path(path)
-        
+
+        # Same guard the read tool applies. Editing is also a read: the success
+        # result carries a diff whose context lines would expose the secrets.
+        if is_credential_path(absolute_path):
+            return ToolResult.fail(DENIED_MESSAGE)
+
         # Check if file exists
         if not os.path.exists(absolute_path):
             return ToolResult.fail(f"Error: File not found: {path}")
