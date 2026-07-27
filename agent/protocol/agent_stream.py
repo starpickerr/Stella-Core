@@ -287,10 +287,30 @@ class AgentStreamExecutor:
             # clear stop boundary on the next turn.
             self.messages.append({
                 "role": "assistant",
-                "content": [{"type": "text", "text": "_(Cancelled by user)_"}],
+                "content": [{"type": "text", "text": self._cancellation_marker()}],
             })
         except Exception as e:
             logger.warning(f"[Agent] _handle_cancelled cleanup failed: {e}")
+
+    @staticmethod
+    def _cancellation_marker() -> str:
+        """Stop-boundary note, listing background jobs a cancel does not kill."""
+        marker = "_(Cancelled by user)_"
+        try:
+            from agent.tools.bash import background
+            running = [job for job in background.list_jobs() if job["running"]]
+        except Exception:
+            return marker
+        if not running:
+            return marker
+        lines = "\n".join(
+            f"- {job['id']}: {job['command']} ({job['elapsed']}s elapsed)"
+            for job in running
+        )
+        return (
+            f"{marker}\nBackground commands are still running - cancelling does not "
+            f"stop them. Use bash(bash_id=..., kill=true) to stop one.\n{lines}"
+        )
 
     def _emit_event(self, event_type: str, data: dict = None):
         """Emit event"""
@@ -1415,6 +1435,7 @@ class AgentStreamExecutor:
             # Set tool context
             tool.model = self.model
             tool.context = self.agent
+            tool.cancel_event = self.cancel_event
             tool.progress_callback = lambda message: self._emit_event(
                 "tool_execution_progress",
                 {
@@ -1430,6 +1451,7 @@ class AgentStreamExecutor:
                 result: ToolResult = tool.execute_tool(arguments)
             finally:
                 tool.progress_callback = None
+                tool.cancel_event = None
             execution_time = time.time() - start_time
 
             result_dict = {

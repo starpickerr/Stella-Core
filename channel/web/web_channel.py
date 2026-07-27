@@ -1252,8 +1252,15 @@ class WebChannel(ChatChannel):
         # tail so async post-processing (TTS auto-synthesis) can deliver a
         # `voice_attach` event before the client disconnects.
         POST_DONE_TAIL_SECONDS = 60
+        # A cancel only takes effect at the agent's next checkpoint, so the run
+        # keeps emitting events (tool results, the partial reply) for a while
+        # after the user presses Stop. Stay open for them, just not for the
+        # full idle timeout.
+        CANCEL_GRACE_SECONDS = 60
+        POST_CANCEL_TAIL_SECONDS = 3
         post_done = False
         post_deadline = 0.0
+        cancelled = False
 
         try:
             while time.time() < deadline:
@@ -1269,19 +1276,26 @@ class WebChannel(ChatChannel):
                     yield b": keepalive\n\n"
                     continue
 
-                deadline = time.time() + idle_timeout
+                deadline = time.time() + (
+                    CANCEL_GRACE_SECONDS if cancelled else idle_timeout
+                )
                 payload = json.dumps(item, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
 
                 itype = item.get("type")
                 if itype == "done":
                     post_done = True
-                    post_deadline = time.time() + POST_DONE_TAIL_SECONDS
+                    post_deadline = time.time() + (
+                        POST_CANCEL_TAIL_SECONDS if cancelled
+                        else POST_DONE_TAIL_SECONDS
+                    )
                 elif itype == "cancelled":
-                    # Close SSE tail quickly after cancel; don't wait for the
-                    # full TTS tail since the user already pressed Stop.
-                    post_done = True
-                    post_deadline = time.time() + 3
+                    # Wait for the run to actually wind down and send its
+                    # partial reply as "done"; closing on a blind timer here
+                    # strands in-flight tool bubbles and makes the client
+                    # reconnect onto a dropped queue.
+                    cancelled = True
+                    deadline = time.time() + CANCEL_GRACE_SECONDS
                 elif itype == "voice_attach":
                     # WSGI buffers the previous chunk until the next yield;
                     # shrink the tail so the generator wakes up quickly to

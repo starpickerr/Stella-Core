@@ -13,9 +13,14 @@ import time
 from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from agent.tools.bash import background
 from agent.tools.utils.truncate import truncate_tail, format_size, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES
 from common.log import logger
 from common.utils import expand_path
+
+
+class _Cancelled(Exception):
+    """Raised inside the wait loop when the user cancelled the run."""
 
 
 class Bash(BaseTool):
@@ -26,12 +31,19 @@ class Bash(BaseTool):
     _PROGRESS_INTERVAL = 0.5
     # cmd.exe command line limit is ~8191 chars; rewrite python -c above this.
     _WIN_CMD_SAFE_LEN = 7000
+    # A command that finishes early returns early, so a generous default costs
+    # nothing and spares the model a retry on every install or build. Anything
+    # genuinely longer belongs in the background.
+    DEFAULT_TIMEOUT = 120
+    MAX_TIMEOUT = 600
 
     name: str = "bash"
     description: str = f"""Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {DEFAULT_MAX_LINES} lines or {DEFAULT_MAX_BYTES // 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file.
 {'''
 PLATFORM: Windows (cmd.exe). Do NOT use Unix-only commands like head, tail, sed, awk. To search file contents or find files by name, use the search_files tool instead of this command.
 ''' if _IS_WIN else ''}
+BACKGROUND: For a server, watcher, or any job that outlives the timeout, pass run_in_background=true rather than writing `nohup ... &` yourself. You get a bash_id back; call bash(bash_id=...) to see what it has printed since your last look, and bash(bash_id=..., kill=true) to stop it. Background jobs keep running after the task ends unless you kill them.
+
 ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME directly.
 
 SAFETY:
@@ -43,14 +55,26 @@ SAFETY:
         "properties": {
             "command": {
                 "type": "string",
-                "description": "Bash command to execute"
+                "description": "Bash command to execute. Omit when reading from or killing a background command."
             },
             "timeout": {
                 "type": "integer",
-                "description": "Timeout in seconds (optional, default: 30)"
+                "description": f"Seconds to wait, default {DEFAULT_TIMEOUT}, max {MAX_TIMEOUT}. The call returns as soon as the command finishes, so a high value never costs waiting time - set it generously for installs and builds instead of risking a timeout."
+            },
+            "run_in_background": {
+                "type": "boolean",
+                "description": "Start the command and return immediately with a bash_id instead of waiting. Use for servers, watchers, and anything longer than the timeout allows. Do not add '&' yourself."
+            },
+            "bash_id": {
+                "type": "string",
+                "description": "Read whatever a background command has printed since you last looked. Pass this instead of command."
+            },
+            "kill": {
+                "type": "boolean",
+                "description": "With bash_id, stop that background command."
             }
         },
-        "required": ["command"]
+        "required": []
     }
 
     def __init__(self, config: dict = None):
@@ -59,7 +83,7 @@ SAFETY:
         # Ensure working directory exists
         if not os.path.exists(self.cwd):
             os.makedirs(self.cwd, exist_ok=True)
-        self.default_timeout = self.config.get("timeout", 30)
+        self.default_timeout = self.config.get("timeout", self.DEFAULT_TIMEOUT)
         # Enable safety mode by default (can be disabled in config)
         self.safety_mode = self.config.get("safety_mode", True)
         # Desktop runs on the user's own machine (often non-technical users),
@@ -82,11 +106,29 @@ SAFETY:
         :param args: Dictionary containing the command and optional timeout
         :return: Command output or error
         """
-        command = args.get("command", "").strip()
+        command = (args.get("command") or "").strip()
         timeout = args.get("timeout", self.default_timeout)
+        run_in_background = bool(args.get("run_in_background", False))
+        bash_id = (args.get("bash_id") or "").strip()
+
+        # Reading from or killing a background command needs no command string.
+        if bash_id:
+            return self._background_followup(bash_id, bool(args.get("kill", False)))
 
         if not command:
             return ToolResult.fail("Error: command parameter is required")
+
+        try:
+            timeout = int(timeout)
+        except (TypeError, ValueError):
+            return ToolResult.fail(f"Error: timeout must be an integer, got: {timeout!r}")
+        if timeout <= 0:
+            return ToolResult.fail("Error: timeout must be a positive integer")
+        if timeout > self.MAX_TIMEOUT:
+            return ToolResult.fail(
+                f"Error: timeout above {self.MAX_TIMEOUT}s is not allowed. "
+                f"Use run_in_background=true for a command that runs this long."
+            )
 
         # Security check: Prevent direct access to the credential file
         if re.search(r'\.cow[/\\]\.env', command):
@@ -140,6 +182,19 @@ SAFETY:
                     command, temp_script_path = self._rewrite_long_python_c(command)
                 if command and not command.strip().lower().startswith("chcp"):
                     command = f"chcp 65001 >nul 2>&1 && {command}"
+
+            if run_in_background:
+                # Ownership of temp_script_path passes to the registry - the
+                # process is still reading it, so it can only go once the job does.
+                job_id = background.start(command, self.cwd, env, temp_script_path)
+                return ToolResult.success({
+                    "output": (
+                        f"Started in background (bash_id: {job_id}). "
+                        f"Read its output with bash(bash_id=\"{job_id}\"), "
+                        f"stop it with bash(bash_id=\"{job_id}\", kill=true)."
+                    ),
+                    "bash_id": job_id,
+                })
 
             try:
                 result = self._run_streaming(
@@ -264,10 +319,53 @@ SAFETY:
                 "details": details if details else None
             })
 
+        except _Cancelled:
+            return ToolResult.fail("Command was stopped because the user cancelled the run.")
         except subprocess.TimeoutExpired:
             return ToolResult.fail(f"Error: Command timed out after {timeout} seconds")
         except Exception as e:
             return ToolResult.fail(f"Error executing command: {str(e)}")
+
+    def _background_followup(self, bash_id: str, want_kill: bool) -> ToolResult:
+        """Read from, or kill, an already-running background command."""
+        if want_kill:
+            if background.kill(bash_id) is None:
+                return ToolResult.fail(self._unknown_job_message(bash_id))
+            return ToolResult.success({"output": f"Killed background command {bash_id}."})
+
+        state = background.read(bash_id)
+        if state is None:
+            return ToolResult.fail(self._unknown_job_message(bash_id))
+
+        output = state["output"] or "(no new output)"
+        if state["dropped_bytes"]:
+            output = (
+                f"[{format_size(state['dropped_bytes'])} of earlier output dropped - "
+                f"buffer keeps only the most recent]\n" + output
+            )
+        if state["running"]:
+            status = f"\n\n[Still running, {state['elapsed']}s elapsed]"
+        else:
+            status = f"\n\n[Finished with exit code {state['exit_code']} after {state['elapsed']}s]"
+
+        payload = {
+            "output": output + status,
+            "running": state["running"],
+            "exit_code": state["exit_code"],
+        }
+        # A non-zero exit is a failure the model should react to, same as
+        # foreground - but only once the process has actually finished.
+        if not state["running"] and state["exit_code"] != 0:
+            return ToolResult.fail(payload)
+        return ToolResult.success(payload)
+
+    @staticmethod
+    def _unknown_job_message(bash_id: str) -> str:
+        jobs = background.list_jobs()
+        if not jobs:
+            return f"Error: no background command with id {bash_id} (none are being tracked)."
+        known = ", ".join(j["id"] for j in jobs)
+        return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
     def _run_streaming(self, command: str, timeout: int, env: dict, dotenv_vars: dict):
         process = subprocess.Popen(
@@ -311,6 +409,9 @@ SAFETY:
                 if elapsed >= timeout:
                     self._kill_process(process)
                     raise subprocess.TimeoutExpired(command, timeout)
+                if self.is_cancelled():
+                    self._kill_process(process)
+                    raise _Cancelled()
                 if elapsed >= self._PROGRESS_INTERVAL and now - last_reported_at >= self._PROGRESS_INTERVAL:
                     with recent_lock:
                         snapshot = bytes(recent).decode("utf-8", errors="replace")

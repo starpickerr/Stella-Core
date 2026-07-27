@@ -76,10 +76,11 @@ class TestCreateToolPath:
 
     def test_empty_config_defaults(self):
         """No tool_configs at all — config is empty and attributes keep built-ins."""
+        from agent.tools.bash.bash import Bash
         tm = make_tool_manager({})
         tool = tm.create_tool("bash")
         assert tool.config == {}
-        assert tool.default_timeout == 30
+        assert tool.default_timeout == Bash.DEFAULT_TIMEOUT
         assert tool.safety_mode is True
 
     def test_non_bash_tool_unaffected(self):
@@ -153,7 +154,7 @@ class TestAgentInitializerMergePath:
         tool.config = {"cwd": "/somewhere"}
         file_config = {"cwd": "/tmp", "memory_manager": None}
         self._simulate_load_tools_merge(tool, "bash", file_config)
-        assert tool.default_timeout == 30, f"Expected 30, got {tool.default_timeout}"
+        assert tool.default_timeout == Bash.DEFAULT_TIMEOUT, f"Expected {Bash.DEFAULT_TIMEOUT}, got {tool.default_timeout}"
         assert tool.safety_mode is True, f"Expected True, got {tool.safety_mode}"
 
     def test_merge_with_cwd_only(self):
@@ -189,14 +190,14 @@ class TestBugReproduction:
     def test_repro_bug_scenario(self):
         """
         The original bug: creating a Bash tool and setting config['timeout']=5
-        should result in default_timeout=5. Before the fix it stayed at 30
-        because __init__ read from the empty config before ToolManager
-        populated it.
+        should result in default_timeout=5. Before the fix it stayed at the
+        built-in default because __init__ read from the empty config before
+        ToolManager populated it.
         """
         from agent.tools.bash.bash import Bash
 
         tool = Bash()
-        assert tool.default_timeout == 30  # expected before fix
+        assert tool.default_timeout == Bash.DEFAULT_TIMEOUT  # expected before fix
 
         # ToolManager sets config after __init__
         tool.config = {"timeout": 5, "safety_mode": False}

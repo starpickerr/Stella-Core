@@ -2979,6 +2979,18 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let reasoningText = '';
     let reasoningStartTime = 0;
     let done = false;
+    let cancelled = false;
+
+    // A stream can end while tools are still marked in-flight (cancel, dropped
+    // connection). Settle them so nothing spins forever.
+    function settlePendingTools() {
+        toolElements.forEach(el => {
+            el.classList.remove('tool-streaming');
+            const icon = el.querySelector('.tool-icon');
+            if (icon) icon.className = 'fas fa-minus text-slate-400 flex-shrink-0 tool-icon';
+        });
+        toolElements.clear();
+    }
 
     // The session this stream belongs to. Sessions run in parallel: the user
     // may switch to another session while this one is still streaming. The
@@ -3275,6 +3287,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             } else if (item.type === 'cancelled') {
                 // Agent acknowledged the stop; mark the bubble. A trailing
                 // "done" still arrives with the partial answer.
+                cancelled = true;
                 ensureBotEl();
                 if (currentReasoningEl) {
                     finalizeThinking(currentReasoningEl, reasoningStartTime, reasoningText);
@@ -3295,6 +3308,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 // TTS audio (`voice_attach`). It will close the stream on
                 // its own via onerror once the tail expires.
                 done = true;
+                settlePendingTools();
                 clearOwnerRequest();
                 resetSendBtnSendMode();
 
@@ -3359,11 +3373,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
 
             } else if (item.type === 'error') {
                 done = true;
+                settlePendingTools();
                 if (currentEs) { currentEs.close(); }
                 delete activeStreams[requestId];
                 clearOwnerRequest();
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
-                addBotMessage(t('error_send'), new Date());
+                // After a stop the stream is expected to end; the bubble is
+                // already tagged "已中止", so don't stack a failure on top.
+                if (!cancelled) addBotMessage(t('error_send'), new Date());
                 resetSendBtnSendMode();
             }
     }
@@ -3417,6 +3434,18 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 return;
             }
 
+            if (cancelled) {
+                // The user stopped the run, so the stream ending here is the
+                // expected outcome. Reconnecting would only land on a queue
+                // the backend has already reclaimed.
+                settlePendingTools();
+                clearOwnerRequest();
+                if (loadingEl) { loadingEl.remove(); loadingEl = null; }
+                if (contentEl) contentEl.classList.remove('sse-streaming');
+                resetSendBtnSendMode();
+                return;
+            }
+
             if (currentReasoningEl) {
                 finalizeThinking(currentReasoningEl, reasoningStartTime, reasoningText);
                 currentReasoningEl = null;
@@ -3434,6 +3463,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             // Exhausted retries. Only surface the failure in the owning view —
             // a background session must not mutate the currently shown chat.
             clearOwnerRequest();
+            settlePendingTools();
             if (!isActive()) return;
             if (loadingEl) { loadingEl.remove(); loadingEl = null; }
             if (!botEl) {

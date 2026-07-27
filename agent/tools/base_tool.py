@@ -39,6 +39,16 @@ class BaseTool:
     params: dict = {}  # Store JSON Schema
     model: Optional[Any] = None  # LLM model instance, type depends on bot implementation
     progress_callback = None
+    cancel_event = None
+
+    def is_cancelled(self) -> bool:
+        """True once the user asked to stop the run.
+
+        Long-running tools should poll this and abort early; the agent loop
+        checkpoint right after the tool returns turns it into a clean cancel.
+        """
+        event = getattr(self, "cancel_event", None)
+        return event is not None and event.is_set()
 
     def report_progress(self, message: str):
         callback = getattr(self, "progress_callback", None)
