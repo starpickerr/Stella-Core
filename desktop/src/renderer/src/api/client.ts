@@ -17,6 +17,8 @@ import type {
   KnowledgeGraph,
   KnowledgeAction,
   KnowledgeImportPayload,
+  WorkspaceEntry,
+  WorkspaceTree,
 } from '../types'
 
 interface ApiResult {
@@ -173,6 +175,29 @@ class ApiClient {
 
   getServeFileUrl(absPath: string): string {
     return this.withToken(`${this.baseUrl}/api/file?path=${encodeURIComponent(absPath)}`)
+  }
+
+  // ---------------------------------------------------------
+  // Workspace browsing / preview
+  // ---------------------------------------------------------
+
+  async workspaceTree(path = ''): Promise<WorkspaceTree & ApiResult> {
+    return this.request(`/api/workspace/tree?path=${encodeURIComponent(path)}`)
+  }
+
+  async workspaceSearch(query: string, limit = 30): Promise<{ results: WorkspaceEntry[] } & ApiResult> {
+    return this.request(`/api/workspace/search?q=${encodeURIComponent(query)}&limit=${limit}`)
+  }
+
+  async workspaceResolve(path: string): Promise<{ file: WorkspaceEntry } & ApiResult> {
+    return this.request(`/api/workspace/resolve?path=${encodeURIComponent(path)}`)
+  }
+
+  /** Absolute URL for a `/preview/...` path. The signed token in the path is
+   *  what authorizes it, so no auth token is appended. */
+  getPreviewUrl(previewPath: string): string {
+    if (/^https?:\/\//.test(previewPath)) return previewPath
+    return `${this.baseUrl}${previewPath}`
   }
 
   // ---------------------------------------------------------

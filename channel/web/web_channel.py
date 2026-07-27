@@ -1,3 +1,4 @@
+import base64
 import datetime
 import hashlib
 import hmac
@@ -13,6 +14,7 @@ import time
 import uuid
 from queue import Queue, Empty
 from typing import List, Tuple
+from urllib.parse import quote
 
 import web
 
@@ -171,6 +173,125 @@ def _get_upload_dir() -> str:
     tmp_dir = os.path.join(ws_root, "tmp")
     os.makedirs(tmp_dir, exist_ok=True)
     return tmp_dir
+
+
+def _get_workspace_root() -> str:
+    """Resolve the agent workspace directory."""
+    from common.utils import expand_path
+    return expand_path(conf().get("agent_workspace", "~/cow"))
+
+
+_PREVIEW_SECRET = None
+_PREVIEW_SECRET_LOCK = threading.Lock()
+
+
+def _get_preview_secret() -> bytes:
+    """
+    Stable secret used to sign /preview directory tokens.
+
+    Preview URLs can't rely on the auth cookie: the preview iframe is sandboxed
+    without `allow-same-origin`, so its subresource requests come from an opaque
+    origin and Chrome withholds the SameSite=Lax cookie. The signature in the
+    URL is what authorizes the request instead, so it must survive restarts.
+    """
+    global _PREVIEW_SECRET
+    if _PREVIEW_SECRET is not None:
+        return _PREVIEW_SECRET
+    with _PREVIEW_SECRET_LOCK:
+        if _PREVIEW_SECRET is not None:
+            return _PREVIEW_SECRET
+        path = os.path.join(get_data_root(), ".preview_secret")
+        secret = None
+        try:
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    secret = (f.read() or "").strip() or None
+        except Exception as e:
+            logger.warning(f"[WebChannel] Could not read preview secret: {e}")
+        if not secret:
+            secret = uuid.uuid4().hex + uuid.uuid4().hex
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(secret)
+                os.chmod(path, 0o600)
+            except Exception as e:
+                logger.warning(f"[WebChannel] Could not persist preview secret: {e}")
+        _PREVIEW_SECRET = secret.encode()
+        return _PREVIEW_SECRET
+
+
+def _encode_dir_token(dir_path: str) -> str:
+    """Encode a directory path into a signed, URL-safe token for /preview."""
+    real = os.path.realpath(dir_path)
+    body = base64.urlsafe_b64encode(real.encode("utf-8")).decode("ascii").rstrip("=")
+    sig = hmac.new(_get_preview_secret(), real.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+    return f"{body}.{sig}"
+
+
+def _decode_dir_token(token: str) -> str:
+    """Verify and decode a /preview directory token. Raises ValueError if invalid."""
+    body, _, sig = (token or "").partition(".")
+    if not body or not sig:
+        raise ValueError("Malformed preview token")
+    padding = "=" * (-len(body) % 4)
+    try:
+        real = base64.urlsafe_b64decode(body + padding).decode("utf-8")
+    except Exception:
+        raise ValueError("Malformed preview token")
+    expected = hmac.new(_get_preview_secret(), real.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(sig, expected):
+        raise ValueError("Bad preview token signature")
+    return real
+
+
+def _serve_allowed_roots() -> list:
+    """Roots that /api/file and /preview may read from (symlinks resolved)."""
+    serve_root = conf().get("web_file_serve_root", "~") or "~"
+    return [
+        os.path.realpath(os.path.expanduser(serve_root)),
+        os.path.realpath(_get_workspace_root()),
+    ]
+
+
+def _is_path_allowed(real_path: str) -> bool:
+    roots = _serve_allowed_roots()
+    if os.sep in roots:
+        return True
+    for root in roots:
+        try:
+            if os.path.commonpath([real_path, root]) == root:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _build_preview_url(abs_path: str) -> str:
+    """
+    Preview URL that mounts the file's *directory*, so relative assets
+    referenced by an HTML page (./style.css, ./img/a.png) resolve correctly.
+    """
+    directory = os.path.dirname(abs_path)
+    name = os.path.basename(abs_path)
+    return f"/preview/{_encode_dir_token(directory)}/{quote(name)}"
+
+
+def _build_artifact_payload(data: dict) -> dict:
+    """Turn an agent `artifact` event into an SSE payload for the web clients."""
+    file_path = data.get("path", "")
+    if not file_path:
+        return None
+    return {
+        "type": "artifact",
+        "abs_path": file_path,
+        "rel_path": data.get("rel_path") or os.path.basename(file_path),
+        "file_name": data.get("file_name") or os.path.basename(file_path),
+        "kind": data.get("kind", "file"),
+        "previewable": bool(data.get("previewable")),
+        "size": data.get("size", 0),
+        "raw_url": f"/api/file?path={quote(file_path)}",
+        "preview_url": _build_preview_url(file_path),
+    }
 
 
 def _sanitize_upload_relative_path(relative_path: str) -> str:
@@ -642,6 +763,11 @@ class WebChannel(ChatChannel):
                     payload["abs_path"] = file_path
                 q.put(payload)
 
+            elif event_type == "artifact":
+                payload = _build_artifact_payload(data)
+                if payload:
+                    q.put(payload)
+
         return on_event
 
     # ------------------------------------------------------------------
@@ -982,7 +1108,14 @@ class WebChannel(ChatChannel):
                     fpath = att.get("file_path", "")
                     if not fpath:
                         continue
-                    if ftype == "image":
+                    if ftype == "workspace_ref":
+                        # File already lives in the workspace (dragged from the file
+                        # panel or picked with @); reference it in place so the agent
+                        # reads the original instead of an uploaded copy.
+                        file_refs.append(
+                            f"[{i18n.t('工作空间文件', 'Workspace file')}: {fpath}]"
+                        )
+                    elif ftype == "image":
                         file_refs.append(f"[{i18n.t('图片', 'Image')}: {fpath}]")
                     elif ftype == "video":
                         file_refs.append(f"[{i18n.t('视频', 'Video')}: {fpath}]")
@@ -1350,6 +1483,11 @@ class WebChannel(ChatChannel):
             '/upload', 'UploadHandler',
             '/uploads/(.*)', 'UploadsHandler',
             '/api/file', 'FileServeHandler',
+            '/preview/(.+)', 'PreviewHandler',
+            '/api/workspace/tree', 'WorkspaceTreeHandler',
+            '/api/workspace/search', 'WorkspaceSearchHandler',
+            '/api/workspace/resolve', 'WorkspaceResolveHandler',
+            '/api/workspace/meta', 'WorkspaceMetaHandler',
             '/api/voice/asr', 'VoiceAsrHandler',
             '/api/voice/tts', 'VoiceTtsHandler',
             '/poll', 'PollHandler',
@@ -1690,14 +1828,7 @@ class FileServeHandler:
             # Defaults to the user home dir plus the agent workspace; set web_file_serve_root="/"
             # to allow the whole filesystem.
             file_path = os.path.realpath(file_path)
-            serve_root = conf().get("web_file_serve_root", "~") or "~"
-            allowed_roots = [
-                os.path.realpath(os.path.expanduser(serve_root)),
-                os.path.realpath(os.path.expanduser(conf().get("agent_workspace", "~/cow"))),
-            ]
-            if os.sep not in allowed_roots and not any(
-                os.path.commonpath([file_path, root]) == root for root in allowed_roots
-            ):
+            if not _is_path_allowed(file_path):
                 raise web.notfound()
             if not os.path.isfile(file_path):
                 raise web.notfound()
@@ -1713,6 +1844,61 @@ class FileServeHandler:
             raise
         except Exception as e:
             logger.error(f"[WebChannel] Error serving file: {e}")
+            raise web.notfound()
+
+
+class PreviewHandler:
+    """
+    Directory-mounted file server for the preview panel: /preview/<token>/<relpath>
+
+    Unlike /api/file (single file, query param) this mounts the file's directory,
+    so relative assets inside a generated HTML page resolve normally. The token is
+    HMAC-signed, which is what authorizes the request - the sandboxed iframe can't
+    send the auth cookie.
+    """
+
+    def GET(self, path_info):
+        try:
+            token, _, rel_path = (path_info or "").partition("/")
+            if not token or not rel_path:
+                raise web.notfound()
+
+            from urllib.parse import unquote
+            rel_path = unquote(rel_path)
+
+            try:
+                base_dir = _decode_dir_token(token)
+            except ValueError:
+                raise web.notfound()
+
+            full_path = os.path.realpath(os.path.join(base_dir, rel_path))
+            base_real = os.path.realpath(base_dir)
+            # Confine to the mounted directory, then to the globally allowed roots.
+            if os.path.commonpath([full_path, base_real]) != base_real:
+                raise web.notfound()
+            if not _is_path_allowed(full_path) or not os.path.isfile(full_path):
+                raise web.notfound()
+
+            content_type = mimetypes.guess_type(full_path)[0] or "application/octet-stream"
+            web.header('Content-Type', content_type)
+            web.header('Cache-Control', 'no-cache')
+            web.header('X-Content-Type-Options', 'nosniff')
+            if content_type.startswith("text/html"):
+                # Agent-generated pages are untrusted. The CSP sandbox forces an
+                # opaque origin even when the page is opened as a top-level tab,
+                # so it can't read the console's localStorage auth token; the
+                # panel's iframe already applies the same flags.
+                web.header(
+                    'Content-Security-Policy',
+                    "sandbox allow-scripts allow-popups allow-forms allow-modals; "
+                    "frame-ancestors 'self'",
+                )
+            with open(full_path, 'rb') as f:
+                return f.read()
+        except web.HTTPError:
+            raise
+        except Exception as e:
+            logger.error(f"[WebChannel] Error serving preview: {e}")
             raise web.notfound()
 
 
@@ -4457,12 +4643,6 @@ class FeishuRegisterHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
-def _get_workspace_root():
-    """Resolve the agent workspace directory."""
-    from common.utils import expand_path
-    return expand_path(conf().get("agent_workspace", "~/cow"))
-
-
 class ToolsHandler:
     def GET(self):
         _require_auth()
@@ -5096,6 +5276,113 @@ class AssetsHandler:
         except Exception as e:
             logger.error(f"Error serving static file: {e}", exc_info=True)
             raise web.notfound()
+
+
+def _workspace_service():
+    from agent.workspace.service import WorkspaceService
+    return WorkspaceService(_get_workspace_root())
+
+
+def _decorate_entry(svc, entry: dict) -> dict:
+    """Attach the URLs the frontend needs to preview or download an entry."""
+    if entry.get("is_dir"):
+        return entry
+    abs_path = entry.get("abs_path") or os.path.join(svc.root, entry["path"])
+    entry["abs_path"] = abs_path
+    entry["raw_url"] = f"/api/file?path={quote(abs_path)}"
+    entry["preview_url"] = _build_preview_url(abs_path)
+    return entry
+
+
+class WorkspaceTreeHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(path='', show_hidden='')
+            svc = _workspace_service()
+            result = svc.list_dir(params.path, show_hidden=params.show_hidden == '1')
+            result["entries"] = [_decorate_entry(svc, e) for e in result["entries"]]
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace tree error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class WorkspaceSearchHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(q='', limit='30')
+            try:
+                limit = max(1, min(100, int(params.limit)))
+            except (TypeError, ValueError):
+                limit = 30
+            svc = _workspace_service()
+            result = svc.search(params.q, limit=limit)
+            result["results"] = [_decorate_entry(svc, e) for e in result["results"]]
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace search error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class WorkspaceResolveHandler:
+    """Metadata + preview/raw URLs for one file, given a relative or absolute path."""
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.protocol.artifact import classify_kind, is_previewable
+            params = web.input(path='')
+            raw_path = (params.path or '').strip()
+            if not raw_path:
+                return json.dumps({"status": "error", "message": "path is required"})
+
+            svc = _workspace_service()
+            if os.path.isabs(os.path.expanduser(raw_path)):
+                abs_path = os.path.realpath(os.path.expanduser(raw_path))
+                if not _is_path_allowed(abs_path):
+                    return json.dumps({"status": "error", "message": "Path not allowed"})
+                if not os.path.isfile(abs_path):
+                    return json.dumps({"status": "error", "message": "File not found"})
+                kind = classify_kind(abs_path)
+                entry = {
+                    "name": os.path.basename(abs_path),
+                    "path": svc.to_rel(abs_path),
+                    "abs_path": abs_path,
+                    "is_dir": False,
+                    "kind": kind,
+                    "previewable": is_previewable(kind),
+                    "size": os.path.getsize(abs_path),
+                    "mtime": os.path.getmtime(abs_path),
+                }
+            else:
+                entry = svc.stat_file(raw_path)
+
+            entry["raw_url"] = f"/api/file?path={quote(entry['abs_path'])}"
+            entry["preview_url"] = _build_preview_url(entry["abs_path"])
+            return json.dumps({"status": "success", "file": entry}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace resolve error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class WorkspaceMetaHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            return json.dumps({"status": "success", **_workspace_service().meta()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace meta error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
 
 class KnowledgeListHandler:

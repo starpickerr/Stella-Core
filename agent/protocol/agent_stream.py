@@ -146,6 +146,10 @@ class AgentStreamExecutor:
         # Track files to send (populated by read tool)
         self.files_to_send = []  # List of file metadata dicts
 
+        # Absolute paths already reported as artifacts, so a write-then-edit
+        # sequence on the same file only surfaces one card in the UI.
+        self._emitted_artifacts = set()
+
     def _check_cancelled(self) -> None:
         """Raise AgentCancelledError if the user requested cancellation.
 
@@ -290,7 +294,37 @@ class AgentStreamExecutor:
                 })
             except Exception as e:
                 logger.error(f"Event callback error: {e}")
-    
+
+    # Tools whose successful execution may have produced a user-facing file.
+    _ARTIFACT_TOOLS = ("write", "edit")
+
+    def _maybe_emit_artifact(self, tool_call: dict, result: dict) -> None:
+        """Report a file written by `write`/`edit` so clients can preview it."""
+        if not self.on_event:
+            return
+        if tool_call.get("name") not in self._ARTIFACT_TOOLS:
+            return
+        if result.get("status") != "success":
+            return
+
+        data = result.get("result")
+        path = data.get("path") if isinstance(data, dict) else None
+        if not path:
+            path = (tool_call.get("arguments") or {}).get("path")
+        if not path:
+            return
+
+        from agent.protocol.artifact import safe_build_artifact
+
+        artifact = safe_build_artifact(path)
+        if not artifact:
+            return
+        if artifact["path"] in self._emitted_artifacts:
+            return
+        self._emitted_artifacts.add(artifact["path"])
+        logger.info(f"🗂  Artifact: {artifact['rel_path']} ({artifact['kind']})")
+        self._emit_event("artifact", artifact)
+
     def _is_thinking_enabled(self) -> bool:
         """Whether deep-thinking mode is on at the model layer.
 
@@ -647,6 +681,9 @@ class AgentStreamExecutor:
                                 self.files_to_send.append(result_data)
                                 logger.info(f"📎 File queued for sending: {result_data.get('file_name', result_data.get('path'))}")
                                 self._emit_event("file_to_send", result_data)
+
+                        # Surface user-facing files written by the agent
+                        self._maybe_emit_artifact(tool_call, result)
                         
                         # Check for critical error - abort entire conversation
                         if result.get("status") == "critical_error":
