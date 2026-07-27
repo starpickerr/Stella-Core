@@ -9,6 +9,8 @@ from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.credentials import is_credential_path
+from agent.tools.utils.diff import looks_like_line_numbered_block
+from agent.tools.utils.file_state import note_write, staleness_warning
 from common.utils import expand_path
 
 
@@ -50,6 +52,15 @@ class Write(BaseTool):
         
         if not path:
             return ToolResult.fail("Error: path parameter is required")
+
+        # write replaces the whole file, so echoing read's numbered output here
+        # would corrupt every line at once.
+        if looks_like_line_numbered_block(content):
+            return ToolResult.fail(
+                f"Error: content looks like read tool output ('12|content'), not file "
+                f"content. Those line-number prefixes are display only - strip them "
+                f"before writing {path}."
+            )
         
         try:
             # Resolve path (may raise PermissionError for protected locations)
@@ -60,9 +71,13 @@ class Write(BaseTool):
             if parent_dir:
                 os.makedirs(parent_dir, exist_ok=True)
             
+            # Check before writing - our own write would reset the mtime.
+            warning = staleness_warning(absolute_path)
+
             # Write file
             with open(absolute_path, 'w', encoding='utf-8') as f:
                 f.write(content)
+            note_write(absolute_path)
             
             # Get bytes written
             bytes_written = len(content.encode('utf-8'))
@@ -76,6 +91,8 @@ class Write(BaseTool):
                 "path": path,
                 "bytes_written": bytes_written
             }
+            if warning:
+                result["warning"] = warning
             
             return ToolResult.success(result)
             

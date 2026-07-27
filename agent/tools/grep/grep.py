@@ -10,9 +10,11 @@ Backend strategy (4-tier, first available wins):
 The external backends (1-3) keep search fast on every platform that ships a
 real search tool; the pure-Python tier guarantees the tool still returns
 results on a bare Windows box where none of them exist (that was the original
-motivation for this tool). Only tier 1 honors .gitignore; the others fall back
-to a fixed VCS/dependency directory denylist, and the result carries a notice
-when that happens so the model knows the exclusion basis differs.
+motivation for this tool). Only tier 1 honors .gitignore; all tiers additionally
+skip a fixed VCS/dependency directory denylist so results stay comparable across
+backends. no_ignore=true lifts both. A search that finds nothing while such a
+directory is present says so, naming it - which is the only time the exclusion
+is worth a word.
 """
 
 import fnmatch
@@ -60,6 +62,36 @@ _SKIP_DIR_NAMES = {
     "target", "vendor", ".tox", "coverage", ".idea",
 }
 
+def _pruned_dirs(root: str, max_depth: int = 2) -> List[str]:
+    """Denylisted directory names actually present under ``root``.
+
+    The external backends prune inside their own subprocess and cannot report
+    back, so we look for ourselves. Only called on an empty result, and only a
+    couple of levels deep - which is where these directories sit in practice.
+    """
+    start = root if os.path.isdir(root) else os.path.dirname(root)
+    found = set()
+
+    def scan(path: str, depth: int) -> None:
+        try:
+            entries = list(os.scandir(path))
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            if entry.name in _SKIP_DIR_NAMES:
+                found.add(entry.name)
+            elif depth < max_depth:
+                scan(entry.path, depth + 1)
+
+    scan(start, 1)
+    return sorted(found)
+
+
 class Grep(BaseTool):
     """Tool for searching file contents by pattern across a directory tree."""
 
@@ -98,7 +130,7 @@ class Grep(BaseTool):
             },
             "no_ignore": {
                 "type": "boolean",
-                "description": "When true, also search files normally ignored via .gitignore. Default false. (Only affects the ripgrep backend; other backends never consult .gitignore.)"
+                "description": "When true, search everywhere: files ignored via .gitignore, plus dependency/build directories (node_modules, dist, vendor, .venv, ...) that are skipped by default. Default false."
             },
             "max_results": {
                 "type": "integer",
@@ -240,10 +272,10 @@ class Grep(BaseTool):
         cmd = ["rg", "--line-number", "--no-heading", "--with-filename", "--color", "never"]
         # Exclude the same VCS/dependency dirs the other backends hardcode, so a
         # repo WITHOUT a .gitignore still gives identical results across backends
-        # (rg alone would otherwise only skip what .gitignore lists). Users who
-        # genuinely need these dirs pass no_ignore=true.
-        for d in _SKIP_DIR_NAMES:
-            cmd += ["--glob", f"!{d}"]
+        # (rg alone would otherwise only skip what .gitignore lists).
+        if not opts.no_ignore:
+            for d in _SKIP_DIR_NAMES:
+                cmd += ["--glob", f"!{d}"]
         cmd += ["--max-columns", "1000"]
         if opts.ignore_case:
             cmd.append("-i")
@@ -258,7 +290,7 @@ class Grep(BaseTool):
         # `--` guards patterns that begin with a dash.
         cmd += ["-e", opts.pattern, "--", opts.root]
         rows, timed_out = self._run_external(cmd, opts)
-        return _BackendResult(rows, timed_out, False, True)
+        return _BackendResult(rows, timed_out)
 
     # ------------------------------------------------------------ grep backend
     def _backend_grep(self, opts: "_SearchOptions") -> "_BackendResult":
@@ -266,8 +298,9 @@ class Grep(BaseTool):
         # (aligns alternation/quantifier syntax with rg). -n is added only in
         # content mode — mixing it with -c/-l corrupts their output.
         cmd = ["grep", "-rH", "-E"]
-        for d in _SKIP_DIR_NAMES:
-            cmd.append(f"--exclude-dir={d}")
+        if not opts.no_ignore:
+            for d in _SKIP_DIR_NAMES:
+                cmd.append(f"--exclude-dir={d}")
         if opts.ignore_case:
             cmd.append("-i")
         if opts.file_glob and opts.file_glob != "*":
@@ -280,7 +313,7 @@ class Grep(BaseTool):
             cmd.append("-n")
         cmd += ["-e", opts.pattern, opts.root]
         rows, timed_out = self._run_external(cmd, opts)
-        return _BackendResult(rows, timed_out, False, True)
+        return _BackendResult(rows, timed_out)
 
     # ------------------------------------------------ powershell backend (win)
     def _backend_powershell(self, opts: "_SearchOptions") -> "_BackendResult":
@@ -295,6 +328,9 @@ class Grep(BaseTool):
         glob_filter = ""
         if opts.file_glob and opts.file_glob != "*":
             glob_filter = f"-Filter '{opts.file_glob}' "
+        prune = "" if opts.no_ignore else (
+            f"| Where-Object {{ $_.FullName -notmatch '\\\\({'|'.join(_SKIP_DIR_NAMES)})\\\\' }} "
+        )
         script = (
             # Force UTF-8 on stdout so non-ASCII file names/content survive the
             # trip to our subprocess reader (Windows PowerShell defaults to the
@@ -302,7 +338,7 @@ class Grep(BaseTool):
             f"[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
             f"$ErrorActionPreference='SilentlyContinue';"
             f"Get-ChildItem -LiteralPath '{opts.root}' -Recurse -File {glob_filter}"
-            f"| Where-Object {{ $_.FullName -notmatch '\\\\({'|'.join(_SKIP_DIR_NAMES)})\\\\' }} "
+            f"{prune}"
             f"| Select-String -Pattern @'\n{opts.pattern}\n'@ {ci} "
             f"| ForEach-Object {{ \"$($_.Path)`t$($_.LineNumber):$($_.Line)\" }}"
         )
@@ -314,9 +350,9 @@ class Grep(BaseTool):
                 errors="replace", timeout=remaining,
             )
         except subprocess.TimeoutExpired:
-            return _BackendResult([], True, False, True)
+            return _BackendResult([], True)
         rows = self._parse_powershell((proc.stdout or "").splitlines(), opts)
-        return _BackendResult(rows, False, False, True)
+        return _BackendResult(rows, False)
 
     def _parse_powershell(self, lines: List[str], opts: "_SearchOptions") -> List[dict]:
         """Parse Select-String's `path\\tline:content` and aggregate into the
@@ -417,7 +453,6 @@ class Grep(BaseTool):
         compiled = re.compile(opts.pattern, flags)
         rows: List[dict] = []
         pattern_timeout = False
-        skip_pruned = False
         root = opts.root
 
         walk_root = root if os.path.isdir(root) else os.path.dirname(root)
@@ -426,8 +461,7 @@ class Grep(BaseTool):
         for dirpath, dirnames, filenames in os.walk(walk_root):
             kept = []
             for d in dirnames:
-                if d in _SKIP_DIR_NAMES:
-                    skip_pruned = True
+                if d in _SKIP_DIR_NAMES and not opts.no_ignore:
                     continue
                 if self._is_credential_path(os.path.join(dirpath, d)):
                     continue
@@ -438,9 +472,9 @@ class Grep(BaseTool):
                 if single_file and filename != single_file:
                     continue
                 if len(rows) >= opts.max_results:
-                    return _BackendResult(self._python_finalize(rows, opts), False, pattern_timeout, skip_pruned)
+                    return _BackendResult(self._python_finalize(rows, opts), False, pattern_timeout)
                 if time.monotonic() >= opts.deadline:
-                    return _BackendResult(self._python_finalize(rows, opts), True, pattern_timeout, skip_pruned)
+                    return _BackendResult(self._python_finalize(rows, opts), True, pattern_timeout)
                 if opts.file_glob and opts.file_glob != "*" and not fnmatch.fnmatch(filename, opts.file_glob):
                     continue
                 fp = os.path.join(dirpath, filename)
@@ -450,9 +484,9 @@ class Grep(BaseTool):
                 rows.extend(file_rows)
                 pattern_timeout = pattern_timeout or hit_pattern_timeout
                 if hit_deadline:
-                    return _BackendResult(self._python_finalize(rows, opts), True, pattern_timeout, skip_pruned)
+                    return _BackendResult(self._python_finalize(rows, opts), True, pattern_timeout)
 
-        return _BackendResult(self._python_finalize(rows, opts), False, pattern_timeout, skip_pruned)
+        return _BackendResult(self._python_finalize(rows, opts), False, pattern_timeout)
 
     def _python_scan_file(self, fp: str, compiled, opts: "_SearchOptions") -> Tuple[List[dict], bool, bool]:
         try:
@@ -528,11 +562,15 @@ class Grep(BaseTool):
                 f"files — the rest of that file was not searched. Results may be incomplete. "
                 f"Simplify `pattern` to avoid catastrophic backtracking."
             )
-        if outcome.skip_pruned:
-            notices.append(
-                "Directories like .git/node_modules/dist/vendor were excluded by a fixed "
-                "denylist (not .gitignore), so match_count omits their contents."
-            )
+        # Only worth saying when the search came up empty AND a denylisted
+        # directory is really there: otherwise it is noise on every call, and
+        # in a tree without one it is simply untrue.
+        if not rows and not opts.no_ignore:
+            pruned = _pruned_dirs(opts.root)
+            if pruned:
+                notices.append(
+                    f"Skipped {', '.join(pruned)}. Use no_ignore=true to search them too."
+                )
         if notices:
             payload["notice"] = " ".join(notices)
         return ToolResult.success(payload)
@@ -540,13 +578,12 @@ class Grep(BaseTool):
 
 class _BackendResult:
     """What a backend returns: rows plus the signals _format turns into notices."""
-    __slots__ = ("rows", "timed_out", "pattern_timeout", "skip_pruned")
+    __slots__ = ("rows", "timed_out", "pattern_timeout")
 
-    def __init__(self, rows, timed_out=False, pattern_timeout=False, skip_pruned=False):
+    def __init__(self, rows, timed_out=False, pattern_timeout=False):
         self.rows = rows
         self.timed_out = timed_out
         self.pattern_timeout = pattern_timeout
-        self.skip_pruned = skip_pruned
 
 
 class _SearchOptions:

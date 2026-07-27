@@ -491,10 +491,31 @@ def test_skips_conventional_ignored_directories(tmp_path):
     result = tool.execute({"pattern": "TARGET"})
     assert result.status == "success"
     assert {m["file"] for m in _matches(result)} == {"src/app.py"}
-    # match_count alone can't distinguish "genuinely nothing in the skipped
-    # dirs" from "matches were there but pruned" — the notice makes that
-    # ambiguity visible instead of silent.
-    assert "excluded" in result.result["notice"]
+    # The search answered the question, so the exclusion is not worth a word.
+    assert "notice" not in result.result
+
+
+def test_no_notice_when_no_pruned_directory_exists(tmp_path):
+    # The common case in a plain document workspace: nothing to skip, so the
+    # model must not be told anything about node_modules.
+    _write(tmp_path, "src/app.py", "hello\n")
+
+    result = _make_tool(tmp_path).execute({"pattern": "NOTHING"})
+    assert result.status == "success"
+    assert result.result["match_count"] == 0
+    assert "notice" not in result.result
+
+
+def test_no_ignore_reaches_into_pruned_directories(tmp_path):
+    _write(tmp_path, "node_modules/pkg/index.js", "TARGET\n")
+
+    tool = _make_tool(tmp_path)
+    assert tool.execute({"pattern": "TARGET"}).result["match_count"] == 0
+
+    result = tool.execute({"pattern": "TARGET", "no_ignore": True})
+    assert result.status == "success"
+    assert {m["file"] for m in _matches(result)} == {"node_modules/pkg/index.js"}
+    assert "notice" not in result.result
 
 
 def test_zero_matches_because_the_only_hit_was_in_a_pruned_directory(tmp_path):
@@ -506,7 +527,9 @@ def test_zero_matches_because_the_only_hit_was_in_a_pruned_directory(tmp_path):
     result = tool.execute({"pattern": "TARGET"})
     assert result.status == "success"
     assert result.result["match_count"] == 0
-    assert "excluded" in result.result["notice"]
+    notice = result.result["notice"]
+    assert "node_modules" in notice        # names what was actually skipped
+    assert "no_ignore" in notice           # and how to reach it
 
 
 def test_no_skip_list_notice_when_nothing_was_pruned(tmp_path):
