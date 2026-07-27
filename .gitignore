@@ -14,7 +14,7 @@ tmp
 plugins.json
 *.log
 logs/
-workspace
+/workspace
 config.yaml
 user_datas.pkl
 chatgpt_tool_hub/

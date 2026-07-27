@@ -1109,12 +1109,18 @@ class WebChannel(ChatChannel):
                     if not fpath:
                         continue
                     if ftype == "workspace_ref":
-                        # File already lives in the workspace (dragged from the file
-                        # panel or picked with @); reference it in place so the agent
-                        # reads the original instead of an uploaded copy.
-                        file_refs.append(
-                            f"[{i18n.t('工作空间文件', 'Workspace file')}: {fpath}]"
+                        # Already lives in the workspace (dragged from the file panel
+                        # or picked with @); reference it in place so the agent opens
+                        # the original instead of an uploaded copy. Naming the kind
+                        # tells the agent whether to `read` it or `ls` into it.
+                        is_dir = os.path.isdir(
+                            os.path.join(_get_workspace_root(), fpath)
                         )
+                        label = (
+                            i18n.t('工作空间目录', 'Workspace directory') if is_dir
+                            else i18n.t('工作空间文件', 'Workspace file')
+                        )
+                        file_refs.append(f"[{label}: {fpath}]")
                     elif ftype == "image":
                         file_refs.append(f"[{i18n.t('图片', 'Image')}: {fpath}]")
                     elif ftype == "video":
@@ -5335,7 +5341,12 @@ class WorkspaceSearchHandler:
 
 
 class WorkspaceResolveHandler:
-    """Metadata + preview/raw URLs for one file, given a relative or absolute path."""
+    """
+    Metadata + preview/raw URLs for one entry, given a relative or absolute path.
+
+    Directories resolve as well (the client then browses instead of previewing),
+    just without the file URLs.
+    """
 
     def GET(self):
         _require_auth()
@@ -5352,24 +5363,27 @@ class WorkspaceResolveHandler:
                 abs_path = os.path.realpath(os.path.expanduser(raw_path))
                 if not _is_path_allowed(abs_path):
                     return json.dumps({"status": "error", "message": "Path not allowed"})
-                if not os.path.isfile(abs_path):
+                is_dir = os.path.isdir(abs_path)
+                if not is_dir and not os.path.isfile(abs_path):
                     return json.dumps({"status": "error", "message": "File not found"})
-                kind = classify_kind(abs_path)
+                kind = "directory" if is_dir else classify_kind(abs_path)
                 entry = {
                     "name": os.path.basename(abs_path),
                     "path": svc.to_rel(abs_path),
                     "abs_path": abs_path,
-                    "is_dir": False,
+                    "is_dir": is_dir,
                     "kind": kind,
-                    "previewable": is_previewable(kind),
-                    "size": os.path.getsize(abs_path),
+                    "previewable": (not is_dir) and is_previewable(kind),
+                    "size": 0 if is_dir else os.path.getsize(abs_path),
                     "mtime": os.path.getmtime(abs_path),
                 }
             else:
                 entry = svc.stat_file(raw_path)
 
-            entry["raw_url"] = f"/api/file?path={quote(entry['abs_path'])}"
-            entry["preview_url"] = _build_preview_url(entry["abs_path"])
+            # A directory has nothing to serve; the client browses into it.
+            if not entry["is_dir"]:
+                entry["raw_url"] = f"/api/file?path={quote(entry['abs_path'])}"
+                entry["preview_url"] = _build_preview_url(entry["abs_path"])
             return json.dumps({"status": "success", "file": entry}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})

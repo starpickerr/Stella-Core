@@ -1,7 +1,12 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
-import { isUserFacingPath, kindOf, PREVIEWABLE_KINDS } from '../lib/fileKind'
+import {
+  isUserFacingPath,
+  kindOf,
+  parseAttachmentMarkers,
+  PREVIEWABLE_KINDS,
+} from '../lib/fileKind'
 import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
 
 /**
@@ -140,12 +145,16 @@ function artifactsFromSteps(steps: MessageStep[]): Artifact[] {
 /** Convert a backend history message into a UI ChatMessage. */
 function historyToMessage(m: HistoryMessage): ChatMessage {
   if (m.role === 'user') {
+    // History persists only the prompt text, so the attachment chips have to be
+    // recovered from the `[label: path]` markers appended to it.
+    const { text, attachments } = parseAttachmentMarkers(m.content)
     return {
       id: uid('user'),
       role: 'user',
-      content: m.content,
+      content: text,
       timestamp: m.created_at,
       userSeq: m._seq,
+      attachments,
     }
   }
 
