@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { History } from 'lucide-react'
+import { History, FolderTree } from 'lucide-react'
 import NavRail from './layout/NavRail'
 import SessionList from './layout/SessionList'
 import WindowControls from './layout/WindowControls'
@@ -10,6 +10,8 @@ import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
+import { useWorkspaceStore } from './store/workspaceStore'
+import WorkspacePanel from './components/WorkspacePanel'
 import { initUpdateListener } from './store/updateStore'
 import { useOnboardingStore } from './store/onboardingStore'
 import OnboardingWizard from './components/OnboardingWizard'
@@ -31,6 +33,8 @@ const App: React.FC = () => {
   const navigate = useNavigate()
   const { isWin, isMac } = usePlatform()
   const { sessionsCollapsed, toggleSessions, navCollapsed } = useUIStore()
+  const toggleWorkspace = useWorkspaceStore((s) => s.togglePanel)
+  const workspaceOpen = useWorkspaceStore((s) => s.open)
   const onboardingOpen = useOnboardingStore((s) => s.open)
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
@@ -170,6 +174,19 @@ const App: React.FC = () => {
             </button>
           )}
           <div className="flex-1 min-w-0" />
+          {isChat && !showProductGate && (
+            <button
+              onClick={toggleWorkspace}
+              title={t('ws_toggle')}
+              className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn cursor-pointer transition-colors ${
+                workspaceOpen
+                  ? 'text-accent bg-accent-soft'
+                  : 'text-content-tertiary hover:text-content hover:bg-surface-2'
+              } ${isMac ? 'mt-1' : ''}`}
+            >
+              <FolderTree size={16} />
+            </button>
+          )}
           {product.slots?.HeaderRight && (
             <div className="titlebar-no-drag flex items-center">
               <product.slots.HeaderRight />
@@ -179,7 +196,8 @@ const App: React.FC = () => {
         </header>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-base">
+        <div className="flex-1 flex min-h-0 overflow-hidden bg-base">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {showProductGate && ProductGate ? (
             <ProductGate onAuthenticated={() => setProductAuthed(true)} />
           ) : (
@@ -199,6 +217,8 @@ const App: React.FC = () => {
             ))}
           </Routes>
           )}
+          </div>
+          {isChat && !showProductGate && <WorkspacePanel />}
         </div>
       </div>
     </div>

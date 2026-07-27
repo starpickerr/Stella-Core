@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import Markdown from './Markdown'
 import MessageSteps, { ThinkingStep } from './MessageSteps'
+import FileCard from './FileCard'
 import { product } from '@product'
 
 interface MessageBubbleProps {
@@ -142,6 +143,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
 
           {/* Final answer */}
           {message.content && <Markdown content={message.content} />}
+
+          {/* Files the agent wrote this turn — click to open the preview panel. */}
+          {message.artifacts && message.artifacts.length > 0 && (
+            <div className="flex flex-col items-start">
+              {message.artifacts.map((a) => (
+                <FileCard key={a.abs_path || a.rel_path} meta={a} />
+              ))}
+            </div>
+          )}
 
           {/* Media attachments sent via the `send` tool (images / files). */}
           {message.attachments && message.attachments.length > 0 && (

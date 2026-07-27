@@ -1,0 +1,864 @@
+/* =====================================================================
+ * Workspace panel: file preview + file manager + @ file references.
+ * Loaded after console.js and reuses its globals (t, escapeHtml,
+ * renderMarkdown, applyHighlighting, pendingAttachments, ...).
+ * ===================================================================== */
+
+const WS_WIDTH_KEY = 'cow_workspace_width';
+const WS_DEFAULT_WIDTH = 420;
+const WS_MIN_WIDTH = 280;
+
+// Panel state
+let wsPanelOpen = false;
+let wsActiveTab = 'preview';
+let wsCurrentFile = null;
+// Set once the user closes the panel by hand: from then on we stop
+// auto-opening artifacts for the rest of the page session.
+let wsAutoOpenSuppressed = false;
+// Artifacts produced by the turn currently streaming.
+let wsTurnArtifacts = [];
+
+// File manager state
+let wsCurrentDir = '';
+let wsSearchMode = false;
+let wsSearchTimer = null;
+
+// =====================================================================
+// Metadata helpers
+// =====================================================================
+const WS_KIND_ICONS = {
+    directory: 'fa-folder',
+    html: 'fa-file-code',
+    markdown: 'fa-file-lines',
+    image: 'fa-file-image',
+    video: 'fa-file-video',
+    audio: 'fa-file-audio',
+    pdf: 'fa-file-pdf',
+    csv: 'fa-file-csv',
+    code: 'fa-file-code',
+    office: 'fa-file-word',
+    text: 'fa-file-lines',
+    file: 'fa-file',
+};
+
+const WS_KIND_BY_EXT = {
+    html: ['html', 'htm'],
+    markdown: ['md', 'markdown'],
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'],
+    video: ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'],
+    audio: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'],
+    pdf: ['pdf'],
+    csv: ['csv', 'tsv'],
+    code: ['py', 'js', 'ts', 'tsx', 'jsx', 'java', 'c', 'cpp', 'h', 'go', 'rs',
+           'rb', 'php', 'sh', 'sql', 'css', 'scss', 'json', 'yaml', 'yml',
+           'xml', 'toml', 'ini'],
+    text: ['txt', 'log'],
+    office: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
+};
+
+const WS_EXT_KIND = (() => {
+    const map = {};
+    for (const [kind, exts] of Object.entries(WS_KIND_BY_EXT)) {
+        exts.forEach(e => { map[e] = kind; });
+    }
+    return map;
+})();
+
+const WS_PREVIEWABLE = new Set(
+    ['html', 'markdown', 'image', 'video', 'audio', 'pdf', 'csv', 'code', 'text']
+);
+
+function wsKindOf(name) {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    return WS_EXT_KIND[ext] || 'file';
+}
+
+function wsIconClass(kind) {
+    return `fas ${WS_KIND_ICONS[kind] || WS_KIND_ICONS.file} ws-icon-${kind}`;
+}
+
+function wsFormatSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let n = bytes;
+    for (const u of units) {
+        if (n < 1024) return `${u === 'B' ? Math.round(n) : n.toFixed(1)}${u}`;
+        n /= 1024;
+    }
+    return `${n.toFixed(1)}TB`;
+}
+
+async function wsApi(path) {
+    const res = await fetch(path);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'Request failed');
+    return data;
+}
+
+// =====================================================================
+// Panel open / close / resize
+// =====================================================================
+function openWorkspacePanel(tab) {
+    const panel = document.getElementById('workspace-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    wsPanelOpen = true;
+    const width = parseInt(localStorage.getItem(WS_WIDTH_KEY), 10);
+    if (width >= WS_MIN_WIDTH) panel.style.width = `${width}px`;
+    if (tab) switchWorkspaceTab(tab);
+}
+
+/**
+ * @param {boolean} byUser - true when triggered by the close button, which
+ *   also disables auto-open for the rest of the session.
+ */
+function closeWorkspacePanel(byUser) {
+    const panel = document.getElementById('workspace-panel');
+    if (!panel) return;
+    panel.classList.add('hidden');
+    wsPanelOpen = false;
+    if (byUser) wsAutoOpenSuppressed = true;
+}
+
+function toggleWorkspacePanel() {
+    if (wsPanelOpen) {
+        closeWorkspacePanel(true);
+        return;
+    }
+    wsAutoOpenSuppressed = false;
+    openWorkspacePanel(wsCurrentFile ? 'preview' : 'files');
+}
+
+function switchWorkspaceTab(tab) {
+    wsActiveTab = tab;
+    document.querySelectorAll('.workspace-tab').forEach(el => {
+        el.classList.toggle('active', el.dataset.wsTab === tab);
+    });
+    document.querySelectorAll('.workspace-body').forEach(el => {
+        el.classList.toggle('active', el.id === `ws-body-${tab}`);
+    });
+    wsUpdateHeaderActions();
+    if (tab === 'files' && !document.getElementById('ws-file-list').childElementCount) {
+        loadWorkspaceDir(wsCurrentDir);
+    }
+}
+
+function wsUpdateHeaderActions() {
+    const show = wsActiveTab === 'preview' && !!wsCurrentFile;
+    ['ws-btn-external', 'ws-btn-download', 'ws-btn-copy'].forEach(id => {
+        document.getElementById(id)?.classList.toggle('hidden', !show);
+    });
+}
+
+function initWorkspaceResizer() {
+    const resizer = document.getElementById('ws-resizer');
+    const panel = document.getElementById('workspace-panel');
+    if (!resizer || !panel) return;
+
+    let startX = 0;
+    let startWidth = 0;
+
+    function onMove(e) {
+        const delta = startX - e.clientX;
+        const next = Math.max(WS_MIN_WIDTH, Math.min(window.innerWidth * 0.7, startWidth + delta));
+        panel.style.width = `${next}px`;
+    }
+
+    function onUp() {
+        resizer.classList.remove('dragging');
+        document.body.style.userSelect = '';
+        // The preview iframe swallows mousemove while dragging over it.
+        document.getElementById('ws-preview-content')?.style.removeProperty('pointer-events');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        localStorage.setItem(WS_WIDTH_KEY, String(parseInt(panel.style.width, 10) || WS_DEFAULT_WIDTH));
+    }
+
+    resizer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startX = e.clientX;
+        startWidth = panel.offsetWidth;
+        resizer.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+        document.getElementById('ws-preview-content')?.style.setProperty('pointer-events', 'none');
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+}
+
+// =====================================================================
+// Preview
+// =====================================================================
+function wsSetPreviewEmpty(message, icon) {
+    const body = document.getElementById('ws-preview-content');
+    const title = document.getElementById('ws-preview-title');
+    if (!body) return;
+    title?.classList.add('hidden');
+    body.innerHTML = `<div class="workspace-empty">
+        <i class="fas ${icon || 'fa-eye'}"></i>
+        <span>${escapeHtml(message)}</span>
+    </div>`;
+}
+
+/**
+ * Open a file in the preview tab.
+ * @param {object|string} target - file metadata, or a path to resolve first.
+ */
+async function openInPreview(target) {
+    let meta = target;
+    if (typeof target === 'string') {
+        try {
+            meta = (await wsApi(`/api/workspace/resolve?path=${encodeURIComponent(target)}`)).file;
+        } catch (e) {
+            openWorkspacePanel('preview');
+            wsSetPreviewEmpty(t('ws_preview_failed') + ': ' + e.message, 'fa-triangle-exclamation');
+            return;
+        }
+    }
+    if (!meta) return;
+
+    wsCurrentFile = meta;
+    openWorkspacePanel('preview');
+    switchWorkspaceTab('preview');
+
+    const title = document.getElementById('ws-preview-title');
+    if (title) {
+        title.textContent = meta.path || meta.file_name || meta.name || '';
+        title.classList.remove('hidden');
+    }
+    wsUpdateHeaderActions();
+    await wsRenderPreview(meta);
+}
+
+async function wsRenderPreview(meta) {
+    const body = document.getElementById('ws-preview-content');
+    if (!body) return;
+    const kind = meta.kind || wsKindOf(meta.file_name || meta.name || meta.path);
+    const name = meta.file_name || meta.name || (meta.path || '').split('/').pop();
+    const previewUrl = meta.preview_url;
+    const rawUrl = meta.raw_url || previewUrl;
+
+    if (kind === 'html') {
+        body.innerHTML = '';
+        const frame = document.createElement('iframe');
+        // No allow-same-origin: the generated page runs in an opaque origin and
+        // cannot reach the console's storage or auth cookie.
+        frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms allow-modals');
+        frame.src = previewUrl;
+        body.appendChild(frame);
+        return;
+    }
+
+    if (kind === 'image') {
+        body.innerHTML = `<div class="ws-pad"><img class="ws-media" src="${escapeHtml(rawUrl)}" alt="${escapeHtml(name)}"></div>`;
+        return;
+    }
+
+    if (kind === 'video') {
+        body.innerHTML = `<div class="ws-pad"><video class="ws-media" controls preload="metadata" src="${escapeHtml(rawUrl)}"></video></div>`;
+        return;
+    }
+
+    if (kind === 'audio') {
+        body.innerHTML = `<div class="ws-pad"><audio class="ws-media" controls src="${escapeHtml(rawUrl)}"></audio></div>`;
+        return;
+    }
+
+    if (kind === 'pdf') {
+        body.innerHTML = '';
+        const frame = document.createElement('iframe');
+        frame.src = previewUrl;
+        body.appendChild(frame);
+        return;
+    }
+
+    if (kind === 'markdown' || kind === 'code' || kind === 'text' || kind === 'csv') {
+        body.innerHTML = `<div class="workspace-empty"><i class="fas fa-spinner fa-spin"></i></div>`;
+        try {
+            const res = await fetch(previewUrl);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+            if (kind === 'markdown') {
+                body.innerHTML = `<div class="ws-pad msg-content">${renderMarkdown(text)}</div>`;
+            } else if (kind === 'csv') {
+                body.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+            } else {
+                const lang = (name.split('.').pop() || '').toLowerCase();
+                body.innerHTML = `<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(text)}</code></pre>`;
+            }
+            applyHighlighting(body);
+        } catch (e) {
+            wsSetPreviewEmpty(t('ws_preview_failed') + ': ' + e.message, 'fa-triangle-exclamation');
+        }
+        return;
+    }
+
+    // Unsupported type: offer a download instead of a broken viewer.
+    body.innerHTML = `<div class="workspace-empty">
+        <i class="${wsIconClass(kind)}"></i>
+        <span>${escapeHtml(name)}</span>
+        <span>${escapeHtml(t('ws_no_inline_preview'))}</span>
+        <a href="${escapeHtml(rawUrl)}" download="${escapeHtml(name)}"
+           class="file-card-btn" style="width:auto;padding:4px 12px;border:1px solid currentColor;">
+            <i class="fas fa-download"></i>&nbsp;${escapeHtml(t('ws_download'))}
+        </a>
+    </div>`;
+}
+
+function openPreviewExternally() {
+    if (!wsCurrentFile) return;
+    window.open(wsCurrentFile.preview_url || wsCurrentFile.raw_url, '_blank', 'noopener');
+}
+
+function downloadPreviewFile() {
+    if (!wsCurrentFile) return;
+    const a = document.createElement('a');
+    a.href = wsCurrentFile.raw_url || wsCurrentFile.preview_url;
+    a.download = wsCurrentFile.file_name || wsCurrentFile.name || '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+function copyPreviewPath() {
+    if (!wsCurrentFile) return;
+    const path = wsCurrentFile.abs_path || wsCurrentFile.path || '';
+    copyToClipboard(path).then(() => {
+        const btn = document.getElementById('ws-btn-copy');
+        const icon = btn && btn.querySelector('i');
+        if (icon) {
+            icon.className = 'fas fa-check';
+            setTimeout(() => { icon.className = 'fas fa-link'; }, 1500);
+        }
+    });
+}
+
+// =====================================================================
+// Artifact cards in messages
+// =====================================================================
+
+/** Build the HTML for a file card. `meta` needs file_name / kind / raw_url. */
+function renderFileCard(meta) {
+    const name = meta.file_name || meta.name || '';
+    const kind = meta.kind || wsKindOf(name);
+    const relPath = meta.rel_path || meta.path || '';
+    // Skip the path when it adds nothing beyond the file name already shown.
+    const sub = [relPath === name ? '' : relPath, wsFormatSize(meta.size)]
+        .filter(Boolean).join(' · ');
+    const payload = escapeHtml(JSON.stringify({
+        file_name: name,
+        rel_path: meta.rel_path || meta.path || '',
+        abs_path: meta.abs_path || '',
+        kind: kind,
+        size: meta.size || 0,
+        raw_url: meta.raw_url || '',
+        preview_url: meta.preview_url || '',
+        previewable: meta.previewable !== false && WS_PREVIEWABLE.has(kind),
+    }));
+    const canPreview = meta.previewable !== false && WS_PREVIEWABLE.has(kind);
+    return `<div class="file-card" data-file='${payload}'>
+        <i class="file-card-icon ${wsIconClass(kind)}"></i>
+        <div class="file-card-info">
+            <div class="file-card-name">${escapeHtml(name)}</div>
+            ${sub ? `<div class="file-card-sub">${escapeHtml(sub)}</div>` : ''}
+        </div>
+        <div class="file-card-actions">
+            ${canPreview ? `<div class="file-card-btn" data-action="preview" title="${escapeHtml(t('ws_preview'))}"><i class="fas fa-eye"></i></div>` : ''}
+            <div class="file-card-btn" data-action="download" title="${escapeHtml(t('ws_download'))}"><i class="fas fa-download"></i></div>
+        </div>
+    </div>`;
+}
+
+/** Append an artifact card to a live bot bubble and remember it for auto-open. */
+function appendArtifactCard(container, item) {
+    if (!container) return;
+    const existing = container.querySelector(`[data-artifact-path="${CSS.escape(item.abs_path || '')}"]`);
+    if (existing) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'file-card-list';
+    wrap.dataset.artifactPath = item.abs_path || '';
+    wrap.innerHTML = renderFileCard(item);
+    container.appendChild(wrap);
+    wsTurnArtifacts.push(item);
+}
+
+function resetTurnArtifacts() {
+    wsTurnArtifacts = [];
+}
+
+/**
+ * Auto-open policy: only when the turn produced exactly one previewable
+ * artifact, and only while the user hasn't dismissed the panel by hand.
+ */
+function maybeAutoOpenArtifact() {
+    const items = wsTurnArtifacts.filter(a => a.previewable);
+    wsTurnArtifacts = [];
+    if (wsAutoOpenSuppressed || items.length !== 1) return;
+    openInPreview(items[0]);
+}
+
+/**
+ * Rebuild an artifact card from a persisted `write`/`edit` tool step.
+ * History replay has no SSE events, so the tool call is the only record.
+ * Returns '' when the file is agent-internal or the step isn't a file write.
+ */
+function renderArtifactCardFromStep(step) {
+    if (!step || step.type !== 'tool' || step.is_error === true) return '';
+    if (step.name !== 'write' && step.name !== 'edit') return '';
+    const path = (step.arguments && step.arguments.path || '').trim();
+    if (!path || !wsIsUserFacingPath(path)) return '';
+    const name = path.split(/[\\/]/).pop();
+    return `<div class="file-card-list">${renderFileCard({
+        file_name: name,
+        rel_path: path,
+        kind: wsKindOf(name),
+    })}</div>`;
+}
+
+// Mirrors the backend filter in agent/protocol/artifact.py.
+const WS_INTERNAL_DIRS = ['memory', 'knowledge', 'skills', 'tmp', 'scheduler', 'plans'];
+const WS_INTERNAL_FILES = ['AGENT.md', 'RULE.md', 'MEMORY.md', 'USER.md', 'BOOTSTRAP.md', 'mcp.json'];
+
+function wsIsUserFacingPath(path) {
+    const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
+    if (!parts.length) return false;
+    const name = parts[parts.length - 1];
+    if (name.startsWith('.')) return false;
+    // Absolute paths came from outside the workspace convention; skip them here
+    // since history replay can't tell whether they're inside the workspace.
+    if (path.startsWith('/') || path.startsWith('~') || /^[A-Za-z]:/.test(path)) return false;
+    if (parts.length === 1) return !WS_INTERNAL_FILES.includes(name);
+    if (WS_INTERNAL_DIRS.includes(parts[0])) return false;
+    return !parts.slice(0, -1).some(p => p.startsWith('.'));
+}
+
+async function wsResolveMeta(meta) {
+    if (meta.preview_url && meta.raw_url) return meta;
+    const path = meta.abs_path || meta.rel_path || meta.path;
+    if (!path) return null;
+    return (await wsApi(`/api/workspace/resolve?path=${encodeURIComponent(path)}`)).file;
+}
+
+function wsTriggerDownload(url, name) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+// Delegate clicks on file cards and inline path chips.
+document.addEventListener('click', async (e) => {
+    const chip = e.target.closest('.file-chip');
+    if (chip && chip.dataset.path) {
+        e.preventDefault();
+        openInPreview(chip.dataset.path);
+        return;
+    }
+
+    const card = e.target.closest('.file-card');
+    if (!card) return;
+    e.preventDefault();
+    let meta;
+    try { meta = JSON.parse(card.dataset.file); } catch (_) { return; }
+
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'download') {
+        if (meta.raw_url) {
+            wsTriggerDownload(meta.raw_url, meta.file_name);
+            return;
+        }
+        try {
+            const full = await wsResolveMeta(meta);
+            if (full) wsTriggerDownload(full.raw_url, full.name);
+        } catch (_) {}
+        return;
+    }
+    openInPreview(meta.preview_url ? meta : (meta.abs_path || meta.rel_path));
+});
+
+// =====================================================================
+// Inline path chips: turn local paths mentioned in text into clickable chips
+// =====================================================================
+const WS_PATH_EXTS = Object.values(WS_KIND_BY_EXT).flat().join('|');
+// Absolute (/Users/..., C:\...), home-relative (~/cow/...) or workspace-relative
+// (websites/report.html) paths, always anchored on a known file extension and
+// containing at least one separator, which keeps prose like "see report.html"
+// from turning into chips. Excluding `:` and `/` before the match is what stops
+// the tail of an http(s) URL from being picked up.
+const WS_PATH_RE = new RegExp(
+    '(^|[^\\w/\\\\.~:-])((?:~\\/|\\/|[A-Za-z]:\\\\)?(?:[\\w.\\-\\u4e00-\\u9fa5]+[\\/\\\\])+[\\w.\\-\\u4e00-\\u9fa5]+\\.(?:'
+    + WS_PATH_EXTS + '))(?=$|[^\\w.\\-\\u4e00-\\u9fa5]|$)',
+    'gi'
+);
+
+function _buildFileChip(path) {
+    const name = path.split(/[\\/]/).pop();
+    const kind = wsKindOf(name);
+    return `<span class="file-chip" data-path="${escapeHtml(path)}" title="${escapeHtml(path)}">` +
+        `<i class="${wsIconClass(kind)}"></i>${escapeHtml(name)}</span>`;
+}
+
+/**
+ * Rewrite bare file paths in already-rendered markdown into chips.
+ * Only touches text nodes outside <pre>/<code>/<a> so code samples and
+ * existing links stay untouched.
+ */
+function injectFileChips(html) {
+    if (!html || !html.includes('.')) return html;
+
+    // Split on tags; track whether we're inside a region we must not rewrite.
+    let depthSkip = 0;
+    return html.split(/(<[^>]+>)/).map((chunk) => {
+        if (chunk.startsWith('<')) {
+            const tag = chunk.match(/^<\/?\s*([a-zA-Z0-9]+)/);
+            const name = tag ? tag[1].toLowerCase() : '';
+            if (['pre', 'code', 'a', 'img', 'video', 'audio'].includes(name)) {
+                if (chunk.startsWith('</')) depthSkip = Math.max(0, depthSkip - 1);
+                else if (!chunk.endsWith('/>')) depthSkip += 1;
+            }
+            return chunk;
+        }
+        if (depthSkip > 0 || !chunk.trim()) return chunk;
+        return chunk.replace(WS_PATH_RE, (match, lead, path) =>
+            path.includes('://') ? match : lead + _buildFileChip(path)
+        );
+    }).join('');
+}
+
+// =====================================================================
+// File manager tab
+// =====================================================================
+function refreshWorkspaceTree() {
+    const input = document.getElementById('ws-search-input');
+    if (input) input.value = '';
+    wsSearchMode = false;
+    loadWorkspaceDir(wsCurrentDir);
+}
+
+async function loadWorkspaceDir(relPath) {
+    const list = document.getElementById('ws-file-list');
+    if (!list) return;
+    list.innerHTML = `<div class="workspace-empty"><i class="fas fa-spinner fa-spin"></i></div>`;
+    try {
+        const data = await wsApi(`/api/workspace/tree?path=${encodeURIComponent(relPath || '')}`);
+        wsCurrentDir = data.path || '';
+        wsSearchMode = false;
+        renderWorkspaceBreadcrumb(wsCurrentDir);
+        renderWorkspaceEntries(data.entries, data.truncated);
+    } catch (e) {
+        list.innerHTML = `<div class="workspace-empty">
+            <i class="fas fa-triangle-exclamation"></i><span>${escapeHtml(e.message)}</span></div>`;
+    }
+}
+
+function renderWorkspaceBreadcrumb(relPath) {
+    const bar = document.getElementById('ws-breadcrumb');
+    if (!bar) return;
+    const parts = (relPath || '').split('/').filter(Boolean);
+    const crumbs = [`<span class="crumb" data-ws-dir=""><i class="fas fa-house"></i></span>`];
+    let acc = '';
+    parts.forEach((p) => {
+        acc = acc ? `${acc}/${p}` : p;
+        crumbs.push('<span class="sep">/</span>');
+        crumbs.push(`<span class="crumb" data-ws-dir="${escapeHtml(acc)}">${escapeHtml(p)}</span>`);
+    });
+    bar.innerHTML = crumbs.join('');
+}
+
+function renderWorkspaceEntries(entries, truncated) {
+    const list = document.getElementById('ws-file-list');
+    if (!list) return;
+    if (!entries || entries.length === 0) {
+        list.innerHTML = `<div class="workspace-empty"><i class="fas fa-folder-open"></i>
+            <span>${escapeHtml(t('ws_empty_dir'))}</span></div>`;
+        return;
+    }
+    const rows = entries.map(entry => {
+        const meta = entry.is_dir ? '' : wsFormatSize(entry.size);
+        const payload = entry.is_dir ? '' : escapeHtml(JSON.stringify(entry));
+        return `<div class="ws-file-row" ${entry.is_dir
+                ? `data-ws-dir="${escapeHtml(entry.path)}"`
+                : `data-ws-file='${payload}' draggable="true"`}>
+            <i class="${wsIconClass(entry.kind)}"></i>
+            <span class="ws-file-name">${escapeHtml(entry.name)}</span>
+            <span class="ws-file-meta">${escapeHtml(meta)}</span>
+        </div>`;
+    });
+    if (truncated) {
+        rows.push(`<div class="workspace-empty" style="height:auto;padding:12px;">
+            <span>${escapeHtml(t('ws_truncated'))}</span></div>`);
+    }
+    list.innerHTML = rows.join('');
+}
+
+function renderWorkspaceSearchResults(results) {
+    const list = document.getElementById('ws-file-list');
+    if (!list) return;
+    if (!results.length) {
+        list.innerHTML = `<div class="workspace-empty"><i class="fas fa-magnifying-glass"></i>
+            <span>${escapeHtml(t('ws_no_results'))}</span></div>`;
+        return;
+    }
+    list.innerHTML = results.map(entry => `
+        <div class="ws-file-row" data-ws-file='${escapeHtml(JSON.stringify(entry))}' draggable="true">
+            <i class="${wsIconClass(entry.kind)}"></i>
+            <span class="ws-file-name">${escapeHtml(entry.name)}</span>
+            <span class="ws-file-path">${escapeHtml(entry.path)}</span>
+        </div>`).join('');
+}
+
+async function runWorkspaceSearch(query) {
+    if (!query.trim()) {
+        loadWorkspaceDir(wsCurrentDir);
+        return;
+    }
+    try {
+        const data = await wsApi(`/api/workspace/search?q=${encodeURIComponent(query)}&limit=60`);
+        wsSearchMode = true;
+        renderWorkspaceSearchResults(data.results || []);
+    } catch (e) {
+        const list = document.getElementById('ws-file-list');
+        if (list) {
+            list.innerHTML = `<div class="workspace-empty">
+                <i class="fas fa-triangle-exclamation"></i><span>${escapeHtml(e.message)}</span></div>`;
+        }
+    }
+}
+
+function initWorkspaceFilesTab() {
+    const list = document.getElementById('ws-file-list');
+    const bar = document.getElementById('ws-breadcrumb');
+    const input = document.getElementById('ws-search-input');
+
+    bar?.addEventListener('click', (e) => {
+        const crumb = e.target.closest('[data-ws-dir]');
+        if (crumb) loadWorkspaceDir(crumb.dataset.wsDir);
+    });
+
+    list?.addEventListener('click', (e) => {
+        const row = e.target.closest('.ws-file-row');
+        if (!row) return;
+        if (row.dataset.wsDir !== undefined) {
+            loadWorkspaceDir(row.dataset.wsDir);
+            return;
+        }
+        list.querySelectorAll('.ws-file-row.active').forEach(el => el.classList.remove('active'));
+        row.classList.add('active');
+        try { openInPreview(JSON.parse(row.dataset.wsFile)); } catch (_) {}
+    });
+
+    list?.addEventListener('dragstart', (e) => {
+        const row = e.target.closest('.ws-file-row[data-ws-file]');
+        if (!row) return;
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('application/x-cow-workspace-file', row.dataset.wsFile);
+    });
+
+    input?.addEventListener('input', () => {
+        clearTimeout(wsSearchTimer);
+        const q = input.value;
+        wsSearchTimer = setTimeout(() => runWorkspaceSearch(q), 200);
+    });
+}
+
+// =====================================================================
+// Drag a workspace file into the conversation
+// =====================================================================
+function addWorkspaceRefAttachment(entry) {
+    const relPath = entry.path || entry.rel_path || '';
+    if (!relPath) return;
+    if (pendingAttachments.some(a => a.file_type === 'workspace_ref' && a.file_path === relPath)) return;
+    pendingAttachments.push({
+        file_path: relPath,
+        file_name: entry.name || entry.file_name || relPath.split('/').pop(),
+        // Referenced in place; the backend must not treat it as an upload.
+        file_type: 'workspace_ref',
+    });
+    renderAttachmentPreview();
+}
+
+function initWorkspaceDropTarget() {
+    const target = document.getElementById('chat-main');
+    if (!target) return;
+
+    const isWorkspaceDrag = (e) =>
+        Array.from(e.dataTransfer?.types || []).includes('application/x-cow-workspace-file');
+
+    target.addEventListener('dragover', (e) => {
+        if (!isWorkspaceDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        target.classList.add('ws-drop-active');
+    });
+
+    // relatedTarget is the node being entered; moving between descendants of the
+    // target still fires dragleave, so only clear when the pointer truly left.
+    target.addEventListener('dragleave', (e) => {
+        if (!target.contains(e.relatedTarget)) target.classList.remove('ws-drop-active');
+    });
+
+    // No stopPropagation: the outer #view-chat drop handler owns resetting the
+    // upload overlay state, and it ignores drops that carry no files.
+    target.addEventListener('drop', (e) => {
+        if (!isWorkspaceDrag(e)) return;
+        e.preventDefault();
+        target.classList.remove('ws-drop-active');
+        try {
+            addWorkspaceRefAttachment(JSON.parse(e.dataTransfer.getData('application/x-cow-workspace-file')));
+        } catch (_) {}
+    });
+}
+
+// =====================================================================
+// @ file references in the chat input
+// =====================================================================
+let mentionActive = false;
+let mentionStart = -1;
+let mentionItems = [];
+let mentionIndex = 0;
+let mentionTimer = null;
+
+function hideMentionMenu() {
+    mentionActive = false;
+    mentionStart = -1;
+    mentionItems = [];
+    document.getElementById('mention-menu')?.classList.add('hidden');
+}
+
+function renderMentionMenu() {
+    const menu = document.getElementById('mention-menu');
+    if (!menu) return;
+    if (!mentionItems.length) {
+        menu.innerHTML = `<div class="mention-empty">${escapeHtml(t('ws_no_results'))}</div>`;
+        menu.classList.remove('hidden');
+        return;
+    }
+    menu.innerHTML = mentionItems.map((item, i) => `
+        <div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
+            <i class="${wsIconClass(item.kind)}"></i>
+            <span class="m-name">${escapeHtml(item.name)}</span>
+            <span class="m-path">${escapeHtml(item.path)}</span>
+        </div>`).join('');
+    menu.classList.remove('hidden');
+}
+
+async function updateMentionQuery(query) {
+    try {
+        const data = await wsApi(`/api/workspace/search?q=${encodeURIComponent(query)}&limit=12`);
+        if (!mentionActive) return;
+        mentionItems = data.results || [];
+        mentionIndex = 0;
+        renderMentionMenu();
+    } catch (_) {
+        hideMentionMenu();
+    }
+}
+
+function acceptMention(idx) {
+    const item = mentionItems[idx];
+    const input = document.getElementById('chat-input');
+    if (!item || !input) return;
+    addWorkspaceRefAttachment(item);
+    // Drop the "@query" fragment: the file travels as an attachment, not as text.
+    const before = input.value.slice(0, mentionStart);
+    const after = input.value.slice(input.selectionStart);
+    input.value = before + after;
+    input.selectionStart = input.selectionEnd = before.length;
+    hideMentionMenu();
+    input.focus();
+    input.dispatchEvent(new Event('input'));
+}
+
+function initMention() {
+    const input = document.getElementById('chat-input');
+    const menu = document.getElementById('mention-menu');
+    if (!input || !menu) return;
+
+    input.addEventListener('input', () => {
+        const pos = input.selectionStart;
+        const before = input.value.slice(0, pos);
+        // Trigger on "@" at the start of the input or after whitespace.
+        const match = before.match(/(?:^|\s)@([^\s@]*)$/);
+        if (!match) {
+            if (mentionActive) hideMentionMenu();
+            return;
+        }
+        mentionActive = true;
+        mentionStart = pos - match[1].length - 1;
+        clearTimeout(mentionTimer);
+        const q = match[1];
+        mentionTimer = setTimeout(() => updateMentionQuery(q), 150);
+    });
+
+    // Capture phase so Enter/arrows are consumed before the send handler.
+    input.addEventListener('keydown', (e) => {
+        if (!mentionActive || !mentionItems.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            mentionIndex = (mentionIndex + 1) % mentionItems.length;
+            renderMentionMenu();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            mentionIndex = (mentionIndex - 1 + mentionItems.length) % mentionItems.length;
+            renderMentionMenu();
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            acceptMention(mentionIndex);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            hideMentionMenu();
+        }
+    }, true);
+
+    menu.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('.mention-item');
+        if (!item) return;
+        e.preventDefault();
+        acceptMention(parseInt(item.dataset.idx, 10));
+    });
+
+    document.addEventListener('click', (e) => {
+        if (mentionActive && !menu.contains(e.target) && e.target !== input) hideMentionMenu();
+    });
+}
+
+/** Re-render the JS-generated parts of the panel after a language switch. */
+function relocalizeWorkspacePanel() {
+    if (!wsCurrentFile) wsSetPreviewEmpty(t('ws_preview_empty'));
+    if (wsActiveTab === 'files' && !wsSearchMode
+        && document.getElementById('ws-file-list')?.childElementCount) {
+        loadWorkspaceDir(wsCurrentDir);
+    }
+}
+
+// =====================================================================
+// Init
+// =====================================================================
+function initWorkspacePanel() {
+    initWorkspaceResizer();
+    initWorkspaceFilesTab();
+    initWorkspaceDropTarget();
+    initMention();
+    wsSetPreviewEmpty(t('ws_preview_empty'));
+
+    // The panel belongs to the chat view only; follow view switches.
+    const toggle = document.getElementById('workspace-toggle-btn');
+    const chatView = document.getElementById('view-chat');
+    if (toggle && chatView) {
+        const sync = () => toggle.classList.toggle('hidden', !chatView.classList.contains('active'));
+        sync();
+        new MutationObserver(sync).observe(chatView, { attributes: true, attributeFilter: ['class'] });
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initWorkspacePanel);
+} else {
+    initWorkspacePanel();
+}

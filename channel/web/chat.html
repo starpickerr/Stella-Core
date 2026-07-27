@@ -261,6 +261,12 @@
                     <i class="fas fa-clock-rotate-left text-slate-500 dark:text-slate-400"></i>
                 </button>
 
+                <!-- Workspace panel toggle (chat view only) -->
+                <button id="workspace-toggle-btn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer transition-colors duration-150"
+                        onclick="toggleWorkspacePanel()" data-tooltip="工作空间" data-tooltip-pos="bottom">
+                    <i class="fas fa-folder-tree text-slate-500 dark:text-slate-400"></i>
+                </button>
+
                 <!-- Breadcrumb (hidden on mobile) -->
                 <div class="hidden lg:flex items-center gap-2 text-sm min-w-0">
                     <span id="breadcrumb-group" class="text-slate-400 dark:text-slate-500 truncate" data-i18n="nav_chat">对话</span>
@@ -338,7 +344,8 @@
                 <!-- ====================================================== -->
                 <!-- VIEW: Chat                                              -->
                 <!-- ====================================================== -->
-                <div id="view-chat" class="view active relative">
+                <div id="view-chat" class="view active">
+                  <div id="chat-main" class="chat-main relative">
                     <!-- Messages -->
                     <div id="chat-messages" class="flex-1 overflow-y-auto">
                         <!-- Welcome Screen -->
@@ -467,6 +474,7 @@
                                     </button>
                                 </div>
                                 <div id="slash-menu" class="slash-menu hidden"></div>
+                                <div id="mention-menu" class="mention-menu hidden"></div>
                                 <div class="flex-1 min-w-0 relative flex items-center">
                                     <textarea id="chat-input"
                                               class="w-full pl-4 pr-[4.5rem] py-[10px] rounded-xl border border-slate-200 dark:border-slate-600
@@ -476,7 +484,7 @@
                                                      text-sm leading-relaxed"
                                               rows="1"
                                               data-i18n-placeholder="input_placeholder"
-                                              placeholder="输入消息，或输入 / 使用指令"></textarea>
+                                              placeholder="输入消息，/ 使用指令，@ 引用文件"></textarea>
                                     <button id="optimize-btn" type="button"
                                             class="absolute right-9 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg
                                                    text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20
@@ -517,6 +525,69 @@
                             </div>
                         </div>
                     </div>
+                  </div><!-- /#chat-main -->
+
+                    <!-- ================================================== -->
+                    <!-- Workspace panel: file preview + file manager        -->
+                    <!-- ================================================== -->
+                    <aside id="workspace-panel" class="workspace-panel hidden">
+                        <div id="ws-resizer" class="workspace-resizer" title="Drag to resize"></div>
+                        <div class="workspace-inner">
+                            <div class="workspace-header">
+                                <div class="workspace-tabs">
+                                    <button class="workspace-tab active" data-ws-tab="preview" onclick="switchWorkspaceTab('preview')">
+                                        <i class="fas fa-eye"></i>
+                                        <span data-i18n="ws_tab_preview">预览</span>
+                                    </button>
+                                    <button class="workspace-tab" data-ws-tab="files" onclick="switchWorkspaceTab('files')">
+                                        <i class="fas fa-folder-tree"></i>
+                                        <span data-i18n="ws_tab_files">文件</span>
+                                    </button>
+                                </div>
+                                <div class="workspace-header-actions">
+                                    <button id="ws-btn-external" class="workspace-icon-btn hidden" onclick="openPreviewExternally()"
+                                            data-i18n-title="ws_open_external" title="在新标签页打开">
+                                        <i class="fas fa-up-right-from-square"></i>
+                                    </button>
+                                    <button id="ws-btn-download" class="workspace-icon-btn hidden" onclick="downloadPreviewFile()"
+                                            data-i18n-title="ws_download" title="下载">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+                                    <button id="ws-btn-copy" class="workspace-icon-btn hidden" onclick="copyPreviewPath()"
+                                            data-i18n-title="ws_copy_path" title="复制路径">
+                                        <i class="fas fa-link"></i>
+                                    </button>
+                                    <button class="workspace-icon-btn" onclick="closeWorkspacePanel(true)"
+                                            data-i18n-title="ws_close" title="关闭">
+                                        <i class="fas fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Preview tab -->
+                            <div id="ws-body-preview" class="workspace-body active">
+                                <div id="ws-preview-title" class="workspace-file-title hidden"></div>
+                                <div id="ws-preview-content" class="workspace-preview-content"></div>
+                            </div>
+
+                            <!-- Files tab -->
+                            <div id="ws-body-files" class="workspace-body">
+                                <div class="workspace-files-toolbar">
+                                    <div class="workspace-search">
+                                        <i class="fas fa-magnifying-glass"></i>
+                                        <input id="ws-search-input" type="text" spellcheck="false"
+                                               data-i18n-placeholder="ws_search_placeholder" placeholder="搜索文件">
+                                    </div>
+                                    <button class="workspace-icon-btn" onclick="refreshWorkspaceTree()"
+                                            data-i18n-title="ws_refresh" title="刷新">
+                                        <i class="fas fa-rotate-right"></i>
+                                    </button>
+                                </div>
+                                <div id="ws-breadcrumb" class="workspace-breadcrumb"></div>
+                                <div id="ws-file-list" class="workspace-file-list"></div>
+                            </div>
+                        </div>
+                    </aside>
                 </div>
 
                 <!-- ====================================================== -->
@@ -1533,5 +1604,6 @@
     </div>
 
     <script defer src="assets/js/console.js"></script>
+    <script defer src="assets/js/workspace.js"></script>
 </body>
 </html>

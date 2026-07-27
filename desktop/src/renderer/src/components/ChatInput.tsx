@@ -1,9 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Plus, Paperclip, Square, X, File as FileIcon, Loader2, Trash2 } from 'lucide-react'
+import { Plus, Paperclip, Square, X, File as FileIcon, Loader2, Trash2, AtSign } from 'lucide-react'
 import { t } from '../i18n'
-import type { Attachment } from '../types'
+import type { Attachment, WorkspaceEntry } from '../types'
 import apiClient from '../api/client'
 import { PaperPlaneIcon } from './icons'
+import { WORKSPACE_DRAG_TYPE } from './FileTree'
+import { iconFor, colorFor } from '../lib/fileKind'
 
 export type ChatInputHandle = (text: string, attachments: Attachment[]) => void
 
@@ -34,6 +36,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const [dragOver, setDragOver] = useState(false)
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
+  // `@` workspace-file picker
+  const [mentionItems, setMentionItems] = useState<WorkspaceEntry[]>([])
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const mentionStartRef = useRef(-1)
+  const mentionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -138,7 +145,65 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     resetHeight()
   }, [text, attachments, isStreaming, onSend])
 
+  const mentionOpen = mentionStartRef.current >= 0 && mentionItems.length > 0
+
+  const closeMention = () => {
+    mentionStartRef.current = -1
+    setMentionItems([])
+    setMentionIndex(0)
+  }
+
+  /** Reference an existing workspace file in place instead of uploading a copy. */
+  const addWorkspaceRef = (entry: WorkspaceEntry) => {
+    setAttachments((prev) =>
+      prev.some((a) => a.file_type === 'workspace_ref' && a.file_path === entry.path)
+        ? prev
+        : [...prev, { file_path: entry.path, file_name: entry.name, file_type: 'workspace_ref' }]
+    )
+  }
+
+  const acceptMention = (index: number) => {
+    const item = mentionItems[index]
+    const el = textareaRef.current
+    if (!item || !el) return
+    addWorkspaceRef(item)
+    // Drop the "@query" fragment: the file rides along as an attachment.
+    const caret = el.selectionStart
+    const next = text.slice(0, mentionStartRef.current) + text.slice(caret)
+    const caretAfter = mentionStartRef.current
+    setText(next)
+    closeMention()
+    requestAnimationFrame(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = caretAfter
+      autoSize(el)
+    })
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Mention menu takes precedence: it's only open while typing "@…".
+    if (mentionOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((i) => (i + 1) % mentionItems.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((i) => (i - 1 + mentionItems.length) % mentionItems.length)
+        return
+      }
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+        e.preventDefault()
+        acceptMention(mentionIndex)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeMention()
+        return
+      }
+    }
     // Slash menu navigation
     if (slashOpen && filtered.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -175,6 +240,25 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     // open slash menu when the input starts with "/" and has no space
     setSlashOpen(v.startsWith('/') && !v.includes(' '))
     setSlashIndex(0)
+
+    // Trigger the file picker on "@" at the start or after whitespace.
+    const match = v.slice(0, e.target.selectionStart).match(/(?:^|\s)@([^\s@]*)$/)
+    if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current)
+    if (!match) {
+      closeMention()
+      return
+    }
+    mentionStartRef.current = e.target.selectionStart - match[1].length - 1
+    mentionTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await apiClient.workspaceSearch(match[1], 12)
+        if (mentionStartRef.current < 0) return
+        setMentionItems(res.results || [])
+        setMentionIndex(0)
+      } catch {
+        closeMention()
+      }
+    }, 160)
   }
 
   const uploadFiles = async (files: File[]) => {
@@ -211,6 +295,17 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
+    // A file dragged from the workspace panel is already on disk in the
+    // workspace — reference it instead of uploading a duplicate.
+    const wsPayload = e.dataTransfer.getData(WORKSPACE_DRAG_TYPE)
+    if (wsPayload) {
+      try {
+        addWorkspaceRef(JSON.parse(wsPayload) as WorkspaceEntry)
+      } catch {
+        /* malformed drag payload */
+      }
+      return
+    }
     const files = Array.from(e.dataTransfer.files || [])
     if (files.length) uploadFiles(files)
   }
@@ -240,6 +335,18 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     if (slashIndex >= filtered.length) setSlashIndex(0)
   }, [filtered.length, slashIndex])
 
+  // A drag can end without ever reaching this drop zone (Esc, or released over
+  // another element), and then no dragleave/drop fires here.
+  useEffect(() => {
+    const clear = () => setDragOver(false)
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+    }
+  }, [])
+
   const canSend = !isStreaming && (!!text.trim() || attachments.length > 0)
 
   return (
@@ -252,12 +359,16 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           e.preventDefault()
           setDragOver(true)
         }}
-        onDragLeave={() => setDragOver(false)}
+        onDragLeave={(e) => {
+          // Moving between descendants also fires dragleave; only clear when the
+          // pointer actually left the drop zone.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+        }}
         onDrop={handleDrop}
       >
         {dragOver && (
           <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-accent-soft text-accent text-sm font-medium pointer-events-none">
-            {t('input_placeholder')}
+            {t('drop_to_attach')}
           </div>
         )}
 
@@ -289,6 +400,34 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
         )}
 
+        {/* Workspace file picker (@) */}
+        {mentionOpen && (
+          <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-72 overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
+            {mentionItems.map((item, i) => {
+              const Icon = iconFor(item.kind)
+              return (
+                <button
+                  key={item.path}
+                  onMouseEnter={() => setMentionIndex(i)}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    acceptMention(i)
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
+                    i === mentionIndex ? 'bg-accent-soft' : 'hover:bg-surface-2'
+                  }`}
+                >
+                  <Icon size={13} className={`shrink-0 ${colorFor(item.kind)}`} />
+                  <span className="text-[13px] text-content shrink-0 max-w-[45%] truncate">{item.name}</span>
+                  <span className="flex-1 min-w-0 text-[11px] text-content-tertiary text-right truncate">
+                    {item.path}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Attachment preview */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -310,8 +449,14 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-inset border border-default rounded-lg text-xs text-content-secondary max-w-[180px] relative pr-7">
-                    <FileIcon size={12} />
-                    <span className="truncate">{att.file_name}</span>
+                    {att.file_type === 'workspace_ref' ? (
+                      <AtSign size={12} className="text-accent" />
+                    ) : (
+                      <FileIcon size={12} />
+                    )}
+                    <span className="truncate" title={att.file_path}>
+                      {att.file_name}
+                    </span>
                     <button
                       onClick={() => removeAttachment(i)}
                       className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-danger text-white flex items-center justify-center cursor-pointer"
