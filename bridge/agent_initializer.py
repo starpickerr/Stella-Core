@@ -272,11 +272,16 @@ class AgentInitializer:
         memory_tools = []
         
         try:
-            from agent.memory import MemoryManager, MemoryConfig
+            from agent.memory import MemoryManager, MemoryConfig, set_global_memory_config
             from agent.tools import MemorySearchTool, MemoryGetTool
             from config import conf
 
             memory_config = MemoryConfig(workspace_root=workspace_root)
+            # MemoryManager below takes memory_config directly, so this call
+            # isn't for its own sake - it's for ConversationStore/evolution,
+            # which read the singleton unconditionally (see
+            # set_global_memory_config's docstring).
+            set_global_memory_config(memory_config)
 
             embedding_provider = self._init_embedding_provider(
                 memory_config, session_id=session_id
