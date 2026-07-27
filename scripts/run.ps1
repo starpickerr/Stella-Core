@@ -414,12 +414,12 @@ function Install-Dependencies {
         Write-Warn ((T "cow CLI 不在 PATH 中，你可以使用" "cow CLI not in PATH. You can use") + ": $PythonCmd -m cli.cli")
     }
 
-    # Optional: bundle ripgrep for a faster grep tool. Never fatal.
+    # Optional: bundle ripgrep for a faster search_files tool. Never fatal.
     Install-Ripgrep
 }
 
 # ── install ripgrep (best-effort) ────────────────────────────────
-# Bundle a fast search backend for the grep tool. This is OPTIONAL: the grep
+# Bundle a fast search backend for the search_files tool. This is OPTIONAL: the search_files
 # tool falls back to PowerShell / pure-Python when rg is absent, so ANY failure
 # here (no network, download error, unzip error) is swallowed with a warning
 # and never blocks the install. We drop rg.exe into the Python Scripts dir,

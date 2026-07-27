@@ -60,7 +60,7 @@ export class PythonBackend extends EventEmitter {
     const existing = process.env.PATH || ''
     const parts: string[] = existing ? existing.split(sep) : []
 
-    // Prepend the bundled ripgrep dir (if shipped) so the grep tool's
+    // Prepend the bundled ripgrep dir (if shipped) so the search_files tool's
     // shutil.which("rg") finds our copy and uses the fast rg backend instead of
     // the slow PowerShell fallback. Only Windows ships rg today (macOS relies on
     // its system grep); the existsSync guard keeps this a no-op everywhere else.

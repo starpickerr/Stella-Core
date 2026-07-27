@@ -21,6 +21,7 @@ from agent.tools.utils.diff import (
     strip_line_number_prefixes,
 )
 from agent.tools.utils.file_state import note_write, staleness_warning
+from agent.tools.utils.syntax_check import review as syntax_review
 
 
 class Edit(BaseTool):
@@ -186,6 +187,10 @@ class Edit(BaseTool):
             # Check before writing - our own write would reset the mtime.
             warning = staleness_warning(absolute_path)
 
+            blocking, syntax_warning = syntax_review(absolute_path, base_content, new_content)
+            if blocking:
+                return ToolResult.fail(f"Error: {blocking}")
+
             # Write file
             with open(absolute_path, 'w', encoding='utf-8') as f:
                 f.write(final_content)
@@ -207,8 +212,9 @@ class Edit(BaseTool):
             }
             if replacements_made > 1:
                 result["replacements"] = replacements_made
-            if warning:
-                result["warning"] = warning
+            warnings = [w for w in (warning, syntax_warning) if w]
+            if warnings:
+                result["warning"] = " ".join(warnings)
             
             # Notify memory manager if file is in memory directory
             if self.memory_manager and "memory/" in path:

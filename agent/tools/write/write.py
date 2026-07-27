@@ -11,6 +11,7 @@ from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.credentials import is_credential_path
 from agent.tools.utils.diff import looks_like_line_numbered_block
 from agent.tools.utils.file_state import note_write, staleness_warning
+from agent.tools.utils.syntax_check import review as syntax_review
 from common.utils import expand_path
 
 
@@ -18,7 +19,7 @@ class Write(BaseTool):
     """Tool for writing file content"""
     
     name: str = "write"
-    description: str = "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. IMPORTANT: Single write should not exceed 10KB. For large files, create a skeleton first, then use edit to add content in chunks."
+    description: str = "Write content to a file, overwriting the existing file if there is one at the path. Creates parent directories automatically. Prefer the edit tool for modifying an existing file - it only sends the text being changed. Only use write to create new files or for complete rewrites."
     
     params: dict = {
         "type": "object",
@@ -74,6 +75,17 @@ class Write(BaseTool):
             # Check before writing - our own write would reset the mtime.
             warning = staleness_warning(absolute_path)
 
+            previous = None
+            if os.path.isfile(absolute_path):
+                try:
+                    with open(absolute_path, 'r', encoding='utf-8') as f:
+                        previous = f.read()
+                except (OSError, UnicodeDecodeError):
+                    previous = None
+            blocking, syntax_warning = syntax_review(absolute_path, previous, content)
+            if blocking:
+                return ToolResult.fail(f"Error: {blocking}")
+
             # Write file
             with open(absolute_path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -91,8 +103,9 @@ class Write(BaseTool):
                 "path": path,
                 "bytes_written": bytes_written
             }
-            if warning:
-                result["warning"] = warning
+            warnings = [w for w in (warning, syntax_warning) if w]
+            if warnings:
+                result["warning"] = " ".join(warnings)
             
             return ToolResult.success(result)
             

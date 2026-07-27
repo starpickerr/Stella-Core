@@ -1,5 +1,14 @@
 """
-Grep tool - search file contents across the workspace (grep-like).
+search_files tool - search inside workspace files, or find files by name.
+
+Two questions, one tool: target='content' greps file contents, target='files'
+matches file names. They are packaged together because "find the thing" is one
+intent from the model's point of view, and because a tool named `grep` never
+cued the model to try it for a filename lookup - it would burn turns grepping
+for the name, then fall back to shelling out to `find`.
+
+The name-matching path is plain Python (see _find_by_name). Everything below
+concerns content search.
 
 Backend strategy (4-tier, first available wins):
     1. ripgrep (rg)               - fastest; respects .gitignore natively
@@ -92,16 +101,18 @@ def _pruned_dirs(root: str, max_depth: int = 2) -> List[str]:
     return sorted(found)
 
 
-class Grep(BaseTool):
+class SearchFiles(BaseTool):
     """Tool for searching file contents by pattern across a directory tree."""
 
-    name: str = "grep"
+    name: str = "search_files"
     description: str = (
-        "Search file contents for a regex pattern across a directory tree, "
-        "returning matching lines with their file path and line number. "
-        "Prefer this tool for searching file contents. Supports full regex syntax; "
-        "use file_glob to limit which files are searched and output_mode to choose "
-        "the result shape."
+        "Search file contents, or find files by name. Prefer this over running "
+        "grep/rg/find in the bash tool.\n"
+        "Content search (target='content', default): regex search inside files, returning "
+        "matching lines with their file path and line number. Narrow with file_glob, "
+        "choose the result shape with output_mode.\n"
+        "File search (target='files'): find files by a name glob such as '*.py' or "
+        "'*report*', recursively under path, ordered most-recently-modified first."
     )
 
     params: dict = {
@@ -109,7 +120,12 @@ class Grep(BaseTool):
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "Regex pattern to search for in file contents."
+                "description": "Regex to search for inside files, or - when target='files' - a glob matched against the file name, e.g. '*.py' or '*report*'."
+            },
+            "target": {
+                "type": "string",
+                "enum": ["content", "files"],
+                "description": "'content' searches inside files (default); 'files' finds files by name."
             },
             "path": {
                 "type": "string",
@@ -147,6 +163,89 @@ class Grep(BaseTool):
         # Resolved once (assumes ~/.cow is stable for this session), not per-check.
         self._cow_dir = os.path.realpath(expand_path("~/.cow")).replace(os.sep, "/")
 
+    # --------------------------------------------------------- file-name search
+    def _find_by_name(self, pattern: str, root: str, ignore_case: bool,
+                      no_ignore: bool, max_results: int) -> ToolResult:
+        """Find files whose name matches a glob.
+
+        Answers "where is that file?", which content search cannot: grepping for
+        a filename only finds files that mention it, not the file itself.
+
+        Pure Python rather than shelling out to find/rg: the tree walk is the
+        cheap part, and it keeps the denylist and result ordering identical on
+        every platform.
+
+        Results are ordered most-recently-modified first - when several files
+        match, the one just worked on is almost always the one wanted.
+        """
+        matcher = fnmatch.fnmatch if ignore_case else fnmatch.fnmatchcase
+        # A bare "report" is far more likely to mean "name contains report"
+        # than an exact filename; a pattern with no wildcard would otherwise
+        # match nothing and look like the file does not exist.
+        if not any(ch in pattern for ch in "*?["):
+            pattern = f"*{pattern}*"
+
+        deadline = time.monotonic() + self.timeout
+        hits = []
+        timed_out = False
+
+        if os.path.isfile(root):
+            walk_root, only = os.path.dirname(root), os.path.basename(root)
+        else:
+            walk_root, only = root, None
+
+        for dirpath, dirnames, filenames in os.walk(walk_root):
+            if time.monotonic() > deadline:
+                timed_out = True
+                break
+            kept = []
+            for d in dirnames:
+                if d in _SKIP_DIR_NAMES and not no_ignore:
+                    continue
+                if self._is_credential_path(os.path.join(dirpath, d)):
+                    continue
+                kept.append(d)
+            dirnames[:] = sorted(kept)
+
+            for filename in filenames:
+                if only and filename != only:
+                    continue
+                if not matcher(filename, pattern):
+                    continue
+                full = os.path.join(dirpath, filename)
+                if self._is_credential_path(full):
+                    continue
+                try:
+                    mtime = os.path.getmtime(full)
+                except OSError:
+                    continue
+                hits.append((mtime, self._rel(full, root)))
+
+        hits.sort(key=lambda h: (-h[0], h[1]))
+        files = [rel for _, rel in hits[:max_results]]
+
+        payload = {"files": files, "match_count": len(files)}
+        notices = []
+        if len(hits) > max_results:
+            notices.append(
+                f"{len(hits)} files matched, showing the {max_results} most recently "
+                f"modified. Narrow `pattern` or `path`, or raise max_results."
+            )
+        if timed_out:
+            notices.append(
+                f"Search stopped after {self.timeout}s - results may be incomplete. "
+                f"Narrow `path`."
+            )
+        if not files and not no_ignore:
+            pruned = _pruned_dirs(root)
+            if pruned:
+                notices.append(
+                    f"Skipped {', '.join(pruned)}. Use no_ignore=true to search them too."
+                )
+        if notices:
+            payload["notice"] = " ".join(notices)
+        return ToolResult.success(payload)
+
     # ------------------------------------------------------------------ execute
     def execute(self, args: Dict[str, Any]) -> ToolResult:
         """Execute a content search. See params for arguments.
@@ -159,6 +258,10 @@ class Grep(BaseTool):
         pattern = args.get("pattern", "")
         if not isinstance(pattern, str) or not pattern:
             return ToolResult.fail("Error: pattern parameter is required")
+
+        target = args.get("target", "content") or "content"
+        if target not in ("content", "files"):
+            return ToolResult.fail(f"Error: target must be content/files, got: {target!r}")
 
         path = args.get("path", ".") or "."
         file_glob = args.get("file_glob", "*") or "*"
@@ -185,10 +288,12 @@ class Grep(BaseTool):
 
         # Validate regex early so a bad pattern fails the same way on every
         # backend (external tools would otherwise emit their own error text).
-        try:
-            re.compile(pattern)
-        except re.error as e:
-            return ToolResult.fail(f"Error: invalid regex pattern: {e}")
+        # In file mode the pattern is a glob, not a regex.
+        if target == "content":
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                return ToolResult.fail(f"Error: invalid regex pattern: {e}")
 
         root = self._resolve_path(path)
         if self._is_credential_path(root):
@@ -200,6 +305,9 @@ class Grep(BaseTool):
                 f"Error: path not found: {path}\nResolved to: {root}\n"
                 f"Hint: Relative paths are based on workspace ({self.cwd}). For directories outside workspace, use absolute paths."
             )
+
+        if target == "files":
+            return self._find_by_name(pattern, root, ignore_case, no_ignore, max_results)
 
         opts = _SearchOptions(
             pattern=pattern, root=root, file_glob=file_glob,
@@ -215,13 +323,13 @@ class Grep(BaseTool):
             # Any backend failure falls through to python so the tool never
             # hard-fails just because an external binary misbehaved.
             if backend is not self._backend_python:
-                logger.warning(f"[Grep] backend '{used}' failed ({e}); falling back to python")
+                logger.warning(f"[SearchFiles] backend '{used}' failed ({e}); falling back to python")
                 used = "python(fallback)"
                 outcome = self._backend_python(opts)
             else:
                 return ToolResult.fail(f"Error searching files: {e}")
 
-        logger.debug(f"[Grep] backend={used} mode={opts.output_mode} matches={len(outcome.rows)}")
+        logger.debug(f"[SearchFiles] backend={used} mode={opts.output_mode} matches={len(outcome.rows)}")
         return self._format(outcome, opts)
 
     # ------------------------------------------------------------- backend pick
