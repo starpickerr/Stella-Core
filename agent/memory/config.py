@@ -104,8 +104,16 @@ def get_default_memory_config() -> MemoryConfig:
 def set_global_memory_config(config: MemoryConfig):
     """
     Set the global memory configuration.
-    This should be called before creating any MemoryManager instances.
-    
+
+    get_default_memory_config() lazily falls back to a MemoryConfig() with
+    the hardcoded ~/cow default the first time anything calls it. Call this
+    before either of the following happens, otherwise:
+    - MemoryManager() instances created without an explicit config= pick
+      up the wrong workspace.
+    - ConversationStore, the evolution executor, and the evolution-undo
+      tool always read via get_default_memory_config() (they take no
+      config= override), so they depend on this unconditionally.
+
     Args:
         config: MemoryConfig instance to use globally
         

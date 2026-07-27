@@ -315,12 +315,61 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
+def _init_global_memory_config():
+    """
+    Fulfills set_global_memory_config's contract (see its docstring) at
+    process startup, before GET /api/sessions - fired by the web UI on
+    page load, without going through AgentInitializer - can lock the
+    singleton onto ~/cow ahead of the first chat message.
+    """
+    try:
+        from agent.memory import MemoryConfig, set_global_memory_config
+        from common.utils import expand_path
+        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+        set_global_memory_config(MemoryConfig(workspace_root=workspace_root))
+        _warn_if_legacy_workspace_data_exists(workspace_root)
+    except Exception as e:
+        logger.warning(f"[App] Failed to init global memory config: {e}")
+
+
+def _warn_if_legacy_workspace_data_exists(workspace_root: str):
+    """
+    Warn if the hardcoded ~/cow default holds data that agent_workspace
+    doesn't - e.g. after changing agent_workspace without moving the old
+    directory's contents over. The new workspace would otherwise look
+    empty even though old data still exists, with no indication why.
+    """
+    try:
+        from common.utils import expand_path
+        legacy_root = expand_path("~/cow")
+        # samefile checks filesystem identity, so case-insensitive filesystems
+        # (default on Windows and macOS) are handled correctly - normcase
+        # alone isn't enough, since it only folds case on Windows. Falls back
+        # when either path doesn't exist yet (samefile requires both to).
+        try:
+            same = os.path.samefile(legacy_root, workspace_root)
+        except OSError:
+            same = os.path.normcase(os.path.realpath(legacy_root)) == os.path.normcase(os.path.realpath(workspace_root))
+        if same:
+            return
+        # Non-empty check, not a specific file - covers session/skills/memory alike.
+        if os.path.isdir(legacy_root) and os.listdir(legacy_root):
+            logger.warning(
+                f"[App] Found existing data at the default workspace ({legacy_root}) "
+                f"that doesn't match your configured agent_workspace ({workspace_root}). "
+                f"It is not migrated automatically - if it has session history, memory, "
+                f"or skills you want to keep, move it into {workspace_root} manually."
+            )
+    except Exception as e:
+        logger.warning(f"[App] Legacy workspace check failed: {e}")
+
+
 def _sync_builtin_skills():
     """Sync builtin skills from project skills/ to workspace skills/ on startup."""
     import shutil
     try:
-        workspace = conf().get("agent_workspace", "~/cow")
-        workspace = os.path.expanduser(workspace)
+        from common.utils import expand_path
+        workspace = expand_path(conf().get("agent_workspace", "~/cow"))
         project_root = os.path.dirname(os.path.abspath(__file__))
         builtin_dir = os.path.join(project_root, "skills")
         custom_dir = os.path.join(workspace, "skills")
@@ -353,6 +402,9 @@ def run():
     try:
         # load config
         load_config()
+        # Prime the global memory config before GET /api/sessions (fired by
+        # the web UI on page load) can lazily default it to ~/cow.
+        _init_global_memory_config()
         # ctrl + c
         sigterm_handler_wrap(signal.SIGINT)
         # kill signal
