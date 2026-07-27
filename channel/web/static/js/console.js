@@ -128,7 +128,7 @@ const I18N = {
         steer_active: '引导当前任务',
         slash_logs: '查看最近日志',
         slash_version: '查看版本',
-        input_placeholder: '输入消息，或输入 / 使用指令',
+        input_placeholder: '输入消息，/ 使用指令，@ 引用文件',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
         config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
@@ -229,6 +229,15 @@ const I18N = {
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
         session_history: '历史会话',
+        ws_toggle: '工作空间', ws_tab_preview: '预览', ws_tab_files: '文件',
+        ws_open_external: '在新标签页打开', ws_download: '下载', ws_copy_path: '复制路径',
+        ws_close: '关闭', ws_refresh: '刷新', ws_preview: '预览',
+        ws_search_placeholder: '搜索文件',
+        ws_preview_empty: '选择一个文件进行预览',
+        ws_preview_failed: '预览失败',
+        ws_no_inline_preview: '该类型不支持内嵌预览',
+        ws_empty_dir: '空目录', ws_no_results: '没有匹配的文件',
+        ws_truncated: '文件过多，仅显示部分',
         today: '今天', yesterday: '昨天', earlier: '更早',
         delete_session_confirm: '确认删除该会话？所有消息将被清除。',
         delete_session_title: '删除会话',
@@ -387,7 +396,7 @@ const I18N = {
         steer_active: '引導當前任務',
         slash_logs: '檢視最近日誌',
         slash_version: '檢視版本',
-        input_placeholder: '輸入訊息，或輸入 / 使用指令',
+        input_placeholder: '輸入訊息，/ 使用指令，@ 引用檔案',
         config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
         config_model: '模型設定', config_agent: 'Agent 設定',
         config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
@@ -488,6 +497,15 @@ const I18N = {
         logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
         new_chat: '新對話',
         session_history: '歷史會話',
+        ws_toggle: '工作空間', ws_tab_preview: '預覽', ws_tab_files: '檔案',
+        ws_open_external: '在新分頁開啟', ws_download: '下載', ws_copy_path: '複製路徑',
+        ws_close: '關閉', ws_refresh: '重新整理', ws_preview: '預覽',
+        ws_search_placeholder: '搜尋檔案',
+        ws_preview_empty: '選擇一個檔案進行預覽',
+        ws_preview_failed: '預覽失敗',
+        ws_no_inline_preview: '該類型不支援內嵌預覽',
+        ws_empty_dir: '空目錄', ws_no_results: '沒有符合的檔案',
+        ws_truncated: '檔案過多，僅顯示部分',
         today: '今天', yesterday: '昨天', earlier: '更早',
         delete_session_confirm: '確認刪除該會話？所有訊息將被清除。',
         delete_session_title: '刪除會話',
@@ -641,7 +659,7 @@ const I18N = {
         steer_active: 'Steer active task',
         slash_logs: 'Show recent logs',
         slash_version: 'Show version',
-        input_placeholder: 'Type a message, or press / for commands',
+        input_placeholder: 'Type a message, / for commands, @ to reference files',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
         config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
@@ -742,6 +760,15 @@ const I18N = {
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
         session_history: 'History',
+        ws_toggle: 'Workspace', ws_tab_preview: 'Preview', ws_tab_files: 'Files',
+        ws_open_external: 'Open in new tab', ws_download: 'Download', ws_copy_path: 'Copy path',
+        ws_close: 'Close', ws_refresh: 'Refresh', ws_preview: 'Preview',
+        ws_search_placeholder: 'Search files',
+        ws_preview_empty: 'Select a file to preview',
+        ws_preview_failed: 'Preview failed',
+        ws_no_inline_preview: 'No inline preview for this file type',
+        ws_empty_dir: 'Empty directory', ws_no_results: 'No matching files',
+        ws_truncated: 'Too many files, showing a subset',
         today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier',
         delete_session_confirm: 'Delete this session? All messages will be removed.',
         delete_session_title: 'Delete Session',
@@ -862,6 +889,8 @@ function applyI18n() {
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
     if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
+    // Workspace panel content is rendered by JS, not data-i18n attributes.
+    if (typeof relocalizeWorkspacePanel === 'function') relocalizeWorkspacePanel();
 }
 
 // Single entry point for switching language. Updates the in-memory language,
@@ -1323,6 +1352,8 @@ function renderMarkdown(text) {
         html = _rewriteLocalImgSrc(html);
         // Order matters: video first (more specific), then image.
         html = injectImagePreviews(injectVideoPlayers(html));
+        // Fallback for files the agent only mentions by path (workspace.js).
+        if (typeof injectFileChips === 'function') html = injectFileChips(html);
         // Note: Code block headers are added via DOM manipulation after insertion
         // See addCodeBlockHeadersToElement()
         return html;
@@ -2217,6 +2248,14 @@ function hideDragOverlay() {
     dragOverlay.classList.add('hidden');
 }
 
+/** Clear every drag affordance at once, whatever the drag's outcome was. */
+function resetDragState() {
+    dragCounter = 0;
+    hideDragOverlay();
+    chatInputArea.classList.remove('drag-over');
+    document.getElementById('chat-main')?.classList.remove('ws-drop-active');
+}
+
 chatView.addEventListener('dragenter', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2229,29 +2268,35 @@ chatView.addEventListener('dragenter', (e) => {
 chatView.addEventListener('dragover', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    chatInputArea.classList.add('drag-over');
+    // Only external file drags upload here; workspace drags have their own target.
+    if (e.dataTransfer.types.includes('Files')) {
+        chatInputArea.classList.add('drag-over');
+    }
 });
 
 chatView.addEventListener('dragleave', (e) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounter--;
-    if (dragCounter === 0) {
-        hideDragOverlay();
-        chatInputArea.classList.remove('drag-over');
+    if (dragCounter <= 0) {
+        resetDragState();
     }
 });
 
 chatView.addEventListener('drop', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter = 0;
-    hideDragOverlay();
-    chatInputArea.classList.remove('drag-over');
+    resetDragState();
     if (e.dataTransfer.files.length) {
         handleFileSelect(e.dataTransfer.files);
     }
 });
+
+// A drag can end without ever reaching a drop target (Esc, or released over
+// another element). Clear the highlight unconditionally so it can't stay stuck
+// until the next reload.
+document.addEventListener('dragend', resetDragState);
+window.addEventListener('drop', resetDragState);
 
 document.body.addEventListener('dragover', (e) => {
     if (e.dataTransfer.types.includes('Files')) {
@@ -2860,6 +2905,7 @@ function sendMessage() {
     pendingAttachments = [];
     renderAttachmentPreview();
     sendBtn.disabled = true;
+    if (typeof resetTurnArtifacts === 'function') resetTurnArtifacts();
 
     const body = { session_id: sessionId, message: text, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
     if (attachments.length > 0) {
@@ -3207,6 +3253,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 mediaEl.appendChild(fileEl);
                 scrollChatToBottom();
 
+            } else if (item.type === 'artifact') {
+                // A user-facing file the agent wrote; render a card and let the
+                // workspace panel decide whether to auto-open it (workspace.js).
+                ensureBotEl();
+                if (typeof appendArtifactCard === 'function') {
+                    appendArtifactCard(mediaEl, item);
+                }
+                scrollChatToBottom();
+
             } else if (item.type === 'phase') {
                 // Coarse progress (e.g. cow install-browser); must not close SSE (unlike "done")
                 ensureBotEl();
@@ -3281,6 +3336,8 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 }
                 renderBotSpeakerButton(botEl, finalText);
                 scrollChatToBottom();
+
+                if (typeof maybeAutoOpenArtifact === 'function') maybeAutoOpenArtifact();
 
                 if (titleInfo) {
                     generateSessionTitle(titleInfo.sid, titleInfo.userMsg, '');
@@ -3635,6 +3692,10 @@ function renderStepsHtml(steps) {
             // so it persists across page refreshes (SSE-only file events are not stored).
             const mediaHtml = _renderSentFileFromToolResult(step);
             if (mediaHtml) html += mediaHtml;
+            // Same idea for files written by write/edit: rebuild the artifact card.
+            if (typeof renderArtifactCardFromStep === 'function') {
+                html += renderArtifactCardFromStep(step);
+            }
         }
     }
     return { stepsHtml: html, lastContentText };
@@ -4219,6 +4280,7 @@ function _applyInputTooltips() {
     set('clear-context-btn', 'tip_clear_context');
     set('attach-btn', 'tip_attach');
     set('session-toggle-btn', 'session_history', 'bottom');
+    set('workspace-toggle-btn', 'ws_toggle', 'bottom');
     // Optimize / mic buttons carry state-dependent tooltips managed in their
     // own setup, but on language switch we reset them to the idle label so the
     // tooltip follows the current locale.
