@@ -299,7 +299,7 @@ class ApiClient {
   }
 
   // Feishu one-click register
-  async getFeishuRegister(): Promise<{ status: string; qrcode_url?: string; qr_image?: string; expire_in?: number; message?: string }> {
+  async getFeishuRegister(): Promise<{ status: string; register_status?: string; qrcode_url?: string; qr_image?: string; expire_in?: number; message?: string }> {
     return this.request('/api/feishu/register')
   }
 

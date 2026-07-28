@@ -40,6 +40,19 @@ def test_is_available_reflects_import_machinery(monkeypatch):
     assert lark_install.is_available() is True
 
 
+def test_needs_download_only_when_nothing_is_unpacked(offline):
+    """Drives the "downloading..." hint, so it must not cry wolf."""
+    assert lark_install.needs_download() is True
+    os.makedirs(lark_install.vendor_dir())
+    assert lark_install.needs_download() is False
+
+
+def test_needs_download_false_when_sdk_importable(monkeypatch, tmp_path):
+    monkeypatch.setenv("COW_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(lark_install, "is_available", lambda: True)
+    assert lark_install.needs_download() is False
+
+
 def test_vendor_dir_is_versioned(monkeypatch, tmp_path):
     monkeypatch.setenv("COW_DATA_DIR", str(tmp_path))
     assert lark_install.vendor_dir().endswith(lark_install.VENDOR_VERSION)

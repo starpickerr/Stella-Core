@@ -96,6 +96,15 @@ def is_available() -> bool:
     return importlib.util.find_spec("lark_oapi") is not None
 
 
+def needs_download() -> bool:
+    """True if enabling Feishu would have to fetch the bundle first.
+
+    Lets the UI warn about the one-time wait before it happens; ``ensure``
+    re-checks anyway, so a stale answer only costs a misplaced hint.
+    """
+    return not is_available() and not os.path.isdir(vendor_dir())
+
+
 def _activate(path: str) -> bool:
     """Put an unpacked bundle on sys.path and report whether it took effect."""
     if not os.path.isdir(path):
