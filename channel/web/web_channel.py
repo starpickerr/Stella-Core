@@ -4083,13 +4083,9 @@ class ChannelsHandler:
             from common import i18n
             local_config = conf()
             active_channels = self._active_channel_set()
-            # Desktop build ships without lark-oapi, so hide Feishu from the list.
-            desktop_mode = os.environ.get("COW_DESKTOP") == "1"
             channels = []
             is_hant = i18n.get_language() == i18n.ZH_HANT
             for ch_name, ch_def in self.CHANNEL_DEFS.items():
-                if desktop_mode and ch_name == "feishu":
-                    continue
                 fields_out = []
                 for f in ch_def["fields"]:
                     raw_val = local_config.get(f["key"], f.get("default", ""))
@@ -4537,11 +4533,18 @@ class FeishuRegisterHandler:
 
         def _worker():
             try:
+                # Desktop builds don't bundle lark_oapi; fetch it on demand the
+                # first time the user enables Feishu (requires network).
+                from channel.feishu import lark_install
+                lark_install.ensure(allow_install=True)
                 import lark_oapi as lark
-            except ImportError:
+            except ImportError as e:
                 with cls._lock:
                     cls._state["status"] = "error"
-                    cls._state["error"] = "lark-oapi SDK 未安装，请执行 pip install -U lark-oapi"
+                    cls._state["error"] = (
+                        "飞书 SDK 不可用，请联网后重试，"
+                        "或手动执行 pip install -U 'lark-oapi>=1.5.5'（%s）" % e
+                    )
                 return
 
             def _on_qr(info):
