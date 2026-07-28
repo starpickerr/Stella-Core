@@ -7,7 +7,7 @@ Design:
 - Pruning: age-based only (sessions not updated within N days are deleted)
 - Thread-safe via a single in-process lock
 
-Storage path: ~/cow/sessions/conversations.db
+Storage path: ~/cow/memory/long-term/index.db (shared with the memory index)
 """
 
 from __future__ import annotations
@@ -352,6 +352,7 @@ class ConversationStore:
     def __init__(self, db_path: Path):
         self._db_path = db_path
         self._lock = threading.RLock()  # Use RLock to allow reentrant locking
+        self._schema_identity: tuple = ()
         self._init_db()
 
     # ------------------------------------------------------------------
@@ -1185,13 +1186,37 @@ class ConversationStore:
 
     def _init_db(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = self._connect()
+        conn = self._raw_connect()
         try:
             conn.executescript(_DDL)
             conn.commit()
             self._migrate(conn)
         finally:
             conn.close()
+        self._schema_identity = self._db_identity()
+
+    def _db_identity(self) -> tuple:
+        """Identify the physical file behind _db_path, or () when it is missing."""
+        try:
+            st = self._db_path.stat()
+        except OSError:
+            return ()
+        return (st.st_dev, st.st_ino)
+
+    def _ensure_schema(self) -> None:
+        """Recreate the conversation tables when the shared DB file was swapped.
+
+        The long-term memory index lives in the same file and may quarantine and
+        replace it on corruption. Without this check, every later query would
+        keep failing with "no such table: sessions" for the whole process
+        lifetime, so new messages would silently stop being persisted.
+        """
+        if self._db_identity() == self._schema_identity:
+            return
+        logger.warning(
+            "[ConversationStore] Shared DB file was replaced; recreating conversation schema"
+        )
+        self._init_db()
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         """Apply incremental schema migrations on existing databases."""
@@ -1234,6 +1259,11 @@ class ConversationStore:
                 logger.warning(f"[ConversationStore] Migration (extras) failed: {e}")
 
     def _connect(self) -> sqlite3.Connection:
+        with self._lock:
+            self._ensure_schema()
+        return self._raw_connect()
+
+    def _raw_connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path), timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
