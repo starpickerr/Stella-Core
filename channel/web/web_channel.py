@@ -4319,8 +4319,8 @@ class FeishuRegisterHandler:
 
         def _worker():
             try:
-                # Desktop builds don't bundle lark_oapi; install it on demand
-                # the first time the user enables Feishu (requires network).
+                # Desktop builds don't bundle lark_oapi; fetch it on demand the
+                # first time the user enables Feishu (requires network).
                 from channel.feishu import lark_install
                 lark_install.ensure(allow_install=True)
                 import lark_oapi as lark
@@ -4328,7 +4328,7 @@ class FeishuRegisterHandler:
                 with cls._lock:
                     cls._state["status"] = "error"
                     cls._state["error"] = (
-                        "lark-oapi SDK 未安装或安装失败，请联网后重试，"
+                        "飞书 SDK 不可用，请联网后重试，"
                         "或手动执行 pip install -U 'lark-oapi>=1.5.5'（%s）" % e
                     )
                 return

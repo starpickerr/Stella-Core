@@ -29,10 +29,9 @@ def rp(*parts):
 # PyInstaller's static analysis can't see them. List every channel we ship.
 # Feishu (channel.feishu.feishu_channel) is bundled so the channel code is
 # present; its heavy lark_oapi SDK is deliberately NOT bundled — see the
-# `excludes` note below and channel/feishu/lark_install.py, which installs it
-# on demand the first time the user enables Feishu (fixes
-# zhayujie/CowAgent#2987: "客户端没有飞书通道"). pip/setuptools/wheel are
-# bundled (small) so that on-demand install can run inside the frozen app.
+# `excludes` note below and channel/feishu/lark_install.py, which downloads a
+# trimmed bundle the first time the user enables Feishu (fixes
+# zhayujie/CowAgent#2987: "客户端没有飞书通道").
 hiddenimports = [
     # channels (dynamic import in channel/channel_factory.py)
     'channel.web.web_channel',
@@ -48,12 +47,6 @@ hiddenimports = [
     'channel.telegram.telegram_channel',
     'channel.slack.slack_channel',
     'channel.discord.discord_channel',
-    # pip is used by the Feishu on-demand installer (channel/feishu/lark_install.py)
-    # to fetch lark_oapi + its deps inside the frozen desktop app.
-    'pip',
-    'pip._internal',
-    'setuptools',
-    'wheel',
 ]
 
 # Agent tools and model providers are imported lazily in places; collect their
@@ -162,17 +155,17 @@ datas += collect_data_files('playwright', include_py_files=True)
 # --- Excludes -------------------------------------------------------------
 # Keep the bundle lean: drop tests/docs and dev-only packages.
 #
-# Feishu's lark_oapi (~116MB + deps) is intentionally EXCLUDED here. The desktop
-# client does not bundle it; instead, the first time a user enables the Feishu
-# channel, channel/feishu/lark_install.py pip-installs lark_oapi (and its deps)
-# into a writable per-user dir (~/.cow/feishu_vendor) and adds it to sys.path.
-# This keeps the base download ~116MB smaller while Feishu still works out of
-# the box after a one-time, on-demand download (fixes zhayujie/CowAgent#2987).
-# pip/setuptools/wheel are NOT excluded (see hiddenimports) so that on-demand
-# install can run inside the frozen app.
+# Feishu's lark_oapi (~122MB unpacked) is intentionally EXCLUDED here. The first
+# time a user enables the Feishu channel, channel/feishu/lark_install.py
+# downloads a trimmed, pure-Python bundle (~1MB, built by
+# desktop/build/build-feishu-vendor.py) into ~/.cow/feishu_vendor and adds it to
+# sys.path. This keeps the base download small while Feishu still works out of
+# the box after a one-time fetch (fixes zhayujie/CowAgent#2987).
 excludes = [
-    'lark_oapi',          # Feishu SDK — installed on demand, NOT bundled (see above)
+    'lark_oapi',          # Feishu SDK — fetched on demand, NOT bundled (see above)
     'tests',
+    'pip',
+    'wheel',
     'pytest',
     # NOTE: playwright is now BUNDLED (pure-Python package + Node driver, ~10-15MB)
     # so the browser tool works out of the box on desktop. The heavy Chromium

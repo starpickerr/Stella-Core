@@ -54,6 +54,7 @@ desktop/build/*
 !desktop/build/cowagent-backend.spec
 !desktop/build/requirements-desktop.txt
 !desktop/build/build-backend.sh
+!desktop/build/build-feishu-vendor.py
 !desktop/build/entitlements.mac.plist
 !desktop/build/notarize-dmg.sh
 
