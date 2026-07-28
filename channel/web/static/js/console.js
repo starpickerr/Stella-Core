@@ -193,6 +193,8 @@ const I18N = {
         feishu_scan_denied: '已取消授权',
         feishu_scan_fail: '创建失败',
         feishu_scan_retry: '重试',
+        feishu_sdk_downloading: '正在下载飞书组件...',
+        feishu_sdk_downloading_tip: '首次启用需要下载，约 1MB，稍后自动继续',
         feishu_mode_scan: '扫码创建', feishu_mode_manual: '手动填写',
         tasks_title: '定时任务', tasks_desc: '查看和管理定时任务',
         tasks_coming: '即将推出', tasks_coming_desc: '定时任务管理功能即将在此提供',
@@ -461,6 +463,8 @@ const I18N = {
         feishu_scan_denied: '已取消授權',
         feishu_scan_fail: '建立失敗',
         feishu_scan_retry: '重試',
+        feishu_sdk_downloading: '正在下載飛書元件...',
+        feishu_sdk_downloading_tip: '首次啟用需要下載，約 1MB，稍後自動繼續',
         feishu_mode_scan: '掃碼建立', feishu_mode_manual: '手動填寫',
         tasks_title: '定時任務', tasks_desc: '檢視和管理定時任務',
         tasks_coming: '即將推出', tasks_coming_desc: '定時任務管理功能即將在此提供',
@@ -724,6 +728,8 @@ const I18N = {
         feishu_scan_denied: 'Authorization cancelled',
         feishu_scan_fail: 'App creation failed',
         feishu_scan_retry: 'Retry',
+        feishu_sdk_downloading: 'Downloading Feishu components...',
+        feishu_sdk_downloading_tip: 'A one-time ~1MB download; this will continue automatically',
         feishu_mode_scan: 'Scan QR', feishu_mode_manual: 'Manual',
         tasks_title: 'Scheduled Tasks', tasks_desc: 'View and manage scheduled tasks',
         tasks_coming: 'Coming Soon', tasks_coming_desc: 'Scheduled task management will be available here',
@@ -8162,7 +8168,12 @@ function startFeishuRegister(targetStatusId) {
                 renderFeishuRegisterError(statusId, data.message || t('feishu_scan_fail'));
                 return;
             }
-            renderFeishuQr(statusId, data.qr_image, data.qrcode_url);
+            if (data.register_status === 'downloading') {
+                // Desktop first run: the SDK bundle lands before the QR exists.
+                renderFeishuSdkDownloading(statusId);
+            } else {
+                renderFeishuQr(statusId, data.qr_image, data.qrcode_url);
+            }
             pollFeishuRegisterStatus(statusId);
         })
         .catch(err => {
@@ -8183,6 +8194,17 @@ function renderFeishuQr(statusId, qrImage, qrUrl) {
             <p class="text-xs text-slate-400 dark:text-slate-500">${t('feishu_scan_tip')}</p>
             ${qrUrl ? `<a href="${qrUrl}" target="_blank" rel="noopener"
                 class="text-xs text-blue-500 hover:text-blue-600 underline">${t('feishu_scan_open_link')}</a>` : ''}
+        </div>`;
+}
+
+function renderFeishuSdkDownloading(statusId) {
+    const statusEl = document.getElementById(statusId);
+    if (!statusEl) return;
+    statusEl.innerHTML = `
+        <div class="flex flex-col items-center gap-2 py-6">
+            <i class="fas fa-spinner fa-spin text-slate-400"></i>
+            <p class="text-sm text-slate-500 dark:text-slate-400">${t('feishu_sdk_downloading')}</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500">${t('feishu_sdk_downloading_tip')}</p>
         </div>`;
 }
 
@@ -8216,6 +8238,18 @@ function pollFeishuRegisterStatus(statusId) {
                 return;
             }
             const rs = data.register_status;
+            if (rs === 'downloading') {
+                renderFeishuSdkDownloading(statusId);
+                pollFeishuRegisterStatus(statusId);
+                return;
+            }
+            // The QR may only be generated after the bundle downloaded, in
+            // which case the initial GET could not carry it. Render it once;
+            // repainting on every poll would make it flicker.
+            const shown = document.getElementById(statusId);
+            if ((data.qr_image || data.qrcode_url) && shown && !shown.querySelector('img')) {
+                renderFeishuQr(statusId, data.qr_image, data.qrcode_url);
+            }
             if (rs === 'done') {
                 const statusEl = document.getElementById(statusId);
                 if (statusEl) {

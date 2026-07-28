@@ -336,6 +336,10 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
         if (action === 'save') {
           setStatus(t('channels_save_ok'))
           setTimeout(() => setStatus(''), 1600)
+        } else if (action === 'connect' && res.downloading) {
+          // Feishu fetches its SDK bundle in the background on first enable.
+          setStatus(t('feishu_sdk_downloading_hint'))
+          setTimeout(() => setStatus(''), 8000)
         }
         onChanged()
       } else {

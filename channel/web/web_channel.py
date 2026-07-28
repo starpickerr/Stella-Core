@@ -4266,6 +4266,16 @@ class ChannelsHandler:
 
         logger.info(f"[WebChannel] Channel '{channel_name}' connecting, channel_type={new_channel_type}")
 
+        # Feishu pulls its SDK bundle on first use; tell the UI so it can warn
+        # about the one-time wait rather than reporting an instant success.
+        downloading = False
+        if channel_name == "feishu":
+            try:
+                from channel.feishu import lark_install
+                downloading = lark_install.needs_download()
+            except Exception as e:
+                logger.warning(f"[WebChannel] Could not check Feishu SDK state: {e}")
+
         def _do_start():
             try:
                 import sys
@@ -4298,6 +4308,7 @@ class ChannelsHandler:
         return json.dumps({
             "status": "success",
             "channel_type": new_channel_type,
+            "downloading": downloading,
         }, ensure_ascii=False)
 
     def _handle_disconnect(self, channel_name: str):
@@ -4500,7 +4511,9 @@ class FeishuRegisterHandler:
 
     GET  /api/feishu/register   → 启动注册：调用 SDK 生成二维码 URL，立即返回；
                                    后台线程继续轮询飞书侧直到用户扫码授权。
-    POST /api/feishu/register   → 轮询当前会话状态（pending / done / error / expired）。
+    POST /api/feishu/register   → 轮询当前会话状态（downloading / pending / done /
+                                   error / expired）。桌面版首次启用时要先下载飞书
+                                   SDK 包，此时二维码尚不存在，改由轮询补发。
                                    注册成功后不直接写 config，由前端再调
                                    /api/channels {action:'connect'} 走标准启用流程。
     """
@@ -4534,8 +4547,12 @@ class FeishuRegisterHandler:
         def _worker():
             try:
                 # Desktop builds don't bundle lark_oapi; fetch it on demand the
-                # first time the user enables Feishu (requires network).
+                # first time the user enables Feishu (requires network). Flag it
+                # so the modal explains the wait instead of just spinning.
                 from channel.feishu import lark_install
+                if lark_install.needs_download():
+                    with cls._lock:
+                        cls._state["status"] = "downloading"
                 lark_install.ensure(allow_install=True)
                 import lark_oapi as lark
             except ImportError as e:
@@ -4608,7 +4625,9 @@ class FeishuRegisterHandler:
             import time as _t
             for _ in range(100):
                 with self._lock:
-                    if self._state.get("url") or self._state.get("status") in ("error", "expired", "denied"):
+                    if self._state.get("url") or self._state.get("status") in (
+                        "downloading", "error", "expired", "denied"
+                    ):
                         break
                 _t.sleep(0.1)
             with self._lock:
@@ -4616,6 +4635,13 @@ class FeishuRegisterHandler:
                     return json.dumps({
                         "status": "error",
                         "message": self._state.get("error", "register failed"),
+                    })
+                if self._state.get("status") == "downloading":
+                    # The SDK bundle is still coming down; the QR only exists
+                    # once it lands, so hand the frontend over to polling.
+                    return json.dumps({
+                        "status": "success",
+                        "register_status": "downloading",
                     })
                 if not self._state.get("url"):
                     return json.dumps({
@@ -4660,11 +4686,18 @@ class FeishuRegisterHandler:
                         "register_status": status,
                         "message": self._state.get("error", ""),
                     })
-                # pending / starting：还在等用户扫码
-                return json.dumps({
-                    "status": "success",
-                    "register_status": "pending",
-                })
+                if status == "downloading":
+                    return json.dumps({
+                        "status": "success",
+                        "register_status": "downloading",
+                    })
+                # pending / starting：还在等用户扫码。二维码可能是在 GET 返回
+                # "downloading" 之后才生成的，带上让前端补渲染。
+                payload = {"status": "success", "register_status": "pending"}
+                if self._state.get("url"):
+                    payload["qrcode_url"] = self._state["url"]
+                    payload["qr_image"] = self._state.get("qr_image", "")
+                return json.dumps(payload)
         except Exception as e:
             logger.error(f"[WebChannel] FeishuRegister POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})

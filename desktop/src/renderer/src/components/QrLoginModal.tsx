@@ -5,7 +5,8 @@ import apiClient from '../api/client'
 import { Modal } from '../pages/settings/primitives'
 
 type Provider = 'weixin' | 'feishu'
-type Phase = 'loading' | 'waiting' | 'scanned' | 'success' | 'error'
+// 'downloading': Feishu only, the SDK bundle is fetched before the QR exists.
+type Phase = 'loading' | 'downloading' | 'waiting' | 'scanned' | 'success' | 'error'
 
 interface QrLoginModalProps {
   provider: Provider
@@ -91,6 +92,18 @@ const QrLoginModal: React.FC<QrLoginModalProps> = ({ provider, onClose, onConnec
         if (!aliveRef.current) return
         if (data.status !== 'success') return fail((data.message as string) || t('feishu_scan_fail'))
         const rs = data.register_status as string
+        if (rs === 'downloading') {
+          setPhase('downloading')
+          return pollFeishu()
+        }
+        // The QR may only appear after the bundle finished downloading, in
+        // which case the initial GET could not carry it.
+        const img = (data.qr_image as string) || (data.qrcode_url as string)
+        if (img) {
+          setQr(img)
+          setOpenLink((data.qrcode_url as string) || '')
+          setPhase((p) => (p === 'downloading' ? 'waiting' : p))
+        }
         if (rs === 'done') {
           setPhase('success')
           await apiClient.channelAction('connect', 'feishu', {
@@ -119,6 +132,11 @@ const QrLoginModal: React.FC<QrLoginModalProps> = ({ provider, onClose, onConnec
       const data = await apiClient.getFeishuRegister()
       if (!aliveRef.current) return
       if (data.status !== 'success') return fail(data.message || t('feishu_scan_fail'))
+      if (data.register_status === 'downloading') {
+        // First run in the desktop build: the SDK bundle lands before the QR.
+        setPhase('downloading')
+        return pollFeishu()
+      }
       setQr(data.qr_image || data.qrcode_url || '')
       setOpenLink(data.qrcode_url || '')
       setPhase('waiting')
@@ -163,6 +181,16 @@ const QrLoginModal: React.FC<QrLoginModalProps> = ({ provider, onClose, onConnec
           <div className="flex items-center text-content-tertiary py-10">
             <Loader2 size={18} className="animate-spin mr-2" />
             {provider === 'weixin' ? t('weixin_scan_loading') : t('feishu_scan_loading')}
+          </div>
+        )}
+
+        {phase === 'downloading' && (
+          <div className="flex flex-col items-center py-10">
+            <div className="flex items-center text-content-tertiary">
+              <Loader2 size={18} className="animate-spin mr-2" />
+              {t('feishu_sdk_downloading')}
+            </div>
+            <p className="text-xs text-content-tertiary mt-2">{t('feishu_sdk_downloading_tip')}</p>
           </div>
         )}
 
