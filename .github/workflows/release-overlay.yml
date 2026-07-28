@@ -78,14 +78,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # meta_arch tags the feed yml this leg parks on R2. Both mac legs emit
+          # the same feed name, so without it the second one overwrites the
+          # first and the published feed loses an architecture. Windows has a
+          # single leg and parks its feed untagged.
           - name: macOS arm64
             os: macos-14
             platform: mac
             eb_flags: --mac --arm64
+            meta_arch: arm64
           - name: macOS x64
             os: macos-15-intel
             platform: mac
             eb_flags: --mac --x64
+            meta_arch: x64
           - name: Windows x64
             os: windows-latest
             platform: win
@@ -194,6 +200,41 @@ jobs:
           CLIENT_SMS_SECRET: ${{ secrets.CLIENT_SMS_SECRET }}
         run: node build-overlay.mjs ${{ matrix.eb_flags }} --publish always
 
+      # A leg packages the backend PyInstaller just built on its own runner, so
+      # an app whose Electron shell is a different arch than that backend is a
+      # packaging mistake: an x86_64 backend under an arm64 shell drags the whole
+      # agent through Rosetta (slow enough that spawning a browser times out),
+      # and an arm64 backend under an x64 shell cannot execute at all. The pair
+      # is only ever implied by flags and config, so assert it on the output.
+      - name: Verify packaged architectures
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(desktop/release/mac*/*.app)
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "::error::no .app was packaged"
+            exit 1
+          fi
+          for app in "${apps[@]}"; do
+            # App names carry the (masked) product name — report the out dir.
+            leg="$(basename "$(dirname "$app")")"
+            shell_bin="$app/Contents/MacOS/$(basename "$app" .app)"
+            backend="$app/Contents/Resources/backend/cowagent-backend/cowagent-backend"
+            if [ ! -f "$backend" ]; then
+              echo "::error::$leg: the app carries no backend"
+              exit 1
+            fi
+            shell_arch="$(lipo -archs "$shell_bin")"
+            backend_arch="$(lipo -archs "$backend")"
+            echo "$leg: shell=$shell_arch backend=$backend_arch"
+            if [ "$shell_arch" != "$backend_arch" ]; then
+              echo "::error::$leg pairs a $shell_arch shell with a $backend_arch backend"
+              exit 1
+            fi
+          done
+
       # Prefix update paths with v<ver>/ so the root feed resolves installers
       # from the versioned folder.
       - name: Rewrite update metadata
@@ -224,6 +265,7 @@ jobs:
           R2_PREFIX: ${{ secrets.OVERLAY_R2_PREFIX }}
           R2_VERSION: ${{ inputs.version }}
           R2_META_VERSIONED: "1"
+          R2_META_ARCH: ${{ matrix.meta_arch }}
           UPLOAD_TOOL: wrangler
         run: |
           # Empty would silently fall back to the default prefix and scatter
@@ -271,8 +313,8 @@ jobs:
       # dir, then republish it at the feed root — the URL shipped clients poll.
       # This is the step that makes the version go live.
       #
-      # NOTE: both mac legs write the same <channel>-mac.yml key, so the
-      # arm64/x64 feeds collide and the last upload wins.
+      # Each mac leg parked its feed under its own arch tag, so fetch-feed.mjs
+      # merges their entries into one <channel>-mac.yml before the republish.
       - name: Publish feed to R2
         shell: bash
         env:
