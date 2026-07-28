@@ -441,7 +441,8 @@ class ConversationStore:
         session_id: str,
         messages: List[Dict[str, Any]],
         channel_type: str = "",
-    ) -> None:
+        create_if_missing: bool = True,
+    ) -> bool:
         """
         Append new messages to a session's history.
 
@@ -453,15 +454,31 @@ class ConversationStore:
             messages: List of message dicts to append.
             channel_type: Source channel (e.g. "feishu", "web", "wechat").
                           Only written on session creation; ignored on update.
+            create_if_missing: When False, do nothing if the session row is
+                          gone. Callers that already stored the user turn use
+                          this so a session deleted mid-run is not recreated
+                          from the reply alone.
+
+        Returns:
+            True when the messages were written, False when the session was
+            missing and ``create_if_missing`` is False.
         """
         if not messages:
-            return
+            return False
 
         now = int(time.time())
         with self._lock:
             conn = self._connect()
             try:
                 with conn:
+                    if not create_if_missing:
+                        exists = conn.execute(
+                            "SELECT 1 FROM sessions WHERE session_id = ?",
+                            (session_id,),
+                        ).fetchone()
+                        if not exists:
+                            return False
+
                     # INSERT OR IGNORE creates the row on first visit;
                     # the UPDATE always refreshes last_active.
                     # Avoids ON CONFLICT...DO UPDATE (requires SQLite >= 3.24).
@@ -530,6 +547,7 @@ class ConversationStore:
                                         (title, session_id),
                                     )
                                     break
+                    return True
             finally:
                 conn.close()
 

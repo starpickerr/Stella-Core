@@ -8,6 +8,7 @@ side is re-derivable from the workspace, so recovering it must never take the
 conversation history down with it — the failure mode being pinned here is
 "no such table: sessions" after the memory index repaired itself.
 """
+import logging
 import os
 import shutil
 import sqlite3
@@ -27,8 +28,15 @@ class TestSharedDbRecovery(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.db = self.tmp / "index.db"
+        # These cases corrupt databases on purpose. Their recovery logging is
+        # indistinguishable from a real incident, and pytest shares run.log
+        # with the running app, so keep it out of the file.
+        self._log = logging.getLogger("log")
+        self._log_level = self._log.level
+        self._log.setLevel(logging.CRITICAL + 1)
 
     def tearDown(self):
+        self._log.setLevel(self._log_level)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # -- helpers -------------------------------------------------------

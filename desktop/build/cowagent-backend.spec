@@ -87,6 +87,11 @@ hiddenimports += [
     'cli.commands.knowledge',
 ]
 
+# certifi carries the CA bundle the bundled OpenSSL lacks (see common/ssl_certs).
+# requests pulls it in, but naming it keeps stdlib TLS working even if that ever
+# stops being true — without it every HTTPS call through urllib/websockets fails.
+hiddenimports += ['certifi']
+
 # Third-party SDKs that use lazy/conditional imports internally.
 hiddenimports += collect_submodules('dashscope')
 hiddenimports += [

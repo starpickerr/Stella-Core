@@ -14,16 +14,33 @@ import {
   Hash,
   AtSign,
   RadioTower,
+  QrCode,
+  KeyRound,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { t, localizedLabel } from '../i18n'
 import apiClient from '../api/client'
 import type { ChannelInfo, ChannelField } from '../types'
 import { Toggle, Btn } from './settings/primitives'
-import QrLoginModal from '../components/QrLoginModal'
+import QrScanPanel from '../components/QrScanPanel'
 import { PaperPlaneIcon } from '../components/icons'
 
 // Channels that connect via QR scanning rather than credential fields.
 const QR_PROVIDERS: Record<string, 'weixin' | 'feishu'> = { weixin: 'weixin', feishu: 'feishu' }
+
+// A running WeChat channel reports its own login state, which does not always
+// match "connected": it can still be booting, or be waiting for someone to
+// scan its QR. Anything else (including every other channel) has nothing
+// pending and is simply shown as connected.
+type Pending = 'none' | 'scanning' | 'starting'
+
+const pendingState = (ch: ChannelInfo): Pending => {
+  const s = ch.login_status
+  if (ch.name !== 'weixin' || !ch.active || !s || s === 'logged_in') return 'none'
+  // 'idle'/'unknown' mean the channel is still coming up (the connect handler
+  // waits a few seconds before starting it) — not something to scan for.
+  return s === 'waiting_scan' || s === 'scanned' ? 'scanning' : 'starting'
+}
 
 // An icon component that takes a `size` prop (lucide icons and our PaperPlaneIcon).
 type IconComponent = React.FC<{ size?: number }>
@@ -65,16 +82,18 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const loadChannels = async () => {
+  // `silent` refreshes keep the current list on screen (used by the WeChat
+  // login watcher, which must not flash the spinner every few seconds).
+  const loadChannels = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const data = await apiClient.getChannels()
       setChannels(data || [])
     } catch (err) {
       console.error('Failed to load channels:', err)
-      setChannels([])
+      if (!silent) setChannels([])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -83,6 +102,16 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
     void loadChannels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl])
+
+  // While a channel is still settling (booting, or waiting for a scan that may
+  // happen elsewhere), poll so its card flips to "connected" on its own.
+  const settling = channels.some((c) => pendingState(c) !== 'none')
+  useEffect(() => {
+    if (!settling) return
+    const id = setInterval(() => void loadChannels(true), 3000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settling])
 
   const { connected, available } = useMemo(() => {
     const connected = channels.filter((c) => c.active)
@@ -288,6 +317,25 @@ const ChannelIcon: React.FC<{ name: string; size?: number }> = ({ name, size = 3
   )
 }
 
+// Segmented tab used by channels that support several connect modes.
+const ModeTab: React.FC<{ icon: LucideIcon; label: string; active: boolean; onClick: () => void }> = ({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-[6px] text-sm font-medium cursor-pointer transition-colors ${
+      active ? 'bg-surface text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
+    }`}
+  >
+    <Icon size={14} />
+    {label}
+  </button>
+)
+
 const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defaultExpanded?: boolean }> = ({
   channel,
   onChanged,
@@ -295,9 +343,21 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
 }) => {
   // Channels with no fields connect purely via QR (e.g. weixin).
   const isQrLogin = channel.fields.length === 0
-  // QR provider supported by the desktop scan modal (weixin / feishu).
+  // QR provider supported by the desktop scan panel (weixin / feishu).
   const qrProvider = QR_PROVIDERS[channel.name]
-  const [showQr, setShowQr] = useState(false)
+  // Feishu can be connected either by scanning a QR (which creates the app for
+  // the user) or by pasting credentials, so it gets a tab switcher.
+  const dualMode = !!qrProvider && !isQrLogin
+  const pending = pendingState(channel)
+  // WeChat goes straight to the QR: when it is being added, and when a running
+  // channel lost its login. No intermediate button to click (or double-click).
+  const weixinQr = qrProvider === 'weixin' && (pending === 'scanning' || (!channel.active && defaultExpanded))
+  // Feishu's scan creates a brand new app, so it stays behind a button.
+  const [feishuScanning, setFeishuScanning] = useState(false)
+  // Stored credentials mean the user most likely wants to edit them.
+  const [mode, setMode] = useState<'scan' | 'manual'>(() =>
+    channel.fields.some((f) => f.type !== 'bool' && !!f.value) ? 'manual' : 'scan'
+  )
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(channel.fields.map((f) => [f.key, f.value != null ? String(f.value) : '']))
@@ -352,6 +412,39 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
     }
   }
 
+  const fieldEditor = (
+    <div className="space-y-3">
+      {channel.fields.map((f) => (
+        <FieldRow
+          key={f.key}
+          field={f}
+          value={values[f.key] ?? ''}
+          onChange={(v) => setField(f.key, v)}
+          onFocusSecret={() => {
+            if (f.type === 'secret' && masked[f.key]) {
+              setField(f.key, '')
+              setMasked((p) => ({ ...p, [f.key]: false }))
+            }
+          }}
+        />
+      ))}
+      <div className="flex items-center justify-end gap-3 pt-1">
+        <span className={`text-xs transition-opacity ${status ? 'opacity-100' : 'opacity-0'} ${status === t('channels_save_ok') ? 'text-accent' : 'text-danger'}`}>
+          {status || '\u00a0'}
+        </span>
+        {channel.active ? (
+          <Btn variant="primary" onClick={() => run('save')} disabled={busy}>
+            {t('channels_save')}
+          </Btn>
+        ) : (
+          <Btn variant="primary" onClick={() => run('connect')} disabled={busy}>
+            {t('channels_connect')}
+          </Btn>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className={defaultExpanded ? '' : 'rounded-card border border-default bg-surface p-4'}>
       <div className="flex items-center gap-3">
@@ -359,8 +452,24 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm text-content">{localizedLabel(channel.label)}</span>
-            <span className={`w-2 h-2 rounded-full ${channel.active ? 'bg-accent' : 'bg-content-tertiary'}`} />
-            {channel.active && <span className="text-xs text-accent">{t('channels_connected')}</span>}
+            <span
+              className={`w-2 h-2 rounded-full ${
+                pending !== 'none'
+                  ? 'bg-warning animate-pulse'
+                  : channel.active
+                    ? 'bg-accent'
+                    : 'bg-content-tertiary'
+              }`}
+            />
+            {pending === 'scanning' ? (
+              <span className={`text-xs ${channel.login_status === 'scanned' ? 'text-accent' : 'text-warning'}`}>
+                {channel.login_status === 'scanned' ? t('weixin_scan_scanned') : t('weixin_scan_waiting')}
+              </span>
+            ) : pending === 'starting' ? (
+              <span className="text-xs text-warning">{t('channels_starting')}</span>
+            ) : channel.active ? (
+              <span className="text-xs text-accent">{t('channels_connected')}</span>
+            ) : null}
           </div>
           <p className="text-xs text-content-tertiary font-mono mt-0.5">{channel.name}</p>
         </div>
@@ -369,11 +478,7 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
           <Btn variant="danger" onClick={() => run('disconnect')} disabled={busy}>
             {t('channels_disconnect')}
           </Btn>
-        ) : qrProvider ? (
-          <Btn variant="primary" onClick={() => setShowQr(true)}>
-            {qrProvider === 'weixin' ? t('channels_scan_login') : t('channels_scan_register')}
-          </Btn>
-        ) : isQrLogin || defaultExpanded ? null : (
+        ) : isQrLogin || dualMode || defaultExpanded ? null : (
           <Btn variant="ghost" onClick={() => setExpanded((v) => !v)}>
             {t('channels_add')}
           </Btn>
@@ -385,60 +490,58 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
         <p className="text-xs text-content-tertiary mt-3 pl-12">{t('channels_qr_hint')}</p>
       )}
 
-      {/* Field-bearing QR channels (feishu) can also be configured manually. */}
-      {!isQrLogin && qrProvider && !channel.active && !expanded && (
-        <button
-          onClick={() => setExpanded(true)}
-          className="text-xs text-content-tertiary hover:text-content-secondary mt-3 pl-12 cursor-pointer transition-colors"
-        >
-          {t('channels_add')}
-        </button>
-      )}
-
-      {/* Field editor: always for connected channels with fields, on-demand for available ones. */}
-      {!isQrLogin && (channel.active || expanded) && (
-        <div className="mt-4 space-y-3">
-          {channel.fields.map((f) => (
-            <FieldRow
-              key={f.key}
-              field={f}
-              value={values[f.key] ?? ''}
-              onChange={(v) => setField(f.key, v)}
-              onFocusSecret={() => {
-                if (f.type === 'secret' && masked[f.key]) {
-                  setField(f.key, '')
-                  setMasked((p) => ({ ...p, [f.key]: false }))
-                }
-              }}
-            />
-          ))}
-          <div className="flex items-center justify-end gap-3 pt-1">
-            <span className={`text-xs transition-opacity ${status ? 'opacity-100' : 'opacity-0'} ${status === t('channels_save_ok') ? 'text-accent' : 'text-danger'}`}>
-              {status || '\u00a0'}
-            </span>
-            {channel.active ? (
-              <Btn variant="primary" onClick={() => run('save')} disabled={busy}>
-                {t('channels_save')}
-              </Btn>
-            ) : (
-              <Btn variant="primary" onClick={() => run('connect')} disabled={busy}>
-                {t('channels_connect')}
-              </Btn>
-            )}
-          </div>
+      {/* WeChat: the QR is the whole flow, so show it right away. The amber
+          "waiting for scan" badge is what tells a live card why it reappeared. */}
+      {weixinQr && (
+        <div className={channel.active ? 'mt-4 pt-4 border-t border-subtle' : 'mt-2'}>
+          <QrScanPanel provider="weixin" onConnected={onChanged} />
         </div>
       )}
 
-      {showQr && qrProvider && (
-        <QrLoginModal
-          provider={qrProvider}
-          onClose={() => setShowQr(false)}
-          onConnected={() => {
-            setShowQr(false)
-            onChanged()
-          }}
-        />
+      {/* Feishu: pick between one-click QR registration and manual credentials. */}
+      {dualMode && (
+        <div className="mt-4">
+          <div className="flex items-center gap-1 bg-inset rounded-btn p-0.5 mb-4">
+            <ModeTab
+              icon={QrCode}
+              label={t('feishu_mode_scan')}
+              active={mode === 'scan'}
+              onClick={() => setMode('scan')}
+            />
+            <ModeTab
+              icon={KeyRound}
+              label={t('feishu_mode_manual')}
+              active={mode === 'manual'}
+              onClick={() => {
+                setMode('manual')
+                // Drop the pending scan so coming back doesn't silently start
+                // a second app registration.
+                setFeishuScanning(false)
+              }}
+            />
+          </div>
+          {mode !== 'scan' ? (
+            fieldEditor
+          ) : feishuScanning ? (
+            <QrScanPanel provider="feishu" onConnected={onChanged} />
+          ) : (
+            <div className="flex flex-col items-center py-3">
+              <p className="text-sm text-content-secondary mb-4 text-center max-w-sm leading-relaxed">
+                {channel.active ? t('feishu_scan_replace_desc') : t('feishu_scan_panel_desc')}
+              </p>
+              <Btn variant="primary" onClick={() => setFeishuScanning(true)}>
+                <span className="flex items-center gap-1.5">
+                  <QrCode size={15} />
+                  {t('feishu_scan_btn')}
+                </span>
+              </Btn>
+            </div>
+          )}
+        </div>
       )}
+
+      {/* Field editor: always for connected channels with fields, on-demand for available ones. */}
+      {!isQrLogin && !dualMode && (channel.active || expanded) && <div className="mt-4">{fieldEditor}</div>}
     </div>
   )
 }

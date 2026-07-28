@@ -298,11 +298,24 @@ class SessionService:
             page_size=page_size,
         )
 
+    @staticmethod
+    def _cancel_running(session_id: str) -> None:
+        """Abort any in-flight run of a session before dropping its data."""
+        try:
+            from agent.protocol import get_cancel_registry
+            cancelled = get_cancel_registry().cancel_session(session_id)
+            if cancelled:
+                logger.info(f"[SessionService] Cancelled {cancelled} in-flight "
+                            f"request(s) for session {session_id}")
+        except Exception as e:
+            logger.warning(f"[SessionService] Cancel on delete failed: {e}")
+
     def delete_session(self, session_id: str) -> None:
         if not session_id:
             raise ValueError("session_id required")
         session_id = self._normalize_sid(session_id)
 
+        self._cancel_running(session_id)
         store = self._get_store()
         store.clear_session(session_id)
         self._remove_agent(session_id)

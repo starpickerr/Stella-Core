@@ -5057,6 +5057,19 @@ class SessionDetailHandler:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
 
+            # Stop any in-flight run first: a reply that lands after the delete
+            # would otherwise keep burning tokens for a session nobody can see.
+            try:
+                from agent.protocol import get_cancel_registry
+                cancelled = get_cancel_registry().cancel_session(session_id)
+                if cancelled:
+                    logger.info(
+                        f"[WebChannel] Cancelled {cancelled} in-flight request(s) "
+                        f"for deleted session {session_id}"
+                    )
+            except Exception as e:
+                logger.warning(f"[WebChannel] Cancel on delete failed: {e}")
+
             from agent.memory import get_conversation_store
             store = get_conversation_store()
             store.clear_session(session_id)
@@ -5072,6 +5085,12 @@ class SessionDetailHandler:
                 pass
 
             channel = WebChannel()
+            # Drop messages still waiting in the channel queue: processing them
+            # after the delete would recreate the session from scratch.
+            try:
+                channel.cancel_session(session_id)
+            except Exception as e:
+                logger.warning(f"[WebChannel] Failed to drain queue on delete: {e}")
             channel.session_queues.pop(session_id, None)
 
             logger.info(f"[WebChannel] Session deleted: {session_id}")
