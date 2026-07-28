@@ -4,6 +4,7 @@ Agent Stream Execution Module - Multi-turn reasoning based on tool-call
 Provides streaming output, event system, and complete tool-call loop
 """
 import json
+import re
 import time
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
@@ -39,6 +40,54 @@ MAX_STORED_REASONING_CHARS = 4 * 1024  # 4 KB
 
 # Marker inserted between head and tail when reasoning is truncated.
 _REASONING_TRUNCATE_MARKER = "\n\n... [reasoning truncated, {omitted} chars omitted] ...\n\n"
+
+# --------------------------------------------------------------------------
+# Fatal-error classification.
+#
+# Both branches below drop the whole in-memory context, so a false positive
+# costs the user their working conversation. Every marker must therefore be
+# specific enough that it cannot appear in an unrelated failure: generic words
+# ("without", "each", "must have", "not found") matched far too much, and a
+# bare "400" substring also matched token counts such as 4000.
+# --------------------------------------------------------------------------
+
+# Word-bounded so "4000" / "40096" are not read as HTTP 400.
+_RE_HTTP_400 = re.compile(r"\b400\b")
+
+_CONTEXT_OVERFLOW_MARKERS = (
+    "context length exceeded", "maximum context length", "prompt is too long",
+    "context overflow", "context window", "exceeds model context",
+    "request_too_large", "request exceeds the maximum size",
+    "too many tokens", "input is too long",
+)
+
+# Structural tool_use/tool_result pairing complaints only.
+_MESSAGE_FORMAT_MARKERS = (
+    "tool_use", "tool_result", "tool_call_id", "tool_calls",
+    "tool result", "tool id",
+    "must be a response to a preceeding message",
+)
+
+
+def _is_context_overflow(error_str_lower: str) -> bool:
+    if "[context_overflow]" in error_str_lower:
+        return True
+    return any(m in error_str_lower for m in _CONTEXT_OVERFLOW_MARKERS)
+
+
+def _is_message_format_error(error_str_lower: str) -> bool:
+    """Detect broken tool_use/tool_result pairing rejected by the provider.
+
+    Requires both a structural marker and a 400-class signal, so an unrelated
+    400 (bad model name, missing parameter, oversized upload) never qualifies.
+    """
+    if not any(m in error_str_lower for m in _MESSAGE_FORMAT_MARKERS):
+        return False
+    return bool(
+        _RE_HTTP_400.search(error_str_lower)
+        or "invalid_request" in error_str_lower
+        or "invalidparameter" in error_str_lower
+    )
 
 
 def _truncate_reasoning_for_storage(text: str) -> str:
@@ -1199,33 +1248,13 @@ class AgentStreamExecutor:
             error_str = str(e)
             error_str_lower = error_str.lower()
             
-            # Check if error is context overflow (non-retryable, needs session reset)
-            # Method 1: Check for special marker (set in stream error handling above)
-            is_context_overflow = '[context_overflow]' in error_str_lower
-            
-            # Method 2: Fallback to keyword matching for non-stream errors
-            if not is_context_overflow:
-                is_context_overflow = any(keyword in error_str_lower for keyword in [
-                    'context length exceeded', 'maximum context length', 'prompt is too long',
-                    'context overflow', 'context window', 'too large', 'exceeds model context',
-                    'request_too_large', 'request exceeds the maximum size'
-                ])
-            
-            # Check if error is message format error (incomplete tool_use/tool_result pairs)
-            # This happens when previous conversation had tool failures or context trimming
-            # broke tool_use/tool_result pairs.
-            # Note: MiniMax returns error 2013 "tool result's tool id(...) not found" for
-            # tool_call_id mismatches — the keywords below are intentionally broad to catch
-            # both standard (Claude/OpenAI) and provider-specific (MiniMax) variants.
-            is_message_format_error = any(keyword in error_str_lower for keyword in [
-                'tool_use', 'tool_result', 'tool result', 'without', 'immediately after',
-                'corresponding', 'must have', 'each',
-                'tool_call_id', 'tool id', 'is not found', 'not found', 'tool_calls',
-                'must be a response to a preceeding message',
-                '2013',  # MiniMax error code for tool_call_id mismatch
-            ]) and ('400' in error_str_lower or 'status: 400' in error_str_lower
-                     or 'invalid_request' in error_str_lower
-                     or 'invalidparameter' in error_str_lower)
+            # Context overflow is non-retryable and needs the working context reset.
+            is_context_overflow = _is_context_overflow(error_str_lower)
+
+            # Incomplete tool_use/tool_result pairs rejected by the provider.
+            # MiniMax's "tool result's tool id(...) not found" (code 2013) is
+            # covered by the "tool result" / "tool id" markers.
+            is_message_format_error = _is_message_format_error(error_str_lower)
             
             if is_context_overflow or is_message_format_error:
                 error_type = "context overflow" if is_context_overflow else "message format error"
@@ -1251,20 +1280,21 @@ class AgentStreamExecutor:
                             _overflow_retry=True
                         )
 
-                # Aggressive trim didn't help or this is a message format error
-                # -> clear everything and also purge DB to prevent reload of dirty data
-                logger.warning("🔄 Clearing conversation history to recover")
+                # Aggressive trim didn't help, or this is a message format error.
+                # Reset the working context only: the persisted history is
+                # irreplaceable, and it can never reintroduce broken tool pairs
+                # because every load path strips tool_use/tool_result blocks.
+                logger.warning("🔄 Resetting in-memory context to recover (stored history kept)")
                 self.messages.clear()
-                self._clear_session_db()
                 if is_context_overflow:
                     raise Exception(_t(
-                        "抱歉，对话历史过长导致上下文溢出。我已清空历史记录，请重新描述你的需求。",
-                        "Sorry, the conversation history got too long and overflowed the context. I've cleared the history — please describe your request again.",
+                        "抱歉，对话历史过长导致上下文溢出。我已重置当前上下文（历史记录仍然保留），请重新描述你的需求。",
+                        "Sorry, the conversation history got too long and overflowed the context. I've reset the current context (your history is kept) — please describe your request again.",
                     ))
                 else:
                     raise Exception(_t(
-                        "抱歉，之前的对话出现了问题。我已清空历史记录，请重新发送你的消息。",
-                        "Sorry, something went wrong with the earlier conversation. I've cleared the history — please send your message again.",
+                        "抱歉，之前的对话出现了问题。我已重置当前上下文（历史记录仍然保留），请重新发送你的消息。",
+                        "Sorry, something went wrong with the earlier conversation. I've reset the current context (your history is kept) — please send your message again.",
                     ))
             
             # Check if error is rate limit (429)
@@ -1951,24 +1981,6 @@ class AgentStreamExecutor:
             f"({old_count} -> {len(self.messages)} messages, "
             f"~{current_tokens + system_tokens} -> ~{kept_tokens + system_tokens} tokens)"
         )
-
-    def _clear_session_db(self):
-        """
-        Clear the current session's persisted messages from SQLite DB.
-
-        This prevents dirty data (broken tool_use/tool_result pairs) from being
-        reloaded on the next request or after a restart.
-        """
-        try:
-            session_id = getattr(self.agent, '_current_session_id', None)
-            if not session_id:
-                return
-            from agent.memory import get_conversation_store
-            store = get_conversation_store()
-            store.clear_session(session_id)
-            logger.info(f"🗑️ Cleared dirty session data from DB: {session_id}")
-        except Exception as e:
-            logger.warning(f"Failed to clear session DB: {e}")
 
     def _prepare_messages(self) -> List[Dict[str, Any]]:
         """

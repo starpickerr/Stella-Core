@@ -412,6 +412,10 @@ class AgentBridge:
         as the database. The operation is a no-op when the agent has not been
         instantiated yet for the session.
 
+        Tool blocks are stripped exactly as on session restore. Deleting a
+        message can orphan a tool_use from its tool_result, and replaying that
+        pair would make the provider reject the next request.
+
         Returns:
             Number of messages now held in the agent's memory. Returns -1 if
             the agent does not exist or has no compatible ``messages`` attr.
@@ -432,6 +436,7 @@ class AgentBridge:
                 f"[AgentBridge] Failed to load messages for sync (session={session_id}): {e}"
             )
             return -1
+        remaining = AgentInitializer._filter_text_only_messages(remaining)
         with agent.messages_lock:
             agent.messages.clear()
             for msg in remaining:
@@ -591,16 +596,6 @@ class AgentBridge:
                     new_messages = new_messages[1:]
                 if new_messages:
                     self._persist_messages(session_id, list(new_messages), channel_type)
-                else:
-                    with agent.messages_lock:
-                        msg_count = len(agent.messages)
-                    if msg_count == 0:
-                        try:
-                            from agent.memory import get_conversation_store
-                            get_conversation_store().clear_session(session_id)
-                            logger.info(f"[AgentBridge] Cleared DB for recovered session: {session_id}")
-                        except Exception as e:
-                            logger.warning(f"[AgentBridge] Failed to clear DB after recovery: {e}")
             
             # Record this user turn for the self-evolution idle trigger. Skip
             # scheduler-injected / scheduled-task sessions so internal runs do
@@ -643,18 +638,9 @@ class AgentBridge:
             
         except Exception as e:
             logger.error(f"Agent reply error: {e}")
-            # If the agent cleared its messages due to format error / overflow,
-            # also purge the DB so the next request starts clean.
-            if session_id and agent:
-                try:
-                    with agent.messages_lock:
-                        msg_count = len(agent.messages)
-                    if msg_count == 0:
-                        from agent.memory import get_conversation_store
-                        get_conversation_store().clear_session(session_id)
-                        logger.info(f"[AgentBridge] Cleared DB for session after error: {session_id}")
-                except Exception as db_err:
-                    logger.warning(f"[AgentBridge] Failed to clear DB after error: {db_err}")
+            # The in-memory context may have been reset to recover from a format
+            # error or overflow, but the stored history is deliberately left
+            # intact: it is irreplaceable and is never reloaded with tool blocks.
             # Release cancel token on error path too (idempotent).
             if cancel_event is not None and (request_id or session_id):
                 try:
@@ -1116,8 +1102,9 @@ class AgentBridge:
 
     def clear_session(self, session_id: str):
         """
-        Clear a specific session's agent and conversation history
-        
+        Drop the cached agent for a session. Persisted history is untouched;
+        the next request rebuilds the agent and restores from the store.
+
         Args:
             session_id: Session identifier to clear
         """
