@@ -634,7 +634,16 @@ class BrowserService:
         )
         endpoint = self._chrome_launcher.launch()
 
-        self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
+        try:
+            self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
+        except Exception as e:
+            if not self._chrome_launcher.adopted:
+                raise
+            # We reused a browser from an earlier session and it turned out not
+            # to be attachable. Retrying would adopt it again, so replace it.
+            logger.warning(f"[Browser] cannot attach to the reused Chrome: {e}")
+            endpoint = self._chrome_launcher.relaunch_fresh()
+            self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
         # The spawned Chrome opens its own default context (backed by
         # user_data_dir); reuse it so cookies / logins persist.
         contexts = self._browser.contexts
