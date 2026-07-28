@@ -138,20 +138,3 @@ export function parseAttachmentMarkers(content: string): {
   }
 }
 
-// Mirrors the backend filter in agent/protocol/artifact.py, for rebuilding
-// artifact cards from persisted tool steps where no SSE event exists.
-const INTERNAL_DIRS = ['memory', 'knowledge', 'skills', 'tmp', 'scheduler', 'plans']
-const INTERNAL_FILES = ['AGENT.md', 'RULE.md', 'MEMORY.md', 'USER.md', 'BOOTSTRAP.md', 'mcp.json']
-
-export function isUserFacingPath(path: string): boolean {
-  if (!path) return false
-  // Absolute paths can't be checked against the workspace layout client-side.
-  if (path.startsWith('/') || path.startsWith('~') || /^[A-Za-z]:/.test(path)) return false
-  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
-  if (!parts.length) return false
-  const name = parts[parts.length - 1]
-  if (name.startsWith('.')) return false
-  if (parts.length === 1) return !INTERNAL_FILES.includes(name)
-  if (INTERNAL_DIRS.includes(parts[0])) return false
-  return !parts.slice(0, -1).some((p) => p.startsWith('.'))
-}

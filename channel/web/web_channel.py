@@ -294,6 +294,41 @@ def _build_artifact_payload(data: dict) -> dict:
     }
 
 
+def _artifacts_from_steps(steps) -> list:
+    """
+    Rebuild the artifact cards of a persisted assistant message.
+
+    History replay has no SSE events, so the `write`/`edit` tool calls are the
+    only record. Doing this server-side keeps one implementation of the
+    workspace-internal filter — and lets absolute paths inside the workspace be
+    recognised, which a client mirroring the rules can't do.
+    """
+    from agent.protocol.artifact import get_workspace_root, safe_build_artifact
+
+    out = []
+    seen = set()
+    root = None
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("type") != "tool":
+            continue
+        if step.get("is_error") or step.get("name") not in ("write", "edit"):
+            continue
+        args = step.get("arguments")
+        path = str((args or {}).get("path") or "").strip() if isinstance(args, dict) else ""
+        if not path:
+            continue
+        if root is None:
+            root = get_workspace_root()
+        info = safe_build_artifact(path, root)
+        if not info or info["path"] in seen:
+            continue
+        seen.add(info["path"])
+        payload = _build_artifact_payload(info)
+        if payload:
+            out.append(payload)
+    return out
+
+
 def _sanitize_upload_relative_path(relative_path: str) -> str:
     """Normalize relative upload path and reject escapes / absolute paths."""
     relative_path = (relative_path or "").replace("\\", "/").strip("/")
@@ -5221,6 +5256,12 @@ class HistoryHandler:
                 page=int(params.page),
                 page_size=int(params.page_size),
             )
+            for msg in result.get("messages") or []:
+                if msg.get("role") != "assistant":
+                    continue
+                artifacts = _artifacts_from_steps(msg.get("steps"))
+                if artifacts:
+                    msg["artifacts"] = artifacts
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] History API error: {e}")

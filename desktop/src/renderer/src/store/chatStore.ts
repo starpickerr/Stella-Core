@@ -1,12 +1,7 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
-import {
-  isUserFacingPath,
-  kindOf,
-  parseAttachmentMarkers,
-  PREVIEWABLE_KINDS,
-} from '../lib/fileKind'
+import { parseAttachmentMarkers } from '../lib/fileKind'
 import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
 
 /**
@@ -111,37 +106,6 @@ function attachmentsFromSteps(steps: MessageStep[]): Attachment[] {
   return out
 }
 
-/**
- * Rebuild artifact cards from persisted `write`/`edit` steps. Like
- * `attachmentsFromSteps`, this exists because SSE `artifact` events aren't
- * stored — the tool call is the only record after a reload. URLs are left
- * empty and resolved lazily when the card is clicked.
- */
-function artifactsFromSteps(steps: MessageStep[]): Artifact[] {
-  const out: Artifact[] = []
-  const seen = new Set<string>()
-  for (const s of steps) {
-    if (s.type !== 'tool' || s.is_error) continue
-    if (s.name !== 'write' && s.name !== 'edit') continue
-    const path = String((s.arguments as Record<string, unknown> | undefined)?.path || '').trim()
-    if (!path || seen.has(path) || !isUserFacingPath(path)) continue
-    seen.add(path)
-    const name = path.split('/').pop() || path
-    const kind = kindOf(name)
-    out.push({
-      abs_path: '',
-      rel_path: path,
-      file_name: name,
-      kind,
-      previewable: PREVIEWABLE_KINDS.has(kind),
-      size: 0,
-      raw_url: '',
-      preview_url: '',
-    })
-  }
-  return out
-}
-
 /** Convert a backend history message into a UI ChatMessage. */
 function historyToMessage(m: HistoryMessage): ChatMessage {
   if (m.role === 'user') {
@@ -174,7 +138,8 @@ function historyToMessage(m: HistoryMessage): ChatMessage {
     .map((s) => ({ ...s }))
   const finalContent = m.content || (lastContentIdx >= 0 ? raw[lastContentIdx].content || '' : '')
   const attachments = attachmentsFromSteps(raw)
-  const artifacts = artifactsFromSteps(raw)
+  // Artifacts are rebuilt by the backend, which alone knows the workspace root.
+  const artifacts = m.artifacts || []
 
   return {
     id: uid('assistant'),
