@@ -315,24 +315,7 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
-def _init_global_memory_config():
-    """
-    Fulfills set_global_memory_config's contract (see its docstring) at
-    process startup, before GET /api/sessions - fired by the web UI on
-    page load, without going through AgentInitializer - can lock the
-    singleton onto ~/cow ahead of the first chat message.
-    """
-    try:
-        from agent.memory import MemoryConfig, set_global_memory_config
-        from common.utils import expand_path
-        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-        set_global_memory_config(MemoryConfig(workspace_root=workspace_root))
-        _warn_if_legacy_workspace_data_exists(workspace_root)
-    except Exception as e:
-        logger.warning(f"[App] Failed to init global memory config: {e}")
-
-
-def _warn_if_legacy_workspace_data_exists(workspace_root: str):
+def _warn_if_legacy_workspace_data_exists():
     """
     Warn if the hardcoded ~/cow default holds data that agent_workspace
     doesn't - e.g. after changing agent_workspace without moving the old
@@ -341,6 +324,7 @@ def _warn_if_legacy_workspace_data_exists(workspace_root: str):
     """
     try:
         from common.utils import expand_path
+        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
         legacy_root = expand_path("~/cow")
         # samefile checks filesystem identity, so case-insensitive filesystems
         # (default on Windows and macOS) are handled correctly - normcase
@@ -352,8 +336,10 @@ def _warn_if_legacy_workspace_data_exists(workspace_root: str):
             same = os.path.normcase(os.path.realpath(legacy_root)) == os.path.normcase(os.path.realpath(workspace_root))
         if same:
             return
-        # Non-empty check, not a specific file - covers session/skills/memory alike.
-        if os.path.isdir(legacy_root) and os.listdir(legacy_root):
+        # Any visible entry counts - covers session/skills/memory alike. Hidden
+        # entries are ignored so OS noise (.DS_Store) can't warn on every boot.
+        leftovers = os.listdir(legacy_root) if os.path.isdir(legacy_root) else []
+        if any(not name.startswith(".") for name in leftovers):
             logger.warning(
                 f"[App] Found existing data at the default workspace ({legacy_root}) "
                 f"that doesn't match your configured agent_workspace ({workspace_root}). "
@@ -402,9 +388,7 @@ def run():
     try:
         # load config
         load_config()
-        # Prime the global memory config before GET /api/sessions (fired by
-        # the web UI on page load) can lazily default it to ~/cow.
-        _init_global_memory_config()
+        _warn_if_legacy_workspace_data_exists()
         # ctrl + c
         sigterm_handler_wrap(signal.SIGINT)
         # kill signal

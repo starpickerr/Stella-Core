@@ -12,9 +12,20 @@ from pathlib import Path
 
 
 def _default_workspace():
-    """Get default workspace path with proper Windows support"""
+    """
+    Resolve the default workspace from agent_workspace, falling back to
+    ~/cow. Reading the config here (instead of hardcoding ~/cow) keeps
+    every consumer of get_default_memory_config() - ConversationStore,
+    the evolution executor, the evolution-undo tool - on the configured
+    workspace without each entrypoint having to prime the singleton.
+    """
     from common.utils import expand_path
-    return expand_path("~/cow")
+    try:
+        from config import conf
+        return expand_path(conf().get("agent_workspace") or "~/cow")
+    except Exception:
+        # Config not importable/loaded yet: keep the historical default.
+        return expand_path("~/cow")
 
 
 @dataclass
@@ -90,7 +101,7 @@ _global_memory_config: Optional[MemoryConfig] = None
 def get_default_memory_config() -> MemoryConfig:
     """
     Get the global memory configuration.
-    If not set, returns a default configuration.
+    If not set, builds one whose workspace follows agent_workspace.
     
     Returns:
         MemoryConfig instance
@@ -105,14 +116,13 @@ def set_global_memory_config(config: MemoryConfig):
     """
     Set the global memory configuration.
 
-    get_default_memory_config() lazily falls back to a MemoryConfig() with
-    the hardcoded ~/cow default the first time anything calls it. Call this
-    before either of the following happens, otherwise:
-    - MemoryManager() instances created without an explicit config= pick
-      up the wrong workspace.
-    - ConversationStore, the evolution executor, and the evolution-undo
-      tool always read via get_default_memory_config() (they take no
-      config= override), so they depend on this unconditionally.
+    The workspace of the lazily built default already follows
+    agent_workspace (see _default_workspace), so this is only needed to
+    override the other fields, or to re-point the workspace after the
+    singleton has been built. Note who reads that singleton, since none of
+    them accept a config= override: ConversationStore, the evolution
+    executor, the evolution-undo tool, and MemoryManager() instances
+    created without an explicit config.
 
     Args:
         config: MemoryConfig instance to use globally
