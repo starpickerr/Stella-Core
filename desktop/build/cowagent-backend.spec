@@ -26,9 +26,12 @@ def rp(*parts):
 
 # --- Hidden imports -------------------------------------------------------
 # Channels are imported dynamically by channel_factory via string names, so
-# PyInstaller's static analysis can't see them. List every channel we ship
-# (Feishu is intentionally excluded — lark-oapi is dropped from the desktop
-# build to save ~116MB).
+# PyInstaller's static analysis can't see them. List every channel we ship.
+# Feishu (channel.feishu.feishu_channel) is bundled so the channel code is
+# present; its heavy lark_oapi SDK is deliberately NOT bundled — see the
+# `excludes` note below and channel/feishu/lark_install.py, which downloads a
+# trimmed bundle the first time the user enables Feishu (fixes
+# zhayujie/CowAgent#2987: "客户端没有飞书通道").
 hiddenimports = [
     # channels (dynamic import in channel/channel_factory.py)
     'channel.web.web_channel',
@@ -37,6 +40,7 @@ hiddenimports = [
     'channel.wechatmp.wechatmp_channel',
     'channel.wechatcom.wechatcomapp_channel',
     'channel.wechat_kf.wechat_kf_channel',
+    'channel.feishu.feishu_channel',
     'channel.dingtalk.dingtalk_channel',
     'channel.wecom_bot.wecom_bot_channel',
     'channel.qq.qq_channel',
@@ -149,10 +153,16 @@ datas += collect_data_files('pptx')
 datas += collect_data_files('playwright', include_py_files=True)
 
 # --- Excludes -------------------------------------------------------------
-# Keep the bundle lean: drop Feishu's heavy SDK, plugins (disabled in desktop
-# mode), tests/docs, and dev-only packages.
+# Keep the bundle lean: drop tests/docs and dev-only packages.
+#
+# Feishu's lark_oapi (~122MB unpacked) is intentionally EXCLUDED here. The first
+# time a user enables the Feishu channel, channel/feishu/lark_install.py
+# downloads a trimmed, pure-Python bundle (~1MB, built by
+# desktop/build/build-feishu-vendor.py) into ~/.cow/feishu_vendor and adds it to
+# sys.path. This keeps the base download small while Feishu still works out of
+# the box after a one-time fetch (fixes zhayujie/CowAgent#2987).
 excludes = [
-    'lark_oapi',          # Feishu — ~116MB, excluded from desktop build
+    'lark_oapi',          # Feishu SDK — fetched on demand, NOT bundled (see above)
     'tests',
     'pip',
     'wheel',
