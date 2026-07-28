@@ -8,6 +8,7 @@ import time
 from channel import channel_factory
 from common import const
 from common.log import logger
+from common.ssl_certs import ensure_ca_bundle
 from config import load_config, conf
 from plugins import *
 import threading
@@ -386,6 +387,10 @@ def _sync_builtin_skills():
 def run():
     global _channel_mgr
     try:
+        # Before any TLS connection: a packaged build has no OpenSSL CA store.
+        bundle = ensure_ca_bundle()
+        if bundle:
+            logger.debug(f"[App] using certifi CA bundle: {bundle}")
         # load config
         load_config()
         _warn_if_legacy_workspace_data_exists()

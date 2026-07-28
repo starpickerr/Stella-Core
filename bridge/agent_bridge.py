@@ -595,7 +595,10 @@ class AgentBridge:
                 if pre_persisted and new_messages and new_messages[0].get("role") == "user":
                     new_messages = new_messages[1:]
                 if new_messages:
-                    self._persist_messages(session_id, list(new_messages), channel_type)
+                    self._persist_messages(
+                        session_id, list(new_messages), channel_type,
+                        create_if_missing=not pre_persisted
+                    )
             
             # Record this user turn for the self-evolution idle trigger. Skip
             # scheduler-injected / scheduled-task sessions so internal runs do
@@ -848,12 +851,18 @@ class AgentBridge:
             return False
 
     def _persist_messages(
-        self, session_id: str, new_messages: list, channel_type: str = ""
+        self, session_id: str, new_messages: list, channel_type: str = "",
+        create_if_missing: bool = True
     ) -> None:
         """
         Persist new messages to the conversation store after each agent run.
 
         Failures are logged but never propagate — they must not interrupt replies.
+
+        ``create_if_missing=False`` is used once the user turn is known to be
+        stored already: a missing session row then means the user deleted the
+        session while the reply was still running, so the reply is dropped
+        instead of resurrecting the session without its question.
         """
         if not new_messages:
             return
@@ -875,9 +884,15 @@ class AgentBridge:
 
         try:
             from agent.memory import get_conversation_store
-            get_conversation_store().append_messages(
-                session_id, messages_to_store, channel_type=channel_type
+            stored = get_conversation_store().append_messages(
+                session_id, messages_to_store, channel_type=channel_type,
+                create_if_missing=create_if_missing
             )
+            if not stored and not create_if_missing:
+                logger.info(
+                    f"[AgentBridge] Session {session_id} was deleted mid-run, "
+                    f"dropped {len(messages_to_store)} reply message(s)"
+                )
         except Exception as e:
             logger.warning(
                 f"[AgentBridge] Failed to persist messages for session={session_id}: {e}"

@@ -119,7 +119,10 @@ def _activate(path: str) -> bool:
 
 def _fetch(url: str) -> bytes:
     logger.info("[FeiShu] downloading Feishu SDK bundle from %s", url)
-    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as resp:
+    # The overseas mirror sits behind a CDN that answers 403 to urllib's default
+    # User-Agent, so an unnamed request only ever reaches the China mirror.
+    req = urllib.request.Request(url, headers={"User-Agent": "CowAgent"})
+    with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
         return resp.read()
 
 
