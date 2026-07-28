@@ -22,6 +22,11 @@
  * pre-build backend source dir (build/dist/cowagent-backend, produced by
  * PyInstaller before packaging) — its layout mirrors the in-app copy — and map
  * each Mach-O to its in-app relative path.
+ *
+ * Never pin `arch` on mac.target in package.json: an arch listed there wins over
+ * the --arm64/--x64 CLI flag, so every runner would build every arch and pair a
+ * foreign shell with the backend PyInstaller just built for the host. The arch
+ * has to come from the CLI, one per CI job.
  */
 const { execFileSync } = require('child_process')
 const fs = require('fs')

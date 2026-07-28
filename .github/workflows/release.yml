@@ -96,6 +96,23 @@ jobs:
             --distpath desktop/build/dist \
             --workpath desktop/build/build-work
 
+      # PyInstaller follows whatever arch the host Python is, so a translated
+      # toolchain would hand us a backend for the wrong arch. Shipping that in
+      # an arm64 app puts the whole agent — and every browser it spawns — under
+      # Rosetta, which is slow enough to look like a hang. Catch it here.
+      - name: Verify backend architecture
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          want=arm64
+          [ "${{ matrix.arch }}" = "arm64" ] || want=x86_64
+          got="$(lipo -archs desktop/build/dist/cowagent-backend/cowagent-backend)"
+          echo "backend arch: $got (want $want)"
+          if [ "$got" != "$want" ]; then
+            echo "::error::backend is $got but this job targets $want"
+            exit 1
+          fi
+
       - name: Install desktop deps
         working-directory: desktop
         run: npm ci
@@ -304,6 +321,15 @@ jobs:
           # so the yml files themselves don't need to go to R2.
           # .zip is the mac auto-update artifact (electron-updater's MacUpdater
           # can ONLY consume zip, not dmg — the dmg is for manual downloads).
+          # Flattening hides collisions: two jobs emitting the same installer
+          # name would silently overwrite each other and publish whichever
+          # landed last. Refuse instead of guessing.
+          dupes="$(find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) \
+            -exec basename {} \; | sort | uniq -d)"
+          if [ -n "$dupes" ]; then
+            echo "::error::more than one build job produced: $dupes"
+            exit 1
+          fi
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' \) -exec cp {} dist/ \;
           echo "Staged files:"; ls -la dist
           # When the whole matrix failed there's nothing to publish; flag it so
