@@ -1,10 +1,9 @@
 # encoding:utf-8
 """
 Regression tests for `agent_workspace` not being honored everywhere - see
-`set_global_memory_config()` (agent/memory/config.py) and its two call
-sites, `AgentInitializer._setup_memory_system` and
-`app._init_global_memory_config`, for the underlying contract each test
-here pins.
+`_default_workspace()` / `set_global_memory_config()` (agent/memory/config.py)
+and `AgentInitializer._setup_memory_system` for the underlying contract each
+test here pins.
 """
 import os
 import sys
@@ -85,19 +84,16 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
             f"the configured workspace {self.workspace}, not ~/cow",
         )
 
-    def test_app_startup_closes_the_early_access_race(self):
+    def test_conversation_store_honors_workspace_without_any_priming(self):
         """
-        Simulates the real failure mode: GET /api/sessions calls
-        get_conversation_store() directly on page load, before any chat
-        message has ever run AgentInitializer.
+        The real failure mode: GET /api/sessions calls
+        get_conversation_store() directly on web-console page load, before
+        any chat message has ever run AgentInitializer. Nothing primes the
+        singleton on that path, so the lazily built default itself has to
+        resolve agent_workspace.
         """
-        import app
         from agent.memory import get_conversation_store
 
-        app._init_global_memory_config()
-
-        # No AgentInitializer / _setup_memory_system call happens here -
-        # this is the early race, exercised directly.
         store = get_conversation_store()
         self.assertTrue(
             str(store._db_path).startswith(self.workspace),
@@ -106,28 +102,19 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
             f"before the first agent init, not ~/cow",
         )
 
-    def test_cold_conversation_store_defaults_to_cow_without_priming(self):
+    def test_falls_back_to_cow_when_agent_workspace_is_unset(self):
         """
-        The fix's correctness rests entirely on _init_global_memory_config()
-        running before anything can call get_conversation_store() /
-        get_default_memory_config() for the first time - an ordering
-        contract enforced only by statement order in app.run(), not by any
-        type system or guard. This pins what actually happens if that
-        contract is ever violated (e.g. a future refactor reorders run()),
-        so a regression here fails loudly instead of quietly reappearing.
+        Resolving from config must not change the default for anyone who
+        never set agent_workspace.
         """
-        from agent.memory import get_conversation_store
+        from agent.memory.config import MemoryConfig
         from common.utils import expand_path
 
-        # No _init_global_memory_config() call - this is the unguarded path.
-        store = get_conversation_store()
-        legacy_root = expand_path("~/cow")
-        self.assertTrue(
-            str(store._db_path).startswith(legacy_root),
-            f"without priming, get_conversation_store() is expected to fall "
-            f"back to the hardcoded {legacy_root} default even though "
-            f"agent_workspace is set to {self.workspace} - this documents "
-            f"the failure mode the ordering in app.run() must prevent",
+        conf().pop("agent_workspace", None)
+        self.assertEqual(
+            MemoryConfig().workspace_root,
+            expand_path("~/cow"),
+            "an unset agent_workspace should still resolve to the ~/cow default",
         )
 
 
@@ -150,7 +137,14 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         self.new_workspace = os.path.join(self.tmp, "custom_workspace")
         os.makedirs(self.new_workspace)
 
+        self._orig_agent_workspace = conf().get("agent_workspace")
+
     def tearDown(self):
+        if self._orig_agent_workspace is None:
+            conf().pop("agent_workspace", None)
+        else:
+            conf()["agent_workspace"] = self._orig_agent_workspace
+
         if self._real_home is None:
             os.environ.pop("HOME", None)
         else:
@@ -163,12 +157,16 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         with open(os.path.join(legacy_db_dir, "index.db"), "wb") as f:
             f.write(b"")
 
-    def test_warns_when_legacy_data_exists_at_a_different_path(self):
+    def _check(self, workspace_root):
         import app
 
+        conf()["agent_workspace"] = workspace_root
+        app._warn_if_legacy_workspace_data_exists()
+
+    def test_warns_when_legacy_data_exists_at_a_different_path(self):
         self._write_legacy_db()
         with self.assertLogs("log", level="WARNING") as cm:
-            app._warn_if_legacy_workspace_data_exists(self.new_workspace)
+            self._check(self.new_workspace)
 
         self.assertTrue(
             any(self.legacy_root in msg and self.new_workspace in msg for msg in cm.output),
@@ -182,11 +180,9 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         skills" - not just the long-term memory DB. A skills-only leftover
         (no memory/long-term/index.db at all) must still trigger it.
         """
-        import app
-
         os.makedirs(os.path.join(self.legacy_root, "skills", "some-skill"))
         with self.assertLogs("log", level="WARNING") as cm:
-            app._warn_if_legacy_workspace_data_exists(self.new_workspace)
+            self._check(self.new_workspace)
 
         self.assertTrue(
             any(self.legacy_root in msg for msg in cm.output),
@@ -194,13 +190,28 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         )
 
     def test_no_warning_when_workspace_is_already_the_legacy_default(self):
-        import app
         import logging
 
         self._write_legacy_db()
         logger = logging.getLogger("log")
         with unittest.mock.patch.object(logger, "warning") as mock_warning:
-            app._warn_if_legacy_workspace_data_exists(self.legacy_root)
+            self._check(self.legacy_root)
+        mock_warning.assert_not_called()
+
+    def test_no_warning_when_only_hidden_files_are_left_over(self):
+        """
+        A stray .DS_Store (or any dotfile the OS drops in) isn't user data,
+        and would otherwise warn on every single startup.
+        """
+        import logging
+
+        os.makedirs(self.legacy_root)
+        with open(os.path.join(self.legacy_root, ".DS_Store"), "wb") as f:
+            f.write(b"")
+
+        logger = logging.getLogger("log")
+        with unittest.mock.patch.object(logger, "warning") as mock_warning:
+            self._check(self.new_workspace)
         mock_warning.assert_not_called()
 
     def test_no_warning_when_paths_differ_only_by_case(self):
@@ -212,7 +223,6 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         this comparison failed on macOS/Linux. Skips on a case-sensitive
         filesystem.
         """
-        import app
         import logging
 
         self._write_legacy_db()
@@ -225,7 +235,7 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
 
         logger = logging.getLogger("log")
         with unittest.mock.patch.object(logger, "warning") as mock_warning:
-            app._warn_if_legacy_workspace_data_exists(differently_cased_workspace)
+            self._check(differently_cased_workspace)
         mock_warning.assert_not_called()
 
 
