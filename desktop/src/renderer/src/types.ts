@@ -265,6 +265,8 @@ export interface HistoryMessage {
   reasoning?: string
   kind?: 'evolution'
   extras?: Record<string, unknown>
+  /** Files written this turn, rebuilt server-side from the write/edit steps. */
+  artifacts?: Artifact[]
   /** Per-message sequence number used by delete/regenerate APIs. */
   _seq?: number
 }

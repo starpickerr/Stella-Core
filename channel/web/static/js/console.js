@@ -3784,10 +3784,6 @@ function renderStepsHtml(steps) {
             // so it persists across page refreshes (SSE-only file events are not stored).
             const mediaHtml = _renderSentFileFromToolResult(step);
             if (mediaHtml) html += mediaHtml;
-            // Same idea for files written by write/edit: rebuild the artifact card.
-            if (typeof renderArtifactCardFromStep === 'function') {
-                html += renderArtifactCardFromStep(step);
-            }
         }
     }
     return { stepsHtml: html, lastContentText };
@@ -3849,6 +3845,11 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
         stepsHtml = renderThinkingHtml(reasoning) + renderToolCallsHtml(toolCalls);
     }
 
+    // Files written this turn, as computed by the history API (workspace.js).
+    const artifactsHtml = typeof renderArtifactCards === 'function'
+        ? renderArtifactCards(msg && msg.artifacts)
+        : '';
+
     // Self-evolution bubbles get a small badge so the user can feel the agent
     // learned something on its own (text itself stays clean). History replay
     // carries msg.kind; live pushes are identified by the evolution_ request id.
@@ -3868,6 +3869,7 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
                 ${evolutionBadge}
                 ${stepsHtml ? `<div class="agent-steps">${stepsHtml}</div>` : ''}
                 <div class="answer-content">${renderMarkdown(displayContent)}</div>
+                <div class="media-content">${artifactsHtml}</div>
                 <div class="bot-audio-slot"></div>
             </div>
             <div class="flex items-center gap-2 mt-1.5">

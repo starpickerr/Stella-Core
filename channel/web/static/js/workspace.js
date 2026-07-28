@@ -405,38 +405,17 @@ function maybeAutoOpenArtifact() {
 }
 
 /**
- * Rebuild an artifact card from a persisted `write`/`edit` tool step.
- * History replay has no SSE events, so the tool call is the only record.
- * Returns '' when the file is agent-internal or the step isn't a file write.
+ * Render the artifact cards of a history message. The list is built by the
+ * backend from the persisted write/edit steps, since only it knows the
+ * workspace root and which files still exist.
  */
-function renderArtifactCardFromStep(step) {
-    if (!step || step.type !== 'tool' || step.is_error === true) return '';
-    if (step.name !== 'write' && step.name !== 'edit') return '';
-    const path = (step.arguments && step.arguments.path || '').trim();
-    if (!path || !wsIsUserFacingPath(path)) return '';
-    const name = path.split(/[\\/]/).pop();
-    return `<div class="file-card-list">${renderFileCard({
-        file_name: name,
-        rel_path: path,
-        kind: wsKindOf(name),
-    })}</div>`;
-}
-
-// Mirrors the backend filter in agent/protocol/artifact.py.
-const WS_INTERNAL_DIRS = ['memory', 'knowledge', 'skills', 'tmp', 'scheduler', 'plans'];
-const WS_INTERNAL_FILES = ['AGENT.md', 'RULE.md', 'MEMORY.md', 'USER.md', 'BOOTSTRAP.md', 'mcp.json'];
-
-function wsIsUserFacingPath(path) {
-    const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
-    if (!parts.length) return false;
-    const name = parts[parts.length - 1];
-    if (name.startsWith('.')) return false;
-    // Absolute paths came from outside the workspace convention; skip them here
-    // since history replay can't tell whether they're inside the workspace.
-    if (path.startsWith('/') || path.startsWith('~') || /^[A-Za-z]:/.test(path)) return false;
-    if (parts.length === 1) return !WS_INTERNAL_FILES.includes(name);
-    if (WS_INTERNAL_DIRS.includes(parts[0])) return false;
-    return !parts.slice(0, -1).some(p => p.startsWith('.'));
+function renderArtifactCards(artifacts) {
+    if (!Array.isArray(artifacts) || !artifacts.length) return '';
+    return artifacts.map(item =>
+        `<div class="file-card-list" data-artifact-path="${escapeHtml(item.abs_path || '')}">
+            ${renderFileCard(item)}
+        </div>`
+    ).join('');
 }
 
 async function wsResolveMeta(meta) {
