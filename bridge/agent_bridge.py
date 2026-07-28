@@ -337,7 +337,7 @@ class AgentBridge:
                 try:
                     tool = tool_manager.create_tool(tool_name)
                     if tool:
-                        if workspace_dir and hasattr(tool, 'cwd'):
+                        if workspace_dir:
                             tool.cwd = workspace_dir
                         tools.append(tool)
                 except Exception as e:

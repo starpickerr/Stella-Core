@@ -40,6 +40,9 @@ class BaseTool:
     model: Optional[Any] = None  # LLM model instance, type depends on bot implementation
     progress_callback = None
     cancel_event = None
+    # Workspace directory, injected per run. Declared here so a tool that
+    # resolves relative paths cannot silently miss the injection.
+    cwd: Optional[str] = None
 
     def is_cancelled(self) -> bool:
         """True once the user asked to stop the run.
