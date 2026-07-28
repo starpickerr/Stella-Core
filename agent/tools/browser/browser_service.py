@@ -1082,6 +1082,14 @@ class BrowserService:
             result = page.evaluate(script)
             return {"result": result}
         except Exception as e:
+            # page.evaluate takes an expression, so a script written as a
+            # function body fails on its top-level return. Wrapping it is what
+            # the caller would do on the next turn anyway.
+            if "Illegal return statement" in str(e):
+                try:
+                    return {"result": page.evaluate("(() => {\n%s\n})()" % script)}
+                except Exception as retry_error:
+                    e = retry_error
             return {"error": f"Evaluate failed: {e}"}
 
     def press(self, key: str) -> Dict[str, Any]:

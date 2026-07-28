@@ -29,6 +29,7 @@ from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.url_safety import validate_url_safe
 from common import const
 from common.log import logger
+from common.utils import expand_path
 from config import conf
 
 DEFAULT_MODEL = const.GPT_41_MINI
@@ -142,6 +143,15 @@ class Vision(BaseTool):
 
     def __init__(self, config: dict = None):
         self.config = config or {}
+        # Declaring cwd is also what makes the bridge inject the workspace.
+        self.cwd = self.config.get("cwd", os.getcwd())
+
+    def _resolve_path(self, path: str) -> str:
+        """Resolve a local image path the same way the file tools do."""
+        path = expand_path(path)
+        if os.path.isabs(path):
+            return path
+        return os.path.abspath(os.path.join(self.cwd, path))
 
     @staticmethod
     def is_available() -> bool:
@@ -715,8 +725,13 @@ class Vision(BaseTool):
             self._validate_url_safe(image)
             return self._download_to_data_url(image)
 
-        if not os.path.isfile(image):
-            raise FileNotFoundError(f"Image file not found: {image}")
+        resolved = self._resolve_path(image)
+        if not os.path.isfile(resolved):
+            raise FileNotFoundError(
+                f"Image file not found: {image}"
+                + (f" (resolved to {resolved})" if resolved != image else "")
+            )
+        image = resolved
 
         ext = image.rsplit(".", 1)[-1].lower() if "." in image else ""
         mime_type = SUPPORTED_EXTENSIONS.get(ext)
