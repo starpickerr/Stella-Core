@@ -51,8 +51,8 @@ URL_VERIFICATION = "url_verification"
 
 # Lazy import of the lark_oapi SDK. The full `import lark_oapi` pulls in 10k+
 # files and takes 4-10s, so we defer the actual import to where it is needed.
-# In desktop mode the SDK is not bundled; the first import triggers an on-demand
-# pip install into a writable per-user dir (see channel/feishu/lark_install.py).
+# In desktop mode the SDK is not bundled; the first import downloads a trimmed
+# bundle into a writable per-user dir (see channel/feishu/lark_install.py).
 from channel.feishu import lark_install
 
 lark = None  # will be populated on first use via _ensure_lark_imported()
@@ -61,8 +61,8 @@ lark = None  # will be populated on first use via _ensure_lark_imported()
 def _ensure_lark_imported():
     """Import lark_oapi on first use (takes 4-10s due to 10k+ source files).
 
-    In desktop mode, if the SDK is missing this triggers an on-demand install
-    (requires network the first time) instead of failing outright.
+    In desktop mode, if the SDK is missing this fetches it on demand (requires
+    network the first time) instead of failing outright.
     """
     global lark
     if lark is None:

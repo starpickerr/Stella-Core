@@ -4,12 +4,11 @@
 # (which Electron talks to) plus the agent core; the remaining IM channels are
 # cheap (~27MB total) so we keep them.
 #
-# Feishu's `lark-oapi` (~116MB + deps) is NOT listed here on purpose: the desktop
-# client installs it on demand the first time the user enables the Feishu channel
-# (channel/feishu/lark_install.py), keeping the base download ~116MB smaller.
-# pip/setuptools/wheel are required by that on-demand installer and must be
-# present in the build/run environment (they ship inside the frozen app too — see
-# the spec's hiddenimports), so they stay available.
+# Feishu's `lark-oapi` (~122MB unpacked) is NOT listed here on purpose: the
+# desktop client downloads a trimmed ~1MB bundle the first time the user enables
+# the Feishu channel (channel/feishu/lark_install.py), keeping the base download
+# small. That bundle relies on `requests` and `pycryptodome` below rather than
+# shipping its own copies.
 
 # ---- core ----
 numpy>=1.21
@@ -53,7 +52,7 @@ python-pptx
 # Chrome/Edge, or downloads Chromium on demand into ~/.cow at first use.
 playwright==1.52.0
 
-# ---- IM channels (kept; lightweight). Feishu/lark-oapi is installed on demand
+# ---- IM channels (kept; lightweight). Feishu/lark-oapi is fetched on demand
 #      by the desktop client when the user enables the channel (see header note). ----
 wechatpy
 pycryptodome
@@ -62,7 +61,3 @@ websocket-client>=1.4.0
 python-telegram-bot
 slack_bolt
 discord.py
-# pip/setuptools/wheel back the Feishu on-demand installer; ensure they are present.
-pip
-setuptools
-wheel
