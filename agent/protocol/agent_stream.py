@@ -59,28 +59,46 @@ def _truncate_reasoning_for_storage(text: str) -> str:
     return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
 
 
-def _parse_tool_args(args_str: str, finish_reason: Optional[str]) -> Tuple[dict, Optional[str]]:
+# Appended only for the file-writing tools, where "send less" needs to say how.
+_SPLIT_WRITE_ADVICE = (
+    "To change an existing file, use edit rather than rewriting the whole file. "
+    "To create a large file, write the first part, then append each remaining part "
+    "with edit using an empty oldText (calling write again would overwrite what you "
+    "just wrote)."
+)
+
+
+def _cut_off_message(cause: str, tool_name: Optional[str]) -> str:
+    message = (
+        f"Your tool call was cut off by {cause}, so it did not run and nothing was written. "
+        "Repeating the same call will be cut off again - send less in one call instead."
+    )
+    if tool_name in ("write", "edit"):
+        message += " " + _SPLIT_WRITE_ADVICE
+    return message
+
+
+def _parse_tool_args(args_str: str, finish_reason: Optional[str],
+                     tool_name: Optional[str] = None) -> Tuple[dict, Optional[str]]:
     """Parse tool args JSON. Returns (args, error_msg); error_msg is None on success.
 
     On JSONDecodeError: detect truncation first (skip repair, surface max_tokens hint);
     otherwise try json-repair for escape issues; finally fall back to the raw decoder error.
     """
+    truncated_by_limit = finish_reason in ("length", "max_tokens")
     if not args_str:
+        # No arguments at all is valid for tools that take none, so only the
+        # finish reason can convict here. _execute_tool catches the rest by
+        # checking the call against the tool's required parameters.
+        if truncated_by_limit:
+            return {}, _cut_off_message("the output token limit", tool_name)
         return {}, None
     try:
         return json.loads(args_str), None
     except json.JSONDecodeError as e:
-        truncated_by_limit = finish_reason in ("length", "max_tokens")
         if truncated_by_limit or not args_str.rstrip().endswith("}"):
             cause = "the output token limit" if truncated_by_limit else "arguments ending mid-JSON"
-            return {}, (
-                f"Your tool call was cut off by {cause}, so it did not run and nothing was written. "
-                "Repeating the same call will be cut off again - send less in one call instead. "
-                "To change an existing file, use edit rather than rewriting the whole file. "
-                "To create a large file, write the first part, then append each remaining part "
-                "with edit using an empty oldText (calling write again would overwrite what you "
-                "just wrote)."
-            )
+            return {}, _cut_off_message(cause, tool_name)
         if _HAS_JSON_REPAIR:
             try:
                 repaired = _repair_json(args_str, return_objects=True)
@@ -1293,7 +1311,7 @@ class AgentStreamExecutor:
                 tool_id = f"call_{uuid.uuid4().hex[:24]}"
 
             args_str = tc.get("arguments") or ""
-            arguments, parse_err = _parse_tool_args(args_str, stop_reason)
+            arguments, parse_err = _parse_tool_args(args_str, stop_reason, tc["name"])
             if parse_err:
                 logger.error(
                     f"Tool args parse failed for {tc['name']} ({len(args_str)} chars): {parse_err}"
@@ -1376,6 +1394,13 @@ class AgentStreamExecutor:
 
         return full_content, tool_calls
 
+    def _required_params(self, tool_name: str) -> list:
+        """Parameter names a tool's schema declares as required."""
+        tool = self.tools.get(tool_name)
+        params = getattr(tool, "params", None)
+        required = params.get("required") if isinstance(params, dict) else None
+        return list(required) if isinstance(required, list) else []
+
     def _execute_tool(self, tool_call: Dict) -> Dict[str, Any]:
         """
         Execute tool
@@ -1396,6 +1421,25 @@ class AgentStreamExecutor:
                 "result": tool_call["_parse_error"],
                 "execution_time": 0,
             }
+            self._record_tool_result(tool_name, arguments, False)
+            return result
+
+        # A call whose arguments never arrived parses into an empty dict, which
+        # would otherwise reach the tool and be reported as one missing field -
+        # sending the model off to fix a parameter it never got to send.
+        missing = self._required_params(tool_name) if not arguments else []
+        if missing:
+            result = {
+                "status": "error",
+                "result": (
+                    f"Your {tool_name} call arrived with no arguments at all, so it did not "
+                    f"run and nothing was written. It requires: {', '.join(missing)}. "
+                    "The arguments were most likely cut off before they were sent."
+                    + (" " + _SPLIT_WRITE_ADVICE if tool_name in ("write", "edit") else "")
+                ),
+                "execution_time": 0,
+            }
+            logger.error(f"Tool {tool_name} called with no arguments (required: {missing})")
             self._record_tool_result(tool_name, arguments, False)
             return result
 
