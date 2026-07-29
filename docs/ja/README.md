@@ -202,6 +202,8 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🏷 更新履歴
 
+> **2026.07.29:** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — ワークスペースとファイルプレビュー、基本ツールの最適化（ファイル検索、書き込み検証、コマンドのバックグラウンド実行）、コンテキスト圧縮（`/compact`）、プロンプトのワンクリック最適化、セキュリティ強化。
+
 > **2026.07.20:** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
 
 > **2026.07.08:** [v2.1.3](https://github.com/zhayujie/CowAgent/releases/tag/2.1.3) — [デスクトップクライアント](https://cowagent.ai/download/)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。

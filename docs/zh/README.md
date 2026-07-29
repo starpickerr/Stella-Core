@@ -203,6 +203,8 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏷 更新日志
 
+> **2026.07.29：** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — 工作空间与文件预览、基础工具优化（文件搜索、写入校验、命令后台运行）、上下文压缩（`/compact`）、提示词一键优化、安全加固
+
 > **2026.07.20：** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
 
 > **2026.07.08：** [v2.1.3](https://github.com/zhayujie/CowAgent/releases/tag/2.1.3) — [桌面客户端](https://cowagent.ai/zh/download/)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
