@@ -68,6 +68,16 @@ class ChannelManager:
         Create and start one or more channels in sub-threads.
         If first_start is True, plugins and linkai client will also be initialized.
         """
+        # A concurrent path may have started this channel already (saving its
+        # config restarts it, connecting it starts it). Overwriting the registry
+        # entry below would orphan that instance: nothing holds it any more, yet
+        # its connection stays up and keeps consuming events, so every inbound
+        # message gets handled twice.
+        for name in channel_names:
+            if self._channels.get(name) is not None:
+                logger.warning(f"[ChannelManager] Channel '{name}' is already running, stopping it first")
+                self.stop(name)
+
         with self._lock:
             channels = []
             for name in channel_names:

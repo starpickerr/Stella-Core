@@ -73,6 +73,11 @@ class QQChannel(ChatChannel):
         self._last_seq = None
         self._heartbeat_interval = 45000
         self._can_resume = False
+        # Bumped on every stop so a superseded socket cannot reconnect itself.
+        self._generation = 0
+        # Last rejection from the QQ API, surfaced to the channel page so the
+        # user sees the platform's reason instead of a bare "unavailable".
+        self._last_api_error = ""
 
         self.received_msgs = ExpiredDict(60 * 60 * 7.1)
         self._msg_seq_counter = {}
@@ -85,6 +90,12 @@ class QQChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def startup(self):
+        if self._ws is not None:
+            # Restarting the channel calls startup() again on the same instance.
+            # Leaving the old socket open would make QQ push every event twice.
+            logger.warning("[QQ] A session is already open, closing it before reconnecting")
+            self.stop()
+
         self.app_id = conf().get("qq_app_id", "")
         self.app_secret = conf().get("qq_app_secret", "")
 
@@ -96,7 +107,7 @@ class QQChannel(ChatChannel):
 
         self._refresh_access_token()
         if not self._access_token:
-            err = "[QQ] Failed to get initial access_token"
+            err = f"[QQ] Failed to get initial access_token: {self._last_api_error}"
             logger.error(err)
             self.report_startup_error(err)
             return
@@ -106,6 +117,7 @@ class QQChannel(ChatChannel):
 
     def stop(self):
         logger.info("[QQ] stop() called")
+        self._generation += 1
         self._stop_event.set()
         if self._ws:
             try:
@@ -128,7 +140,16 @@ class QQChannel(ChatChannel):
             )
             resp.raise_for_status()
             data = resp.json()
-            self._access_token = data.get("access_token", "")
+            token = data.get("access_token", "")
+            if not token:
+                # Credential errors arrive as HTTP 200 with a business code
+                # ("机器人不存在", "appid invalid"), so the status says nothing.
+                # Return without touching the expiry: the next call retries, and
+                # a token that still works is not thrown away over a hiccup.
+                self._last_api_error = resp.text
+                logger.error(f"[QQ] Access token request refused: {resp.text}")
+                return
+            self._access_token = token
             expires_in = int(data.get("expires_in", 7200))
             self._token_expires_at = time.time() + expires_in - 60
             logger.debug(f"[QQ] Access token refreshed, expires_in={expires_in}s")
@@ -158,19 +179,27 @@ class QQChannel(ChatChannel):
                 headers=self._get_auth_headers(),
                 timeout=10,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                # The body carries the platform's own code / message / trace_id,
+                # the only thing that distinguishes an IP-allowlist rejection
+                # from a bad token or an unreleased bot.
+                self._last_api_error = f"status={resp.status_code}, body={resp.text}"
+                logger.error(f"[QQ] Failed to get gateway URL: {self._last_api_error}")
+                return ""
             url = resp.json().get("url", "")
             logger.debug(f"[QQ] Gateway URL: {url}")
             return url
         except Exception as e:
+            self._last_api_error = str(e)
             logger.error(f"[QQ] Failed to get gateway URL: {e}")
             return ""
 
     def _start_ws(self):
+        generation = self._generation
         ws_url = self._get_ws_url()
         if not ws_url:
             logger.error("[QQ] Cannot start WebSocket without gateway URL")
-            self.report_startup_error("Failed to get gateway URL")
+            self.report_startup_error(f"Failed to get gateway URL: {self._last_api_error}")
             return
 
         def _on_open(ws):
@@ -188,6 +217,11 @@ class QQChannel(ChatChannel):
 
         def _on_close(ws, close_status_code, close_msg):
             logger.warning(f"[QQ] WebSocket closed: status={close_status_code}, msg={close_msg}")
+            if self._generation != generation:
+                # A newer session took over; reconnecting here would revive the
+                # old one alongside it and double every incoming event.
+                logger.info("[QQ] Superseded session closed, not reconnecting")
+                return
             self._connected = False
             if not self._stop_event.is_set():
                 if close_status_code in RESUMABLE_CLOSE_CODES and self._session_id:
