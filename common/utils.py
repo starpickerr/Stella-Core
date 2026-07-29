@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import sys
 from urllib.parse import urlparse
 from common.log import logger
 
@@ -133,6 +134,20 @@ def is_cloud_deployment() -> bool:
     return False
 
 
+def apply_cloud_user(headers: dict) -> dict:
+    """
+    Tag *headers* with the console user driving this request, when there is one.
+
+    Read through sys.modules so purely local runs, where the cloud client is
+    never imported, stay untouched.
+    """
+    module = sys.modules.get("common.cloud_client")
+    user_id = module.current_user_id() if module else None
+    if user_id:
+        headers["X-User-Id"] = user_id
+    return headers
+
+
 def get_cloud_headers(api_key: str) -> dict:
     """
     Build standard headers for LinkAI API requests,
@@ -149,4 +164,4 @@ def get_cloud_headers(api_key: str) -> dict:
             headers["X-Client-Id"] = client_id
     except Exception:
         pass
-    return headers
+    return apply_cloud_user(headers)
