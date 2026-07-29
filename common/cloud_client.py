@@ -23,6 +23,8 @@ from common.log import logger
 from linkai import LinkAIClient, PushMsg
 from config import conf, pconf, plugin_config, available_setting, write_plugin_config, get_root, get_weixin_credentials_path
 from plugins import PluginManager
+from contextlib import contextmanager
+from contextvars import ContextVar
 import threading
 import time
 import json
@@ -50,6 +52,27 @@ CREDENTIAL_MAP = {
     "slack":             ("slack_bot_token",         "slack_app_token"),
     "discord":           ("discord_token",           ""),
 }
+
+
+# Console user driving the request handled by the current thread. Kept in a
+# ContextVar so outbound calls can read it without passing it through every
+# call signature; background threads start empty.
+_console_user: ContextVar = ContextVar("console_user", default=None)
+
+
+def current_user_id():
+    """Console user for the request being handled, or None."""
+    return _console_user.get()
+
+
+@contextmanager
+def _acting_user(user_id):
+    value = str(user_id).strip() if user_id is not None and str(user_id).strip() else None
+    token = _console_user.set(value)
+    try:
+        yield
+    finally:
+        _console_user.reset(token)
 
 
 class CloudClient(LinkAIClient):
@@ -598,28 +621,34 @@ class CloudClient(LinkAIClient):
         query = payload.get("query", "")
         session_id = payload.get("session_id", "cloud_console")
         channel_type = payload.get("channel_type", "")
+        # Console user on whose behalf this runs; usage is attributed to them
+        # instead of the account this deployment is registered under.
+        user_id = payload.get("user_id") or data.get("user_id")
         if not session_id.startswith("session_"):
             session_id = f"session_{session_id}"
-        logger.info(f"[CloudClient] on_chat: session={session_id}, channel={channel_type}, query={query[:80]}")
+        logger.info(f"[CloudClient] on_chat: session={session_id}, channel={channel_type}, "
+                    f"user_id={user_id}, query={query[:80]}")
 
-        # Intercept cow/slash commands before the agent runs
-        try:
-            from plugins import PluginManager
-            mgr = PluginManager()
-            instance = mgr.instances.get("COW_CLI")
-            if instance and hasattr(instance, "execute"):
-                result = instance.execute(query, session_id=session_id)
-                if result is not None:
-                    send_chunk_fn({"chunk_type": "content", "delta": result, "segment_id": 0})
-                    return
-        except Exception as e:
-            logger.warning(f"[CloudClient] cow_cli intercept failed: {e}")
+        with _acting_user(user_id):
+            # Intercept cow/slash commands before the agent runs
+            try:
+                from plugins import PluginManager
+                mgr = PluginManager()
+                instance = mgr.instances.get("COW_CLI")
+                if instance and hasattr(instance, "execute"):
+                    result = instance.execute(query, session_id=session_id)
+                    if result is not None:
+                        send_chunk_fn({"chunk_type": "content", "delta": result, "segment_id": 0})
+                        return
+            except Exception as e:
+                logger.warning(f"[CloudClient] cow_cli intercept failed: {e}")
 
-        svc = self.chat_service
-        if svc is None:
-            raise RuntimeError("ChatService not available")
+            svc = self.chat_service
+            if svc is None:
+                raise RuntimeError("ChatService not available")
 
-        svc.run(query=query, session_id=session_id, channel_type=channel_type, send_chunk_fn=send_chunk_fn)
+            svc.run(query=query, session_id=session_id, channel_type=channel_type,
+                    send_chunk_fn=send_chunk_fn)
 
     # ------------------------------------------------------------------
     # history callback

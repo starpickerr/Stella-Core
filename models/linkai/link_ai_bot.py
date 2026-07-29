@@ -333,6 +333,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {conf().get('linkai_api_key')}"
             }
+            utils.apply_cloud_user(headers)
             data = {
                 "prompt": query,
                 "n": 1,
@@ -566,6 +567,7 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
 
         # Prepare headers
         headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
+        utils.apply_cloud_user(headers)
         base_url = conf().get("linkai_api_base", "https://api.link-ai.tech")
         
         if stream:
