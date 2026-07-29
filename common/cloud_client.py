@@ -1,20 +1,20 @@
 """
-Cloud management client for connecting to the LinkAI control console.
+Cloud management client for connecting to a remote control console.
 
-Handles remote configuration sync, message push, and skill management
-via the LinkAI socket protocol.
+Handles remote configuration sync, message push, and skill management over
+the console's socket protocol.
 
-NOTE: By default, no cloud-related config is enabled. The application runs
-entirely locally without connecting to any remote service. The cloud client
-is only activated when BOTH of the following conditions are met:
+DEFAULT IS LOCAL-ONLY. Out of the box no cloud config is enabled: the
+application runs entirely on this machine and uploads nothing to any remote
+service. The cloud client is only activated when BOTH of these hold:
 
-  1. ``use_linkai`` is set to True in config (checked in app.py before
-     importing this module).
+  1. ``use_linkai`` is True in config (checked in app.py before this module
+     is imported).
   2. ``cloud_deployment_id`` (or env CLOUD_DEPLOYMENT_ID) is non-empty
      (checked in app.py and again in the ``start()`` function below).
 
-If either condition is missing, this module is never loaded and the
-program continues as a purely local application.
+If either is missing this module is never loaded and the program continues
+as a purely local application.
 """
 
 from bridge.context import Context, ContextType
@@ -33,6 +33,7 @@ chat_client: LinkAIClient
 
 
 CHANNEL_ACTIONS = {"channel_create", "channel_update", "channel_delete"}
+
 
 # channelType -> config key mapping for app credentials.
 # secret_key may be "" for single-token channels (e.g. telegram/discord).
@@ -62,6 +63,7 @@ class CloudClient(LinkAIClient):
         self._knowledge_service = None
         self._chat_service = None
         self._session_service = None
+        self._workspace_service = None
 
     @property
     def skill_service(self):
@@ -109,6 +111,21 @@ class CloudClient(LinkAIClient):
             except Exception as e:
                 logger.error(f"[CloudClient] Failed to init KnowledgeService: {e}")
         return self._knowledge_service
+
+    @property
+    def workspace_service(self):
+        """Lazy-init WorkspaceService."""
+        if self._workspace_service is None:
+            try:
+                from agent.workspace.service import WorkspaceService
+                from config import conf
+                from common.utils import expand_path
+                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+                self._workspace_service = WorkspaceService(workspace_root)
+                logger.debug("[CloudClient] WorkspaceService initialised")
+            except Exception as e:
+                logger.error(f"[CloudClient] Failed to init WorkspaceService: {e}")
+        return self._workspace_service
 
     @property
     def chat_service(self):
@@ -539,6 +556,30 @@ class CloudClient(LinkAIClient):
         svc = self.knowledge_service
         if svc is None:
             return {"action": action, "code": 500, "message": "KnowledgeService not available", "payload": None}
+
+        return svc.dispatch(action, payload)
+
+    # ------------------------------------------------------------------
+    # workspace callback
+    # ------------------------------------------------------------------
+    def on_workspace(self, data: dict) -> dict:
+        """
+        Handle WORKSPACE messages from the cloud console.
+
+        Read-only browsing of the agent workspace. WorkspaceService keeps every
+        path inside the workspace root and caps response sizes.
+
+        :param data: message data with 'action', 'clientId', 'payload'
+        :return: response dict
+        """
+        action = data.get("action", "")
+        payload = data.get("payload") or {}
+
+        logger.info(f"[CloudClient] on_workspace: action={action}, path={payload.get('path', '')}")
+
+        svc = self.workspace_service
+        if svc is None:
+            return {"action": action, "code": 500, "message": "WorkspaceService not available", "payload": None}
 
         return svc.dispatch(action, payload)
 
