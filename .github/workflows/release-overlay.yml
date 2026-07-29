@@ -184,6 +184,31 @@ jobs:
         shell: bash
         run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
 
+      # Download the Windows signing CLI. The URL comes from a repo variable, so
+      # nothing about the signing setup is hardcoded in a public workflow. Only
+      # runs on the Windows leg and only when a URL is set; otherwise the build
+      # stays unsigned. SIGNTOOL_PATH is exported for the next step's
+      # electron-builder.win.js to invoke. Mirrors the core release workflow.
+      - name: Download Windows signing CLI
+        if: matrix.platform == 'win' && vars.SIGNTOOL_CLI_URL != ''
+        shell: bash
+        env:
+          SIGNTOOL_CLI_URL: ${{ vars.SIGNTOOL_CLI_URL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/signtool"
+          curl -fsSL "$SIGNTOOL_CLI_URL" -o "$RUNNER_TEMP/signtool/cli.zip"
+          # Unzip and locate the signtool executable regardless of nesting.
+          unzip -o "$RUNNER_TEMP/signtool/cli.zip" -d "$RUNNER_TEMP/signtool" >/dev/null
+          exe="$(find "$RUNNER_TEMP/signtool" -type f -iname 'signtool*.exe' | head -n1)"
+          if [ -z "$exe" ]; then
+            echo "signtool.exe not found in downloaded archive" >&2
+            find "$RUNNER_TEMP/signtool" -type f >&2
+            exit 1
+          fi
+          # Normalize to a Windows-style path for execFileSync in Node.
+          echo "SIGNTOOL_PATH=$(cygpath -w "$exe")" >> "$GITHUB_ENV"
+          echo "resolved signtool: $exe"
+
       # build-overlay.mjs stages overlay resources, merges build.config.json
       # over the core build config, runs the core build, then electron-builder.
       #
@@ -198,7 +223,30 @@ jobs:
           COW_CORE_DIR: ${{ github.workspace }}/desktop
           # Trusted-client SMS secret (matches client.sms.secret on the server).
           CLIENT_SMS_SECRET: ${{ secrets.CLIENT_SMS_SECRET }}
-        run: node build-overlay.mjs ${{ matrix.eb_flags }} --publish always
+          # Signing secrets, shared with the core release workflow. Passed through
+          # as-is and only exported below when non-empty: an empty CSC_LINK makes
+          # electron-builder load a bogus certificate and fail, so unset is the
+          # correct state for an unsigned build.
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Windows code signing via the signing CLI; SIGNTOOL_PATH was exported
+          # by the download step above. COW_SIGN_DRY_RUN (repo variable) validates
+          # the pipeline with a self-signed cert, consuming no signing quota.
+          SIGNTOOL_ACCESS_KEY: ${{ secrets.SIGNTOOL_ACCESS_KEY }}
+          SIGNTOOL_ACCESS_SECRET: ${{ secrets.SIGNTOOL_ACCESS_SECRET }}
+          SIGNTOOL_CERT_CODE: ${{ secrets.SIGNTOOL_CERT_CODE }}
+          COW_SIGN_DRY_RUN: ${{ vars.COW_SIGN_DRY_RUN }}
+        run: |
+          # Pick the signing cert for THIS platform only. Both secrets sit in the
+          # job env, but a mac cert must never reach a Windows build (electron-
+          # builder would try to load it and fail) and vice versa. Windows signs
+          # through the hook in electron-builder.win.js using the SIGNTOOL_* env
+          # above, so there is nothing to export for it here.
+          if [ "${{ matrix.platform }}" = "mac" ] && [ -n "$MAC_CSC_LINK" ]; then
+            export CSC_LINK="$MAC_CSC_LINK"
+            export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+          fi
+          node build-overlay.mjs ${{ matrix.eb_flags }} --publish always
 
       # A leg packages the backend PyInstaller just built on its own runner, so
       # an app whose Electron shell is a different arch than that backend is a
