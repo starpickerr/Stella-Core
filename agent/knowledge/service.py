@@ -17,7 +17,7 @@ import shutil
 import threading
 from pathlib import Path
 from typing import Optional, Iterable
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from common.log import logger
 from config import conf
@@ -545,7 +545,8 @@ class KnowledgeService:
 
         nodes = {}
         links = []
-        link_re = re.compile(r'\[([^\]]*)\]\(([^)]+\.md)\)')
+        # Trailing "#anchor" is optional so section links still count as edges.
+        link_re = re.compile(r'\[([^\]]*)\]\(([^)#]+\.md)(?:#[^)]*)?\)')
 
         for md_file in knowledge_path.rglob("*.md"):
             rel = str(md_file.relative_to(knowledge_path))
@@ -560,7 +561,11 @@ class KnowledgeService:
                 if first_line.startswith("# "):
                     title = first_line[2:].strip()
                 for _, link_target in link_re.findall(content):
-                    resolved = (md_file.parent / link_target).resolve()
+                    if "://" in link_target:
+                        continue
+                    # Links written by the index generator are percent-encoded;
+                    # they must be decoded to match a path on disk.
+                    resolved = (md_file.parent / unquote(link_target)).resolve()
                     try:
                         target_rel = str(resolved.relative_to(knowledge_path))
                     except ValueError:

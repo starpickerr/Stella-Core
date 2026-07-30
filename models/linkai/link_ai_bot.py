@@ -273,6 +273,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             if self.args.get("max_tokens"):
                 body["max_tokens"] = self.args.get("max_tokens")
             headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
+            utils.apply_cloud_user(headers)
 
             # do http request
             base_url = conf().get("linkai_api_base", "https://api.link-ai.tech")

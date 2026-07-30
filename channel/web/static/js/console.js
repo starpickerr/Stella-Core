@@ -9385,6 +9385,9 @@ function renderKnowledgeGraph(container, nodes, links) {
 
     // Zoom with adaptive label visibility
     let currentZoomScale = 1;
+    // Set once the graph is fitted to the viewport. Labels hide below it, so
+    // zooming out past the default view still declutters.
+    let fittedScale = 1;
     const zoom = d3.zoom()
         .scaleExtent([0.2, 5])
         .on('zoom', (event) => {
@@ -9396,12 +9399,19 @@ function renderKnowledgeGraph(container, nodes, links) {
 
     function updateLabelVisibility() {
         if (!label) return;
-        if (currentZoomScale < 0.8) {
+        // Fitting a graph of any size into the panel lands well below scale 1,
+        // so a fixed threshold would hide every label in the default view.
+        // Compare against the fitted scale instead, and keep the text a
+        // constant size on screen — inside the zoomed <g>, that means dividing
+        // by the scale.
+        if (currentZoomScale < fittedScale * 0.9) {
             label.attr('opacity', 0);
-        } else {
-            const baseFontSize = Math.min(12, 10 / Math.max(currentZoomScale * 0.7, 0.5));
-            label.attr('opacity', 1).attr('font-size', baseFontSize);
+            return;
         }
+        label.attr('opacity', 1)
+            .attr('font-size', 10 / currentZoomScale)
+            .attr('dx', d => getNodeRadius(d) + 4 / currentZoomScale)
+            .attr('dy', 3 / currentZoomScale);
     }
 
     const simulation = d3.forceSimulation(nodes)
@@ -9500,6 +9510,7 @@ function renderKnowledgeGraph(container, nodes, links) {
         const bh = y1 - y0 + pad * 2;
         if (bw > 0 && bh > 0) {
             const scale = Math.min(width / bw, height / bh, 4);
+            fittedScale = scale;
             const tx = width / 2 - (x0 + x1) / 2 * scale;
             const ty = height / 2 - (y0 + y1) / 2 * scale;
             svg.transition().duration(500).call(

@@ -1367,6 +1367,19 @@
     color: #e2e8f0;
 }
 
+/* Graph node label — the halo keeps it readable where links and nodes crowd */
+.knowledge-graph-label {
+    fill: #475569;
+    paint-order: stroke;
+    stroke: rgba(255,255,255,0.9);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+}
+.dark .knowledge-graph-label {
+    fill: #cbd5e1;
+    stroke: rgba(26,26,26,0.9);
+}
+
 /* Config field tooltip */
 .cfg-tip {
     position: relative;

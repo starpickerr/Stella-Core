@@ -680,7 +680,10 @@ class CloudClient(LinkAIClient):
             return self._query_history(payload)
 
         if action in self._SESSION_ACTIONS:
-            return self._dispatch_session(action, payload)
+            # Some actions (e.g. generate_title) call the model, so attribute
+            # them to the console user just like a chat request.
+            with _acting_user(payload.get("user_id")):
+                return self._dispatch_session(action, payload)
 
         return {"action": action, "code": 404, "message": f"unknown action: {action}", "payload": None}
 
