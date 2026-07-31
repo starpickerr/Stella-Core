@@ -138,6 +138,22 @@ def _check_auth():
 def _require_auth():
     """Raise 401 if not authenticated. Call at the top of protected handlers."""
     if not _check_auth():
+        # Log which credential the caller offered (never the value). A rejected
+        # request is otherwise invisible in run.log, which makes client bugs —
+        # e.g. an endpoint that forgets the Authorization header — undiagnosable.
+        offered = []
+        if web.cookies().get("cow_auth_token", ""):
+            offered.append("cookie")
+        if _get_bearer_token():
+            offered.append("bearer")
+        if _get_query_token():
+            offered.append("query")
+        logger.warning(
+            "[WebChannel] 401 Unauthorized: %s %s (credentials offered: %s)",
+            web.ctx.env.get("REQUEST_METHOD", "?"),
+            web.ctx.env.get("PATH_INFO", "?"),
+            ", ".join(offered) or "none",
+        )
         raise web.HTTPError("401 Unauthorized",
                             {"Content-Type": "application/json; charset=utf-8"},
                             json.dumps({"status": "error", "message": "Unauthorized"}))
@@ -972,7 +988,20 @@ class WebChannel(ChatChannel):
 
     def upload_file(self):
         """Handle file or directory upload via multipart/form-data."""
+
+        def _reject(message):
+            logger.warning("[WebChannel] Upload rejected: %s", message)
+            return json.dumps({"status": "error", "message": message})
+
         try:
+            # Trace the request on arrival: it is the only way to tell a client
+            # that never sent anything (file picker / drag-drop broken) apart
+            # from a request the backend rejected.
+            logger.info(
+                "[WebChannel] Upload request received: %s bytes, content-type=%s",
+                web.ctx.env.get("CONTENT_LENGTH") or "?",
+                web.ctx.env.get("CONTENT_TYPE") or "?",
+            )
             params = _raw_web_input()
             file_obj = params.get("file")
             file_objs = params.get("files")
@@ -998,11 +1027,11 @@ class WebChannel(ChatChannel):
             upload_dir = _get_upload_dir()
             if is_directory_upload:
                 if not upload_id:
-                    return json.dumps({"status": "error", "message": "Missing upload_id for directory upload"})
+                    return _reject("Missing upload_id for directory upload")
                 if not directory_files:
-                    return json.dumps({"status": "error", "message": "No files uploaded"})
+                    return _reject("No files uploaded")
                 if len(directory_files) != len(directory_rel_paths):
-                    return json.dumps({"status": "error", "message": "Directory upload payload mismatch"})
+                    return _reject("Directory upload payload mismatch")
 
                 safe_upload_id = _sanitize_upload_id(upload_id)
                 upload_root = os.path.join(upload_dir, f"webdir_{safe_upload_id}")
@@ -1045,7 +1074,7 @@ class WebChannel(ChatChannel):
                 }, ensure_ascii=False)
 
             if file_obj is None or not hasattr(file_obj, "filename") or not file_obj.filename:
-                return json.dumps({"status": "error", "message": "No file uploaded"})
+                return _reject(f"No file uploaded (form fields: {sorted(params.keys())})")
 
             original_name = file_obj.filename
             ext = os.path.splitext(original_name)[1].lower()
