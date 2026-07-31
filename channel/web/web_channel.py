@@ -27,10 +27,25 @@ from common import const
 from common import i18n
 from common.log import logger
 from common.singleton import singleton
-from config import conf, get_data_root, get_weixin_credentials_path
+from config import conf, get_data_root, get_weixin_credentials_path, read_config_template
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
+
+def _read_config_file_for_write() -> dict:
+    """Baseline dict for a partial write to config.json.
+
+    When the file does not exist yet (fresh install), seed from
+    config-template.json — the very config the running process loaded. Starting
+    from an empty dict would persist a file missing every template default
+    (model, agent limits, ...), silently changing behavior after a restart.
+    """
+    config_path = os.path.join(get_data_root(), "config.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return read_config_template()
+
 
 def _get_web_password() -> str:
     # Coerce to str so non-string values in config.json (e.g. numeric password) won't break comparisons
@@ -2271,15 +2286,9 @@ class ConfigHandler:
                 return json.dumps({"status": "error", "message": "no valid keys to update"})
 
             config_path = os.path.join(get_data_root(), "config.json")
-            old_password = ""  # Store old password before update
-            if os.path.exists(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    file_cfg = json.load(f)
-                    # Capture old password before updating
-                    if "web_password" in applied:
-                        old_password = file_cfg.get("web_password", "")
-            else:
-                file_cfg = {}
+            file_cfg = _read_config_file_for_write()
+            # Capture old password before updating
+            old_password = file_cfg.get("web_password", "") if "web_password" in applied else ""
             file_cfg.update(applied)
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
@@ -2738,11 +2747,7 @@ class ModelsHandler:
 
     @classmethod
     def _read_file_config(cls) -> dict:
-        path = cls._config_path()
-        if not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return _read_config_file_for_write()
 
     @classmethod
     def _write_file_config(cls, data: dict) -> None:
@@ -4219,11 +4224,7 @@ class ChannelsHandler:
             return json.dumps({"status": "error", "message": "no valid fields to update"})
 
         config_path = os.path.join(get_data_root(), "config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_cfg = json.load(f)
-        else:
-            file_cfg = {}
+        file_cfg = _read_config_file_for_write()
         file_cfg.update(applied)
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
@@ -4289,11 +4290,7 @@ class ChannelsHandler:
         local_config["channel_type"] = new_channel_type
 
         config_path = os.path.join(get_data_root(), "config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_cfg = json.load(f)
-        else:
-            file_cfg = {}
+        file_cfg = _read_config_file_for_write()
         file_cfg.update(applied)
         file_cfg["channel_type"] = new_channel_type
         with open(config_path, "w", encoding="utf-8") as f:
@@ -4355,11 +4352,7 @@ class ChannelsHandler:
         local_config["channel_type"] = new_channel_type
 
         config_path = os.path.join(get_data_root(), "config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_cfg = json.load(f)
-        else:
-            file_cfg = {}
+        file_cfg = _read_config_file_for_write()
         file_cfg["channel_type"] = new_channel_type
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
