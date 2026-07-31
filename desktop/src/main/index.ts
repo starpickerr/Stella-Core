@@ -147,6 +147,16 @@ function createWindow() {
     return { action: 'deny' }
   })
 
+  // Last-resort backstop for a stray file drop: Chromium would navigate the
+  // renderer to the dropped file and the UI would be gone until restart.
+  // Renderer reloads keep the same URL, so they are unaffected.
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file:') && url !== mainWindow?.webContents.getURL()) {
+      console.warn(`[Electron] Blocked navigation to dropped file: ${url}`)
+      e.preventDefault()
+    }
+  })
+
   // Close-to-tray: hide the window instead of destroying it, so the tray's
   // "Show" can bring it back. Only a real Quit (menu/tray/Cmd+Q) destroys it.
   mainWindow.on('close', (e) => {

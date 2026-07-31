@@ -43,6 +43,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
@@ -282,25 +283,37 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const uploadFiles = async (files: File[]) => {
     if (!files.length) return
     setUploading(true)
+    setUploadError('')
+    // Report per-file outcomes: a silent failure here is indistinguishable from
+    // the file picker never opening, which makes the feature look broken.
+    const failed: string[] = []
     try {
       for (const file of files) {
-        const result = await apiClient.uploadFile(file, sessionId)
-        if (result.status === 'success') {
-          setAttachments((prev) => [
-            ...prev,
-            {
-              file_path: result.file_path,
-              file_name: result.file_name,
-              file_type: result.file_type as Attachment['file_type'],
-              preview_url: result.preview_url,
-            },
-          ])
+        try {
+          const result = await apiClient.uploadFile(file, sessionId)
+          if (result.status === 'success') {
+            setAttachments((prev) => [
+              ...prev,
+              {
+                file_path: result.file_path,
+                file_name: result.file_name,
+                file_type: result.file_type as Attachment['file_type'],
+                preview_url: result.preview_url,
+              },
+            ])
+          } else {
+            failed.push(`${file.name}: ${result.message || 'unknown error'}`)
+          }
+        } catch (err) {
+          failed.push(`${file.name}: ${(err as Error).message}`)
         }
       }
-    } catch (err) {
-      console.error('Upload failed:', err)
     } finally {
       setUploading(false)
+      if (failed.length) {
+        console.error('Upload failed:', failed)
+        setUploadError(`${t('upload_failed')} — ${failed.join('; ')}`)
+      }
     }
   }
 
@@ -310,12 +323,10 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
+  const handleDropData = (dt: DataTransfer) => {
     // A file dragged from the workspace panel is already on disk in the
     // workspace — reference it instead of uploading a duplicate.
-    const wsPayload = e.dataTransfer.getData(WORKSPACE_DRAG_TYPE)
+    const wsPayload = dt.getData(WORKSPACE_DRAG_TYPE)
     if (wsPayload) {
       try {
         addWorkspaceRef(JSON.parse(wsPayload) as WorkspaceEntry)
@@ -324,9 +335,14 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
       }
       return
     }
-    const files = Array.from(e.dataTransfer.files || [])
+    const files = Array.from(dt.files || [])
     if (files.length) uploadFiles(files)
   }
+
+  // Read through a ref so the window listeners below can stay bound once
+  // instead of re-subscribing whenever the input's state changes.
+  const dropHandlerRef = useRef(handleDropData)
+  dropHandlerRef.current = handleDropData
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
@@ -353,15 +369,55 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     if (slashIndex >= filtered.length) setSlashIndex(0)
   }, [filtered.length, slashIndex])
 
-  // A drag can end without ever reaching this drop zone (Esc, or released over
-  // another element), and then no dragleave/drop fires here.
+  // Accept drops anywhere in the window rather than only over the input box:
+  // users aim at the conversation area, and a drop that no element handles makes
+  // Chromium navigate to the dropped file, replacing the whole UI.
   useEffect(() => {
-    const clear = () => setDragOver(false)
-    window.addEventListener('dragend', clear)
-    window.addEventListener('drop', clear)
+    const carriesFiles = (dt: DataTransfer | null) =>
+      !!dt && (dt.types.includes('Files') || dt.types.includes(WORKSPACE_DRAG_TYPE))
+
+    // dragenter/dragleave also fire when moving between descendants, so track
+    // nesting depth and only drop the highlight once the drag really left.
+    let depth = 0
+    const onDragEnter = (e: DragEvent) => {
+      if (!carriesFiles(e.dataTransfer)) return
+      e.preventDefault()
+      depth += 1
+      setDragOver(true)
+    }
+    const onDragOver = (e: DragEvent) => {
+      if (!carriesFiles(e.dataTransfer)) return
+      e.preventDefault()
+    }
+    const onDragLeave = (e: DragEvent) => {
+      if (!carriesFiles(e.dataTransfer)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDragOver(false)
+    }
+    const onDrop = (e: DragEvent) => {
+      depth = 0
+      setDragOver(false)
+      if (!carriesFiles(e.dataTransfer)) return
+      e.preventDefault()
+      dropHandlerRef.current(e.dataTransfer!)
+    }
+    // A drag can end without ever dropping (Esc, or released outside the window).
+    const onDragEnd = () => {
+      depth = 0
+      setDragOver(false)
+    }
+
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    window.addEventListener('dragend', onDragEnd)
     return () => {
-      window.removeEventListener('dragend', clear)
-      window.removeEventListener('drop', clear)
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragend', onDragEnd)
     }
   }, [])
 
@@ -373,20 +429,23 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
         className={`max-w-3xl mx-auto relative rounded-2xl transition-all ${
           dragOver ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''
         }`}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOver(true)
-        }}
-        onDragLeave={(e) => {
-          // Moving between descendants also fires dragleave; only clear when the
-          // pointer actually left the drop zone.
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
-        }}
-        onDrop={handleDrop}
       >
         {dragOver && (
           <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-accent-soft text-accent text-sm font-medium pointer-events-none">
             {t('drop_to_attach')}
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-xs text-danger">
+            <span className="flex-1 break-all">{uploadError}</span>
+            <button
+              onClick={() => setUploadError('')}
+              className="flex-shrink-0 cursor-pointer hover:opacity-70"
+              title={t('ws_close')}
+            >
+              <X size={12} />
+            </button>
           </div>
         )}
 
@@ -523,7 +582,6 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             className="hidden"
             multiple
             onChange={handleFileSelect}
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.json,.xml,.zip,.py,.js,.ts,.java,.c,.cpp,.go,.rs,.md"
           />
 
           <textarea

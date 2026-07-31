@@ -52,6 +52,21 @@ const App: React.FC = () => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
   }, [backend.status, backend.baseUrl])
 
+  // A file dropped where no drop zone handles it makes Chromium navigate to
+  // that file, replacing the app. Swallow those at the document level; pages
+  // that accept files (chat input, knowledge import) still get the event first.
+  useEffect(() => {
+    const swallow = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    document.addEventListener('dragover', swallow)
+    document.addEventListener('drop', swallow)
+    return () => {
+      document.removeEventListener('dragover', swallow)
+      document.removeEventListener('drop', swallow)
+    }
+  }, [])
+
   // Once the backend is ready, check whether a web_password is set. If so and
   // this session isn't authenticated, show the login gate before the app.
   useEffect(() => {

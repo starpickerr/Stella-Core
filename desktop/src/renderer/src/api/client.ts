@@ -73,6 +73,26 @@ class ApiClient {
     return res.json()
   }
 
+  /** POST multipart form data.
+   *
+   * `request()` can't be reused: it forces a JSON content type, while FormData
+   * must set its own multipart boundary. The auth header still has to be wired
+   * up by hand — the desktop app renders from file://, so it authenticates via
+   * the header, never the cookie.
+   */
+  private async postFormData<T>(path: string, formData: FormData): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : undefined,
+    })
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    return res.json()
+  }
+
   // ---------------------------------------------------------
   // Chat / messages
   // ---------------------------------------------------------
@@ -154,16 +174,12 @@ class ApiClient {
     file_name: string
     file_type: string
     preview_url: string
+    message?: string
   }> {
     const formData = new FormData()
     formData.append('file', file)
     if (sessionId) formData.append('session_id', sessionId)
-    const res = await fetch(`${this.baseUrl}/upload`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
-    return res.json()
+    return this.postFormData('/upload', formData)
   }
 
   getFileUrl(previewUrl: string): string {
@@ -380,12 +396,7 @@ class ApiClient {
     formData.append('target_category', targetCategory)
     formData.append('conflict_strategy', 'rename')
     files.forEach((file) => formData.append('files', file, file.name))
-    const res = await fetch(`${this.baseUrl}/api/knowledge/import`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
-    return res.json()
+    return this.postFormData('/api/knowledge/import', formData)
   }
 
   // ---------------------------------------------------------
@@ -432,12 +443,7 @@ class ApiClient {
   async voiceAsr(audio: File | Blob): Promise<{ status: string; text?: string; audio_url?: string; message?: string }> {
     const formData = new FormData()
     formData.append('file', audio, 'recording.webm')
-    const res = await fetch(`${this.baseUrl}/api/voice/asr`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
-    return res.json()
+    return this.postFormData('/api/voice/asr', formData)
   }
 
   async voiceTts(text: string, sessionId?: string): Promise<{ status: string; audio_url?: string; message?: string }> {
