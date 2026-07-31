@@ -251,6 +251,11 @@ MODEL_LIST = [
 
 MODEL_LIST = MODEL_LIST + GITEE_AI_MODEL_LIST + MODELSCOPE_MODEL_LIST
 
+# Fallback model when `model` is missing from the config. Keep in sync with
+# config-template.json so a config without an explicit model behaves the same
+# as a fresh install.
+DEFAULT_MODEL = DEEPSEEK_V4_FLASH
+
 # channel
 FEISHU = "feishu"
 DINGTALK = "dingtalk"

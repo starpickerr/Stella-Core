@@ -52,7 +52,7 @@ def add_openai_compatible_support(bot_instance):
             return {
                 'api_key': conf().get("open_ai_api_key"),
                 'api_base': conf().get("open_ai_api_base"),
-                'model': conf().get("model", "gpt-3.5-turbo"),
+                'model': conf().get("model") or const.DEFAULT_MODEL,
                 'default_temperature': conf().get("temperature", 0.9),
                 'default_top_p': conf().get("top_p", 1.0),
                 'default_frequency_penalty': conf().get("frequency_penalty", 0.0),
@@ -88,7 +88,7 @@ class AgentLLMModel(LLMModel):
     ]
 
     def __init__(self, bridge: Bridge, bot_type: str = "chat"):
-        super().__init__(model=conf().get("model", const.GPT_41))
+        super().__init__(model=conf().get("model") or const.DEFAULT_MODEL)
         self.bridge = bridge
         self.bot_type = bot_type
         self._bot = None
@@ -96,7 +96,7 @@ class AgentLLMModel(LLMModel):
 
     @property
     def model(self):
-        return conf().get("model", const.GPT_41)
+        return conf().get("model") or const.DEFAULT_MODEL
 
     @model.setter
     def model(self, value):
