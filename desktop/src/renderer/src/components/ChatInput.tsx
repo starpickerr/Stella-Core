@@ -431,8 +431,12 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
         }`}
       >
         {dragOver && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-accent-soft text-accent text-sm font-medium pointer-events-none">
-            {t('drop_to_attach')}
+          // accent-soft is a 12%-alpha tint, so it needs an opaque layer under
+          // it — otherwise the textarea placeholder shows through the hint.
+          <div className="absolute inset-0 z-20 rounded-2xl bg-surface pointer-events-none">
+            <div className="flex h-full w-full items-center justify-center rounded-2xl bg-accent-soft text-accent text-sm font-medium">
+              {t('drop_to_attach')}
+            </div>
           </div>
         )}
 

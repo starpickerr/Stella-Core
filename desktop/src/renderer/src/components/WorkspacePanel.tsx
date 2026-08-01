@@ -101,7 +101,9 @@ const WorkspacePanel: React.FC = () => {
 
   return (
     <aside
-      style={{ width }}
+      // Cap against the viewport so a width remembered on a large window
+      // can't crowd out the chat on a smaller one.
+      style={{ width, maxWidth: '70vw' }}
       className="relative shrink-0 h-full flex border-l border-default bg-base"
     >
       <div

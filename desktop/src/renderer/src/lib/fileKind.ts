@@ -42,6 +42,34 @@ export function kindOf(name: string): FileKind {
   return KIND_BY_EXT[ext] || 'file'
 }
 
+/**
+ * Decide whether an href points at a workspace file rather than the web.
+ *
+ * Agent replies cite their own files with a workspace-relative markdown link
+ * (`[title](knowledge/x.md)`). Handing one to the OS browser opens a 404, so
+ * they need routing to the preview panel instead.
+ *
+ * @returns the cleaned workspace path, or null if the href isn't one.
+ */
+export function workspaceHrefOf(href: string): string | null {
+  if (!href) return null
+  // A scheme (http, mailto, file, data), a protocol-relative host, an in-page
+  // anchor or a site-absolute path is never a workspace file.
+  if (/^[a-zA-Z][\w+.-]*:/.test(href)) return null
+  if (href.startsWith('//') || href.startsWith('#') || href.startsWith('/')) return null
+
+  let path = href.split('#')[0].split('?')[0].trim()
+  // markdown-it percent-encodes non-ASCII hrefs; the API wants them raw.
+  try {
+    path = decodeURI(path)
+  } catch {
+    /* keep the encoded form */
+  }
+  if (!path) return null
+  // Require a known extension so prose links stay untouched.
+  return KIND_BY_EXT[(path.split('.').pop() || '').toLowerCase()] ? path : null
+}
+
 const ICON_BY_KIND: Record<FileKind, LucideIcon> = {
   directory: Folder,
   html: FileCode,

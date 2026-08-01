@@ -364,6 +364,14 @@ body * {
 .msg-content a { color: var(--accent); text-decoration: none; }
 .msg-content a:hover { text-decoration: underline; }
 
+/* Links to workspace files: opened in the preview panel, not the OS browser. */
+.msg-content a.ws-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
 .msg-content blockquote {
   padding-left: 0.9em;
   margin: 0.6em 0;
