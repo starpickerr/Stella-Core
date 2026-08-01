@@ -237,6 +237,7 @@ const I18N = {
         ws_search_placeholder: '搜索文件',
         ws_preview_empty: '选择一个文件进行预览',
         ws_preview_failed: '预览失败',
+        ws_link_not_found: '工作空间中找不到该文件',
         ws_no_inline_preview: '该类型不支持内嵌预览',
         ws_empty_dir: '空目录', ws_no_results: '没有匹配的文件',
         ws_truncated: '文件过多，仅显示部分',
@@ -507,6 +508,7 @@ const I18N = {
         ws_search_placeholder: '搜尋檔案',
         ws_preview_empty: '選擇一個檔案進行預覽',
         ws_preview_failed: '預覽失敗',
+        ws_link_not_found: '工作空間中找不到該檔案',
         ws_no_inline_preview: '該類型不支援內嵌預覽',
         ws_empty_dir: '空目錄', ws_no_results: '沒有符合的檔案',
         ws_truncated: '檔案過多，僅顯示部分',
@@ -772,6 +774,7 @@ const I18N = {
         ws_search_placeholder: 'Search files',
         ws_preview_empty: 'Select a file to preview',
         ws_preview_failed: 'Preview failed',
+        ws_link_not_found: 'File not found in the workspace',
         ws_no_inline_preview: 'No inline preview for this file type',
         ws_empty_dir: 'Empty directory', ws_no_results: 'No matching files',
         ws_truncated: 'Too many files, showing a subset',
@@ -1240,8 +1243,19 @@ function createMd() {
         return self.renderToken(tokens, idx, options);
     };
     md.renderer.rules.link_open = function(tokens, idx, options, env, self) {
-        tokens[idx].attrPush(['target', '_blank']);
-        tokens[idx].attrPush(['rel', 'noopener noreferrer']);
+        const token = tokens[idx];
+        // A workspace-relative href would resolve against the console URL and
+        // 404 in a new tab. Tag it instead so the click handler in
+        // workspace.js opens it in the preview panel.
+        const wsPath = typeof wsWorkspaceHref === 'function'
+            ? wsWorkspaceHref(token.attrGet('href') || '') : null;
+        if (wsPath) {
+            token.attrPush(['data-ws-path', wsPath]);
+            token.attrJoin('class', 'ws-link');
+        } else {
+            token.attrPush(['target', '_blank']);
+            token.attrPush(['rel', 'noopener noreferrer']);
+        }
         return defaultLinkOpen(tokens, idx, options, env, self);
     };
     return md;
@@ -3478,7 +3492,6 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 contentEl.classList.remove('sse-streaming');
                 contentEl.innerHTML = renderMarkdown(accumulatedText);
                 applyHighlighting(botEl);
-                bindChatKnowledgeLinks(botEl);
             }
             resetSendBtnSendMode();
         };
@@ -3894,7 +3907,6 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
     }
     renderBotSpeakerButton(el, displayContent);
     applyHighlighting(el);
-    bindChatKnowledgeLinks(el);
     return el;
 }
 
@@ -9205,70 +9217,6 @@ function bindKnowledgeLinks(container, currentFilePath) {
         a.style.cursor = 'pointer';
         a.classList.add('text-primary-500', 'hover:underline');
     });
-}
-
-function bindChatKnowledgeLinks(container) {
-    if (!container) return;
-    container.querySelectorAll('a').forEach(a => {
-        const href = a.getAttribute('href');
-        if (!href || !href.endsWith('.md')) return;
-        if (/^https?:\/\//.test(href)) return;
-
-        // Determine knowledge path
-        let knowledgePath = null;
-        if (href.startsWith('knowledge/')) {
-            // Full path from workspace root: knowledge/concepts/moe.md
-            knowledgePath = href.replace(/^knowledge\//, '');
-        } else if (/^[a-z0-9_-]+\/[a-z0-9_.-]+\.md$/i.test(href)) {
-            // Looks like category/file.md pattern without knowledge/ prefix
-            knowledgePath = href;
-        } else if (href.includes('/') && !href.startsWith('/')) {
-            // Relative path like ../entities/deepseek.md — extract filename and search
-            const filename = href.split('/').pop();
-            knowledgePath = '__search__:' + filename;
-        }
-        if (!knowledgePath) return;
-
-        a.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (knowledgePath.startsWith('__search__:')) {
-                const filename = knowledgePath.replace('__search__:', '');
-                // Find the file in cached tree data
-                const found = _findKnowledgeFileByName(filename);
-                if (found) {
-                    navigateTo('knowledge');
-                    setTimeout(() => openKnowledgeFile(found.path, found.title), 100);
-                }
-            } else {
-                navigateTo('knowledge');
-                const linkTitle = a.textContent.trim() || knowledgePath.replace(/\.md$/, '').split('/').pop();
-                setTimeout(() => openKnowledgeFile(knowledgePath, linkTitle), 100);
-            }
-        });
-        a.style.cursor = 'pointer';
-        a.classList.add('text-primary-500', 'hover:underline');
-    });
-}
-
-function _findKnowledgeFileByName(filename) {
-    for (const f of _knowledgeRootFiles) {
-        if (f.name === filename) return { path: f.name, title: f.title };
-    }
-    return _searchFileInGroups(_knowledgeTreeData, '', filename);
-}
-
-function _searchFileInGroups(groups, parentPath, filename) {
-    for (const group of groups) {
-        const groupPath = parentPath ? parentPath + '/' + group.dir : group.dir;
-        for (const f of (group.files || [])) {
-            if (f.name === filename) {
-                return { path: groupPath + '/' + f.name, title: f.title };
-            }
-        }
-        const found = _searchFileInGroups(group.children || [], groupPath, filename);
-        if (found) return found;
-    }
-    return null;
 }
 
 function openKnowledgeFile(path, title) {

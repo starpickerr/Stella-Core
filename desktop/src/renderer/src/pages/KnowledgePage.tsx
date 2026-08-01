@@ -143,8 +143,8 @@ function findFileByName(list: KnowledgeList, filename: string): { path: string; 
 }
 
 // Resolve a relative `.md` link (from a document body) into a knowledge path.
-// Mirrors the web console's bindChatKnowledgeLinks logic: supports
-// `knowledge/…/x.md`, `category/x.md`, and bare/relative `../x.md` (by name).
+// Supports `knowledge/…/x.md`, `category/x.md`, and bare/relative `../x.md`
+// (matched by filename).
 function resolveKnowledgeLink(list: KnowledgeList, href: string): { path: string; title: string } | null {
   const clean = href.split('#')[0].split('?')[0]
   if (!clean.endsWith('.md')) return null

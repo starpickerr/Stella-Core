@@ -484,6 +484,13 @@
 .msg-content a { color: #35A85B; text-decoration: underline; }
 .msg-content a:hover { color: #228547; }
 
+/* Links to workspace files: opened in the preview panel, not a new tab. */
+.msg-content a.ws-link {
+    cursor: pointer;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+
 /* Overrides for user bubble (white text on green bg) */
 .user-bubble.msg-content a { color: #ffffff !important; text-decoration: underline; text-decoration-color: rgba(255,255,255,0.6); }
 .user-bubble.msg-content a:hover { color: #e0f5e8 !important; text-decoration-color: #e0f5e8; }

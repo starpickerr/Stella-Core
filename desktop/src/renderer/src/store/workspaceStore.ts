@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
+import { t } from '../i18n'
 import type { Artifact, WorkspaceEntry } from '../types'
 
 const WIDTH_KEY = 'cow_workspace_width'
@@ -39,6 +40,7 @@ interface WorkspaceState {
   setWidth: (w: number) => void
 
   preview: (target: WorkspaceEntry | Artifact | string) => Promise<void>
+  openLink: (path: string) => Promise<void>
   addTurnArtifact: (a: Artifact) => void
   resetTurnArtifacts: () => void
   maybeAutoOpen: () => void
@@ -144,6 +146,39 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     set({ open: true, tab: 'preview', current: entry, previewError: null })
+  },
+
+  /**
+   * Open a workspace file referenced by a link in a rendered message. Agent
+   * links are occasionally relative to the citing document rather than to the
+   * workspace root, so fall back to a filename search before giving up.
+   */
+  openLink: async (path) => {
+    try {
+      await get().preview((await apiClient.workspaceResolve(path)).file)
+      return
+    } catch {
+      /* fall through to the name search */
+    }
+
+    const name = path.split('/').pop() || path
+    try {
+      const { results } = await apiClient.workspaceSearch(name, 10)
+      const hit = (results || []).find((r) => !r.is_dir && r.name === name)
+      if (hit) {
+        await get().preview(hit)
+        return
+      }
+    } catch {
+      /* fall through to the error state */
+    }
+
+    set({
+      open: true,
+      tab: 'preview',
+      current: null,
+      previewError: `${t('ws_link_not_found')}: ${path}`,
+    })
   },
 
   addTurnArtifact: (a) =>

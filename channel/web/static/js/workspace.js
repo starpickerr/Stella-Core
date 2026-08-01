@@ -434,8 +434,22 @@ function wsTriggerDownload(url, name) {
     a.remove();
 }
 
-// Delegate clicks on file cards and inline path chips.
+// Delegate clicks on file cards, inline path chips and workspace links.
+// Delegation (rather than per-element listeners) is what keeps this working
+// after a streamed message re-renders its innerHTML.
 document.addEventListener('click', async (e) => {
+    // A closer handler already claimed this click (e.g. the knowledge viewer
+    // navigating between its own documents).
+    if (e.defaultPrevented) return;
+
+    // Workspace-relative link inside rendered markdown.
+    const wsLink = e.target.closest('a[data-ws-path]');
+    if (wsLink) {
+        e.preventDefault();
+        openWorkspaceLink(wsLink.dataset.wsPath);
+        return;
+    }
+
     const chip = e.target.closest('.file-chip');
     if (chip && chip.dataset.path) {
         e.preventDefault();
@@ -519,6 +533,65 @@ function injectFileChips(html) {
             path.includes('://') ? match : lead + _buildFileChip(path)
         );
     }).join('');
+}
+
+// =====================================================================
+// Workspace links inside rendered markdown
+// =====================================================================
+/**
+ * Decide whether an href points at a workspace file rather than the web.
+ *
+ * Agent replies cite their own files with a workspace-relative markdown link
+ * (`[title](knowledge/x.md)`). The browser would resolve those against the
+ * console URL and open a 404 in a new tab, so they need routing to the
+ * preview panel instead.
+ *
+ * @returns {string|null} the cleaned workspace path, or null if not one.
+ */
+function wsWorkspaceHref(href) {
+    if (!href) return null;
+    // A scheme (http, mailto, file, data), a protocol-relative host, an
+    // in-page anchor or a site-absolute path is never a workspace file.
+    if (/^[a-zA-Z][\w+.-]*:/.test(href)) return null;
+    if (href.startsWith('//') || href.startsWith('#') || href.startsWith('/')) return null;
+
+    let path = href.split('#')[0].split('?')[0].trim();
+    // markdown-it percent-encodes non-ASCII hrefs; the API wants them raw.
+    try { path = decodeURI(path); } catch (_) {}
+    if (!path) return null;
+    // Require a known extension so prose links stay untouched.
+    return WS_EXT_KIND[(path.split('.').pop() || '').toLowerCase()] ? path : null;
+}
+
+/**
+ * Open a workspace file referenced by a link in a rendered message.
+ * Agent links are occasionally relative to the citing document rather than to
+ * the workspace root, so fall back to a filename search before giving up.
+ */
+async function openWorkspaceLink(path) {
+    // The panel lives in the chat view, so a link clicked from elsewhere (the
+    // knowledge reader, a memory file) would otherwise open out of sight.
+    if (typeof navigateTo === 'function' && currentView !== 'chat') navigateTo('chat');
+
+    try {
+        const data = await wsApi(`/api/workspace/resolve?path=${encodeURIComponent(path)}`);
+        openInPreview(data.file);
+        return;
+    } catch (_) { /* fall through to the name search */ }
+
+    const name = path.split('/').pop();
+    try {
+        const data = await wsApi(`/api/workspace/search?q=${encodeURIComponent(name)}&limit=10`);
+        const hit = (data.results || []).find(r => !r.is_dir && r.name === name);
+        if (hit) {
+            openInPreview(hit);
+            return;
+        }
+    } catch (_) {}
+
+    openWorkspacePanel('preview');
+    switchWorkspaceTab('preview');
+    wsSetPreviewEmpty(`${t('ws_link_not_found')}: ${path}`, 'fa-triangle-exclamation');
 }
 
 // =====================================================================

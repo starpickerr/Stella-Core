@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useCallback } from 'react'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import { t } from '../i18n'
+import { workspaceHrefOf } from '../lib/fileKind'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 /**
  * Markdown renderer aligned 1:1 with the web console (markdown-it + highlight.js
@@ -65,8 +67,18 @@ const defaultLinkOpen =
     return self.renderToken(tokens, idx, options)
   }
 md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
-  tokens[idx].attrPush(['target', '_blank'])
-  tokens[idx].attrPush(['rel', 'noopener noreferrer'])
+  const token = tokens[idx]
+  // A workspace-relative href means nothing outside the app: `target=_blank`
+  // would hand it to the OS browser, which resolves it against the renderer's
+  // file:// URL. Tag it so the click handler opens the preview panel instead.
+  const wsPath = workspaceHrefOf(token.attrGet('href') || '')
+  if (wsPath) {
+    token.attrPush(['data-ws-path', wsPath])
+    token.attrJoin('class', 'ws-link')
+  } else {
+    token.attrPush(['target', '_blank'])
+    token.attrPush(['rel', 'noopener noreferrer'])
+  }
   return defaultLinkOpen(tokens, idx, options, env, self)
 }
 
@@ -130,6 +142,14 @@ const Markdown: React.FC<MarkdownProps> = ({ content, onInternalLink }) => {
             return
           }
         }
+      }
+
+      // Links to workspace files open in the preview panel.
+      const wsLink = target.closest('a[data-ws-path]') as HTMLAnchorElement | null
+      if (wsLink) {
+        e.preventDefault()
+        useWorkspaceStore.getState().openLink(wsLink.dataset.wsPath || '')
+        return
       }
 
       const btn = target.closest('.code-copy-btn') as HTMLElement | null
