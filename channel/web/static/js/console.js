@@ -1193,6 +1193,37 @@ function getHljs() {
     return window.hljs || FALLBACK_HLJS;
 }
 
+// CJK ideographs, kana, Hangul and full/halfwidth forms (BMP only).
+const CJK_CHAR_RE = /[\u1100-\u11FF\u2E80-\u303F\u3040-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7FF\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+// CommonMark's flanking rules treat every Unicode punctuation alike, so
+// `是**"引号"**——` never opens emphasis: the quote after `**` is punctuation
+// while 是 before it is neither punctuation nor space, and the run degrades to
+// literal asterisks. Apply the CJK-friendly amendment
+// (github.com/tats-u/markdown-cjk-friendly): a `*` run with a CJK neighbour and
+// no adjacent whitespace both opens and closes. `_` keeps the stock rules,
+// whose intraword behavior depends on the original classification.
+function patchCjkEmphasis(md) {
+    const State = md.inline && md.inline.State;
+    if (!State || !State.prototype.scanDelims || State.prototype._cjkEmphasisPatched) return;
+    const utils = md.utils;
+    const scanDelims = State.prototype.scanDelims;
+    State.prototype.scanDelims = function(start, canSplitWord) {
+        const res = scanDelims.call(this, start, canSplitWord);
+        if (!canSplitWord) return res;
+        const lastCode = start > 0 ? this.src.charCodeAt(start - 1) : 0x20;
+        const nextPos = start + res.length;
+        const nextCode = nextPos < this.posMax ? this.src.charCodeAt(nextPos) : 0x20;
+        if (utils.isWhiteSpace(lastCode) || utils.isWhiteSpace(nextCode)) return res;
+        if (!CJK_CHAR_RE.test(String.fromCharCode(lastCode)) &&
+            !CJK_CHAR_RE.test(String.fromCharCode(nextCode))) return res;
+        res.can_open = true;
+        res.can_close = true;
+        return res;
+    };
+    State.prototype._cjkEmphasisPatched = true;
+}
+
 function createMd() {
     const hljsLib = getHljs();
     const mdFactory = window.markdownit;
@@ -1212,6 +1243,7 @@ function createMd() {
             return hljsLib.highlightAuto(str).value;
         }
     });
+    patchCjkEmphasis(md);
     // Fix greedy linkify: markdown-it's linkify swallows markdown emphasis (*)
     // and CJK full-width punctuation glued to a URL (common in LLM output like
     // "**https://x**，中文"), turning the whole tail into one broken link. Cut
