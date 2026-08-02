@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,8 +8,11 @@ from agent.memory import (
     clear_conversation_store_cache,
     get_default_memory_config,
     get_conversation_store,
+    register_memory_config,
+    reset_memory_configs,
     set_global_memory_config,
 )
+from common.runtime_identity import identity_scope
 from agent.registry import AgentProfile, AgentRegistry, get_agent_registry, set_agent_registry
 from agent.tools.scheduler.integration import (
     get_scheduler_service,
@@ -39,12 +43,34 @@ def isolated_registry(tmp_path, monkeypatch):
     set_agent_registry(registry)
     clear_conversation_store_cache()
     reset_scheduler_services()
+    reset_memory_configs()
     try:
         yield registry
     finally:
+        reset_memory_configs()
         reset_scheduler_services()
         clear_conversation_store_cache()
         set_agent_registry(previous)
+
+
+@pytest.fixture
+def mcp_workspaces(isolated_registry):
+    """Give each Agent an mcp.json naming a server only it should ever boot."""
+    import json
+
+    from agent.tools.tool_manager import ToolManager
+
+    for profile in isolated_registry.list(include_disabled=False):
+        workspace = Path(profile.workspace)
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "mcp.json").write_text(
+            json.dumps({"mcpServers": {f"{profile.id}-server": {"command": "true"}}})
+        )
+    ToolManager.reset_instances()
+    try:
+        yield isolated_registry
+    finally:
+        ToolManager.reset_instances()
 
 
 def _message(text):
@@ -118,6 +144,100 @@ def test_scheduler_stores_allow_same_task_id_per_agent(isolated_registry):
     assert get_scheduler_service(agent_id="primary") is not get_scheduler_service(
         agent_id="research"
     )
+
+
+def test_each_agent_boots_only_its_own_mcp_servers(mcp_workspaces, monkeypatch):
+    """A process-wide ToolManager let the first Agent to start decide which MCP
+    servers existed: everyone else inherited its tools, credentials included,
+    and their own servers never booted at all."""
+    from agent.tools.tool_manager import ToolManager
+
+    booted = []
+    monkeypatch.setattr(
+        ToolManager,
+        "_load_mcp_tools_async",
+        lambda self, configs: booted.append(
+            sorted(cfg.get("name") for cfg in configs)
+        ),
+    )
+    # The loader normally runs on a daemon thread; run it inline so the
+    # assertion does not race it.
+    monkeypatch.setattr(
+        "agent.tools.tool_manager.threading.Thread",
+        lambda target, args=(), **kwargs: SimpleNamespace(
+            start=lambda: target(*args)
+        ),
+    )
+
+    for agent_id in ("primary", "research"):
+        with identity_scope(agent_id=agent_id):
+            ToolManager()._load_mcp_tools()
+
+    assert booted == [["primary-server"], ["research-server"]]
+
+
+def test_tool_manager_instance_is_per_workspace(mcp_workspaces):
+    from agent.tools.tool_manager import ToolManager
+
+    with identity_scope(agent_id="primary"):
+        primary = ToolManager()
+    with identity_scope(agent_id="research"):
+        research = ToolManager()
+    with identity_scope(agent_id="primary"):
+        assert ToolManager() is primary
+
+    assert primary is not research
+    assert primary._mcp_json_path() != research._mcp_json_path()
+    assert primary._mcp_json_path().endswith("primary/mcp.json")
+    assert research._mcp_json_path().endswith("research/mcp.json")
+
+
+def test_mcp_path_stays_put_when_the_ambient_identity_is_gone(mcp_workspaces):
+    """The MCP loader and hot-reload run on threads that carry no identity;
+    the instance has to remember which workspace it belongs to."""
+    from agent.tools.tool_manager import ToolManager
+
+    with identity_scope(agent_id="research"):
+        research = ToolManager()
+
+    assert research._mcp_json_path().endswith("research/mcp.json")
+
+
+def test_registering_one_agents_config_does_not_move_another(isolated_registry):
+    """Each Agent's initializer registers its own config. Before this was keyed
+    by workspace, the last one to initialize owned where every Agent's memory
+    and conversation history landed."""
+    for agent_id in ("primary", "research"):
+        register_memory_config(
+            MemoryConfig(workspace_root=isolated_registry.get(agent_id).workspace)
+        )
+
+    for agent_id in ("primary", "research"):
+        workspace = Path(isolated_registry.get(agent_id).workspace)
+        with identity_scope(agent_id=agent_id):
+            assert Path(get_default_memory_config().workspace_root) == workspace
+            assert get_conversation_store() is get_conversation_store(str(workspace))
+
+
+def test_memory_config_follows_routing_without_any_registration(isolated_registry):
+    """Startup paths read the config before any Agent has initialized."""
+    for agent_id in ("primary", "research"):
+        with identity_scope(agent_id=agent_id):
+            assert Path(get_default_memory_config().workspace_root) == Path(
+                isolated_registry.get(agent_id).workspace
+            )
+
+
+def test_pinned_config_overrides_routing(isolated_registry):
+    pinned = MemoryConfig(workspace_root=isolated_registry.get("primary").workspace)
+    try:
+        set_global_memory_config(pinned)
+        with identity_scope(agent_id="research"):
+            assert get_default_memory_config() is pinned
+    finally:
+        set_global_memory_config(None)
+    with identity_scope(agent_id="research"):
+        assert get_default_memory_config() is not pinned
 
 
 def test_no_argument_conversation_store_preserves_single_agent_default(

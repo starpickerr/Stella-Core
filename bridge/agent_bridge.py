@@ -772,6 +772,7 @@ class AgentBridge:
         """
         import threading
         from agent.tools import ToolManager
+        from common.runtime_identity import wrap
 
         def _run():
             try:
@@ -786,7 +787,12 @@ class AgentBridge:
             except Exception as e:
                 logger.warning(f"[AgentBridge] MCP hot-reload failed (non-fatal): {e}")
 
-        threading.Thread(target=_run, daemon=True, name="mcp-hot-reload").start()
+        # wrap carries the routed identity into the thread; without it this
+        # would reload the default Agent's mcp.json and sync its tools into
+        # whichever Agent actually served the message.
+        threading.Thread(
+            target=wrap(_run), daemon=True, name="mcp-hot-reload"
+        ).start()
 
     def _create_file_reply(self, file_info: dict, text_response: str, context: Context = None) -> Reply:
         """
