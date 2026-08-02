@@ -1143,11 +1143,10 @@ class AgentBridge:
         """
         import os
         from dotenv import load_dotenv
-        from config import conf
+        from common.state_dir import env_file as workspace_env_file
 
         # Reload environment variables from .env file
-        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-        env_file = os.path.join(workspace_root, '.env')
+        env_file = str(workspace_env_file())
 
         if os.path.exists(env_file):
             load_dotenv(env_file, override=True)

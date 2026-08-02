@@ -459,6 +459,15 @@ def load_config():
         logger.setLevel(logging.DEBUG)
         logger.debug("[INIT] set log level to DEBUG")
 
+    # The registry caches profiles on first access. Anything that resolved a
+    # path before this point cached the pre-config workspace, so drop it.
+    # Rebuilding here also surfaces an invalid "agents" block at startup
+    # rather than on the first inbound message.
+    from agent.registry import get_agent_registry, set_agent_registry
+
+    set_agent_registry(None)
+    agent_registry = get_agent_registry()
+
     # Resolve the global UI language as early as possible so that every
     # downstream layer (logs, CLI, agent prompts, channel replies) shares it.
     resolved_lang = i18n.resolve_language(config.get("cow_lang", "auto"))
@@ -475,8 +484,16 @@ def load_config():
 
     # Agent mode info
     if config.get("agent", True):
-        workspace = config.get("agent_workspace", "~/cow")
-        logger.info("[INIT] Mode: Agent (workspace: {})".format(workspace))
+        profiles = agent_registry.list(include_disabled=False)
+        if len(profiles) == 1:
+            logger.info("[INIT] Mode: Agent (workspace: {})".format(profiles[0].workspace))
+        else:
+            logger.info("[INIT] Mode: Agent ({} agents)".format(len(profiles)))
+            for profile in profiles:
+                marker = " (default)" if profile.id == agent_registry.default_agent_id else ""
+                logger.info(
+                    "[INIT]   - {}{}: {}".format(profile.id, marker, profile.workspace)
+                )
     else:
         logger.info("[INIT] Mode: Chat (set \"agent\":true in config.json to enable Agent mode)")
 

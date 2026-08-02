@@ -199,17 +199,14 @@ def _steer_reply_text(status, lang: str) -> str:
 
 
 def _get_upload_dir() -> str:
-    from common.utils import expand_path
-    ws_root = expand_path(conf().get("agent_workspace", "~/cow"))
-    tmp_dir = os.path.join(ws_root, "tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-    return tmp_dir
+    from common.state_dir import tmp_dir
+    return str(tmp_dir())
 
 
 def _get_workspace_root() -> str:
-    """Resolve the agent workspace directory."""
-    from common.utils import expand_path
-    return expand_path(conf().get("agent_workspace", "~/cow"))
+    """Resolve the workspace of the Agent this request is routed to."""
+    from common.state_dir import state_root_str
+    return state_root_str()
 
 
 _PREVIEW_SECRET = None

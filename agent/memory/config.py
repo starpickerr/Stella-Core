@@ -5,7 +5,6 @@ Provides global memory configuration with simplified workspace structure
 """
 
 from __future__ import annotations
-import os
 from dataclasses import dataclass, field
 from typing import Optional, List
 from pathlib import Path
@@ -13,19 +12,13 @@ from pathlib import Path
 
 def _default_workspace():
     """
-    Resolve the default workspace from agent_workspace, falling back to
-    ~/cow. Reading the config here (instead of hardcoding ~/cow) keeps
-    every consumer of get_default_memory_config() - ConversationStore,
-    the evolution executor, the evolution-undo tool - on the configured
-    workspace without each entrypoint having to prime the singleton.
+    Resolve the workspace of the routed Agent. Deferring to state_dir keeps
+    every consumer of get_default_memory_config() - ConversationStore, the
+    evolution executor, the evolution-undo tool - on the right workspace
+    without each entrypoint having to prime the singleton.
     """
-    from common.utils import expand_path
-    try:
-        from config import conf
-        return expand_path(conf().get("agent_workspace") or "~/cow")
-    except Exception:
-        # Config not importable/loaded yet: keep the historical default.
-        return expand_path("~/cow")
+    from common.state_dir import state_root_str
+    return state_root_str()
 
 
 @dataclass
@@ -63,35 +56,21 @@ class MemoryConfig:
     def get_workspace(self) -> Path:
         """Get workspace root directory"""
         return Path(self.workspace_root)
-    
+
     def get_memory_dir(self) -> Path:
         """Get memory files directory"""
-        return self.get_workspace() / "memory"
-    
+        from common import state_dir
+        return state_dir.memory_dir(base=self.workspace_root)
+
     def get_db_path(self) -> Path:
         """Get SQLite database path for long-term memory index"""
-        index_dir = self.get_memory_dir() / "long-term"
-        index_dir.mkdir(parents=True, exist_ok=True)
-        return index_dir / "index.db"
-    
+        from common import state_dir
+        return state_dir.memory_index_db(base=self.workspace_root)
+
     def get_skills_dir(self) -> Path:
         """Get skills directory"""
-        return self.get_workspace() / "skills"
-    
-    def get_agent_workspace(self, agent_name: Optional[str] = None) -> Path:
-        """
-        Get workspace directory for an agent
-        
-        Args:
-            agent_name: Optional agent name (not used in current implementation)
-            
-        Returns:
-            Path to workspace directory
-        """
-        workspace = self.get_workspace()
-        # Ensure workspace directory exists
-        workspace.mkdir(parents=True, exist_ok=True)
-        return workspace
+        from common import state_dir
+        return state_dir.skills_dir(base=self.workspace_root)
 
 
 # Global memory configuration

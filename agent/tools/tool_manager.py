@@ -260,9 +260,8 @@ class ToolManager:
             logger.error(f"Error configuring tools from config: {e}")
 
     def _mcp_json_path(self) -> str:
-        import os
-        workspace = os.path.expanduser(conf().get("agent_workspace", "~/cow"))
-        return os.path.join(workspace, "mcp.json")
+        from common.state_dir import mcp_config_file
+        return str(mcp_config_file())
 
     def _read_mcp_json_signature(self):
         """

@@ -11,6 +11,7 @@ from channel.channel import Channel
 from common.dequeue import Dequeue
 from common import memory
 from common.i18n import t as _t
+from common.runtime_identity import RuntimeIdentity, use_identity
 from plugins import *
 
 try:
@@ -185,18 +186,27 @@ class ChatChannel(Channel):
     def _handle(self, context: Context):
         if context is None or not context.content:
             return
-        logger.debug("[chat_channel] handling context: {}".format(context))
-        # reply的构建步骤
-        reply = self._generate_reply(context)
+        # The single point where an inbound message is bound to an identity.
+        # Everything below reads it from the ambient context instead of being
+        # handed a workspace path.
+        with use_identity(self._identity_for(context)):
+            logger.debug("[chat_channel] handling context: {}".format(context))
+            # reply的构建步骤
+            reply = self._generate_reply(context)
 
-        logger.debug("[chat_channel] decorating reply: {}".format(reply))
+            logger.debug("[chat_channel] decorating reply: {}".format(reply))
 
-        # reply的包装步骤
-        if reply and reply.content:
-            reply = self._decorate_reply(context, reply)
+            # reply的包装步骤
+            if reply and reply.content:
+                reply = self._decorate_reply(context, reply)
 
-            # reply的发送步骤
-            self._send_reply(context, reply)
+                # reply的发送步骤
+                self._send_reply(context, reply)
+
+    def _identity_for(self, context: Context) -> RuntimeIdentity:
+        """Resolve who this message is for. Channel-to-Agent bindings are not
+        wired yet, so agent_id stays None and resolves to the default Agent."""
+        return RuntimeIdentity(session_id=context.get("session_id"))
 
     def _generate_reply(self, context: Context, reply: Reply = Reply()) -> Reply:
         e_context = PluginManager().emit_event(

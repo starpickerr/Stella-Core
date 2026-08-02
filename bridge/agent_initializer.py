@@ -48,10 +48,10 @@ class AgentInitializer:
         Returns:
             Initialized agent instance
         """
-        from config import conf
-        
-        # Get workspace from config
-        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+        from common.state_dir import state_root_str
+
+        # Workspace of the Agent this run is routed to
+        workspace_root = state_root_str()
         
         # Migrate API keys
         self._migrate_config_to_env(workspace_root)
