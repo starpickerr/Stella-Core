@@ -53,15 +53,14 @@ class AgentInitializer:
         Returns:
             Initialized agent instance
         """
+        from agent.registry import get_agent_registry
         from common.runtime_identity import current_identity
-        from common.state_dir import state_root_str
 
         # An explicit agent_id wins (admin, warmup, tests); otherwise follow
         # the identity routing established for this message.
         identity = current_identity()
-        if agent_id:
-            identity = identity.derive(agent_id=agent_id)
-        workspace_root = state_root_str(identity)
+        profile = get_agent_registry().get(agent_id or identity.agent_id)
+        workspace_root = profile.workspace
         
         # Migrate API keys
         self._migrate_config_to_env(workspace_root)
@@ -290,15 +289,15 @@ class AgentInitializer:
         memory_tools = []
         
         try:
-            from agent.memory import MemoryManager, MemoryConfig, set_global_memory_config
+            from agent.memory import MemoryManager, MemoryConfig, register_memory_config
             from agent.tools import MemorySearchTool, MemoryGetTool
             from config import conf
 
             memory_config = MemoryConfig(workspace_root=workspace_root)
-            # Keeps ConversationStore/evolution on the same workspace as this
-            # agent even if the singleton was built before the config was
-            # loaded (see set_global_memory_config's docstring).
-            set_global_memory_config(memory_config)
+            # Publish per workspace, not process-wide: this runs once per Agent,
+            # and a single global slot would leave the last one to initialize
+            # owning where every Agent's memory is written.
+            register_memory_config(memory_config)
 
             embedding_provider = self._init_embedding_provider(
                 memory_config, session_id=session_id

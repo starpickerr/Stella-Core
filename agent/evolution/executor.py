@@ -479,7 +479,9 @@ def run_evolution_for_session(
         logger.info(f"[Evolution] ✓ session={session_id} evolved:\n{result}")
         append_session_evolution(workspace_dir, result, backup_id=backup_id, user_id=user_id)
         # Inject an [EVOLUTION] note so the main agent can honor "undo".
-        _inject_evolution_record(agent_bridge, session_id, channel_type, result, backup_id)
+        _inject_evolution_record(
+            agent_bridge, session_id, channel_type, result, backup_id, agent_id
+        )
         # The injection appended its own messages ([SCHEDULED]/[EVOLUTION]).
         # Advance the cursor past them so the next scan does not treat
         # evolution's own bookkeeping as new user content and re-trigger.
@@ -506,7 +508,12 @@ def run_evolution_for_session(
 
 
 def _inject_evolution_record(
-    agent_bridge, session_id: str, channel_type: str, summary: str, backup_id: Optional[str]
+    agent_bridge,
+    session_id: str,
+    channel_type: str,
+    summary: str,
+    backup_id: Optional[str],
+    agent_id: str = None,
 ) -> None:
     """Add an [EVOLUTION] note to the user session so the main agent can undo."""
     try:

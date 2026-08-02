@@ -31,19 +31,49 @@ def _normalize_mcp_configs(raw) -> list:
 class ToolManager:
     """
     Tool manager for managing tools.
+
+    One instance per Agent workspace. Not a plain singleton: the instance
+    caches booted MCP subprocesses so that per-session agent init does not
+    re-fork them, and each workspace has its own ``mcp.json``. A single
+    process-wide instance would let the first Agent to start decide which MCP
+    servers exist, hand its tools (and their credentials) to every other
+    Agent, and leave their own servers permanently unloaded.
     """
-    _instance = None
+    _instances: Dict[str, "ToolManager"] = {}
+    _instances_lock = threading.Lock()
 
     def __new__(cls):
-        """Singleton pattern to ensure only one instance of ToolManager exists."""
-        if cls._instance is None:
-            cls._instance = super(ToolManager, cls).__new__(cls)
-            cls._instance.tool_classes = {}  # Store tool classes instead of instances
-            cls._instance._initialized = False
-        return cls._instance
+        from common.state_dir import real_state_root
+
+        key = real_state_root()
+        instance = cls._instances.get(key)
+        if instance is not None:
+            return instance
+        with cls._instances_lock:
+            instance = cls._instances.get(key)
+            if instance is None:
+                instance = super(ToolManager, cls).__new__(cls)
+                instance.workspace_root = key
+                instance.tool_classes = {}  # Store tool classes instead of instances
+                instance._initialized = False
+                cls._instances[key] = instance
+            return instance
+
+    @classmethod
+    def instances(cls) -> list:
+        """Every ToolManager built so far, for process-wide operations."""
+        with cls._instances_lock:
+            return list(cls._instances.values())
+
+    @classmethod
+    def reset_instances(cls) -> None:
+        """Drop every cached instance. For tests."""
+        with cls._instances_lock:
+            cls._instances.clear()
 
     def __init__(self):
-        # Initialize only once
+        # Runs on every ToolManager() call, including the ones that get a
+        # cached instance back, so every field is guarded.
         if not hasattr(self, 'tool_classes'):
             self.tool_classes = {}  # Dictionary to store tool classes
         if not hasattr(self, '_mcp_registry'):
@@ -260,8 +290,12 @@ class ToolManager:
             logger.error(f"Error configuring tools from config: {e}")
 
     def _mcp_json_path(self) -> str:
+        # Anchored to the workspace this instance was built for, not to the
+        # ambient identity: the MCP loader and refresh run on background
+        # threads that carry no identity and would otherwise read the default
+        # Agent's mcp.json.
         from common.state_dir import mcp_config_file
-        return str(mcp_config_file())
+        return str(mcp_config_file(base=self.workspace_root))
 
     def _read_mcp_json_signature(self):
         """

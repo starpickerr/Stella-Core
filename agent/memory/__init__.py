@@ -6,7 +6,13 @@ conversation history persistence (SQLite).
 """
 
 from agent.memory.manager import MemoryManager
-from agent.memory.config import MemoryConfig, get_default_memory_config, set_global_memory_config
+from agent.memory.config import (
+    MemoryConfig,
+    get_default_memory_config,
+    register_memory_config,
+    reset_memory_configs,
+    set_global_memory_config,
+)
 from agent.memory.embedding import create_embedding_provider, create_default_embedding_provider
 from agent.memory.conversation_store import (
     ConversationStore,
@@ -19,6 +25,8 @@ __all__ = [
     'MemoryManager',
     'MemoryConfig',
     'get_default_memory_config',
+    'register_memory_config',
+    'reset_memory_configs',
     'set_global_memory_config',
     'create_embedding_provider',
     'create_default_embedding_provider',

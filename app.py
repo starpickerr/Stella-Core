@@ -308,12 +308,28 @@ def _warmup_mcp_tools():
     (npx / uvx etc.) finish initializing before the first user message
     arrives. Returns immediately — the actual work happens on a daemon
     thread inside ToolManager. Safe to call when MCP is not configured.
+
+    Warms every enabled Agent: this runs before any routing has happened, so
+    without the loop only the default Agent's servers would be ready and the
+    rest would boot on their first message instead.
     """
     try:
+        from agent.registry import get_agent_registry
         from agent.tools import ToolManager
-        ToolManager()._load_mcp_tools()
+        from common.runtime_identity import identity_scope
+
+        profiles = get_agent_registry().list(include_disabled=False)
     except Exception as e:
         logger.warning(f"[App] MCP warmup failed (non-fatal): {e}")
+        return
+
+    for profile in profiles:
+        # Per Agent, so one broken mcp.json does not stop the others warming.
+        try:
+            with identity_scope(agent_id=profile.id):
+                ToolManager()._load_mcp_tools()
+        except Exception as e:
+            logger.warning(f"[App] MCP warmup failed for '{profile.id}' (non-fatal): {e}")
 
 
 def _warmup_scheduler():

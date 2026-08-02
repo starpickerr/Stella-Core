@@ -85,31 +85,38 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
             # the scheduler to retry on the next tick (e.g. channel not yet
             # ready right after process start).
             def execute_task_callback(task: dict):
+                # Scheduler threads carry no identity of their own. Binding it
+                # here is the counterpart to chat_channel._handle: leaf code
+                # reached from a task (ToolManager, tmp_dir, memory) then lands
+                # in this Agent's workspace rather than the default one's.
+                from common.runtime_identity import identity_scope
+
                 try:
-                    action = task.get("action", {})
-                    action_type = action.get("type")
-                    channel_type = action.get("channel_type", "unknown")
-                    receiver = action.get("receiver", "")
+                    with identity_scope(agent_id=agent_id):
+                        action = task.get("action", {})
+                        action_type = action.get("type")
+                        channel_type = action.get("channel_type", "unknown")
+                        receiver = action.get("receiver", "")
 
-                    if not _is_channel_ready(channel_type, receiver, agent_id):
-                        logger.warning(
-                            f"[Scheduler] Task {task.get('id')}: channel "
-                            f"'{channel_type}' not ready for receiver={receiver} "
-                            f"(no inbound msg cached since restart?); deferring"
-                        )
-                        return False
+                        if not _is_channel_ready(channel_type, receiver, agent_id):
+                            logger.warning(
+                                f"[Scheduler] Task {task.get('id')}: channel "
+                                f"'{channel_type}' not ready for receiver={receiver} "
+                                f"(no inbound msg cached since restart?); deferring"
+                            )
+                            return False
 
-                    if action_type == "agent_task":
-                        return _execute_agent_task(task, agent_bridge, agent_id)
-                    elif action_type == "send_message":
-                        return _execute_send_message(task, agent_bridge, agent_id)
-                    elif action_type == "tool_call":
-                        return _execute_tool_call(task, agent_bridge, agent_id)
-                    elif action_type == "skill_call":
-                        return _execute_skill_call(task, agent_bridge, agent_id)
-                    else:
-                        logger.warning(f"[Scheduler] Unknown action type: {action_type}")
-                        return True
+                        if action_type == "agent_task":
+                            return _execute_agent_task(task, agent_bridge, agent_id)
+                        elif action_type == "send_message":
+                            return _execute_send_message(task, agent_bridge, agent_id)
+                        elif action_type == "tool_call":
+                            return _execute_tool_call(task, agent_bridge, agent_id)
+                        elif action_type == "skill_call":
+                            return _execute_skill_call(task, agent_bridge, agent_id)
+                        else:
+                            logger.warning(f"[Scheduler] Unknown action type: {action_type}")
+                            return True
                 except Exception as e:
                     logger.error(f"[Scheduler] Error executing task {task.get('id')}: {e}")
                     return False

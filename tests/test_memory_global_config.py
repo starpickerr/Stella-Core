@@ -29,20 +29,16 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         self._orig_agent_workspace = conf().get("agent_workspace")
         conf()["agent_workspace"] = self.workspace
 
-        # Reset the process-wide singletons so earlier tests/imports in the
-        # same run can't leave a stale ~/cow-pointed config behind.
-        import agent.memory.config as memory_config_module
-        import agent.memory.conversation_store as conversation_store_module
-        self._orig_global_memory_config = memory_config_module._global_memory_config
-        self._orig_store_instance = conversation_store_module._store_instance
-        memory_config_module._global_memory_config = None
-        conversation_store_module._store_instance = None
+        # Drop cached configs and stores so earlier tests/imports in the same
+        # run can't leave a stale ~/cow-pointed one behind.
+        from agent.memory import clear_conversation_store_cache, reset_memory_configs
+        reset_memory_configs()
+        clear_conversation_store_cache()
 
     def tearDown(self):
-        import agent.memory.config as memory_config_module
-        import agent.memory.conversation_store as conversation_store_module
-        memory_config_module._global_memory_config = self._orig_global_memory_config
-        conversation_store_module._store_instance = self._orig_store_instance
+        from agent.memory import clear_conversation_store_cache, reset_memory_configs
+        reset_memory_configs()
+        clear_conversation_store_cache()
 
         if self._orig_agent_workspace is None:
             conf().pop("agent_workspace", None)
