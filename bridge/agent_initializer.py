@@ -38,20 +38,30 @@ class AgentInitializer:
         self.bridge = bridge
         self.agent_bridge = agent_bridge
     
-    def initialize_agent(self, session_id: Optional[str] = None) -> Agent:
+    def initialize_agent(
+        self,
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+    ) -> Agent:
         """
         Initialize agent for a session
         
         Args:
             session_id: Session ID (None for default agent)
+            agent_id: Agent profile identifier. Omit for the configured default.
         
         Returns:
             Initialized agent instance
         """
+        from common.runtime_identity import current_identity
         from common.state_dir import state_root_str
 
-        # Workspace of the Agent this run is routed to
-        workspace_root = state_root_str()
+        # An explicit agent_id wins (admin, warmup, tests); otherwise follow
+        # the identity routing established for this message.
+        identity = current_identity()
+        if agent_id:
+            identity = identity.derive(agent_id=agent_id)
+        workspace_root = state_root_str(identity)
         
         # Migrate API keys
         self._migrate_config_to_env(workspace_root)
@@ -84,6 +94,8 @@ class AgentInitializer:
         # Build system prompt
         prompt_builder = PromptBuilder(workspace_dir=workspace_root, language="zh")
         runtime_info = self._get_runtime_info(workspace_root)
+        runtime_info["agent_id"] = profile.id
+        runtime_info["agent_name"] = profile.name
         
         system_prompt = prompt_builder.build(
             tools=tools,
@@ -116,6 +128,10 @@ class AgentInitializer:
             agent.memory_manager = memory_manager
             if hasattr(agent, 'model') and agent.model:
                 memory_manager.flush_manager.llm_model = agent.model
+
+        agent.agent_id = profile.id
+        agent.agent_profile = profile
+        agent.workspace_dir = workspace_root
 
         # Restore persisted conversation history for this session
         if session_id:
@@ -631,11 +647,10 @@ class AgentInitializer:
 
     def _flush_all_agents(self):
         """Flush memory for all active agent sessions, then run Deep Dream."""
-        agents = []
-        if self.agent_bridge.default_agent:
-            agents.append(("default", self.agent_bridge.default_agent))
-        for sid, agent in self.agent_bridge.agents.items():
-            agents.append((sid, agent))
+        agents = [
+            (f"{agent_id}:{session_id or 'default'}", agent)
+            for agent_id, session_id, agent in self.agent_bridge.iter_agent_instances()
+        ]
 
         if not agents:
             return
