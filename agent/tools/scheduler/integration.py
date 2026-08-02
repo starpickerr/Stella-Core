@@ -4,20 +4,39 @@ Integration module for scheduler with AgentBridge
 
 import os
 import threading
-from typing import Optional
+from typing import Dict, Optional
 from config import conf
 from common.log import logger
+from common.utils import expand_path
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 
-# Global scheduler service instance
+# Backward-compatible aliases for the configured default agent.
 _scheduler_service = None
 _task_store = None
+_scheduler_services: Dict[str, object] = {}
+_task_stores: Dict[str, object] = {}
 # Module-level lock to guard idempotent initialization across threads
-_init_lock = threading.Lock()
+_init_lock = threading.RLock()
 
 
-def init_scheduler(agent_bridge) -> bool:
+def _resolve_workspace(workspace_root: str = None, agent_id: str = None):
+    """An explicit workspace wins, then an explicit agent_id, then the routed
+    identity. An agent_id that does not resolve raises: falling back to the
+    default workspace here would silently file one Agent's tasks under
+    another."""
+    if workspace_root is not None:
+        return os.path.realpath(expand_path(str(workspace_root)))
+    from common.runtime_identity import current_identity
+    from common.state_dir import state_root
+
+    identity = current_identity()
+    if agent_id:
+        identity = identity.derive(agent_id=agent_id)
+    return str(state_root(identity))
+
+
+def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = None) -> bool:
     """
     Initialize scheduler service (idempotent).
 
@@ -32,15 +51,19 @@ def init_scheduler(agent_bridge) -> bool:
         True if scheduler is initialized (newly created or already running)
     """
     global _scheduler_service, _task_store
+    workspace_root = _resolve_workspace(workspace_root, agent_id)
+    agent_id = agent_bridge.agent_registry.get(agent_id).id
 
     # Fast path: already initialized and running
-    if _scheduler_service is not None and getattr(_scheduler_service, "running", False):
+    service = _scheduler_services.get(workspace_root)
+    if service is not None and getattr(service, "running", False):
         return True
 
     with _init_lock:
         # Re-check under the lock to avoid races where multiple threads
         # passed the fast-path check before any of them acquired the lock.
-        if _scheduler_service is not None and getattr(_scheduler_service, "running", False):
+        service = _scheduler_services.get(workspace_root)
+        if service is not None and getattr(service, "running", False):
             return True
 
         try:
@@ -49,11 +72,13 @@ def init_scheduler(agent_bridge) -> bool:
 
             from common.state_dir import scheduler_file
 
-            store_path = str(scheduler_file())
+            store_path = str(scheduler_file(base=workspace_root))
 
             # Create task store (reuse if already created)
-            if _task_store is None:
-                _task_store = TaskStore(store_path)
+            task_store = _task_stores.get(workspace_root)
+            if task_store is None:
+                task_store = TaskStore(store_path)
+                _task_stores[workspace_root] = task_store
                 logger.debug(f"[Scheduler] Task store initialized: {store_path}")
 
             # Create execute callback. Returns True on success, False to ask
@@ -75,13 +100,13 @@ def init_scheduler(agent_bridge) -> bool:
                         return False
 
                     if action_type == "agent_task":
-                        return _execute_agent_task(task, agent_bridge)
+                        return _execute_agent_task(task, agent_bridge, agent_id)
                     elif action_type == "send_message":
-                        return _execute_send_message(task, agent_bridge)
+                        return _execute_send_message(task, agent_bridge, agent_id)
                     elif action_type == "tool_call":
-                        return _execute_tool_call(task, agent_bridge)
+                        return _execute_tool_call(task, agent_bridge, agent_id)
                     elif action_type == "skill_call":
-                        return _execute_skill_call(task, agent_bridge)
+                        return _execute_skill_call(task, agent_bridge, agent_id)
                     else:
                         logger.warning(f"[Scheduler] Unknown action type: {action_type}")
                         return True
@@ -90,10 +115,17 @@ def init_scheduler(agent_bridge) -> bool:
                     return False
 
             # Create scheduler service
-            _scheduler_service = SchedulerService(_task_store, execute_task_callback)
-            _scheduler_service.start()
+            service = SchedulerService(task_store, execute_task_callback)
+            service.start()
+            _scheduler_services[workspace_root] = service
+            if agent_id == agent_bridge.agent_registry.default_agent_id:
+                _scheduler_service = service
+                _task_store = task_store
 
-            logger.info("[Scheduler] Service initialized and started")
+            logger.info(
+                f"[Scheduler] Service initialized for agent={agent_id}, "
+                f"workspace={workspace_root}"
+            )
             return True
 
         except Exception as e:
@@ -135,14 +167,32 @@ def _is_channel_ready(channel_type: str, receiver: str) -> bool:
         return True
 
 
-def get_task_store():
-    """Get the global task store instance"""
-    return _task_store
+def get_task_store(workspace_root: str = None, agent_id: str = None):
+    """Get the task store owned by one agent workspace."""
+    workspace_root = _resolve_workspace(workspace_root, agent_id)
+    return _task_stores.get(workspace_root)
 
 
-def get_scheduler_service():
-    """Get the global scheduler service instance"""
-    return _scheduler_service
+def get_scheduler_service(workspace_root: str = None, agent_id: str = None):
+    """Get the scheduler service owned by one agent workspace."""
+    workspace_root = _resolve_workspace(workspace_root, agent_id)
+    return _scheduler_services.get(workspace_root)
+
+
+def reset_scheduler_services(stop: bool = True) -> None:
+    """Stop and forget all scheduler services, primarily for reloads/tests."""
+    global _scheduler_service, _task_store
+    with _init_lock:
+        if stop:
+            for service in list(_scheduler_services.values()):
+                try:
+                    service.stop()
+                except Exception:
+                    pass
+        _scheduler_services.clear()
+        _task_stores.clear()
+        _scheduler_service = None
+        _task_store = None
 
 
 def _remember_delivered_output(
@@ -150,6 +200,7 @@ def _remember_delivered_output(
     task: dict,
     channel_type: str,
     content: str,
+    agent_id: str = None,
 ) -> None:
     """Best-effort persistence of the message the scheduler sent to a user.
 
@@ -181,14 +232,20 @@ def _remember_delivered_output(
         remember = getattr(agent_bridge, "remember_scheduled_output", None)
         if remember:
             task_desc = action.get("task_description") or action.get("content", "")
-            remember(session_id, str(content), channel_type=channel_type, task_description=task_desc)
+            kwargs = {
+                "channel_type": channel_type,
+                "task_description": task_desc,
+            }
+            if hasattr(agent_bridge, "agent_registry"):
+                kwargs["agent_id"] = agent_id
+            remember(session_id, str(content), **kwargs)
     except Exception as e:
         logger.warning(
             f"[Scheduler] Failed to remember delivered output for {session_id}: {e}"
         )
 
 
-def _execute_agent_task(task: dict, agent_bridge) -> bool:
+def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """
     Execute an agent_task action - let Agent handle the task.
     Returns True on successful delivery, False to retry next tick.
@@ -223,6 +280,7 @@ def _execute_agent_task(task: dict, agent_bridge) -> bool:
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
+        context["agent_id"] = agent_id
         
         # Channel-specific setup
         if channel_type == "web":
@@ -277,7 +335,9 @@ def _execute_agent_task(task: dict, agent_bridge) -> bool:
                 logger.error(f"[Scheduler] Failed to send result: {e}")
                 return False
 
-            _remember_delivered_output(agent_bridge, task, channel_type, reply.content)
+            _remember_delivered_output(
+                agent_bridge, task, channel_type, reply.content, agent_id
+            )
             logger.info(f"[Scheduler] Task {task['id']} executed successfully, result sent to {receiver}")
             return True
 
@@ -294,7 +354,7 @@ def _execute_agent_task(task: dict, agent_bridge) -> bool:
         return False
 
 
-def _execute_send_message(task: dict, agent_bridge) -> bool:
+def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """Execute a send_message action. Returns True/False for delivery."""
     try:
         action = task.get("action", {})
@@ -312,6 +372,7 @@ def _execute_send_message(task: dict, agent_bridge) -> bool:
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = receiver
+        context["agent_id"] = agent_id
         
         # Channel-specific context setup
         if channel_type == "web":
@@ -364,7 +425,9 @@ def _execute_send_message(task: dict, agent_bridge) -> bool:
             logger.error(f"[Scheduler] Failed to send message: {e}")
             return False
 
-        _remember_delivered_output(agent_bridge, task, channel_type, content)
+        _remember_delivered_output(
+            agent_bridge, task, channel_type, content, agent_id
+        )
         logger.info(f"[Scheduler] Task {task['id']} executed: sent message to {receiver}")
         return True
 
@@ -375,7 +438,7 @@ def _execute_send_message(task: dict, agent_bridge) -> bool:
         return False
 
 
-def _execute_tool_call(task: dict, agent_bridge) -> bool:
+def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """Execute a tool_call action. Returns True/False for delivery."""
     try:
         action = task.get("action", {})
@@ -409,6 +472,7 @@ def _execute_tool_call(task: dict, agent_bridge) -> bool:
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = receiver
+        context["agent_id"] = agent_id
 
         request_id = None
         if channel_type == "web":
@@ -438,7 +502,9 @@ def _execute_tool_call(task: dict, agent_bridge) -> bool:
             logger.error(f"[Scheduler] Failed to send tool result: {e}")
             return False
 
-        _remember_delivered_output(agent_bridge, task, channel_type, content)
+        _remember_delivered_output(
+            agent_bridge, task, channel_type, content, agent_id
+        )
         logger.info(f"[Scheduler] Task {task['id']} executed: sent tool result to {receiver}")
         return True
 
@@ -447,7 +513,7 @@ def _execute_tool_call(task: dict, agent_bridge) -> bool:
         return False
 
 
-def _execute_skill_call(task: dict, agent_bridge) -> bool:
+def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """Execute a skill_call action by asking Agent to run the skill.
     Returns True/False for delivery."""
     try:
@@ -478,6 +544,7 @@ def _execute_skill_call(task: dict, agent_bridge) -> bool:
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
+        context["agent_id"] = agent_id
 
         if channel_type == "web":
             import uuid
@@ -522,7 +589,9 @@ def _execute_skill_call(task: dict, agent_bridge) -> bool:
             logger.error(f"[Scheduler] Failed to send skill result: {e}")
             return False
 
-        _remember_delivered_output(agent_bridge, task, channel_type, content)
+        _remember_delivered_output(
+            agent_bridge, task, channel_type, content, agent_id
+        )
         logger.info(f"[Scheduler] Task {task['id']} executed: skill result sent to {receiver}")
         return True
 
@@ -541,10 +610,14 @@ def attach_scheduler_to_tool(tool, context: Context = None):
         tool: SchedulerTool instance
         context: Current context (optional)
     """
-    if _task_store:
-        tool.task_store = _task_store
-    
     if context:
+        agent_id = context.get("agent_id")
+        task_store = get_task_store(agent_id=agent_id)
+        scheduler_service = get_scheduler_service(agent_id=agent_id)
+        if task_store:
+            tool.task_store = task_store
+        if scheduler_service:
+            tool.scheduler_service = scheduler_service
         tool.current_context = context
         
         channel_type = context.get("channel_type") or conf().get("channel_type", "unknown")

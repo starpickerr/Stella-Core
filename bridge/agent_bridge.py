@@ -300,6 +300,7 @@ class AgentBridge:
         self.default_agent = None
         self.agent: Optional[Agent] = None
         self.scheduler_initialized = False
+        self.scheduler_agent_ids = set()
         
         # Create helper instances
         self.initializer = AgentInitializer(bridge, self)
@@ -308,8 +309,10 @@ class AgentBridge:
         # for the first user message. init_scheduler is idempotent.
         try:
             from agent.tools.scheduler.integration import init_scheduler
-            if init_scheduler(self):
-                self.scheduler_initialized = True
+            for profile in self.agent_registry.list(include_disabled=False):
+                if init_scheduler(self, profile.workspace, profile.id):
+                    self.scheduler_agent_ids.add(profile.id)
+            self.scheduler_initialized = bool(self.scheduler_agent_ids)
         except Exception as e:
             logger.warning(f"[AgentBridge] Eager scheduler init failed: {e}")
 
@@ -384,6 +387,12 @@ class AgentBridge:
 
     def _resolve_agent_id(self, agent_id: str = None) -> str:
         return self.agent_registry.get(agent_id).id
+
+    def get_conversation_store(self, agent_id: str = None):
+        """Return the session store owned by one agent workspace."""
+        profile = self.agent_registry.get(agent_id)
+        from agent.memory import get_conversation_store
+        return get_conversation_store(profile.workspace)
 
     @staticmethod
     def _runtime_key(agent_id: str, session_id: str) -> Tuple[str, str]:
@@ -477,8 +486,7 @@ class AgentBridge:
         if not (hasattr(agent, "messages") and hasattr(agent, "messages_lock")):
             return -1
         try:
-            from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = self.get_conversation_store(agent_id)
             # No turn cap here: we want a faithful mirror of what the store
             # has for this session after deletion.
             remaining = store.load_messages(session_id, max_turns=10**6)
@@ -603,7 +611,7 @@ class AgentBridge:
             # The reply (assistant/tool messages) is appended once the run
             # completes; the final persist skips this already-stored user turn.
             pre_persisted = self._pre_persist_user_message(
-                session_id, query, context, clear_history
+                session_id, query, context, clear_history, resolved_agent_id
             )
 
             # Mark this session as mid-run so the self-evolution idle scan does
@@ -660,8 +668,11 @@ class AgentBridge:
                     new_messages = new_messages[1:]
                 if new_messages:
                     self._persist_messages(
-                        session_id, list(new_messages), channel_type,
-                        create_if_missing=not pre_persisted
+                        session_id,
+                        list(new_messages),
+                        channel_type,
+                        resolved_agent_id,
+                        create_if_missing=not pre_persisted,
                     )
             
             # Record this user turn for the self-evolution idle trigger. Skip
@@ -873,7 +884,12 @@ class AgentBridge:
                 logger.warning(f"[AgentBridge] Failed to sync API keys: {e}")
     
     def _pre_persist_user_message(
-        self, session_id: str, query: str, context: Context, clear_history: bool
+        self,
+        session_id: str,
+        query: str,
+        context: Context,
+        clear_history: bool,
+        agent_id: str = None,
     ) -> bool:
         """Persist the user's message before the agent runs.
 
@@ -895,8 +911,7 @@ class AgentBridge:
             from config import conf
             if not conf().get("conversation_persistence", True):
                 return False
-            from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = self.get_conversation_store(agent_id)
             # clear_history starts a fresh transcript: wipe the store first so
             # the eager user turn becomes seq 0, matching in-memory state.
             if clear_history:
@@ -915,8 +930,12 @@ class AgentBridge:
             return False
 
     def _persist_messages(
-        self, session_id: str, new_messages: list, channel_type: str = "",
-        create_if_missing: bool = True
+        self,
+        session_id: str,
+        new_messages: list,
+        channel_type: str = "",
+        agent_id: str = None,
+        create_if_missing: bool = True,
     ) -> None:
         """
         Persist new messages to the conversation store after each agent run.
@@ -947,8 +966,7 @@ class AgentBridge:
             messages_to_store = self._strip_thinking_blocks(new_messages)
 
         try:
-            from agent.memory import get_conversation_store
-            stored = get_conversation_store().append_messages(
+            stored = self.get_conversation_store(agent_id).append_messages(
                 session_id, messages_to_store, channel_type=channel_type,
                 create_if_missing=create_if_missing
             )
@@ -1015,12 +1033,11 @@ class AgentBridge:
 
         # Persist first so the new pair gets a stable seq, then prune old
         # scheduler pairs in DB, then sync the in-memory agent.messages buffer.
-        self._persist_messages(session_id, messages, channel_type)
+        self._persist_messages(session_id, messages, channel_type, agent_id)
 
         keep_last_n = max(int(conf().get("scheduler_inject_max_per_session", 3) or 0), 0)
         try:
-            from agent.memory import get_conversation_store
-            deleted = get_conversation_store().prune_scheduled_messages(
+            deleted = self.get_conversation_store(agent_id).prune_scheduled_messages(
                 session_id, keep_last_n=keep_last_n
             )
             if deleted:
