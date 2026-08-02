@@ -79,7 +79,7 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
 
         store = get_conversation_store()
         self.assertTrue(
-            str(store._db_path).startswith(self.workspace),
+            os.path.realpath(store._db_path).startswith(os.path.realpath(self.workspace)),
             f"ConversationStore db_path {store._db_path} should live under "
             f"the configured workspace {self.workspace}, not ~/cow",
         )
