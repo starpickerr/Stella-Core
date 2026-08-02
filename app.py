@@ -334,8 +334,9 @@ def _warn_if_legacy_workspace_data_exists():
     empty even though old data still exists, with no indication why.
     """
     try:
+        from common.state_dir import state_root_str
         from common.utils import expand_path
-        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+        workspace_root = state_root_str()
         legacy_root = expand_path("~/cow")
         # samefile checks filesystem identity, so case-insensitive filesystems
         # (default on Windows and macOS) are handled correctly - normcase
@@ -362,34 +363,41 @@ def _warn_if_legacy_workspace_data_exists():
 
 
 def _sync_builtin_skills():
-    """Sync builtin skills from project skills/ to workspace skills/ on startup."""
+    """Sync builtin skills from project skills/ into every enabled Agent's
+    workspace, so a newly configured Agent is not born without them."""
     import shutil
     try:
-        from common.utils import expand_path
-        workspace = expand_path(conf().get("agent_workspace", "~/cow"))
+        from agent.registry import get_agent_registry
+        from common.runtime_identity import RuntimeIdentity
+        from common.state_dir import skills_dir
+
         project_root = os.path.dirname(os.path.abspath(__file__))
         builtin_dir = os.path.join(project_root, "skills")
-        custom_dir = os.path.join(workspace, "skills")
-
         if not os.path.isdir(builtin_dir):
             return
 
-        os.makedirs(custom_dir, exist_ok=True)
-        synced = 0
-        for name in os.listdir(builtin_dir):
-            src = os.path.join(builtin_dir, name)
-            if not os.path.isdir(src) or not os.path.isfile(os.path.join(src, "SKILL.md")):
-                continue
-            dst = os.path.join(custom_dir, name)
-            try:
-                if os.path.isdir(dst):
-                    shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-                synced += 1
-            except Exception as e:
-                logger.warning(f"[App] Failed to sync builtin skill '{name}': {e}")
-        if synced:
-            logger.info(f"[App] Synced {synced} builtin skill(s) to workspace")
+        for profile in get_agent_registry().list(include_disabled=False):
+            custom_dir = str(
+                skills_dir(RuntimeIdentity(agent_id=profile.id), ensure=True)
+            )
+            synced = 0
+            for name in os.listdir(builtin_dir):
+                src = os.path.join(builtin_dir, name)
+                if not os.path.isdir(src) or not os.path.isfile(os.path.join(src, "SKILL.md")):
+                    continue
+                dst = os.path.join(custom_dir, name)
+                try:
+                    if os.path.isdir(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                    synced += 1
+                except Exception as e:
+                    logger.warning(f"[App] Failed to sync builtin skill '{name}': {e}")
+            if synced:
+                logger.info(
+                    f"[App] Synced {synced} builtin skill(s) to workspace of "
+                    f"agent '{profile.id}'"
+                )
     except Exception as e:
         logger.warning(f"[App] Builtin skills sync failed: {e}")
 

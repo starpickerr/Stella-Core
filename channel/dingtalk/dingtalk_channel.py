@@ -21,7 +21,7 @@ from dingtalk_stream.card_replier import CardReplier
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
-from common.utils import expand_path
+from common import state_dir
 from channel.dingtalk.dingtalk_message import DingTalkMessage
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -396,10 +396,7 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                 
                 # 保存到临时文件
                 file_name = os.path.basename(file_path) or f"media_{uuid.uuid4()}"
-                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-                tmp_dir = os.path.join(workspace_root, "tmp")
-                os.makedirs(tmp_dir, exist_ok=True)
-                temp_file = os.path.join(tmp_dir, file_name)
+                temp_file = os.path.join(str(state_dir.tmp_dir()), file_name)
                 
                 with open(temp_file, "wb") as f:
                     f.write(response.content)

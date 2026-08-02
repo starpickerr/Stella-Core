@@ -95,8 +95,11 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         from agent.memory import get_conversation_store
 
         store = get_conversation_store()
+        # realpath on both sides: the workspace root is canonicalised so that
+        # prefix-based containment checks are sound, and on macOS the temp dir
+        # reached through /var is really /private/var.
         self.assertTrue(
-            str(store._db_path).startswith(self.workspace),
+            os.path.realpath(store._db_path).startswith(os.path.realpath(self.workspace)),
             f"ConversationStore db_path {store._db_path} should live under "
             f"the configured workspace {self.workspace} even when accessed "
             f"before the first agent init, not ~/cow",
@@ -112,8 +115,8 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
 
         conf().pop("agent_workspace", None)
         self.assertEqual(
-            MemoryConfig().workspace_root,
-            expand_path("~/cow"),
+            os.path.realpath(MemoryConfig().workspace_root),
+            os.path.realpath(expand_path("~/cow")),
             "an unset agent_workspace should still resolve to the ~/cow default",
         )
 

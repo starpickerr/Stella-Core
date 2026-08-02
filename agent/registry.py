@@ -220,26 +220,51 @@ class AgentRegistry:
 
 
 _registry_instance: Optional[AgentRegistry] = None
+_registry_signature: Optional[tuple] = None
+_registry_pinned: bool = False
 _registry_lock = threading.Lock()
 
 
+def _config_signature(settings: Mapping[str, Any]) -> tuple:
+    return (
+        repr(settings.get("agents") or []),
+        settings.get("default_agent_id") or "",
+        settings.get("agent_workspace") or "",
+    )
+
+
 def get_agent_registry() -> AgentRegistry:
-    """Return the process-wide registry built from the current configuration."""
+    """Return the process-wide registry for the current configuration.
 
-    global _registry_instance
-    if _registry_instance is not None:
-        return _registry_instance
+    Keyed on the settings it was built from rather than cached outright:
+    resolving a workspace happens on hot paths, but config can still change
+    under us - the console edits it, tests mutate it, and anything that
+    resolved a path before load_config() saw the pre-config value.
+    """
+
+    global _registry_instance, _registry_signature
+    from config import conf
+
+    settings = conf()
+    signature = _config_signature(settings)
     with _registry_lock:
-        if _registry_instance is None:
-            from config import conf
-
-            _registry_instance = AgentRegistry.from_config(conf())
+        if _registry_pinned and _registry_instance is not None:
+            return _registry_instance
+        if _registry_instance is None or _registry_signature != signature:
+            _registry_instance = AgentRegistry.from_config(settings)
+            _registry_signature = signature
         return _registry_instance
 
 
 def set_agent_registry(registry: Optional[AgentRegistry]) -> None:
-    """Replace the process registry, primarily for config reloads and tests."""
+    """Pin a registry, or pass None to go back to following configuration.
 
-    global _registry_instance
+    A pinned registry survives config changes, which is what admin mutations
+    (upsert, set_enabled) and tests need.
+    """
+
+    global _registry_instance, _registry_signature, _registry_pinned
     with _registry_lock:
         _registry_instance = registry
+        _registry_signature = None
+        _registry_pinned = registry is not None

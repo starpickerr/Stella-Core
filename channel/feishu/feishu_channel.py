@@ -38,7 +38,7 @@ from channel.feishu.feishu_scheduler_card import (
     handle_scheduler_action,
     tasks_for_receivers,
 )
-from common import utils
+from common import state_dir, utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
@@ -528,8 +528,7 @@ class FeiShuChanel(ChatChannel):
 
         from agent.tools.scheduler.task_store import TaskStore
 
-        workspace_root = utils.expand_path(conf().get("agent_workspace", "~/cow"))
-        return TaskStore(os.path.join(workspace_root, "scheduler", "tasks.json"))
+        return TaskStore(str(state_dir.scheduler_file()))
 
     def _send_scheduler_card(self, feishu_msg, is_group: bool, receive_id_type: str) -> bool:
         """Reply to ``/tasks`` with tasks scoped to the current chat."""

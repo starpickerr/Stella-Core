@@ -424,10 +424,9 @@ class CowCliPlugin(Plugin):
         task_store = get_task_store()
         if task_store is None:
             from agent.tools.scheduler.task_store import TaskStore
-            from common.utils import expand_path
+            from common.state_dir import scheduler_file
 
-            workspace = expand_path(conf().get("agent_workspace", "~/cow"))
-            task_store = TaskStore(os.path.join(workspace, "scheduler", "tasks.json"))
+            task_store = TaskStore(str(scheduler_file()))
 
         channel_type = ""
         receiver = ""
@@ -1719,13 +1718,12 @@ class CowCliPlugin(Plugin):
         """Create a MemoryFlushManager without a running agent (for pre-init dream)."""
         from pathlib import Path
         from config import conf
-        from common.utils import expand_path
+        from common.state_dir import state_root
         from agent.memory.summarizer import MemoryFlushManager
         from bridge.bridge import Bridge
         from bridge.agent_bridge import AgentLLMModel
 
-        workspace = Path(expand_path(conf().get("agent_workspace", "~/cow")))
-        flush_mgr = MemoryFlushManager(workspace_dir=workspace)
+        flush_mgr = MemoryFlushManager(workspace_dir=state_root())
         flush_mgr.llm_model = AgentLLMModel(Bridge())
         return flush_mgr
 
@@ -1775,11 +1773,8 @@ class CowCliPlugin(Plugin):
 
     def _knowledge_stats(self) -> str:
         from config import conf
-        from common.utils import expand_path
-        knowledge_dir = os.path.join(
-            expand_path(conf().get("agent_workspace", "~/cow")),
-            "knowledge"
-        )
+        from common import state_dir
+        knowledge_dir = str(state_dir.knowledge_dir())
         if not os.path.isdir(knowledge_dir):
             return _t("📚 知识库目录不存在\n\n💡 开启知识库: /knowledge on", "📚 Knowledge base directory not found\n\n💡 Enable it: /knowledge on")
 
@@ -1822,12 +1817,8 @@ class CowCliPlugin(Plugin):
         return "\n".join(lines)
 
     def _knowledge_tree(self) -> str:
-        from config import conf
-        from common.utils import expand_path
-        knowledge_dir = os.path.join(
-            expand_path(conf().get("agent_workspace", "~/cow")),
-            "knowledge"
-        )
+        from common import state_dir
+        knowledge_dir = str(state_dir.knowledge_dir())
         if not os.path.isdir(knowledge_dir):
             return _t("📚 知识库目录不存在\n\n💡 开启知识库: /knowledge on", "📚 Knowledge base directory not found\n\n💡 Enable it: /knowledge on")
 

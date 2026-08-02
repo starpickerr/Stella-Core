@@ -95,10 +95,8 @@ class CloudClient(LinkAIClient):
             try:
                 from agent.skills.manager import SkillManager
                 from agent.skills.service import SkillService
-                from config import conf
-                from common.utils import expand_path
-                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-                manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
+                from common.state_dir import skills_dir
+                manager = SkillManager(custom_dir=str(skills_dir()))
                 self._skill_service = SkillService(manager)
                 logger.debug("[CloudClient] SkillService initialised")
             except Exception as e:
@@ -111,10 +109,8 @@ class CloudClient(LinkAIClient):
         if self._memory_service is None:
             try:
                 from agent.memory.service import MemoryService
-                from config import conf
-                from common.utils import expand_path
-                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-                self._memory_service = MemoryService(workspace_root)
+                from common.state_dir import state_root_str
+                self._memory_service = MemoryService(state_root_str())
                 logger.debug("[CloudClient] MemoryService initialised")
             except Exception as e:
                 logger.error(f"[CloudClient] Failed to init MemoryService: {e}")
@@ -126,10 +122,8 @@ class CloudClient(LinkAIClient):
         if self._knowledge_service is None:
             try:
                 from agent.knowledge.service import KnowledgeService
-                from config import conf
-                from common.utils import expand_path
-                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-                self._knowledge_service = KnowledgeService(workspace_root)
+                from common.state_dir import state_root_str
+                self._knowledge_service = KnowledgeService(state_root_str())
                 logger.debug("[CloudClient] KnowledgeService initialised")
             except Exception as e:
                 logger.error(f"[CloudClient] Failed to init KnowledgeService: {e}")
@@ -141,10 +135,8 @@ class CloudClient(LinkAIClient):
         if self._workspace_service is None:
             try:
                 from agent.workspace.service import WorkspaceService
-                from config import conf
-                from common.utils import expand_path
-                workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
-                self._workspace_service = WorkspaceService(workspace_root)
+                from common.state_dir import state_root_str
+                self._workspace_service = WorkspaceService(state_root_str())
                 logger.debug("[CloudClient] WorkspaceService initialised")
             except Exception as e:
                 logger.error(f"[CloudClient] Failed to init WorkspaceService: {e}")

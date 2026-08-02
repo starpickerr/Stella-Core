@@ -60,13 +60,10 @@ _KIND_BY_EXT: Dict[str, str] = {
 
 
 def get_workspace_root() -> str:
-    """Absolute path of the agent workspace (defaults to ~/cow)."""
-    try:
-        from config import conf
-        raw = conf().get("agent_workspace", "~/cow") or "~/cow"
-    except Exception:
-        raw = "~/cow"
-    return os.path.realpath(expand_path(raw))
+    """Absolute path of the routed Agent's workspace."""
+    from common.state_dir import real_state_root
+
+    return real_state_root()
 
 
 def classify_kind(path: str) -> str:
