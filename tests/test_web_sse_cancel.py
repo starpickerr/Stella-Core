@@ -24,7 +24,12 @@ WebChannel = dict(zip(
 
 def _fake_channel():
     """Minimal stand-in exposing only what stream_response touches."""
-    channel = SimpleNamespace(sse_queues={}, sse_last_active={}, request_to_session={})
+    channel = SimpleNamespace(
+        sse_queues={},
+        sse_last_active={},
+        request_to_session={},
+        request_to_agent={},
+    )
     channel._drop_sse_request = lambda rid: WebChannel._drop_sse_request(channel, rid)
     return channel
 

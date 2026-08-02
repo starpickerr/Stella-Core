@@ -306,12 +306,21 @@ class SessionService:
             page_size=page_size,
         )
 
-    @staticmethod
-    def _cancel_running(session_id: str) -> None:
+    def _cancel_running(self, session_id: str, agent_id: str = None) -> None:
         """Abort any in-flight run of a session before dropping its data."""
         try:
             from agent.protocol import get_cancel_registry
-            cancelled = get_cancel_registry().cancel_session(session_id)
+            from agent.registry import get_agent_registry
+            from bridge.agent_bridge import AgentBridge
+            # Runs are registered under the agent-scoped key, so an unscoped
+            # lookup here would silently cancel nothing.
+            registry = get_agent_registry()
+            scoped = AgentBridge._cancel_key(
+                self._resolve_agent_id(agent_id),
+                session_id,
+                registry.default_agent_id,
+            )
+            cancelled = get_cancel_registry().cancel_session(scoped)
             if cancelled:
                 logger.info(f"[SessionService] Cancelled {cancelled} in-flight "
                             f"request(s) for session {session_id}")
@@ -323,7 +332,7 @@ class SessionService:
             raise ValueError("session_id required")
         session_id = self._normalize_sid(session_id)
 
-        self._cancel_running(session_id)
+        self._cancel_running(session_id, agent_id)
         store = self._get_store(agent_id)
         store.clear_session(session_id)
         self._remove_agent(session_id, agent_id)

@@ -516,9 +516,19 @@ class CowCliPlugin(Plugin):
         if request_id and registry.cancel_request(request_id):
             cancelled = 1
 
-        # Fall back to session-wide cancel
+        # Fall back to session-wide cancel, under the agent-scoped key the run
+        # was registered with.
         if cancelled == 0 and target_session:
-            cancelled = registry.cancel_session(target_session)
+            from bridge.bridge import Bridge
+            agent_bridge = Bridge().get_agent_bridge()
+            agent_id = (
+                agent_bridge.route_context(e_context["context"])
+                if e_context is not None
+                else None
+            )
+            cancelled = registry.cancel_session(
+                agent_bridge.scoped_session_key(target_session, agent_id)
+            )
 
         if cancelled <= 0:
             return _t("当前没有可中止的任务。", "Nothing to cancel.")

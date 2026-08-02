@@ -140,6 +140,10 @@ def test_steer_between_tools_keeps_completed_result_and_skips_remaining_tool():
 def _fake_agent_bridge(result):
     bridge = SimpleNamespace(
         steer_session=Mock(return_value=result),
+        # Steering resolves the agent so it can scope the session key.
+        route_context=Mock(return_value="default"),
+        agent_router=SimpleNamespace(resolve=lambda **kwargs: "default"),
+        scoped_session_key=lambda session_id, agent_id=None: session_id,
     )
     return bridge, SimpleNamespace(get_agent_bridge=lambda: bridge)
 
@@ -158,7 +162,7 @@ def test_chat_steer_command_bypasses_the_normal_queue(monkeypatch):
     ChatChannel.produce(channel, context)
 
     assert channel.sessions == {}
-    bridge.steer_session.assert_called_once_with("session", "focus on tests")
+    bridge.steer_session.assert_called_once_with("session", "focus on tests", "default")
     reply_text = channel._send_reply.call_args.args[1].content
     assert "redirect" in reply_text.lower() or "已引导" in reply_text
 
@@ -205,7 +209,7 @@ def test_web_steer_button_payload_is_handled_inline(monkeypatch):
         "steered": True,
         "inline_reply": "↪️ Active task redirected.",
     }
-    bridge.steer_session.assert_called_once_with("session", "focus on tests")
+    bridge.steer_session.assert_called_once_with("session", "focus on tests", "default")
 
 
 def test_web_steer_does_not_start_a_run_when_session_is_idle(monkeypatch):

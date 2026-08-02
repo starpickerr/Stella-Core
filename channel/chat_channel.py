@@ -10,6 +10,7 @@ from bridge.reply import *
 from channel.channel import Channel
 from common.dequeue import Dequeue
 from common import memory
+from agent.routing import AgentUnavailableError
 from common.i18n import t as _t
 from common.runtime_identity import RuntimeIdentity, use_identity
 from plugins import *
@@ -204,9 +205,16 @@ class ChatChannel(Channel):
                 self._send_reply(context, reply)
 
     def _identity_for(self, context: Context) -> RuntimeIdentity:
-        """Resolve who this message is for. Channel-to-Agent bindings are not
-        wired yet, so agent_id stays None and resolves to the default Agent."""
-        return RuntimeIdentity(session_id=context.get("session_id"))
+        """Resolve who this message is for.
+
+        ``produce`` already routed the context, so the agent is read back here
+        rather than resolved twice. Without this the bridge would serve the
+        bound Agent while workspace paths still resolved to the default one.
+        """
+        return RuntimeIdentity(
+            agent_id=context.get("agent_id"),
+            session_id=context.get("session_id"),
+        )
 
     def _generate_reply(self, context: Context, reply: Reply = Reply()) -> Reply:
         e_context = PluginManager().emit_event(
@@ -456,6 +464,28 @@ class ChatChannel(Channel):
 
     def produce(self, context: Context):
         session_id = context["session_id"]
+        try:
+            from bridge.bridge import Bridge
+            agent_bridge = Bridge().get_agent_bridge()
+            agent_id = agent_bridge.route_context(context)
+            queue_key = agent_bridge._cancel_key(
+                agent_id, session_id, agent_bridge.agent_registry.default_agent_id
+            )
+        except AgentUnavailableError as e:
+            # This conversation is bound to an agent that is off. Answering it
+            # with the default agent would silently swap persona and memory, so
+            # say so instead.
+            logger.warning(f"[chat_channel] {e}")
+            self._send_reply(context, Reply(
+                ReplyType.TEXT,
+                _t("该助手当前已停用，请联系管理员。",
+                   "This assistant is currently disabled. Please contact an administrator."),
+            ))
+            return
+        except Exception as e:
+            logger.warning(f"[chat_channel] Agent route failed, using default: {e}")
+            agent_id = None
+            queue_key = session_id
 
         # Fast path: /cancel must not enter the queue.
         if context.type == ContextType.TEXT and context.content:
@@ -469,15 +499,15 @@ class ChatChannel(Channel):
                 return
 
         with self.lock:
-            if session_id not in self.sessions:
-                self.sessions[session_id] = [
+            if queue_key not in self.sessions:
+                self.sessions[queue_key] = [
                     Dequeue(),
                     threading.BoundedSemaphore(conf().get("concurrency_in_session", 1)),
                 ]
             if context.type == ContextType.TEXT and context.content.startswith("#"):
-                self.sessions[session_id][0].putleft(context)  # 优先处理管理命令
+                self.sessions[queue_key][0].putleft(context)  # 优先处理管理命令
             else:
-                self.sessions[session_id][0].put(context)
+                self.sessions[queue_key][0].put(context)
 
     def _handle_cancel_command(self, context: Context, session_id: str) -> None:
         """Cancel any in-flight agent run for *session_id* and reply inline.
@@ -489,7 +519,13 @@ class ChatChannel(Channel):
             from agent.protocol import get_cancel_registry
             from bridge.reply import Reply, ReplyType
 
-            cancelled = get_cancel_registry().cancel_session(session_id)
+            from bridge.bridge import Bridge
+            agent_bridge = Bridge().get_agent_bridge()
+            agent_id = agent_bridge.route_context(context)
+            scoped_session_id = agent_bridge._cancel_key(
+                agent_id, session_id, agent_bridge.agent_registry.default_agent_id
+            )
+            cancelled = get_cancel_registry().cancel_session(scoped_session_id)
             text = (
                 _t("🛑 已中止", "🛑 Cancelled")
                 if cancelled > 0
@@ -513,7 +549,10 @@ class ChatChannel(Channel):
             from agent.protocol import SteerStatus
             from bridge.bridge import Bridge
 
-            result = Bridge().get_agent_bridge().steer_session(session_id, instruction)
+            agent_bridge = Bridge().get_agent_bridge()
+            result = agent_bridge.steer_session(
+                session_id, instruction, agent_bridge.route_context(context)
+            )
             messages = {
                 SteerStatus.ACCEPTED: _t(
                     "↪️ 已引导当前任务。", "↪️ Active task redirected."

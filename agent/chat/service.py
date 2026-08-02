@@ -211,10 +211,16 @@ class ChatService:
             if session_id
             else None
         )
-        cancel_event = registry.register(cancel_key, session_id=session_id) if cancel_key else None
+        # Both the token and its session grouping are namespaced: two Agents
+        # serving the same session id must not cancel or steer each other.
+        cancel_event = (
+            registry.register(cancel_key, session_id=cancel_key)
+            if cancel_key
+            else None
+        )
         steer_inbox = (
-            steer_registry.register(session_id)
-            if session_id
+            steer_registry.register(cancel_key)
+            if cancel_key
             else None
         )
 
@@ -249,8 +255,8 @@ class ChatService:
                     registry.unregister(cancel_key)
                 except Exception:
                     pass
-            if session_id and steer_inbox is not None:
-                steer_registry.unregister(session_id, steer_inbox)
+            if cancel_key and steer_inbox is not None:
+                steer_registry.unregister(cancel_key, steer_inbox)
 
         # Sync executor messages back to agent (thread-safe).
         # The executor may have trimmed context, making its list shorter than
