@@ -59,6 +59,14 @@ class TestModelsHandler(unittest.TestCase):
             [item["value"] for item in result["providers"]["zhipu"]["reasoning"]["options"]],
             ["low", "medium", "high", "xhigh", "max"],
         )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["claudeAPI"]["reasoning_by_model"]["claude-opus-5"]["options"]],
+            ["low", "medium", "high", "xhigh", "max"],
+        )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["claudeAPI"]["reasoning_by_model"]["claude-sonnet-4-6"]["options"]],
+            ["low", "medium", "high", "max"],
+        )
         self.assertFalse(result["providers"]["openai"]["reasoning"]["supported"])
         self.assertFalse(result["providers"]["gemini"]["reasoning"]["supported"])
 

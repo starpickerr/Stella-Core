@@ -139,6 +139,18 @@ class AgentLLMModel(LLMModel):
             conf().get("reasoning_effort", "high"),
         )
 
+    def _should_pass_reasoning_effort(self, thinking_enabled: bool) -> bool:
+        if thinking_enabled:
+            return True
+
+        from models.reasoning_capabilities import get_reasoning_capability
+
+        capability = get_reasoning_capability(
+            self._resolve_bot_type(self.model),
+            self.model,
+        )
+        return capability.get("param") == "effort"
+
     @property
     def bot(self):
         """Lazy load the bot, re-create when model or bot_type changes"""
@@ -194,9 +206,9 @@ class AgentLLMModel(LLMModel):
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Reasoning effort is only meaningful when thinking is on.
-                # Bots that don't understand the kwarg drop it silently.
-                if thinking_enabled:
+                # Some providers expose effort as request-level control, while
+                # reasoning_effort providers only apply it with thinking on.
+                if self._should_pass_reasoning_effort(thinking_enabled):
                     effort = self._normalized_reasoning_effort()
                     if effort:
                         kwargs['reasoning_effort'] = effort
@@ -256,9 +268,9 @@ class AgentLLMModel(LLMModel):
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Reasoning effort is only meaningful when thinking is on.
-                # Bots that don't understand the kwarg drop it silently.
-                if thinking_enabled:
+                # Some providers expose effort as request-level control, while
+                # reasoning_effort providers only apply it with thinking on.
+                if self._should_pass_reasoning_effort(thinking_enabled):
                     effort = self._normalized_reasoning_effort()
                     if effort:
                         kwargs['reasoning_effort'] = effort

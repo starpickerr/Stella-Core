@@ -36,6 +36,29 @@ def test_zhipu_exposes_native_effort_values_without_disable_aliases():
     assert _values(cap) == ["low", "medium", "high", "xhigh", "max"]
 
 
+def test_claude_5_models_expose_all_effort_values():
+    cap = get_reasoning_capability("claudeAPI", "claude-opus-5")
+
+    assert cap["supported"] is True
+    assert cap["param"] == "effort"
+    assert cap["default"] == "high"
+    assert _values(cap) == ["low", "medium", "high", "xhigh", "max"]
+
+
+def test_claude_4_6_models_hide_xhigh_effort():
+    cap = get_reasoning_capability("claudeAPI", "claude-sonnet-4-6")
+
+    assert cap["supported"] is True
+    assert cap["param"] == "effort"
+    assert cap["default"] == "high"
+    assert _values(cap) == ["low", "medium", "high", "max"]
+
+
+def test_older_claude_models_hide_effort_control():
+    assert get_reasoning_capability("claudeAPI", "claude-sonnet-4-0") == {"supported": False, "options": []}
+    assert get_reasoning_capability("claudeAPI", "claude-3-5-sonnet-latest") == {"supported": False, "options": []}
+
+
 def test_openai_is_hidden_until_responses_api_runtime_support_exists():
     cap = get_reasoning_capability("openai", "gpt-5.4")
 
@@ -61,4 +84,6 @@ def test_normalize_returns_provider_default_for_invalid_value():
     assert normalize_reasoning_effort("deepseek", "deepseek-v4-flash", "max") == "max"
     assert normalize_reasoning_effort("zhipu", "glm-5.2", "minimal") == "high"
     assert normalize_reasoning_effort("zhipu", "glm-5.2", "medium") == "medium"
+    assert normalize_reasoning_effort("claudeAPI", "claude-opus-5", "xhigh") == "xhigh"
+    assert normalize_reasoning_effort("claudeAPI", "claude-sonnet-4-6", "xhigh") == "high"
     assert normalize_reasoning_effort("gemini", "gemini-3.5-flash", "high") is None
