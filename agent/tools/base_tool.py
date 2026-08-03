@@ -62,13 +62,18 @@ class BaseTool:
         except Exception as e:
             logger.debug(f"[{self.name}] progress callback failed: {e}")
 
-    @classmethod
-    def get_json_schema(cls) -> dict:
-        """Get the standard description of the tool"""
+    def get_json_schema(self) -> dict:
+        """The tool as the model sees it.
+
+        Bound to the instance, not the class, so a tool whose name, wording or
+        parameters depend on runtime state can override any of them in
+        __init__ and have both this and the agent loop's direct read of
+        `.description` agree.
+        """
         return {
-            "name": cls.name,
-            "description": cls.description,
-            "parameters": cls.params
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.params
         }
 
     def execute_tool(self, params: dict) -> ToolResult:
