@@ -142,6 +142,7 @@ class AgentLLMModel(LLMModel):
         )
 
     def _should_pass_reasoning_effort(self, thinking_enabled: bool) -> bool:
+        """Return True when the active provider should receive effort."""
         if thinking_enabled:
             return True
 
@@ -154,6 +155,7 @@ class AgentLLMModel(LLMModel):
         return capability.get("param") == "effort" or bool(capability.get("thinking_only"))
 
     def _is_thinking_only_model(self) -> bool:
+        """Return True for models that require reasoning to stay enabled."""
         from models.reasoning_capabilities import get_reasoning_capability
 
         capability = get_reasoning_capability(
@@ -213,6 +215,9 @@ class AgentLLMModel(LLMModel):
                 # quality the thinking pass produces.
                 from config import conf
                 thinking_enabled = bool(conf().get("enable_thinking", False))
+                # Some native-reasoning models reject disabled thinking or use
+                # effort as their only control, so they cannot follow the UI
+                # toggle literally.
                 if self._is_thinking_only_model():
                     thinking_enabled = True
                 kwargs['thinking'] = (
@@ -277,6 +282,8 @@ class AgentLLMModel(LLMModel):
                 # quality the thinking pass produces.
                 from config import conf
                 thinking_enabled = bool(conf().get("enable_thinking", False))
+                # Keep streaming and non-streaming calls on the same provider
+                # contract for always-thinking models.
                 if self._is_thinking_only_model():
                     thinking_enabled = True
                 kwargs['thinking'] = (
@@ -1044,6 +1051,8 @@ class AgentBridge:
             if not thinking_enabled:
                 from models.reasoning_capabilities import get_reasoning_capability
 
+                # Thinking-only models need their reasoning trace in stored
+                # history so the next tool-calling turn can echo it back.
                 capability = get_reasoning_capability(
                     AgentLLMModel(None)._resolve_bot_type(conf().get("model", "")),
                     conf().get("model", ""),
