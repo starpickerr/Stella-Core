@@ -9345,7 +9345,13 @@ function renderKnowledgeGraph(container, nodes, links) {
     const width = container.clientWidth;
     const height = container.clientHeight || 600;
 
-    const categories = [...new Set(nodes.map(n => n.category))];
+    // Order categories by node count so the dominant cluster gets the most
+    // salient palette entry. Ties break by name to keep colors stable.
+    const catCount = {};
+    nodes.forEach(n => { catCount[n.category] = (catCount[n.category] || 0) + 1; });
+    const categories = Object.keys(catCount).sort(
+        (a, b) => catCount[b] - catCount[a] || a.localeCompare(b)
+    );
     const colorScale = d3.scaleOrdinal(d3.schemeTableau10).domain(categories);
 
     // Connection count for sizing

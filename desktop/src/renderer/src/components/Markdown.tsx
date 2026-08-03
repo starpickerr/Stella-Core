@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useCallback } from 'react'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import { t } from '../i18n'
+import apiClient from '../api/client'
 import { workspaceHrefOf } from '../lib/fileKind'
 import { useWorkspaceStore } from '../store/workspaceStore'
 
@@ -110,6 +111,24 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
     token.attrPush(['rel', 'noopener noreferrer'])
   }
   return defaultLinkOpen(tokens, idx, options, env, self)
+}
+
+// An image the agent produced is referenced by its local path (`/Users/.../x.png`
+// or `~/...`). The renderer runs from file:// or the dev server, so such a src
+// never resolves on its own — route it through the backend file endpoint, which
+// takes an absolute path and enforces the allowed roots.
+const defaultImage =
+  md.renderer.rules.image ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options)
+  }
+md.renderer.rules.image = function (tokens, idx, options, env, self) {
+  const token = tokens[idx]
+  const src = token.attrGet('src') || ''
+  if (/^~\//.test(src) || src.startsWith('/')) {
+    token.attrSet('src', apiClient.getServeFileUrl(src))
+  }
+  return defaultImage(tokens, idx, options, env, self)
 }
 
 // Wrap fenced code blocks so we can render a header (lang + copy button).
