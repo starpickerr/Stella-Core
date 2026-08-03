@@ -55,6 +55,25 @@ class SkillService:
             )
         return skill_dir
 
+    @staticmethod
+    def _safe_file_path(root: str, rel_path: str) -> str:
+        """Resolve a skill file path and validate it stays inside ``root``.
+
+        The per-file paths in an add payload are attacker-controlled just like
+        the skill name, so they need the same containment check: entries such
+        as ``../../evil.py`` or ``/etc/cron.d/evil`` would otherwise write
+        outside the skills directory.
+
+        :raises ValueError: if the resolved path would escape ``root``.
+        """
+        dest = os.path.realpath(os.path.join(root, rel_path))
+        root = os.path.realpath(root)
+        if not dest.startswith(root + os.sep):
+            raise ValueError(
+                f"invalid skill file path (path traversal detected): {rel_path!r}"
+            )
+        return dest
+
     # ------------------------------------------------------------------
     # query
     # ------------------------------------------------------------------
@@ -142,7 +161,7 @@ class SkillService:
                 if not url or not rel_path:
                     logger.warning(f"[SkillService] add: skip invalid file entry {file_info}")
                     continue
-                dest = os.path.join(tmp_dir, rel_path)
+                dest = self._safe_file_path(tmp_dir, rel_path)
                 self._download_file(url, dest)
         except Exception:
             shutil.rmtree(tmp_dir, ignore_errors=True)
