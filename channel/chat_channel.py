@@ -349,7 +349,15 @@ class ChatChannel(Channel):
                     self._send(reply, context)
                 else:
                     self._send(reply, context)
-    
+
+                # One agent turn can produce several files (e.g. a web page plus
+                # a document). Only the first rides in `reply`; the rest follow
+                # as their own messages so none are silently dropped.
+                for extra in getattr(reply, "extra_replies", None) or []:
+                    time.sleep(0.3)
+                    logger.debug("[chat_channel] sending extra reply: {}".format(extra))
+                    self._send(extra, context)
+
     def _extract_and_send_images(self, reply: Reply, context: Context):
         """
         从文本回复中提取图片/视频URL并单独发送

@@ -557,6 +557,16 @@ class WeixinChannel(ChatChannel):
             logger.error(f"[Weixin] No context_token for receiver={receiver}, cannot send")
             return
 
+        # A media reply can carry an accompanying message (the agent's summary of
+        # the file it just sent). ilink has no caption field, so it goes out as a
+        # separate bubble first. Image replies are skipped: chat_channel already
+        # splits their text off before we get here, and doing it again would
+        # duplicate the bubble.
+        text_content = getattr(reply, "text_content", "") or ""
+        if text_content and reply.type not in (ReplyType.TEXT, ReplyType.IMAGE_URL, ReplyType.IMAGE):
+            self._send_text(text_content, receiver, context_token)
+            time.sleep(0.3)
+
         if reply.type == ReplyType.TEXT:
             self._send_text(reply.content, receiver, context_token)
         elif reply.type in (ReplyType.IMAGE_URL, ReplyType.IMAGE):

@@ -733,15 +733,25 @@ class AgentBridge:
             if hasattr(agent, 'stream_executor') and hasattr(agent.stream_executor, 'files_to_send'):
                 files_to_send = agent.stream_executor.files_to_send
                 if files_to_send:
-                    # Send the first file (for now, handle one file at a time)
-                    file_info = files_to_send[0]
-                    logger.info(f"[AgentBridge] Sending file: {file_info.get('path')}")
-                    
+                    logger.info(
+                        f"[AgentBridge] Sending {len(files_to_send)} file(s), "
+                        f"first={files_to_send[0].get('path')}"
+                    )
+
                     # Clear files_to_send for next request
                     agent.stream_executor.files_to_send = []
-                    
-                    # Return file reply based on file type
-                    return self._create_file_reply(file_info, response, context)
+
+                    # The reply pipeline carries one Reply, so the remaining
+                    # files ride along and the channel sends them afterwards.
+                    # Only the first carries the text, or it would repeat.
+                    reply = self._create_file_reply(files_to_send[0], response, context)
+                    extras = [
+                        self._create_file_reply(f, "", context)
+                        for f in files_to_send[1:]
+                    ]
+                    if extras:
+                        reply.extra_replies = extras
+                    return reply
             
             return Reply(ReplyType.TEXT, response)
             
