@@ -2013,6 +2013,36 @@ class FileServeHandler:
             raise web.notfound()
 
 
+# Injected into previewed HTML so the iframe's scrollbars match the app chrome
+# instead of falling back to the platform default (wide, opaque track).
+# Placed at the top of <head> so a page that styles its own scrollbars still wins.
+_PREVIEW_SCROLLBAR_CSS = (
+    "<style>"
+    "html{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.45) transparent}"
+    "::-webkit-scrollbar{width:8px;height:8px}"
+    "::-webkit-scrollbar-track{background:transparent}"
+    "::-webkit-scrollbar-corner{background:transparent}"
+    "::-webkit-scrollbar-thumb{background:rgba(128,128,128,.45);border-radius:4px;"
+    "border:2px solid transparent;background-clip:padding-box}"
+    "::-webkit-scrollbar-thumb:hover{background:rgba(128,128,128,.7);"
+    "background-clip:padding-box}"
+    "</style>"
+)
+
+_HEAD_OPEN_RE = re.compile(rb"<head\b[^>]*>", re.IGNORECASE)
+_HTML_OPEN_RE = re.compile(rb"<html\b[^>]*>", re.IGNORECASE)
+
+
+def _inject_preview_chrome(raw: bytes) -> bytes:
+    """Insert the scrollbar stylesheet into a previewed HTML document."""
+    css = _PREVIEW_SCROLLBAR_CSS.encode("utf-8")
+    for pattern in (_HEAD_OPEN_RE, _HTML_OPEN_RE):
+        m = pattern.search(raw)
+        if m:
+            return raw[: m.end()] + css + raw[m.end():]
+    return css + raw
+
+
 class PreviewHandler:
     """
     Directory-mounted file server for the preview panel: /preview/<token>/<relpath>
@@ -2049,7 +2079,8 @@ class PreviewHandler:
             web.header('Content-Type', content_type)
             web.header('Cache-Control', 'no-cache')
             web.header('X-Content-Type-Options', 'nosniff')
-            if content_type.startswith("text/html"):
+            is_html = content_type.startswith("text/html")
+            if is_html:
                 # Agent-generated pages are untrusted. The CSP sandbox forces an
                 # opaque origin even when the page is opened as a top-level tab,
                 # so it can't read the console's localStorage auth token; the
@@ -2064,7 +2095,8 @@ class PreviewHandler:
                     "sandbox allow-scripts allow-popups allow-forms allow-modals",
                 )
             with open(full_path, 'rb') as f:
-                return f.read()
+                data = f.read()
+            return _inject_preview_chrome(data) if is_html else data
         except web.HTTPError:
             raise
         except Exception as e:
