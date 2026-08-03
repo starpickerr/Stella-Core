@@ -8,6 +8,22 @@ from typing import Optional
 
 DEEPSEEK_VALUES = ["low", "high", "xhigh", "max"]
 ZHIPU_VALUES = ["low", "medium", "high", "xhigh", "max"]
+CLAUDE_VALUES = ["low", "medium", "high", "xhigh", "max"]
+CLAUDE_MAX_ONLY_VALUES = ["low", "medium", "high", "max"]
+CLAUDE_XHIGH_MODELS = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-sonnet-5",
+)
+CLAUDE_MAX_ONLY_MODELS = (
+    "claude-mythos-preview",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-opus-4-5",
+)
 
 
 def _option(value: str) -> dict:
@@ -29,6 +45,8 @@ def _base_provider_id(provider_id: str) -> str:
         return "custom"
     if pid == "chatGPT":
         return "openai"
+    if pid == "claudeAPI":
+        return "claude"
     return pid
 
 
@@ -42,6 +60,12 @@ def get_reasoning_capability(provider_id: str, model_name: str = "") -> dict:
 
     if base_pid == "zhipu":
         return _capability(ZHIPU_VALUES, default="high")
+
+    if base_pid == "claude":
+        if model.startswith(CLAUDE_XHIGH_MODELS):
+            return _capability(CLAUDE_VALUES, default="high", param="effort")
+        if model.startswith(CLAUDE_MAX_ONLY_MODELS):
+            return _capability(CLAUDE_MAX_ONLY_VALUES, default="high", param="effort")
 
     return {"supported": False, "options": []}
 

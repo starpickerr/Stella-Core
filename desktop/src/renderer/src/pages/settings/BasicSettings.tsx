@@ -163,6 +163,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     const nextReasoningEffort = reasoningOptions.some((o) => o.value === reasoningEffort)
       ? reasoningEffort
       : reasoning?.default || reasoningOptions[0]?.value || reasoningEffort
+    const canUseReasoningWithoutThinking = reasoning?.param === 'effort'
 
     try {
       await apiClient.updateConfig({
@@ -170,7 +171,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
         agent_max_context_turns: maxTurns,
         agent_max_steps: maxSteps,
         enable_thinking: thinking,
-        reasoning_effort: thinking ? nextReasoningEffort : reasoningEffort,
+        reasoning_effort: thinking || canUseReasoningWithoutThinking ? nextReasoningEffort : reasoningEffort,
         self_evolution_enabled: evolution,
       })
       setAgentStatus(t('config_saved'))
@@ -243,6 +244,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const reasoningValue = reasoningOptions.some((o) => o.value === reasoningEffort)
     ? reasoningEffort
     : reasoning?.default || reasoningOptions[0]?.value || ''
+  const showReasoningEffort = !!reasoning?.supported
+    && reasoningOptions.length > 0
+    && (thinking || reasoning?.param === 'effort')
   const currentUnconfigured = !!provider && !isConfigured(provider)
   const modelOptions = [
     ...(currentMeta?.models || []).map((m) => ({ value: m, label: m })),
@@ -377,7 +381,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             </div>
             <Toggle checked={thinking} onChange={setThinking} />
           </div>
-          {thinking && reasoning?.supported && reasoningOptions.length > 0 && (
+          {showReasoningEffort && (
             <Field label={t('config_reasoning_effort')} hint={t('config_reasoning_effort_hint')}>
               <Dropdown
                 value={reasoningValue}

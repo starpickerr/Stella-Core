@@ -76,6 +76,44 @@ def test_agent_bridge_passes_zhipu_native_medium(monkeypatch):
     assert bot.kwargs["reasoning_effort"] == "medium"
 
 
+def test_agent_bridge_passes_claude_native_xhigh(monkeypatch):
+    from config import conf
+
+    monkeypatch.setitem(conf(), "enable_thinking", True)
+    monkeypatch.setitem(conf(), "reasoning_effort", "xhigh")
+    model, bot = _model_with_bot(monkeypatch, "claudeAPI", "claude-opus-5")
+
+    model.call(_Request())
+
+    assert bot.kwargs["thinking"] == {"type": "enabled"}
+    assert bot.kwargs["reasoning_effort"] == "xhigh"
+
+
+def test_agent_bridge_defaults_invalid_claude_value(monkeypatch):
+    from config import conf
+
+    monkeypatch.setitem(conf(), "enable_thinking", True)
+    monkeypatch.setitem(conf(), "reasoning_effort", "xhigh")
+    model, bot = _model_with_bot(monkeypatch, "claudeAPI", "claude-sonnet-4-6")
+
+    model.call(_Request())
+
+    assert bot.kwargs["reasoning_effort"] == "high"
+
+
+def test_agent_bridge_passes_claude_effort_when_thinking_disabled(monkeypatch):
+    from config import conf
+
+    monkeypatch.setitem(conf(), "enable_thinking", False)
+    monkeypatch.setitem(conf(), "reasoning_effort", "max")
+    model, bot = _model_with_bot(monkeypatch, "claudeAPI", "claude-opus-5")
+
+    model.call(_Request())
+
+    assert bot.kwargs["thinking"] == {"type": "disabled"}
+    assert bot.kwargs["reasoning_effort"] == "max"
+
+
 def test_agent_bridge_defaults_invalid_deepseek_value(monkeypatch):
     from config import conf
 
