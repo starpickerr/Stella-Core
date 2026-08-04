@@ -156,6 +156,53 @@ def test_the_repo_ships_a_guide_that_documents_the_real_format():
         assert name in text, f"the guide omits {name} from the denied-tools list"
 
 
+@pytest.mark.parametrize(
+    "language, marker",
+    [("en", "Independent work"), ("zh", "能整块交出去的独立工作")],
+)
+def test_the_prompt_tells_the_agent_when_to_delegate(language, marker):
+    """Left to the tool description alone the model competes it against ~30
+    other tools and just searches directly, which is what happened in
+    practice. The rule has to be in the prompt itself, in both languages."""
+    from agent.prompt.builder import _build_tooling_section
+
+    class FakeTool:
+        def __init__(self, name):
+            self.name = name
+
+        def __str__(self):
+            return self.name
+
+    without = _build_tooling_section([FakeTool("read")], language)
+    assert marker not in "\n".join(without), "delegation rule shown without the tool"
+
+    with_tool = _build_tooling_section([FakeTool("read"), FakeTool("subagent")], language)
+    assert marker in "\n".join(with_tool)
+
+    # The prompt is paid for on every turn by every user, so the rule gets one
+    # line — enough to make the model consider the tool. When and how to use it
+    # live in the tool description, which it reads once it looks. Counted in
+    # lines rather than characters, which would just track the language.
+    added = len(with_tool) - len(without)
+    assert added == 1, f"delegation guidance grew to {added} lines"
+
+
+def test_the_tool_is_pitched_at_independent_work_not_at_a_step_count(workspace):
+    """Two ways to get this wrong, and we have shipped both. Forbidding the
+    handover of a whole task stopped research being delegated at all; a
+    "more than N reads" trigger fires on ordinary work, and every firing costs
+    a full model run the user waits through. The criterion is whether the work
+    is independent and self-contained."""
+    from agent.tools.subagent import SubagentTool
+
+    description = SubagentTool(config={"cwd": str(workspace)}).description
+    assert "whole task unchanged" not in description
+    assert "three searches" not in description
+    assert "self-contained" in description
+    assert "independent" in description.lower()
+    assert "normal work, not grounds to delegate" in description
+
+
 def test_the_shipped_example_is_inert_until_renamed(workspace):
     """The example is there to be copied, so it has to parse — but it must not
     quietly become a type of its own, or every install would carry a research
@@ -476,3 +523,105 @@ def test_description_reaches_the_model_through_get_json_schema(spawn_tool, enabl
     """The agent loop reads `.description`; other callers read the schema.
     They must not disagree."""
     assert spawn_tool.get_json_schema()["description"] == spawn_tool.description
+
+
+# --- what the client is told while they run ----------------------------------
+
+
+def _events_from(tool):
+    events = []
+    tool.event_callback = lambda event_type, data: events.append((event_type, data))
+    return events
+
+
+def test_each_sub_agent_is_announced_separately(spawn_tool, enabled, monkeypatch):
+    """Several sub agents arrive as one tool call, so without this the client
+    has one spinner standing in for all of them."""
+    _capture_children(monkeypatch, reply="found it")
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"tasks": [{"goal": "first"}, {"goal": "second", "subagent_type": "explore"}]})
+
+    starts = [d for kind, d in events if kind == "tool_execution_start"]
+    ends = [d for kind, d in events if kind == "tool_execution_end"]
+    assert len(starts) == 2 and len(ends) == 2
+    assert {d["arguments"]["goal"] for d in starts} == {"first", "second"}
+    assert {d["tool_name"] for d in starts} == {"subagent:general-purpose", "subagent:explore"}
+    # Every announced unit is one the client can follow and close on its own.
+    assert len({d["tool_call_id"] for d in starts}) == 2
+    assert {d["tool_call_id"] for d in starts} == {d["tool_call_id"] for d in ends}
+    assert [d["status"] for d in ends] == ["success", "success"]
+    assert {d["result"] for d in ends} == {"found it"}
+
+
+def test_a_lone_sub_agent_is_left_to_the_call_itself(spawn_tool, enabled, monkeypatch):
+    """One sub agent is already one tool call; announcing it again would just
+    show the same work twice."""
+    _capture_children(monkeypatch)
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"goal": "just the one"})
+
+    assert events == []
+
+
+def test_a_failed_sub_agent_closes_with_its_error(spawn_tool, enabled, monkeypatch):
+    class _Exploding:
+        def __init__(self, **kwargs):
+            self.extra_system_suffix = None
+
+        def run_stream(self, goal, clear_history=False, cancel_event=None):
+            raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr("agent.protocol.agent.Agent", _Exploding)
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"tasks": [{"goal": "a"}, {"goal": "b"}]})
+
+    ends = [d for kind, d in events if kind == "tool_execution_end"]
+    assert [d["status"] for d in ends] == ["error", "error"]
+    assert all("model unavailable" in d["result"] for d in ends)
+
+
+def test_a_sub_agent_that_overruns_its_budget_is_still_closed(spawn_tool, workspace, monkeypatch):
+    """The worker is abandoned mid-run and never reports back itself. Left
+    alone, its entry would sit there spinning for the rest of the session."""
+    settings = SubagentSettings(enabled=True, max_depth=1, max_concurrent=2, timeout_seconds=0.2)
+    monkeypatch.setattr(SubagentSettings, "from_config", classmethod(lambda cls: settings))
+
+    class _Stuck:
+        def __init__(self, **kwargs):
+            self.extra_system_suffix = None
+
+        def run_stream(self, goal, clear_history=False, cancel_event=None):
+            cancel_event.wait(timeout=5)
+            return ""
+
+    monkeypatch.setattr("agent.protocol.agent.Agent", _Stuck)
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"tasks": [{"goal": "hang"}, {"goal": "hang too"}]})
+
+    starts = [d for kind, d in events if kind == "tool_execution_start"]
+    ends = [d for kind, d in events if kind == "tool_execution_end"]
+    assert len(ends) == len(starts) == 2
+    assert all(d["status"] == "error" for d in ends)
+    assert all("timeout_seconds" in d["result"] for d in ends)
+    # The abandoned worker settles later and reports again; the entry has
+    # already been closed with the reason that actually explains it.
+    time.sleep(0.5)
+    assert len([d for kind, d in events if kind == "tool_execution_end"]) == 2
+
+
+def test_reporting_trouble_does_not_take_the_run_down(spawn_tool, enabled, monkeypatch):
+    _capture_children(monkeypatch)
+
+    def _broken(event_type, data):
+        raise RuntimeError("client went away")
+
+    spawn_tool.event_callback = _broken
+
+    result = spawn_tool.execute({"tasks": [{"goal": "a"}, {"goal": "b"}]})
+
+    assert result.status == "success"
+    assert len(json.loads(result.result)["results"]) == 2

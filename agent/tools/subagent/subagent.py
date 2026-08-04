@@ -7,6 +7,7 @@ authorization, and belongs in its own tool.
 """
 
 import json
+import uuid
 from typing import List
 
 from agent.tools.base_tool import BaseTool, ToolResult
@@ -21,6 +22,11 @@ _STATIC_DESCRIPTION = (
 
 class SubagentTool(BaseTool):
     name = "subagent"
+    # Sub agents share nothing but the workspace, so two of them running at
+    # once is the same situation as two tasks inside one call. Models routinely
+    # express independent work as several calls rather than one call with a
+    # list; this lets that phrasing run just as fast.
+    parallel_safe = True
 
     params = {
         "type": "object",
@@ -47,10 +53,9 @@ class SubagentTool(BaseTool):
             "tasks": {
                 "type": "array",
                 "description": (
-                    "Run several tasks at once instead of one. Each entry takes the "
-                    "same goal / context / subagent_type fields. Use this rather than "
-                    "calling this tool several times: entries here run in parallel, "
-                    "separate calls run one after another."
+                    "Run several tasks at once instead of one. Each entry takes "
+                    "the same goal / context / subagent_type fields, and every "
+                    "entry runs in parallel."
                 ),
                 "items": {
                     "type": "object",
@@ -97,20 +102,20 @@ class SubagentTool(BaseTool):
             "Only the sub agent's conclusion comes back to you; everything it "
             "read or ran on the way stays out of your context. That is what you "
             "are buying, and it costs a full model run.\n\n"
+            "The task must be self-contained: statable in full up front, and "
+            "answerable without you or the user in the loop.\n\n"
             "USE IT WHEN:\n"
-            "- The search is open-ended and most of what gets read will turn out "
-            "to be irrelevant.\n"
-            "- Several independent pieces of work can proceed at once. Put them "
-            f"in `tasks` (up to {settings.max_concurrent}) and they run in "
-            "parallel, so the batch costs about as long as its slowest task "
-            "rather than the sum. Separate calls run one after another.\n\n"
+            "- Independent pieces of work can proceed at once. Send one per "
+            f"entry in `tasks` (up to {settings.max_concurrent}); they run in "
+            "parallel.\n"
+            "- One piece would bury you in output you won't need again. Hand "
+            "over the question, not the individual queries.\n\n"
             "DO NOT USE IT WHEN:\n"
-            "- You already know which file or command answers the question. Just "
-            "do it.\n"
+            "- You need what it would find in order to keep working. A few "
+            "reads or searches of your own are normal work, not grounds to "
+            "delegate.\n"
             "- The task needs something the user said earlier, or needs to ask "
             "the user anything. The sub agent can do neither.\n"
-            "- You would be handing over your whole task unchanged. That buys a "
-            "round trip and nothing else.\n"
             "- The work must outlive this conversation. Use the scheduler.\n\n"
             "The sub agent starts with no history, so state the goal in full and "
             "put every path, identifier and constraint it needs into `context`; "
@@ -151,6 +156,47 @@ class SubagentTool(BaseTool):
                 subagent_type=params.get("subagent_type"),
             )
         ]
+
+    def _card_reporter(self, tasks: List):
+        """Announce each sub agent separately while they run.
+
+        A spawn of several sub agents is one tool call, so without this the
+        client shows one spinner for the lot: no telling how many are running,
+        which one is still going, or what any of them found. Giving each its
+        own id turns them into entries the client already knows how to render.
+
+        Skipped for a lone sub agent, which the call itself already stands for.
+        """
+        if len(tasks) < 2:
+            return None
+
+        ids = [uuid.uuid4().hex[:12] for _ in tasks]
+        closed = set()
+
+        def on_state(index: int, state: dict) -> None:
+            name = f"subagent:{state.get('subagent_type') or 'unknown'}"
+            if state.get("status") == "running":
+                self.emit_event("tool_execution_start", {
+                    "tool_call_id": ids[index],
+                    "tool_name": name,
+                    "arguments": {"goal": tasks[index].goal},
+                })
+                return
+            # A task cancelled on timeout settles twice: once when the timeout
+            # is declared, once when the run it belongs to notices. The first
+            # is the one that explains what happened.
+            if index in closed:
+                return
+            closed.add(index)
+            self.emit_event("tool_execution_end", {
+                "tool_call_id": ids[index],
+                "tool_name": name,
+                "status": "success" if state.get("status") == "completed" else "error",
+                "result": state.get("summary") or state.get("error") or "",
+                "execution_time": state.get("duration_seconds", 0),
+            })
+
+        return on_state
 
     def execute(self, params: dict) -> ToolResult:
         from agent.subagent import SubagentSettings, current_depth, load_templates, run_tasks
@@ -196,7 +242,7 @@ class SubagentTool(BaseTool):
         )
         logger.info(f"[SubagentTool] Running {len(tasks)} task(s) at depth {depth + 1}")
 
-        results = run_tasks(parent, tasks, templates, settings)
+        results = run_tasks(parent, tasks, templates, settings, on_state=self._card_reporter(tasks))
         if all(r.get("status") not in ("completed", "cancelled") for r in results):
             # Every task failed or timed out: surfacing this as success would
             # let the parent report findings that do not exist.

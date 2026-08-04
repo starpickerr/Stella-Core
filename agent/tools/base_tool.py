@@ -40,9 +40,16 @@ class BaseTool:
     model: Optional[Any] = None  # LLM model instance, type depends on bot implementation
     progress_callback = None
     cancel_event = None
+    event_callback = None
     # Workspace directory, injected per run. Declared here so a tool that
     # resolves relative paths cannot silently miss the injection.
     cwd: Optional[str] = None
+    # Whether several calls to this tool in one turn may run at the same time.
+    # Off by default: the agent loop runs tools in the order the model asked
+    # for them, and most tools are written expecting exactly that. Turn it on
+    # only for work that is independent by construction and slow enough that
+    # queueing it is the dominant cost.
+    parallel_safe: bool = False
 
     def is_cancelled(self) -> bool:
         """True once the user asked to stop the run.
@@ -61,6 +68,23 @@ class BaseTool:
             callback(str(message))
         except Exception as e:
             logger.debug(f"[{self.name}] progress callback failed: {e}")
+
+    def emit_event(self, event_type: str, data: dict):
+        """Report a unit of work running inside this call.
+
+        One call is one entry in the client's view of the run. A tool that
+        drives several independent pieces of work at once - and only such a
+        tool - can announce each of them here, so the client can follow them
+        separately instead of watching a single spinner stand in for all of
+        them. Silent when nothing is listening.
+        """
+        callback = getattr(self, "event_callback", None)
+        if not callback:
+            return
+        try:
+            callback(event_type, data)
+        except Exception as e:
+            logger.debug(f"[{self.name}] event callback failed: {e}")
 
     def get_json_schema(self) -> dict:
         """The tool as the model sees it.

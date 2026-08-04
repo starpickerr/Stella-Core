@@ -3,9 +3,12 @@ Agent Stream Execution Module - Multi-turn reasoning based on tool-call
 
 Provides streaming output, event system, and complete tool-call loop
 """
+import contextvars
+import copy
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
 from agent.protocol.cancel import AgentCancelledError
@@ -743,6 +746,7 @@ class AgentStreamExecutor:
                 tool_result_blocks = []
 
                 try:
+                    already_run = self._run_parallel_calls(tool_calls)
                     for tool_index, tool_call in enumerate(tool_calls):
                         # Honour cancel between tool invocations within the same turn
                         self._check_cancelled()
@@ -754,7 +758,10 @@ class AgentStreamExecutor:
                                 content_blocks=tool_result_blocks,
                             )
                             break
-                        result = self._execute_tool(tool_call)
+                        if tool_call["id"] in already_run:
+                            result = already_run[tool_call["id"]]
+                        else:
+                            result = self._execute_tool(tool_call)
                         tool_results.append(result)
                         
                         # Debug: Check if tool is being called repeatedly with same args
@@ -1431,13 +1438,54 @@ class AgentStreamExecutor:
         required = params.get("required") if isinstance(params, dict) else None
         return list(required) if isinstance(required, list) else []
 
-    def _execute_tool(self, tool_call: Dict) -> Dict[str, Any]:
+    def _run_parallel_calls(self, tool_calls: List[Dict]) -> Dict[str, Dict[str, Any]]:
+        """Start every parallel-safe call of this turn at once, keyed by call id.
+
+        Tools otherwise run strictly in the order the model asked for them.
+        That is the right default, but a model that splits independent work
+        across several calls - the usual way of expressing it - would then have
+        the second wait out the first. For a tool that declares itself
+        parallel_safe the wait buys nothing, so those calls are run together
+        here and the loop below picks up the finished results in place.
+
+        Each call gets its own copy of the tool: the loop drives tools by
+        assigning `cancel_event` and `progress_callback` before a call and
+        clearing them after, which two concurrent calls on one instance would
+        do to each other.
+        """
+        eligible = [
+            call for call in tool_calls
+            if getattr(self.tools.get(call["name"]), "parallel_safe", False)
+        ]
+        if len(eligible) < 2:
+            return {}
+
+        logger.info(f"[Agent] Running {len(eligible)} tool calls in parallel")
+        pool = ThreadPoolExecutor(
+            max_workers=len(eligible), thread_name_prefix="parallel-tool"
+        )
+        try:
+            futures = {}
+            for call in eligible:
+                # copy_context carries the runtime identity - which agent, which
+                # session - into the worker thread, so anything the tool writes
+                # lands where the same call would have landed on this thread.
+                ctx = contextvars.copy_context()
+                futures[call["id"]] = pool.submit(
+                    ctx.run, self._execute_tool, call, copy.copy(self.tools[call["name"]])
+                )
+            return {call_id: future.result() for call_id, future in futures.items()}
+        finally:
+            pool.shutdown(wait=False)
+
+    def _execute_tool(self, tool_call: Dict, tool_override: Optional[BaseTool] = None) -> Dict[str, Any]:
         """
         Execute tool
-        
+
         Args:
             tool_call: {"id": str, "name": str, "arguments": dict}
-            
+            tool_override: run against this instance instead of the shared one
+
         Returns:
             Tool execution result
         """
@@ -1502,7 +1550,7 @@ class AgentStreamExecutor:
         })
 
         try:
-            tool = self.tools.get(tool_name)
+            tool = tool_override or self.tools.get(tool_name)
             if not tool:
                 raise ValueError(self._build_tool_not_found_message(tool_name))
 
@@ -1518,6 +1566,7 @@ class AgentStreamExecutor:
                     "message": message,
                 }
             )
+            tool.event_callback = self._emit_event
 
             # Execute tool
             start_time = time.time()
@@ -1526,6 +1575,7 @@ class AgentStreamExecutor:
             finally:
                 tool.progress_callback = None
                 tool.cancel_event = None
+                tool.event_callback = None
             execution_time = time.time() - start_time
 
             result_dict = {

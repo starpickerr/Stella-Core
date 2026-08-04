@@ -123,10 +123,22 @@ def _build_child(parent, template, task: SubagentTask):
     return child
 
 
-def _run_one(parent, template, task: SubagentTask, index: int, cancel_event) -> Dict[str, Any]:
+def _notify(on_state, index: int, state: Dict[str, Any]) -> None:
+    """Report a task's state to the caller. Never lets a reporting problem
+    reach the run it is only meant to describe."""
+    if not on_state:
+        return
+    try:
+        on_state(index, state)
+    except Exception as e:
+        logger.debug(f"[SubAgent] state callback failed: {e}")
+
+
+def _run_one(parent, template, task: SubagentTask, index: int, cancel_event, on_state=None) -> Dict[str, Any]:
     started = time.time()
     run_id = uuid.uuid4().hex[:12]
     result: Dict[str, Any] = {"task_index": index, "subagent_type": template.name}
+    _notify(on_state, index, {"status": "running", "subagent_type": template.name})
 
     try:
         # A fresh run_id under the parent's agent and session: state written by
@@ -146,15 +158,27 @@ def _run_one(parent, template, task: SubagentTask, index: int, cancel_event) -> 
         result["error"] = str(e)
 
     result["duration_seconds"] = round(time.time() - started, 2)
+    _notify(on_state, index, result)
     return result
 
 
-def run_tasks(parent, tasks: List[SubagentTask], templates, settings: SubagentSettings) -> List[Dict[str, Any]]:
+def run_tasks(
+    parent,
+    tasks: List[SubagentTask],
+    templates,
+    settings: SubagentSettings,
+    on_state=None,
+) -> List[Dict[str, Any]]:
     """Run every task and return one result per task, in the order given.
 
     Tasks run concurrently. A task that times out is cancelled and reported as
     such rather than abandoned, so the parent always gets a full-length result
     list and can tell the difference between "nothing found" and "never ran".
+
+    `on_state(index, state)` is called as each task starts and again as it
+    settles, so a caller can follow tasks individually while they run rather
+    than learning about all of them at the end. Every task that reports a start
+    reports an end, timeouts included.
     """
     cancel_events = [threading.Event() for _ in tasks]
     resolved = []
@@ -174,7 +198,10 @@ def run_tasks(parent, tasks: List[SubagentTask], templates, settings: SubagentSe
             # run at depth 0 under the default Agent.
             ctx = contextvars.copy_context()
             futures.append(
-                pool.submit(ctx.run, _run_one, parent, template, task, index, cancel_events[index])
+                pool.submit(
+                    ctx.run, _run_one, parent, template, task, index,
+                    cancel_events[index], on_state,
+                )
             )
 
         deadline = time.time() + settings.timeout_seconds
@@ -196,6 +223,10 @@ def run_tasks(parent, tasks: List[SubagentTask], templates, settings: SubagentSe
                         f"Split the task or raise subagent.timeout_seconds."
                     ),
                 }
+                # The worker is still winding down and will not report this
+                # itself, so close the task out here rather than leave whoever
+                # is following it waiting on a task that is never coming back.
+                _notify(on_state, index, results[index])
     finally:
         # Deliberately not waiting: a `with` block would join the very threads
         # we just gave up on, so the tool call would overrun the budget it is
