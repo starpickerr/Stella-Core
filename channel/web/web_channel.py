@@ -4212,6 +4212,26 @@ class ChannelsHandler:
         }),
     ])
 
+    # Channels that lead the list in English. Everything defined above them
+    # needs a mainland-China account, so an English user scrolling past those
+    # to reach Telegram is scrolling past options they cannot use.
+    EN_FIRST_CHANNELS = ("telegram", "discord", "slack")
+
+    @classmethod
+    def _ordered_channel_defs(cls, lang=None):
+        """
+        Channel definitions ordered for `lang`, defaulting to the configured UI
+        language. Callers pass the language of the interface they are drawing:
+        the desktop client keeps its own language in localStorage, so the global
+        setting is not always what the user is looking at.
+        """
+        from common import i18n
+        if (lang or i18n.get_language()) != i18n.EN:
+            return list(cls.CHANNEL_DEFS.items())
+        lead = [(k, cls.CHANNEL_DEFS[k]) for k in cls.EN_FIRST_CHANNELS if k in cls.CHANNEL_DEFS]
+        rest = [(k, v) for k, v in cls.CHANNEL_DEFS.items() if k not in cls.EN_FIRST_CHANNELS]
+        return lead + rest
+
     @staticmethod
     def _get_weixin_login_status() -> str:
         try:
@@ -4253,7 +4273,12 @@ class ChannelsHandler:
             active_channels = self._active_channel_set()
             channels = []
             is_hant = i18n.get_language() == i18n.ZH_HANT
-            for ch_name, ch_def in self.CHANNEL_DEFS.items():
+            # The caller may be rendering in a different language than the
+            # global setting; honour it when it sends one.
+            req_lang = web.input().get("lang") or None
+            if req_lang not in (i18n.EN, i18n.ZH, i18n.ZH_HANT):
+                req_lang = None
+            for ch_name, ch_def in self._ordered_channel_defs(req_lang):
                 fields_out = []
                 for f in ch_def["fields"]:
                     raw_val = local_config.get(f["key"], f.get("default", ""))
