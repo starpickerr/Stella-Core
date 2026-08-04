@@ -75,6 +75,18 @@ class ChatService:
         # State shared between the event callback and this method
         state = _StreamState()
 
+        def flush_file_links():
+            """Emit any buffered file links as content, then drop them."""
+            if not state.pending_file_links:
+                return
+            links = state.pending_file_links
+            state.pending_file_links = []
+            send_chunk_fn({
+                "chunk_type": "content",
+                "delta": "\n\n" + "\n\n".join(links) + "\n\n",
+                "segment_id": state.segment_id,
+            })
+
         def on_event(event: dict):
             """Translate agent events into CHAT protocol chunks."""
             event_type = event.get("type")
@@ -116,11 +128,7 @@ class ChatService:
                         link = f"![{fname}]({url})"
                     else:
                         link = f"[{fname}]({url})"
-                    send_chunk_fn({
-                        "chunk_type": "content",
-                        "delta": "\n\n" + link + "\n\n",
-                        "segment_id": state.segment_id,
-                    })
+                    state.pending_file_links.append(link)
                     # Remove url so the model won't repeat it in its reply
                     data.pop("url", None)
 
@@ -177,6 +185,9 @@ class ChatService:
                     state.pending_tool_results = None
                     # Next content belongs to a new segment
                     state.segment_id += 1
+                # Now that the tool results are out, the links belong to the
+                # content that follows them.
+                flush_file_links()
 
         # Run the agent with our event callback ---------------------------
         logger.info(
@@ -257,6 +268,10 @@ class ChatService:
                     pass
             if cancel_key and steer_inbox is not None:
                 steer_registry.unregister(cancel_key, steer_inbox)
+
+        # A run that ends without a closing turn_end (e.g. the last turn had no
+        # tool calls to flush) must still deliver whatever the send tool uploaded.
+        flush_file_links()
 
         # Sync executor messages back to agent (thread-safe).
         # The executor may have trimmed context, making its list shorter than
@@ -428,3 +443,8 @@ class _StreamState:
         # Maps tool_call_id -> arguments captured from tool_execution_start,
         # so that tool_execution_end can attach the correct input args.
         self.pending_tool_arguments: dict = {}
+        # Markdown links for files the send tool uploaded, held until the turn's
+        # tool results have been flushed. Emitting one the moment the tool reports
+        # it would place content between a tool's start and its result, which no
+        # other event does and which leaves clients unable to pair the two.
+        self.pending_file_links: list = []

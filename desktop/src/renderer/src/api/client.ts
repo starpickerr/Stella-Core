@@ -20,6 +20,7 @@ import type {
   WorkspaceEntry,
   WorkspaceTree,
 } from '../types'
+import { getLang } from '../i18n'
 
 interface ApiResult {
   status: string
@@ -287,7 +288,11 @@ class ApiClient {
   // ---------------------------------------------------------
 
   async getChannels(): Promise<ChannelInfo[]> {
-    const data = await this.request<{ status: string; channels: ChannelInfo[] }>('/api/channels')
+    // The list is ordered per language, and this window's language is kept
+    // locally, so it may differ from the backend's global setting.
+    const data = await this.request<{ status: string; channels: ChannelInfo[] }>(
+      `/api/channels?lang=${getLang()}`
+    )
     return data.channels
   }
 
