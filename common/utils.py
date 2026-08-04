@@ -134,6 +134,69 @@ def is_cloud_deployment() -> bool:
     return False
 
 
+# Above this value a reported memory limit means "unlimited" rather than a real
+# cap (the kernel exposes a near-64-bit sentinel when no limit is set).
+_NO_MEMORY_LIMIT_THRESHOLD = 1 << 53
+
+
+def _read_int_file(path: str):
+    try:
+        with open(path, "r") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _read_stat_file(path: str) -> dict:
+    """Parse a whitespace-separated ``key value`` file into {key: int}."""
+    stats = {}
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        stats[parts[0]] = int(parts[1])
+                    except ValueError:
+                        continue
+    except OSError:
+        pass
+    return stats
+
+
+def memory_headroom_mb():
+    """MB of additional memory a new child process can claim, or None.
+
+    Returns None when the runtime enforces no memory limit — the normal case for
+    a plain install, where the caller should skip any budget check.
+
+    Only unreclaimable memory (anonymous pages, unevictable pages, kernel slab)
+    counts as used. Page cache is deliberately excluded: it grows to fill the
+    whole limit and is dropped on demand, so counting it would make the headroom
+    look permanently exhausted.
+    """
+    # Unified hierarchy (cgroup v2).
+    limit = _read_int_file("/sys/fs/cgroup/memory.max")
+    if limit is not None:
+        stats = _read_stat_file("/sys/fs/cgroup/memory.stat")
+        used = (
+            stats.get("anon", 0)
+            + stats.get("unevictable", 0)
+            + stats.get("slab_unreclaimable", 0)
+        )
+    else:
+        # Legacy hierarchy (cgroup v1).
+        limit = _read_int_file("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+        if limit is None:
+            return None
+        stats = _read_stat_file("/sys/fs/cgroup/memory/memory.stat")
+        used = stats.get("total_rss", stats.get("rss", 0))
+
+    if limit >= _NO_MEMORY_LIMIT_THRESHOLD:
+        return None
+    return max(0.0, (limit - used) / (1024 * 1024))
+
+
 def apply_cloud_user(headers: dict) -> dict:
     """
     Tag *headers* with the console user driving this request, when there is one.
