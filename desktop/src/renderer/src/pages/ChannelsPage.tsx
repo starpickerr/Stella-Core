@@ -18,7 +18,7 @@ import {
   KeyRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { t, localizedLabel } from '../i18n'
+import { t, localizedLabel, getLang } from '../i18n'
 import apiClient from '../api/client'
 import type { ChannelInfo, ChannelField } from '../types'
 import { Toggle, Btn } from './settings/primitives'
@@ -97,11 +97,13 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
     }
   }
 
+  // Refetch on a language switch too: the backend orders the list for the
+  // language we ask with, so the old response is stale once that changes.
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
     void loadChannels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl])
+  }, [baseUrl, getLang()])
 
   // While a channel is still settling (booting, or waiting for a scan that may
   // happen elsewhere), poll so its card flips to "connected" on its own.
