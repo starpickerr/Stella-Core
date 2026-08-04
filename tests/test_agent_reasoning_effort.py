@@ -150,3 +150,33 @@ def test_agent_bridge_omits_effort_when_thinking_disabled(monkeypatch):
 
     assert bot.kwargs["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in bot.kwargs
+
+
+def test_agent_bridge_uses_per_model_effort_over_global(monkeypatch):
+    from config import conf
+
+    # Global key says "max", but the per-model entry for deepseek-v4-flash
+    # says "low" — per-model must win (no remap, no global override).
+    monkeypatch.setitem(conf(), "enable_thinking", True)
+    monkeypatch.setitem(conf(), "reasoning_effort", "max")
+    monkeypatch.setitem(conf(), "reasoning_effort_by_model", {"deepseek:deepseek-v4-flash": "low"})
+    model, bot = _model_with_bot(monkeypatch, "deepseek", "deepseek-v4-flash")
+
+    model.call(_Request())
+
+    assert bot.kwargs["reasoning_effort"] == "low"
+
+
+def test_agent_bridge_ignores_other_models_per_model_effort(monkeypatch):
+    from config import conf
+
+    # Only a *different* model has a per-model entry; the active model falls
+    # back to the global value.
+    monkeypatch.setitem(conf(), "enable_thinking", True)
+    monkeypatch.setitem(conf(), "reasoning_effort", "high")
+    monkeypatch.setitem(conf(), "reasoning_effort_by_model", {"claude:claude-opus-5": "max"})
+    model, bot = _model_with_bot(monkeypatch, "deepseek", "deepseek-v4-flash")
+
+    model.call(_Request())
+
+    assert bot.kwargs["reasoning_effort"] == "high"

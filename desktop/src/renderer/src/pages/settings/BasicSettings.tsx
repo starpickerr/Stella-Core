@@ -55,6 +55,24 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const providerMeta = (id: string): ProviderMeta | undefined => config?.providers?.[id] as ProviderMeta | undefined
 
+  // Canonical per-model key shared with the backend resolve path: lowercased
+  // model so the key is stable regardless of how the user typed the model name.
+  const currentModelKey = () => {
+    const m = (CustomModelPicker ? model : showCustom ? customModel.trim() : model).trim().toLowerCase()
+    return m ? `${provider}:${m}` : ''
+  }
+
+  const currentSavedEffort = () => config?.reasoning_effort_by_model?.[currentModelKey()] ?? config?.reasoning_effort
+
+  // When the active provider/model changes, surface that model's own saved
+  // effort instead of leaving the previous model's value visible.
+  useEffect(() => {
+    if (!config) return
+    const saved = currentSavedEffort()
+    setReasoningEffort(saved || 'high')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, model, showCustom, customModel, config])
+
   const loadConfig = async () => {
     try {
       setLoading(true)
@@ -163,17 +181,27 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     const nextReasoningEffort = reasoningOptions.some((o) => o.value === reasoningEffort)
       ? reasoningEffort
       : reasoning?.default || reasoningOptions[0]?.value || reasoningEffort
-    const canUseReasoningWithoutThinking = reasoning?.param === 'effort'
 
     try {
+      // Persist the effort per model so switching vendors never reinterprets a
+      // value the user set for a different model. Merge with the existing map so
+      // other models' saved efforts are not overwritten by the flat config save.
+      const effortKey = currentModelKey()
       await apiClient.updateConfig({
         agent_max_context_tokens: maxTokens,
         agent_max_context_turns: maxTurns,
         agent_max_steps: maxSteps,
         enable_thinking: thinking,
-        reasoning_effort: thinking || canUseReasoningWithoutThinking ? nextReasoningEffort : reasoningEffort,
+        reasoning_effort_by_model: {
+          ...(config?.reasoning_effort_by_model || {}),
+          ...(effortKey ? { [effortKey]: nextReasoningEffort } : {}),
+        },
         self_evolution_enabled: evolution,
       })
+      // Refresh so the in-memory config carries the just-saved per-model value;
+      // otherwise switching model and back would show/submit a stale value.
+      const fresh = await apiClient.getConfig()
+      setConfig(fresh)
       setAgentStatus(t('config_saved'))
     } catch {
       setAgentStatus(t('config_save_error'))
