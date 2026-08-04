@@ -323,6 +323,7 @@ export interface ConfigData {
   agent_max_steps: number
   enable_thinking?: boolean
   reasoning_effort?: string
+  reasoning_effort_by_model?: Record<string, string>
   self_evolution_enabled?: boolean
   api_bases: Record<string, string>
   api_keys: Record<string, string>

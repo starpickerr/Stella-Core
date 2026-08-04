@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from models.reasoning_capabilities import (
     get_reasoning_capability,
     normalize_reasoning_effort,
+    resolve_reasoning_effort,
 )
 
 
@@ -87,3 +88,86 @@ def test_normalize_returns_provider_default_for_invalid_value():
     assert normalize_reasoning_effort("claudeAPI", "claude-opus-5", "xhigh") == "xhigh"
     assert normalize_reasoning_effort("claudeAPI", "claude-sonnet-4-6", "xhigh") == "high"
     assert normalize_reasoning_effort("gemini", "gemini-3.5-flash", "high") is None
+
+
+# --- resolve_reasoning_effort (per-model config resolution) ---
+
+
+def test_resolve_returns_stored_per_model_value_without_rewriting():
+    # deepseek-v4 allows low, so a stored "low" is returned verbatim.
+    by_model = {"deepseek:deepseek-v4-flash": "low"}
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", by_model, "high") == "low"
+
+
+def test_resolve_prefers_raw_provider_key_over_base_key():
+    # Raw provider id ("claudeAPI") differs from base ("claude"). A value stored
+    # under the raw id must win over one stored under the normalized base id.
+    by_model = {"claudeAPI:claude-opus-5": "xhigh", "claude:claude-opus-5": "low"}
+    assert resolve_reasoning_effort("claudeAPI", "claude-opus-5", by_model, "high") == "xhigh"
+
+
+def test_resolve_falls_back_to_base_provider_key():
+    # Legacy/alternate id normalization: claudeAPI -> claude. When only the base
+    # key is stored, it is used.
+    by_model = {"claude:claude-opus-5": "max"}
+    assert resolve_reasoning_effort("claudeAPI", "claude-opus-5", by_model, "high") == "max"
+
+
+def test_resolve_falls_back_to_legacy_global_value_when_no_per_model_entry():
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", {}, "high") == "high"
+
+
+def test_resolve_invalid_stored_value_falls_to_model_default_not_remap():
+    by_model = {"deepseek:deepseek-v4-flash": "medium"}
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", by_model, "max") == "high"
+
+
+def test_resolve_does_not_apply_legacy_remap_to_valid_per_model_value():
+    by_model = {"deepseek:deepseek-v4-flash": "low"}
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", by_model, "max") == "low"
+
+
+def test_resolve_unsupported_provider_returns_none():
+    assert resolve_reasoning_effort("gemini", "gemini-3.5-flash", {}, "high") is None
+
+
+def test_resolve_non_dict_by_model_degrades_to_legacy():
+    # A malformed persisted map (string/list from a hand-edited config) must not
+    # crash the resolver; it degrades to the legacy global value.
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", "garbage", "high") == "high"
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", ["bad"], "high") == "high"
+    assert resolve_reasoning_effort("deepseek", "deepseek-v4-flash", None, "high") == "high"
+
+
+# --- R7 invariant: normalization always outputs a valid native enum ---
+# Every supported provider/model, for every legacy global value that has ever
+# appeared across vendors, must normalize to a value *inside that model's own
+# allowed set*. This guards the remap table against silently emitting an enum
+# the upstream API rejects, or bumping to a tier outside the model's enum.
+# It only tests the current capability branches — it does not restructure the
+# capability data.
+
+
+def test_normalization_always_outputs_valid_native_enum():
+    # One representative model per capability branch in get_reasoning_capability.
+    supported_pairs = [
+        ("deepseek", "deepseek-v4-flash"),
+        ("zhipu", "glm-5.2"),
+        ("claude", "claude-fable-5"),
+        ("claude", "claude-opus-4-6"),  # max-only Claude variant
+    ]
+    # Union of every legacy effort value seen anywhere (native enums + the
+    # legacy remap inputs minimal/none).
+    legacy_inputs = ["low", "medium", "high", "xhigh", "max", "minimal", "none"]
+
+    for provider, model in supported_pairs:
+        cap = get_reasoning_capability(provider, model)
+        assert cap["supported"], f"{provider}:{model} expected supported"
+        allowed = [item["value"] for item in cap["options"]]
+        for value in legacy_inputs:
+            result = normalize_reasoning_effort(provider, model, value)
+            assert result is not None, f"{provider}:{model} legacy={value!r} -> None"
+            assert result in allowed, (
+                f"{provider}:{model} legacy={value!r} -> {result!r} "
+                f"not in allowed {allowed}"
+            )

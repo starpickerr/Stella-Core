@@ -2293,7 +2293,7 @@ class ConfigHandler:
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
-        "enable_thinking", "reasoning_effort", "self_evolution_enabled", "web_password",
+        "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
     }
 
     @staticmethod
@@ -2387,6 +2387,7 @@ class ConfigHandler:
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
                 "reasoning_effort": local_config.get("reasoning_effort", "high"),
+                "reasoning_effort_by_model": local_config.get("reasoning_effort_by_model", {}),
                 "self_evolution_enabled": bool(local_config.get("self_evolution_enabled", False)),
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
@@ -2421,6 +2422,22 @@ class ConfigHandler:
                     value = int(value)
                 if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)
+                # reasoning_effort_by_model is a dict that must be *merged* with
+                # the persisted map, not replaced. A frontend submits only the
+                # entries it changed (merged locally), so whole-key replacement
+                # here would drop other models' saved efforts on a concurrent or
+                # sequential save (or a second open settings page).
+                if key == "reasoning_effort_by_model":
+                    if not isinstance(value, dict):
+                        # Reject malformed payloads explicitly instead of
+                        # persisting a non-dict that the resolver would choke on.
+                        return json.dumps({
+                            "status": "error",
+                            "message": "reasoning_effort_by_model must be a JSON object",
+                        })
+                    merged = dict(local_config.get("reasoning_effort_by_model") or {})
+                    merged.update(value)
+                    value = merged
                 local_config[key] = value
                 applied[key] = value
 

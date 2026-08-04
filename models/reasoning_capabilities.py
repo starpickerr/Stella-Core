@@ -70,17 +70,77 @@ def get_reasoning_capability(provider_id: str, model_name: str = "") -> dict:
     return {"supported": False, "options": []}
 
 
-def normalize_reasoning_effort(provider_id: str, model_name: str, value: object) -> Optional[str]:
-    """Validate a saved effort value against the active provider capability."""
-    capability = get_reasoning_capability(provider_id, model_name)
-    if not capability.get("supported"):
-        return None
+def _legacy_remap(base_pid: str, model: str, effort: str) -> str:
+    """Map a legacy global effort value to a provider-native enum.
 
+    This exists only to migrate the old single global ``reasoning_effort`` key.
+    Per-model values stored in ``reasoning_effort_by_model`` are *not* remapped
+    (see ``resolve_reasoning_effort``) — they are the model's own intent.
+    """
+    return effort
+
+
+def _validate_effort(value: object, capability: dict) -> Optional[str]:
+    """Pure validation: return ``value`` if it is in the capability's allowed
+    set, otherwise fall back to the capability's default. No remapping."""
     allowed = [item["value"] for item in capability.get("options", [])]
     effort = str(value or "").strip()
     if effort in allowed:
         return effort
     return capability.get("default")
+
+
+def normalize_reasoning_effort(provider_id: str, model_name: str, value: object) -> Optional[str]:
+    """Validate a saved effort value against the active provider capability.
+
+    Applies the legacy remap (migration of the old global key). See
+    ``resolve_reasoning_effort`` for the per-model config resolution path.
+    """
+    capability = get_reasoning_capability(provider_id, model_name)
+    if not capability.get("supported"):
+        return None
+
+    base_pid = _base_provider_id(provider_id)
+    model = (model_name or "").strip().lower()
+    effort = _legacy_remap(base_pid, model, str(value or "").strip())
+    return _validate_effort(effort, capability)
+
+
+def resolve_reasoning_effort(
+    provider_id: str, model_name: str, by_model: dict, legacy_value: object
+) -> Optional[str]:
+    """Resolve the effective effort for an active provider/model.
+
+    This is *config resolution*, not provider normalization: it reads a
+    per-model value from ``reasoning_effort_by_model`` and only validates it
+    against the model's capability. It never remaps across vendors — a value a
+    user set for a specific model is their intent for that model.
+
+    Candidate keys are tried in order so that ``custom:foo:model`` is not
+    collapsed to ``custom:model`` when two custom providers share a model name:
+      ``<raw_provider>:<model>`` → ``<base_provider>:<model>`` → ``<model>``
+
+    When no per-model value exists, falls back to the legacy global
+    ``reasoning_effort`` (which may be remapped for migration).
+    """
+    raw = (provider_id or "").strip()
+    base = _base_provider_id(raw)
+    model = (model_name or "").strip().lower()
+    capability = get_reasoning_capability(base, model)
+    if not capability.get("supported"):
+        return None
+
+    # Guard against a malformed persisted value (e.g. a hand-edited config.json
+    # or env override that turned the map into a non-dict) so we degrade to the
+    # legacy fallback instead of raising/returning a weird value.
+    if not isinstance(by_model, dict):
+        by_model = {}
+
+    for key in (f"{raw}:{model}", f"{base}:{model}", model):
+        if key in by_model:
+            return _validate_effort(by_model[key], capability)
+
+    return normalize_reasoning_effort(base, model, legacy_value)
 
 
 def provider_reasoning_metadata(provider_id: str, model_name: str = "") -> dict:

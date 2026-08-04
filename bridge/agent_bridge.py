@@ -131,11 +131,13 @@ class AgentLLMModel(LLMModel):
         return const.OPENAI
 
     def _normalized_reasoning_effort(self):
-        from models.reasoning_capabilities import normalize_reasoning_effort
+        """Return the active model's effort value after config resolution."""
+        from models.reasoning_capabilities import resolve_reasoning_effort
 
-        return normalize_reasoning_effort(
+        return resolve_reasoning_effort(
             self._resolve_bot_type(self.model),
             self.model,
+            conf().get("reasoning_effort_by_model", {}),
             conf().get("reasoning_effort", "high"),
         )
 

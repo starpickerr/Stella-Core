@@ -4928,6 +4928,7 @@ let configCurrentModel = '';
 let cfgProviderValue = '';
 let cfgModelValue = '';
 let cfgReasoningEffortValue = 'high';
+let configReasoningByModel = {};
 
 // --- Custom dropdown helper ---
 function initDropdown(el, options, selectedValue, onChange, opts) {
@@ -5017,6 +5018,7 @@ function initConfigView(data) {
     configApiBases = data.api_bases || {};
     configApiKeys = data.api_keys || {};
     configCurrentModel = data.model || '';
+    configReasoningByModel = data.reasoning_effort_by_model || {};
     cfgReasoningEffortValue = data.reasoning_effort || 'high';
 
     const providerEl = document.getElementById('cfg-provider');
@@ -5226,9 +5228,15 @@ function syncReasoningEffortOptions() {
 
     wrap.classList.remove('hidden');
     const values = options.map(opt => opt.value);
-    const selected = values.includes(cfgReasoningEffortValue)
-        ? cfgReasoningEffortValue
-        : (reasoning.default || options[0].value);
+    // Prefer this model's own saved effort (per-model config) so switching
+    // vendors never reinterprets a value set for a different model. Key is the
+    // lowercased model name, matching the backend resolve path.
+    const savedForModel = configReasoningByModel[`${cfgProviderValue}:${selectedModel.trim().toLowerCase()}`]
+        || configReasoningByModel[cfgProviderValue + ':' + selectedModel];
+    const saved = savedForModel || cfgReasoningEffortValue;
+    // Fall back to the active model's native enum when the saved value is not
+    // valid here.
+    const selected = values.includes(saved) ? saved : (reasoning.default || options[0].value);
     cfgReasoningEffortValue = selected;
 
     initDropdown(
@@ -5337,12 +5345,16 @@ function saveModelConfig() {
 }
 
 function saveAgentConfig() {
+    const effortKey = `${cfgProviderValue}:${getSelectedModel().trim().toLowerCase()}`;
+    const mergedEffortByModel = Object.assign({}, configReasoningByModel, { [effortKey]: cfgReasoningEffortValue });
     const updates = {
         agent_max_context_tokens: parseInt(document.getElementById('cfg-max-tokens').value) || 50000,
         agent_max_context_turns: parseInt(document.getElementById('cfg-max-turns').value) || 20,
         agent_max_steps: parseInt(document.getElementById('cfg-max-steps').value) || 20,
         enable_thinking: document.getElementById('cfg-enable-thinking').checked,
-        reasoning_effort: cfgReasoningEffortValue,
+        // Persist effort per model (merge with the existing map so other
+        // models' saved efforts survive the flat config save).
+        reasoning_effort_by_model: mergedEffortByModel,
         self_evolution_enabled: document.getElementById('cfg-self-evolution').checked,
     };
 
@@ -5356,6 +5368,9 @@ function saveAgentConfig() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Reflect the merged map so a later model switch shows/uses the
+            // just-saved value instead of a stale in-memory one.
+            configReasoningByModel = mergedEffortByModel;
             showStatus('cfg-agent-status', 'config_saved', false);
         } else {
             showStatus('cfg-agent-status', 'config_save_error', true);
