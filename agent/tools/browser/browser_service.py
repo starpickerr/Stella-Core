@@ -12,14 +12,24 @@ import sys
 import json
 import uuid
 import queue
+import signal
 import threading
 from typing import Optional, Dict, Any, List, Callable
 
 from common.log import logger
-from common.utils import expand_path, is_cloud_deployment
+from common.utils import expand_path, is_cloud_deployment, memory_headroom_mb
 
 
 _DEFAULT_USER_DATA_DIR = "~/.cow/browser_profile"
+
+# Bounds for the renderer's JS heap cap. The floor is what even simple pages need
+# to run at all; the ceiling is where constraining it stops being useful. The
+# fraction leaves the rest of the available memory for the renderer's non-JS
+# allocations and for the browser / driver processes.
+_V8_HEAP_MIN_MB = 128
+_V8_HEAP_MAX_MB = 512
+_V8_HEAP_DEFAULT_MB = 256
+_V8_HEAP_FRACTION = 0.4
 
 try:
     from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Playwright
@@ -250,6 +260,102 @@ def _should_use_headless() -> bool:
     return True
 
 
+# Command-line markers identifying the processes a launch spawns (the engine
+# itself plus the driver supervising it). Only descendants of our own process are
+# ever considered, so matching on these is enough to leave unrelated children —
+# e.g. anything started by the bash tool — alone.
+_BROWSER_PROCESS_MARKERS = (
+    "ms-playwright",
+    "playwright/driver",
+    "headless_shell",
+    "chrome-linux",
+    "chrome.exe",
+    "chromium",
+    "Google Chrome",
+    "Microsoft Edge",
+)
+
+
+def _process_table() -> Dict[int, tuple]:
+    """Map pid -> (ppid, cmdline) for every visible process.
+
+    Reads /proc directly where available, so this keeps working on minimal images
+    that ship no process utilities, and falls back to `ps` elsewhere.
+    """
+    table: Dict[int, tuple] = {}
+    if os.path.isdir("/proc"):
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            try:
+                with open(f"/proc/{pid}/stat", "rb") as f:
+                    stat = f.read().decode("utf-8", "replace")
+                # comm is parenthesised and may itself contain spaces, so parse
+                # the numeric fields from after the last closing parenthesis;
+                # ppid is the second of them.
+                ppid = int(stat[stat.rfind(")") + 1:].split()[1])
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmdline = f.read().decode("utf-8", "replace").replace("\0", " ")
+            except (OSError, ValueError, IndexError):
+                continue
+            table[pid] = (ppid, cmdline)
+        return table
+
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["ps", "-eo", "pid=,ppid=,command="],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except Exception as e:
+        logger.debug(f"[Browser] process listing unavailable: {e}")
+        return table
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 2:
+            continue
+        try:
+            table[int(parts[0])] = (int(parts[1]), parts[2] if len(parts) > 2 else "")
+        except ValueError:
+            continue
+    return table
+
+
+def _kill_browser_descendants(root_pid: int) -> int:
+    """Force-kill every browser process descended from *root_pid*.
+
+    Returns how many were killed. Used when the launch thread is wedged and will
+    never run its own teardown, in which case these processes would otherwise
+    hold their memory for the remaining lifetime of the parent process.
+    """
+    table = _process_table()
+    children: Dict[int, List[int]] = {}
+    for pid, (ppid, _cmdline) in table.items():
+        children.setdefault(ppid, []).append(pid)
+
+    ordered: List[int] = []
+    pending = list(children.get(root_pid, []))
+    while pending:
+        pid = pending.pop(0)
+        ordered.append(pid)
+        pending.extend(children.get(pid, []))
+
+    sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+    killed = 0
+    # Deepest first, so a supervisor cannot spawn replacements while we work.
+    for pid in reversed(ordered):
+        cmdline = table.get(pid, (0, ""))[1]
+        if not any(marker in cmdline for marker in _BROWSER_PROCESS_MARKERS):
+            continue
+        try:
+            os.kill(pid, sig)
+            killed += 1
+        except OSError:
+            pass
+    return killed
+
+
 def _flatten_tree(node, indent=0) -> List[str]:
     """Convert snapshot tree to compact text lines for LLM consumption."""
     if node is None:
@@ -311,6 +417,9 @@ class BrowserService:
     """
 
     _IDLE_TIMEOUT_DEFAULT = 300  # seconds
+    # Generous enough for a cold start on a loaded machine, while still bounding
+    # how long a launch that will never finish can hold a caller.
+    _STARTUP_TIMEOUT_DEFAULT = 60  # seconds
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self._config = config or {}
@@ -404,6 +513,11 @@ class BrowserService:
         self._idle_timeout: float = float(idle_cfg) if idle_cfg is not None else self._IDLE_TIMEOUT_DEFAULT
         self._idle_timer: Optional[threading.Timer] = None
 
+        startup_cfg = self._config.get("startup_timeout")
+        self._startup_timeout: float = (
+            float(startup_cfg) if startup_cfg is not None else self._STARTUP_TIMEOUT_DEFAULT
+        )
+
         # Set when the browser / page is detected to have died externally
         # (e.g. user manually closed the window). The next _submit() will then
         # tear down the stale thread and relaunch.
@@ -414,7 +528,10 @@ class BrowserService:
     # ------------------------------------------------------------------
 
     def _start_thread(self):
-        """Start the dedicated Playwright thread if not already running."""
+        """Start the dedicated Playwright thread, blocking until it is usable.
+
+        Raises if the browser does not become ready in time.
+        """
         with self._lock:
             if self._alive and self._thread and self._thread.is_alive():
                 return
@@ -428,8 +545,20 @@ class BrowserService:
             self._ready = threading.Event()
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="BrowserThread")
             self._thread.start()
-            # Block until browser is ready (or failed)
-            self._ready.wait(timeout=30)
+            ready = self._ready
+
+        # Wait outside the lock: a launch that never finishes has to be torn down
+        # from here, and close() needs the same lock.
+        if not ready.wait(timeout=self._startup_timeout):
+            # A launch that hangs (rather than raising) leaves _alive set, so
+            # without this the caller would queue work onto a thread that never
+            # consumes it and then wait out a second, longer timeout on top.
+            self.close()
+            raise RuntimeError(
+                f"Browser failed to start within {self._startup_timeout:.0f}s — "
+                "not enough memory or CPU available for it. Use web_search instead "
+                "and do not retry this tool."
+            )
 
     def _run_loop(self):
         """Event loop running on the dedicated thread. Processes tasks until stopped."""
@@ -482,6 +611,31 @@ class BrowserService:
             result_slot["error"] = error
             result_slot["event"].set()
 
+    def _v8_heap_cap_mb(self) -> int:
+        """Old-space cap for the renderer's JS heap, in MB.
+
+        This bounds the blast radius of a runaway page: on hitting the cap the tab
+        dies, which the agent can recover from, whereas letting it consume all
+        remaining memory takes down everything else with it.
+
+        Derived from the memory actually available rather than fixed, so a single
+        setting behaves sensibly across allocation sizes. Override with
+        ``v8_heap_mb`` under ``tools.browser``.
+        """
+        override = self._config.get("v8_heap_mb")
+        if override:
+            try:
+                return max(_V8_HEAP_MIN_MB, int(override))
+            except (TypeError, ValueError):
+                logger.debug(f"[Browser] ignoring invalid v8_heap_mb: {override!r}")
+
+        headroom = memory_headroom_mb()
+        if headroom is None:
+            return _V8_HEAP_DEFAULT_MB
+        # The rest of the headroom has to cover the renderer's non-JS memory plus
+        # the browser and driver processes, so the heap only gets a slice.
+        return int(min(_V8_HEAP_MAX_MB, max(_V8_HEAP_MIN_MB, headroom * _V8_HEAP_FRACTION)))
+
     def _launch_browser(self):
         """Launch / connect Chromium on the background thread."""
         # Point Playwright at our pinned download dir before any launch so a
@@ -506,8 +660,8 @@ class BrowserService:
             "--no-default-browser-check",
             "--disable-background-networking",
             "--disable-component-update",
-            "--disable-features=Translate,OptimizationHints",
         ]
+        disabled_features = ["Translate", "OptimizationHints"]
         if self._headless:
             launch_args.append("--no-sandbox")
 
@@ -516,14 +670,22 @@ class BrowserService:
                 "--disable-gpu",
                 "--disable-software-rasterizer",
                 "--disable-extensions",
-                "--disable-background-networking",
                 "--disable-background-timer-throttling",
                 "--disable-renderer-backgrounding",
-                "--disable-features=site-per-process,TranslateUI,IsolateOrigins",
                 "--no-zygote",
-                "--js-flags=--max-old-space-size=384",
-                "--memory-pressure-off",
+                # The agent drives a single tab, so keep cross-origin frames from
+                # adding renderers behind our back.
+                "--renderer-process-limit=1",
+                # A cached page holds a whole renderer's state alive. Re-fetching
+                # on back navigation is the better trade when memory is scarce.
+                "--disable-back-forward-cache",
+                f"--js-flags=--max-old-space-size={self._v8_heap_cap_mb()}",
             ])
+            disabled_features.extend(["site-per-process", "IsolateOrigins", "TranslateUI"])
+
+        # Chromium honours only the LAST --disable-features it receives, so every
+        # feature has to go into a single switch or earlier ones are dropped.
+        launch_args.append("--disable-features=" + ",".join(disabled_features))
 
         extra_args = self._config.get("launch_args", [])
         if extra_args:
@@ -805,6 +967,20 @@ class BrowserService:
     # Public lifecycle
     # ------------------------------------------------------------------
 
+    def is_running(self) -> bool:
+        """True when a browser is currently up and serving requests.
+
+        The service object itself outlives any individual browser, so this asks
+        about the browser rather than about the service.
+        """
+        with self._lock:
+            return bool(
+                self._alive
+                and not self._needs_restart
+                and self._thread is not None
+                and self._thread.is_alive()
+            )
+
     def close(self):
         """Shut down browser and background thread (safe from any thread)."""
         self._cancel_idle_timer()
@@ -818,9 +994,41 @@ class BrowserService:
             self._task_queue.put(None)
         if t is not None and t.is_alive():
             t.join(timeout=10)
+            if t.is_alive():
+                # The thread is stuck inside the launch, so _shutdown_browser()
+                # will never run and whatever it spawned would stay resident for
+                # the rest of the process's life. Reclaim it directly.
+                self._reap_spawned_processes()
         with self._lock:
             self._thread = None
             self._needs_restart = False
+
+    def _reap_spawned_processes(self):
+        """Force-kill browser processes left behind by a launch that never finished."""
+        try:
+            if self._chrome_launcher:
+                self._chrome_launcher.close()
+        except Exception as e:
+            logger.debug(f"[Browser] launcher close error during reap: {e}")
+        self._chrome_launcher = None
+
+        # A wedged thread may still hold references to half-built objects, so drop
+        # ours: the process kill below is what actually frees the resources.
+        self._page = None
+        self._context = None
+        self._browser = None
+        self._playwright = None
+
+        try:
+            killed = _kill_browser_descendants(os.getpid())
+        except Exception as e:
+            logger.warning(f"[Browser] Failed to reclaim browser processes: {e}")
+            return
+        if killed:
+            logger.warning(
+                f"[Browser] Launch did not finish; force-killed {killed} leftover "
+                "browser process(es)"
+            )
 
     # ------------------------------------------------------------------
     # Actions  (each method is dispatched to the background thread)
