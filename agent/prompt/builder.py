@@ -207,6 +207,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "scheduler": "manage scheduled tasks and reminders",
             "send": "send a local file to the user (local files only; put URLs directly in the reply text)",
             "vision": "analyze images (recognition, description, OCR, etc.)",
+            "subagent": "hand a self-contained task to a sub agent and get back only its conclusion",
         }
     else:
         core_summaries = {
@@ -226,6 +227,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "scheduler": "管理定时任务和提醒",
             "send": "发送本地文件给用户（仅限本地文件，URL直接放在回复文本中）",
             "vision": "分析图片内容（识别、描述、OCR文字提取等）",
+            "subagent": "把一件自成一体的任务交给子 Agent，只拿回它的结论",
         }
 
     # Preferred display order
@@ -234,7 +236,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         "bash", "terminal",
         "web_search", "web_fetch", "browser",
         "memory_search", "memory_get",
-        "env_config", "scheduler", "send", "vision",
+        "env_config", "scheduler", "send", "vision", "subagent",
     ]
 
     # Build name -> summary mapping for available tools
@@ -253,6 +255,13 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         summary = available[name]
         tool_lines.append(f"- {name}: {summary}" if summary else f"- {name}")
 
+    # The delegation rule earns its place in the prompt only when the tool is
+    # there. Left to the tool description alone it competes with ~30 others and
+    # loses: the model reaches for search directly and fills its own context.
+    has_subagent = "subagent" in {
+        tool.name if hasattr(tool, "name") else str(tool) for tool in tools
+    }
+
     if is_en:
         lines = [
             "## 🔧 Tooling",
@@ -268,6 +277,14 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "- Put URLs directly in the reply text; the system handles and renders them. Don't download and re-send them via the send tool",
             "",
         ]
+        if has_subagent:
+            # One line, and only the part the tool description cannot do for
+            # itself: get the model to consider delegating at all. When and how
+            # belong in the description, which it reads once it looks.
+            lines.insert(
+                -1,
+                "- Independent work that can be handed over whole — parallel pieces, or research whose intermediate output you won't need again — goes to `subagent`, which returns only its conclusion",
+            )
     else:
         lines = [
             "## 🔧 工具系统",
@@ -283,6 +300,11 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "- URL链接直接放在回复文本中即可，系统会自动处理和渲染。无需下载后使用send工具发送",
             "",
         ]
+        if has_subagent:
+            lines.insert(
+                -1,
+                "- 能整块交出去的独立工作——可并行的多个部分，或中间产物用完即弃的调研——交给 `subagent`，它只把结论带回来",
+            )
 
     return lines
 
