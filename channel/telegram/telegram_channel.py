@@ -24,6 +24,7 @@ import threading
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
+from channel.telegram.telegram_markdown import CAPTION_LIMIT, to_telegram_html
 from channel.telegram.telegram_message import TelegramMessage
 from common.expired_dict import ExpiredDict
 from common.log import logger
@@ -582,11 +583,15 @@ class TelegramChannel(ChatChannel):
 
     async def _send_with_retry(self, send_fn, *, label: str):
         """Run a single Telegram API call with retries for transient network errors."""
-        from telegram.error import NetworkError, TimedOut
+        from telegram.error import BadRequest, NetworkError, TimedOut
         last_err = None
         for attempt in range(self._SEND_RETRIES + 1):
             try:
                 return await send_fn()
+            except BadRequest:
+                # Subclasses NetworkError in PTB, but the request itself is
+                # malformed: retrying only delays the failure.
+                raise
             except (NetworkError, TimedOut) as e:
                 last_err = e
                 if attempt >= self._SEND_RETRIES:
@@ -599,27 +604,53 @@ class TelegramChannel(ChatChannel):
                 await asyncio.sleep(wait)
         raise last_err
 
+    async def _send_text(self, text: str, chat_id, reply_to_msg_id):
+        """Send markdown as Telegram HTML, splitting on the 4096-char cap.
+
+        One malformed entity makes Telegram reject the whole message, so a
+        rejected chunk is resent verbatim rather than dropped.
+        """
+        from telegram.constants import ParseMode
+        from telegram.error import BadRequest
+
+        for chunk in _split_text(text, 4000):
+            rendered = to_telegram_html(chunk)
+            if not rendered:
+                continue
+            try:
+                await self._send_with_retry(
+                    lambda c=rendered: self._bot.send_message(
+                        chat_id=chat_id,
+                        text=c,
+                        parse_mode=ParseMode.HTML,
+                        reply_to_message_id=reply_to_msg_id,
+                        # Avoid failing the whole send if reply_to was deleted
+                        allow_sending_without_reply=True,
+                    ),
+                    label="send_message",
+                )
+            except BadRequest as e:
+                logger.warning(f"[Telegram] HTML rejected ({e}); resending as plain text")
+                await self._send_with_retry(
+                    lambda c=chunk: self._bot.send_message(
+                        chat_id=chat_id,
+                        text=c,
+                        reply_to_message_id=reply_to_msg_id,
+                        allow_sending_without_reply=True,
+                    ),
+                    label="send_message(plain)",
+                )
+
     async def _async_send(self, reply: Reply, chat_id, reply_to_msg_id):
         try:
             rtype = reply.type
             content = reply.content
 
             if rtype == ReplyType.TEXT or rtype == ReplyType.INFO or rtype == ReplyType.ERROR:
-                # Telegram caps a single text message at 4096 chars; auto-split
                 text = str(content) if content is not None else ""
                 if not text:
                     return
-                for chunk in _split_text(text, 4000):
-                    await self._send_with_retry(
-                        lambda c=chunk: self._bot.send_message(
-                            chat_id=chat_id,
-                            text=c,
-                            reply_to_message_id=reply_to_msg_id,
-                            # Avoid failing the whole send if reply_to was deleted
-                            allow_sending_without_reply=True,
-                        ),
-                        label="send_message",
-                    )
+                await self._send_text(text, chat_id, reply_to_msg_id)
 
             elif rtype == ReplyType.IMAGE:
                 # Already a local BytesIO; send it directly
@@ -677,20 +708,41 @@ class TelegramChannel(ChatChannel):
                     (".mp4", ".mov", ".avi", ".mkv", ".webm")
                 )
 
-                async def _send_file():
+                # Captions are capped far below a message, and an oversized one
+                # fails the upload itself. Anything too long follows separately.
+                overflow = None
+                if caption and len(caption) > CAPTION_LIMIT:
+                    caption, overflow = None, caption
+
+                from telegram.constants import ParseMode
+                from telegram.error import BadRequest
+
+                async def _send_file(cap, mode):
                     with open(local, "rb") as f:
                         if is_video:
                             return await self._bot.send_video(
-                                chat_id=chat_id, video=f, caption=caption,
+                                chat_id=chat_id, video=f, caption=cap, parse_mode=mode,
                                 reply_to_message_id=reply_to_msg_id,
                                 allow_sending_without_reply=True,
                             )
                         return await self._bot.send_document(
-                            chat_id=chat_id, document=f, caption=caption,
+                            chat_id=chat_id, document=f, caption=cap, parse_mode=mode,
                             reply_to_message_id=reply_to_msg_id,
                             allow_sending_without_reply=True,
                         )
-                await self._send_with_retry(_send_file, label="send_video" if is_video else "send_document")
+
+                label = "send_video" if is_video else "send_document"
+                try:
+                    await self._send_with_retry(
+                        lambda: _send_file(to_telegram_html(caption) if caption else None, ParseMode.HTML),
+                        label=label,
+                    )
+                except BadRequest as e:
+                    logger.warning(f"[Telegram] caption rejected ({e}); resending file without markup")
+                    await self._send_with_retry(lambda: _send_file(caption, None), label=f"{label}(plain)")
+
+                if overflow:
+                    await self._send_text(overflow, chat_id, reply_to_msg_id)
 
             else:
                 # Fallback: send as plain text
