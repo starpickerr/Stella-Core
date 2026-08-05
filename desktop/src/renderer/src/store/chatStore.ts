@@ -65,6 +65,17 @@ function stripCancelMarker(text: string): string {
     .trim()
 }
 
+const SUBSTEP_ARGS_CHARS = 90
+
+/** Tool arguments on one line, for a step in a list of dozens. */
+function summarizeArgs(args?: Record<string, unknown>): string {
+  if (!args || typeof args !== 'object') return ''
+  const joined = Object.entries(args)
+    .map(([key, value]) => `${key}=${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(', ')
+  return joined.length > SUBSTEP_ARGS_CHARS ? joined.slice(0, SUBSTEP_ARGS_CHARS) + '…' : joined
+}
+
 /**
  * Rebuild attachments from `send`-tool results persisted in the message steps.
  * SSE `file_to_send` events aren't stored, so on history reload the only record
@@ -263,11 +274,47 @@ export const useChatStore = create<ChatState>((set, get) => {
                     ...s,
                     status: data.status,
                     result: data.result ?? s.result,
+                    display: data.display ?? s.display,
                     execution_time: data.execution_time,
                     is_error: data.status !== 'success',
                   }
                 : s
             ),
+          }))
+          break
+
+        // A tool call made inside a sub agent, filed under that sub agent's
+        // step so its minutes of work can be followed rather than guessed at.
+        // Ignored when the step is gone: a sub agent cancelled on a timeout
+        // keeps going until its next checkpoint, and what it reports after
+        // that describes work nobody is waiting on.
+        case 'subagent_step':
+          if (!data.card_id || !data.step_id) break
+          updateMsg(sid, botId, (m) => ({
+            ...m,
+            steps: (m.steps || []).map((s) => {
+              if (s.type !== 'tool' || s.id !== data.card_id) return s
+              const substeps = [...(s.substeps || [])]
+              const at = substeps.findIndex((sub) => sub.id === data.step_id)
+              if (at < 0) {
+                if (data.phase !== 'start') return s
+                substeps.push({
+                  id: data.step_id!,
+                  name: data.tool || 'tool',
+                  args: summarizeArgs(data.arguments),
+                  status: 'running',
+                })
+              } else {
+                if (data.phase !== 'end') return s
+                substeps[at] = {
+                  ...substeps[at],
+                  status: data.status || 'success',
+                  execution_time: data.execution_time,
+                  error: data.error,
+                }
+              }
+              return { ...s, substeps }
+            }),
           }))
           break
 

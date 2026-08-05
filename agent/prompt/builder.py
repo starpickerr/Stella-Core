@@ -133,8 +133,11 @@ def build_agent_system_prompt(
     if conf().get("knowledge", True):
         sections.extend(_build_knowledge_section(workspace_dir, language))
 
-    # 4. Workspace (working environment description)
-    sections.extend(_build_workspace_section(workspace_dir, language))
+    # 4. Workspace (working environment description). Two of its blocks only
+    # hold when the context files were actually loaded, which sub agents skip.
+    sections.extend(
+        _build_workspace_section(workspace_dir, language, bool(context_files))
+    )
 
     # 5. User identity (if present)
     if user_identity:
@@ -204,6 +207,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "scheduler": "manage scheduled tasks and reminders",
             "send": "send a local file to the user (local files only; put URLs directly in the reply text)",
             "vision": "analyze images (recognition, description, OCR, etc.)",
+            "subagent": "hand a self-contained task to a sub agent and get back only its conclusion",
         }
     else:
         core_summaries = {
@@ -223,6 +227,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "scheduler": "管理定时任务和提醒",
             "send": "发送本地文件给用户（仅限本地文件，URL直接放在回复文本中）",
             "vision": "分析图片内容（识别、描述、OCR文字提取等）",
+            "subagent": "把一件自成一体的任务交给子 Agent，只拿回它的结论",
         }
 
     # Preferred display order
@@ -231,7 +236,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         "bash", "terminal",
         "web_search", "web_fetch", "browser",
         "memory_search", "memory_get",
-        "env_config", "scheduler", "send", "vision",
+        "env_config", "scheduler", "send", "vision", "subagent",
     ]
 
     # Build name -> summary mapping for available tools
@@ -250,6 +255,13 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         summary = available[name]
         tool_lines.append(f"- {name}: {summary}" if summary else f"- {name}")
 
+    # The delegation rule earns its place in the prompt only when the tool is
+    # there. Left to the tool description alone it competes with ~30 others and
+    # loses: the model reaches for search directly and fills its own context.
+    has_subagent = "subagent" in {
+        tool.name if hasattr(tool, "name") else str(tool) for tool in tools
+    }
+
     if is_en:
         lines = [
             "## 🔧 Tooling",
@@ -265,6 +277,14 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "- Put URLs directly in the reply text; the system handles and renders them. Don't download and re-send them via the send tool",
             "",
         ]
+        if has_subagent:
+            # One line, and only the part the tool description cannot do for
+            # itself: get the model to consider delegating at all. When and how
+            # belong in the description, which it reads once it looks.
+            lines.insert(
+                -1,
+                "- Independent work that can be handed over whole — parallel pieces, or research whose intermediate output you won't need again — goes to `subagent`, which returns only its conclusion",
+            )
     else:
         lines = [
             "## 🔧 工具系统",
@@ -280,6 +300,11 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "- URL链接直接放在回复文本中即可，系统会自动处理和渲染。无需下载后使用send工具发送",
             "",
         ]
+        if has_subagent:
+            lines.insert(
+                -1,
+                "- 能整块交出去的独立工作——可并行的多个部分，或中间产物用完即弃的调研——交给 `subagent`，它只把结论带回来",
+            )
 
     return lines
 
@@ -548,8 +573,16 @@ def _build_docs_section(workspace_dir: str, language: str) -> List[str]:
     return []
 
 
-def _build_workspace_section(workspace_dir: str, language: str) -> List[str]:
-    """Build the workspace section."""
+def _build_workspace_section(
+    workspace_dir: str, language: str, context_files_loaded: bool = True
+) -> List[str]:
+    """Build the workspace section.
+
+    ``context_files_loaded`` gates the two blocks that are only true for an
+    Agent serving a user directly. A sub agent gets neither the context files
+    nor a user to talk to, so telling it that AGENT.md is already loaded would
+    both misinform it and talk it out of reading the workspace rules itself.
+    """
     if language == "en":
         lines = [
             "## 📂 Workspace",
@@ -572,24 +605,27 @@ def _build_workspace_section(workspace_dir: str, language: str) -> List[str]:
             "",
             "4. **When unsure**: run `bash pwd` to confirm the current directory, or `ls .` to see where you are",
             "",
-            "**Important - files already auto-loaded**:",
-            "",
-            "The following files are **already auto-loaded** into the system prompt at session start, so you **don't need to read them again with the read tool**:",
-            "",
-            "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. When your name, personality or style changes, proactively `edit` this file",
-            "- ✅ `USER.md`: loaded - the user's identity info. When the user changes how they're addressed, their name, etc., `edit` this file",
-            "- ✅ `RULE.md`: loaded - workspace guide and rules; follow them strictly",
-            "- ✅ `MEMORY.md`: loaded - long-term memory index",
-            "",
-            "**💬 Communication norms**:",
-            "",
-            "- No need to expose file names for memory operations; use natural language. Say \"I'll remember that\" rather than \"updated MEMORY.md\"",
-            "- Tell the user about key decisions and steps during a task, so they know what you're doing and why",
-            "- Be genuinely helpful rather than performatively polite; solve the problem as much as you can",
-            "- Keep replies well-structured and focused. Use **bold**, lists and sections to make info clear at a glance",
-            "- Use emoji to make expression lively 🎯, but don't overdo it",
-            "",
         ]
+        if context_files_loaded:
+            lines += [
+                "**Important - files already auto-loaded**:",
+                "",
+                "The following files are **already auto-loaded** into the system prompt at session start, so you **don't need to read them again with the read tool**:",
+                "",
+                "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. When your name, personality or style changes, proactively `edit` this file",
+                "- ✅ `USER.md`: loaded - the user's identity info. When the user changes how they're addressed, their name, etc., `edit` this file",
+                "- ✅ `RULE.md`: loaded - workspace guide and rules; follow them strictly",
+                "- ✅ `MEMORY.md`: loaded - long-term memory index",
+                "",
+                "**💬 Communication norms**:",
+                "",
+                "- No need to expose file names for memory operations; use natural language. Say \"I'll remember that\" rather than \"updated MEMORY.md\"",
+                "- Tell the user about key decisions and steps during a task, so they know what you're doing and why",
+                "- Be genuinely helpful rather than performatively polite; solve the problem as much as you can",
+                "- Keep replies well-structured and focused. Use **bold**, lists and sections to make info clear at a glance",
+                "- Use emoji to make expression lively 🎯, but don't overdo it",
+                "",
+            ]
     else:
         lines = [
             "## 📂 工作空间",
@@ -612,24 +648,27 @@ def _build_workspace_section(workspace_dir: str, language: str) -> List[str]:
             "",
             "4. **不确定时**: 先用 `bash pwd` 确认当前目录，或用 `ls .` 查看当前位置",
             "",
-            "**重要说明 - 文件已自动加载**:",
-            "",
-            "以下文件在会话启动时**已经自动加载**到系统提示词中，你**无需再用 read 工具读取**：",
-            "",
-            "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当你的名字、性格或交流风格发生变化时，主动用 `edit` 更新此文件",
-            "- ✅ `USER.md`: 已加载 - 用户的身份信息。当用户修改称呼、姓名等身份信息时，用 `edit` 更新此文件",
-            "- ✅ `RULE.md`: 已加载 - 工作空间使用指南和规则，请严格遵循",
-            "- ✅ `MEMORY.md`: 已加载 - 长期记忆索引",
-            "",
-            "**💬 交流规范**:",
-            "",
-            "- 记忆相关操作无需暴露文件名，用自然语言表达即可。例如说「我已记住」而非「已更新 MEMORY.md」",
-            "- 任务执行过程中的关键决策和步骤应该告知用户，让用户了解你在做什么、为什么这么做",
-            "- 做真正有帮助的助手，而不是表演式的客套，尽可能帮忙解决问题",
-            "- 回复应结构清晰、重点突出。善用 **加粗**、列表、分段等格式让信息一目了然",
-            "- 适当使用 emoji 让表达更生动自然 🎯，但不要过度堆砌",
-            "",
         ]
+        if context_files_loaded:
+            lines += [
+                "**重要说明 - 文件已自动加载**:",
+                "",
+                "以下文件在会话启动时**已经自动加载**到系统提示词中，你**无需再用 read 工具读取**：",
+                "",
+                "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当你的名字、性格或交流风格发生变化时，主动用 `edit` 更新此文件",
+                "- ✅ `USER.md`: 已加载 - 用户的身份信息。当用户修改称呼、姓名等身份信息时，用 `edit` 更新此文件",
+                "- ✅ `RULE.md`: 已加载 - 工作空间使用指南和规则，请严格遵循",
+                "- ✅ `MEMORY.md`: 已加载 - 长期记忆索引",
+                "",
+                "**💬 交流规范**:",
+                "",
+                "- 记忆相关操作无需暴露文件名，用自然语言表达即可。例如说「我已记住」而非「已更新 MEMORY.md」",
+                "- 任务执行过程中的关键决策和步骤应该告知用户，让用户了解你在做什么、为什么这么做",
+                "- 做真正有帮助的助手，而不是表演式的客套，尽可能帮忙解决问题",
+                "- 回复应结构清晰、重点突出。善用 **加粗**、列表、分段等格式让信息一目了然",
+                "- 适当使用 emoji 让表达更生动自然 🎯，但不要过度堆砌",
+                "",
+            ]
 
     # Cloud deployment: inject websites directory info and access URL
     cloud_website_lines = _build_cloud_website_section(workspace_dir)
