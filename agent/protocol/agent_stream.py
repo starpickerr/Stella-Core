@@ -20,7 +20,7 @@ from agent.protocol.message_utils import (
     build_compaction_summary_text,
     find_first_user_text_block,
 )
-from agent.tools.base_tool import BaseTool, ToolResult
+from agent.tools.base_tool import BaseTool, ToolResult, is_tool_available
 from common.log import logger
 from common.i18n import t as _t
 
@@ -976,6 +976,9 @@ class AgentStreamExecutor:
     def _select_tools_for_injection(self) -> list:
         """Decide which tools to inject into the current LLM turn.
 
+        A tool behind a setting is left out while that setting is off, and
+        picked up again on the turn after it is switched back on.
+
         Built-in tools are ALWAYS injected in full (skills and core flows hard
         depend on them). MCP tools are also injected in full UNLESS on-demand
         retrieval is enabled AND the MCP tool count exceeds the configured
@@ -987,7 +990,7 @@ class AgentStreamExecutor:
         failure, count below threshold, or any error → inject all tools. Tools
         are never silently dropped.
         """
-        all_tools = list(self.tools.values())
+        all_tools = [tool for tool in self.tools.values() if is_tool_available(tool)]
         try:
             from config import conf
             if not conf().get("mcp_tool_retrieval_enabled", False):
@@ -1567,6 +1570,7 @@ class AgentStreamExecutor:
                 }
             )
             tool.event_callback = self._emit_event
+            tool.tool_call_id = tool_id
 
             # Execute tool
             start_time = time.time()
@@ -1576,6 +1580,7 @@ class AgentStreamExecutor:
                 tool.progress_callback = None
                 tool.cancel_event = None
                 tool.event_callback = None
+                tool.tool_call_id = None
             execution_time = time.time() - start_time
 
             result_dict = {
@@ -1596,11 +1601,13 @@ class AgentStreamExecutor:
                     self.agent.refresh_skills()
                     logger.info(f"Skills refreshed! Now have {len(self.agent.skill_manager.skills)} skills")
 
-            self._emit_event("tool_execution_end", {
-                "tool_call_id": tool_id,
-                "tool_name": tool_name,
-                **result_dict
-            })
+            # `display` rides on the event only: result_dict becomes the
+            # tool_result the model reads, and a second rendering of the same
+            # outcome there would just cost context.
+            end_event = {"tool_call_id": tool_id, "tool_name": tool_name, **result_dict}
+            if getattr(result, "display", None):
+                end_event["display"] = result.display
+            self._emit_event("tool_execution_end", end_event)
 
             return result_dict
 

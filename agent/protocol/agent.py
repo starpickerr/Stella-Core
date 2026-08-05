@@ -7,7 +7,7 @@ from common.log import logger
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
 from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
-from agent.tools.base_tool import BaseTool, ToolStage
+from agent.tools.base_tool import BaseTool, ToolStage, is_tool_available
 
 
 class Agent:
@@ -135,7 +135,10 @@ class Agent:
                 lang = "zh"
             builder = PromptBuilder(workspace_dir=self.workspace_dir or "", language=lang)
             full = builder.build(
-                tools=self.tools,
+                # Same list the model is offered this turn: describing a tool
+                # in the prompt that is not in the schema invites it to call
+                # something that is not there.
+                tools=[tool for tool in self.tools if is_tool_available(tool)],
                 context_files=context_files,
                 skill_manager=self.skill_manager,
                 memory_manager=self.memory_manager,

@@ -31,7 +31,7 @@ def current_depth() -> int:
 
 @dataclass(frozen=True)
 class SubagentSettings:
-    enabled: bool = False
+    enabled: bool = True
     max_depth: int = 1
     max_concurrent: int = 3
     timeout_seconds: float = 300.0
@@ -59,7 +59,10 @@ class SubagentSettings:
             return value
 
         return cls(
-            enabled=bool(raw.get("enabled", False)),
+            # On unless switched off: an install that has never heard of this
+            # setting gets sub agents, which is the behaviour worth defaulting
+            # to. Turning it off is the deliberate act.
+            enabled=bool(raw.get("enabled", True)),
             max_depth=_bounded("max_depth", 1, 1, 5, int),
             max_concurrent=_bounded("max_concurrent", 3, 1, 10, int),
             timeout_seconds=_bounded("timeout_seconds", 300.0, 10.0, 3600.0, float),
@@ -109,7 +112,12 @@ def _build_child(parent, template, task: SubagentTask):
         model=parent.model,
         tools=_private_tools(parent, template),
         output_mode="logger",
-        max_steps=parent.max_steps,
+        # Half the parent's budget. A sub agent's task is one self-contained
+        # piece of work by definition, and it starts with an empty context, so
+        # it should not be able to run as long as the whole conversation that
+        # delegated it. Overrunning is not fatal: the loop asks for a summary
+        # of what it managed and that is what comes back.
+        max_steps=max(1, parent.max_steps // 2),
         max_context_tokens=parent.max_context_tokens,
         memory_manager=None,
         name=f"subagent:{template.name}",
@@ -134,11 +142,22 @@ def _notify(on_state, index: int, state: Dict[str, Any]) -> None:
         logger.debug(f"[SubAgent] state callback failed: {e}")
 
 
-def _run_one(parent, template, task: SubagentTask, index: int, cancel_event, on_state=None) -> Dict[str, Any]:
+def _run_one(parent, template, task: SubagentTask, index: int, cancel_event,
+             on_state=None, on_event=None) -> Dict[str, Any]:
     started = time.time()
     run_id = uuid.uuid4().hex[:12]
     result: Dict[str, Any] = {"task_index": index, "subagent_type": template.name}
     _notify(on_state, index, {"status": "running", "subagent_type": template.name})
+
+    child_events = None
+    if on_event:
+        def child_events(event: Dict[str, Any]) -> None:
+            # Same contract as _notify: watching a run must not be able to
+            # break it.
+            try:
+                on_event(index, event)
+            except Exception as e:
+                logger.debug(f"[SubAgent] event callback failed: {e}")
 
     try:
         # A fresh run_id under the parent's agent and session: state written by
@@ -148,7 +167,8 @@ def _run_one(parent, template, task: SubagentTask, index: int, cancel_event, on_
             _depth.set(_depth.get() + 1)
             child = _build_child(parent, template, task)
             summary = child.run_stream(
-                task.goal, clear_history=True, cancel_event=cancel_event
+                task.goal, clear_history=True, cancel_event=cancel_event,
+                on_event=child_events,
             )
         result["status"] = "cancelled" if cancel_event.is_set() else "completed"
         result["summary"] = summary or ""
@@ -168,6 +188,7 @@ def run_tasks(
     templates,
     settings: SubagentSettings,
     on_state=None,
+    on_event=None,
 ) -> List[Dict[str, Any]]:
     """Run every task and return one result per task, in the order given.
 
@@ -179,6 +200,11 @@ def run_tasks(
     settles, so a caller can follow tasks individually while they run rather
     than learning about all of them at the end. Every task that reports a start
     reports an end, timeouts included.
+
+    `on_event(index, event)` receives the sub agent's own stream events as they
+    happen. What the parent's context sees is still only the returned summary;
+    this is for whoever is watching the run, who otherwise spends the minutes
+    it takes looking at a spinner.
     """
     cancel_events = [threading.Event() for _ in tasks]
     resolved = []
@@ -200,7 +226,7 @@ def run_tasks(
             futures.append(
                 pool.submit(
                     ctx.run, _run_one, parent, template, task, index,
-                    cancel_events[index], on_state,
+                    cancel_events[index], on_state, on_event,
                 )
             )
 

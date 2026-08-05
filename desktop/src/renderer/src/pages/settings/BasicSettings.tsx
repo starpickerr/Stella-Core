@@ -37,6 +37,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [maxTurns, setMaxTurns] = useState(20)
   const [maxSteps, setMaxSteps] = useState(20)
   const [thinking, setThinking] = useState(false)
+  const [subagent, setSubagent] = useState(true)
   const [evolution, setEvolution] = useState(false)
   const [agentStatus, setAgentStatus] = useState('')
 
@@ -64,6 +65,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setMaxTurns(data.agent_max_context_turns ?? 20)
       setMaxSteps(data.agent_max_steps ?? 20)
       setThinking(!!data.enable_thinking)
+      setSubagent(data.subagent_enabled !== false)
       setEvolution(!!data.self_evolution_enabled)
       // Prefer the real password (desktop only) so it can be edited in place;
       // fall back to the masked value for browser access.
@@ -160,6 +162,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
         agent_max_context_turns: maxTurns,
         agent_max_steps: maxSteps,
         enable_thinking: thinking,
+        subagent_enabled: subagent,
         self_evolution_enabled: evolution,
       })
       setAgentStatus(t('config_saved'))
@@ -359,6 +362,13 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               <div className="text-xs text-content-tertiary mt-0.5">{t('config_thinking_hint')}</div>
             </div>
             <Toggle checked={thinking} onChange={setThinking} />
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <div className="text-sm font-medium text-content">{t('config_subagent')}</div>
+              <div className="text-xs text-content-tertiary mt-0.5">{t('config_subagent_hint')}</div>
+            </div>
+            <Toggle checked={subagent} onChange={setSubagent} />
           </div>
           <div className="flex items-center justify-between py-1">
             <div>

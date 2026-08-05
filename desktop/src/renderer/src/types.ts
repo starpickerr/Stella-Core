@@ -67,6 +67,16 @@ export interface BackendStatusEvent {
 
 export type Role = 'user' | 'assistant' | 'system'
 
+/** One tool call made inside a sub agent, shown under that sub agent's step. */
+export interface SubStep {
+  id: string
+  name: string
+  args?: string
+  status?: string
+  execution_time?: number
+  error?: string
+}
+
 /** A single ordered step inside an assistant turn (matches backend history). */
 export interface MessageStep {
   type: 'thinking' | 'content' | 'tool'
@@ -79,6 +89,11 @@ export interface MessageStep {
   is_error?: boolean
   status?: string
   execution_time?: number
+  /** The outcome written for a person. Rendered instead of `result`, which is
+   * the form the model was handed. */
+  display?: string
+  /** Work done inside this step, for a tool that drives sub agents. */
+  substeps?: SubStep[]
 }
 
 /** Local UI message model (superset of backend history message). */
@@ -192,6 +207,7 @@ export type StreamEventType =
   | 'tool_start'
   | 'tool_progress'
   | 'tool_end'
+  | 'subagent_step'
   | 'message_end'
   | 'phase'
   | 'file_to_send'
@@ -213,8 +229,15 @@ export interface StreamEvent {
   arguments?: Record<string, unknown>
   status?: string
   result?: string
+  /** `tool_end`: the outcome written for a person, when the tool wrote one. */
+  display?: string
   execution_time?: number
   has_tool_calls?: boolean
+  /** `subagent_step` event fields: which step of which card, and how it went. */
+  card_id?: string
+  step_id?: string
+  phase?: 'start' | 'end'
+  error?: string
   path?: string
   abs_path?: string
   file_name?: string
@@ -308,6 +331,7 @@ export interface ConfigData {
   agent_max_context_turns: number
   agent_max_steps: number
   enable_thinking?: boolean
+  subagent_enabled?: boolean
   self_evolution_enabled?: boolean
   api_bases: Record<string, string>
   api_keys: Record<string, string>
