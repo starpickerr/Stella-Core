@@ -418,6 +418,52 @@ def _sync_builtin_skills():
         logger.warning(f"[App] Builtin skills sync failed: {e}")
 
 
+def _scaffold_subagent_assets():
+    """Seed every enabled Agent's subagents/ directory with the guide and the
+    example type, so there is something to copy from.
+
+    Only when the feature is on: an install that never enables sub agents
+    should not grow a directory for them. Files are written once rather than
+    synced like skills, so a user who edits or deletes one keeps that choice.
+    """
+    import shutil
+    try:
+        from agent.registry import get_agent_registry
+        from agent.subagent import SubagentSettings
+        from common.runtime_identity import RuntimeIdentity
+        from common.state_dir import subagents_dir
+
+        if not SubagentSettings.from_config().enabled:
+            return
+
+        asset_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "agent", "subagent", "assets"
+        )
+        if not os.path.isdir(asset_dir):
+            return
+
+        for profile in get_agent_registry().list(include_disabled=False):
+            target_dir = subagents_dir(RuntimeIdentity(agent_id=profile.id), ensure=True)
+            written = 0
+            for name in sorted(os.listdir(asset_dir)):
+                src = os.path.join(asset_dir, name)
+                target = target_dir / name
+                if not os.path.isfile(src) or target.exists():
+                    continue
+                try:
+                    shutil.copyfile(src, target)
+                    written += 1
+                except Exception as e:
+                    logger.warning(f"[App] Failed to write sub agent asset '{name}': {e}")
+            if written:
+                logger.info(
+                    f"[App] Seeded {written} sub agent file(s) in workspace of "
+                    f"agent '{profile.id}'"
+                )
+    except Exception as e:
+        logger.warning(f"[App] Sub agent scaffold failed: {e}")
+
+
 def run():
     global _channel_mgr
     try:
@@ -450,6 +496,7 @@ def run():
 
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
+        _scaffold_subagent_assets()
 
         # Kick off MCP server loading in the background so first-message
         # latency isn't dominated by npx package downloads. Skipped in desktop

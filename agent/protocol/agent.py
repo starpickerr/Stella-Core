@@ -7,7 +7,7 @@ from common.log import logger
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
 from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
-from agent.tools.base_tool import BaseTool, ToolStage
+from agent.tools.base_tool import BaseTool, ToolStage, is_tool_available
 
 
 class Agent:
@@ -15,7 +15,7 @@ class Agent:
                  tools=None, output_mode="print", max_steps=100, max_context_tokens=None, 
                  context_reserve_tokens=None, memory_manager=None, name: str = None,
                  workspace_dir: str = None, skill_manager=None, enable_skills: bool = True,
-                 runtime_info: dict = None):
+                 runtime_info: dict = None, skip_context_files: bool = False):
         """
         Initialize the Agent with system prompt, model, description.
 
@@ -34,6 +34,12 @@ class Agent:
         :param skill_manager: Optional SkillManager instance (will be created if None and enable_skills=True)
         :param enable_skills: Whether to enable skills support (default: True)
         :param runtime_info: Optional runtime info dict (with _get_current_time callable for dynamic time)
+        :param skip_context_files: Skip AGENT.md / USER.md / RULE.md when building the
+                           system prompt. Sub agents set this: they report to the
+                           agent that spawned them rather than to the user, so the
+                           persona is the parent's job, and inheriting it would
+                           spend context on instructions about a conversation the
+                           sub agent cannot see.
         """
         self.name = name or "Agent"
         self.system_prompt = system_prompt
@@ -52,6 +58,7 @@ class Agent:
         self.workspace_dir = workspace_dir  # Workspace directory
         self.enable_skills = enable_skills  # Skills enabled flag
         self.runtime_info = runtime_info  # Runtime info for dynamic time update
+        self.skip_context_files = skip_context_files
         # Optional extra instructions appended AFTER the rebuilt full system
         # prompt. Used by the self-evolution review agent to add its task brief
         # on top of the full context (tools, workspace, user preferences, time)
@@ -117,7 +124,9 @@ class Agent:
             if self.skill_manager:
                 self.skill_manager.refresh_skills()
 
-            context_files = load_context_files(self.workspace_dir) if self.workspace_dir else None
+            context_files = None
+            if self.workspace_dir and not self.skip_context_files:
+                context_files = load_context_files(self.workspace_dir)
 
             try:
                 from common import i18n
@@ -126,7 +135,10 @@ class Agent:
                 lang = "zh"
             builder = PromptBuilder(workspace_dir=self.workspace_dir or "", language=lang)
             full = builder.build(
-                tools=self.tools,
+                # Same list the model is offered this turn: describing a tool
+                # in the prompt that is not in the schema invites it to call
+                # something that is not there.
+                tools=[tool for tool in self.tools if is_tool_available(tool)],
                 context_files=context_files,
                 skill_manager=self.skill_manager,
                 memory_manager=self.memory_manager,

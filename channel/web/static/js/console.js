@@ -139,6 +139,7 @@ const I18N = {
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
+        config_subagent: '子 Agent', config_subagent_hint: '把可独立完成的任务交给子 Agent，多个任务并行执行，只把结论带回主对话',
         config_self_evolution: '自主进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
         evolution_badge: '自主学习',
         config_channel_type: '通道类型',
@@ -410,6 +411,7 @@ const I18N = {
         config_max_turns: '最大記憶輪次', config_max_turns_hint: '一問一答為一輪，超過後會智慧壓縮處理',
         config_max_steps: '最大執行步數', config_max_steps_hint: '單次對話中 Agent 最多呼叫工具的次數',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否啟用深度思考模式',
+        config_subagent: '子 Agent', config_subagent_hint: '把可獨立完成的任務交給子 Agent，多個任務並行執行，只把結論帶回主對話',
         config_self_evolution: '自主進化', config_self_evolution_hint: '會話空閒後自動覆盤，沉澱記憶、最佳化技能、處理未完成事項',
         evolution_badge: '自主學習',
         config_channel_type: '管道型別',
@@ -676,6 +678,7 @@ const I18N = {
         config_max_turns: 'Max Memory Turns', config_max_turns_hint: 'One Q&A pair = one turn, auto-compressed when exceeded',
         config_max_steps: 'Max Steps', config_max_steps_hint: 'Max tool calls the Agent can make in a single conversation',
         config_enable_thinking: 'Deep Thinking', config_enable_thinking_hint: 'Enable deep thinking mode',
+        config_subagent: 'Sub Agents', config_subagent_hint: 'Hand self-contained tasks to sub agents, which run in parallel and report back only their conclusions',
         config_self_evolution: 'Self-Evolution', config_self_evolution_hint: 'Auto-review idle conversations to consolidate memory, improve skills, and follow up on unfinished tasks',
         evolution_badge: 'Self-learned',
         config_channel_type: 'Channel Type',
@@ -3217,6 +3220,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
                         <i class="fas fa-cog fa-spin text-primary-400 flex-shrink-0 tool-icon"></i>
                         <span class="tool-name">${item.tool}</span>
+                        <span class="tool-substep-count"></span>
                         <i class="fas fa-chevron-right tool-chevron"></i>
                     </div>
                     <div class="tool-detail">
@@ -3224,9 +3228,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                             <div class="tool-detail-label">Input</div>
                             <pre class="tool-detail-content">${argsStr}</pre>
                         </div>
+                        <div class="tool-detail-section tool-substeps-section hidden">
+                            <div class="tool-detail-label">Steps</div>
+                            <div class="tool-substeps"></div>
+                        </div>
                         <div class="tool-detail-section tool-output-section">
                             <div class="tool-detail-label tool-output-label">Output</div>
                             <pre class="tool-detail-content tool-live-output"></pre>
+                            <div class="tool-display-output"></div>
                         </div>
                     </div>`;
                 stepsEl.appendChild(toolEl);
@@ -3260,24 +3269,40 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                         nameEl.innerHTML += ` <span class="tool-time">${item.execution_time}s</span>`;
                     }
 
-                    // Fill output section
+                    // Fill output section. A tool that wrote its outcome for a
+                    // person (item.display) gets rendered as markdown; the raw
+                    // result is what the model reads and stays hidden then.
                     const outputLabel = toolEl.querySelector('.tool-output-label');
                     const outputEl = toolEl.querySelector('.tool-live-output');
+                    const displayEl = toolEl.querySelector('.tool-display-output');
                     if (outputLabel) outputLabel.textContent = isError ? 'Error' : 'Output';
-                    if (outputEl) {
+                    if (displayEl && item.display) {
+                        displayEl.innerHTML = renderMarkdown(String(item.display));
+                        displayEl.classList.add('has-content');
+                        if (outputEl) outputEl.textContent = '';
+                    } else if (outputEl) {
                         outputEl.textContent = item.result ? String(item.result) : '';
                         outputEl.classList.toggle('tool-error-text', isError);
                     }
 
                     toolEl.classList.remove('tool-streaming');
-                    toolEl.classList.remove('expanded');
-                    if (!item.result) {
+                    // Tools collapse once they are done; their output is a
+                    // trace. A tool that wrote something for a person to read
+                    // stays open — the reader just waited for it.
+                    toolEl.classList.toggle('expanded', !!item.display);
+                    if (!item.result && !item.display) {
                         const outputSection = toolEl.querySelector('.tool-output-section');
                         if (outputSection) outputSection.remove();
                     }
                     if (isError) toolEl.classList.add('tool-failed');
                     toolElements.delete(item.tool_call_id);
                 }
+
+            } else if (item.type === 'subagent_step') {
+                // A tool call made inside a sub agent, rendered under that sub
+                // agent's card so its minutes of work are followable.
+                renderSubagentStep(toolElements.get(item.card_id), item);
+                scrollChatToBottom();
 
             } else if (item.type === 'image') {
                 ensureBotEl();
@@ -3806,6 +3831,13 @@ function renderStepsHtml(steps) {
             const iconClass = isErr
                 ? 'fas fa-times text-red-400 flex-shrink-0 tool-icon'
                 : 'fas fa-check text-primary-400 flex-shrink-0 tool-icon';
+            // Same rule as the live stream: a tool that wrote its outcome for
+            // a person shows that, not the form the model was handed.
+            const outputHtml = step.display
+                ? `<div class="tool-display-output has-content">${renderMarkdown(String(step.display))}</div>`
+                : (resultStr
+                    ? `<pre class="tool-detail-content${isErr ? ' tool-error-text' : ''}">${resultStr}</pre>`
+                    : '');
             html += `
 <div class="agent-step agent-tool-step${isErr ? ' tool-failed' : ''}">
     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -3818,10 +3850,10 @@ function renderStepsHtml(steps) {
             <div class="tool-detail-label">Input</div>
             <pre class="tool-detail-content">${argsStr}</pre>
         </div>
-        ${resultStr ? `
+        ${outputHtml ? `
         <div class="tool-detail-section tool-output-section">
             <div class="tool-detail-label">${isErr ? 'Error' : 'Output'}</div>
-            <pre class="tool-detail-content${isErr ? ' tool-error-text' : ''}">${resultStr}</pre>
+            ${outputHtml}
         </div>` : ''}
     </div>
 </div>`;
@@ -4888,6 +4920,82 @@ function formatToolArgs(args) {
     }
 }
 
+const SUBSTEP_ARGS_CHARS = 90;
+
+/** Tool arguments on one line, for a step in a list of dozens. */
+function summarizeToolArgs(args) {
+    if (!args || typeof args !== 'object') return '';
+    const parts = [];
+    for (const [key, value] of Object.entries(args)) {
+        const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        parts.push(`${key}=${text}`);
+    }
+    const joined = parts.join(', ');
+    return joined.length > SUBSTEP_ARGS_CHARS
+        ? joined.slice(0, SUBSTEP_ARGS_CHARS) + '…'
+        : joined;
+}
+
+/**
+ * Add or settle one step inside a sub agent's card.
+ *
+ * Silent when the card is gone: a sub agent cancelled on timeout keeps working
+ * until its next checkpoint, and steps that arrive after its card closed
+ * describe work nobody is waiting on any more.
+ */
+function renderSubagentStep(toolEl, item) {
+    if (!toolEl || !item.step_id) return;
+    const section = toolEl.querySelector('.tool-substeps-section');
+    const list = toolEl.querySelector('.tool-substeps');
+    if (!section || !list) return;
+
+    let stepEl = list.querySelector(`[data-step-id="${CSS.escape(item.step_id)}"]`);
+    if (!stepEl) {
+        if (item.phase !== 'start') return;
+        stepEl = document.createElement('div');
+        stepEl.className = 'tool-substep';
+        stepEl.dataset.stepId = item.step_id;
+        stepEl.innerHTML = `
+            <i class="fas fa-circle-notch fa-spin tool-substep-icon"></i>
+            <span class="tool-substep-name">${escapeHtml(item.tool || 'tool')}</span>
+            <span class="tool-substep-args">${escapeHtml(summarizeToolArgs(item.arguments))}</span>
+            <span class="tool-substep-time"></span>`;
+        list.appendChild(stepEl);
+        section.classList.remove('hidden');
+        // The first step is also the first sign of life from a sub agent that
+        // runs for minutes, so it opens the card it belongs to.
+        toolEl.classList.add('expanded');
+        updateSubstepCount(toolEl, list.children.length);
+        return;
+    }
+
+    if (item.phase !== 'end') return;
+    const isError = item.status && item.status !== 'success';
+    const icon = stepEl.querySelector('.tool-substep-icon');
+    if (icon) {
+        icon.className = isError
+            ? 'fas fa-times tool-substep-icon tool-substep-failed'
+            : 'fas fa-check tool-substep-icon';
+    }
+    const timeEl = stepEl.querySelector('.tool-substep-time');
+    if (timeEl && item.execution_time) timeEl.textContent = `${item.execution_time}s`;
+    if (item.error) {
+        // A step that failed says so where it happened; the sub agent's report
+        // covers what the successful ones found.
+        const argsEl = stepEl.querySelector('.tool-substep-args');
+        if (argsEl) {
+            argsEl.textContent = String(item.error);
+            argsEl.classList.add('tool-substep-failed');
+        }
+        stepEl.title = String(item.error);
+    }
+}
+
+function updateSubstepCount(toolEl, count) {
+    const countEl = toolEl.querySelector('.tool-substep-count');
+    if (countEl) countEl.textContent = count === 1 ? '1 step' : `${count} steps`;
+}
+
 function scrollChatToBottom(force) {
     if (force || _autoScrollEnabled) {
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -5032,6 +5140,7 @@ function initConfigView(data) {
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     document.getElementById('cfg-enable-thinking').checked = data.enable_thinking === true;
+    document.getElementById('cfg-subagent').checked = data.subagent_enabled !== false;
     document.getElementById('cfg-self-evolution').checked = data.self_evolution_enabled === true;
 
     // Reflect the current UI language (already resolved, may include the user's
@@ -5291,6 +5400,7 @@ function saveAgentConfig() {
         agent_max_context_turns: parseInt(document.getElementById('cfg-max-turns').value) || 20,
         agent_max_steps: parseInt(document.getElementById('cfg-max-steps').value) || 20,
         enable_thinking: document.getElementById('cfg-enable-thinking').checked,
+        subagent_enabled: document.getElementById('cfg-subagent').checked,
         self_evolution_enabled: document.getElementById('cfg-self-evolution').checked,
     };
 

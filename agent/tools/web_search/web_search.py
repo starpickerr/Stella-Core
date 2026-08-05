@@ -126,16 +126,15 @@ class WebSearch(BaseTool):
         """Tool is offered to the agent when at least one provider has a key."""
         return bool(configured_providers())
 
-    @classmethod
-    def get_json_schema(cls) -> dict:
+    def get_json_schema(self) -> dict:
         """Augment the static schema with a `provider` field — only when the
         user has ≥2 providers configured AND strategy is 'auto'. Otherwise
         the backend picks silently and exposing the field would only waste
         the agent's tokens."""
         schema = {
-            "name": cls.name,
-            "description": cls.description,
-            "parameters": json.loads(json.dumps(cls.params)),  # deep copy
+            "name": self.name,
+            "description": self.description,
+            "parameters": json.loads(json.dumps(self.params)),  # deep copy
         }
         if _configured_strategy() != "auto":
             return schema

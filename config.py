@@ -271,6 +271,16 @@ available_setting = {
     "agent_max_context_tokens": 64000,  # max context tokens in Agent mode
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
+    # In-process sub agents: the Agent hands a self-contained task to a
+    # short-lived worker with its own context, and gets back only the result.
+    # Set enabled to false to withhold the subagent tool entirely.
+    # Types live in <workspace>/subagents/*.md alongside the built-in ones.
+    "subagent": {
+        "enabled": True,
+        "max_depth": 1,          # 1 = only the main Agent may spawn (range 1-5)
+        "max_concurrent": 3,     # parallel sub agents per spawn call (range 1-10)
+        "timeout_seconds": 300,  # budget for one spawn call (range 10-3600)
+    },
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
     "reasoning_effort": "high",  # Reasoning depth under thinking mode: "high" or "max"
     "knowledge": True,  # whether to enable the knowledge base feature
