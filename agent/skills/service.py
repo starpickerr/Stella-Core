@@ -64,9 +64,13 @@ class SkillService:
         as ``../../evil.py`` or ``/etc/cron.d/evil`` would otherwise write
         outside the skills directory.
 
+        Backslashes are normalised to ``/`` first, so a Windows-style payload
+        is checked the same way on POSIX, where ``\\`` is a legal filename
+        character rather than a separator.
+
         :raises ValueError: if the resolved path would escape ``root``.
         """
-        dest = os.path.realpath(os.path.join(root, rel_path))
+        dest = os.path.realpath(os.path.join(root, rel_path.replace("\\", "/")))
         root = os.path.realpath(root)
         if not dest.startswith(root + os.sep):
             raise ValueError(
