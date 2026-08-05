@@ -273,10 +273,10 @@ available_setting = {
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
     # In-process sub agents: the Agent hands a self-contained task to a
     # short-lived worker with its own context, and gets back only the result.
-    # Off by default; the subagent tool is not offered until enabled.
+    # Set enabled to false to withhold the subagent tool entirely.
     # Types live in <workspace>/subagents/*.md alongside the built-in ones.
     "subagent": {
-        "enabled": False,
+        "enabled": True,
         "max_depth": 1,          # 1 = only the main Agent may spawn (range 1-5)
         "max_concurrent": 3,     # parallel sub agents per spawn call (range 1-10)
         "timeout_seconds": 300,  # budget for one spawn call (range 10-3600)

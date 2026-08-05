@@ -11,20 +11,41 @@ class ToolStage(Enum):
 
 
 class ToolResult:
-    """Tool execution result"""
-    
-    def __init__(self, status: str = None, result: Any = None, ext_data: Any = None):
+    """Tool execution result
+
+    ``result`` is what the model reads, so it is written for a model: JSON,
+    exit codes, whatever parses cleanly. ``display`` is the same outcome
+    written for a person, and clients render it instead when it is set. A tool
+    whose result is already readable leaves it None and the two stay one thing.
+    """
+
+    def __init__(self, status: str = None, result: Any = None, ext_data: Any = None,
+                 display: Optional[str] = None):
         self.status = status
         self.result = result
         self.ext_data = ext_data
+        self.display = display
 
     @staticmethod
-    def success(result, ext_data: Any = None):
-        return ToolResult(status="success", result=result, ext_data=ext_data)
+    def success(result, ext_data: Any = None, display: Optional[str] = None):
+        return ToolResult(status="success", result=result, ext_data=ext_data, display=display)
 
     @staticmethod
-    def fail(result, ext_data: Any = None):
-        return ToolResult(status="error", result=result, ext_data=ext_data)
+    def fail(result, ext_data: Any = None, display: Optional[str] = None):
+        return ToolResult(status="error", result=result, ext_data=ext_data, display=display)
+
+
+def is_tool_available(tool) -> bool:
+    """Availability of a tool that may not implement the check at all.
+
+    Errs towards offering it: a check that breaks should cost the agent a log
+    line, not a capability.
+    """
+    try:
+        return bool(tool.is_available())
+    except Exception as e:
+        logger.debug(f"[{getattr(tool, 'name', '?')}] availability check failed: {e}")
+        return True
 
 
 class BaseTool:
@@ -41,6 +62,10 @@ class BaseTool:
     progress_callback = None
     cancel_event = None
     event_callback = None
+    # Id of the call currently running, injected per call by the agent loop. A
+    # tool that reports work of its own through `emit_event` needs it to say
+    # which entry in the client's view that work belongs under.
+    tool_call_id: Optional[str] = None
     # Workspace directory, injected per run. Declared here so a tool that
     # resolves relative paths cannot silently miss the injection.
     cwd: Optional[str] = None
@@ -50,6 +75,16 @@ class BaseTool:
     # only for work that is independent by construction and slow enough that
     # queueing it is the dominant cost.
     parallel_safe: bool = False
+
+    def is_available(self) -> bool:
+        """Whether this tool should be offered to the model right now.
+
+        Read once per turn, so a tool behind a setting the user can change
+        mid-conversation answers for the setting as it stands rather than as
+        it stood when the Agent was built. A tool that is always usable - the
+        overwhelming majority - leaves this alone.
+        """
+        return True
 
     def is_cancelled(self) -> bool:
         """True once the user asked to stop the run.

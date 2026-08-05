@@ -322,14 +322,39 @@ def _build_artifact_payload(data: dict) -> dict:
     }
 
 
+def _paths_written_by_step(step: dict) -> list:
+    """Files a persisted tool step produced, if any.
+
+    `write`/`edit` name theirs in the arguments. A `subagent` step lists the
+    ones its sub agents wrote in its result: those files never passed through
+    a tool call of this agent's own, so nothing else records them.
+    """
+    name = step.get("name")
+    if name in ("write", "edit"):
+        args = step.get("arguments")
+        path = str((args or {}).get("path") or "").strip() if isinstance(args, dict) else ""
+        return [path] if path else []
+    if name != "subagent":
+        return []
+    try:
+        results = json.loads(step.get("result") or "{}").get("results") or []
+    except (ValueError, TypeError, AttributeError):
+        return []
+    return [
+        path
+        for item in results if isinstance(item, dict)
+        for path in (item.get("files") or [])
+    ]
+
+
 def _artifacts_from_steps(steps) -> list:
     """
     Rebuild the artifact cards of a persisted assistant message.
 
-    History replay has no SSE events, so the `write`/`edit` tool calls are the
-    only record. Doing this server-side keeps one implementation of the
-    workspace-internal filter — and lets absolute paths inside the workspace be
-    recognised, which a client mirroring the rules can't do.
+    History replay has no SSE events, so the tool calls are the only record.
+    Doing this server-side keeps one implementation of the workspace-internal
+    filter — and lets absolute paths inside the workspace be recognised, which
+    a client mirroring the rules can't do.
     """
     from agent.protocol.artifact import get_workspace_root, safe_build_artifact
 
@@ -337,24 +362,39 @@ def _artifacts_from_steps(steps) -> list:
     seen = set()
     root = None
     for step in steps or []:
-        if not isinstance(step, dict) or step.get("type") != "tool":
+        if not isinstance(step, dict) or step.get("type") != "tool" or step.get("is_error"):
             continue
-        if step.get("is_error") or step.get("name") not in ("write", "edit"):
-            continue
-        args = step.get("arguments")
-        path = str((args or {}).get("path") or "").strip() if isinstance(args, dict) else ""
-        if not path:
-            continue
-        if root is None:
-            root = get_workspace_root()
-        info = safe_build_artifact(path, root)
-        if not info or info["path"] in seen:
-            continue
-        seen.add(info["path"])
-        payload = _build_artifact_payload(info)
-        if payload:
-            out.append(payload)
+        for path in _paths_written_by_step(step):
+            if root is None:
+                root = get_workspace_root()
+            info = safe_build_artifact(path, root)
+            if not info or info["path"] in seen:
+                continue
+            seen.add(info["path"])
+            payload = _build_artifact_payload(info)
+            if payload:
+                out.append(payload)
     return out
+
+
+def _add_subagent_displays(steps) -> None:
+    """Give persisted `subagent` steps the same readable form they had live.
+
+    `display` is deliberately kept out of the model's context, so it is not in
+    the stored conversation either. Rebuilding it here means a reloaded page
+    shows the sub agents' reports rather than the JSON the model was handed.
+    """
+    from agent.tools.subagent import format_results
+
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("name") != "subagent":
+            continue
+        try:
+            results = json.loads(step.get("result") or "{}").get("results")
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if isinstance(results, list) and results:
+            step["display"] = format_results(results)
 
 
 def _sanitize_upload_relative_path(relative_path: str) -> str:
@@ -689,6 +729,9 @@ class WebChannel(ChatChannel):
         # Keep aligned with frontend REASONING_RENDER_CAP and backend
         # MAX_STORED_REASONING_CHARS.
         MAX_REASONING_STREAM_CHARS = 4 * 1024  # 4 KB
+        # A tool's human-readable outcome (ToolResult.display). Reasoning is a
+        # trace worth capping hard; this is the deliverable, so it gets room.
+        MAX_DISPLAY_STREAM_CHARS = 32 * 1024
         # Use a single-element list as a mutable counter accessible from closure.
         reasoning_chars_sent = [0]
         reasoning_capped_notified = [False]
@@ -749,13 +792,39 @@ class WebChannel(ChatChannel):
                 result_str = str(result)
                 if len(result_str) > 2000:
                     result_str = result_str[:2000] + "…"
-                q.put({
+                payload = {
                     "type": "tool_end",
                     "tool_call_id": data.get("tool_call_id"),
                     "tool": tool_name,
                     "status": status,
                     "result": result_str,
                     "execution_time": round(exec_time, 2)
+                }
+                # A tool that wrote its outcome for a person sends that
+                # instead. It gets a far larger budget than `result`: this is
+                # the report itself, not a trace of how it was produced.
+                display = data.get("display")
+                if display:
+                    display = str(display)
+                    if len(display) > MAX_DISPLAY_STREAM_CHARS:
+                        display = display[:MAX_DISPLAY_STREAM_CHARS] + "…"
+                    payload["display"] = display
+                q.put(payload)
+
+            elif event_type == "subagent_step":
+                # A tool call made by a sub agent, relayed so the card for
+                # that sub agent can show what it is doing instead of
+                # spinning for minutes.
+                q.put({
+                    "type": "subagent_step",
+                    "card_id": data.get("card_id"),
+                    "step_id": data.get("step_id"),
+                    "phase": data.get("phase"),
+                    "tool": data.get("tool_name", "tool"),
+                    "arguments": data.get("arguments") or {},
+                    "status": data.get("status"),
+                    "error": data.get("error"),
+                    "execution_time": data.get("execution_time", 0),
                 })
 
             elif event_type == "message_end":
@@ -2263,6 +2332,12 @@ class ConfigHandler:
         "enable_thinking", "self_evolution_enabled", "web_password",
     }
 
+    # Switches the API exposes flat - one key, one control - while the config
+    # file keeps a feature's settings together under one object.
+    NESTED_BOOLS = {
+        "subagent_enabled": ("subagent", "enabled"),
+    }
+
     @staticmethod
     def _mask_key(value: str) -> str:
         """Mask the middle part of an API key for display."""
@@ -2274,6 +2349,8 @@ class ConfigHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
+            from agent.subagent import SubagentSettings
+
             local_config = conf()
             use_agent = local_config.get("agent", True)
             title = "CowAgent" if use_agent else "AI Assistant"
@@ -2342,6 +2419,9 @@ class ConfigHandler:
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
                 "self_evolution_enabled": bool(local_config.get("self_evolution_enabled", False)),
+                # Read through the feature's own loader so the default it
+                # applies to an absent setting is the one shown here.
+                "subagent_enabled": SubagentSettings.from_config().enabled,
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
                 "providers": providers,
@@ -2368,7 +2448,12 @@ class ConfigHandler:
 
             local_config = conf()
             applied = {}
+            nested = {}
             for key, value in updates.items():
+                if key in self.NESTED_BOOLS:
+                    section, leaf = self.NESTED_BOOLS[key]
+                    nested.setdefault(section, {})[leaf] = bool(value)
+                    continue
                 if key not in self.EDITABLE_KEYS:
                     continue
                 if key in ("agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps"):
@@ -2378,7 +2463,7 @@ class ConfigHandler:
                 local_config[key] = value
                 applied[key] = value
 
-            if not applied:
+            if not applied and not nested:
                 return json.dumps({"status": "error", "message": "no valid keys to update"})
 
             config_path = os.path.join(get_data_root(), "config.json")
@@ -2386,6 +2471,14 @@ class ConfigHandler:
             # Capture old password before updating
             old_password = file_cfg.get("web_password", "") if "web_password" in applied else ""
             file_cfg.update(applied)
+            # Merged rather than assigned: the UI sends the one switch it owns,
+            # and the rest of the section is the user's to keep.
+            for section, values in nested.items():
+                merged = dict(file_cfg.get(section) or {})
+                merged.update(values)
+                file_cfg[section] = merged
+                local_config[section] = merged
+                applied[section] = merged
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
@@ -5346,6 +5439,7 @@ class HistoryHandler:
             for msg in result.get("messages") or []:
                 if msg.get("role") != "assistant":
                     continue
+                _add_subagent_displays(msg.get("steps"))
                 artifacts = _artifacts_from_steps(msg.get("steps"))
                 if artifacts:
                     msg["artifacts"] = artifacts

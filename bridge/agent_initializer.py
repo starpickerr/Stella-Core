@@ -379,15 +379,6 @@ class AgentInitializer:
                         logger.debug("[AgentInitializer] evolution_undo skipped - self-evolution disabled")
                         continue
 
-                # Withhold the subagent tool unless the feature is switched on.
-                # Off by default, so it never reaches the model and nothing
-                # about an existing install changes.
-                if tool_name == "subagent":
-                    from agent.subagent import SubagentSettings
-                    if not SubagentSettings.from_config().enabled:
-                        logger.debug("[AgentInitializer] subagent tool skipped - feature disabled")
-                        continue
-
                 # Special handling for EnvConfig tool
                 if tool_name == "env_config":
                     from agent.tools import EnvConfig

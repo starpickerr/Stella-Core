@@ -86,7 +86,7 @@ def _capture_children(monkeypatch, reply="done"):
             self.extra_system_suffix = None
             built.append(self)
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             self.goal = goal
             self.clear_history = clear_history
             self.depth_seen = current_depth()
@@ -381,7 +381,7 @@ def test_a_task_that_overruns_its_budget_is_reported_not_dropped(parent, workspa
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             started.set()
             # Honour the cancel the runner sets on timeout, as a real run would.
             cancel_event.wait(timeout=5)
@@ -407,7 +407,7 @@ def test_a_timed_out_call_returns_without_waiting_for_the_worker(parent, workspa
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             release.wait(timeout=10)  # ignores the cancel, as a wedged run would
             return ""
 
@@ -432,7 +432,7 @@ def test_siblings_do_not_share_tool_instances(parent, workspace, enabled, monkey
             self.tools = kwargs["tools"]
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             # Keep the objects alive, not their ids: a freed copy's address can
             # be handed straight back to the next allocation.
             seen.append({t.name: t for t in self.tools})
@@ -454,12 +454,37 @@ def test_siblings_do_not_share_tool_instances(parent, workspace, enabled, monkey
         assert seen[0][name] is not parent_tools[name], f"child shares the parent's {name} instance"
 
 
+def test_a_sub_agent_gets_half_the_parents_step_budget(parent, workspace, enabled, monkeypatch):
+    """One self-contained task, started from an empty context, should not be
+    allowed to run as long as the whole conversation that delegated it."""
+    seen = []
+
+    class _Recording:
+        def __init__(self, **kwargs):
+            seen.append(kwargs["max_steps"])
+            self.extra_system_suffix = None
+
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
+            return "ok"
+
+    monkeypatch.setattr("agent.protocol.agent.Agent", _Recording)
+    templates = load_templates(str(workspace))
+
+    parent.max_steps = 40
+    run_tasks(parent, [SubagentTask(goal="a")], templates, enabled)
+    # A budget too small to halve still has to leave room for one step.
+    parent.max_steps = 1
+    run_tasks(parent, [SubagentTask(goal="b")], templates, enabled)
+
+    assert seen == [20, 1]
+
+
 def test_a_failing_task_is_reported_as_failed(parent, workspace, enabled, monkeypatch):
     class _Exploding:
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             raise RuntimeError("model unavailable")
 
     monkeypatch.setattr("agent.protocol.agent.Agent", _Exploding)
@@ -477,7 +502,7 @@ def test_all_tasks_failing_surfaces_as_a_tool_error(spawn_tool, enabled, monkeyp
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             raise RuntimeError("nope")
 
     monkeypatch.setattr("agent.protocol.agent.Agent", _Exploding)
@@ -562,7 +587,7 @@ def test_a_lone_sub_agent_is_left_to_the_call_itself(spawn_tool, enabled, monkey
 
     spawn_tool.execute({"goal": "just the one"})
 
-    assert events == []
+    assert [kind for kind, _ in events if kind.startswith("tool_execution")] == []
 
 
 def test_a_failed_sub_agent_closes_with_its_error(spawn_tool, enabled, monkeypatch):
@@ -570,7 +595,7 @@ def test_a_failed_sub_agent_closes_with_its_error(spawn_tool, enabled, monkeypat
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             raise RuntimeError("model unavailable")
 
     monkeypatch.setattr("agent.protocol.agent.Agent", _Exploding)
@@ -593,7 +618,7 @@ def test_a_sub_agent_that_overruns_its_budget_is_still_closed(spawn_tool, worksp
         def __init__(self, **kwargs):
             self.extra_system_suffix = None
 
-        def run_stream(self, goal, clear_history=False, cancel_event=None):
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
             cancel_event.wait(timeout=5)
             return ""
 
@@ -611,6 +636,204 @@ def test_a_sub_agent_that_overruns_its_budget_is_still_closed(spawn_tool, worksp
     # already been closed with the reason that actually explains it.
     time.sleep(0.5)
     assert len([d for kind, d in events if kind == "tool_execution_end"]) == 2
+
+
+# --- what the client is told about the work inside them ----------------------
+
+
+def _child_emitting(monkeypatch, events_by_goal, reply="done"):
+    """Replace the child Agent with one that reports the given stream events."""
+
+    class _Emitter:
+        def __init__(self, **kwargs):
+            self.extra_system_suffix = None
+
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
+            for event in events_by_goal.get(goal, []):
+                if on_event:
+                    on_event(event)
+            return reply
+
+    monkeypatch.setattr("agent.protocol.agent.Agent", _Emitter)
+
+
+def _step(tool_call_id, tool_name, phase, **extra):
+    data = {"tool_call_id": tool_call_id, "tool_name": tool_name, **extra}
+    return {"type": f"tool_execution_{phase}", "data": data}
+
+
+def test_a_file_a_sub_agent_wrote_reaches_the_user(spawn_tool, enabled, monkeypatch):
+    """The report is the thing the spawn was for. Produced a level down, it is
+    still the file the user asked for."""
+    artifact = {"path": "/ws/report.md", "rel_path": "report.md", "kind": "markdown"}
+    _child_emitting(monkeypatch, {"write it up": [{"type": "artifact", "data": artifact}]})
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"goal": "write it up"})
+
+    assert [d for kind, d in events if kind == "artifact"] == [artifact]
+
+
+def test_the_work_inside_a_lone_sub_agent_lands_on_the_spawn_card(spawn_tool, enabled, monkeypatch):
+    _child_emitting(monkeypatch, {"look it up": [
+        _step("c1", "web_search", "start", arguments={"query": "x"}),
+        _step("c1", "web_search", "end", status="success", result={"total": 3}, execution_time=0.94),
+    ]})
+    events = _events_from(spawn_tool)
+    spawn_tool.tool_call_id = "spawn-call"
+
+    spawn_tool.execute({"goal": "look it up"})
+
+    steps = [d for kind, d in events if kind == "subagent_step"]
+    assert [d["phase"] for d in steps] == ["start", "end"]
+    assert {d["card_id"] for d in steps} == {"spawn-call"}
+    assert len({d["step_id"] for d in steps}) == 1
+    assert steps[0]["tool_name"] == "web_search"
+    assert steps[0]["arguments"] == {"query": "x"}
+    assert steps[1]["execution_time"] == 0.94
+
+
+def test_what_a_step_found_is_left_to_the_report(spawn_tool, enabled, monkeypatch):
+    """Its findings are already in the sub agent's summary. Repeating them per
+    step puts the same text through the stream twice, in the one place too
+    small to read it."""
+    _child_emitting(monkeypatch, {"look it up": [
+        _step("c1", "web_search", "end", status="success", result={"results": ["…"] * 10}),
+    ]})
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"goal": "look it up"})
+
+    step = [d for kind, d in events if kind == "subagent_step"][0]
+    assert "error" not in step and "result" not in step
+
+
+def test_a_step_that_failed_carries_the_reason(spawn_tool, enabled, monkeypatch):
+    """Nothing else says why that step came up empty."""
+    _child_emitting(monkeypatch, {"look it up": [
+        _step("c1", "web_fetch", "end", status="error", result="HTTP 403 for URL: https://x"),
+    ]})
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"goal": "look it up"})
+
+    step = [d for kind, d in events if kind == "subagent_step"][0]
+    assert step["status"] == "error"
+    assert step["error"] == "HTTP 403 for URL: https://x"
+
+
+def test_steps_are_attributed_to_the_sub_agent_that_ran_them(spawn_tool, enabled, monkeypatch):
+    """Two sub agents run at once and their events interleave. A step shown
+    under the wrong one is worse than not showing it."""
+    _child_emitting(monkeypatch, {
+        "first": [_step("shared-id", "read", "start", arguments={})],
+        "second": [_step("shared-id", "bash", "start", arguments={})],
+    })
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"tasks": [{"goal": "first"}, {"goal": "second"}]})
+
+    cards = {d["tool_call_id"] for kind, d in events if kind == "tool_execution_start"}
+    steps = [d for kind, d in events if kind == "subagent_step"]
+    assert len(steps) == 2
+    assert {d["card_id"] for d in steps} == cards
+    # Sub agents number their calls independently, so the same id from two of
+    # them must not collapse into one step.
+    assert len({d["step_id"] for d in steps}) == 2
+
+
+def test_the_files_a_sub_agent_wrote_are_listed_in_its_result(spawn_tool, enabled, monkeypatch):
+    """A sub agent names its files in prose, if at all. The parent should not
+    have to parse them back out, and once the run's events are gone this is
+    the only record that they exist."""
+    _child_emitting(monkeypatch, {
+        "first": [{"type": "artifact", "data": {"path": "/ws/a.md"}},
+                  {"type": "artifact", "data": {"path": "/ws/b.md"}}],
+        "second": [{"type": "artifact", "data": {"path": "/ws/c.md"}}],
+    })
+
+    result = spawn_tool.execute({"tasks": [{"goal": "first"}, {"goal": "second"}]})
+
+    by_index = {r["task_index"]: r.get("files") for r in json.loads(result.result)["results"]}
+    assert by_index == {0: ["/ws/a.md", "/ws/b.md"], 1: ["/ws/c.md"]}
+
+
+def test_a_sub_agent_that_wrote_nothing_lists_nothing(spawn_tool, enabled, monkeypatch):
+    _capture_children(monkeypatch)
+
+    result = spawn_tool.execute({"goal": "go"})
+
+    assert "files" not in json.loads(result.result)["results"][0]
+
+
+def test_a_sub_agents_prose_never_reaches_the_reply(spawn_tool, enabled, monkeypatch):
+    """Message and reasoning streams render as the assistant speaking. A sub
+    agent talking to itself there reads as the assistant losing the thread."""
+    _child_emitting(monkeypatch, {"go": [
+        {"type": "message_update", "data": {"delta": "thinking out loud"}},
+        {"type": "reasoning_update", "data": {"delta": "hmm"}},
+        {"type": "turn_start", "data": {"turn": 2}},
+    ]})
+    events = _events_from(spawn_tool)
+
+    spawn_tool.execute({"goal": "go"})
+
+    assert events == []
+
+
+def test_a_broken_watcher_does_not_take_the_sub_agent_down(spawn_tool, enabled, monkeypatch):
+    _child_emitting(monkeypatch, {"go": [{"type": "artifact", "data": {"path": "/ws/a.md"}}]})
+
+    def _broken(event_type, data):
+        raise RuntimeError("client went away")
+
+    spawn_tool.event_callback = _broken
+
+    result = spawn_tool.execute({"goal": "go"})
+    assert result.status == "success"
+
+
+# --- the conclusion, written for a person ------------------------------------
+
+
+def test_the_conclusion_is_offered_as_markdown(spawn_tool, enabled, monkeypatch):
+    """The JSON is what the parent model parses. Nobody who waited minutes for
+    a report wants to read a JSON blob."""
+    _capture_children(monkeypatch, reply="Found three things.")
+
+    result = spawn_tool.execute({"goal": "go"})
+
+    assert result.display.startswith("### general-purpose")
+    assert "Found three things." in result.display
+    # The model still gets the machine-readable form.
+    assert json.loads(result.result)["results"][0]["summary"] == "Found three things."
+
+
+def test_several_conclusions_are_numbered_and_separated(spawn_tool, enabled, monkeypatch):
+    _capture_children(monkeypatch, reply="the answer")
+
+    result = spawn_tool.execute({"tasks": [{"goal": "a"}, {"goal": "b", "subagent_type": "explore"}]})
+
+    assert "### 1. general-purpose" in result.display
+    assert "### 2. explore" in result.display
+    assert result.display.count("the answer") == 2
+
+
+def test_a_conclusion_that_never_arrived_says_so(spawn_tool, enabled, monkeypatch):
+    class _Exploding:
+        def __init__(self, **kwargs):
+            self.extra_system_suffix = None
+
+        def run_stream(self, goal, clear_history=False, cancel_event=None, on_event=None):
+            raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr("agent.protocol.agent.Agent", _Exploding)
+
+    result = spawn_tool.execute({"goal": "go"})
+
+    assert result.status == "error"
+    assert "**failed**" in result.display
+    assert "model unavailable" in result.display
 
 
 def test_reporting_trouble_does_not_take_the_run_down(spawn_tool, enabled, monkeypatch):

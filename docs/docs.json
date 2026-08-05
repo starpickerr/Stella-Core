@@ -254,6 +254,17 @@
             ]
           },
           {
+            "tab": "Multi-Agent",
+            "groups": [
+              {
+                "group": "Multi-Agent System",
+                "pages": [
+                  "multi-agent/subagent"
+                ]
+              }
+            ]
+          },
+          {
             "tab": "Releases",
             "groups": [
               {
@@ -485,6 +496,17 @@
             ]
           },
           {
+            "tab": "多 Agent",
+            "groups": [
+              {
+                "group": "多 Agent 系统",
+                "pages": [
+                  "zh/multi-agent/subagent"
+                ]
+              }
+            ]
+          },
+          {
             "tab": "版本",
             "groups": [
               {
@@ -710,6 +732,17 @@
                   "ja/cli/skill",
                   "ja/cli/memory-knowledge",
                   "ja/cli/general"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "マルチ Agent",
+            "groups": [
+              {
+                "group": "マルチ Agent システム",
+                "pages": [
+                  "ja/multi-agent/subagent"
                 ]
               }
             ]

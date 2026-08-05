@@ -97,9 +97,10 @@ by construction rather than by instruction.
 Note that a tool allowlist matches by exact name, so it excludes MCP tools.
 Omit `tools` if the type needs them.
 
-## Turning it on
+## Settings
 
-Sub agents are off by default. In `config.json`:
+Sub agents are on by default. To turn them off, or to change the limits, in
+`config.json`:
 
 ```json
 "subagent": {
@@ -112,7 +113,7 @@ Sub agents are off by default. In `config.json`:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | Whether the Agent is offered the `subagent` tool at all |
+| `enabled` | `true` | Whether the Agent is offered the `subagent` tool at all |
 | `max_depth` | `1` | `1` means only your Agent may spawn; a sub agent cannot spawn another |
 | `max_concurrent` | `3` | How many sub agents one call may run in parallel |
 | `timeout_seconds` | `300` | Budget for one call, covering all its parallel tasks |
