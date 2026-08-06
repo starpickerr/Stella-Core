@@ -178,7 +178,9 @@ def test_agent_bridge_passes_linkai_deepseek_passthrough_effort(monkeypatch):
 
     assert model._resolve_bot_type("deepseek-v4-flash") == "linkai"
     assert bot.kwargs["thinking"] == {"type": "enabled"}
-    assert bot.kwargs["reasoning_effort"] == "max"
+    # deepseek-v4 takes the value as-is through the gateway; the upstream maps
+    # it to its own level.
+    assert bot.kwargs["reasoning_effort"] == "xhigh"
 
 
 def test_agent_bridge_passes_linkai_glm_passthrough_effort(monkeypatch):

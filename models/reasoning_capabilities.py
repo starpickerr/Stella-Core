@@ -35,8 +35,6 @@ DASHSCOPE_HIGH_MAX_MODELS = (
     "glm-5.2",
     "glm-5.1",
     "glm-5",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
 )
 DASHSCOPE_MAX_ONLY_MODELS = (
     "kimi/kimi-k3",
@@ -101,6 +99,10 @@ def get_reasoning_capability(provider_id: str, model_name: str = "") -> dict:
         # unsupported Qwen/GLM/Kimi variants do not inherit another enum set.
         if model.startswith(DASHSCOPE_QWEN38_MODELS):
             return _capability(DASHSCOPE_QWEN38_VALUES, default="xhigh", thinking_only=True)
+        # deepseek-v4 takes the same enum wherever it is hosted; the two
+        # variants only differ in how they map the values internally.
+        if model.startswith("deepseek-v4"):
+            return _capability(DEEPSEEK_VALUES, default="high")
         if model.startswith(DASHSCOPE_HIGH_MAX_MODELS):
             return _capability(DASHSCOPE_HIGH_MAX_VALUES, default="high")
         if model.startswith(DASHSCOPE_MAX_ONLY_MODELS):
@@ -113,7 +115,7 @@ def get_reasoning_capability(provider_id: str, model_name: str = "") -> dict:
         # LinkAI is a gateway; only expose passthrough effort for models whose
         # upstream protocol has been verified here.
         if model.startswith("deepseek-v4"):
-            return _capability(DASHSCOPE_HIGH_MAX_VALUES, default="high")
+            return _capability(DEEPSEEK_VALUES, default="high")
         if model.startswith("glm-"):
             return _capability(ZHIPU_VALUES, default="high")
         if model.startswith("kimi-k3"):
@@ -150,13 +152,7 @@ def _legacy_remap(base_pid: str, model: str, effort: str) -> str:
                 "xhigh": "max",
             }.get(effort, effort)
     elif base_pid == "linkai":
-        if model.startswith("deepseek-v4"):
-            effort = {
-                "low": "high",
-                "medium": "high",
-                "xhigh": "max",
-            }.get(effort, effort)
-        elif model.startswith("glm-"):
+        if model.startswith("glm-"):
             effort = {
                 "minimal": "high",
                 "none": "high",
