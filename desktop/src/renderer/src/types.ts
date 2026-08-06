@@ -310,9 +310,24 @@ export interface HistoryPage {
 /** A label that may be localized (some providers/channels return {zh,en}). */
 export type LocalizedLabel = string | { zh: string; en: string }
 
+export interface ReasoningOption {
+  value: string
+  label: string
+}
+
+export interface ReasoningCapability {
+  supported: boolean
+  param?: string
+  default?: string
+  thinking_only?: boolean
+  options: ReasoningOption[]
+}
+
 export interface ProviderMeta {
   label: LocalizedLabel
   models: string[]
+  reasoning?: ReasoningCapability
+  reasoning_by_model?: Record<string, ReasoningCapability>
   api_base_key?: string | null
   api_base_default?: string | null
   api_base_placeholder?: string
@@ -331,6 +346,8 @@ export interface ConfigData {
   agent_max_context_turns: number
   agent_max_steps: number
   enable_thinking?: boolean
+  reasoning_effort?: string
+  reasoning_effort_by_model?: Record<string, string>
   subagent_enabled?: boolean
   self_evolution_enabled?: boolean
   api_bases: Record<string, string>

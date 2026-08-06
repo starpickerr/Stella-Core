@@ -130,6 +130,40 @@ class AgentLLMModel(LLMModel):
                 return btype
         return const.OPENAI
 
+    def _normalized_reasoning_effort(self):
+        """Return the active model's effort value after config resolution."""
+        from models.reasoning_capabilities import resolve_reasoning_effort
+
+        return resolve_reasoning_effort(
+            self._resolve_bot_type(self.model),
+            self.model,
+            conf().get("reasoning_effort_by_model", {}),
+            conf().get("reasoning_effort", "high"),
+        )
+
+    def _should_pass_reasoning_effort(self, thinking_enabled: bool) -> bool:
+        """Return True when the active provider should receive effort."""
+        if thinking_enabled:
+            return True
+
+        from models.reasoning_capabilities import get_reasoning_capability
+
+        capability = get_reasoning_capability(
+            self._resolve_bot_type(self.model),
+            self.model,
+        )
+        return capability.get("param") == "effort" or bool(capability.get("thinking_only"))
+
+    def _is_thinking_only_model(self) -> bool:
+        """Return True for models that require reasoning to stay enabled."""
+        from models.reasoning_capabilities import get_reasoning_capability
+
+        capability = get_reasoning_capability(
+            self._resolve_bot_type(self.model),
+            self.model,
+        )
+        return bool(capability.get("thinking_only"))
+
     @property
     def bot(self):
         """Lazy load the bot, re-create when model or bot_type changes"""
@@ -181,15 +215,20 @@ class AgentLLMModel(LLMModel):
                 # quality the thinking pass produces.
                 from config import conf
                 thinking_enabled = bool(conf().get("enable_thinking", False))
+                # Some native-reasoning models reject disabled thinking or use
+                # effort as their only control, so they cannot follow the UI
+                # toggle literally.
+                if self._is_thinking_only_model():
+                    thinking_enabled = True
                 kwargs['thinking'] = (
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Reasoning effort is only meaningful when thinking is on.
-                # Bots that don't understand the kwarg drop it silently.
-                if thinking_enabled:
-                    effort = conf().get("reasoning_effort", "high")
-                    if effort in ("high", "max"):
+                # Some providers expose effort as request-level control, while
+                # reasoning_effort providers only apply it with thinking on.
+                if self._should_pass_reasoning_effort(thinking_enabled):
+                    effort = self._normalized_reasoning_effort()
+                    if effort:
                         kwargs['reasoning_effort'] = effort
 
                 response = self.bot.call_with_tools(**kwargs)
@@ -243,15 +282,19 @@ class AgentLLMModel(LLMModel):
                 # quality the thinking pass produces.
                 from config import conf
                 thinking_enabled = bool(conf().get("enable_thinking", False))
+                # Keep streaming and non-streaming calls on the same provider
+                # contract for always-thinking models.
+                if self._is_thinking_only_model():
+                    thinking_enabled = True
                 kwargs['thinking'] = (
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Reasoning effort is only meaningful when thinking is on.
-                # Bots that don't understand the kwarg drop it silently.
-                if thinking_enabled:
-                    effort = conf().get("reasoning_effort", "high")
-                    if effort in ("high", "max"):
+                # Some providers expose effort as request-level control, while
+                # reasoning_effort providers only apply it with thinking on.
+                if self._should_pass_reasoning_effort(thinking_enabled):
+                    effort = self._normalized_reasoning_effort()
+                    if effort:
                         kwargs['reasoning_effort'] = effort
 
                 stream = self.bot.call_with_tools(**kwargs)
@@ -1005,6 +1048,16 @@ class AgentBridge:
             # The in-memory message list keeps them intact for this run's
             # multi-turn LLM context.
             thinking_enabled = bool(conf().get("enable_thinking", False))
+            if not thinking_enabled:
+                from models.reasoning_capabilities import get_reasoning_capability
+
+                # Thinking-only models need their reasoning trace in stored
+                # history so the next tool-calling turn can echo it back.
+                capability = get_reasoning_capability(
+                    AgentLLMModel(None)._resolve_bot_type(conf().get("model", "")),
+                    conf().get("model", ""),
+                )
+                thinking_enabled = bool(capability.get("thinking_only"))
         except Exception:
             thinking_enabled = False
 

@@ -340,6 +340,15 @@ class ClaudeAPIBot(Bot, OpenAIImage):
         if tools:
             request_params["tools"] = tools
 
+        # Claude exposes effort under output_config rather than the generic
+        # reasoning_effort field used by OpenAI-compatible providers.
+        output_config = dict(kwargs.get("output_config") or {})
+        reasoning_effort = kwargs.get("reasoning_effort")
+        if reasoning_effort:
+            output_config["effort"] = reasoning_effort
+        if output_config:
+            request_params["output_config"] = output_config
+
         try:
             if stream:
                 return self._handle_stream_response(request_params)

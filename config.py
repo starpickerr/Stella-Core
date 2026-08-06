@@ -282,7 +282,8 @@ available_setting = {
         "timeout_seconds": 300,  # budget for one spawn call (range 10-3600)
     },
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
-    "reasoning_effort": "high",  # Reasoning depth under thinking mode: "high" or "max"
+    "reasoning_effort": "high",  # Provider-native reasoning depth; allowed values depend on the active provider/model
+    "reasoning_effort_by_model": {},  # Per-model effort intent: {"<provider>:<model>": "<value>"}; overrides the global key per model
     "knowledge": True,  # whether to enable the knowledge base feature
     # Self-evolution: review idle conversations to learn memory/skills. Flat keys.
     "self_evolution_enabled": False,        # switch to enable/disable self-evolution
