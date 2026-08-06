@@ -71,15 +71,20 @@ def test_dashscope_qwen38_max_exposes_native_effort_values():
     assert get_reasoning_capability("dashscope", "qwen3.8-max") == {"supported": False, "options": []}
 
 
-def test_dashscope_direct_glm_and_deepseek_expose_high_max_effort_values():
+def test_dashscope_glm_exposes_high_max_effort_values():
     glm_cap = get_reasoning_capability("dashscope", "glm-5.2")
-    deepseek_cap = get_reasoning_capability("dashscope", "deepseek-v4-flash")
 
     assert glm_cap["supported"] is True
     assert glm_cap["default"] == "high"
     assert _values(glm_cap) == ["high", "max"]
+
+
+def test_dashscope_deepseek_keeps_the_model_native_effort_values():
+    deepseek_cap = get_reasoning_capability("dashscope", "deepseek-v4-flash")
+
     assert deepseek_cap["supported"] is True
-    assert _values(deepseek_cap) == ["high", "max"]
+    assert deepseek_cap["default"] == "high"
+    assert _values(deepseek_cap) == ["low", "high", "xhigh", "max"]
 
 
 def test_dashscope_kimi_k3_only_exposes_max_effort():
@@ -116,7 +121,7 @@ def test_linkai_exposes_known_passthrough_effort_models():
 
     assert deepseek_cap["supported"] is True
     assert deepseek_cap["default"] == "high"
-    assert _values(deepseek_cap) == ["high", "max"]
+    assert _values(deepseek_cap) == ["low", "high", "xhigh", "max"]
     assert glm_cap["supported"] is True
     assert glm_cap["default"] == "high"
     assert _values(glm_cap) == ["low", "medium", "high", "xhigh", "max"]
@@ -162,12 +167,13 @@ def test_normalize_returns_provider_default_for_invalid_value():
     assert normalize_reasoning_effort("dashscope", "qwen3.8-max", "high") is None
     assert normalize_reasoning_effort("dashscope", "qwen3.8-max-preview", "minimal") == "low"
     assert normalize_reasoning_effort("dashscope", "glm-5.2", "low") == "high"
-    assert normalize_reasoning_effort("dashscope", "deepseek-v4-pro", "xhigh") == "max"
+    assert normalize_reasoning_effort("dashscope", "deepseek-v4-pro", "xhigh") == "xhigh"
+    assert normalize_reasoning_effort("dashscope", "deepseek-v4-pro", "low") == "low"
     assert normalize_reasoning_effort("dashscope", "kimi/kimi-k3", "high") == "max"
     assert normalize_reasoning_effort("moonshot", "kimi-k3", "low") == "low"
     assert normalize_reasoning_effort("moonshot", "kimi-k3", "medium") == "max"
-    assert normalize_reasoning_effort("linkai", "deepseek-v4-flash", "low") == "high"
-    assert normalize_reasoning_effort("linkai", "deepseek-v4-flash", "xhigh") == "max"
+    assert normalize_reasoning_effort("linkai", "deepseek-v4-flash", "low") == "low"
+    assert normalize_reasoning_effort("linkai", "deepseek-v4-flash", "xhigh") == "xhigh"
     assert normalize_reasoning_effort("linkai", "glm-5.2", "medium") == "medium"
     assert normalize_reasoning_effort("linkai", "glm-5.2", "minimal") == "high"
     assert normalize_reasoning_effort("linkai", "kimi-k3", "medium") == "max"
