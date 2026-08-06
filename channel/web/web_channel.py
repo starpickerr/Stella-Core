@@ -45,9 +45,21 @@ class SSEStreamState:
     total_bytes: int = 0
     last_active: float = field(default_factory=time.time)
     main_done: bool = False
+    main_done_at: Optional[float] = None
     stream_complete: bool = False
     completed_at: Optional[float] = None
     closed: bool = False
+
+
+def _parse_sse_cursor(*values) -> int:
+    cursors = []
+    for value in values:
+        try:
+            cursors.append(max(0, int(value or 0)))
+        except (TypeError, ValueError):
+            cursors.append(0)
+    return max(cursors, default=0)
+
 
 def _read_config_file_for_write() -> dict:
     """Baseline dict for a partial write to config.json.
@@ -556,7 +568,9 @@ class WebChannel(ChatChannel):
     _instance = None
     SSE_REPLAY_MAX_EVENTS = 5000
     SSE_REPLAY_MAX_BYTES = 4 * 1024 * 1024
-    SSE_COMPLETED_TTL_SECONDS = 300
+    SSE_POST_DONE_TAIL_SECONDS = 60
+    SSE_COMPLETED_TTL_SECONDS = 60
+    SSE_IDLE_TIMEOUT_SECONDS = 1800
 
     # def __new__(cls):
     #     if cls._instance is None:
@@ -588,10 +602,19 @@ class WebChannel(ChatChannel):
         with self._sse_streams_lock:
             state = self.sse_streams.get(request_id)
         if state is None:
+            logger.warning(
+                f"[WebChannel] dropped SSE event for unknown request "
+                f"{request_id}: type={event.get('type')}"
+            )
             return False
 
         with state.condition:
             if state.closed or state.stream_complete:
+                reason = "closed" if state.closed else "complete"
+                logger.warning(
+                    f"[WebChannel] dropped SSE event for {reason} stream "
+                    f"{request_id}: type={event.get('type')}"
+                )
                 return False
             item = dict(event)
             item["seq"] = state.next_seq
@@ -615,6 +638,8 @@ class WebChannel(ChatChannel):
             event_type = item.get("type")
             if event_type == "done":
                 state.main_done = True
+                if state.main_done_at is None:
+                    state.main_done_at = state.last_active
             elif event_type == "stream_end":
                 state.stream_complete = True
                 state.completed_at = state.last_active
@@ -693,11 +718,20 @@ class WebChannel(ChatChannel):
                 # Skip duplicate file pushes here; just let the done event through.
                 if reply.type in (ReplyType.IMAGE_URL, ReplyType.FILE) and content.startswith("file://"):
                     text_content = getattr(reply, 'text_content', '')
-                    if text_content:
+                    with self._sse_streams_lock:
+                        state = self.sse_streams.get(request_id)
+                    already_done = False
+                    if state is not None:
+                        with state.condition:
+                            already_done = state.main_done
+                    # A preceding TEXT reply may already have published done
+                    # and deliberately left the stream open for auto-TTS. In
+                    # that case this duplicate media reply must not end it.
+                    if text_content and not already_done:
                         seqs = self._fetch_latest_pair_seqs(
                             session_id, context.get("agent_id")
                         )
-                        self._publish_sse_event(request_id, {
+                        published = self._publish_sse_event(request_id, {
                             "type": "done",
                             "content": text_content,
                             "request_id": request_id,
@@ -705,7 +739,10 @@ class WebChannel(ChatChannel):
                             "user_seq": seqs.get("user_seq"),
                             "bot_seq": seqs.get("bot_seq"),
                         })
-                    self._publish_sse_event(request_id, {"type": "stream_end"})
+                        if published:
+                            self._publish_sse_event(
+                                request_id, {"type": "stream_end"}
+                            )
                     logger.debug(f"SSE skipped duplicate file for request {request_id}")
                     return
 
@@ -1444,6 +1481,48 @@ class WebChannel(ChatChannel):
                 state.closed = True
                 state.condition.notify_all()
 
+    def _sweep_sse_streams(self, now: Optional[float] = None) -> int:
+        """Finalize overdue tails and reclaim expired SSE replay logs."""
+        now = time.time() if now is None else now
+        with self._sse_streams_lock:
+            states = list(self.sse_streams.items())
+
+        overdue = []
+        for request_id, state in states:
+            with state.condition:
+                if (
+                    state.main_done
+                    and not state.stream_complete
+                    and state.main_done_at is not None
+                    and now - state.main_done_at
+                    >= self.SSE_POST_DONE_TAIL_SECONDS
+                ):
+                    overdue.append(request_id)
+        for request_id in overdue:
+            self._publish_sse_event(request_id, {"type": "stream_end"})
+
+        with self._sse_streams_lock:
+            states = list(self.sse_streams.items())
+        stale = []
+        for request_id, state in states:
+            with state.condition:
+                if state.stream_complete and state.completed_at is not None:
+                    expired = (
+                        now - state.completed_at
+                        >= self.SSE_COMPLETED_TTL_SECONDS
+                    )
+                else:
+                    expired = (
+                        now - state.last_active
+                        >= self.SSE_IDLE_TIMEOUT_SECONDS
+                    )
+            if expired:
+                stale.append(request_id)
+
+        for request_id in stale:
+            self._drop_sse_request(request_id)
+        return len(stale)
+
     def _start_sse_janitor(self):
         """Start a background thread that reclaims orphaned SSE logs.
 
@@ -1454,33 +1533,16 @@ class WebChannel(ChatChannel):
             return
         self._sse_janitor_started = True
 
-        SSE_IDLE_TIMEOUT = 1800  # 30 minutes with no client consumption
         SWEEP_INTERVAL = 60
 
         def _sweep():
             while True:
                 time.sleep(SWEEP_INTERVAL)
                 try:
-                    now = time.time()
-                    with self._sse_streams_lock:
-                        states = list(self.sse_streams.items())
-                    stale = []
-                    for rid, state in states:
-                        with state.condition:
-                            if state.stream_complete and state.completed_at:
-                                expired = (
-                                    now - state.completed_at
-                                    > self.SSE_COMPLETED_TTL_SECONDS
-                                )
-                            else:
-                                expired = now - state.last_active > SSE_IDLE_TIMEOUT
-                        if expired:
-                            stale.append(rid)
-                    for rid in stale:
-                        self._drop_sse_request(rid)
-                    if stale:
+                    reclaimed = self._sweep_sse_streams()
+                    if reclaimed:
                         logger.info(
-                            f"[WebChannel] SSE janitor reclaimed {len(stale)} "
+                            f"[WebChannel] SSE janitor reclaimed {reclaimed} "
                             f"idle stream(s)"
                         )
                 except Exception as e:
@@ -1516,8 +1578,17 @@ class WebChannel(ChatChannel):
         try:
             while time.time() < deadline:
                 resync_payload = None
+                force_stream_end = False
                 with state.condition:
-                    state.last_active = time.time()
+                    now = time.time()
+                    state.last_active = now
+                    force_stream_end = (
+                        state.main_done
+                        and not state.stream_complete
+                        and state.main_done_at is not None
+                        and now - state.main_done_at
+                        >= self.SSE_POST_DONE_TAIL_SECONDS
+                    )
                     if state.events:
                         first_seq = state.events[0][0]["seq"]
                         latest_seq = state.events[-1][0]["seq"]
@@ -1546,6 +1617,12 @@ class WebChannel(ChatChannel):
                         and not pending and not complete and not closed
                     ):
                         state.condition.wait(timeout=1)
+
+                if force_stream_end:
+                    self._publish_sse_event(
+                        request_id, {"type": "stream_end"}
+                    )
+                    continue
 
                 if resync_payload is not None:
                     payload = json.dumps(resync_payload, ensure_ascii=False)
@@ -2264,13 +2341,10 @@ class StreamHandler:
         # Explicit query cursors are used by the frontend's manually-created
         # EventSource. Native EventSource reconnects remain compatible via the
         # standard Last-Event-ID request header.
-        raw_after_seq = params.after_seq
-        if raw_after_seq in (None, ''):
-            raw_after_seq = web.ctx.env.get('HTTP_LAST_EVENT_ID', '0')
-        try:
-            after_seq = max(0, int(raw_after_seq or 0))
-        except (TypeError, ValueError):
-            after_seq = 0
+        after_seq = _parse_sse_cursor(
+            params.after_seq,
+            web.ctx.env.get('HTTP_LAST_EVENT_ID', '0'),
+        )
 
         web.header('Content-Type', 'text/event-stream; charset=utf-8')
         web.header('Cache-Control', 'no-cache')
