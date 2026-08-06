@@ -28,6 +28,7 @@ from common import i18n
 from common.log import logger
 from common.singleton import singleton
 from config import conf, get_data_root, get_weixin_credentials_path, read_config_template
+from models.reasoning_capabilities import provider_reasoning_metadata
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -2226,7 +2227,7 @@ class ConfigHandler:
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
+        const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
@@ -2299,7 +2300,7 @@ class ConfigHandler:
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
+            "models": [const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
         }),
         ("doubao", {
             "label": {"zh": "豆包", "en": "Doubao"},
@@ -2361,7 +2362,7 @@ class ConfigHandler:
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
-        "enable_thinking", "self_evolution_enabled", "web_password",
+        "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
     }
 
     # Switches the API exposes flat - one key, one control - while the config
@@ -2399,7 +2400,12 @@ class ConfigHandler:
                     api_keys_masked[key_field] = self._mask_key(raw) if raw else ""
 
             providers = {}
+            provider_model = local_config.get("model", "")
             for pid, p in self.PROVIDER_MODELS.items():
+                reasoning_by_model = {
+                    model: provider_reasoning_metadata(pid, model)
+                    for model in p["models"]
+                }
                 providers[pid] = {
                     "label": p["label"],
                     "models": p["models"],
@@ -2407,6 +2413,8 @@ class ConfigHandler:
                     "api_base_default": p["api_base_default"],
                     "api_base_placeholder": p.get("api_base_placeholder", ""),
                     "api_key_field": p.get("api_key_field"),
+                    "reasoning": provider_reasoning_metadata(pid, provider_model),
+                    "reasoning_by_model": reasoning_by_model,
                 }
 
             # Expose user-defined custom providers as "custom:<id>" entries so
@@ -2431,6 +2439,11 @@ class ConfigHandler:
                         "api_base_default": None,
                         "api_base_placeholder": "",
                         "api_key_field": None,
+                        "reasoning": provider_reasoning_metadata(cid, cp.get("model") or ""),
+                        "reasoning_by_model": (
+                            {cp["model"]: provider_reasoning_metadata(cid, cp["model"])}
+                            if cp.get("model") else {}
+                        ),
                     }
             except Exception as cp_err:
                 logger.warning(f"[ConfigHandler] failed to expand custom providers: {cp_err}")
@@ -2450,6 +2463,8 @@ class ConfigHandler:
                 "agent_max_context_turns": local_config.get("agent_max_context_turns", 20),
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
+                "reasoning_effort": local_config.get("reasoning_effort", "high"),
+                "reasoning_effort_by_model": local_config.get("reasoning_effort_by_model", {}),
                 "self_evolution_enabled": bool(local_config.get("self_evolution_enabled", False)),
                 # Read through the feature's own loader so the default it
                 # applies to an absent setting is the one shown here.
@@ -2492,6 +2507,22 @@ class ConfigHandler:
                     value = int(value)
                 if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)
+                # reasoning_effort_by_model is a dict that must be *merged* with
+                # the persisted map, not replaced. A frontend submits only the
+                # entries it changed (merged locally), so whole-key replacement
+                # here would drop other models' saved efforts on a concurrent or
+                # sequential save (or a second open settings page).
+                if key == "reasoning_effort_by_model":
+                    if not isinstance(value, dict):
+                        # Reject malformed payloads explicitly instead of
+                        # persisting a non-dict that the resolver would choke on.
+                        return json.dumps({
+                            "status": "error",
+                            "message": "reasoning_effort_by_model must be a JSON object",
+                        })
+                    merged = dict(local_config.get("reasoning_effort_by_model") or {})
+                    merged.update(value)
+                    value = merged
                 local_config[key] = value
                 applied[key] = value
 

@@ -560,10 +560,20 @@ class AgentStreamExecutor:
         # injected transcripts / large prompts) so logs stay readable.
         thinking_enabled = self._is_thinking_enabled()
         thinking_label = " | 💭 thinking" if thinking_enabled else ""
+        # When deep thinking is on, also surface the resolved reasoning effort
+        # (per-model aware) so the operator can confirm the effective intensity.
+        effort_label = ""
+        if thinking_enabled:
+            try:
+                effort = self.model._normalized_reasoning_effort()
+                if effort:
+                    effort_label = f" | effort={effort}"
+            except Exception:
+                effort_label = ""
         _log_msg = user_message if len(user_message) <= 500 else (
             user_message[:500] + f" …(+{len(user_message) - 500} chars)"
         )
-        logger.info(f"🤖 {self.model.model}{thinking_label} | 👤 {_log_msg}")        
+        logger.info(f"🤖 {self.model.model}{thinking_label}{effort_label} | 👤 {_log_msg}")
         
         # Add user message (Claude format - use content blocks for consistency)
         self.messages.append({

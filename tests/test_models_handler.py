@@ -4,7 +4,7 @@ import os
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -29,6 +29,104 @@ if "web" not in sys.modules:
 
 
 class TestModelsHandler(unittest.TestCase):
+    def test_config_handler_exposes_reasoning_effort_metadata(self):
+        from channel.web.web_channel import ConfigHandler
+        from config import Config
+
+        local_config = Config({
+            "agent": True,
+            "model": "deepseek-v4-flash",
+            "bot_type": "deepseek",
+            "enable_thinking": True,
+            "reasoning_effort": "max",
+        })
+
+        with patch("channel.web.web_channel._require_auth", lambda: None):
+            with patch("channel.web.web_channel.conf", return_value=local_config):
+                result = json.loads(ConfigHandler().GET())
+
+        self.assertEqual(result["reasoning_effort"], "max")
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["deepseek"]["reasoning"]["options"]],
+            ["low", "high", "xhigh", "max"],
+        )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["deepseek"]["reasoning_by_model"]["deepseek-v4-flash"]["options"]],
+            ["low", "high", "xhigh", "max"],
+        )
+        self.assertFalse(result["providers"]["deepseek"]["reasoning_by_model"]["deepseek-chat"]["supported"])
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["zhipu"]["reasoning"]["options"]],
+            ["low", "medium", "high", "xhigh", "max"],
+        )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["claudeAPI"]["reasoning_by_model"]["claude-opus-5"]["options"]],
+            ["low", "medium", "high", "xhigh", "max"],
+        )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["claudeAPI"]["reasoning_by_model"]["claude-sonnet-4-6"]["options"]],
+            ["low", "medium", "high", "max"],
+        )
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["dashscope"]["reasoning_by_model"]["qwen3.8-max-preview"]["options"]],
+            ["low", "medium", "xhigh"],
+        )
+        self.assertFalse(result["providers"]["dashscope"]["reasoning_by_model"]["qwen3.7-plus"]["supported"])
+        self.assertEqual(
+            [item["value"] for item in result["providers"]["moonshot"]["reasoning_by_model"]["kimi-k3"]["options"]],
+            ["low", "high", "max"],
+        )
+        self.assertTrue(result["providers"]["moonshot"]["reasoning_by_model"]["kimi-k3"]["thinking_only"])
+        self.assertFalse(result["providers"]["moonshot"]["reasoning_by_model"]["kimi-k2.7-code"]["supported"])
+        self.assertFalse(result["providers"]["openai"]["reasoning"]["supported"])
+        self.assertFalse(result["providers"]["gemini"]["reasoning"]["supported"])
+
+    def test_reasoning_effort_is_editable_config_key(self):
+        from channel.web.web_channel import ConfigHandler
+
+        self.assertIn("reasoning_effort", ConfigHandler.EDITABLE_KEYS)
+        self.assertIn("reasoning_effort_by_model", ConfigHandler.EDITABLE_KEYS)
+
+    def test_config_save_rejects_non_dict_reasoning_effort_by_model(self):
+        from channel.web.web_channel import ConfigHandler
+        from config import Config
+
+        local_config = Config({"reasoning_effort_by_model": {"deepseek:deepseek-v4-flash": "high"}})
+        file_config = {"reasoning_effort_by_model": {"deepseek:deepseek-v4-flash": "high"}}
+        payload = {"updates": {"reasoning_effort_by_model": "not-a-dict"}}
+
+        with patch("channel.web.web_channel._require_auth", lambda: None), \
+             patch("channel.web.web_channel.web.header"), \
+             patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
+             patch("channel.web.web_channel.conf", return_value=local_config), \
+             patch("channel.web.web_channel._read_config_file_for_write", return_value=file_config), \
+             patch("builtins.open", mock_open()) as m:
+            result = json.loads(ConfigHandler().POST())
+
+        self.assertEqual(result["status"], "error")
+        # Nothing written: the payload was rejected before the file write.
+        m.assert_not_called()
+        # The in-memory config is untouched too.
+        self.assertEqual(local_config.get("reasoning_effort_by_model"), {"deepseek:deepseek-v4-flash": "high"})
+
+    def test_config_handler_hides_deepseek_effort_for_non_v4_models(self):
+        from channel.web.web_channel import ConfigHandler
+        from config import Config
+
+        local_config = Config({
+            "agent": True,
+            "model": "deepseek-chat",
+            "bot_type": "deepseek",
+            "enable_thinking": True,
+            "reasoning_effort": "max",
+        })
+
+        with patch("channel.web.web_channel._require_auth", lambda: None):
+            with patch("channel.web.web_channel.conf", return_value=local_config):
+                result = json.loads(ConfigHandler().GET())
+
+        self.assertFalse(result["providers"]["deepseek"]["reasoning"]["supported"])
+
     def test_set_asr_capability_persists_provider_and_model(self):
         from channel.web.web_channel import ModelsHandler
 

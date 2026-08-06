@@ -37,6 +37,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [maxTurns, setMaxTurns] = useState(20)
   const [maxSteps, setMaxSteps] = useState(20)
   const [thinking, setThinking] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState('high')
   const [subagent, setSubagent] = useState(true)
   const [evolution, setEvolution] = useState(false)
   const [agentStatus, setAgentStatus] = useState('')
@@ -55,6 +56,24 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const providerMeta = (id: string): ProviderMeta | undefined => config?.providers?.[id] as ProviderMeta | undefined
 
+  // Canonical per-model key shared with the backend resolve path: lowercased
+  // model so the key is stable regardless of how the user typed the model name.
+  const currentModelKey = () => {
+    const m = (CustomModelPicker ? model : showCustom ? customModel.trim() : model).trim().toLowerCase()
+    return m ? `${provider}:${m}` : ''
+  }
+
+  const currentSavedEffort = () => config?.reasoning_effort_by_model?.[currentModelKey()] ?? config?.reasoning_effort
+
+  // When the active provider/model changes, surface that model's own saved
+  // effort instead of leaving the previous model's value visible.
+  useEffect(() => {
+    if (!config) return
+    const saved = currentSavedEffort()
+    setReasoningEffort(saved || 'high')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, model, showCustom, customModel, config])
+
   const loadConfig = async () => {
     try {
       setLoading(true)
@@ -65,6 +84,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setMaxTurns(data.agent_max_context_turns ?? 20)
       setMaxSteps(data.agent_max_steps ?? 20)
       setThinking(!!data.enable_thinking)
+      setReasoningEffort(data.reasoning_effort || 'high')
       setSubagent(data.subagent_enabled !== false)
       setEvolution(!!data.self_evolution_enabled)
       // Prefer the real password (desktop only) so it can be edited in place;
@@ -156,15 +176,35 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   }
 
   const saveAgentConfig = async () => {
+    const meta = config?.providers?.[provider] as ProviderMeta | undefined
+    const selectedModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+    const reasoning = meta?.reasoning_by_model?.[selectedModel] || meta?.reasoning
+    const reasoningOptions = reasoning?.supported ? reasoning.options || [] : []
+    const nextReasoningEffort = reasoningOptions.some((o) => o.value === reasoningEffort)
+      ? reasoningEffort
+      : reasoning?.default || reasoningOptions[0]?.value || reasoningEffort
+
     try {
+      // Persist the effort per model so switching vendors never reinterprets a
+      // value the user set for a different model. Merge with the existing map so
+      // other models' saved efforts are not overwritten by the flat config save.
+      const effortKey = currentModelKey()
       await apiClient.updateConfig({
         agent_max_context_tokens: maxTokens,
         agent_max_context_turns: maxTurns,
         agent_max_steps: maxSteps,
         enable_thinking: thinking,
+        reasoning_effort_by_model: {
+          ...(config?.reasoning_effort_by_model || {}),
+          ...(effortKey ? { [effortKey]: nextReasoningEffort } : {}),
+        },
         subagent_enabled: subagent,
         self_evolution_enabled: evolution,
       })
+      // Refresh so the in-memory config carries the just-saved per-model value;
+      // otherwise switching model and back would show/submit a stale value.
+      const fresh = await apiClient.getConfig()
+      setConfig(fresh)
       setAgentStatus(t('config_saved'))
     } catch {
       setAgentStatus(t('config_save_error'))
@@ -229,6 +269,17 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       label: localizedLabel(providerMeta(id)?.label) || id,
     }))
   const currentMeta = providerMeta(provider)
+  const selectedModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+  const reasoning = currentMeta?.reasoning_by_model?.[selectedModel] || currentMeta?.reasoning
+  const reasoningOptions = reasoning?.supported ? reasoning.options || [] : []
+  const reasoningValue = reasoningOptions.some((o) => o.value === reasoningEffort)
+    ? reasoningEffort
+    : reasoning?.default || reasoningOptions[0]?.value || ''
+  // Some providers expose effort as request-level config, and some models are
+  // always-thinking. Those controls stay visible without the generic toggle.
+  const showReasoningEffort = !!reasoning?.supported
+    && reasoningOptions.length > 0
+    && (thinking || reasoning?.param === 'effort' || reasoning?.thinking_only === true)
   const currentUnconfigured = !!provider && !isConfigured(provider)
   const modelOptions = [
     ...(currentMeta?.models || []).map((m) => ({ value: m, label: m })),
@@ -363,6 +414,15 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             </div>
             <Toggle checked={thinking} onChange={setThinking} />
           </div>
+          {showReasoningEffort && (
+            <Field label={t('config_reasoning_effort')} hint={t('config_reasoning_effort_hint')}>
+              <Dropdown
+                value={reasoningValue}
+                options={reasoningOptions}
+                onChange={setReasoningEffort}
+              />
+            </Field>
+          )}
           <div className="flex items-center justify-between py-1">
             <div>
               <div className="text-sm font-medium text-content">{t('config_subagent')}</div>

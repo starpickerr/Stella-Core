@@ -139,6 +139,7 @@ const I18N = {
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
+        config_reasoning_effort: '思考强度', config_reasoning_effort_hint: '按当前模型厂商支持的原生枚举发送',
         config_subagent: '子 Agent', config_subagent_hint: '把可独立完成的任务交给子 Agent，多个任务并行执行，只把结论带回主对话',
         config_self_evolution: '自主进化', config_self_evolution_hint: '会话空闲后自动复盘，沉淀记忆、优化技能、处理未完成事项',
         evolution_badge: '自主学习',
@@ -411,6 +412,7 @@ const I18N = {
         config_max_turns: '最大記憶輪次', config_max_turns_hint: '一問一答為一輪，超過後會智慧壓縮處理',
         config_max_steps: '最大執行步數', config_max_steps_hint: '單次對話中 Agent 最多呼叫工具的次數',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否啟用深度思考模式',
+        config_reasoning_effort: '思考強度', config_reasoning_effort_hint: '按目前模型廠商支援的原生枚舉傳送',
         config_subagent: '子 Agent', config_subagent_hint: '把可獨立完成的任務交給子 Agent，多個任務並行執行，只把結論帶回主對話',
         config_self_evolution: '自主進化', config_self_evolution_hint: '會話空閒後自動覆盤，沉澱記憶、最佳化技能、處理未完成事項',
         evolution_badge: '自主學習',
@@ -678,6 +680,7 @@ const I18N = {
         config_max_turns: 'Max Memory Turns', config_max_turns_hint: 'One Q&A pair = one turn, auto-compressed when exceeded',
         config_max_steps: 'Max Steps', config_max_steps_hint: 'Max tool calls the Agent can make in a single conversation',
         config_enable_thinking: 'Deep Thinking', config_enable_thinking_hint: 'Enable deep thinking mode',
+        config_reasoning_effort: 'Reasoning Effort', config_reasoning_effort_hint: 'Sent as the active provider\'s native enum value',
         config_subagent: 'Sub Agents', config_subagent_hint: 'Hand self-contained tasks to sub agents, which run in parallel and report back only their conclusions',
         config_self_evolution: 'Self-Evolution', config_self_evolution_hint: 'Auto-review idle conversations to consolidate memory, improve skills, and follow up on unfinished tasks',
         evolution_badge: 'Self-learned',
@@ -5032,6 +5035,8 @@ let configApiKeys = {};
 let configCurrentModel = '';
 let cfgProviderValue = '';
 let cfgModelValue = '';
+let cfgReasoningEffortValue = 'high';
+let configReasoningByModel = {};
 
 // --- Custom dropdown helper ---
 function initDropdown(el, options, selectedValue, onChange, opts) {
@@ -5121,6 +5126,8 @@ function initConfigView(data) {
     configApiBases = data.api_bases || {};
     configApiKeys = data.api_keys || {};
     configCurrentModel = data.model || '';
+    configReasoningByModel = data.reasoning_effort_by_model || {};
+    cfgReasoningEffortValue = data.reasoning_effort || 'high';
 
     const providerEl = document.getElementById('cfg-provider');
     const providerOpts = Object.entries(configProviders).map(([pid, p]) => ({ value: pid, label: localizedLabel(p.label) }));
@@ -5139,7 +5146,18 @@ function initConfigView(data) {
     document.getElementById('cfg-max-tokens').value = data.agent_max_context_tokens || 50000;
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
-    document.getElementById('cfg-enable-thinking').checked = data.enable_thinking === true;
+    const thinkingEl = document.getElementById('cfg-enable-thinking');
+    thinkingEl.checked = data.enable_thinking === true;
+    if (!thinkingEl._cfgReasoningBound) {
+        thinkingEl.addEventListener('change', syncReasoningEffortOptions);
+        thinkingEl._cfgReasoningBound = true;
+    }
+    const customModelEl = document.getElementById('cfg-model-custom');
+    if (customModelEl && !customModelEl._cfgReasoningBound) {
+        customModelEl.addEventListener('input', syncReasoningEffortOptions);
+        customModelEl._cfgReasoningBound = true;
+    }
+    syncReasoningEffortOptions();
     document.getElementById('cfg-subagent').checked = data.subagent_enabled !== false;
     document.getElementById('cfg-self-evolution').checked = data.self_evolution_enabled === true;
 
@@ -5262,6 +5280,7 @@ function onProviderChange(pid) {
     }
 
     onModelSelectChange(modelOpts[0] ? modelOpts[0].value : '');
+    syncReasoningEffortOptions();
 }
 
 function onModelSelectChange(val) {
@@ -5274,6 +5293,7 @@ function onModelSelectChange(val) {
         customWrap.classList.add('hidden');
         document.getElementById('cfg-model-custom').value = '';
     }
+    syncReasoningEffortOptions();
 }
 
 function syncModelSelection(model) {
@@ -5295,6 +5315,47 @@ function syncModelSelection(model) {
         document.getElementById('cfg-model-custom-wrap').classList.remove('hidden');
         document.getElementById('cfg-model-custom').value = model;
     }
+    syncReasoningEffortOptions();
+}
+
+function syncReasoningEffortOptions() {
+    const wrap = document.getElementById('cfg-reasoning-effort-wrap');
+    const el = document.getElementById('cfg-reasoning-effort');
+    if (!wrap || !el) return;
+
+    const provider = configProviders[cfgProviderValue] || {};
+    const selectedModel = getSelectedModel();
+    const reasoningByModel = provider.reasoning_by_model || {};
+    const reasoning = reasoningByModel[selectedModel] || provider.reasoning || {};
+    const options = reasoning.supported ? (reasoning.options || []) : [];
+    const thinkingEl = document.getElementById('cfg-enable-thinking');
+    // Claude-style effort and thinking-only models must expose effort even
+    // when the generic thinking toggle is off.
+    const canUseWithoutThinking = reasoning.param === 'effort' || reasoning.thinking_only === true;
+    if (!thinkingEl || (!thinkingEl.checked && !canUseWithoutThinking) || !options.length) {
+        wrap.classList.add('hidden');
+        return;
+    }
+
+    wrap.classList.remove('hidden');
+    const values = options.map(opt => opt.value);
+    // Prefer this model's own saved effort (per-model config) so switching
+    // vendors never reinterprets a value set for a different model. Key is the
+    // lowercased model name, matching the backend resolve path.
+    const savedForModel = configReasoningByModel[`${cfgProviderValue}:${selectedModel.trim().toLowerCase()}`]
+        || configReasoningByModel[cfgProviderValue + ':' + selectedModel];
+    const saved = savedForModel || cfgReasoningEffortValue;
+    // Fall back to the active model's native enum when the saved value is not
+    // valid here.
+    const selected = values.includes(saved) ? saved : (reasoning.default || options[0].value);
+    cfgReasoningEffortValue = selected;
+
+    initDropdown(
+        el,
+        options.map(opt => ({ value: opt.value, label: opt.label || opt.value })),
+        selected,
+        (val) => { cfgReasoningEffortValue = val; }
+    );
 }
 
 function getSelectedModel() {
@@ -5395,11 +5456,16 @@ function saveModelConfig() {
 }
 
 function saveAgentConfig() {
+    const effortKey = `${cfgProviderValue}:${getSelectedModel().trim().toLowerCase()}`;
+    const mergedEffortByModel = Object.assign({}, configReasoningByModel, { [effortKey]: cfgReasoningEffortValue });
     const updates = {
         agent_max_context_tokens: parseInt(document.getElementById('cfg-max-tokens').value) || 50000,
         agent_max_context_turns: parseInt(document.getElementById('cfg-max-turns').value) || 20,
         agent_max_steps: parseInt(document.getElementById('cfg-max-steps').value) || 20,
         enable_thinking: document.getElementById('cfg-enable-thinking').checked,
+        // Persist effort per model (merge with the existing map so other
+        // models' saved efforts survive the flat config save).
+        reasoning_effort_by_model: mergedEffortByModel,
         subagent_enabled: document.getElementById('cfg-subagent').checked,
         self_evolution_enabled: document.getElementById('cfg-self-evolution').checked,
     };
@@ -5414,6 +5480,9 @@ function saveAgentConfig() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Reflect the merged map so a later model switch shows/uses the
+            // just-saved value instead of a stale in-memory one.
+            configReasoningByModel = mergedEffortByModel;
             showStatus('cfg-agent-status', 'config_saved', false);
         } else {
             showStatus('cfg-agent-status', 'config_save_error', true);
