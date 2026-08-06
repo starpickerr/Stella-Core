@@ -185,6 +185,7 @@ class AgentStreamExecutor:
             max_context_turns: int = 30,
             cancel_event=None,
             steer_inbox=None,
+            allow_empty_response: bool = False,
     ):
         """
         Initialize stream executor
@@ -204,6 +205,10 @@ class AgentStreamExecutor:
                 run_stream catches to gracefully wind down.
             steer_inbox: Optional SteerInbox for explicit instructions sent to
                 this active run. Drained only at message-safe checkpoints.
+            allow_empty_response: When True, an empty final answer is a valid
+                outcome and is returned as-is instead of being replaced with
+                fallback text. Set for runs with no human waiting on a reply
+                (scheduled tasks), where silence can be the intended result.
         """
         self.agent = agent
         self.model = model
@@ -215,6 +220,7 @@ class AgentStreamExecutor:
         self.max_context_turns = max_context_turns
         self.cancel_event = cancel_event
         self.steer_inbox = steer_inbox
+        self.allow_empty_response = allow_empty_response
 
         # Message history - use provided messages or create new list
         self.messages = messages if messages is not None else []
@@ -242,6 +248,36 @@ class AgentStreamExecutor:
         if self.steer_inbox is None:
             return []
         return self.steer_inbox.drain()
+
+    def _explicit_response_prompt(self) -> str:
+        """Prompt that asks a silent model for its final answer.
+
+        When silence is a valid outcome the model has to be told so, or it
+        writes filler text just to satisfy the request.
+        """
+        if self.allow_empty_response:
+            return (
+                "请说明刚才工具执行的结果。如果本次无需向用户发送任何内容"
+                "（例如任务只要求在满足特定条件时才通知，而当前条件不满足），"
+                "直接返回空即可，不要输出任何文字。"
+            )
+        return "请向用户说明刚才工具执行的结果或回答用户的问题。"
+
+    def _empty_response_fallback(self) -> str:
+        """Text to return when the model produced no answer at all.
+
+        Stays empty for runs that allow silence, so a scheduled task whose
+        notify condition wasn't met delivers nothing instead of an apology
+        addressed to a user who never asked anything.
+        """
+        if self.allow_empty_response:
+            logger.info("[Agent] Empty response kept as-is (silence allowed for this run)")
+            return ""
+        logger.info("Generated fallback response for empty LLM output")
+        return _t(
+            "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
+            "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
+        )
 
     @staticmethod
     def _steering_text(updates: List[str]) -> str:
@@ -663,7 +699,7 @@ class AgentStreamExecutor:
                                 "role": "user",
                                 "content": [{
                                     "type": "text",
-                                    "text": "请向用户说明刚才工具执行的结果或回答用户的问题。"
+                                    "text": self._explicit_response_prompt()
                                 }]
                             })
                             
@@ -690,18 +726,10 @@ class AgentStreamExecutor:
                             elif not assistant_msg:
                                 # Still empty (no text and no tool_calls): use fallback
                                 logger.warning(f"[Agent] Still empty after explicit request")
-                                final_response = _t(
-                                    "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
-                                    "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
-                                )
-                                logger.info(f"Generated fallback response for empty LLM output")
+                                final_response = self._empty_response_fallback()
                         else:
                             # First-turn empty reply, fall back directly
-                            final_response = _t(
-                                "抱歉，我暂时无法生成回复。请尝试换一种方式描述你的需求，或稍后再试。",
-                                "Sorry, I can't generate a reply right now. Please try rephrasing your request, or try again later.",
-                            )
-                            logger.info(f"Generated fallback response for empty LLM output")
+                            final_response = self._empty_response_fallback()
                     else:
                         logger.info(f"💭 {assistant_msg[:150]}{'...' if len(assistant_msg) > 150 else ''}")
                     
