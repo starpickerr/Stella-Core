@@ -5,6 +5,8 @@
 export interface ElectronAPI {
   getBackendPort: () => Promise<number | null>
   getBackendStatus: () => Promise<string>
+  /** Data dir holding config.json and run.log (~/.cow in packaged builds). */
+  getDataDir: () => Promise<string>
   restartBackend: () => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>

@@ -145,7 +145,14 @@ const App: React.FC = () => {
   const handleLangChange = useCallback(() => forceUpdate((n) => n + 1), [])
 
   if (backend.status !== 'ready') {
-    return <StatusScreen status={backend.status} error={backend.error} onRetry={backend.restart} />
+    return (
+      <StatusScreen
+        status={backend.status}
+        error={backend.error}
+        slow={backend.slow}
+        onRetry={backend.restart}
+      />
+    )
   }
 
   // Backend is up but we're still resolving auth — keep the loading screen.

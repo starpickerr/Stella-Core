@@ -1,5 +1,6 @@
 # encoding:utf-8
 
+import logging
 import os
 import signal
 import sys
@@ -144,6 +145,15 @@ class ChannelManager:
         except Exception as e:
             logger.error(f"[ChannelManager] Channel '{name}' startup error: {e}")
             logger.exception(e)
+            # The desktop client IS the web channel: without it the Electron
+            # shell polls a health endpoint that will never answer and, 90s
+            # later, blames a generic "initialization failed". Exiting non-zero
+            # lets the shell surface the real error immediately. Server
+            # deployments keep the old behavior - other channels may still be
+            # serving, so one broken channel must not take the process down.
+            if DESKTOP_MODE and name == "web":
+                logging.shutdown()
+                os._exit(1)
 
     def stop(self, channel_name: str = None):
         """
@@ -332,6 +342,56 @@ def _warmup_mcp_tools():
             logger.warning(f"[App] MCP warmup failed for '{profile.id}' (non-fatal): {e}")
 
 
+def _preload_heavy_imports():
+    """Resolve the scheduler's import graph on the main thread.
+
+    Python locks imports per module, so two threads walking overlapping graphs
+    in opposite order deadlock outright: the scheduler warmup pulls
+    agent.tools -> requests -> urllib3 while channel creation pulls
+    web_channel -> web -> http.client -> email, and the graphs meet. Desktop
+    mode warms up on a background thread, so its modules must already be in
+    sys.modules before that thread exists - afterwards it only builds objects.
+    """
+    try:
+        from bridge.bridge import Bridge  # noqa: F401
+    except Exception as e:
+        logger.warning(f"[App] Import preload failed (non-fatal): {e}")
+
+
+WEB_STARTUP_TIMEOUT = 25
+
+
+def _start_web_watchdog(timeout: int = WEB_STARTUP_TIMEOUT):
+    """Exit if the web console hasn't bound within ``timeout`` seconds.
+
+    A crash in channel startup already exits, but a *hang* used to leave the
+    process alive forever: the Electron shell waited out its own timeout,
+    blamed a generic "initialization failed", and the wedged backend stayed
+    resident - one more of them per launch attempt. Dumping every thread's
+    stack turns the next such hang into a diagnosable log instead of a guess.
+    """
+    # Resolved here, on the main thread: a background thread must not be the
+    # one to import these (see _preload_heavy_imports).
+    import faulthandler
+    from channel.web.web_channel import SERVING
+
+    def _watch():
+        if SERVING.wait(timeout):
+            return
+        logger.error(
+            f"[App] Web console did not start within {timeout}s, exiting. "
+            "Thread stacks follow:"
+        )
+        try:
+            faulthandler.dump_traceback()
+        except Exception:
+            pass
+        logging.shutdown()
+        os._exit(1)
+
+    threading.Thread(target=_watch, daemon=True).start()
+
+
 def _warmup_scheduler():
     """Eager-init AgentBridge so the scheduler thread starts at process
     boot rather than waiting for the first user message."""
@@ -508,6 +568,8 @@ def run():
             # Defer the (heavy) AgentBridge/scheduler warmup to a background
             # thread so the web API becomes available within a couple seconds.
             # The scheduler still starts; it just doesn't block UI readiness.
+            _preload_heavy_imports()
+            _start_web_watchdog()
             threading.Thread(target=_warmup_scheduler, daemon=True).start()
         else:
             _warmup_scheduler()

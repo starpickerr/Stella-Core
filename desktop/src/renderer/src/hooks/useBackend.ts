@@ -1,16 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-// Fixed default port — MUST match DESKTOP_BACKEND_PORT in main/python-manager.ts.
-// The backend is launched on exactly this port (the main process frees it first
-// and passes it via COW_WEB_PORT), so probing it works even before the
-// getBackendPort IPC resolves. Keeping both sides on one constant means the
-// renderer can never end up talking to the wrong port.
+// Preferred port — MUST match DESKTOP_BACKEND_PORT in main/python-manager.ts.
+// It is only the starting guess for probing: the main process may fall back to
+// another port when this one can't be bound (Windows reserves port ranges for
+// Hyper-V/WSL2), and it publishes the real one via getBackendPort / the
+// 'starting' backend-status event. Always prefer that over this constant.
 const BACKEND_PORT = 9876
+
+// A healthy backend answers in a few seconds; a crash exits immediately and a
+// wedged one is killed by the watchdog in app.py, so both real failure modes
+// reach us as an error event well before this. It only bounds the case where
+// that event never arrives, and a blank spinner soon reads as a broken app.
+// Last in the ladder (backend watchdog < main-process probe < this) so the
+// most specific error always gets to the screen first.
+const GIVE_UP_AFTER_MS = 40_000
+// Long enough to not fire on a normal cold start, short enough that a user who
+// is about to force-quit sees the app admit something is off.
+const SLOW_START_AFTER_MS = 15_000
 
 interface BackendState {
   status: 'connecting' | 'ready' | 'error'
   port: number
   error?: string
+  slow?: boolean
 }
 
 export function useBackend() {
@@ -52,18 +64,37 @@ export function useBackend() {
     // throttling (when the window is in the background) can't fast-forward us
     // into a false failure. Only give up if we genuinely can't reach the
     // backend for this long.
+    // The port we're currently polling, and a generation counter that retires
+    // superseded loops. Both the IPC result and the 'starting' event report the
+    // port, usually the same one, and the first probe takes seconds — without
+    // this, the duplicate call would spawn a second loop against the same port.
+    let activePort: number | null = null
+    let pollGeneration = 0
+
     const startPolling = async (port: number) => {
+      if (activePort === port) return
+      activePort = port
+      const generation = ++pollGeneration
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current)
+        pollingRef.current = null
+      }
       portRef.current = port
-      const deadline = Date.now() + 90_000
+      setState((prev) => (prev.port === port ? prev : { ...prev, port }))
+      const startedAt = Date.now()
+      const deadline = startedAt + GIVE_UP_AFTER_MS
 
       const poll = async () => {
-        if (cancelled) return
+        if (cancelled || generation !== pollGeneration) return
 
         const ready = await probeBackend(port)
-        if (cancelled) return
+        // The probe is async: a port switch may have landed while it was in
+        // flight, in which case this loop is stale and must not report state.
+        if (cancelled || generation !== pollGeneration) return
 
         if (ready) {
           readyRef.current = true
+          activePort = null
           setState({ status: 'ready', port })
           return
         }
@@ -71,10 +102,15 @@ export function useBackend() {
         // Backend already answered before but is briefly unreachable (e.g.
         // window was asleep): keep retrying, never surface an error.
         if (!readyRef.current && Date.now() >= deadline) {
-          // Leave error undefined so StatusScreen shows the localized,
-          // user-friendly message instead of a raw technical string.
-          setState({ status: 'error', port })
+          activePort = null
+          // Keep any error the main process already reported — it is more
+          // specific than the localized fallback StatusScreen would show.
+          setState((prev) => ({ ...prev, status: 'error', port }))
           return
+        }
+
+        if (!readyRef.current && Date.now() - startedAt >= SLOW_START_AFTER_MS) {
+          setState((prev) => (prev.slow ? prev : { ...prev, slow: true }))
         }
 
         pollingRef.current = setTimeout(poll, 1000)
@@ -84,20 +120,20 @@ export function useBackend() {
     }
 
     if (api) {
-      // Always start polling, even if getBackendPort rejects or the ready event
-      // was already emitted before we subscribed: polling /config is the
-      // self-sufficient path to "ready" and must never depend on the IPC round
-      // trip succeeding (otherwise the app can hang forever on "connecting").
+      // Start on the preferred port immediately, without waiting for IPC:
+      // probing is the self-sufficient path to "ready" and must never depend on
+      // the round trip succeeding (otherwise the app can hang on "connecting").
+      // Both the IPC result and the 'starting' event redirect us to the real
+      // port if the main process had to fall back to another one.
+      startPolling(BACKEND_PORT)
+
       api
         .getBackendPort()
         .then((port) => {
-          const p = port || BACKEND_PORT
-          portRef.current = p
-          setState((prev) => ({ ...prev, port: p }))
-          startPolling(p)
+          if (port) startPolling(port)
         })
         .catch(() => {
-          startPolling(BACKEND_PORT)
+          // Preferred-port polling is already running; nothing to recover.
         })
 
       offStatus = api.onBackendStatus((data) => {
@@ -105,15 +141,21 @@ export function useBackend() {
           readyRef.current = true
           portRef.current = data.port
           setState({ status: 'ready', port: data.port })
+          // Retire the poll loop so a later restart can start a fresh one.
+          pollGeneration++
+          activePort = null
           if (pollingRef.current) {
             clearTimeout(pollingRef.current)
             pollingRef.current = null
           }
+        } else if (data.status === 'starting' && data.port) {
+          startPolling(data.port)
         } else if (data.status === 'error' && !readyRef.current) {
           // Ignore late "error" from the main process once we've been ready —
           // it usually means the window was backgrounded, not a real failure.
-          // Drop the raw technical message; StatusScreen shows a localized one.
-          setState((prev) => ({ ...prev, status: 'error' }))
+          // Keep the message: it carries the backend's own error line, which is
+          // the only diagnostic a user has when the UI never came up.
+          setState((prev) => ({ ...prev, status: 'error', error: data.error }))
         }
       })
     } else {
@@ -144,7 +186,7 @@ export function useBackend() {
   }, [probeBackend])
 
   const restart = useCallback(async () => {
-    setState((prev) => ({ ...prev, status: 'connecting', error: undefined }))
+    setState((prev) => ({ ...prev, status: 'connecting', error: undefined, slow: false }))
     if (window.electronAPI) {
       await window.electronAPI.restartBackend()
     }

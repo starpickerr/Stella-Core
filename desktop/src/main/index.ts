@@ -187,6 +187,14 @@ async function startBackend() {
     mainWindow?.webContents.send('backend-status', { status: 'ready', port })
   })
 
+  // The port isn't a constant: pickPort() may land on a fallback when the
+  // preferred one is unbindable (Windows reserved ranges). Tell the renderer as
+  // soon as we know, so it probes the right port from the first attempt.
+  pythonBackend.on('port', (port: number) => {
+    console.log(`[backend] using port ${port}`)
+    mainWindow?.webContents.send('backend-status', { status: 'starting', port })
+  })
+
   pythonBackend.on('error', (error: string) => {
     // Mirror to the main-process stdout too: otherwise backend startup errors
     // are only visible in the renderer devtools, making `npm run dev` hangs
@@ -204,12 +212,21 @@ async function startBackend() {
 }
 
 function setupIPC() {
-  ipcMain.handle('get-backend-port', () => {
-    return pythonBackend?.getPort() ?? null
+  // Await the port decision rather than reading the current guess: the renderer
+  // usually asks before startBackend() has probed anything, and a wrong answer
+  // here means it polls a port nothing will ever listen on.
+  ipcMain.handle('get-backend-port', async () => {
+    return pythonBackend ? pythonBackend.whenPortReady() : null
   })
 
   ipcMain.handle('get-backend-status', () => {
     return pythonBackend?.getStatus() ?? 'stopped'
+  })
+
+  // Where config.json and run.log live, so the error screen can open the folder
+  // for a user whose UI never came up.
+  ipcMain.handle('get-data-dir', () => {
+    return pythonBackend?.getDataDir() ?? ''
   })
 
   ipcMain.handle('restart-backend', async () => {
