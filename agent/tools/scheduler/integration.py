@@ -320,8 +320,13 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             reply = agent_bridge.agent_reply(task_description, context=context, on_event=None, clear_history=False)
 
             if not (reply and reply.content):
-                logger.error(f"[Scheduler] Task {task['id']}: No result from agent execution")
-                return True  # agent ran but produced nothing; don't loop
+                # Empty is a valid outcome: the task ran and decided there was
+                # nothing worth reporting (conditional reminders, monitors with
+                # no alert). Send nothing rather than a placeholder message.
+                logger.info(
+                    f"[Scheduler] Task {task['id']}: agent produced no content, nothing to send"
+                )
+                return True
 
             if action.get("silent", False):
                 logger.info(

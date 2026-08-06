@@ -707,6 +707,11 @@ class AgentBridge:
                     clear_history=clear_history,
                     cancel_event=cancel_event,
                     steer_inbox=steer_inbox,
+                    # A scheduled task may legitimately have nothing to report
+                    # (e.g. "notify me only if the price drops"). Nobody is
+                    # waiting on this run, so an empty answer stays empty and
+                    # the scheduler sends no message at all.
+                    allow_empty_response=bool(context and context.get("is_scheduled_task")),
                 )
             finally:
                 # Clear the mid-run flag so idle scans can review this session.

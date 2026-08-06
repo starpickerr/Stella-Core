@@ -393,7 +393,8 @@ class Agent:
         return action
 
     def run_stream(self, user_message: str, on_event=None, clear_history: bool = False,
-                   skill_filter=None, cancel_event=None, steer_inbox=None) -> str:
+                   skill_filter=None, cancel_event=None, steer_inbox=None,
+                   allow_empty_response: bool = False) -> str:
         """
         Execute single agent task with streaming (based on tool-call)
 
@@ -418,6 +419,9 @@ class Agent:
                 (tool_use/tool_result pairs preserved).
             steer_inbox: Optional SteerInbox drained at safe checkpoints. New
                 instructions guide this run without entering the normal queue.
+            allow_empty_response: If True, an empty answer is returned as-is
+                instead of a fallback message. For runs nobody is waiting on
+                (scheduled tasks), where sending nothing is a valid outcome.
 
         Returns:
             Final response text
@@ -464,6 +468,7 @@ class Agent:
             max_context_turns=max_context_turns,
             cancel_event=cancel_event,
             steer_inbox=steer_inbox,
+            allow_empty_response=allow_empty_response,
         )
 
         # Execute
