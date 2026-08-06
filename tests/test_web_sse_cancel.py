@@ -22,6 +22,7 @@ def _fake_channel():
         request_to_agent={},
         SSE_REPLAY_MAX_EVENTS=5000,
         SSE_REPLAY_MAX_BYTES=4 * 1024 * 1024,
+        SSE_POST_DONE_TAIL_SECONDS=60,
     )
     channel._drop_sse_request = lambda rid: WebChannel._drop_sse_request(channel, rid)
     channel._publish_sse_event = lambda rid, event: WebChannel._publish_sse_event(

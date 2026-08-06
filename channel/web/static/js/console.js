@@ -1460,6 +1460,9 @@ let pollGeneration = 0;   // incremented on each restart to cancel stale poll lo
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
 let sessionActiveRequest = {};   // session_id -> request_id (in-flight stream per session)
+const PENDING_VOICE_ATTACH_TTL_MS = 2 * 60 * 1000;
+const PENDING_VOICE_ATTACH_MAX = 100;
+const pendingVoiceAttachments = new Map(); // session_id:bot_seq -> pending audio
 
 function isCurrentSessionConversationActive() {
     return !!sessionActiveRequest[sessionId];
@@ -3038,6 +3041,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let reasoningStartTime = 0;
     let done = false;
     let mainDone = false;
+    let completedBotSeq = null;
     let cancelled = false;
     let lastSeq = 0;
 
@@ -3388,6 +3392,9 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 // The answer is persisted, but async attachments may still
                 // follow. Only stream_end closes the request lifecycle.
                 mainDone = true;
+                if (item.bot_seq !== undefined && item.bot_seq !== null) {
+                    completedBotSeq = item.bot_seq;
+                }
                 settlePendingTools();
                 resetSendBtnSendMode();
 
@@ -3442,9 +3449,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
 
             } else if (item.type === 'voice_attach') {
                 // TTS finished — attach a playable audio element to the
-                // current bot bubble. The stream closes right after.
-                if (botEl && item.url) {
-                    attachAudioToBotBubble(botEl, item.url, { autoplay: true });
+                // persisted bot bubble. If history is still loading after a
+                // session switch, keep the attachment until that bubble exists.
+                if (item.url && completedBotSeq !== null) {
+                    rememberPendingVoiceAttachment(
+                        ownerSession, completedBotSeq, item.url
+                    );
+                    flushPendingVoiceAttachments(ownerSession, true);
                 }
 
             } else if (item.type === 'stream_end') {
@@ -3511,6 +3522,26 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             }
             if (buffer.items.length < 5000) buffer.items.push(item);
             if (seq) lastSeq = seq;
+
+            // done is persisted before it is published. Remember that state
+            // even while this session is in the background, where rendering
+            // is intentionally skipped.
+            if (item.type === 'done') {
+                mainDone = true;
+                if (item.bot_seq !== undefined && item.bot_seq !== null) {
+                    completedBotSeq = item.bot_seq;
+                }
+            } else if (
+                item.type === 'voice_attach'
+                && item.url
+                && completedBotSeq !== null
+            ) {
+                // Background sessions skip rendering below. Preserve their
+                // attachment so loadHistory can mount it when the user returns.
+                rememberPendingVoiceAttachment(
+                    ownerSession, completedBotSeq, item.url
+                );
+            }
 
             // Background session: keep the stream alive so the reply finishes
             // and persists, but skip rendering into the now-foreign view. The
@@ -4020,6 +4051,53 @@ function attachAudioToBotBubble(botEl, audioUrl, opts) {
     } catch (_) { /* silent */ }
 }
 
+function pendingVoiceAttachmentKey(sid, botSeq) {
+    return `${sid}:${botSeq}`;
+}
+
+function rememberPendingVoiceAttachment(sid, botSeq, audioUrl) {
+    if (!sid || botSeq === undefined || botSeq === null || !audioUrl) return;
+    const key = pendingVoiceAttachmentKey(sid, botSeq);
+    const pending = {
+        sid,
+        botSeq: String(botSeq),
+        audioUrl,
+        expiresAt: Date.now() + PENDING_VOICE_ATTACH_TTL_MS,
+    };
+    pendingVoiceAttachments.delete(key);
+    pendingVoiceAttachments.set(key, pending);
+
+    while (pendingVoiceAttachments.size > PENDING_VOICE_ATTACH_MAX) {
+        pendingVoiceAttachments.delete(pendingVoiceAttachments.keys().next().value);
+    }
+    setTimeout(() => {
+        if (pendingVoiceAttachments.get(key) === pending) {
+            pendingVoiceAttachments.delete(key);
+        }
+    }, PENDING_VOICE_ATTACH_TTL_MS);
+}
+
+function flushPendingVoiceAttachments(sid, autoplay) {
+    if (!sid || sid !== sessionId) return 0;
+    const now = Date.now();
+    let attached = 0;
+    pendingVoiceAttachments.forEach((pending, key) => {
+        if (pending.expiresAt <= now) {
+            pendingVoiceAttachments.delete(key);
+            return;
+        }
+        if (pending.sid !== sid) return;
+        const botEl = Array.from(
+            messagesDiv.querySelectorAll('.bot-message-group[data-seq]')
+        ).find(el => el.dataset.seq === pending.botSeq);
+        if (!botEl) return;
+        attachAudioToBotBubble(botEl, pending.audioUrl, { autoplay: !!autoplay });
+        pendingVoiceAttachments.delete(key);
+        attached++;
+    });
+    return attached;
+}
+
 // Build a compact play/pause + progress + duration pill that wraps a
 // hidden <audio>. Returns the root element; safe to embed anywhere.
 function renderVoicePill(audioUrl, opts) {
@@ -4164,10 +4242,14 @@ function addBotMessage(content, timestamp, requestId) {
 function loadHistory(page) {
     if (historyLoading) return;
     historyLoading = true;
+    const historySessionId = sessionId;
 
-    fetch(`/api/history?session_id=${encodeURIComponent(sessionId)}&page=${page}&page_size=20`)
+    fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
         .then(r => r.json())
         .then(data => {
+            // A response from a session we have since left must never render
+            // into the new session's message list.
+            if (historySessionId !== sessionId) return;
             if (data.status !== 'success' || data.messages.length === 0) return;
 
             const prevScrollHeight = messagesDiv.scrollHeight;
@@ -4227,6 +4309,12 @@ function loadHistory(page) {
             const insertBefore = sentinel ? sentinel.nextSibling : messagesDiv.firstChild;
             messagesDiv.insertBefore(fragment, insertBefore);
             updateEditButtonsState();
+            // A background voice_attach can arrive before this history
+            // fragment creates its target bubble. Retry now that seq metadata
+            // is present in the DOM; do not autoplay delayed attachments.
+            if (isFirstLoad) {
+                flushPendingVoiceAttachments(historySessionId, false);
+            }
 
             // Manage the "load more" sentinel at the very top
             if (data.has_more) {
@@ -4665,6 +4753,14 @@ function _reattachStream(sid) {
         if (oldEs) { try { oldEs.close(); } catch (_) {} delete activeStreams[requestId]; }
         delete streamBuffers[requestId];
         delete sessionActiveRequest[sid];
+        resetSendBtnSendMode();
+        return false;
+    }
+
+    // done already exists in persistent history. Keep the background tail
+    // connected for voice_attach/stream_end, but do not replay the answer into
+    // the freshly loaded history view or it would create a duplicate bubble.
+    if (buffer.items.some(it => it.type === 'done')) {
         resetSendBtnSendMode();
         return false;
     }
