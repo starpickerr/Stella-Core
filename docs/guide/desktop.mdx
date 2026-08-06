@@ -41,6 +41,8 @@ The desktop client has built-in auto-update. When a new version is available it 
 
 Once the desktop client is running, it listens on port `9876` locally, and its backend is exactly the same Web console. So while the app is open you can also just point your browser at `http://localhost:9876` for the same full experience as the client UI.
 
+If that port is unavailable (for example reserved by Hyper-V/WSL2 on Windows), the client automatically falls back to another one and still starts normally. The actual port is shown on the `Local access` line in `run.log`, and you can pin one by setting `web_port` in `config.json`.
+
 ## Local Data Storage
 
 All data of the desktop client is stored on your machine:

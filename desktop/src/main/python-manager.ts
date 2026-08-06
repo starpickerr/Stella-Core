@@ -11,32 +11,94 @@ import net from 'net'
 // the read-only app bundle. Source/dev runs keep using the repo CWD instead.
 const COW_DATA_DIR = path.join(os.homedir(), '.cow')
 
-// Fixed port for the desktop backend. Deliberately not 9899 (the web console's
-// default) so a source-run `python app.py` never collides with the packaged
-// app. This is a SINGLE SOURCE OF TRUTH shared with the renderer (see
-// useBackend.ts BACKEND_PORT): the backend is always told to bind exactly here
-// via COW_WEB_PORT, and the renderer always talks to exactly here. We do NOT
-// fall back to an OS-random port, because the renderer could never guess it —
-// instead we proactively free this port before launch (see freePort()).
+// Preferred port for the desktop backend. Deliberately not 9899 (the web
+// console's default) so a source-run `python app.py` never collides with the
+// packaged app. The renderer starts by probing this port, but it is only a
+// PREFERENCE, not a guarantee — see pickPort() for why, and note that the real
+// port is always published to the renderer via the 'port' event / whenPortReady.
 export const DESKTOP_BACKEND_PORT = 9876
+
+// Tried in order when the preferred port can't be bound. Windows reserves
+// pseudo-random port ranges for Hyper-V/WSL2/Docker (netsh "excluded port
+// range"): binding one fails with WinError 10013 even though nothing is
+// listening, so freePort() has nothing to kill and the old fixed-port design
+// left those users permanently stuck on "initializing". The candidates are
+// spread far apart so a single reserved block can't swallow all of them.
+const FALLBACK_PORTS = [19876, 29876, 39876, 49876, 55876]
+
+// How long the renderer may wait for the port decision before falling back to
+// the preferred port. Picking a port only involves local bind probes, so this
+// is a safety net against a hung probe, not a normal code path.
+const PORT_READY_TIMEOUT_MS = 15_000
 
 export class PythonBackend extends EventEmitter {
   private process: ChildProcess | null = null
   private backendPath: string
   private port: number = DESKTOP_BACKEND_PORT
   private status: 'stopped' | 'starting' | 'ready' | 'error' = 'stopped'
+  // Resolves once start() has settled on a port. The renderer awaits this
+  // instead of assuming DESKTOP_BACKEND_PORT, so a fallback port is never a
+  // guess it has to make.
+  private portReady: Promise<number>
+  private markPortReady!: (port: number) => void
+  // Rolling tail of backend output. A startup that never reaches "ready" is
+  // otherwise reported as a bare timeout, and the actual cause (a bind error, a
+  // config exception) is only visible in run.log — which the user can't open
+  // from the UI, because the UI is exactly what failed to come up.
+  private recentLogs: string[] = []
 
   constructor(backendPath: string) {
     super()
     this.backendPath = backendPath
+    this.portReady = new Promise<number>((resolve) => {
+      this.markPortReady = resolve
+    })
   }
 
   getPort(): number {
     return this.port
   }
 
+  /**
+   * The port the backend will actually use, once known. Times out to the
+   * current best guess so a stalled startup can never leave the renderer
+   * waiting forever on a promise that never settles.
+   */
+  whenPortReady(): Promise<number> {
+    return Promise.race([
+      this.portReady,
+      new Promise<number>((resolve) => setTimeout(() => resolve(this.port), PORT_READY_TIMEOUT_MS)),
+    ])
+  }
+
+  /** Writable data dir the backend runs against (holds config.json + run.log). */
+  getDataDir(): string {
+    return this.findBundledBackend() ? COW_DATA_DIR : this.backendPath
+  }
+
   getStatus(): string {
     return this.status
+  }
+
+  private recordLog(line: string) {
+    this.recentLogs.push(line)
+    if (this.recentLogs.length > 80) {
+      this.recentLogs.shift()
+    }
+  }
+
+  /**
+   * Append the most recent backend error line to a message, so the UI can show
+   * what actually went wrong instead of just "startup timed out".
+   */
+  private withLastError(message: string): string {
+    for (let i = this.recentLogs.length - 1; i >= 0; i--) {
+      const line = this.recentLogs[i]
+      if (/\[ERROR\]|Error:|OSError|Traceback/.test(line)) {
+        return `${message}: ${line.trim().slice(0, 300)}`
+      }
+    }
+    return message
   }
 
   // Cache the resolved PATH so we only spawn a login shell once per process.
@@ -181,16 +243,57 @@ export class PythonBackend extends EventEmitter {
   }
 
   /**
-   * Resolve the port to bind. The whole point is determinism: the renderer must
-   * be able to reach the backend WITHOUT guessing, so we use exactly one fixed
-   * port (DESKTOP_BACKEND_PORT) unless the user explicitly pinned a web_port.
-   * We never auto-roll to a random port — instead start() proactively frees the
-   * fixed port. The returned value is the single source of truth handed to both
-   * the backend (COW_WEB_PORT) and the renderer (getBackendPort IPC).
+   * Pick a port the backend can actually bind, preferring the pinned/default
+   * one. Each candidate is probed for real (bind + close); a busy one gets a
+   * freePort() pass first, since the usual cause is a stale backend from a
+   * previous run. Anything still unusable is skipped rather than fought over:
+   * on Windows a port can be permanently unbindable (reserved by Hyper-V/WSL2)
+   * with no process to kill, which used to strand the app on "initializing".
+   *
+   * The result is the single source of truth handed to both the backend
+   * (COW_WEB_PORT) and the renderer (whenPortReady / the 'port' event).
    */
-  private resolvePort(dataDir: string): number {
+  private async pickPort(dataDir: string): Promise<number> {
     const pinned = this.readConfiguredPort(dataDir)
-    return pinned !== null ? pinned : DESKTOP_BACKEND_PORT
+    const preferred = pinned !== null ? pinned : DESKTOP_BACKEND_PORT
+    const candidates = [preferred, ...FALLBACK_PORTS.filter((p) => p !== preferred)]
+
+    for (const port of candidates) {
+      if (await this.isPortFree(port)) {
+        return port
+      }
+      await this.freePort(port)
+      if (await this.isPortFree(port)) {
+        return port
+      }
+      this.emit('log', `Port ${port} is unusable — trying the next candidate`)
+    }
+
+    // Every candidate refused. Let the OS name a free port: it's less stable
+    // across restarts, but the renderer is told which one, so it still works.
+    const ephemeral = await this.findEphemeralPort()
+    if (ephemeral) {
+      this.emit('log', `All candidate ports refused — using OS-assigned port ${ephemeral}`)
+      return ephemeral
+    }
+    // Nothing bindable at all. Return the preferred port anyway so the backend
+    // runs and logs a real bind error instead of us failing silently here.
+    return preferred
+  }
+
+  /** Ask the OS for any free loopback port. Null if even that fails. */
+  private findEphemeralPort(): Promise<number | null> {
+    return new Promise((resolve) => {
+      const tester = net
+        .createServer()
+        .once('error', () => resolve(null))
+        .once('listening', () => {
+          const addr = tester.address()
+          const port = addr && typeof addr === 'object' ? addr.port : null
+          tester.close(() => resolve(port))
+        })
+        .listen(0, '127.0.0.1')
+    })
   }
 
   /** True if we can bind 127.0.0.1:port right now (i.e. it's free). */
@@ -286,6 +389,8 @@ export class PythonBackend extends EventEmitter {
     }
 
     this.status = 'starting'
+    // Drop the previous run's output so a retry can't report a stale error.
+    this.recentLogs = []
 
     // Prefer the packaged self-contained backend (production); fall back to
     // running app.py with a Python interpreter (local development).
@@ -296,12 +401,12 @@ export class PythonBackend extends EventEmitter {
     // Always launch our OWN backend (re-entrancy is guarded above by the status
     // check, so we never double-spawn for this instance). We don't reuse
     // whatever happens to be on the port: that's how the app previously attached
-    // to a source-run web console and read the wrong config. The port is fixed
-    // (or the user's pinned web_port) — never random — so the renderer always
-    // knows it. We then proactively free that port (kill stale listeners)
-    // before spawning, so a leftover process from a previous run can't block us.
-    this.port = this.resolvePort(dataDir)
-    await this.freePort(this.port)
+    // to a source-run web console and read the wrong config. pickPort() frees
+    // stale listeners and skips ports the OS refuses, then publishes the result
+    // so the renderer never has to guess which port we settled on.
+    this.port = await this.pickPort(dataDir)
+    this.markPortReady(this.port)
+    this.emit('port', this.port)
 
     let command: string
     let args: string[]
@@ -358,19 +463,15 @@ export class PythonBackend extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    this.process.stdout?.on('data', (data: Buffer) => {
+    const onOutput = (data: Buffer) => {
       const lines = data.toString().split('\n').filter(Boolean)
       for (const line of lines) {
+        this.recordLog(line)
         this.emit('log', line)
       }
-    })
-
-    this.process.stderr?.on('data', (data: Buffer) => {
-      const lines = data.toString().split('\n').filter(Boolean)
-      for (const line of lines) {
-        this.emit('log', line)
-      }
-    })
+    }
+    this.process.stdout?.on('data', onOutput)
+    this.process.stderr?.on('data', onOutput)
 
     this.process.on('exit', (code) => {
       // If the backend dies before it ever became ready, surface an error now
@@ -381,7 +482,7 @@ export class PythonBackend extends EventEmitter {
       this.emit('log', `Python process exited with code ${code}`)
       if (!wasReady && code !== 0 && code !== null) {
         this.status = 'error'
-        this.emit('error', `Backend exited during startup (code ${code})`)
+        this.emit('error', this.withLastError(`Backend exited during startup (code ${code})`))
       }
     })
 
@@ -398,7 +499,11 @@ export class PythonBackend extends EventEmitter {
       // Wall-clock deadline rather than an attempt counter: if the machine
       // sleeps/suspends, the 1s timers stretch out and a counter would give up
       // far too early. Time-based bounding tracks real elapsed time instead.
-      const timeoutMs = 120_000
+      // Only reachable when the process is alive yet never answers /api/health:
+      // a crash exits immediately and a wedged startup is killed by the
+      // backend's own watchdog, and both paths report a real cause. So this is
+      // a backstop, kept just above that watchdog so its message wins the race.
+      const timeoutMs = 30_000
       const startedAt = Date.now()
 
       const check = () => {
@@ -432,7 +537,10 @@ export class PythonBackend extends EventEmitter {
         }
         if (Date.now() - startedAt >= timeoutMs) {
           this.status = 'error'
-          this.emit('error', `Backend failed to start within ${Math.round(timeoutMs / 1000)} seconds`)
+          this.emit(
+            'error',
+            this.withLastError(`Backend failed to start within ${Math.round(timeoutMs / 1000)} seconds`),
+          )
           resolve()
           return
         }

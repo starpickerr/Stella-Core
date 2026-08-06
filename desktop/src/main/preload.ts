@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendPort: () => ipcRenderer.invoke('get-backend-port'),
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
+  getDataDir: () => ipcRenderer.invoke('get-data-dir') as Promise<string>,
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   selectFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('select-file', filters),

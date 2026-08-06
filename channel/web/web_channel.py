@@ -60,6 +60,56 @@ def _is_password_enabled():
     return bool(_get_web_password())
 
 
+# Set once the console owns its socket. The desktop watchdog waits on this to
+# tell "still starting" apart from "wedged and never going to answer".
+SERVING = threading.Event()
+
+_BIND_ERROR_CODE_RE = re.compile(r"\[(WinError|Errno) (\d+)\]")
+
+
+def _bind_error_codes(err: OSError):
+    """Return ``(winerror, errno)`` for a bind failure.
+
+    cheroot swallows the original exception: it re-raises a bare
+    ``socket.error(msg)`` with neither errno nor ``__cause__`` set, so on the
+    path we actually care about the code only survives inside the message text.
+    """
+    winerror = getattr(err, "winerror", None)
+    err_no = err.errno
+    if winerror is None and err_no is None:
+        for kind, code in _BIND_ERROR_CODE_RE.findall(str(err)):
+            if kind == "WinError":
+                winerror = int(code)
+            else:
+                err_no = int(code)
+    return winerror, err_no
+
+
+def _log_bind_failure(host: str, port: int, err: OSError):
+    """Explain a failed bind in terms the user can act on.
+
+    Windows needs its own branch: a port can be permanently unbindable because
+    Hyper-V/WSL2/Docker reserved the range it falls in (WinError 10013), and
+    nothing is listening on it, so the usual "kill the stale process" advice
+    sends people looking for a process that doesn't exist.
+    """
+    winerror, err_no = _bind_error_codes(err)
+    if winerror == 10013:
+        logger.error(
+            f"[WebChannel] 端口 {port} 被系统保留，无法绑定（WinError 10013）。"
+            f"通常是 Hyper-V/WSL2/Docker 占用了该端口段，可执行 "
+            f"`netsh interface ipv4 show excludedportrange protocol=tcp` 查看，"
+            f"或在 config.json 中把 web_port 改成区间外的端口"
+        )
+    elif winerror == 10048 or err_no in (48, 98):  # WSAEADDRINUSE / macOS / Linux
+        logger.error(
+            f"[WebChannel] 端口 {port} 已被占用，可执行 `cow restart` 清理残留进程，"
+            f"或在 config.json 中修改 web_port"
+        )
+    else:
+        logger.error(f"[WebChannel] 无法在 {host}:{port} 上启动服务: {err}")
+
+
 def _session_expire_seconds():
     return int(conf().get("web_session_expire_days", 30)) * 86400
 
@@ -1639,62 +1689,66 @@ class WebChannel(ChatChannel):
 
         self._cleanup_stale_voice_recordings()
 
-        # Print available channel types (ordered by language: prioritize
-        # locally-popular channels for the current UI language)
-        logger.info(
-            "[WebChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
-        zh_channels = [
-            ("web", "Web"),
-            ("terminal", "Terminal"),
-            ("weixin", "WeChat"),
-            ("feishu", "Feishu"),
-            ("dingtalk", "DingTalk"),
-            ("wecom_bot", "WeCom Bot"),
-            ("wechatcom_app", "WeCom App"),
-            ("wechat_kf", "WeChat Customer Service"),
-            ("wechatmp", "WeChat Official Account"),
-            ("wechatmp_service", "WeChat Official Account (Service)"),
-            ("telegram", "Telegram"),
-            ("slack", "Slack"),
-            ("discord", "Discord"),
-        ]
-        en_channels = [
-            ("web", "Web"),
-            ("terminal", "Terminal"),
-            ("telegram", "Telegram"),
-            ("slack", "Slack"),
-            ("discord", "Discord"),
-            ("weixin", "WeChat"),
-            ("feishu", "Feishu"),
-            ("dingtalk", "DingTalk"),
-            ("wecom_bot", "WeCom Bot"),
-            ("wechatcom_app", "WeCom App"),
-            ("wechat_kf", "WeChat Customer Service"),
-            ("wechatmp", "WeChat Official Account"),
-            ("wechatmp_service", "WeChat Official Account (Service)"),
-        ]
-        channels = en_channels if i18n.get_language() == "en" else zh_channels
-        name_width = max(len(name) for name, _ in channels)
-        for idx, (name, label) in enumerate(channels, 1):
-            logger.info(f"[WebChannel]  {idx:>2}. {name:<{name_width}} - {label}")
-        logger.info("[WebChannel] ✅ Web console is running")
-        logger.info(f"[WebChannel] 🌐 Local access: http://localhost:{port}")
-        if is_public_bind:
-            logger.info(f"[WebChannel] 🌍 Server access: http://YOUR_IP:{port} (replace YOUR_IP with your server IP)")
-            if not _is_password_enabled():
-                logger.info("[WebChannel] ⚠️  Listening on 0.0.0.0 without web_password set; set an access password in config.json for public deployment")
-        else:
-            logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
+        def _log_startup_banner():
+            """Announce the console. Only called once the socket is actually
+            bound — printing it up front made a failed bind look like a
+            successful startup in the logs."""
+            # Print available channel types (ordered by language: prioritize
+            # locally-popular channels for the current UI language)
+            logger.info(
+                "[WebChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
+            zh_channels = [
+                ("web", "Web"),
+                ("terminal", "Terminal"),
+                ("weixin", "WeChat"),
+                ("feishu", "Feishu"),
+                ("dingtalk", "DingTalk"),
+                ("wecom_bot", "WeCom Bot"),
+                ("wechatcom_app", "WeCom App"),
+                ("wechat_kf", "WeChat Customer Service"),
+                ("wechatmp", "WeChat Official Account"),
+                ("wechatmp_service", "WeChat Official Account (Service)"),
+                ("telegram", "Telegram"),
+                ("slack", "Slack"),
+                ("discord", "Discord"),
+            ]
+            en_channels = [
+                ("web", "Web"),
+                ("terminal", "Terminal"),
+                ("telegram", "Telegram"),
+                ("slack", "Slack"),
+                ("discord", "Discord"),
+                ("weixin", "WeChat"),
+                ("feishu", "Feishu"),
+                ("dingtalk", "DingTalk"),
+                ("wecom_bot", "WeCom Bot"),
+                ("wechatcom_app", "WeCom App"),
+                ("wechat_kf", "WeChat Customer Service"),
+                ("wechatmp", "WeChat Official Account"),
+                ("wechatmp_service", "WeChat Official Account (Service)"),
+            ]
+            channels = en_channels if i18n.get_language() == "en" else zh_channels
+            name_width = max(len(name) for name, _ in channels)
+            for idx, (name, label) in enumerate(channels, 1):
+                logger.info(f"[WebChannel]  {idx:>2}. {name:<{name_width}} - {label}")
+            logger.info("[WebChannel] ✅ Web console is running")
+            logger.info(f"[WebChannel] 🌐 Local access: http://localhost:{port}")
+            if is_public_bind:
+                logger.info(f"[WebChannel] 🌍 Server access: http://YOUR_IP:{port} (replace YOUR_IP with your server IP)")
+                if not _is_password_enabled():
+                    logger.info("[WebChannel] ⚠️  Listening on 0.0.0.0 without web_password set; set an access password in config.json for public deployment")
+            else:
+                logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
 
-        # In desktop mode the Electron shell renders the UI, so don't pop a
-        # browser window (also avoids issues when running detached/headless).
-        if os.environ.get("COW_DESKTOP") != "1":
-            try:
-                import webbrowser
-                webbrowser.open(f"http://localhost:{port}")
-                logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
-            except Exception as e:
-                logger.debug(f"[WebChannel] Could not open browser: {e}")
+            # In desktop mode the Electron shell renders the UI, so don't pop a
+            # browser window (also avoids issues when running detached/headless).
+            if os.environ.get("COW_DESKTOP") != "1":
+                try:
+                    import webbrowser
+                    webbrowser.open(f"http://localhost:{port}")
+                    logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
+                except Exception as e:
+                    logger.debug(f"[WebChannel] Could not open browser: {e}")
 
         # Ensure the static dir exists. In a packaged build it ships read-only
         # inside the bundle, so swallow errors instead of failing startup.
@@ -1782,17 +1836,21 @@ class WebChannel(ChatChannel):
         self._http_server = server
         # Reclaim orphaned SSE queues so disconnected clients don't leak fds.
         self._start_sse_janitor()
+        # prepare() binds the socket, serve() runs the accept loop. Splitting
+        # start() into the two lets us report a bind failure with the port in
+        # hand, and keeps the "console is running" banner honest: it now only
+        # prints once we really own the port.
         try:
-            server.start()
+            server.prepare()
+        except OSError as e:
+            _log_bind_failure(host, port, e)
+            raise
+        SERVING.set()
+        _log_startup_banner()
+        try:
+            server.serve()
         except (KeyboardInterrupt, SystemExit):
             server.stop()
-        except OSError as e:
-            if e.errno in (48, 98):  # macOS/Linux EADDRINUSE
-                logger.error(
-                    f"[WebChannel] 端口 {port} 已被占用，可执行 `cow restart` 清理残留进程，"
-                    f"或在 config.json 中修改 web_port"
-                )
-            raise
 
     def stop(self):
         if self._http_server:
