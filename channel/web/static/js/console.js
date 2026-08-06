@@ -3037,7 +3037,9 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let reasoningText = '';
     let reasoningStartTime = 0;
     let done = false;
+    let mainDone = false;
     let cancelled = false;
+    let lastSeq = 0;
 
     // A stream can end while tools are still marked in-flight (cancel, dropped
     // connection). Settle them so nothing spins forever.
@@ -3383,13 +3385,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 resetSendBtnSendMode();
 
             } else if (item.type === 'done') {
-                // Don't close the stream yet: the backend keeps it open
-                // for a short tail to deliver async attachments such as
-                // TTS audio (`voice_attach`). It will close the stream on
-                // its own via onerror once the tail expires.
-                done = true;
+                // The answer is persisted, but async attachments may still
+                // follow. Only stream_end closes the request lifecycle.
+                mainDone = true;
                 settlePendingTools();
-                clearOwnerRequest();
                 resetSendBtnSendMode();
 
                 const finalTextRaw = item.content || accumulatedText;
@@ -3447,9 +3446,27 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 if (botEl && item.url) {
                     attachAudioToBotBubble(botEl, item.url, { autoplay: true });
                 }
+
+            } else if (item.type === 'stream_end') {
+                done = true;
                 if (currentEs) { currentEs.close(); }
                 delete activeStreams[requestId];
                 clearOwnerRequest();
+
+            } else if (item.type === 'resync_required') {
+                done = true;
+                settlePendingTools();
+                if (currentEs) { currentEs.close(); }
+                delete activeStreams[requestId];
+                clearOwnerRequest();
+                resetSendBtnSendMode();
+                if (isActive()) {
+                    messagesDiv.innerHTML = '';
+                    historyPage = 0;
+                    historyHasMore = false;
+                    historyLoading = false;
+                    loadHistory(1);
+                }
 
             } else if (item.type === 'error') {
                 done = true;
@@ -3466,13 +3483,19 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     }
 
     function connect() {
-        const es = new EventSource(`/stream?request_id=${encodeURIComponent(requestId)}`);
+        const es = new EventSource(
+            `/stream?request_id=${encodeURIComponent(requestId)}`
+            + `&after_seq=${lastSeq}`
+        );
         currentEs = es;
         activeStreams[requestId] = es;
 
         es.onmessage = function(e) {
             let item;
             try { item = JSON.parse(e.data); } catch (_) { return; }
+
+            const seq = Number(item.seq || 0);
+            if (seq && seq <= lastSeq) return;
 
             // Successful data received, reset reconnect counter
             reconnectCount = 0;
@@ -3487,13 +3510,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 if (previousIndex >= 0) buffer.items.splice(previousIndex, 1);
             }
             if (buffer.items.length < 5000) buffer.items.push(item);
+            if (seq) lastSeq = seq;
 
             // Background session: keep the stream alive so the reply finishes
             // and persists, but skip rendering into the now-foreign view. The
             // buffer above still grows so returning to the session can rebuild
             // the bubble and resume live rendering.
             if (ownerSession !== sessionId) {
-                if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
+                if (item.type === 'stream_end' || item.type === 'error' || item.type === 'resync_required') {
                     done = true;
                     es.close();
                     delete activeStreams[requestId];
@@ -3510,11 +3534,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             delete activeStreams[requestId];
 
             if (done) {
-                // Normal close after the post-done tail expired; nothing to do.
+                // stream_end or an unrecoverable event already closed it.
                 return;
             }
 
-            if (cancelled) {
+            if (cancelled && !mainDone) {
                 // The user stopped the run, so the stream ending here is the
                 // expected outcome. Reconnecting would only land on a queue
                 // the backend has already reclaimed.
@@ -3563,8 +3587,10 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     // snapshot matches exactly what live rendering would have produced.
     if (replayItems && replayItems.length) {
         for (const item of replayItems) {
+            const seq = Number(item.seq || 0);
+            if (seq > lastSeq) lastSeq = seq;
             try { processSSEItem(item); } catch (_) {}
-            if (item.type === 'done' || item.type === 'error' || item.type === 'voice_attach') {
+            if (item.type === 'stream_end' || item.type === 'error' || item.type === 'resync_required') {
                 done = true;
             }
         }
@@ -4619,7 +4645,7 @@ function _onSessionListScroll() {
 // Returning to a session whose reply is still streaming in the background.
 // Close the background EventSource, rebuild the bubble from the buffered
 // events (snapshot), then resume live streaming via a fresh connection that
-// reads the remaining tail from the backend queue. Returns true if a stream
+// reads the remaining tail from the backend replay log. Returns true if a stream
 // was re-attached. The user's own bubble is already in history (persisted
 // eagerly), so it was rendered by loadHistory before this runs.
 function _reattachStream(sid) {
@@ -4632,7 +4658,7 @@ function _reattachStream(sid) {
     // persisted and rendered by loadHistory — re-attaching would duplicate it.
     // Just clean up the buffer/cursor and rely on history.
     const finished = buffer.items.some(
-        it => it.type === 'done' || it.type === 'error'
+        it => it.type === 'stream_end' || it.type === 'error' || it.type === 'resync_required'
     );
     if (finished) {
         const oldEs = activeStreams[requestId];
@@ -4643,9 +4669,8 @@ function _reattachStream(sid) {
         return false;
     }
 
-    // Stop the background stream so the rebuilt one is the sole consumer of
-    // the backend queue (the queue survives until "done", so the new
-    // connection picks up any remaining events).
+    // Stop the background connection before rebuilding. Each new connection
+    // resumes independently from its last accepted sequence number.
     const oldEs = activeStreams[requestId];
     if (oldEs) { try { oldEs.close(); } catch (_) {} delete activeStreams[requestId]; }
 
