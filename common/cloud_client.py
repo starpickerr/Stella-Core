@@ -814,6 +814,8 @@ def get_website_base_url() -> str:
     websites_domain = os.environ.get("CLOUD_WEBSITES_DOMAIN") or conf().get("cloud_websites_domain", "")
     if websites_domain:
         websites_domain = websites_domain.strip().rstrip("/")
+        if websites_domain.startswith(("http://", "https://")):
+            return f"{websites_domain}/{deployment_id}"
         return f"https://{websites_domain}/{deployment_id}"
 
     domain = get_root_domain()
