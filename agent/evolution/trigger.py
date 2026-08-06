@@ -142,10 +142,6 @@ def _scan_once(agent_bridge, cfg) -> None:
             channel_type = getattr(agent, "_evo_channel_type", "") or ""
             receiver = getattr(agent, "_evo_receiver", "") or ""
 
-            # Reset baseline BEFORE running so a long pass / new messages during
-            # it don't double-trigger; turns accrue fresh from here.
-            agent._evo_turns = 0
-
             run_evolution_for_session(
                 agent_bridge,
                 session_id=session_id,
