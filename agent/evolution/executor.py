@@ -337,6 +337,11 @@ def run_evolution_for_session(
         if not agent:
             return False
 
+        # Consume the trigger only after this pass has secured a concurrency
+        # slot and resolved its session. Sessions rejected by the gate keep
+        # their accumulated turns and remain eligible for the next scan.
+        agent._evo_turns = 0
+
         with agent.messages_lock:
             all_messages = list(agent.messages)
         total_msgs = len(all_messages)
