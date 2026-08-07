@@ -34,7 +34,7 @@ CowAgent は軽量でデプロイしやすく、拡張性に優れています�
 ## 🎬 デモ
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/c83b0945-a88c-4eba-b66b-a7a25abf9549" controls muted playsinline width="720">
+  <video src="https://github.com/user-attachments/assets/8625a19f-615c-4343-8be8-3707ce4d4d4e" controls muted playsinline width="720">
     このブラウザでは動画を再生できません。
     <a href="https://cowagent.ai/">公式サイトでデモを見る →</a>
   </video>
