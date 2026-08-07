@@ -34,7 +34,7 @@ CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋�
 ## 🎬 示範
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/80bf15c9-e259-412b-b0cb-8222f9effb51" controls muted playsinline width="720">
+  <video src="https://github.com/user-attachments/assets/a2d8fb12-f294-42d6-a569-c4a6ceedab1d" controls muted playsinline width="720">
     你的瀏覽器無法播放該影片。
     <a href="https://cowagent.ai/?lang=zh">前往官網觀看示範 →</a>
   </video>
