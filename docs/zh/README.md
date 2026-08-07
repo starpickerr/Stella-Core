@@ -5,6 +5,7 @@
   <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://docs.cowagent.ai/zh"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="文档" /></a>
+  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -26,6 +27,17 @@ CowAgent 轻量、易部署、可扩展，自由接入主流大模型，覆盖�
   <a href="https://skills.cowagent.ai/">🧩 技能广场</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/zh/download/">💻 下载客户端</a> &nbsp;·&nbsp;
   <a href="https://link-ai.tech/cowagent/create">☁️ 在线体验</a>
+</p>
+
+<br/>
+
+## 🎬 演示
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/80bf15c9-e259-412b-b0cb-8222f9effb51" controls muted playsinline width="720">
+    你的浏览器无法播放该视频。
+    <a href="https://cowagent.ai/?lang=zh">前往官网观看演示 →</a>
+  </video>
 </p>
 
 <br/>
@@ -239,7 +251,11 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
 
-也可通过以下方式获取支持：
+也欢迎在 GitHub [提交 Issue](https://github.com/zhayujie/CowAgent/issues)，或加入 [**Discord 服务器**](https://discord.gg/9U8eA8v9TR) 交流：
+
+<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-加入社区-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Discord" /></a>
+
+还可通过以下方式获取支持：
 
 - 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues)
 - 🤖 在线 AI 助手：[项目小助手](https://link-ai.tech/app/Kv2fXJcH)（基于项目知识库）

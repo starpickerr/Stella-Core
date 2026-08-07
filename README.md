@@ -5,6 +5,7 @@
   <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars"></a>
   <a href="https://docs.cowagent.ai/"><img src="https://img.shields.io/badge/Docs-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="Docs"></a>
+  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -26,6 +27,17 @@ CowAgent is lightweight, easy to deploy, and built to extend. Plug in any major 
   <a href="https://skills.cowagent.ai/">🧩 Skill Hub</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/download/">💻 Download</a> &nbsp;·&nbsp;
   <a href="https://link-ai.tech/cowagent/create">☁️ Try Online</a>
+</p>
+
+<br/>
+
+## 🎬 Demo
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/c83b0945-a88c-4eba-b66b-a7a25abf9549" controls muted playsinline width="720">
+    Your browser can't play this video.
+    <a href="https://cowagent.ai/">Watch the demo on our website →</a>
+  </video>
 </p>
 
 <br/>
@@ -232,7 +244,11 @@ Full history: [Release Notes](https://docs.cowagent.ai/releases/overview)
 
 ## 🤝 Community & Support
 
-[File an issue](https://github.com/zhayujie/CowAgent/issues) on GitHub, or scan the QR code below to join our WeChat community:
+Join our [**Discord server**](https://discord.gg/9U8eA8v9TR) to ask questions, share skills, and follow development:
+
+<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord"></a>
+
+You can also [file an issue](https://github.com/zhayujie/CowAgent/issues) on GitHub, or scan the QR code below to join our WeChat group:
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png">
 

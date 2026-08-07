@@ -5,6 +5,7 @@
   <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://docs.cowagent.ai/ja"><img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="ドキュメント" /></a>
+  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -26,6 +27,17 @@ CowAgent は軽量でデプロイしやすく、拡張性に優れています�
   <a href="https://skills.cowagent.ai/">🧩 Skill Hub</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/download/">💻 ダウンロード</a> &nbsp;·&nbsp;
   <a href="https://link-ai.tech/cowagent/create">☁️ オンラインで試す</a>
+</p>
+
+<br/>
+
+## 🎬 デモ
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/c83b0945-a88c-4eba-b66b-a7a25abf9549" controls muted playsinline width="720">
+    このブラウザでは動画を再生できません。
+    <a href="https://cowagent.ai/">公式サイトでデモを見る →</a>
+  </video>
 </p>
 
 <br/>
@@ -232,7 +244,11 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🤝 コミュニティとサポート
 
-GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) するか、下記 QR コードをスキャンして WeChat コミュニティに参加してください：
+[**Discord サーバー**](https://discord.gg/9U8eA8v9TR) に参加して、質問や Skill の共有、開発状況の確認ができます：
+
+<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-コミュニティに参加-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord に参加" /></a>
+
+GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
 
