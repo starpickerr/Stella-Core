@@ -48,6 +48,18 @@ def is_tool_available(tool) -> bool:
         return True
 
 
+def renders_own_cards(tool, arguments: dict) -> bool:
+    """Whether a call reports itself. Errs towards the generic card, which is
+    never wrong, only sometimes redundant."""
+    if tool is None:
+        return False
+    try:
+        return bool(tool.renders_own_cards(arguments))
+    except Exception as e:
+        logger.debug(f"[{getattr(tool, 'name', '?')}] card check failed: {e}")
+        return False
+
+
 class BaseTool:
     """Base class for all tools."""
 
@@ -75,6 +87,19 @@ class BaseTool:
     # only for work that is independent by construction and slow enough that
     # queueing it is the dominant cost.
     parallel_safe: bool = False
+
+    def renders_own_cards(self, arguments: dict) -> bool:
+        """Whether this call reports itself, so the caller should stay quiet.
+
+        A tool that runs several units of work at once can say which of them
+        is still going, and the generic card wrapped around the whole call
+        then shows the same thing a second time with every unit's arguments
+        and every unit's output run together. Answering True for such a call
+        leaves only the cards the tool emits itself. A failure that stops the
+        tool before it emits anything still gets a card, otherwise it would
+        vanish.
+        """
+        return False
 
     def is_available(self) -> bool:
         """Whether this tool should be offered to the model right now.

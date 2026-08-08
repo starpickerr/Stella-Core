@@ -90,6 +90,11 @@ They all reach outside the delegated task — messaging the user, scheduling wor
 in your Agent's name, editing its configuration, or touching memory a sub agent
 is deliberately not given.
 
+A type that lists `tools` gets no skills either. A skill is a workflow written
+end to end and most of them finish by writing something down, so handing one to
+a sub agent that had those tools taken away just costs it turns. Omit `tools`
+when the type needs skills, and scope the work in the body instead.
+
 Listing tools explicitly is worth it when a type should not be able to change
 anything: `tools: read, ls, search_files, web_search, web_fetch` cannot write,
 by construction rather than by instruction.

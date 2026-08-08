@@ -56,6 +56,18 @@ class SubagentTemplate:
     def allows_all_tools(self) -> bool:
         return _ALL_TOOLS in self.tools
 
+    def inherits_skills(self) -> bool:
+        """Whether the parent's skills are worth putting in front of this type.
+
+        A skill is a workflow written end to end, and most of them finish by
+        writing something down. Shown to a sub agent that had those tools
+        taken away, it reads as an instruction that cannot be carried out: the
+        agent spends turns preparing for a step it will never reach, then says
+        so in the report the parent has to read. Full tool set, full skills;
+        anything narrower, none.
+        """
+        return self.allows_all_tools()
+
     def select_tools(self, available: List) -> List:
         """Pick this template's tools out of the parent's set."""
         allowed = []

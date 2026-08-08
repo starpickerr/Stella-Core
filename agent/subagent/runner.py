@@ -122,8 +122,8 @@ def _build_child(parent, template, task: SubagentTask):
         memory_manager=None,
         name=f"subagent:{template.name}",
         workspace_dir=parent.workspace_dir,
-        skill_manager=parent.skill_manager,
-        enable_skills=parent.enable_skills,
+        skill_manager=parent.skill_manager if template.inherits_skills() else None,
+        enable_skills=parent.enable_skills and template.inherits_skills(),
         runtime_info=parent.runtime_info,
         skip_context_files=True,
     )

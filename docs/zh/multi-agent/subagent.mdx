@@ -22,7 +22,7 @@ description: Sub Agent：把独立的任务交给子 Agent 执行，支持并行
 | --- | --- |
 | 模型 | 主对话的历史消息 |
 | 工作区（文件读写在同一处） | 人设与规则文件（`AGENT.md`、`RULE.md`、`USER.md`） |
-| 技能 | 记忆与知识库检索 |
+| 技能（仅工具完整的类型） | 记忆与知识库检索 |
 
 因此子 Agent 只知道主 Agent 传递给它的内容。它看不到对话历史，也无法向用户提问，所需的路径、标识、约束和已确定的结论，都需要主 Agent 在创建任务时一并写明。
 
@@ -90,7 +90,7 @@ tools: web_search, web_fetch, read, write
 | `tools` | 可用工具，省略表示继承主 Agent 的全部工具 |
 | 正文 | 子 Agent 的系统提示词，说明工作方式和返回内容 |
 
-限定 `tools` 是最可靠的约束方式：只有 `read, ls, search_files` 的类型无法修改任何文件。
+限定 `tools` 是最可靠的约束方式：只有 `read, ls, search_files` 的类型无法修改任何文件。写了 `tools` 的类型不会继承技能，需要用到技能时省略该字段，在正文中限定工作范围。
 
 工作区首次启动时会在 `subagents/` 下生成 `README.md` 和 `example.md.template`，把后者复制为 `.md` 文件即可启用。模板每轮对话重新读取，新增文件在下一条消息生效，无需重启。
 

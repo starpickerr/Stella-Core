@@ -303,7 +303,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         if has_subagent:
             lines.insert(
                 -1,
-                "- 能整块交出去的独立工作——可并行的多个部分，或中间产物用完即弃的调研——交给 `subagent`，它只把结论带回来",
+                "- 能整块交出去的独立工作交给 `subagent`：可并行的多个部分，或中间产物用完即弃的调研，它只把结论带回来",
             )
 
     return lines

@@ -314,6 +314,12 @@ class SubagentTool(BaseTool):
             )
         ]
 
+    def renders_own_cards(self, arguments: dict) -> bool:
+        """True exactly when the tasks get cards of their own, which is the
+        same condition `_SpawnView` uses. A lone sub agent keeps reporting
+        under the spawn call's card, so that one has to stay."""
+        return len(self._collect_tasks(arguments or {})) > 1
+
     def _spawn_view(self, tasks: List):
         """One spawn call, as the client sees it.
 
