@@ -103,7 +103,7 @@ def test_agent_bridge_defaults_invalid_claude_value(monkeypatch):
     assert bot.kwargs["reasoning_effort"] == "high"
 
 
-def test_agent_bridge_passes_claude_effort_when_thinking_disabled(monkeypatch):
+def test_agent_bridge_omits_claude_effort_when_thinking_disabled(monkeypatch):
     from config import conf
 
     monkeypatch.setitem(conf(), "enable_thinking", False)
@@ -113,7 +113,7 @@ def test_agent_bridge_passes_claude_effort_when_thinking_disabled(monkeypatch):
     model.call(_Request())
 
     assert bot.kwargs["thinking"] == {"type": "disabled"}
-    assert bot.kwargs["reasoning_effort"] == "max"
+    assert "reasoning_effort" not in bot.kwargs
 
 
 def test_agent_bridge_passes_dashscope_qwen38_effort(monkeypatch):

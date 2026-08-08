@@ -275,11 +275,8 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const reasoningValue = reasoningOptions.some((o) => o.value === reasoningEffort)
     ? reasoningEffort
     : reasoning?.default || reasoningOptions[0]?.value || ''
-  // Some providers expose effort as request-level config, and some models are
-  // always-thinking. Those controls stay visible without the generic toggle.
-  const showReasoningEffort = !!reasoning?.supported
-    && reasoningOptions.length > 0
-    && (thinking || reasoning?.param === 'effort' || reasoning?.thinking_only === true)
+  // Effort only shapes a thinking pass, so the field follows the toggle.
+  const showReasoningEffort = thinking && !!reasoning?.supported && reasoningOptions.length > 0
   const currentUnconfigured = !!provider && !isConfigured(provider)
   const modelOptions = [
     ...(currentMeta?.models || []).map((m) => ({ value: m, label: m })),

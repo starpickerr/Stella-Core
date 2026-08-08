@@ -141,19 +141,6 @@ class AgentLLMModel(LLMModel):
             conf().get("reasoning_effort", "high"),
         )
 
-    def _should_pass_reasoning_effort(self, thinking_enabled: bool) -> bool:
-        """Return True when the active provider should receive effort."""
-        if thinking_enabled:
-            return True
-
-        from models.reasoning_capabilities import get_reasoning_capability
-
-        capability = get_reasoning_capability(
-            self._resolve_bot_type(self.model),
-            self.model,
-        )
-        return capability.get("param") == "effort" or bool(capability.get("thinking_only"))
-
     def _is_thinking_only_model(self) -> bool:
         """Return True for models that require reasoning to stay enabled."""
         from models.reasoning_capabilities import get_reasoning_capability
@@ -224,9 +211,9 @@ class AgentLLMModel(LLMModel):
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Some providers expose effort as request-level control, while
-                # reasoning_effort providers only apply it with thinking on.
-                if self._should_pass_reasoning_effort(thinking_enabled):
+                # Effort only shapes a thinking pass. Thinking-only models keep
+                # receiving it because they force thinking_enabled above.
+                if thinking_enabled:
                     effort = self._normalized_reasoning_effort()
                     if effort:
                         kwargs['reasoning_effort'] = effort
@@ -290,9 +277,9 @@ class AgentLLMModel(LLMModel):
                     {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
-                # Some providers expose effort as request-level control, while
-                # reasoning_effort providers only apply it with thinking on.
-                if self._should_pass_reasoning_effort(thinking_enabled):
+                # Effort only shapes a thinking pass. Thinking-only models keep
+                # receiving it because they force thinking_enabled above.
+                if thinking_enabled:
                     effort = self._normalized_reasoning_effort()
                     if effort:
                         kwargs['reasoning_effort'] = effort
