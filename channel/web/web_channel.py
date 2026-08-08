@@ -13,8 +13,10 @@ import threading
 import time
 import uuid
 from queue import Queue, Empty
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from urllib.parse import quote
+from collections import OrderedDict, deque
+from dataclasses import dataclass, field
 
 import web
 
@@ -22,7 +24,6 @@ from bridge.context import *
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
-from collections import OrderedDict
 from common import const
 from common import i18n
 from common.log import logger
@@ -32,6 +33,33 @@ from models.reasoning_capabilities import provider_reasoning_metadata
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
+
+
+@dataclass
+class SSEStreamState:
+    """Bounded, replayable event log for one web request."""
+
+    condition: threading.Condition = field(default_factory=threading.Condition)
+    events: deque = field(default_factory=deque)
+    next_seq: int = 1
+    total_bytes: int = 0
+    last_active: float = field(default_factory=time.time)
+    main_done: bool = False
+    main_done_at: Optional[float] = None
+    stream_complete: bool = False
+    completed_at: Optional[float] = None
+    closed: bool = False
+
+
+def _parse_sse_cursor(*values) -> int:
+    cursors = []
+    for value in values:
+        try:
+            cursors.append(max(0, int(value or 0)))
+        except (TypeError, ValueError):
+            cursors.append(0)
+    return max(cursors, default=0)
+
 
 def _read_config_file_for_write() -> dict:
     """Baseline dict for a partial write to config.json.
@@ -588,6 +616,11 @@ class WebMessage(ChatMessage):
 class WebChannel(ChatChannel):
     NOT_SUPPORT_REPLYTYPE = [ReplyType.VOICE]
     _instance = None
+    SSE_REPLAY_MAX_EVENTS = 5000
+    SSE_REPLAY_MAX_BYTES = 4 * 1024 * 1024
+    SSE_POST_DONE_TAIL_SECONDS = 60
+    SSE_COMPLETED_TTL_SECONDS = 60
+    SSE_IDLE_TIMEOUT_SECONDS = 1800
 
     # def __new__(cls):
     #     if cls._instance is None:
@@ -600,12 +633,8 @@ class WebChannel(ChatChannel):
         self.session_queues = {}  # session_id -> Queue (fallback polling)
         self.request_to_session = {}  # request_id -> session_id
         self.request_to_agent = {}  # request_id -> agent_id
-        self.sse_queues = {}  # request_id -> Queue (SSE streaming)
-        # request_id -> last-active timestamp. Refreshed while the SSE
-        # generator is being consumed (client still connected). The janitor
-        # only reclaims queues whose generator stopped refreshing this, so a
-        # long-running but still-streaming reply is never wrongly killed.
-        self.sse_last_active = {}
+        self.sse_streams = {}  # request_id -> SSEStreamState
+        self._sse_streams_lock = threading.RLock()
         self._http_server = None
         self._sse_janitor_started = False
 
@@ -617,6 +646,55 @@ class WebChannel(ChatChannel):
     def _generate_request_id(self):
         """生成唯一的请求ID"""
         return str(uuid.uuid4())
+
+    def _publish_sse_event(self, request_id: str, event: dict) -> bool:
+        """Append one sequenced event and wake every connected reader."""
+        with self._sse_streams_lock:
+            state = self.sse_streams.get(request_id)
+        if state is None:
+            logger.warning(
+                f"[WebChannel] dropped SSE event for unknown request "
+                f"{request_id}: type={event.get('type')}"
+            )
+            return False
+
+        with state.condition:
+            if state.closed or state.stream_complete:
+                reason = "closed" if state.closed else "complete"
+                logger.warning(
+                    f"[WebChannel] dropped SSE event for {reason} stream "
+                    f"{request_id}: type={event.get('type')}"
+                )
+                return False
+            item = dict(event)
+            item["seq"] = state.next_seq
+            state.next_seq += 1
+            encoded_size = len(json.dumps(
+                item, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8"))
+            state.events.append((item, encoded_size))
+            state.total_bytes += encoded_size
+            state.last_active = time.time()
+
+            # Keep at least the newest event even if it alone exceeds the byte
+            # budget. Cursor expiry is reported explicitly by stream_response.
+            while len(state.events) > 1 and (
+                len(state.events) > self.SSE_REPLAY_MAX_EVENTS
+                or state.total_bytes > self.SSE_REPLAY_MAX_BYTES
+            ):
+                _, removed_size = state.events.popleft()
+                state.total_bytes -= removed_size
+
+            event_type = item.get("type")
+            if event_type == "done":
+                state.main_done = True
+                if state.main_done_at is None:
+                    state.main_done_at = state.last_active
+            elif event_type == "stream_end":
+                state.stream_complete = True
+                state.completed_at = state.last_active
+            state.condition.notify_all()
+        return True
 
     @staticmethod
     def _session_queue_key(session_id: str, agent_id: str = None) -> str:
@@ -670,14 +748,14 @@ class WebChannel(ChatChannel):
             agent_id = context.get("agent_id") or self.request_to_agent.get(request_id)
             session_queue_key = self._session_queue_key(session_id, agent_id)
 
-            # SSE mode: push events to SSE queue
-            if request_id in self.sse_queues:
+            # SSE mode: append events to the replay log.
+            if request_id in self.sse_streams:
                 content = reply.content if reply.content is not None else ""
 
                 # Intermediate status lines (e.g. /install-browser phases) must NOT use "done",
                 # or the frontend closes EventSource and drops subsequent events.
                 if getattr(reply, "sse_phase", False):
-                    self.sse_queues[request_id].put({
+                    self._publish_sse_event(request_id, {
                         "type": "phase",
                         "content": content,
                         "request_id": request_id,
@@ -690,11 +768,20 @@ class WebChannel(ChatChannel):
                 # Skip duplicate file pushes here; just let the done event through.
                 if reply.type in (ReplyType.IMAGE_URL, ReplyType.FILE) and content.startswith("file://"):
                     text_content = getattr(reply, 'text_content', '')
-                    if text_content:
+                    with self._sse_streams_lock:
+                        state = self.sse_streams.get(request_id)
+                    already_done = False
+                    if state is not None:
+                        with state.condition:
+                            already_done = state.main_done
+                    # A preceding TEXT reply may already have published done
+                    # and deliberately left the stream open for auto-TTS. In
+                    # that case this duplicate media reply must not end it.
+                    if text_content and not already_done:
                         seqs = self._fetch_latest_pair_seqs(
                             session_id, context.get("agent_id")
                         )
-                        self.sse_queues[request_id].put({
+                        published = self._publish_sse_event(request_id, {
                             "type": "done",
                             "content": text_content,
                             "request_id": request_id,
@@ -702,6 +789,10 @@ class WebChannel(ChatChannel):
                             "user_seq": seqs.get("user_seq"),
                             "bot_seq": seqs.get("bot_seq"),
                         })
+                        if published:
+                            self._publish_sse_event(
+                                request_id, {"type": "stream_end"}
+                            )
                     logger.debug(f"SSE skipped duplicate file for request {request_id}")
                     return
 
@@ -715,7 +806,7 @@ class WebChannel(ChatChannel):
                 seqs = self._fetch_latest_pair_seqs(
                     session_id, context.get("agent_id")
                 )
-                self.sse_queues[request_id].put({
+                self._publish_sse_event(request_id, {
                     "type": "done",
                     "content": content,
                     "request_id": request_id,
@@ -728,8 +819,13 @@ class WebChannel(ChatChannel):
                 # synthesis runs in the background so the chat stream is never
                 # blocked; the resulting audio URL is pushed via a follow-up
                 # `voice_attach` SSE event and persisted to messages.extras.
+                tts_pending = False
                 if reply.type == ReplyType.TEXT and content.strip():
-                    self._maybe_dispatch_auto_tts(request_id, session_id, content, context)
+                    tts_pending = self._maybe_dispatch_auto_tts(
+                        request_id, session_id, content, context
+                    )
+                if not tts_pending:
+                    self._publish_sse_event(request_id, {"type": "stream_end"})
                 return
 
             # Fallback: polling mode
@@ -739,7 +835,7 @@ class WebChannel(ChatChannel):
                 # request: they were already pushed via the `file_to_send` event during
                 # agent execution. By the time the chat_channel sends the IMAGE_URL reply,
                 # the SSE stream has typically closed (after the text "done") and the
-                # request_id is gone from sse_queues, so we'd otherwise duplicate the file
+                # request_id is gone from sse_streams, so we'd otherwise duplicate the file
                 # as a polling bubble. Scheduler/push tasks have no on_event and must
                 # still go through polling normally.
                 if (
@@ -771,7 +867,7 @@ class WebChannel(ChatChannel):
             logger.error(f"Error in send method: {e}")
 
     def _make_sse_callback(self, request_id: str):
-        """Build an on_event callback that pushes agent stream events into the SSE queue."""
+        """Build a callback that publishes agent events to the SSE replay log."""
 
         # Cap reasoning bytes pushed to the frontend per request to avoid
         # browser stalls / crashes on very long chains-of-thought. Anything
@@ -792,9 +888,9 @@ class WebChannel(ChatChannel):
         streamed_error: List[str] = []
 
         def on_event(event: dict):
-            if request_id not in self.sse_queues:
+            if request_id not in self.sse_streams:
                 return
-            q = self.sse_queues[request_id]
+            publish = lambda item: self._publish_sse_event(request_id, item)
             event_type = event.get("type")
             data = event.get("data", {})
 
@@ -806,7 +902,7 @@ class WebChannel(ChatChannel):
                 if remaining <= 0:
                     if not reasoning_capped_notified[0]:
                         reasoning_capped_notified[0] = True
-                        q.put({
+                        publish({
                             "type": "reasoning",
                             "content": "\n\n... [reasoning truncated for display] ...",
                         })
@@ -814,20 +910,20 @@ class WebChannel(ChatChannel):
                 if len(delta) > remaining:
                     delta = delta[:remaining]
                 reasoning_chars_sent[0] += len(delta)
-                q.put({"type": "reasoning", "content": delta})
+                publish({"type": "reasoning", "content": delta})
 
             elif event_type == "message_update":
                 delta = data.get("delta", "")
                 if delta:
-                    q.put({"type": "delta", "content": delta})
+                    publish({"type": "delta", "content": delta})
 
             elif event_type == "tool_execution_start":
                 tool_name = data.get("tool_name", "tool")
                 arguments = data.get("arguments", {})
-                q.put({"type": "tool_start", "tool_call_id": data.get("tool_call_id"), "tool": tool_name, "arguments": arguments})
+                publish({"type": "tool_start", "tool_call_id": data.get("tool_call_id"), "tool": tool_name, "arguments": arguments})
 
             elif event_type == "tool_execution_progress":
-                q.put({
+                publish({
                     "type": "tool_progress",
                     "tool_call_id": data.get("tool_call_id"),
                     "tool": data.get("tool_name", "tool"),
@@ -860,13 +956,13 @@ class WebChannel(ChatChannel):
                     if len(display) > MAX_DISPLAY_STREAM_CHARS:
                         display = display[:MAX_DISPLAY_STREAM_CHARS] + "…"
                     payload["display"] = display
-                q.put(payload)
+                publish(payload)
 
             elif event_type == "subagent_step":
                 # A tool call made by a sub agent, relayed so the card for
                 # that sub agent can show what it is doing instead of
                 # spinning for minutes.
-                q.put({
+                publish({
                     "type": "subagent_step",
                     "card_id": data.get("card_id"),
                     "step_id": data.get("step_id"),
@@ -881,7 +977,7 @@ class WebChannel(ChatChannel):
             elif event_type == "message_end":
                 tool_calls = data.get("tool_calls", [])
                 if tool_calls:
-                    q.put({"type": "message_end", "has_tool_calls": True})
+                    publish({"type": "message_end", "has_tool_calls": True})
 
             elif event_type == "error":
                 # Agent raised an exception (LLM 401/timeout/etc). Surface the
@@ -895,19 +991,20 @@ class WebChannel(ChatChannel):
                 # Remember it so the agent_end handler below knows not to
                 # rewrite the message into a generic empty-response notice.
                 streamed_error.append(err_msg)
-                q.put({
+                publish({
                     "type": "done",
                     "content": f"❌ {err_msg}",
                     "request_id": request_id,
                     "timestamp": time.time(),
                 })
+                publish({"type": "stream_end"})
 
             elif event_type == "agent_cancelled":
                 # Push an explicit cancelled SSE event so the frontend
                 # marks the bubble as stopped. A trailing "done" still
                 # arrives with the partial answer.
                 final_response = data.get("final_response", "")
-                q.put({
+                publish({
                     "type": "cancelled",
                     "content": final_response,
                     "request_id": request_id,
@@ -931,7 +1028,7 @@ class WebChannel(ChatChannel):
                             f"[WebChannel] agent_end with empty final_response for "
                             f"request {request_id}, sending fallback done"
                         )
-                        q.put({
+                        publish({
                             "type": "done",
                             "content": i18n.t(
                                 "(模型未返回任何内容，请重试或换一种方式描述你的需求)",
@@ -940,6 +1037,7 @@ class WebChannel(ChatChannel):
                             "request_id": request_id,
                             "timestamp": time.time(),
                         })
+                        publish({"type": "stream_end"})
 
             elif event_type == "file_to_send":
                 file_path = data.get("path", "")
@@ -967,12 +1065,12 @@ class WebChannel(ChatChannel):
                 # the file directly (Finder / default app) instead of the browser.
                 if not is_remote and file_path:
                     payload["abs_path"] = file_path
-                q.put(payload)
+                publish(payload)
 
             elif event_type == "artifact":
                 payload = _build_artifact_payload(data)
                 if payload:
-                    q.put(payload)
+                    publish(payload)
 
         return on_event
 
@@ -1020,22 +1118,24 @@ class WebChannel(ChatChannel):
         session_id: str,
         text: str,
         context: dict,
-    ) -> None:
+    ) -> bool:
         try:
             mode = self._resolve_voice_reply_mode()
             if mode == "off":
-                return
+                return False
             if mode == "voice_if_voice" and not context.get("is_voice_input"):
-                return
+                return False
             if not self._tts_provider_ready():
-                return
+                return False
             threading.Thread(
                 target=self._synthesize_tts_async,
                 args=(request_id, session_id, text, context.get("agent_id")),
                 daemon=True,
             ).start()
+            return True
         except Exception as e:
             logger.debug(f"[WebChannel] auto-tts dispatch skipped: {e}")
+            return False
 
     def _synthesize_tts_async(
         self,
@@ -1067,14 +1167,13 @@ class WebChannel(ChatChannel):
                 ).attach_extras_to_last_assistant(session_id, payload)
             except Exception as e:
                 logger.debug(f"[WebChannel] tts persist skipped: {e}")
-            q = self.sse_queues.get(request_id)
-            if q is None:
+            if request_id not in self.sse_streams:
                 logger.warning(
-                    f"[WebChannel] TTS ready but SSE queue already closed "
+                    f"[WebChannel] TTS ready but SSE stream already closed "
                     f"for request {request_id} (url={url})"
                 )
                 return
-            q.put({
+            self._publish_sse_event(request_id, {
                 "type": "voice_attach",
                 "url": url,
                 "request_id": request_id,
@@ -1084,6 +1183,8 @@ class WebChannel(ChatChannel):
         except Exception as e:
             # TTS failures are intentionally silent (no user-facing error).
             logger.warning(f"[WebChannel] TTS synthesis failed: {e}")
+        finally:
+            self._publish_sse_event(request_id, {"type": "stream_end"})
 
     @staticmethod
     def _publish_tts_audio(src_path: str) -> str:
@@ -1379,8 +1480,8 @@ class WebChannel(ChatChannel):
                 self.session_queues[session_queue_key] = Queue()
 
             if use_sse:
-                self.sse_queues[request_id] = Queue()
-                self.sse_last_active[request_id] = time.time()
+                with self._sse_streams_lock:
+                    self.sse_streams[request_id] = SSEStreamState()
 
             trigger_prefixs = conf().get("single_chat_prefix", [""])
             if check_prefix(prompt, trigger_prefixs) is None:
@@ -1420,52 +1521,78 @@ class WebChannel(ChatChannel):
             return json.dumps({"status": "error", "message": str(e)})
 
     def _drop_sse_request(self, request_id: str):
-        """Reclaim all state tied to an SSE request to prevent fd/memory leaks.
+        """Reclaim all state tied to an SSE request."""
+        with self._sse_streams_lock:
+            state = self.sse_streams.pop(request_id, None)
+            self.request_to_session.pop(request_id, None)
+            self.request_to_agent.pop(request_id, None)
+        if state is not None:
+            with state.condition:
+                state.closed = True
+                state.condition.notify_all()
 
-        Removing the queue lets the WSGI generator and its socket be released,
-        and dropping request_to_session avoids unbounded map growth.
-        """
-        self.sse_queues.pop(request_id, None)
-        self.sse_last_active.pop(request_id, None)
-        self.request_to_session.pop(request_id, None)
-        self.request_to_agent.pop(request_id, None)
+    def _sweep_sse_streams(self, now: Optional[float] = None) -> int:
+        """Finalize overdue tails and reclaim expired SSE replay logs."""
+        now = time.time() if now is None else now
+        with self._sse_streams_lock:
+            states = list(self.sse_streams.items())
+
+        overdue = []
+        for request_id, state in states:
+            with state.condition:
+                if (
+                    state.main_done
+                    and not state.stream_complete
+                    and state.main_done_at is not None
+                    and now - state.main_done_at
+                    >= self.SSE_POST_DONE_TAIL_SECONDS
+                ):
+                    overdue.append(request_id)
+        for request_id in overdue:
+            self._publish_sse_event(request_id, {"type": "stream_end"})
+
+        with self._sse_streams_lock:
+            states = list(self.sse_streams.items())
+        stale = []
+        for request_id, state in states:
+            with state.condition:
+                if state.stream_complete and state.completed_at is not None:
+                    expired = (
+                        now - state.completed_at
+                        >= self.SSE_COMPLETED_TTL_SECONDS
+                    )
+                else:
+                    expired = (
+                        now - state.last_active
+                        >= self.SSE_IDLE_TIMEOUT_SECONDS
+                    )
+            if expired:
+                stale.append(request_id)
+
+        for request_id in stale:
+            self._drop_sse_request(request_id)
+        return len(stale)
 
     def _start_sse_janitor(self):
-        """Start a background thread that reclaims orphaned SSE queues.
+        """Start a background thread that reclaims orphaned SSE logs.
 
-        When a client disconnects before the "done" event arrives (browser
-        closed, session switched, network drop), the generator may keep the
-        queue around to allow reconnection. Without a sweep these orphans
-        accumulate, leaking file descriptors until cheroot raises
-        "[Errno 24] Too many open files".
-
-        Reclamation is based on idle time, not total age: an active stream
-        refreshes ``sse_last_active`` every second while its generator is being
-        consumed, so a long-running reply (even hours long) is never killed
-        while the client stays connected. Only queues that stopped refreshing
-        (client gone) past SSE_IDLE_TIMEOUT are reclaimed.
+        Completed logs remain replayable for a short grace period. Abandoned
+        unfinished logs use the longer idle timeout.
         """
         if self._sse_janitor_started:
             return
         self._sse_janitor_started = True
 
-        SSE_IDLE_TIMEOUT = 1800  # 30 minutes with no client consumption
         SWEEP_INTERVAL = 60
 
         def _sweep():
             while True:
                 time.sleep(SWEEP_INTERVAL)
                 try:
-                    now = time.time()
-                    stale = [
-                        rid for rid, ts in list(self.sse_last_active.items())
-                        if now - ts > SSE_IDLE_TIMEOUT
-                    ]
-                    for rid in stale:
-                        self._drop_sse_request(rid)
-                    if stale:
+                    reclaimed = self._sweep_sse_streams()
+                    if reclaimed:
                         logger.info(
-                            f"[WebChannel] SSE janitor reclaimed {len(stale)} "
+                            f"[WebChannel] SSE janitor reclaimed {reclaimed} "
                             f"idle stream(s)"
                         )
                 except Exception as e:
@@ -1474,91 +1601,108 @@ class WebChannel(ChatChannel):
         t = threading.Thread(target=_sweep, name="sse-janitor", daemon=True)
         t.start()
 
-    def stream_response(self, request_id: str):
+    def stream_response(self, request_id: str, after_seq: int = 0):
         """
         SSE generator for a given request_id.
         Yields UTF-8 encoded bytes to avoid WSGI Latin-1 mangling.
-        Supports client reconnection: the queue is only removed after a
-        "done" event is consumed, so a new GET /stream with the same
-        request_id can resume reading remaining events.
+        Each connection reads the request's event log using its own cursor.
         """
-        if request_id not in self.sse_queues:
+        with self._sse_streams_lock:
+            state = self.sse_streams.get(request_id)
+        if state is None:
             yield b"data: {\"type\": \"error\", \"message\": \"invalid request_id\"}\n\n"
             return
-
-        q = self.sse_queues[request_id]
+        try:
+            cursor = max(0, int(after_seq))
+        except (TypeError, ValueError):
+            cursor = 0
         idle_timeout = 600  # 10 minutes without any real event
         deadline = time.time() + idle_timeout
-        # After the main reply is done we keep the stream open for a short
-        # tail so async post-processing (TTS auto-synthesis) can deliver a
-        # `voice_attach` event before the client disconnects.
-        POST_DONE_TAIL_SECONDS = 60
         # A cancel only takes effect at the agent's next checkpoint, so the run
         # keeps emitting events (tool results, the partial reply) for a while
         # after the user presses Stop. Stay open for them, just not for the
         # full idle timeout.
         CANCEL_GRACE_SECONDS = 60
-        POST_CANCEL_TAIL_SECONDS = 3
-        post_done = False
-        post_deadline = 0.0
         cancelled = False
 
         try:
             while time.time() < deadline:
-                # Mark the stream alive on every loop. While the client keeps
-                # consuming, the generator runs and refreshes this, so the
-                # janitor won't reclaim a long-running but active stream.
-                self.sse_last_active[request_id] = time.time()
-                try:
-                    item = q.get(timeout=1)
-                except Empty:
-                    if post_done and time.time() >= post_deadline:
+                resync_payload = None
+                force_stream_end = False
+                with state.condition:
+                    now = time.time()
+                    state.last_active = now
+                    force_stream_end = (
+                        state.main_done
+                        and not state.stream_complete
+                        and state.main_done_at is not None
+                        and now - state.main_done_at
+                        >= self.SSE_POST_DONE_TAIL_SECONDS
+                    )
+                    if state.events:
+                        first_seq = state.events[0][0]["seq"]
+                        latest_seq = state.events[-1][0]["seq"]
+                        if cursor < first_seq - 1:
+                            resync_payload = {
+                                "type": "resync_required",
+                                "reason": "event_cursor_expired",
+                                "after_seq": cursor,
+                                "first_available_seq": first_seq,
+                            }
+                        elif cursor > latest_seq:
+                            resync_payload = {
+                                "type": "resync_required",
+                                "reason": "event_cursor_ahead",
+                                "after_seq": cursor,
+                                "latest_available_seq": latest_seq,
+                            }
+                    pending = [
+                        event for event, _ in state.events
+                        if event["seq"] > cursor
+                    ]
+                    complete = state.stream_complete
+                    closed = state.closed
+                    if (
+                        resync_payload is None
+                        and not pending and not complete and not closed
+                    ):
+                        state.condition.wait(timeout=1)
+
+                if force_stream_end:
+                    self._publish_sse_event(
+                        request_id, {"type": "stream_end"}
+                    )
+                    continue
+
+                if resync_payload is not None:
+                    payload = json.dumps(resync_payload, ensure_ascii=False)
+                    yield f"data: {payload}\n\n".encode("utf-8")
+                    return
+
+                if not pending:
+                    if complete or closed:
                         break
                     yield b": keepalive\n\n"
                     continue
 
-                deadline = time.time() + (
-                    CANCEL_GRACE_SECONDS if cancelled else idle_timeout
-                )
-                payload = json.dumps(item, ensure_ascii=False)
-                yield f"data: {payload}\n\n".encode("utf-8")
-
-                itype = item.get("type")
-                if itype == "done":
-                    post_done = True
-                    post_deadline = time.time() + (
-                        POST_CANCEL_TAIL_SECONDS if cancelled
-                        else POST_DONE_TAIL_SECONDS
+                for item in pending:
+                    deadline = time.time() + (
+                        CANCEL_GRACE_SECONDS if cancelled else idle_timeout
                     )
-                elif itype == "cancelled":
-                    # Wait for the run to actually wind down and send its
-                    # partial reply as "done"; closing on a blind timer here
-                    # strands in-flight tool bubbles and makes the client
-                    # reconnect onto a dropped queue.
-                    cancelled = True
-                    deadline = time.time() + CANCEL_GRACE_SECONDS
-                elif itype == "voice_attach":
-                    # WSGI buffers the previous chunk until the next yield;
-                    # shrink the tail so the generator wakes up quickly to
-                    # emit a couple of keepalive comments that push the
-                    # voice_attach payload through to the browser.
-                    post_done = True
-                    post_deadline = time.time() + 2  # 2s post-attach tail
+                    payload = json.dumps(item, ensure_ascii=False)
+                    yield (
+                        f"id: {item['seq']}\n"
+                        f"data: {payload}\n\n"
+                    ).encode("utf-8")
+                    cursor = item["seq"]
+                    if item.get("type") == "cancelled":
+                        cancelled = True
+                        deadline = time.time() + CANCEL_GRACE_SECONDS
+                    if item.get("type") == "stream_end":
+                        return
         except GeneratorExit:
-            # Client disconnected (WSGI closed the generator). If the reply is
-            # already complete there is nothing to resume, so reclaim now to
-            # release the socket fd. Otherwise keep the queue briefly so a
-            # reconnect with the same request_id can resume; the janitor will
-            # reclaim it if no reconnect happens.
-            if post_done:
-                self._drop_sse_request(request_id)
+            # The event log is deliberately retained for reconnection.
             raise
-        finally:
-            # Drop the queue once the reply is actually complete or the idle
-            # deadline has passed. Early client disconnects are handled by the
-            # GeneratorExit branch above and the background janitor.
-            if post_done or time.time() >= deadline:
-                self._drop_sse_request(request_id)
 
     def cancel_request(self):
         """
@@ -1606,8 +1750,8 @@ class WebChannel(ChatChannel):
                 )
                 cancelled = registry.cancel_session(scoped_session_id)
 
-            if request_id and request_id in self.sse_queues:
-                self.sse_queues[request_id].put({
+            if request_id and request_id in self.sse_streams:
+                self._publish_sse_event(request_id, {
                     "type": "cancelled",
                     "content": "🛑 Cancelled" if lang.startswith("en") else "🛑 已中止",
                     "request_id": request_id,
@@ -1834,7 +1978,7 @@ class WebChannel(ChatChannel):
         server.requests.min = 20
         server.requests.max = 80
         self._http_server = server
-        # Reclaim orphaned SSE queues so disconnected clients don't leak fds.
+        # Reclaim orphaned SSE logs so disconnected clients don't leak memory.
         self._start_sse_janitor()
         # prepare() binds the socket, serve() runs the accept loop. Splitting
         # start() into the two lets us report a bind failure with the port in
@@ -2247,17 +2391,25 @@ class CancelHandler:
 class StreamHandler:
     def GET(self):
         _require_auth()
-        params = web.input(request_id='')
+        params = web.input(request_id='', after_seq='')
         request_id = params.request_id
         if not request_id:
             raise web.badrequest()
+
+        # Explicit query cursors are used by the frontend's manually-created
+        # EventSource. Native EventSource reconnects remain compatible via the
+        # standard Last-Event-ID request header.
+        after_seq = _parse_sse_cursor(
+            params.after_seq,
+            web.ctx.env.get('HTTP_LAST_EVENT_ID', '0'),
+        )
 
         web.header('Content-Type', 'text/event-stream; charset=utf-8')
         web.header('Cache-Control', 'no-cache')
         web.header('X-Accel-Buffering', 'no')
         web.header('Access-Control-Allow-Origin', '*')
 
-        return WebChannel().stream_response(request_id)
+        return WebChannel().stream_response(request_id, after_seq)
 
 
 class ChatHandler:
