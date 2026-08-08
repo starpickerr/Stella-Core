@@ -5329,31 +5329,32 @@ function syncReasoningEffortOptions() {
     const reasoning = reasoningByModel[selectedModel] || provider.reasoning || {};
     const options = reasoning.supported ? (reasoning.options || []) : [];
     const thinkingEl = document.getElementById('cfg-enable-thinking');
-    // Claude-style effort and thinking-only models must expose effort even
-    // when the generic thinking toggle is off.
-    const canUseWithoutThinking = reasoning.param === 'effort' || reasoning.thinking_only === true;
-    if (!thinkingEl || (!thinkingEl.checked && !canUseWithoutThinking) || !options.length) {
+
+    if (options.length) {
+        const values = options.map(opt => opt.value);
+        // Prefer this model's own saved effort (per-model config) so switching
+        // vendors never reinterprets a value set for a different model. Key is
+        // the lowercased model name, matching the backend resolve path.
+        const savedForModel = configReasoningByModel[`${cfgProviderValue}:${selectedModel.trim().toLowerCase()}`]
+            || configReasoningByModel[cfgProviderValue + ':' + selectedModel];
+        const saved = savedForModel || cfgReasoningEffortValue;
+        // Fall back to the active model's native enum when the saved value is
+        // not valid here. Resolved even while hidden so a save never writes
+        // another model's enum under this model's key.
+        cfgReasoningEffortValue = values.includes(saved) ? saved : (reasoning.default || options[0].value);
+    }
+
+    // Effort only shapes a thinking pass, so the field follows the toggle.
+    if (!thinkingEl || !thinkingEl.checked || !options.length) {
         wrap.classList.add('hidden');
         return;
     }
 
     wrap.classList.remove('hidden');
-    const values = options.map(opt => opt.value);
-    // Prefer this model's own saved effort (per-model config) so switching
-    // vendors never reinterprets a value set for a different model. Key is the
-    // lowercased model name, matching the backend resolve path.
-    const savedForModel = configReasoningByModel[`${cfgProviderValue}:${selectedModel.trim().toLowerCase()}`]
-        || configReasoningByModel[cfgProviderValue + ':' + selectedModel];
-    const saved = savedForModel || cfgReasoningEffortValue;
-    // Fall back to the active model's native enum when the saved value is not
-    // valid here.
-    const selected = values.includes(saved) ? saved : (reasoning.default || options[0].value);
-    cfgReasoningEffortValue = selected;
-
     initDropdown(
         el,
         options.map(opt => ({ value: opt.value, label: opt.label || opt.value })),
-        selected,
+        cfgReasoningEffortValue,
         (val) => { cfgReasoningEffortValue = val; }
     );
 }

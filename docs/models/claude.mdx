@@ -36,6 +36,19 @@ Claude is provided by Anthropic and supports both text chat and image understand
 | `claude-sonnet-4-6` | Balanced cost and speed, lower cost |
 | `claude-opus-4-6` / `claude-sonnet-4-5` / `claude-sonnet-4-0` | Earlier flagships at a lower price |
 
+## Thinking Mode
+
+Controlled by the global `enable_thinking` setting, which can also be toggled on the Web Console configuration page. When enabled, the Web Console shows the thinking process:
+
+```json
+{
+  "enable_thinking": true,
+  "reasoning_effort": "high"
+}
+```
+
+`reasoning_effort` sets the thinking intensity (mapped to Anthropic's `output_config.effort`) and accepts `low` / `medium` / `high` / `xhigh` / `max`, with the supported range depending on the model. It only takes effect when `enable_thinking` is `true`.
+
 ## Image Understanding
 
 Once `claude_api_key` is configured, the Agent's Vision tool automatically uses the Claude main model to recognize images, with no extra setup required.

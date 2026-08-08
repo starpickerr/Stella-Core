@@ -36,6 +36,19 @@ Claude は Anthropic が提供するモデルで、テキスト対話と画像�
 | `claude-sonnet-4-6` | コストパフォーマンスと速度のバランスが良く、コストも低い |
 | `claude-opus-4-6` / `claude-sonnet-4-5` / `claude-sonnet-4-0` | より以前のフラッグシップ。価格はより安い |
 
+## 思考モード
+
+グローバル設定 `enable_thinking` で制御し、Web コンソールの設定ページからも切り替えられます。有効にすると Web コンソールに思考プロセスが表示されます：
+
+```json
+{
+  "enable_thinking": true,
+  "reasoning_effort": "high"
+}
+```
+
+`reasoning_effort` は思考の強度（Anthropic の `output_config.effort` に対応）を制御し、`low` / `medium` / `high` / `xhigh` / `max` を指定できます。対応範囲はモデルによって異なり、`enable_thinking` が `true` の場合のみ有効です。
+
 ## 画像理解
 
 `claude_api_key` を設定すると、Agent の Vision ツールは Claude のメインモデルを使用して自動的に画像を認識します。追加設定は不要です。
