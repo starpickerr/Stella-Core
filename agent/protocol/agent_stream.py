@@ -20,7 +20,7 @@ from agent.protocol.message_utils import (
     build_compaction_summary_text,
     find_first_user_text_block,
 )
-from agent.tools.base_tool import BaseTool, ToolResult, is_tool_available
+from agent.tools.base_tool import BaseTool, ToolResult, is_tool_available, renders_own_cards
 from common.log import logger
 from common.i18n import t as _t
 
@@ -1584,14 +1584,29 @@ class AgentStreamExecutor:
                 }
             return result
 
-        self._emit_event("tool_execution_start", {
+        tool = tool_override or self.tools.get(tool_name)
+        start_event = {
             "tool_call_id": tool_id,
             "tool_name": tool_name,
-            "arguments": arguments
-        })
+            "arguments": arguments,
+        }
+        # A call that puts up its own cards gets no card of its own, or the
+        # same work is on screen twice. Trust but verify: a tool that turns
+        # back at its own front door - a setting is off, an argument is out of
+        # range - emits nothing, and its refusal has to appear somewhere.
+        own_cards = renders_own_cards(tool, arguments)
+        emitted_own = False
+
+        def emit_from_tool(event_type, data):
+            nonlocal emitted_own
+            if event_type == "tool_execution_start":
+                emitted_own = True
+            self._emit_event(event_type, data)
+
+        if not own_cards:
+            self._emit_event("tool_execution_start", start_event)
 
         try:
-            tool = tool_override or self.tools.get(tool_name)
             if not tool:
                 raise ValueError(self._build_tool_not_found_message(tool_name))
 
@@ -1607,7 +1622,7 @@ class AgentStreamExecutor:
                     "message": message,
                 }
             )
-            tool.event_callback = self._emit_event
+            tool.event_callback = emit_from_tool if own_cards else self._emit_event
             tool.tool_call_id = tool_id
 
             # Execute tool
@@ -1645,7 +1660,11 @@ class AgentStreamExecutor:
             end_event = {"tool_call_id": tool_id, "tool_name": tool_name, **result_dict}
             if getattr(result, "display", None):
                 end_event["display"] = result.display
-            self._emit_event("tool_execution_end", end_event)
+            if not own_cards:
+                self._emit_event("tool_execution_end", end_event)
+            elif not emitted_own:
+                self._emit_event("tool_execution_start", start_event)
+                self._emit_event("tool_execution_end", end_event)
 
             return result_dict
 
@@ -1658,7 +1677,12 @@ class AgentStreamExecutor:
             }
             # Record failure
             self._record_tool_result(tool_name, arguments, False)
-            
+
+            # The tool was trusted to put up its own cards and then threw.
+            # Whatever it had already drawn is now stranded mid-spin, so a
+            # card saying what went wrong is worth the small duplication.
+            if own_cards:
+                self._emit_event("tool_execution_start", start_event)
             self._emit_event("tool_execution_end", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,

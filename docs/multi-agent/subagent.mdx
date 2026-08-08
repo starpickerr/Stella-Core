@@ -22,7 +22,7 @@ A sub agent inherits part of the main Agent's environment, but it is not a copy 
 | --- | --- |
 | Model | Message history of the main conversation |
 | Workspace (files are read and written in the same place) | Persona and rule files (`AGENT.md`, `RULE.md`, `USER.md`) |
-| Skills | Memory and knowledge base retrieval |
+| Skills (types with the full tool set only) | Memory and knowledge base retrieval |
 
 A sub agent therefore knows only what the main Agent passes to it. It cannot see the conversation and cannot ask the user anything, so every path, identifier, constraint and settled decision it needs must be stated when the task is created.
 
@@ -90,7 +90,7 @@ Fields:
 | `tools` | Allowed tools. Omit to inherit all tools of the main Agent |
 | Body | The sub agent's system prompt: how to work and what to return |
 
-Restricting `tools` is the most reliable constraint: a type with only `read, ls, search_files` cannot modify anything.
+Restricting `tools` is the most reliable constraint: a type with only `read, ls, search_files` cannot modify anything. A type that lists `tools` does not inherit skills, so omit the field when the type needs them and scope the work in the body instead.
 
 On first start, `README.md` and `example.md.template` are created under `subagents/`. Copy the template to a `.md` file to enable it. Templates are re-read every turn, so a new file takes effect on the next message with no restart.
 

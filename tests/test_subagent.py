@@ -283,6 +283,35 @@ def test_child_gets_the_task_but_not_the_parents_persona_or_memory(
     assert "read-only" in brief
 
 
+def test_a_type_that_gives_up_tools_gives_up_skills_with_them(
+    parent, workspace, enabled, monkeypatch
+):
+    """A skill is a workflow written end to end, and most end in a write. Show
+    one to a read-only sub agent and it spends turns getting ready for a step
+    it will never reach, then reports that it could not take it."""
+    parent.skill_manager = object()
+    parent.enable_skills = True
+    built = _capture_children(monkeypatch)
+    templates = load_templates(str(workspace))
+
+    run_tasks(
+        parent,
+        [
+            SubagentTask(goal="Find it", subagent_type="explore"),
+            SubagentTask(goal="Fix it", subagent_type="general-purpose"),
+        ],
+        templates,
+        enabled,
+    )
+
+    by_goal = {child.goal: child for child in built}
+    assert by_goal["Find it"].kwargs["skill_manager"] is None
+    assert by_goal["Find it"].kwargs["enable_skills"] is False
+    # Full tool set, full skills: nothing it reads about is out of reach.
+    assert by_goal["Fix it"].kwargs["skill_manager"] is parent.skill_manager
+    assert by_goal["Fix it"].kwargs["enable_skills"] is True
+
+
 def test_skip_context_files_actually_keeps_the_persona_out_of_the_prompt(workspace):
     """The flag being passed is not the same as the flag working. This builds a
     real Agent, so a regression in get_full_system_prompt is caught here."""
