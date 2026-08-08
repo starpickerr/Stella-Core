@@ -256,6 +256,8 @@ const I18N = {
         tip_new_chat: '新建对话',
         tip_clear_context: '清除上下文',
         tip_attach: '添加附件',
+        tip_cancel: '中止',
+        tip_cancelled: '已中止',
         attach_menu_file: '上传文件',
         mic_idle_title: '点击录音 / 再按一次结束',
         mic_recording_title: '录音中，再次点击结束',
@@ -529,6 +531,8 @@ const I18N = {
         tip_new_chat: '新建對話',
         tip_clear_context: '清除上下文',
         tip_attach: '新增附件',
+        tip_cancel: '中止',
+        tip_cancelled: '已中止',
         attach_menu_file: '上傳檔案',
         mic_idle_title: '點選錄音 / 再按一次結束',
         mic_recording_title: '錄音中，再次點選結束',
@@ -797,6 +801,8 @@ const I18N = {
         tip_new_chat: 'New Chat',
         tip_clear_context: 'Clear Context',
         tip_attach: 'Add Attachment',
+        tip_cancel: 'Cancel',
+        tip_cancelled: 'Cancelled',
         attach_menu_file: 'Upload File',
         mic_idle_title: 'Click to record, click again to stop',
         mic_recording_title: 'Recording, click to stop',
@@ -1971,7 +1977,7 @@ function setSendBtnCancelMode(requestId) {
     sendBtnMode = 'cancel';
     sendBtn.disabled = false;
     sendBtn.classList.add('send-btn-cancel');
-    sendBtn.title = (currentLang === 'zh' ? '中止' : 'Cancel');
+    _setBtnTooltip(sendBtn, t('tip_cancel'));
     sendBtn.innerHTML = '<i class="fas fa-stop text-sm"></i>';
     updateSteerBtnState();
 }
@@ -1980,7 +1986,7 @@ function resetSendBtnSendMode() {
     activeRequestId = null;
     sendBtnMode = 'send';
     sendBtn.classList.remove('send-btn-cancel');
-    sendBtn.title = '';
+    _setBtnTooltip(sendBtn, '');
     sendBtn.innerHTML = '<i class="fas fa-paper-plane text-sm"></i>';
     steerBtn.classList.add('hidden');
     steerBtn.classList.remove('flex');
@@ -2053,7 +2059,7 @@ function requestCancel() {
     // Optimistic UI lock so the click visibly registers before the SSE
     // "cancelled" event arrives.
     sendBtn.disabled = true;
-    sendBtn.title = (currentLang === 'zh' ? '已中止' : 'Cancelled');
+    _setBtnTooltip(sendBtn, t('tip_cancelled'));
 }
 
 // Button click is the only path to Cancel. Pressing Enter still calls
@@ -4555,17 +4561,25 @@ function _restoreSessionPanel() {
     }
 }
 
+// Swap the native `title` for the CSS tooltip so hints appear instantly
+// instead of waiting for the browser's built-in delay.
+function _setBtnTooltip(el, text) {
+    if (!el) return;
+    el.setAttribute('data-tooltip', text);
+    el.removeAttribute('title');
+}
+
 function _applyInputTooltips() {
     const set = (id, key, pos) => {
         const el = document.getElementById(id);
         if (!el) return;
-        el.setAttribute('data-tooltip', t(key));
-        el.removeAttribute('title');
+        _setBtnTooltip(el, t(key));
         if (pos) el.setAttribute('data-tooltip-pos', pos);
     };
     set('new-chat-btn', 'tip_new_chat');
     set('clear-context-btn', 'tip_clear_context');
     set('attach-btn', 'tip_attach');
+    set('steer-btn', 'steer_active');
     set('session-toggle-btn', 'session_history', 'bottom');
     set('workspace-toggle-btn', 'ws_toggle', 'bottom');
     // Optimize / mic buttons carry state-dependent tooltips managed in their
@@ -4573,6 +4587,8 @@ function _applyInputTooltips() {
     // tooltip follows the current locale.
     set('optimize-btn', 'optimize_idle_title');
     set('mic-btn', 'mic_idle_title');
+    // Send button only carries a tooltip while it acts as the cancel button.
+    _setBtnTooltip(sendBtn, sendBtnMode === 'cancel' ? t('tip_cancel') : '');
 }
 
 function _addOptimisticSessionItem(sid) {
