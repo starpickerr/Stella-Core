@@ -128,6 +128,8 @@ class EvolutionSafetyTest(unittest.TestCase):
                 "report.html",
                 "new-project/src/main.py",
                 "config.json",
+                "skills_config.json",
+                "new-project/skills_config.json",
                 "memory/evolution/custom-note.md",
             ):
                 result = guard.execute({"path": rel, "content": rel})

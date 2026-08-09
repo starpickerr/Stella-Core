@@ -193,9 +193,7 @@ def _denied_evolution_path(
     if not parts:
         return True
     folded = tuple(part.casefold() for part in parts)
-    if resolved.name.casefold() in {
-        name.casefold() for name in _WATCH_IGNORE_NAMES
-    }:
+    if folded == ("skills", "skills_config.json"):
         return True
     if folded[0] == "memory" and len(folded) >= 2:
         if folded[1] == ".evolution_backups":
