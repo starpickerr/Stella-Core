@@ -47,6 +47,22 @@ _MAX_CONCURRENT = 2
 _running_lock = threading.Lock()
 _running_count = 0
 
+# Transactions for the same workspace must not overlap: a failed pass restoring
+# its snapshot could otherwise overwrite a concurrent pass that already
+# committed. Different workspaces retain the global parallelism above.
+_workspace_locks_guard = threading.Lock()
+_workspace_locks: dict[Path, threading.Lock] = {}
+
+
+def _get_workspace_lock(workspace_dir: Path) -> threading.Lock:
+    workspace = workspace_dir.resolve()
+    with _workspace_locks_guard:
+        lock = _workspace_locks.get(workspace)
+        if lock is None:
+            lock = threading.Lock()
+            _workspace_locks[workspace] = lock
+        return lock
+
 
 def _builtin_skill_names() -> set:
     """Names of skills shipped with the product (project-root ``skills/``).
@@ -385,6 +401,7 @@ def run_evolution_for_session(
         _running_count += 1
 
     transaction: Optional[_EvolutionWriteTransaction] = None
+    workspace_lock: Optional[threading.Lock] = None
     try:
         if hasattr(agent_bridge, "get_cached_agent"):
             agent = agent_bridge.get_cached_agent(session_id, agent_id=agent_id)
@@ -429,6 +446,8 @@ def run_evolution_for_session(
             from agent.memory.config import get_default_memory_config
             mem_cfg = get_default_memory_config()
         workspace_dir = mem_cfg.get_workspace()
+        workspace_lock = _get_workspace_lock(Path(workspace_dir))
+        workspace_lock.acquire()
         if user_id:
             memory_file = Path(workspace_dir) / "memory" / "users" / user_id / "MEMORY.md"
         else:
@@ -576,10 +595,14 @@ def run_evolution_for_session(
         logger.warning(f"[Evolution] Run failed for session={session_id}: {e}")
         return False
     finally:
-        if transaction is not None:
-            transaction.rollback()
-        with _running_lock:
-            _running_count -= 1
+        try:
+            if transaction is not None:
+                transaction.rollback()
+        finally:
+            if workspace_lock is not None:
+                workspace_lock.release()
+            with _running_lock:
+                _running_count -= 1
 
 
 def _inject_evolution_record(
