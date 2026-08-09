@@ -108,6 +108,33 @@ class _Bridge:
 
 
 class EvolutionSafetyTest(unittest.TestCase):
+    def test_workspace_locks_serialize_only_the_same_workspace(self):
+        first = Path.cwd() / ".evolution-lock-test-a"
+        second = Path.cwd() / ".evolution-lock-test-b"
+        first_lock = executor._get_workspace_lock(first)
+        self.assertIs(first_lock, executor._get_workspace_lock(first))
+        self.assertIsNot(first_lock, executor._get_workspace_lock(second))
+
+        attempted = threading.Event()
+        acquired = threading.Event()
+
+        def acquire_same_workspace():
+            attempted.set()
+            with executor._get_workspace_lock(first):
+                acquired.set()
+
+        first_lock.acquire()
+        worker = threading.Thread(target=acquire_same_workspace)
+        worker.start()
+        try:
+            self.assertTrue(attempted.wait(1))
+            self.assertFalse(acquired.wait(0.05))
+        finally:
+            first_lock.release()
+        self.assertTrue(acquired.wait(1))
+        worker.join(timeout=1)
+        self.assertFalse(worker.is_alive())
+
     def test_bash_is_not_selected_for_evolution(self):
         tools = [SimpleNamespace(name="bash"), SimpleNamespace(name="read")]
         self.assertEqual([t.name for t in executor._select_tools(tools)], ["read"])
