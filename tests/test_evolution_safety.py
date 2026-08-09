@@ -76,14 +76,15 @@ class _Agent:
 
 
 class _ReviewAgent:
-    def __init__(self, tools, outcome):
+    def __init__(self, tools, outcome, write_path):
         self.tools = tools
         self.outcome = outcome
+        self.write_path = write_path
         self.model = None
 
     def run_stream(self, *_args, **_kwargs):
         write = next(t for t in self.tools if t.name == "write")
-        result = write.execute({"path": "MEMORY.md", "content": "modified"})
+        result = write.execute({"path": self.write_path, "content": "modified"})
         if result.status != "success":
             raise AssertionError(result.result)
         if isinstance(self.outcome, Exception):
@@ -92,14 +93,15 @@ class _ReviewAgent:
 
 
 class _Bridge:
-    def __init__(self, agent, outcome):
+    def __init__(self, agent, outcome, write_path="MEMORY.md"):
         self.agents = {"session": agent}
         self.default_agent = agent
         self.outcome = outcome
+        self.write_path = write_path
         self.injected = []
 
     def create_agent(self, **kwargs):
-        return _ReviewAgent(kwargs["tools"], self.outcome)
+        return _ReviewAgent(kwargs["tools"], self.outcome, self.write_path)
 
     def remember_scheduled_output(self, **kwargs):
         self.injected.append(kwargs["content"])
@@ -110,7 +112,7 @@ class EvolutionSafetyTest(unittest.TestCase):
         tools = [SimpleNamespace(name="bash"), SimpleNamespace(name="read")]
         self.assertEqual([t.name for t in executor._select_tools(tools)], ["read"])
 
-    def test_write_guard_allows_existing_feature_paths(self):
+    def test_write_guard_allows_workspace_task_outputs(self):
         with TemporaryDirectory(dir=Path.cwd()) as tmp:
             ws = Path(tmp)
             tx = executor._EvolutionWriteTransaction(ws)
@@ -123,12 +125,16 @@ class EvolutionSafetyTest(unittest.TestCase):
                 "skills/custom/scripts/helper.py",
                 "knowledge/topic.md",
                 "output/result.txt",
+                "report.html",
+                "new-project/src/main.py",
+                "config.json",
+                "memory/evolution/custom-note.md",
             ):
                 result = guard.execute({"path": rel, "content": rel})
                 self.assertEqual(result.status, "success", rel)
             tx.rollback()
 
-    def test_write_guard_blocks_unrelated_and_protected_paths(self):
+    def test_write_guard_blocks_only_protected_and_outside_paths(self):
         with (
             TemporaryDirectory(dir=Path.cwd()) as tmp,
             TemporaryDirectory(dir=Path.cwd()) as outside,
@@ -139,8 +145,6 @@ class EvolutionSafetyTest(unittest.TestCase):
                 _FileTool(ws), str(ws), {"builtin"}, tx
             )
             blocked = (
-                "config.json",
-                "memory/evolution/log.md",
                 "memory/.evolution_backups/x.md",
                 "skills/builtin/SKILL.md",
                 "skills/Builtin/SKILL.md",
@@ -152,13 +156,13 @@ class EvolutionSafetyTest(unittest.TestCase):
                 self.assertEqual(result.status, "error", path)
             tx.rollback()
 
-    def _run_with_outcome(self, outcome):
+    def _run_with_outcome(self, outcome, write_path="MEMORY.md"):
         temp = TemporaryDirectory(dir=Path.cwd())
         ws = Path(temp.name)
         (ws / "MEMORY.md").write_text("original", encoding="utf-8")
         (ws / "memory").mkdir()
         agent = _Agent(ws, _FileTool(ws))
-        bridge = _Bridge(agent, outcome)
+        bridge = _Bridge(agent, outcome, write_path)
         cfg = SimpleNamespace(enabled=True, max_steps=3)
         patches = (
             patch.object(executor, "get_evolution_config", return_value=cfg),
@@ -205,6 +209,33 @@ class EvolutionSafetyTest(unittest.TestCase):
                 self.assertTrue(executor.run_evolution_for_session(bridge, "session"))
             self.assertEqual((ws / "MEMORY.md").read_text(encoding="utf-8"), "modified")
             self.assertTrue(bridge.injected)
+        finally:
+            temp.cleanup()
+
+    def test_long_summary_is_truncated_without_rolling_back(self):
+        outcome = "Productive evolution summary. " + ("detail " * 800) + "tail-marker"
+        temp, ws, bridge, patches = self._run_with_outcome(outcome)
+        try:
+            with patches[0], patches[1], patches[2]:
+                self.assertTrue(executor.run_evolution_for_session(bridge, "session"))
+            self.assertEqual((ws / "MEMORY.md").read_text(encoding="utf-8"), "modified")
+            self.assertIn("[summary truncated]", bridge.injected[0])
+            self.assertNotIn("tail-marker", bridge.injected[0])
+        finally:
+            temp.cleanup()
+
+    def test_unfinished_task_can_create_a_new_project_subdirectory(self):
+        temp, ws, bridge, patches = self._run_with_outcome(
+            "Finished the promised generated page.",
+            write_path="generated-site/index.html",
+        )
+        try:
+            with patches[0], patches[1], patches[2]:
+                self.assertTrue(executor.run_evolution_for_session(bridge, "session"))
+            self.assertEqual(
+                (ws / "generated-site" / "index.html").read_text(encoding="utf-8"),
+                "modified",
+            )
         finally:
             temp.cleanup()
 

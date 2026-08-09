@@ -145,6 +145,20 @@ class _EvolutionWriteTransaction:
     def commit(self) -> None:
         self._committed = True
 
+    def has_changes(self) -> bool:
+        """Return whether a guarded write changed or created a file."""
+        for path, before in self._before.items():
+            try:
+                after = path.read_bytes() if path.is_file() else self._MISSING
+            except OSError:
+                after = self._MISSING
+            if before is self._MISSING:
+                if after is not self._MISSING:
+                    return True
+            elif after is self._MISSING or after != before:
+                return True
+        return False
+
     def rollback(self) -> None:
         if self._committed:
             return
@@ -167,35 +181,30 @@ class _EvolutionWriteTransaction:
                 pass
 
 
-def _allowed_evolution_path(
+def _denied_evolution_path(
     workspace: Path, resolved: Path, protected_skills: set
 ) -> bool:
-    """Allow only the file types Self-Evolution is designed to maintain."""
+    """Block only workspace paths Self-Evolution must never modify."""
     try:
         relative = resolved.relative_to(workspace)
     except ValueError:
-        return False
+        return True
     parts = relative.parts
     if not parts:
-        return False
-    if len(parts) == 1:
-        return parts[0] in {"MEMORY.md", "AGENT.md"}
-    top = parts[0]
-    if top == "memory":
-        return (
-            resolved.suffix.lower() == ".md"
-            and parts[1] not in _MEMORY_IGNORE
-        )
-    if top == "skills":
+        return True
+    folded = tuple(part.casefold() for part in parts)
+    if resolved.name.casefold() in {
+        name.casefold() for name in _WATCH_IGNORE_NAMES
+    }:
+        return True
+    if folded[0] == "memory" and len(folded) >= 2:
+        if folded[1] == ".evolution_backups":
+            return True
+    if folded[0] == "skills" and len(folded) >= 2:
         protected = {name.casefold() for name in protected_skills}
-        return (
-            len(parts) >= 3
-            and parts[1].casefold() not in protected
-            and parts[-1].casefold() not in {
-                name.casefold() for name in _WATCH_IGNORE_NAMES
-            }
-        )
-    return top in {"knowledge", "output"} and len(parts) >= 2
+        if folded[1] in protected:
+            return True
+    return False
 
 
 class _WorkspaceWriteGuard:
@@ -241,12 +250,12 @@ class _WorkspaceWriteGuard:
             resolved = Path(self._inner._resolve_path(path)).resolve()
         except Exception as e:
             return ToolResult.fail(f"Error: invalid evolution write path '{path}': {e}")
-        if not _allowed_evolution_path(
+        if _denied_evolution_path(
             self._ws, resolved, self._protected_skills
         ):
             return ToolResult.fail(
-                "Error: evolution may only write approved memory, persona, "
-                "custom-skill, knowledge, or output files; "
+                "Error: evolution cannot write outside the workspace or modify "
+                "protected skills and bookkeeping files; "
                 f"path '{path}' was blocked."
             )
         try:
@@ -331,12 +340,21 @@ def _workspace_changed(workspace_dir, pre: dict) -> bool:
     return _workspace_snapshot(workspace_dir) != pre
 
 
+_MAX_EVOLUTION_SUMMARY_CHARS = 4000
+
+
 def _valid_evolution_result(result: str) -> bool:
     """Reject malformed/no-content summaries before committing file changes."""
     cleaned = (result or "").replace(SILENT_TOKEN, "").strip()
-    if not cleaned or len(cleaned) > 4000:
-        return False
-    return any(ch.isalnum() for ch in cleaned)
+    return bool(cleaned) and any(ch.isalnum() for ch in cleaned)
+
+
+def _truncate_evolution_result(result: str) -> str:
+    """Bound notification/log size without vetoing valid completed work."""
+    if len(result) <= _MAX_EVOLUTION_SUMMARY_CHARS:
+        return result
+    suffix = "\n\n[summary truncated]"
+    return result[:_MAX_EVOLUTION_SUMMARY_CHARS - len(suffix)].rstrip() + suffix
 
 
 def run_evolution_for_session(
@@ -508,9 +526,13 @@ def run_evolution_for_session(
             logger.info(f"[Evolution] ✗ No change for session={session_id} ([SILENT])")
             return False
 
-        # Anti-nag backstop: if the model wrote a summary but actually changed no
-        # watched file, stay silent — never notify about work that didn't happen.
-        if not _workspace_changed(workspace_dir, pre_snapshot):
+        # Anti-nag backstop: accept guarded writes anywhere in the workspace,
+        # plus legacy watched changes used by the deterministic test harness.
+        # If neither changed, never notify about work that did not happen.
+        if not (
+            transaction.has_changes()
+            or _workspace_changed(workspace_dir, pre_snapshot)
+        ):
             logger.info(
                 f"[Evolution] ✗ session={session_id}: text produced but no file "
                 f"changed — staying silent"
@@ -526,6 +548,7 @@ def run_evolution_for_session(
                 "rolling back"
             )
             return False
+        result = _truncate_evolution_result(result)
 
         logger.info(f"[Evolution] ✓ session={session_id} evolved:\n{result}")
         append_session_evolution(workspace_dir, result, backup_id=backup_id, user_id=user_id)
