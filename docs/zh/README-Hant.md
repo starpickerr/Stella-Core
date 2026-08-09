@@ -5,6 +5,7 @@
   <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://docs.cowagent.ai/zh"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="文件" /></a>
+  <a href="https://cdn.link-ai.tech/code/cow/cowagent-wechat-group.png"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?style=flat&logo=wechat&logoColor=white" alt="微信交流群" /></a>
   <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
