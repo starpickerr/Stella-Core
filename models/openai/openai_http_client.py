@@ -23,6 +23,7 @@ Design goals:
 """
 
 import json
+import os
 from typing import Any, Dict, Generator, Optional
 from urllib.parse import urlparse
 
@@ -38,6 +39,17 @@ DEFAULT_TIMEOUT = 600  # seconds; matches old openai SDK default
 _APP_TITLE = "CowAgent"
 _APP_REFERER = "https://github.com/zhayujie/CowAgent"
 
+
+def _client_source() -> str:
+    """Coarse client origin for server-side traceability. The desktop shell
+    injects COW_DESKTOP=1; everything else is the open-source runtime."""
+    return "desktop" if os.environ.get("COW_DESKTOP") == "1" else "open-source"
+
+
+# Optional client-source tag. Only sent to the source-tagged hosts below, so no
+# client identity leaks to a user's own proxy.
+_SOURCE_HEADER = "X-Client-Source"
+
 # Per-gateway app attribution headers, only sent when the request host
 # matches a documented gateway. Sending these to user-configured custom
 # proxies would leak app identity, so we dispatch by host suffix.
@@ -50,7 +62,14 @@ _ATTRIBUTION_HEADERS_BY_HOST: Dict[str, Dict[str, str]] = {
         "HTTP-Referer": _APP_REFERER,
         "X-Title": _APP_TITLE,
     },
+    "link-ai.tech": {
+        "X-Title": _APP_TITLE,
+    },
 }
+
+# Hosts that also receive the client-source tag. Resolved per request rather
+# than baked into the table above, so COW_DESKTOP set after import is honored.
+_SOURCE_TAGGED_HOSTS = ("link-ai.tech",)
 
 
 def _resolve_attribution_headers(url: str) -> Dict[str, str]:
@@ -62,7 +81,10 @@ def _resolve_attribution_headers(url: str) -> Dict[str, str]:
         return {}
     for suffix, headers in _ATTRIBUTION_HEADERS_BY_HOST.items():
         if host == suffix or host.endswith("." + suffix):
-            return dict(headers)
+            resolved = dict(headers)
+            if any(host == h or host.endswith("." + h) for h in _SOURCE_TAGGED_HOSTS):
+                resolved[_SOURCE_HEADER] = _client_source()
+            return resolved
     return {}
 
 
