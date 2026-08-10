@@ -5,16 +5,24 @@ Provides vector and keyword search capabilities
 """
 
 from __future__ import annotations
+
+import hashlib
+import json
 import os
 import re
 import sqlite3
-import json
-import hashlib
 import threading
 import time
-from typing import List, Dict, Optional, Any
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from agent.memory.vector_backend import (
+    SQLiteVectorBackend,
+    VectorBackend,
+    VectorRecord,
+)
+
 try:
     import numpy as np
     _HAS_NUMPY = True
@@ -103,15 +111,23 @@ class SearchResult:
 class MemoryStorage:
     """SQLite-based storage with FTS5 for keyword search"""
     
-    def __init__(self, db_path: Path):
+    def __init__(
+        self,
+        db_path: Path,
+        vector_backend: Optional[VectorBackend] = None,
+    ):
         self.db_path = db_path
         self.conn: Optional[sqlite3.Connection] = None
+        self.vector_backend = vector_backend
         self.fts5_available = False  # Track FTS5 availability
         # RLock protects concurrent writes from the same process.
         # SQLite WAL mode handles read/write concurrency at the file level,
         # but same-process concurrent writes still need a Python-level lock.
         self._lock = threading.RLock()
         self._init_db()
+        if self.vector_backend is None:
+            assert self.conn is not None
+            self.vector_backend = SQLiteVectorBackend(self.conn)
     
     def _check_fts5_support(self) -> bool:
         """Check if SQLite has FTS5 support"""
@@ -551,13 +567,18 @@ class MemoryStorage:
         params = (
             chunk.id, chunk.user_id, chunk.scope, chunk.source, chunk.path,
             chunk.start_line, chunk.end_line, chunk.text,
-            self._encode_embedding(chunk.embedding),
+            None,
             chunk.hash,
             json.dumps(chunk.metadata) if chunk.metadata else None,
         )
         with self._lock:
-            self.conn.execute(_SQL, params)
-            self.conn.commit()
+            try:
+                self.conn.execute(_SQL, params)
+                self.vector_backend.upsert([self._to_vector_record(chunk)])
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
 
     def save_chunks_batch(self, chunks: List[MemoryChunk]):
         """Save multiple chunks in a batch (insert or update by id).
@@ -594,15 +615,22 @@ class MemoryStorage:
             (
                 c.id, c.user_id, c.scope, c.source, c.path,
                 c.start_line, c.end_line, c.text,
-                self._encode_embedding(c.embedding),
+                None,
                 c.hash,
                 json.dumps(c.metadata) if c.metadata else None,
             )
             for c in chunks
         ]
         with self._lock:
-            self.conn.executemany(_SQL, params_list)
-            self.conn.commit()
+            try:
+                self.conn.executemany(_SQL, params_list)
+                self.vector_backend.upsert([
+                    self._to_vector_record(chunk) for chunk in chunks
+                ])
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
     
     def get_chunk(self, chunk_id: str) -> Optional[MemoryChunk]:
         """Get a chunk by ID"""
@@ -622,118 +650,31 @@ class MemoryStorage:
         scopes: List[str] = None,
         limit: int = 10
     ) -> List[SearchResult]:
-        """
-        Vector similarity search using numpy-vectorized cosine similarity.
-        All embeddings are loaded then scored in a single BLAS matrix-vector
-        multiply, which is ~100x faster than the pure-Python per-row loop.
-        """
+        """Search the configured vector backend."""
         if scopes is None:
             scopes = ["shared"]
             if user_id:
                 scopes.append("user")
-
-        scope_placeholders = ','.join('?' * len(scopes))
-        params = list(scopes)
-
+        metadata_filter = {"scopes": scopes}
         if user_id:
-            query = f"""
-                SELECT * FROM chunks
-                WHERE scope IN ({scope_placeholders})
-                AND (scope = 'shared' OR user_id = ?)
-                AND embedding IS NOT NULL
-            """
-            params.append(user_id)
-        else:
-            query = f"""
-                SELECT * FROM chunks
-                WHERE scope IN ({scope_placeholders})
-                AND embedding IS NOT NULL
-            """
-
-        rows = self.conn.execute(query, params).fetchall()
-        if not rows:
-            return []
-
-        # Parse embeddings and build a (N, D) matrix in one pass.
-        # New rows store BLOB bytes (np.frombuffer); legacy rows fall back to JSON.
-        # Filter out rows whose embedding dimension differs from the query —
-        # mixing dimensions would cause np.array() to produce an object array
-        # and matrix @ q_vec to raise ValueError.
-        expected_dim = len(query_embedding)
-        valid_rows = []
-        vectors = []
-        for row in rows:
-            vec = self._decode_embedding(row['embedding'])
-            if not vec:
-                continue
-            if len(vec) != expected_dim:
-                from common.log import logger
-                logger.warning(
-                    "[MemoryStorage] Skipping chunk %s: embedding dim %d != query dim %d",
-                    row['id'], len(vec), expected_dim
-                )
-                continue
-            valid_rows.append(row)
-            vectors.append(vec)
-
-        if not vectors:
-            return []
-
-        if _HAS_NUMPY:
-            matrix = np.array(vectors, dtype=np.float32)        # (N, D)
-            q_vec = np.array(query_embedding, dtype=np.float32)  # (D,)
-
-            # Vectorized cosine similarity: dot(matrix, q) / (||matrix|| * ||q||)
-            dots = matrix @ q_vec                                # (N,)
-            row_norms = np.linalg.norm(matrix, axis=1)           # (N,)
-            q_norm = float(np.linalg.norm(q_vec))
-            denominators = row_norms * q_norm
-            np.maximum(denominators, 1e-10, out=denominators)    # avoid div-by-zero
-            sims = dots / denominators                           # (N,)
-
-            # Select TopK using argpartition (O(N) average), then sort only those K
-            k = min(limit, len(valid_rows))
-            top_idx = np.argpartition(sims, -k)[-k:]
-            top_idx = top_idx[np.argsort(sims[top_idx])[::-1]]
-
-            return [
-                SearchResult(
-                    path=valid_rows[i]['path'],
-                    start_line=valid_rows[i]['start_line'],
-                    end_line=valid_rows[i]['end_line'],
-                    score=float(sims[i]),
-                    snippet=self._truncate_text(valid_rows[i]['text'], 500),
-                    source=valid_rows[i]['source'],
-                    user_id=valid_rows[i]['user_id']
-                )
-                for i in top_idx
-                if sims[i] > 0
-            ]
-        else:
-            # Pure-Python cosine similarity fallback (numpy not installed)
-            import math
-            q = query_embedding
-            q_norm = math.sqrt(sum(x * x for x in q)) or 1e-10
-            scored = []
-            for i, vec in enumerate(vectors):
-                dot = sum(a * b for a, b in zip(vec, q))
-                v_norm = math.sqrt(sum(x * x for x in vec)) or 1e-10
-                sim = dot / (v_norm * q_norm)
-                if sim > 0:
-                    scored.append((sim, valid_rows[i]))
-            scored.sort(key=lambda x: x[0], reverse=True)
-            return [
-                SearchResult(
-                    path=row['path'],
-                    start_line=row['start_line'],
-                    end_line=row['end_line'],
-                    score=sim,
-                    snippet=self._truncate_text(row['text'], 500),
-                    source=row['source'],
-                    user_id=row['user_id']
-                )
-                for sim, row in scored[:limit]
-            ]
+            metadata_filter["user_id"] = user_id
+        matches = self.vector_backend.search(
+            query_embedding,
+            limit=limit,
+            metadata_filter=metadata_filter,
+        )
+        return [
+            SearchResult(
+                path=match.metadata["path"],
+                start_line=match.metadata["start_line"],
+                end_line=match.metadata["end_line"],
+                score=match.score,
+                snippet=self._truncate_text(match.metadata["text"], 500),
+                source=match.metadata["source"],
+                user_id=match.metadata.get("user_id"),
+            )
+            for match in matches
+        ]
     
     def search_keyword(
         self,
@@ -928,9 +869,14 @@ class MemoryStorage:
     def delete_by_path(self, path: str):
         """Delete all chunks and file metadata for a path."""
         with self._lock:
-            self.conn.execute("DELETE FROM chunks WHERE path = ?", (path,))
-            self.conn.execute("DELETE FROM files WHERE path = ?", (path,))
-            self.conn.commit()
+            try:
+                self.vector_backend.delete(metadata_filter={"path": path})
+                self.conn.execute("DELETE FROM chunks WHERE path = ?", (path,))
+                self.conn.execute("DELETE FROM files WHERE path = ?", (path,))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
 
     def get_file_hash(self, path: str) -> Optional[str]:
         """Get stored file hash"""
@@ -989,15 +935,21 @@ class MemoryStorage:
     # Helper methods
 
     @staticmethod
-    def _encode_embedding(embedding: Optional[List[float]]) -> Optional[bytes]:
-        """Encode embedding as float32 BLOB bytes (~6x smaller and faster than JSON).
-        Falls back to struct.pack when numpy is unavailable."""
-        if embedding is None:
-            return None
-        if _HAS_NUMPY:
-            return np.array(embedding, dtype=np.float32).tobytes()
-        import struct
-        return struct.pack(f'{len(embedding)}f', *embedding)
+    def _to_vector_record(chunk: MemoryChunk) -> VectorRecord:
+        return VectorRecord(
+            id=chunk.id,
+            embedding=chunk.embedding,
+            metadata={
+                "user_id": chunk.user_id,
+                "scope": chunk.scope,
+                "source": chunk.source,
+                "path": chunk.path,
+                "start_line": chunk.start_line,
+                "end_line": chunk.end_line,
+                "text": chunk.text,
+                "metadata": chunk.metadata,
+            },
+        )
 
     @staticmethod
     def _decode_embedding(raw) -> Optional[List[float]]:
