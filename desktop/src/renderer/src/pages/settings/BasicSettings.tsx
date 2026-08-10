@@ -93,7 +93,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setPwDirty(false)
 
       const ids = data.providers ? Object.keys(data.providers) : []
-      const current = data.use_linkai ? 'linkai' : data.bot_type || ids[0] || ''
+      const current = showManagedApiKey ? 'linkai' : data.use_linkai ? 'linkai' : data.bot_type || ids[0] || ''
       setProvider(current)
       const meta = data.providers?.[current] as ProviderMeta | undefined
       // Managed key: show the masked value for the current provider's key field.
@@ -154,7 +154,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setTimeout(() => setModelStatus(''), 2000)
   }
 
-  const currentKeyField = (config?.providers?.[provider] as ProviderMeta | undefined)?.api_key_field
+  const currentKeyField =
+    (config?.providers?.[provider] as ProviderMeta | undefined)?.api_key_field ||
+    (showManagedApiKey ? 'linkai_api_key' : undefined)
 
   const saveApiKey = async () => {
     if (!apiKeyDirty || !currentKeyField) return
