@@ -570,6 +570,7 @@ def load_config():
                 injected += 1
 
     injected += _sync_skill_config_to_env(config.get("skills", {}))
+    injected += sync_image_generation_custom_provider_env(config)
 
     if injected:
         logger.info("[INIT] Synced {} config values to environment variables".format(injected))
@@ -684,6 +685,55 @@ def _sync_skill_config_to_env(skill_section) -> int:
             os.environ[env_key] = str(val)
             injected += 1
     return injected
+
+
+def sync_image_generation_custom_provider_env(
+    config_data,
+    overwrite=False,
+) -> int:
+    """Expose the selected custom image provider to the skill subprocess."""
+    env_key = "SKILL_IMAGE_GENERATION_CUSTOM_PROVIDER"
+    skills = config_data.get("skills") if isinstance(config_data, dict) else {}
+    image_config = (
+        skills.get("image-generation")
+        if isinstance(skills, dict)
+        else {}
+    )
+    provider_id = (
+        image_config.get("provider", "")
+        if isinstance(image_config, dict)
+        else ""
+    )
+
+    selected = None
+    if isinstance(provider_id, str) and provider_id.startswith("custom:"):
+        custom_id = provider_id[len("custom:"):]
+        providers = config_data.get("custom_providers", [])
+        if isinstance(providers, list):
+            selected = next(
+                (
+                    provider
+                    for provider in providers
+                    if isinstance(provider, dict)
+                    and provider.get("id") == custom_id
+                ),
+                None,
+            )
+
+    if selected is None:
+        if overwrite:
+            os.environ.pop(env_key, None)
+        return 0
+    if env_key in os.environ and not overwrite:
+        return 0
+
+    payload = {
+        key: selected.get(key)
+        for key in ("id", "name", "api_key", "api_base", "model")
+        if selected.get(key) is not None
+    }
+    os.environ[env_key] = json.dumps(payload, ensure_ascii=False)
+    return 1
 
 
 def get_root():
