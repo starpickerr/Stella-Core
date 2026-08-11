@@ -35,6 +35,9 @@ export interface ProductSlots {
   // Rendered as the logo on the empty new-chat home screen in place of the
   // default app logo. Lets a build show its own square logo there too.
   HomeLogo?: React.FC
+  // Rendered as the logo on the startup/connecting status screen in place of
+  // the default app logo. Lets a build show its own square logo there too.
+  StatusLogo?: React.FC
 }
 
 // Extra routes appended to the core <Routes>. Path is a HashRouter path.

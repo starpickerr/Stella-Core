@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, net } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, net, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -8,6 +8,7 @@ import os from 'os'
 
 const CACHE_DIRNAME = 'app-icon'
 const ICON_FILE = 'icon.png'
+const ICO_FILE = 'icon.ico'
 const META_FILE = 'meta.json'
 const MAX_ICON_BYTES = 4 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 10 * 1000
@@ -30,6 +31,10 @@ function iconCachePath(): string {
 
 function metaCachePath(): string {
   return path.join(cacheDir(), META_FILE)
+}
+
+function icoCachePath(): string {
+  return path.join(cacheDir(), ICO_FILE)
 }
 
 // Download in the main process so the bytes aren't mangled by a text transport.
@@ -148,6 +153,89 @@ export function applyCachedAppIcon(): void {
   }
 }
 
+// On Windows, existing shortcuts (Desktop + Start Menu) keep the icon/name they
+// were created with at install time. Regenerate a multi-size .ico from the
+// current PNG and rewrite every shortcut that points at this executable so its
+// icon (and optionally its label) matches the runtime one. No-op elsewhere.
+async function writeIcoFromCachedPng(): Promise<string | null> {
+  const png = iconCachePath()
+  if (!fs.existsSync(png)) return null
+  try {
+    const { default: pngToIco } = await import('png-to-ico')
+    const buf = await pngToIco(png)
+    fs.mkdirSync(cacheDir(), { recursive: true })
+    fs.writeFileSync(icoCachePath(), buf)
+    return icoCachePath()
+  } catch (e) {
+    console.warn('[app-icon] ico generation failed:', (e as Error).message)
+    return null
+  }
+}
+
+// Directories that may hold a shortcut to this app.
+function shortcutDirs(): string[] {
+  const home = os.homedir()
+  const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming')
+  return [
+    path.join(home, 'Desktop'),
+    path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+  ]
+}
+
+// A shortcut belongs to this app when its target is the current executable.
+function pointsAtThisApp(target: string | undefined): boolean {
+  if (!target) return false
+  try {
+    return path.resolve(target).toLowerCase() === path.resolve(process.execPath).toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+function syncWindowsShortcuts(opts: { icoPath?: string | null; title?: string }): void {
+  if (process.platform !== 'win32') return
+  const icoPath = opts.icoPath
+  const title = opts.title?.trim()
+  for (const dir of shortcutDirs()) {
+    let entries: string[]
+    try {
+      entries = fs.readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.lnk'))
+    } catch {
+      continue
+    }
+    for (const name of entries) {
+      const linkPath = path.join(dir, name)
+      let details: Electron.ShortcutDetails
+      try {
+        details = shell.readShortcutLink(linkPath)
+      } catch {
+        continue
+      }
+      if (!pointsAtThisApp(details.target)) continue
+      const next: Electron.ShortcutDetails = { ...details }
+      if (icoPath) next.icon = icoPath
+      if (typeof next.iconIndex !== 'number') next.iconIndex = 0
+      try {
+        shell.writeShortcutLink(linkPath, 'update', next)
+      } catch (e) {
+        console.warn('[app-icon] shortcut update failed:', (e as Error).message)
+        continue
+      }
+      // Rename the shortcut file to the new label, keeping it in place.
+      if (title) {
+        const target = path.join(dir, `${title}.lnk`)
+        if (path.resolve(target).toLowerCase() !== path.resolve(linkPath).toLowerCase()) {
+          try {
+            if (!fs.existsSync(target)) fs.renameSync(linkPath, target)
+          } catch (e) {
+            console.warn('[app-icon] shortcut rename failed:', (e as Error).message)
+          }
+        }
+      }
+    }
+  }
+}
+
 export function setupAppIconIPC(deps: {
   getWindow: () => BrowserWindow | null
   getTray: () => Electron.Tray | null
@@ -161,6 +249,10 @@ export function setupAppIconIPC(deps: {
     if (!icon) return false
     applyIcon(icon)
     cacheIcon(icon)
+    if (process.platform === 'win32') {
+      const icoPath = await writeIcoFromCachedPng()
+      syncWindowsShortcuts({ icoPath })
+    }
     return true
   })
 
@@ -168,6 +260,7 @@ export function setupAppIconIPC(deps: {
     if (typeof title !== 'string' || !title.trim()) return false
     applyTitle(title)
     cacheMeta({ title })
+    syncWindowsShortcuts({ title })
     return true
   })
 }
