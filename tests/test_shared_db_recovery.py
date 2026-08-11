@@ -171,5 +171,74 @@ class TestSharedDbRecovery(unittest.TestCase):
         storage.close()
 
 
+class TestTrigramUpdateTrigger(unittest.TestCase):
+    """The trigram FTS5 index must survive updates to an existing chunk.
+
+    External-content FTS5 corrupts ("database disk image is malformed") when an
+    UPDATE trigger rewrites the row with a bare "UPDATE ... SET" instead of the
+    delete+insert pattern. These cases pin the fix and its migration.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.db = self.tmp / "index.db"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _chunk(self, text: str, embedding=None) -> MemoryChunk:
+        return MemoryChunk(
+            id="c1", user_id=None, scope="shared", source="memory",
+            path="a.md", start_line=1, end_line=1, text=text,
+            embedding=embedding, hash="h",
+        )
+
+    def test_updating_chunk_keeps_trigram_index_healthy(self):
+        storage = MemoryStorage(self.db)
+        if not storage.trigram_fts5_available:
+            self.skipTest("trigram FTS5 unavailable in this SQLite build")
+        storage.save_chunk(self._chunk("人工智能教程"))
+        # Would raise "database disk image is malformed" with the old trigger.
+        storage.save_chunk(self._chunk("机器学习笔记"))
+        self.assertEqual(
+            [r.path for r in storage.search_keyword("机器学习")], ["a.md"]
+        )
+        # Old tokens must be gone from the index after the update.
+        self.assertEqual(storage.search_keyword("人工智能教程"), [])
+        storage.close()
+
+    def test_legacy_update_trigger_is_migrated_on_open(self):
+        storage = MemoryStorage(self.db)
+        if not storage.trigram_fts5_available:
+            self.skipTest("trigram FTS5 unavailable in this SQLite build")
+        storage.save_chunk(self._chunk("深度学习入门"))
+        storage.close()
+
+        # Downgrade to the legacy buggy trigger to simulate an old database.
+        conn = sqlite3.connect(str(self.db))
+        conn.execute("DROP TRIGGER IF EXISTS chunks_trigram_au")
+        conn.execute(
+            "CREATE TRIGGER chunks_trigram_au AFTER UPDATE ON chunks BEGIN "
+            "UPDATE chunks_fts_trigram SET text=new.text, id=new.id, "
+            "user_id=new.user_id, path=new.path, source=new.source, "
+            "scope=new.scope WHERE rowid=new.rowid; END"
+        )
+        conn.commit()
+        conn.close()
+
+        storage = MemoryStorage(self.db)
+        trigger_sql = storage.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name='chunks_trigram_au'"
+        ).fetchone()[0]
+        self.assertNotIn("UPDATE chunks_fts_trigram", trigger_sql)
+        # Updates now work without corrupting the index.
+        storage.save_chunk(self._chunk("强化学习进阶"))
+        self.assertEqual(
+            [r.path for r in storage.search_keyword("强化学习")], ["a.md"]
+        )
+        self.assertEqual(storage.search_keyword("深度学习入门"), [])
+        storage.close()
+
+
 if __name__ == "__main__":
     unittest.main()
