@@ -56,10 +56,22 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const providerMeta = (id: string): ProviderMeta | undefined => config?.providers?.[id] as ProviderMeta | undefined
 
+  // Custom providers (custom:<id> or legacy "custom") have no preset model
+  // catalog, so their model is always typed into a free-form input.
+  const isCustomProviderId = (id: string) => id.startsWith('custom:') || id === 'custom'
+
   // Canonical per-model key shared with the backend resolve path: lowercased
   // model so the key is stable regardless of how the user typed the model name.
   const currentModelKey = () => {
-    const m = (CustomModelPicker ? model : showCustom ? customModel.trim() : model).trim().toLowerCase()
+    const m = (
+      CustomModelPicker
+        ? model
+        : isCustomProviderId(provider) || showCustom
+          ? customModel.trim()
+          : model
+    )
+      .trim()
+      .toLowerCase()
     return m ? `${provider}:${m}` : ''
   }
 
@@ -101,7 +113,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setApiKey((keyField && data.api_keys?.[keyField]) || '')
       setApiKeyDirty(false)
       const presets = meta?.models || []
-      if (data.model && presets.length && !presets.includes(data.model)) {
+      if (current.startsWith('custom:') || current === 'custom') {
+        // Custom providers always use the free-form model input; seed it with
+        // the saved model so it isn't blank on load.
+        setCustomModel(data.model || '')
+      } else if (data.model && presets.length && !presets.includes(data.model)) {
         setShowCustom(true)
         setCustomModel(data.model)
       }
@@ -115,6 +131,15 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const handleProviderChange = (id: string) => {
     setProvider(id)
     setShowCustom(false)
+    if (id.startsWith('custom:') || id === 'custom') {
+      // Prefill with the provider's default model (or the saved one when
+      // re-selecting the active provider) and let the user edit it freely.
+      const meta = config?.providers?.[id] as ProviderMeta | undefined
+      const saved = id === config?.bot_type ? config?.model || '' : ''
+      setCustomModel(saved || meta?.models?.[0] || '')
+      setModel('')
+      return
+    }
     setCustomModel('')
     if (config) {
       const meta = config.providers?.[id] as ProviderMeta | undefined
@@ -135,7 +160,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   }
 
   const saveModelConfig = async () => {
-    const finalModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+    const finalModel = CustomModelPicker
+      ? model
+      : isCustomProviderId(provider) || showCustom
+        ? customModel.trim()
+        : model
     // With a managed model source the provider selector is hidden; route through
     // the managed provider so credentials resolve consistently.
     const isLinkai = CustomModelPicker ? true : provider === 'linkai'
@@ -179,7 +208,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const saveAgentConfig = async () => {
     const meta = config?.providers?.[provider] as ProviderMeta | undefined
-    const selectedModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+    const selectedModel = CustomModelPicker
+      ? model
+      : isCustomProviderId(provider) || showCustom
+        ? customModel.trim()
+        : model
     const reasoning = meta?.reasoning_by_model?.[selectedModel] || meta?.reasoning
     const reasoningOptions = reasoning?.supported ? reasoning.options || [] : []
     const nextReasoningEffort = reasoningOptions.some((o) => o.value === reasoningEffort)
@@ -271,7 +304,12 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       label: localizedLabel(providerMeta(id)?.label) || id,
     }))
   const currentMeta = providerMeta(provider)
-  const selectedModel = CustomModelPicker ? model : showCustom ? customModel.trim() : model
+  const isCustomProvider = isCustomProviderId(provider)
+  const selectedModel = CustomModelPicker
+    ? model
+    : isCustomProvider || showCustom
+      ? customModel.trim()
+      : model
   const reasoning = currentMeta?.reasoning_by_model?.[selectedModel] || currentMeta?.reasoning
   const reasoningOptions = reasoning?.supported ? reasoning.options || [] : []
   const reasoningValue = reasoningOptions.some((o) => o.value === reasoningEffort)
@@ -298,6 +336,14 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
           <Field label={t('config_model_name')}>
             {CustomModelPicker ? (
               <CustomModelPicker value={model} onChange={setModel} />
+            ) : isCustomProvider ? (
+              // Custom providers have no preset catalog: type the model directly.
+              <TextInput
+                className="font-mono"
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                placeholder={t('config_custom_model_hint')}
+              />
             ) : (
               <>
                 <Dropdown
