@@ -586,6 +586,12 @@ def run():
     except Exception as e:
         logger.error("App startup failed!")
         logger.exception(e)
+        # Desktop shell reads exit code 0 as a clean shutdown and would spin on
+        # "connecting" until its timeout. Exit non-zero so it surfaces the real
+        # error and offers a retry right away.
+        if DESKTOP_MODE:
+            logging.shutdown()
+            os._exit(1)
 
 
 if __name__ == "__main__":
