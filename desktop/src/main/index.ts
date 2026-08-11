@@ -4,10 +4,11 @@ import fs from 'fs'
 import http from 'http'
 import { PythonBackend } from './python-manager'
 import { buildAppMenu } from './menu'
-import { createTray, destroyTray } from './tray'
+import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
+import { setupAppIconIPC, applyCachedAppIcon } from './app-icon'
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
 // where the default Electron binary would otherwise report "Electron". The name
@@ -349,6 +350,7 @@ app.whenReady().then(async () => {
   setupIPC()
   setupThemeIPC()
   setupHttpRelayIPC()
+  setupAppIconIPC({ getWindow: () => mainWindow, getTray })
   createWindow()
   buildAppMenu(() => mainWindow)
   // No menu-bar tray on macOS — the Dock + window controls are enough there.
@@ -363,6 +365,8 @@ app.whenReady().then(async () => {
       },
     })
   }
+  // Re-apply a previously set icon/title before the page loads.
+  applyCachedAppIcon()
   await startBackend()
 
   // Wire auto-update: a first silent check a few seconds after launch (so it

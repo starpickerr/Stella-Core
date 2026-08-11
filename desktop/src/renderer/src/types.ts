@@ -41,6 +41,10 @@ export interface ElectronAPI {
   downloadUpdate?: (lang?: string) => Promise<void>
   installUpdate?: () => Promise<void>
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
+  // Override the window/Dock/taskbar icon and title at runtime (cached across
+  // launches). Used by product extensions; unused by the standard build.
+  setAppIcon?: (iconUrl: string) => Promise<boolean>
+  setAppTitle?: (title: string) => Promise<boolean>
   platform: string
   // OS UI language (e.g. "zh-CN"); used to default the language on first run.
   systemLocale?: string
