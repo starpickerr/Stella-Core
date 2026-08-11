@@ -111,6 +111,12 @@ def _truncate_reasoning_for_storage(text: str) -> str:
     return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
 
 
+# Cap for the 429 incremental backoff. The base curve is 30 + retry_count*15,
+# which without a cap crosses the web channel's 600s SSE idle timeout by the
+# 8th retry; capping each wait at 60s keeps the cumulative sleep in bounds.
+RATE_LIMIT_MAX_WAIT = 60  # seconds
+
+
 # Appended only for the file-writing tools, where "send less" needs to say how.
 _SPLIT_WRITE_ADVICE = (
     "To change an existing file, use edit rather than rewriting the whole file. "
@@ -1078,7 +1084,7 @@ class AgentStreamExecutor:
             logger.debug(f"[ToolRetrieval] full injection (retrieval skipped): {e}")
             return all_tools
 
-    def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=None,
+    def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
                          _overflow_retry: bool = False) -> Tuple[str, List[Dict]]:
         """
         Call LLM with streaming and automatic retry on errors
@@ -1086,20 +1092,12 @@ class AgentStreamExecutor:
         Args:
             retry_on_empty: Whether to retry once if empty response is received
             retry_count: Current retry attempt (internal use)
-            max_retries: Maximum number of retries for API errors. When None,
-                falls back to the "llm_max_retries" config value (default 3)
+            max_retries: Maximum number of retries for API errors
             _overflow_retry: Internal flag indicating this is a retry after context overflow
 
         Returns:
             (response_text, tool_calls)
         """
-        if max_retries is None:
-            from config import conf
-            raw = conf().get("llm_max_retries")
-            try:
-                max_retries = max(0, int(raw)) if raw is not None else 3
-            except (TypeError, ValueError):
-                max_retries = 3
         # Validate and fix message history (e.g. orphaned tool_result blocks).
         # Context trimming is done once in run_stream() before the loop starts,
         # NOT here — trimming mid-execution would strip the current run's
@@ -1364,9 +1362,11 @@ class AgentStreamExecutor:
             ])
             
             if is_retryable and retry_count < max_retries:
-                # Rate limit needs longer wait time
+                # Rate limit needs longer wait time, but capped so the cumulative
+                # backoff stays within the web stream's idle timeout (see the
+                # RATE_LIMIT_MAX_WAIT note above).
                 if is_rate_limit:
-                    wait_time = 30 + (retry_count * 15)  # 30s, 45s, 60s for rate limit
+                    wait_time = min(30 + (retry_count * 15), RATE_LIMIT_MAX_WAIT)  # 30s..60s
                 else:
                     wait_time = (retry_count + 1) * 2  # 2s, 4s, 6s for other errors
                 
