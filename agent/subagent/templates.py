@@ -17,11 +17,14 @@ from common.log import logger
 # Denied to every sub agent regardless of template.
 #
 # Each of these reaches outside the delegated task: `send` and `scheduler` act
-# on the user's channel in the parent's name, `env_config` and `evolution_undo`
-# mutate the Agent itself, and memory tools read and write state the sub agent
-# is deliberately not given. The `subagent` tool itself is denied so that a
-# template granting "all tools" cannot recurse; the depth limit governs the
-# nesting that is actually allowed.
+# on the user's channel in the parent's name, and `env_config` and
+# `evolution_undo` mutate the Agent itself. The `subagent` tool itself is denied
+# so that a template granting "all tools" cannot recurse; the depth limit
+# governs the nesting that is actually allowed.
+#
+# Memory tools are intentionally NOT blocked: a sub agent should be able to
+# search and read the shared knowledge base to ground its work. It still owns no
+# memory of its own (memory_manager is None), so it can read but never persist.
 BLOCKED_TOOLS = frozenset(
     {
         "subagent",
@@ -29,12 +32,13 @@ BLOCKED_TOOLS = frozenset(
         "scheduler",
         "env_config",
         "evolution_undo",
-        "memory_search",
-        "memory_get",
     }
 )
 
-READ_ONLY_TOOLS = ("read", "ls", "search_files", "web_search", "web_fetch", "vision")
+READ_ONLY_TOOLS = (
+    "read", "ls", "search_files", "web_search", "web_fetch", "vision",
+    "memory_search", "memory_get",
+)
 
 _ALL_TOOLS = "*"
 
@@ -77,7 +81,9 @@ GENERAL_PURPOSE = SubagentTemplate(
     prompt=(
         "You are a focused sub agent. You have been given one task by the agent "
         "that spawned you, and you cannot see its conversation or ask the user "
-        "anything, so work from the task and context you were given.\n\n"
+        "anything, so work from the task and context you were given. You can "
+        "search and read the shared memory / knowledge base for background you "
+        "need.\n\n"
         "Finish the task and nothing beyond it, then reply with what you found "
         "or changed, the paths of any files you touched, and anything you could "
         "not resolve. Your reply is the only thing that reaches the agent that "
@@ -97,7 +103,8 @@ EXPLORE = SubagentTemplate(
     prompt=(
         "You are a read-only sub agent. You investigate and report; you never "
         "modify anything. You cannot see the conversation of the agent that "
-        "spawned you and cannot ask the user anything.\n\n"
+        "spawned you and cannot ask the user anything, but you can search and "
+        "read the shared memory / knowledge base.\n\n"
         "Report what you found, with concrete file paths, line numbers, URLs or "
         "quotes so the answer can be checked without redoing your search. Say so "
         "plainly when you did not find something, rather than guessing."
