@@ -7,6 +7,7 @@ import logging
 import os
 import pickle
 import sys
+import time
 
 from common.log import logger
 from common import i18n
@@ -403,10 +404,30 @@ def drag_sensitive(config):
 
         elif isinstance(config, dict):
             return _mask_sensitive_recursive(config)
+    except ValueError:
+        # Unparseable config string (e.g. a corrupted config.json). This is
+        # handled and reported by load_config's self-heal path, so don't scare
+        # the log with a full traceback here — just return it unmasked.
+        return config
     except Exception as e:
         logger.exception(e)
         return config
     return config
+
+
+def _quarantine_corrupted_config(config_path):
+    """Move a corrupted config.json aside so startup can reinitialize cleanly.
+
+    Renames the bad file to ``config.json.corrupted-<timestamp>`` (kept for
+    inspection rather than deleted) and never raises: recovery must proceed even
+    if the rename fails, in which case the fresh config is written over it.
+    """
+    try:
+        backup_path = "{}.corrupted-{}".format(config_path, time.strftime("%Y%m%d%H%M%S"))
+        os.replace(config_path, backup_path)
+        logger.warning("[INIT] backed up corrupted config to {}".format(backup_path))
+    except Exception as e:
+        logger.warning("[INIT] failed to back up corrupted config: {}".format(e))
 
 
 def load_config():
@@ -422,7 +443,8 @@ def load_config():
     logger.info("")
     # User config lives in the data root: source deployments use CWD (./), while
     # the desktop build points COW_DATA_DIR at ~/.cow so config survives updates.
-    config_path = os.path.join(get_data_root(), "config.json")
+    user_config_path = os.path.join(get_data_root(), "config.json")
+    config_path = user_config_path
     if not os.path.exists(config_path):
         logger.info("config file not found, falling back to config-template.json")
         config_path = get_config_template_path()
@@ -434,7 +456,39 @@ def load_config():
     # `object_pairs_hook` lets us catch users who accidentally typed the
     # same key twice (e.g. two `"tools"` blocks) — json.loads would
     # otherwise silently drop all but the last occurrence.
-    config = Config(json.loads(config_str, object_pairs_hook=_merge_duplicate_keys))
+    #
+    # Self-heal a corrupted user config.json instead of crashing on startup —
+    # but ONLY for the packaged desktop client (COW_DESKTOP=1). A truncated or
+    # invalid file (e.g. a bad write during a previous update) would otherwise
+    # make json.loads raise and strand the desktop app on "Initialization
+    # Failed" forever, with no way for an end user to recover short of manually
+    # deleting the file. Source deployments deliberately keep the original
+    # behavior (raise): a developer editing config.json wants a clear error to
+    # fix, not to have their file silently backed up and replaced by defaults.
+    desktop_mode = os.environ.get("COW_DESKTOP") == "1"
+    try:
+        config = Config(json.loads(config_str, object_pairs_hook=_merge_duplicate_keys))
+    except ValueError as parse_err:
+        if not desktop_mode or config_path != user_config_path:
+            # Source run, or the bundled template itself is broken (a packaging
+            # bug we can't heal by falling back further) — surface it.
+            raise
+        logger.error(
+            "[INIT] config.json is corrupted ({}); backing it up and "
+            "reinitializing from config-template.json".format(parse_err)
+        )
+        _quarantine_corrupted_config(user_config_path)
+        template_str = read_file(get_config_template_path())
+        config = Config(json.loads(template_str, object_pairs_hook=_merge_duplicate_keys))
+        # Persist the fresh config so the recovered defaults survive the next
+        # launch (and the app has a valid file to write user changes back into).
+        try:
+            with open(user_config_path, mode="w", encoding="utf-8") as f:
+                json.dump(dict(config), f, ensure_ascii=False, indent=2)
+        except Exception as write_err:
+            # A failed rewrite must not re-crash startup: we already hold a valid
+            # in-memory config, so run with it and retry the write next launch.
+            logger.warning("[INIT] failed to write recovered config.json: {}".format(write_err))
 
     # Migrate legacy singular keys (`tool`, `skill`) into the canonical
     # plural buckets so the rest of the codebase only reads one schema.
