@@ -359,6 +359,12 @@ class MemoryStorage:
                         tokenize='trigram case_sensitive 0'
                     )
                 """)
+                # Migrate legacy chunks_trigram_au triggers created by older
+                # versions. They used a bare "UPDATE chunks_fts_trigram SET ..."
+                # that corrupts the trigram index on chunk updates. Drop it so
+                # the CREATE TRIGGER IF NOT EXISTS below installs the fixed
+                # delete+insert version. Dropping a trigger touches no data.
+                self._migrate_legacy_trigram_update_trigger()
                 self.conn.execute("""
                     CREATE TRIGGER IF NOT EXISTS chunks_trigram_ai
                     AFTER INSERT ON chunks BEGIN
@@ -372,13 +378,18 @@ class MemoryStorage:
                         DELETE FROM chunks_fts_trigram WHERE rowid = old.rowid;
                     END
                 """)
+                # External-content FTS5 requires the delete+insert pattern on
+                # UPDATE: a bare "UPDATE chunks_fts_trigram SET ..." leaves the
+                # old tokens in the index and corrupts the trigram shadow tables
+                # ("database disk image is malformed"). The special 'delete'
+                # command removes the old row's tokens using its previous text.
                 self.conn.execute("""
                     CREATE TRIGGER IF NOT EXISTS chunks_trigram_au
                     AFTER UPDATE ON chunks BEGIN
-                        UPDATE chunks_fts_trigram
-                        SET text=new.text, id=new.id, user_id=new.user_id,
-                            path=new.path, source=new.source, scope=new.scope
-                        WHERE rowid = new.rowid;
+                        INSERT INTO chunks_fts_trigram(chunks_fts_trigram, rowid, text, id, user_id, path, source, scope)
+                        VALUES ('delete', old.rowid, old.text, old.id, old.user_id, old.path, old.source, old.scope);
+                        INSERT INTO chunks_fts_trigram(rowid, text, id, user_id, path, source, scope)
+                        VALUES (new.rowid, new.text, new.id, new.user_id, new.path, new.source, new.scope);
                     END
                 """)
                 # One-time backfill for existing rows.
@@ -416,6 +427,33 @@ class MemoryStorage:
         """)
 
         self.conn.commit()
+
+    def _migrate_legacy_trigram_update_trigger(self):
+        """Replace the legacy chunks_trigram_au trigger if present.
+
+        Older versions synced updates with a bare
+        "UPDATE chunks_fts_trigram SET ...", which corrupts the external-content
+        trigram index on chunk updates. We detect that shape via the stored
+        trigger SQL, drop it (dropping a trigger touches no data), and flag a
+        trigram rebuild so any already-damaged index is repaired below.
+        """
+        try:
+            row = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' "
+                "AND name='chunks_trigram_au'"
+            ).fetchone()
+        except Exception:
+            return
+        if not row or not row[0]:
+            return
+        if "UPDATE chunks_fts_trigram" in row[0]:
+            from common.log import logger
+            logger.warning(
+                "[MemoryStorage] Replacing legacy chunks_trigram_au trigger and "
+                "rebuilding the trigram index."
+            )
+            self.conn.execute("DROP TRIGGER IF EXISTS chunks_trigram_au")
+            self._trigram_needs_rebuild = True
 
     def _fts5_state_inconsistent(self) -> bool:
         """Detect a half-broken FTS5 setup (e.g. trigger exists but table doesn't)."""
