@@ -81,6 +81,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAppIcon: (iconUrl: string) => ipcRenderer.invoke('set-app-icon', iconUrl) as Promise<boolean>,
   setAppTitle: (title: string) => ipcRenderer.invoke('set-app-title', title) as Promise<boolean>,
 
+  // Show a native OS notification; clicking it focuses the window and asks the
+  // renderer (via onOpenSession) to open the given session.
+  notify: (payload: { title?: string; body?: string; sessionId?: string }) =>
+    ipcRenderer.invoke('notify', payload) as Promise<boolean>,
+  onOpenSession: (callback: (sessionId: string) => void) => {
+    const handler = (_event: unknown, sessionId: string) => callback(sessionId)
+    ipcRenderer.on('open-session', handler)
+    return () => ipcRenderer.removeListener('open-session', handler)
+  },
+
   platform: process.platform,
   // OS UI language (e.g. "zh-CN"), read synchronously so the renderer can pick
   // a default language on first run. Falls back to '' if unavailable.
