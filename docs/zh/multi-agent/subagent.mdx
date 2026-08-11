@@ -22,7 +22,7 @@ description: Sub Agent：把独立的任务交给子 Agent 执行，支持并行
 | --- | --- |
 | 模型 | 主对话的历史消息 |
 | 工作区（文件读写在同一处） | 人设与规则文件（`AGENT.md`、`RULE.md`、`USER.md`） |
-| 技能（仅工具完整的类型） | 记忆与知识库检索 |
+| 技能（仅工具完整的类型） | 写入记忆（可读取共享记忆 / 知识库，但不会持久化写入） |
 
 因此子 Agent 只知道主 Agent 传递给它的内容。它看不到对话历史，也无法向用户提问，所需的路径、标识、约束和已确定的结论，都需要主 Agent 在创建任务时一并写明。
 
@@ -54,7 +54,7 @@ description: Sub Agent：把独立的任务交给子 Agent 执行，支持并行
 | 类型 | 适用场景 | 工具范围 |
 | --- | --- | --- |
 | `general-purpose` | 既需要调查也需要操作的多步任务：搜索、阅读、执行命令、写文件 | 主 Agent 的全部工具（禁用工具除外） |
-| `explore` | 只读的调查：查找文件、检索代码或文档、从网上收集信息 | `read`、`ls`、`search_files`、`web_search`、`web_fetch`、`vision` |
+| `explore` | 只读的调查：查找文件、检索代码或文档、从网上收集信息 | `read`、`ls`、`search_files`、`web_search`、`web_fetch`、`vision`、`memory_search`、`memory_get` |
 
 ## 自定义类型
 
@@ -106,7 +106,6 @@ tools: web_search, web_fetch, read, write
 | --- | --- |
 | `send`、`scheduler` | 会以主 Agent 的名义向用户渠道发送消息或创建任务，超出单个任务的范围 |
 | `env_config`、`evolution_undo` | 会修改 Agent 自身配置 |
-| `memory_search`、`memory_get` | 读写的是不提供给子 Agent 的状态 |
 | `subagent` | 避免开放全部工具的类型无限递归，实际允许的嵌套层数由 `max_depth` 控制 |
 
 ## 相关配置

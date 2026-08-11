@@ -22,7 +22,7 @@ A sub agent inherits part of the main Agent's environment, but it is not a copy 
 | --- | --- |
 | Model | Message history of the main conversation |
 | Workspace (files are read and written in the same place) | Persona and rule files (`AGENT.md`, `RULE.md`, `USER.md`) |
-| Skills (types with the full tool set only) | Memory and knowledge base retrieval |
+| Skills (types with the full tool set only) | Message-writing to memory (it can read the shared memory / knowledge base, but never persists) |
 
 A sub agent therefore knows only what the main Agent passes to it. It cannot see the conversation and cannot ask the user anything, so every path, identifier, constraint and settled decision it needs must be stated when the task is created.
 
@@ -54,7 +54,7 @@ Each sub agent is created with a type, which determines its system prompt and th
 | Type | Use case | Tools |
 | --- | --- | --- |
 | `general-purpose` | Multi-step work that involves both investigation and action: searching, reading, running commands, writing files | All tools of the main Agent, except the blocked ones |
-| `explore` | Read-only investigation: finding files, searching code or documents, gathering facts from the web | `read`, `ls`, `search_files`, `web_search`, `web_fetch`, `vision` |
+| `explore` | Read-only investigation: finding files, searching code or documents, gathering facts from the web | `read`, `ls`, `search_files`, `web_search`, `web_fetch`, `vision`, `memory_search`, `memory_get` |
 
 ## Custom Types
 
@@ -106,7 +106,6 @@ The following tools are unavailable to every sub agent:
 | --- | --- |
 | `send`, `scheduler` | Act on the user's channel in the main Agent's name, which is outside the scope of one task |
 | `env_config`, `evolution_undo` | Modify the Agent's own configuration |
-| `memory_search`, `memory_get` | Read and write state that is deliberately not given to sub agents |
 | `subagent` | Prevents a type with all tools from recursing. Actual nesting is governed by `max_depth` |
 
 ## Configuration
