@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
+import { product } from '@product'
 import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { Attachment, ChatMessage } from '../types'
@@ -242,7 +243,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
 
         {isEmpty ? (
           <div data-home className="chat-home flex flex-col items-center justify-center h-full px-6 py-12">
-            <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
+            {product.slots?.HomeLogo ? (
+              <div className="w-16 h-16 rounded-2xl mb-5 shadow-md overflow-hidden">
+                <product.slots.HomeLogo />
+              </div>
+            ) : (
+              <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
+            )}
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8 leading-relaxed whitespace-pre-line">
               {t('welcome_subtitle')}

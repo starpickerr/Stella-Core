@@ -78,6 +78,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-status', handler)
   },
 
+  setAppIcon: (iconUrl: string) => ipcRenderer.invoke('set-app-icon', iconUrl) as Promise<boolean>,
+  setAppTitle: (title: string) => ipcRenderer.invoke('set-app-title', title) as Promise<boolean>,
+
   platform: process.platform,
   // OS UI language (e.g. "zh-CN"), read synchronously so the renderer can pick
   // a default language on first run. Falls back to '' if unavailable.

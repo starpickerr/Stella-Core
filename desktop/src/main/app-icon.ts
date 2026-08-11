@@ -1,0 +1,173 @@
+import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, net } from 'electron'
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+
+// Let the web layer override the window icon/title at runtime and remember it,
+// so it also applies on the next launch before the page loads.
+
+const CACHE_DIRNAME = 'app-icon'
+const ICON_FILE = 'icon.png'
+const META_FILE = 'meta.json'
+const MAX_ICON_BYTES = 4 * 1024 * 1024
+const DOWNLOAD_TIMEOUT_MS = 10 * 1000
+
+interface CachedMeta {
+  title?: string
+}
+
+let getMainWindow: (() => BrowserWindow | null) | null = null
+let getTrayIcon: (() => Electron.Tray | null) | null = null
+
+function cacheDir(): string {
+  const root = process.env.COW_HOME || path.join(os.homedir(), '.cow')
+  return path.join(root, CACHE_DIRNAME)
+}
+
+function iconCachePath(): string {
+  return path.join(cacheDir(), ICON_FILE)
+}
+
+function metaCachePath(): string {
+  return path.join(cacheDir(), META_FILE)
+}
+
+// Download in the main process so the bytes aren't mangled by a text transport.
+function downloadImage(url: string): Promise<NativeImage | null> {
+  return new Promise((resolve) => {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      resolve(null)
+      return
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      resolve(null)
+      return
+    }
+    let done = false
+    const finish = (img: NativeImage | null) => {
+      if (done) return
+      done = true
+      resolve(img)
+    }
+    const request = net.request({ method: 'GET', url })
+    const timer = setTimeout(() => {
+      request.abort()
+      finish(null)
+    }, DOWNLOAD_TIMEOUT_MS)
+    request.on('response', (response) => {
+      const chunks: Buffer[] = []
+      let size = 0
+      response.on('data', (chunk: Buffer) => {
+        size += chunk.length
+        if (size > MAX_ICON_BYTES) {
+          request.abort()
+          clearTimeout(timer)
+          finish(null)
+          return
+        }
+        chunks.push(chunk)
+      })
+      response.on('end', () => {
+        clearTimeout(timer)
+        const img = nativeImage.createFromBuffer(Buffer.concat(chunks))
+        finish(img.isEmpty() ? null : img)
+      })
+    })
+    request.on('error', () => {
+      clearTimeout(timer)
+      finish(null)
+    })
+    request.end()
+  })
+}
+
+function applyIcon(icon: NativeImage): void {
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  } else {
+    getMainWindow?.()?.setIcon(icon)
+  }
+  const tray = getTrayIcon?.()
+  if (tray) tray.setImage(icon.resize({ width: 18, height: 18 }))
+}
+
+function applyTitle(title: string): void {
+  const trimmed = title.trim()
+  if (!trimmed) return
+  app.setName(trimmed)
+  getMainWindow?.()?.setTitle(trimmed)
+}
+
+function cacheIcon(icon: NativeImage): void {
+  try {
+    fs.mkdirSync(cacheDir(), { recursive: true })
+    fs.writeFileSync(iconCachePath(), icon.toPNG())
+  } catch (e) {
+    console.warn('[app-icon] icon cache write failed:', (e as Error).message)
+  }
+}
+
+function cacheMeta(meta: CachedMeta): void {
+  try {
+    fs.mkdirSync(cacheDir(), { recursive: true })
+    let existing: CachedMeta = {}
+    try {
+      existing = JSON.parse(fs.readFileSync(metaCachePath(), 'utf8')) as CachedMeta
+    } catch {
+      /* first write or unreadable */
+    }
+    fs.writeFileSync(metaCachePath(), JSON.stringify({ ...existing, ...meta }))
+  } catch (e) {
+    console.warn('[app-icon] meta cache write failed:', (e as Error).message)
+  }
+}
+
+// Apply the cached icon/title before the page loads, so a custom mark shows
+// from the first paint instead of flashing the default.
+export function applyCachedAppIcon(): void {
+  let icon: NativeImage | null = null
+  try {
+    const buf = fs.readFileSync(iconCachePath())
+    if (buf.length && buf.length <= MAX_ICON_BYTES) {
+      const img = nativeImage.createFromBuffer(buf)
+      if (!img.isEmpty()) icon = img
+    }
+  } catch {
+    /* no cached icon */
+  }
+  if (icon) applyIcon(icon)
+
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaCachePath(), 'utf8')) as CachedMeta
+    if (meta.title) applyTitle(meta.title)
+  } catch {
+    /* no cached title */
+  }
+}
+
+export function setupAppIconIPC(deps: {
+  getWindow: () => BrowserWindow | null
+  getTray: () => Electron.Tray | null
+}): void {
+  getMainWindow = deps.getWindow
+  getTrayIcon = deps.getTray
+
+  ipcMain.handle('set-app-icon', async (_event, iconUrl: unknown) => {
+    if (typeof iconUrl !== 'string' || !iconUrl) return false
+    const icon = await downloadImage(iconUrl)
+    if (!icon) return false
+    applyIcon(icon)
+    cacheIcon(icon)
+    return true
+  })
+
+  ipcMain.handle('set-app-title', (_event, title: unknown) => {
+    if (typeof title !== 'string' || !title.trim()) return false
+    applyTitle(title)
+    cacheMeta({ title })
+    return true
+  })
+}

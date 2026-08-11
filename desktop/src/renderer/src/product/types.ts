@@ -32,6 +32,9 @@ export interface ProductSlots {
   // Rendered as the assistant message avatar in place of the default app icon.
   // Lets a build show its own (or an OEM's) square logo next to replies.
   AssistantAvatar?: React.FC
+  // Rendered as the logo on the empty new-chat home screen in place of the
+  // default app logo. Lets a build show its own square logo there too.
+  HomeLogo?: React.FC
 }
 
 // Extra routes appended to the core <Routes>. Path is a HashRouter path.
