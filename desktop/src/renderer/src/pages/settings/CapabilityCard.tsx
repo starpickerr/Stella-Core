@@ -46,6 +46,10 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
 
+  // Custom providers expose no preset model catalog, so the model must always
+  // be typed in freely instead of picked from an (empty) dropdown.
+  const isCustomProvider = provider.startsWith('custom:')
+
   // A provider is configured when it has credentials (a custom provider counts
   // only once it actually carries a name/key, not as an empty placeholder).
   const isConfigured = (id: string): boolean => {
@@ -86,6 +90,13 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   const handleProvider = (id: string) => {
     setProvider(id)
     setShowCustom(false)
+    if (id.startsWith('custom:')) {
+      // Prefill with the saved model when re-selecting the same provider.
+      const saved = id === state.current_provider ? state.current_model || '' : ''
+      setCustomModel(saved)
+      setModel('')
+      return
+    }
     setCustomModel('')
     const first = resolveModels(data, id, state.provider_models)[0]
     setModel(first?.value || '')
@@ -102,7 +113,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     }
   }
 
-  const finalModel = showCustom ? customModel.trim() : model
+  const finalModel = showCustom || isCustomProvider ? customModel.trim() : model
   const isAuto = allowAuto && !provider
 
   return (
@@ -123,19 +134,31 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
         </Field>
         {!isAuto && (
           <Field label={t('models_model')}>
-            <Dropdown
-              value={showCustom ? CUSTOM_OPTION : model}
-              options={modelOptions}
-              placeholder={t('models_select_model')}
-              onChange={handleModel}
-            />
-            {showCustom && (
+            {isCustomProvider ? (
+              // Custom providers have no preset catalog: type the model directly.
               <TextInput
-                className="mt-2 font-mono"
+                className="font-mono"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder={t('config_custom_model_hint')}
               />
+            ) : (
+              <>
+                <Dropdown
+                  value={showCustom ? CUSTOM_OPTION : model}
+                  options={modelOptions}
+                  placeholder={t('models_select_model')}
+                  onChange={handleModel}
+                />
+                {showCustom && (
+                  <TextInput
+                    className="mt-2 font-mono"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder={t('config_custom_model_hint')}
+                  />
+                )}
+              </>
             )}
           </Field>
         )}
