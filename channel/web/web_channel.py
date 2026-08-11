@@ -28,7 +28,13 @@ from common import const
 from common import i18n
 from common.log import logger
 from common.singleton import singleton
-from config import conf, get_data_root, get_weixin_credentials_path, read_config_template
+from config import (
+    conf,
+    get_data_root,
+    get_weixin_credentials_path,
+    read_config_template,
+    sync_image_generation_custom_provider_env,
+)
 from models.reasoning_capabilities import provider_reasoning_metadata
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
@@ -3201,6 +3207,7 @@ class ModelsHandler:
             {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
             "seedream-5.0-lite",
         ],
+        "custom": [],
     }
 
     @staticmethod
@@ -3686,13 +3693,23 @@ class ModelsHandler:
         explicit_model = (img_node.get("model") or "").strip()
         explicit_provider = (img_node.get("provider") or "").strip()
 
+        providers = []
+        custom_cards = cls._custom_provider_cards(local_config)
+        for provider_id in cls._IMAGE_PROVIDER_MODELS:
+            if provider_id == "custom":
+                providers.extend(
+                    card["id"] for card in custom_cards
+                )
+            else:
+                providers.append(provider_id)
+
         # Provider resolution priority:
         #   1. Explicit `skills.image-generation.provider` (persisted via UI;
         #      supports custom model names that prefix-inference can't catch).
         #   2. Scan per-provider model catalog by model name.
         # Empty provider keeps the dropdown on "auto" when we can't tell.
         inferred_provider = ""
-        if explicit_provider and explicit_provider in cls._IMAGE_PROVIDER_MODELS:
+        if explicit_provider and explicit_provider in providers:
             inferred_provider = explicit_provider
         elif explicit_model:
             for pid, models in cls._IMAGE_PROVIDER_MODELS.items():
@@ -3717,13 +3734,9 @@ class ModelsHandler:
             "current_model": explicit_model,
             "fallback_provider": predicted["provider"],
             "fallback_model": predicted["model"],
-            "providers": list(cls._IMAGE_PROVIDER_MODELS.keys()),
+            "providers": providers,
             "provider_models": cls._IMAGE_PROVIDER_MODELS,
-            # The dispatcher that honors a pinned provider isn't wired up
-            # yet; advertise this so the UI can show a "saved but not active"
-            # banner until the runtime catches up.
-            "runtime_active": False,
-            "note": "router_pending",
+            "runtime_active": True,
         }
 
     # Canonical search provider order. Mirrors PROVIDER_ORDER in
@@ -3972,6 +3985,51 @@ class ModelsHandler:
                 if provider and provider.get("model"):
                     local_config["model"] = provider["model"]
                     file_cfg["model"] = provider["model"]
+
+        skills = local_config.get("skills") or {}
+        image_config = (
+            skills.get("image-generation")
+            if isinstance(skills, dict)
+            else {}
+        )
+        image_provider = (
+            image_config.get("provider", "")
+            if isinstance(image_config, dict)
+            else ""
+        )
+        if image_provider.startswith("custom:"):
+            image_provider_id = image_provider[len("custom:"):]
+            if not any(
+                provider.get("id") == image_provider_id
+                for provider in providers
+            ):
+                for target in (local_config, file_cfg):
+                    self._set_nested_namespace_value(
+                        target,
+                        "skills",
+                        "image-generation",
+                        "provider",
+                        "",
+                    )
+                    self._set_nested_namespace_value(
+                        target,
+                        "skills",
+                        "image-generation",
+                        "model",
+                        "",
+                    )
+                os.environ.pop(
+                    "SKILL_IMAGE_GENERATION_PROVIDER",
+                    None,
+                )
+                os.environ.pop(
+                    "SKILL_IMAGE_GENERATION_MODEL",
+                    None,
+                )
+        sync_image_generation_custom_provider_env(
+            local_config,
+            overwrite=True,
+        )
         self._write_file_config(file_cfg)
         self._reset_bridge()
 
@@ -4124,6 +4182,45 @@ class ModelsHandler:
         # a specific vendor still get routed there — runtime falls back to
         # model-name prefix inference only when provider is empty.
         local_config = conf()
+        if provider_id.startswith("custom:"):
+            custom_id = provider_id[len("custom:"):]
+            providers = self._normalize_custom_providers(
+                local_config.get("custom_providers")
+            )
+            custom_provider = next(
+                (
+                    provider
+                    for provider in providers
+                    if provider.get("id") == custom_id
+                ),
+                None,
+            )
+            if custom_provider is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": (
+                        "unknown custom provider id: {}".format(custom_id)
+                    ),
+                })
+            if not model:
+                model = custom_provider.get("model") or ""
+        elif (
+            provider_id
+            and provider_id not in self._IMAGE_PROVIDER_MODELS
+        ):
+            return json.dumps({
+                "status": "error",
+                "message": "unknown image provider: {}".format(provider_id),
+            })
+
+        if provider_id and not model:
+            return json.dumps({
+                "status": "error",
+                "message": (
+                    "image model is required when a provider is selected"
+                ),
+            })
+
         file_cfg = self._read_file_config()
 
         self._set_nested_namespace_value(local_config, "skills", "image-generation", "model", model or "")
@@ -4148,13 +4245,16 @@ class ModelsHandler:
             os.environ[provider_env] = provider_id
         else:
             os.environ.pop(provider_env, None)
+        sync_image_generation_custom_provider_env(
+            local_config,
+            overwrite=True,
+        )
 
         logger.info(f"[ModelsHandler] image updated: provider={provider_id!r} model={model!r}")
         return json.dumps({
             "status": "success",
             "provider": provider_id,
             "model": model,
-            "router_pending": True,
         })
 
     def _set_chat(self, provider_id: str, model: str) -> str:
