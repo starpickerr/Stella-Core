@@ -77,6 +77,14 @@ export interface ProductNav {
   hideFooterMenu?: boolean
 }
 
+// Optional external links a build can override (e.g. a differently-branded
+// docs site). Each returns null to fall back to the core default.
+export interface ProductLinks {
+  // The "what's new" page for a given version. `lang` is the UI language
+  // (e.g. 'zh'). Return null to use the core docs site.
+  releaseNotesUrl?: (version: string, lang: string) => string | null
+}
+
 export interface ProductExtension {
   auth?: ProductAuth
   slots?: ProductSlots
@@ -84,4 +92,5 @@ export interface ProductExtension {
   onboarding?: ProductOnboarding
   models?: ProductModels
   nav?: ProductNav
+  links?: ProductLinks
 }
