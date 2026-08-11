@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, dialog, nativeImage, Notification } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
@@ -14,6 +14,12 @@ import { setupAppIconIPC, applyCachedAppIcon } from './app-icon'
 // where the default Electron binary would otherwise report "Electron". The name
 // can be overridden by the bundled app-config (appName); defaults to CowAgent.
 app.setName(loadAppConfig()?.appName || 'CowAgent')
+
+// Windows shows notifications only when an AppUserModelID is set; without it
+// they are silently dropped. Harmless on macOS/Linux.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.cowagent.desktop')
+}
 
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
@@ -308,6 +314,25 @@ function setupIPC() {
   // to pick a sensible default UI language on first run before any paint.
   ipcMain.on('get-system-locale', (event) => {
     event.returnValue = app.getLocale() || app.getSystemLocale?.() || ''
+  })
+
+  // Show a native OS notification (e.g. a scheduler reminder). Clicking it
+  // brings the window forward and asks the renderer to open the given session.
+  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string }) => {
+    if (!Notification.isSupported() || !payload?.body) return false
+    const n = new Notification({ title: payload.title || app.name, body: payload.body })
+    n.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+      if (payload.sessionId) {
+        mainWindow?.webContents.send('open-session', payload.sessionId)
+      }
+    })
+    n.show()
+    return true
   })
 }
 

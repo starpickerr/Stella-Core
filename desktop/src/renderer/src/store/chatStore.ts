@@ -35,6 +35,10 @@ interface ChatState {
   loadHistory: (sid: string, page?: number) => Promise<void>
   clearContext: (sid: string) => Promise<boolean>
   clearLocal: (sid: string) => void
+
+  // Append a server-pushed message (scheduler/push) polled outside the SSE
+  // stream. Deduped by requestId so a reply already on screen isn't repeated.
+  receivePush: (sid: string, content: string, requestId?: string) => boolean
 }
 
 // EventSource instances kept outside the store (not serializable).
@@ -604,6 +608,25 @@ export const useChatStore = create<ChatState>((set, get) => {
         delete streams[sid]
       }
       patchSession(sid, { ...EMPTY })
+    },
+
+    receivePush: (sid, content, requestId) => {
+      if (!content) return false
+      const cur = get().sessions[sid]
+      // Already streaming this request via SSE, or the same push already
+      // landed — don't render it twice.
+      if (requestId && cur?.messages.some((m) => m.pushRequestId === requestId)) {
+        return false
+      }
+      const msg: ChatMessage = {
+        id: uid('assistant'),
+        role: 'assistant',
+        content,
+        timestamp: Date.now() / 1000,
+        pushRequestId: requestId,
+      }
+      patchMessages(sid, (msgs) => [...msgs, msg])
+      return true
     },
   }
 })

@@ -45,6 +45,10 @@ export interface ElectronAPI {
   // launches). Used by product extensions; unused by the standard build.
   setAppIcon?: (iconUrl: string) => Promise<boolean>
   setAppTitle?: (title: string) => Promise<boolean>
+  // Show a native OS notification; clicking it focuses the window and fires
+  // onOpenSession with the session id.
+  notify?: (payload: { title?: string; body?: string; sessionId?: string }) => Promise<boolean>
+  onOpenSession?: (callback: (sessionId: string) => void) => () => void
   platform: string
   // OS UI language (e.g. "zh-CN"); used to default the language on first run.
   systemLocale?: string
@@ -129,6 +133,8 @@ export interface ChatMessage {
   isStreaming?: boolean
   isCancelled?: boolean
   error?: string
+  /** request_id of a server-pushed (scheduler) message, used to dedupe polls. */
+  pushRequestId?: string
 }
 
 export interface Attachment {

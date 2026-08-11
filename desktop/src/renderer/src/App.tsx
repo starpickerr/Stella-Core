@@ -8,6 +8,7 @@ import StatusScreen from './components/StatusScreen'
 import LoginGate from './components/LoginGate'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
+import { usePushPoll } from './hooks/usePushPoll'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
 import { useWorkspaceStore } from './store/workspaceStore'
@@ -123,6 +124,18 @@ const App: React.FC = () => {
       cancelled = true
     }
   }, [backend.status, authState, maybeOpenOnboarding])
+
+  // Poll for scheduler/push messages once the backend and auth are settled.
+  usePushPoll(backend.status === 'ready' && authState === 'ok')
+
+  // A clicked OS notification asks us to open its session.
+  useEffect(() => {
+    const off = window.electronAPI?.onOpenSession?.((sessionId) => {
+      useSessionStore.getState().setActive(sessionId)
+      navigate('/')
+    })
+    return off
+  }, [navigate])
 
   // Subscribe to auto-update status from the main process (no-op in dev).
   useEffect(() => initUpdateListener(), [])
