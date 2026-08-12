@@ -32,6 +32,65 @@ QR_POLL_TIMEOUT = 35
 BOT_TYPE = "3"
 
 
+# The Weixin CDN only accepts legacy TLS1.2 + RSA cipher suites (e.g.
+# AES256-GCM-SHA384). OpenSSL 1.1.1's default SECLEVEL=2 rejects these
+# no-forward-secrecy suites, so the handshake fails with SSLV3_ALERT_
+# HANDSHAKE_FAILURE. Lower the security level only for CDN requests.
+_cdn_session = None
+
+
+def _get_cdn_session() -> "requests.Session":
+    global _cdn_session
+    if _cdn_session is not None:
+        return _cdn_session
+
+    import ssl
+
+    from requests.adapters import HTTPAdapter
+
+    try:
+        from urllib3.util.ssl_ import create_urllib3_context
+    except ImportError:
+        create_urllib3_context = None
+
+    class _WeixinCdnAdapter(HTTPAdapter):
+        def _build_ctx(self):
+            if create_urllib3_context is not None:
+                ctx = create_urllib3_context()
+            else:
+                ctx = ssl.create_default_context()
+            try:
+                ctx.set_ciphers("DEFAULT@SECLEVEL=1")
+            except ssl.SSLError:
+                pass
+            # A custom SSL context has an empty trust store; load a CA bundle
+            # (certifi if available, otherwise system defaults) so cert
+            # verification still works.
+            try:
+                import certifi
+                ctx.load_verify_locations(cafile=certifi.where())
+            except Exception:
+                try:
+                    ctx.load_default_certs()
+                except Exception:
+                    pass
+            return ctx
+
+        def init_poolmanager(self, *args, **kwargs):
+            kwargs["ssl_context"] = self._build_ctx()
+            return super().init_poolmanager(*args, **kwargs)
+
+        def proxy_manager_for(self, *args, **kwargs):
+            kwargs["ssl_context"] = self._build_ctx()
+            return super().proxy_manager_for(*args, **kwargs)
+
+    session = requests.Session()
+    adapter = _WeixinCdnAdapter()
+    session.mount("https://", adapter)
+    _cdn_session = session
+    return _cdn_session
+
+
 def _random_wechat_uin() -> str:
     val = random.randint(0, 0xFFFFFFFF)
     return base64.b64encode(str(val).encode("utf-8")).decode("utf-8")
@@ -328,7 +387,7 @@ def upload_media_to_cdn(api: WeixinApi, file_path: str, to_user_id: str,
             else:
                 raise RuntimeError(f"[Weixin] getUploadUrl returned neither upload_full_url nor upload_param: {resp}")
 
-            cdn_resp = requests.post(cdn_url, data=encrypted, headers={
+            cdn_resp = _get_cdn_session().post(cdn_url, data=encrypted, headers={
                 "Content-Type": "application/octet-stream",
                 "Content-Length": str(len(encrypted)),
             }, timeout=120)
@@ -381,7 +440,7 @@ def download_media_from_cdn(cdn_base_url: str, encrypt_query_param: str,
     """
     from urllib.parse import quote
     url = f"{cdn_base_url}/download?encrypted_query_param={quote(encrypt_query_param)}"
-    resp = requests.get(url, timeout=60)
+    resp = _get_cdn_session().get(url, timeout=60)
     resp.raise_for_status()
 
     # Determine key format:
