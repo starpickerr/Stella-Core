@@ -280,6 +280,8 @@ def get_agent_registry() -> AgentRegistry:
     """
 
     global _registry_instance, _registry_signature
+    import os
+
     from config import conf
 
     settings = conf()
@@ -288,7 +290,31 @@ def get_agent_registry() -> AgentRegistry:
         if _registry_pinned and _registry_instance is not None:
             return _registry_instance
         if _registry_instance is None or _registry_signature != signature:
-            _registry_instance = AgentRegistry.from_config(settings)
+            try:
+                _registry_instance = AgentRegistry.from_config(settings)
+            except AgentRegistryError:
+                # An invalid `agents`/`default_agent_id` block would otherwise
+                # bubble all the way up through load_config() and take the whole
+                # process down before the web console can bind — leaving a
+                # desktop user with no UI to fix the very config that is broken.
+                # Fall back to the default single agent so the app still starts;
+                # the console can then edit the bad block. Source deployments
+                # keep failing loudly so the developer sees the error at once.
+                if os.environ.get("COW_DESKTOP") != "1":
+                    raise
+                from common.log import logger
+
+                logger.error(
+                    "[AgentRegistry] invalid 'agents' config; ignoring it and "
+                    "starting with the default agent. Fix it in the console.",
+                    exc_info=True,
+                )
+                fallback = {
+                    k: v
+                    for k, v in dict(settings).items()
+                    if k not in ("agents", "default_agent_id")
+                }
+                _registry_instance = AgentRegistry.from_config(fallback)
             _registry_signature = signature
         return _registry_instance
 
