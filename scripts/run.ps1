@@ -388,7 +388,9 @@ function Install-Dependencies {
     & $PythonCmd -m pip install --upgrade pip setuptools wheel @pipMirror
 
     Write-Info (T "正在安装项目依赖（可能需要几分钟）..." "Installing project dependencies (may take a few minutes)...")
-    & $PythonCmd -m pip install -r "$BaseDir\requirements.txt" @pipMirror
+    # --prefer-binary: avoid building C extensions (e.g. aiohttp) from source,
+    # which would require Microsoft C++ Build Tools that most users don't have.
+    & $PythonCmd -m pip install --prefer-binary -r "$BaseDir\requirements.txt" @pipMirror
     $pipExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
     if ($pipExit -ne 0) {
