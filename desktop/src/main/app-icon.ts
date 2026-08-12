@@ -38,7 +38,7 @@ function icoCachePath(): string {
 }
 
 // Download in the main process so the bytes aren't mangled by a text transport.
-function downloadImage(url: string): Promise<NativeImage | null> {
+function downloadBuffer(url: string): Promise<Buffer | null> {
   return new Promise((resolve) => {
     let parsed: URL
     try {
@@ -52,10 +52,10 @@ function downloadImage(url: string): Promise<NativeImage | null> {
       return
     }
     let done = false
-    const finish = (img: NativeImage | null) => {
+    const finish = (buf: Buffer | null) => {
       if (done) return
       done = true
-      resolve(img)
+      resolve(buf)
     }
     const request = net.request({ method: 'GET', url })
     const timer = setTimeout(() => {
@@ -77,8 +77,7 @@ function downloadImage(url: string): Promise<NativeImage | null> {
       })
       response.on('end', () => {
         clearTimeout(timer)
-        const img = nativeImage.createFromBuffer(Buffer.concat(chunks))
-        finish(img.isEmpty() ? null : img)
+        finish(Buffer.concat(chunks))
       })
     })
     request.on('error', () => {
@@ -87,6 +86,29 @@ function downloadImage(url: string): Promise<NativeImage | null> {
     })
     request.end()
   })
+}
+
+async function downloadImage(url: string): Promise<NativeImage | null> {
+  const buf = await downloadBuffer(url)
+  if (!buf) return null
+  const img = nativeImage.createFromBuffer(buf)
+  return img.isEmpty() ? null : img
+}
+
+// Fetch a ready-made multi-size .ico and cache it verbatim, so Windows
+// shortcuts get a crisp icon without a lossy PNG conversion. Rejects payloads
+// that aren't real .ico files (magic bytes 00 00 01 00).
+async function downloadIco(url: string): Promise<string | null> {
+  const buf = await downloadBuffer(url)
+  if (!buf || buf.length < 4 || buf.readUInt32LE(0) !== 0x00010000) return null
+  try {
+    fs.mkdirSync(cacheDir(), { recursive: true })
+    fs.writeFileSync(icoCachePath(), buf)
+    return icoCachePath()
+  } catch (e) {
+    console.warn('[app-icon] ico download write failed:', (e as Error).message)
+    return null
+  }
 }
 
 function applyIcon(icon: NativeImage): void {
@@ -263,14 +285,16 @@ export function setupAppIconIPC(deps: {
   getMainWindow = deps.getWindow
   getTrayIcon = deps.getTray
 
-  ipcMain.handle('set-app-icon', async (_event, iconUrl: unknown) => {
+  ipcMain.handle('set-app-icon', async (_event, iconUrl: unknown, icoUrl: unknown) => {
     if (typeof iconUrl !== 'string' || !iconUrl) return false
     const icon = await downloadImage(iconUrl)
     if (!icon) return false
     applyIcon(icon)
     cacheIcon(icon)
     if (process.platform === 'win32') {
-      const icoPath = await writeIcoFromCachedPng()
+      let icoPath: string | null = null
+      if (typeof icoUrl === 'string' && icoUrl) icoPath = await downloadIco(icoUrl)
+      if (!icoPath) icoPath = await writeIcoFromCachedPng()
       syncWindowsShortcuts({ icoPath })
     }
     return true
