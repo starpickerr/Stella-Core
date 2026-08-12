@@ -216,6 +216,8 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏷 更新日志
 
+> **2026.08.12：** [v2.1.6](https://github.com/zhayujie/CowAgent/releases/tag/2.1.6) — 子 Agent 并行任务分配、推理强度配置、记忆向量库可插拔、体验和安全优化
+
 > **2026.07.29：** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — 工作空间与文件预览、基础工具优化（文件搜索、写入校验、命令后台运行）、上下文压缩（`/compact`）、提示词一键优化、安全加固
 
 > **2026.07.20：** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
@@ -227,20 +229,6 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 > **2026.06.09：** [v2.1.1](https://github.com/zhayujie/CowAgent/releases/tag/2.1.1) — 自进化能力、Web 控制台升级（消息管理、多会话并行）、新模型接入（MiniMax-M3、qwen3.7-plus）、Python 3.13 支持
 
 > **2026.06.01：** [v2.1.0](https://github.com/zhayujie/CowAgent/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
-
-> **2026.05.22：** [v2.0.9](https://github.com/zhayujie/CowAgent/releases/tag/2.0.9) — 模型管理、MCP 协议支持、浏览器登录态持久化、新模型接入（gpt-5.5、gemini-3.5-flash、qwen3.7-max）、部署安全加固
-
-> **2026.05.06：** [v2.0.8](https://github.com/zhayujie/CowAgent/releases/tag/2.0.8) — 飞书渠道全面升级（语音、流式输出、扫码接入）、新模型支持（DeepSeek V4、百度千帆）、定时任务工具增强
-
-> **2026.04.22：** [v2.0.7](https://github.com/zhayujie/CowAgent/releases/tag/2.0.7) — 图像生成内置技能（GPT Image 2、Nano Banana）、新模型支持（Kimi K2.6、Claude Opus 4.7、GLM 5.1）、知识库和记忆增强
-
-> **2026.04.14：** [v2.0.6](https://github.com/zhayujie/CowAgent/releases/tag/2.0.6) — 知识库系统、梦境记忆模块、上下文智能压缩、Web 控制台多会话
-
-> **2026.04.01：** [v2.0.5](https://github.com/zhayujie/CowAgent/releases/tag/2.0.5) — Cow CLI 命令系统、Skill Hub 开源、浏览器工具、企微扫码创建
-
-> **2026.03.22：** [v2.0.4](https://github.com/zhayujie/CowAgent/releases/tag/2.0.4) — 新增个人微信通道，支持文本/图片/文件/语音消息
-
-> **2026.02.03：** [v2.0.0](https://github.com/zhayujie/CowAgent/releases/tag/2.0.0) — 正式升级为超级 Agent 助理，支持多轮任务决策、长期记忆、Skills 框架
 
 完整更新历史：[Release Notes](https://docs.cowagent.ai/zh/releases)
 

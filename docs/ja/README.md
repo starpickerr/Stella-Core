@@ -215,6 +215,8 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🏷 更新履歴
 
+> **2026.08.12:** [v2.1.6](https://github.com/zhayujie/CowAgent/releases/tag/2.1.6) — 独立タスクを並行実行するサブ Agent、推論強度の設定、差し替え可能なメモリのベクトルバックエンド、体験とセキュリティの改善。
+
 > **2026.07.29:** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — ワークスペースとファイルプレビュー、基本ツールの最適化（ファイル検索、書き込み検証、コマンドのバックグラウンド実行）、コンテキスト圧縮（`/compact`）、プロンプトのワンクリック最適化、セキュリティ強化。
 
 > **2026.07.20:** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
@@ -226,18 +228,6 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 > **2026.06.09:** [v2.1.1](https://github.com/zhayujie/CowAgent/releases/tag/2.1.1) — 自己進化、Web コンソールの強化（メッセージ管理、マルチセッション並行）、クロスプラットフォーム対応の MCP 強化と並行呼び出し、新モデル（MiniMax-M3、qwen3.7-plus）、Python 3.13 対応。
 
 > **2026.06.01:** [v2.1.0](https://github.com/zhayujie/CowAgent/releases/tag/2.1.0) — 国際化対応、新チャネル（Telegram、Discord、Slack、WeChat カスタマーサービス）、CLI インタラクション強化、ワンライナーインストールの最適化、MCP Streamable HTTP 対応、新モデル（claude-opus-4-8、MiMo）。
-
-> **2026.05.22:** [v2.0.9](https://github.com/zhayujie/CowAgent/releases/tag/2.0.9) — モデル管理、MCP プロトコル対応、ブラウザセッション永続化、新モデル（gpt-5.5、gemini-3.5-flash、qwen3.7-max）、デプロイのセキュリティ強化。
-
-> **2026.05.06:** [v2.0.8](https://github.com/zhayujie/CowAgent/releases/tag/2.0.8) — Feishu チャネル全面アップグレード（音声、ストリーミング、QR 接続）、DeepSeek V4 と Baidu Qianfan 対応、スケジューラツール強化。
-
-> **2026.04.22:** [v2.0.7](https://github.com/zhayujie/CowAgent/releases/tag/2.0.7) — 組み込み画像生成（GPT Image 2、Nano Banana）、新モデル（Kimi K2.6、Claude Opus 4.7、GLM 5.1）、ナレッジベースと記憶の強化。
-
-> **2026.04.14:** [v2.0.6](https://github.com/zhayujie/CowAgent/releases/tag/2.0.6) — ナレッジベース、Deep Dream 記憶蒸留、スマートコンテキスト圧縮、マルチセッション Web コンソール。
-
-> **2026.04.01:** [v2.0.5](https://github.com/zhayujie/CowAgent/releases/tag/2.0.5) — Cow CLI、Skill Hub オープンソース化、ブラウザツール、WeCom Bot QR 接続。
-
-> **2026.02.03:** [v2.0.0](https://github.com/zhayujie/CowAgent/releases/tag/2.0.0) — マルチステップタスク計画、長期記憶、Skill フレームワークを備えたスーパー Agent アシスタントへの全面アップグレード。
 
 完全な履歴: [リリースノート](https://docs.cowagent.ai/ja/releases/overview)
 
