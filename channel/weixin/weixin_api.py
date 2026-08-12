@@ -31,6 +31,10 @@ DEFAULT_API_TIMEOUT = 15
 QR_POLL_TIMEOUT = 35
 BOT_TYPE = "3"
 
+# Retry policy for outbound sendMessage calls on transient transport errors.
+SEND_RETRIES = 2
+SEND_RETRY_BACKOFF_BASE = 1.0
+
 
 # The Weixin CDN only accepts legacy TLS1.2 + RSA cipher suites (e.g.
 # AES256-GCM-SHA384). OpenSSL 1.1.1's default SECLEVEL=2 rejects these
@@ -128,20 +132,39 @@ class WeixinApi:
         self.token = token
         self.cdn_base_url = cdn_base_url
 
-    def _post(self, endpoint: str, body: dict, timeout: int = DEFAULT_API_TIMEOUT) -> dict:
+    def _post(self, endpoint: str, body: dict, timeout: int = DEFAULT_API_TIMEOUT,
+              retries: int = 0) -> dict:
         url = _ensure_trailing_slash(self.base_url) + endpoint
         headers = _build_headers(self.token)
         body.setdefault("base_info", {}).setdefault("channel_version", CHANNEL_VERSION)
-        try:
-            resp = requests.post(url, json=body, headers=headers, timeout=timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.exceptions.Timeout:
-            logger.debug(f"[Weixin] API timeout: {endpoint}")
-            return {"ret": 0, "msgs": []}
-        except Exception as e:
-            logger.error(f"[Weixin] API error {endpoint}: {e}")
-            raise
+        attempt = 0
+        while True:
+            try:
+                resp = requests.post(url, json=body, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                return resp.json()
+            except requests.exceptions.Timeout:
+                logger.debug(f"[Weixin] API timeout: {endpoint}")
+                return {"ret": 0, "msgs": []}
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                # Transient transport-level errors (e.g. SSLEOFError from the
+                # peer dropping the connection) are usually recoverable, so
+                # retry a few times with exponential backoff before giving up.
+                if attempt < retries:
+                    backoff = SEND_RETRY_BACKOFF_BASE * (2 ** attempt)
+                    attempt += 1
+                    logger.warning(f"[Weixin] API transient error {endpoint} "
+                                   f"(attempt {attempt}/{retries}), retrying in "
+                                   f"{backoff}s: {e}")
+                    time.sleep(backoff)
+                    continue
+                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                raise
 
     # ── getUpdates (long-poll) ─────────────────────────────────────────
 
@@ -163,7 +186,7 @@ class WeixinApi:
                 "item_list": [{"type": 1, "text_item": {"text": text}}],
                 "context_token": context_token,
             }
-        })
+        }, retries=SEND_RETRIES)
 
     def send_image_item(self, to: str, context_token: str,
                         encrypt_query_param: str, aes_key_b64: str,
@@ -234,7 +257,7 @@ class WeixinApi:
                 "item_list": items,
                 "context_token": context_token,
             }
-        })
+        }, retries=SEND_RETRIES)
 
     # ── getUploadUrl ───────────────────────────────────────────────────
 
