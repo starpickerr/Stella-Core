@@ -78,7 +78,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-status', handler)
   },
 
-  setAppIcon: (iconUrl: string) => ipcRenderer.invoke('set-app-icon', iconUrl) as Promise<boolean>,
+  setAppIcon: (iconUrl: string, icoUrl?: string) =>
+    ipcRenderer.invoke('set-app-icon', iconUrl, icoUrl) as Promise<boolean>,
   setAppTitle: (title: string) => ipcRenderer.invoke('set-app-title', title) as Promise<boolean>,
 
   // Show a native OS notification; clicking it focuses the window and asks the

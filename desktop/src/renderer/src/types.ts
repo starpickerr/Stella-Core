@@ -43,7 +43,7 @@ export interface ElectronAPI {
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   // Override the window/Dock/taskbar icon and title at runtime (cached across
   // launches). Used by product extensions; unused by the standard build.
-  setAppIcon?: (iconUrl: string) => Promise<boolean>
+  setAppIcon?: (iconUrl: string, icoUrl?: string) => Promise<boolean>
   setAppTitle?: (title: string) => Promise<boolean>
   // Show a native OS notification; clicking it focuses the window and fires
   // onOpenSession with the session id.
