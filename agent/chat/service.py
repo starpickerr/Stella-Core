@@ -143,6 +143,9 @@ class ChatService:
                     "chunk_type": "tool_start",
                     "tool": tool_name,
                     "arguments": arguments,
+                    # Carry the call id so later subagent_step chunks can attach
+                    # their inner steps to the right card via card_id.
+                    "tool_id": tool_call_id,
                 })
 
             elif event_type == "tool_execution_end":
@@ -173,6 +176,33 @@ class ChatService:
 
                 if state.pending_tool_results is not None:
                     state.pending_tool_results.append(tool_info)
+
+            elif event_type == "subagent_step":
+                # A single step a sub agent ran inside a still-in-flight
+                # `subagent` tool call. Forwarded immediately (NOT batched into
+                # pending_tool_results) so the console can follow the sub
+                # agent's progress live instead of waiting minutes for the whole
+                # spawn to finish and flush at turn_end.
+                send_chunk_fn({
+                    "chunk_type": "subagent_step",
+                    "card_id": data.get("card_id"),
+                    "step_id": data.get("step_id"),
+                    "phase": data.get("phase"),
+                    # Frontend expects `tool`; the event carries `tool_name`.
+                    "tool": data.get("tool_name") or data.get("tool") or "tool",
+                    "arguments": data.get("arguments") or {},
+                    "status": data.get("status"),
+                    "execution_time": data.get("execution_time"),
+                    "error": data.get("error"),
+                })
+
+            elif event_type == "artifact":
+                # A file a (sub) agent wrote. Forward live so it can be previewed
+                # as soon as it exists rather than only after the turn settles.
+                send_chunk_fn({
+                    "chunk_type": "artifact",
+                    "artifact": data,
+                })
 
             elif event_type == "turn_end":
                 has_tool_calls = data.get("has_tool_calls", False)
