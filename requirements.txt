@@ -1,5 +1,8 @@
 numpy>=1.21
-aiohttp>=3.8.6,<3.10
+# aiohttp<3.10 has no prebuilt wheels for Python 3.13+, so pip would compile from
+# source (needs MSVC on Windows). Use >=3.10 on 3.13+ where cp313 wheels exist.
+aiohttp>=3.8.6,<3.10; python_version < "3.13"
+aiohttp>=3.10; python_version >= "3.13"
 requests>=2.28.2
 chardet>=5.1.0
 Pillow
