@@ -14,6 +14,7 @@ from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.bash import background, exit_codes
+from agent.tools.bash.decode import decode_output
 from agent.tools.utils.truncate import truncate_tail, format_size, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES
 from common.log import logger
 from common.utils import expand_path
@@ -222,16 +223,19 @@ SAFETY:
                     parts = shlex.split(command)
                     if len(parts) > 0:
                         logger.info(f"[Bash] Retrying with argument list: {parts[:3]}...")
-                        retry_result = subprocess.run(
+                        raw = subprocess.run(
                             parts,
                             cwd=self.cwd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
-                            text=True,
-                            encoding="utf-8",
-                            errors="replace",
                             timeout=timeout,
                             env=env
+                        )
+                        from types import SimpleNamespace
+                        retry_result = SimpleNamespace(
+                            returncode=raw.returncode,
+                            stdout=decode_output(raw.stdout),
+                            stderr=decode_output(raw.stderr),
                         )
                         logger.debug(f"[Bash] Retry exit code: {retry_result.returncode}, stdout: {len(retry_result.stdout)}, stderr: {len(retry_result.stderr)}")
                         
@@ -374,6 +378,7 @@ SAFETY:
             command,
             shell=True,
             cwd=self.cwd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
@@ -416,7 +421,7 @@ SAFETY:
                     raise _Cancelled()
                 if elapsed >= self._PROGRESS_INTERVAL and now - last_reported_at >= self._PROGRESS_INTERVAL:
                     with recent_lock:
-                        snapshot = bytes(recent).decode("utf-8", errors="replace")
+                        snapshot = decode_output(bytes(recent))
                     snapshot = self._redact_progress(snapshot, dotenv_vars)
                     if snapshot and snapshot != last_snapshot:
                         self.report_progress(snapshot)
@@ -434,8 +439,8 @@ SAFETY:
         from types import SimpleNamespace
         return SimpleNamespace(
             returncode=process.returncode,
-            stdout=b"".join(stdout_chunks).decode("utf-8", errors="replace"),
-            stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+            stdout=decode_output(b"".join(stdout_chunks)),
+            stderr=decode_output(b"".join(stderr_chunks)),
         )
 
     def _kill_process(self, process):

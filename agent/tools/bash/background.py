@@ -23,6 +23,8 @@ import time
 import uuid
 from typing import Dict, List, Optional, Tuple
 
+from agent.tools.bash.decode import decode_output
+
 _IS_WIN = sys.platform == "win32"
 
 # Per-job output cap. A chatty server would otherwise grow without bound; the
@@ -64,7 +66,7 @@ class _Job:
             chunk = bytes(self.buffer[self.cursor:])
             self.cursor = len(self.buffer)
             dropped, self.dropped = self.dropped, 0
-        return chunk.decode("utf-8", errors="replace"), dropped
+        return decode_output(chunk), dropped
 
     @property
     def running(self) -> bool:
@@ -114,6 +116,7 @@ def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None) 
         command,
         shell=True,
         cwd=cwd,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=env,
