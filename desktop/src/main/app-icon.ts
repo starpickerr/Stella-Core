@@ -218,10 +218,9 @@ function sanitizeShortcutName(title: string): string {
   return title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim()
 }
 
-// Rewrite the icon of every shortcut pointing at this app, and optionally
-// rename its file to `title`. The rename creates the new file and only deletes
-// the old one once the new one exists, so a failed write never leaves the user
-// without a shortcut.
+// Update the icon of every shortcut pointing at this app, and rename the file
+// to `title`. Rename is a plain filesystem move (fs.renameSync) so the target
+// and cwd are preserved exactly and no duplicate is ever created.
 function syncWindowsShortcuts(opts: { icoPath?: string | null; title?: string }): void {
   if (process.platform !== 'win32') return
   const icoPath = opts.icoPath
@@ -234,7 +233,7 @@ function syncWindowsShortcuts(opts: { icoPath?: string | null; title?: string })
       continue
     }
     for (const name of entries) {
-      const linkPath = path.join(dir, name)
+      let linkPath = path.join(dir, name)
       let details: Electron.ShortcutDetails
       try {
         details = shell.readShortcutLink(linkPath)
@@ -243,36 +242,25 @@ function syncWindowsShortcuts(opts: { icoPath?: string | null; title?: string })
       }
       if (!pointsAtThisApp(details.target)) continue
 
-      const next: Electron.ShortcutDetails = { ...details }
-      if (icoPath) next.icon = icoPath
-      if (typeof next.iconIndex !== 'number') next.iconIndex = 0
+      if (title) {
+        const target = path.join(dir, `${title}.lnk`)
+        if (path.resolve(target).toLowerCase() !== path.resolve(linkPath).toLowerCase()) {
+          try {
+            fs.renameSync(linkPath, target)
+            linkPath = target
+          } catch (e) {
+            console.warn('[app-icon] shortcut rename failed:', (e as Error).message)
+          }
+        }
+      }
 
+      if (!icoPath) continue
+      const next: Electron.ShortcutDetails = { ...details, icon: icoPath }
+      if (typeof next.iconIndex !== 'number') next.iconIndex = 0
       try {
         shell.writeShortcutLink(linkPath, 'update', next)
       } catch (e) {
         console.warn('[app-icon] shortcut icon update failed:', (e as Error).message)
-        continue
-      }
-
-      if (!title) continue
-      const target = path.join(dir, `${title}.lnk`)
-      if (path.resolve(target).toLowerCase() === path.resolve(linkPath).toLowerCase()) continue
-      // Target name already taken: drop the stale original, don't duplicate.
-      if (fs.existsSync(target)) {
-        try {
-          fs.rmSync(linkPath)
-        } catch {
-          /* keep both rather than fail */
-        }
-        continue
-      }
-      try {
-        shell.writeShortcutLink(target, 'create', next)
-        if (fs.existsSync(target)) {
-          fs.rmSync(linkPath)
-        }
-      } catch (e) {
-        console.warn('[app-icon] shortcut rename failed, keeping original:', (e as Error).message)
       }
     }
   }
