@@ -271,7 +271,7 @@ You can also [file an issue](https://github.com/zhayujie/CowAgent/issues) on Git
 - **🧠 Agent infrastructure** — unified access to LLMs, knowledge bases, databases, skills, and workflows; plug-and-play building blocks that extend what CowAgent can do
 - **🏢 Team & enterprise features** — workspaces, role-based access, audit logs, and private deployment for production use cases
 
-For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/consultant.jpg) to reach our team on WeChat.
+For enterprise inquiries: sales@simple-future.tech or [scan the QR code](https://cdn.link-ai.tech/contact/customer-support.png) to reach our team on WeChat.
 
 <br/>
 
