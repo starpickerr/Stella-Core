@@ -82,7 +82,18 @@ class ChannelManager:
         with self._lock:
             channels = []
             for name in channel_names:
-                ch = channel_factory.create_channel(name)
+                # One misconfigured channel (e.g. wechatcom_app without its
+                # corp_id/token/aes_key) must not take the whole process down:
+                # instantiating it can raise while parsing config. The web
+                # console in particular has to come up so the desktop shell can
+                # surface the error and let the user fix the config. Skip the
+                # broken channel and keep the rest.
+                try:
+                    ch = channel_factory.create_channel(name)
+                except Exception as e:
+                    logger.error(f"[ChannelManager] Failed to create channel '{name}', skipping it: {e}")
+                    logger.exception(e)
+                    continue
                 ch.cloud_mode = self.cloud_mode
                 self._channels[name] = ch
                 channels.append((name, ch))
