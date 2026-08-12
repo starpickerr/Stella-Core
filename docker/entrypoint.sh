@@ -51,8 +51,8 @@ fi
 
 # fix ownership of mounted volumes then drop to non-root user
 if [ "$(id -u)" = "0" ]; then
-    mkdir -p /home/agent/cow
-    chown agent:agent /home/agent/cow
+    mkdir -p /home/agent/cow "${COW_DATA_DIR:-/home/agent/.cow}"
+    chown agent:agent /home/agent/cow "${COW_DATA_DIR:-/home/agent/.cow}"
     exec su agent -s /bin/bash -c "cd $CHATGPT_ON_WECHAT_PREFIX && $CHATGPT_ON_WECHAT_EXEC"
 fi
 

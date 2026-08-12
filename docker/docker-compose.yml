@@ -46,5 +46,11 @@ services:
       AGENT_MAX_CONTEXT_TURNS: 20
       AGENT_MAX_STEPS: 20
       SELF_EVOLUTION_ENABLED: 'True'
+      # Writable data root (config.json, run.log, credentials) — kept separate
+      # from the workspace so it survives image upgrades / container recreation.
+      COW_DATA_DIR: '/home/agent/.cow'
     volumes:
+      # Workspace: skills, memory, knowledge, mcp.json, conversation artifacts
       - ./cow:/home/agent/cow
+      # Data root: config.json, run.log, credentials
+      - ./cow-data:/home/agent/.cow
