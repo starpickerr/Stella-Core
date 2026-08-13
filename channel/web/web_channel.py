@@ -2599,6 +2599,7 @@ class ConfigHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.subagent import SubagentSettings
+            from agent.evolution.config import get_evolution_config
 
             local_config = conf()
             use_agent = local_config.get("agent", True)
@@ -2681,9 +2682,9 @@ class ConfigHandler:
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
                 "reasoning_effort": local_config.get("reasoning_effort", "high"),
                 "reasoning_effort_by_model": local_config.get("reasoning_effort_by_model", {}),
-                "self_evolution_enabled": bool(local_config.get("self_evolution_enabled", False)),
                 # Read through the feature's own loader so the default it
                 # applies to an absent setting is the one shown here.
+                "self_evolution_enabled": get_evolution_config().enabled,
                 "subagent_enabled": SubagentSettings.from_config().enabled,
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
