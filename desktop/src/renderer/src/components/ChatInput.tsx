@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { t } from '../i18n'
 import type { Attachment, WorkspaceEntry } from '../types'
+import { chatDraft } from '../store/draftStore'
 import apiClient from '../api/client'
 import { PaperPlaneIcon } from './icons'
 import { WORKSPACE_DRAG_TYPE } from './FileTree'
@@ -40,8 +41,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   { onSend, onNewChat, onStop, onClearContext, isStreaming, sessionId },
   ref
 ) {
-  const [text, setText] = useState('')
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  // Restore the draft saved in `chatDraft` on mount (lazy init: the very first
+  // render must already show it, otherwise the write-through effect below would
+  // overwrite the saved draft with the initial empty state).
+  const [text, setText] = useState(() => chatDraft.text)
+  const [attachments, setAttachments] = useState(() => chatDraft.attachments)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -104,6 +108,15 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     autoSize(textareaRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Write the input through to `chatDraft` on every change so it survives this
+  // component unmounting when the user navigates to another page (chat route
+  // unmounts ChatPage; see store/draftStore.ts). Sending clears the input, which
+  // therefore also clears the saved draft.
+  useEffect(() => {
+    chatDraft.text = text
+    chatDraft.attachments = attachments
+  }, [text, attachments])
 
   // Allow the parent to load a draft (e.g. when editing a past user message).
   useImperativeHandle(ref, () => (draft: string, atts: Attachment[]) => {
