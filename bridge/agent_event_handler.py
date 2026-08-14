@@ -28,6 +28,7 @@ class AgentEventHandler:
         channel_type = ""
         if context and hasattr(context, "kwargs"):
             channel_type = context.kwargs.get("channel_type", "") or ""
+        self._channel_type = channel_type
         self._is_weixin = channel_type == const.WEIXIN
         self._thinking_sent_count = 0
         self._merged_buf: list[str] = []
@@ -68,7 +69,11 @@ class AgentEventHandler:
         if tool_calls:
             if self.current_content.strip():
                 logger.info(f"💭 {self.current_content.strip()[:200]}{'...' if len(self.current_content) > 200 else ''}")
-                self._send_to_channel(self.current_content.strip())
+                # Only the Web console renders intermediate pre-tool
+                # commentary. IM channels (WeChat/WeCom/DingTalk/Feishu/...)
+                # must not receive CoT as a visible "Agent Reply".
+                if self._channel_type == "web":
+                    self._send_to_channel(self.current_content.strip())
         else:
             if self.current_content.strip():
                 logger.debug(f"💬 {self.current_content.strip()[:200]}{'...' if len(self.current_content) > 200 else ''}")

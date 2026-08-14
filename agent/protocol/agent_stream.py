@@ -1266,8 +1266,36 @@ class AgentStreamExecutor:
                         if self._is_thinking_enabled():
                             self._emit_event("reasoning_update", {"delta": reasoning_delta})
 
-                    # Handle text content
+                    # Handle text content. Some providers (Anthropic-shaped
+                    # adapters, MiMo sync wrappers) stream a list of content
+                    # blocks instead of a string. Thinking/reasoning blocks
+                    # must never be treated as the visible reply — that is
+                    # what leaked CoT into WeChat as "Agent Reply".
                     content_delta = delta.get("content") or ""
+                    if isinstance(content_delta, list):
+                        text_parts = []
+                        for block in content_delta:
+                            if not isinstance(block, dict):
+                                continue
+                            btype = block.get("type")
+                            if btype in ("thinking", "reasoning"):
+                                thinking_text = (
+                                    block.get("thinking")
+                                    or block.get("reasoning")
+                                    or block.get("text")
+                                    or ""
+                                )
+                                if thinking_text:
+                                    full_reasoning += thinking_text
+                                    if self._is_thinking_enabled():
+                                        self._emit_event(
+                                            "reasoning_update",
+                                            {"delta": thinking_text},
+                                        )
+                                continue
+                            if btype in ("text", "text_delta", None):
+                                text_parts.append(block.get("text") or "")
+                        content_delta = "".join(text_parts)
                     if content_delta:
                         # Filter out <think> tags from content
                         filtered_delta = self._filter_think_tags(content_delta)
