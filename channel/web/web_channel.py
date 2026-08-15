@@ -6333,10 +6333,16 @@ class KnowledgeReadHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
+            from pathlib import Path
             from agent.knowledge.service import KnowledgeService
             params = web.input(path='')
             svc = KnowledgeService(_get_workspace_root())
             result = svc.read_file(params.path)
+            # Absolute directory of the doc (posix separators), so clients can
+            # resolve image srcs that are relative to the doc into /api/file
+            # URLs. Additive field; read_file itself stays untouched.
+            rel = str(result["path"]).replace("\\", "/")
+            result["dir"] = Path(svc.knowledge_dir, *rel.split("/")).parent.as_posix()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
