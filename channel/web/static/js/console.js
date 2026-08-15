@@ -1340,12 +1340,17 @@ const md = createMd();
 const VIDEO_EXT_RE = /\.(?:mp4|webm|mov|avi|mkv)$/i;  // tested against URL without query string
 const IMAGE_EXT_RE = /\.(?:jpg|jpeg|png|gif|webp|bmp|svg)$/i;  // tested against URL without query string
 
+// Windows absolute path (D:\x.png / D:/x.png).
+const WIN_ABS_PATH_RE = /^[A-Za-z]:[\\/]/;
+
 function _toWebUrl(url) {
-    if (/^\/[A-Za-z]/.test(url) && !url.startsWith('/api/')) {
+    if ((/^\/[A-Za-z]/.test(url) || WIN_ABS_PATH_RE.test(url)) && !url.startsWith('/api/')) {
         return '/api/file?path=' + encodeURIComponent(url);
     }
     if (/^file:\/\/\//i.test(url)) {
-        return '/api/file?path=' + encodeURIComponent(url.replace(/^file:\/\/\//i, '/'));
+        // file:///home/x → /home/x, but file:///D:/x stays drive-relative.
+        const p = url.replace(/^file:\/\/\//i, '');
+        return '/api/file?path=' + encodeURIComponent(WIN_ABS_PATH_RE.test(p) ? p : '/' + p);
     }
     return url;
 }
@@ -4062,7 +4067,10 @@ function createUserMessageEl(content, timestamp, attachments) {
     if (attachments && attachments.length > 0) {
         const items = attachments.map(a => {
             if (a.file_type === 'image') {
-                return `<img src="${a.preview_url}" alt="${escapeHtml(a.file_name)}" class="user-msg-image">`;
+                // History replay recovers attachments from prompt markers, which
+                // carry only the local file_path — route it through /api/file.
+                const src = (a.preview_url || _toWebUrl(a.file_path || '')).replace(/"/g, '&quot;');
+                return `<img src="${src}" alt="${escapeHtml(a.file_name)}" class="user-msg-image" onclick="_openImageLightbox(this.src)">`;
             }
             const icon = a.file_type === 'video'
                 ? 'fa-film'
@@ -9886,6 +9894,26 @@ function bindKnowledgeLinks(container, currentFilePath) {
     });
 }
 
+// Rewrite <img> srcs that are relative to the knowledge doc's directory into
+// /api/file URLs, mirroring bindKnowledgeLinks for links. Runs on rendered
+// DOM, so markdown syntax quoted inside code blocks is never touched. The
+// lightbox onclick that renderMarkdown attached reads this.src at click time,
+// so rewriting src alone keeps zoom working.
+function bindKnowledgeImages(container, baseDir) {
+    if (!baseDir) return;
+    container.querySelectorAll('img').forEach(img => {
+        const src = img.getAttribute('src');
+        // Remote / data / site-absolute srcs resolve on their own.
+        if (!src || /^(?:[a-z][\w+.-]*:|\/)/i.test(src)) return;
+        const segments = [];
+        for (const seg of `${baseDir}/${src.split('?')[0]}`.split('/')) {
+            if (seg === '..') segments.pop();
+            else if (seg !== '.' && seg !== '') segments.push(seg);
+        }
+        img.src = '/api/file?path=' + encodeURIComponent(segments.join('/'));
+    });
+}
+
 function openKnowledgeFile(path, title) {
     _knowledgeCurrentFile = path;
     // Update active state in tree via data-path
@@ -9906,6 +9934,7 @@ function openKnowledgeFile(path, title) {
         viewer.classList.remove('hidden');
         applyHighlighting(viewer);
         bindKnowledgeLinks(bodyEl, path);
+        bindKnowledgeImages(bodyEl, data.dir);
 
         // Mobile: hide sidebar, show content
         if (window.innerWidth < 768) {
