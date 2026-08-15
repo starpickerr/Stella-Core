@@ -408,7 +408,7 @@ class ApiClient {
     return this.request<{ status: string } & KnowledgeList>('/api/knowledge/list')
   }
 
-  async readKnowledge(path: string): Promise<{ status: string; content: string; path: string }> {
+  async readKnowledge(path: string): Promise<{ status: string; content: string; path: string; dir?: string }> {
     return this.request(`/api/knowledge/read?path=${encodeURIComponent(path)}`)
   }
 
