@@ -138,12 +138,17 @@ md.renderer.rules.image = function (tokens, idx, options, env, self) {
     } catch {
       /* keep the raw form */
     }
+    const combined = `${baseDir}/${rel.split('?')[0]}`
     const segments: string[] = []
-    for (const seg of `${baseDir}/${rel.split('?')[0]}`.split('/')) {
+    for (const seg of combined.split('/')) {
       if (seg === '..') segments.pop()
       else if (seg !== '.' && seg !== '') segments.push(seg)
     }
-    token.attrSet('src', apiClient.getServeFileUrl(segments.join('/')))
+    // Unix baseDir is absolute, so restore the leading slash split() dropped
+    // (a Windows drive path like C:/x keeps its own prefix). /api/file rejects
+    // non-absolute paths.
+    const resolved = (combined.startsWith('/') ? '/' : '') + segments.join('/')
+    token.attrSet('src', apiClient.getServeFileUrl(resolved))
   }
   return defaultImage(tokens, idx, options, env, self)
 }

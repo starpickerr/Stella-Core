@@ -9905,12 +9905,16 @@ function bindKnowledgeImages(container, baseDir) {
         const src = img.getAttribute('src');
         // Remote / data / site-absolute srcs resolve on their own.
         if (!src || /^(?:[a-z][\w+.-]*:|\/)/i.test(src)) return;
+        const combined = `${baseDir}/${src.split('?')[0]}`;
         const segments = [];
-        for (const seg of `${baseDir}/${src.split('?')[0]}`.split('/')) {
+        for (const seg of combined.split('/')) {
             if (seg === '..') segments.pop();
             else if (seg !== '.' && seg !== '') segments.push(seg);
         }
-        img.src = '/api/file?path=' + encodeURIComponent(segments.join('/'));
+        // baseDir is an absolute posix path, so restore the leading slash the
+        // split() dropped — /api/file rejects non-absolute paths.
+        const resolved = (combined.startsWith('/') ? '/' : '') + segments.join('/');
+        img.src = '/api/file?path=' + encodeURIComponent(resolved);
     });
 }
 

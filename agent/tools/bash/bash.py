@@ -165,7 +165,13 @@ SAFETY:
         try:
             # Prepare environment with .env file variables
             env = os.environ.copy()
-            
+
+            # Anchor artifact outputs to the workspace/project dir regardless of
+            # any `cd` inside the command, so tools (e.g. image-generation) can
+            # resolve a stable output dir instead of relying on the live cwd.
+            if self.cwd:
+                env["AGENT_WORKSPACE"] = self.cwd
+
             # Load environment variables from ~/.cow/.env if it exists
             env_file = expand_path("~/.cow/.env")
             dotenv_vars = {}
