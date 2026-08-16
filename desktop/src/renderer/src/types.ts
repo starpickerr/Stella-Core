@@ -47,7 +47,7 @@ export interface ElectronAPI {
   setAppTitle?: (title: string) => Promise<boolean>
   // Show a native OS notification; clicking it focuses the window and fires
   // onOpenSession with the session id.
-  notify?: (payload: { title?: string; body?: string; sessionId?: string }) => Promise<boolean>
+  notify?: (payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) => Promise<boolean>
   onOpenSession?: (callback: (sessionId: string) => void) => () => void
   platform: string
   // OS UI language (e.g. "zh-CN"); used to default the language on first run.
