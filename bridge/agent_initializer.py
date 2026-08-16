@@ -657,7 +657,9 @@ class AgentInitializer:
                     time.sleep(wait_seconds)
 
                     self._flush_all_agents()
-                    last_run_date = datetime.datetime.now().date()
+                    # Record the scheduled date: a run that crosses midnight must
+                    # not mark the new day as already done.
+                    last_run_date = target.date()
                 except Exception as e:
                     logger.warning(f"[DailyFlush] Error in daily flush loop: {e}")
                     time.sleep(3600)
