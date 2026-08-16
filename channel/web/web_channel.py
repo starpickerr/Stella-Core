@@ -9,6 +9,7 @@ import os
 import random
 import re
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -40,9 +41,6 @@ from models.reasoning_capabilities import provider_reasoning_metadata
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
 
-# Windows need
-import sys
-import ctypes
 
 @dataclass
 class SSEStreamState:
@@ -6266,6 +6264,11 @@ class ProjectCreateHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+# Virtual path (Windows only) that expands to the list of logical drives, so
+# the picker can navigate above a drive root and switch between drives.
+_DRIVES_SENTINEL = "__DRIVES__"
+
+
 class ProjectBrowseHandler:
     """List sub-directories of a path, for the "open project" folder picker.
 
@@ -6282,22 +6285,24 @@ class ProjectBrowseHandler:
             params = web.input(path='')
             raw = (params.path or '').strip()
 
-            # In Windows,If the path is __DRIVES__, we return a list of drives.
-            if sys.platform == 'win32' and raw == '__DRIVES__':
+            # On Windows, "__DRIVES__" is a virtual path listing all logical
+            # drives, so the user can hop across drives from a drive root.
+            if sys.platform == 'win32' and raw == _DRIVES_SENTINEL:
+                import ctypes
+
                 drives = []
                 buf = ctypes.create_unicode_buffer(1024)
                 length = ctypes.windll.kernel32.GetLogicalDriveStringsW(1024, buf)
                 for drive in buf[:length].split('\x00'):
                     if drive:
-                        drives.append({"name": drive.rstrip('\\'), "path": drive})
-
+                        drives.append({"name": drive.rstrip("\\"), "path": drive})
                 return json.dumps({
                     "status": "success",
-                    "path": "Drives:",
+                    "path": _DRIVES_SENTINEL,
                     "parent": None,
-                    "dirs": drives
+                    "dirs": drives,
                 }, ensure_ascii=False)
-            
+
             # Default entry point is the user's home (~), a familiar anchor for
             # picking a project directory.
             base = os.path.realpath(expand_path(raw)) if raw else os.path.realpath(os.path.expanduser("~"))
@@ -6324,12 +6329,12 @@ class ProjectBrowseHandler:
             dirs.sort(key=lambda d: d["name"].lower())
             parent = os.path.dirname(base)
 
-            # In Windows, if the current directory is the root directory of the drive:
+            # On Windows, at a drive root (e.g. C:\) dirname returns the same
+            # path, so point parent at the drives list instead of dropping it.
             if sys.platform == 'win32':
-                drive,tail = os.path.splitdrive(base)
-                if tail in (os.sep, os.altsep) or tail == '':
-                    # Set parent to __DRIVES__
-                    parent = '__DRIVES__'
+                _, tail = os.path.splitdrive(base)
+                if tail in (os.sep, os.altsep, ''):
+                    parent = _DRIVES_SENTINEL
 
             return json.dumps({
                 "status": "success",
