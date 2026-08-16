@@ -128,8 +128,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      flashMicError(t('mic_permission_denied'))
+    } catch (e) {
+      // Surface the concrete failure name so a denied/missing-device/insecure
+      // context can be told apart instead of always blaming permissions.
+      const err = e as Error
+      flashMicError(`${t('mic_permission_denied')} (${err.name || 'Error'})`)
       return
     }
     streamRef.current = stream
