@@ -316,11 +316,12 @@ function setupIPC() {
     event.returnValue = app.getLocale() || app.getSystemLocale?.() || ''
   })
 
-  // Show a native OS notification (e.g. a scheduler reminder). Clicking it
-  // brings the window forward and asks the renderer to open the given session.
-  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string }) => {
+  // Show a native OS notification (e.g. a scheduler reminder or a finished
+  // task). Clicking it brings the window forward and asks the renderer to open
+  // the given session.
+  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) => {
     if (!Notification.isSupported() || !payload?.body) return false
-    const n = new Notification({ title: payload.title || app.name, body: payload.body })
+    const n = new Notification({ title: payload.title || app.name, body: payload.body, silent: !!payload.silent })
     n.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()

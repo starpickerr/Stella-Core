@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Show a native OS notification; clicking it focuses the window and asks the
   // renderer (via onOpenSession) to open the given session.
-  notify: (payload: { title?: string; body?: string; sessionId?: string }) =>
+  notify: (payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) =>
     ipcRenderer.invoke('notify', payload) as Promise<boolean>,
   onOpenSession: (callback: (sessionId: string) => void) => {
     const handler = (_event: unknown, sessionId: string) => callback(sessionId)
