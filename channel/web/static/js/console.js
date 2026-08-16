@@ -241,7 +241,7 @@ const I18N = {
         ws_sel_new_subtitle: '将在 {root} 下创建新项目目录', ws_sel_new_hint: '仅填写项目名称，不含路径分隔符',
         ws_sel_name_required: '请输入项目名称', ws_sel_name_no_slash: '项目名称不能包含 / 或 \\',
         ws_sel_open_here: '打开此目录', ws_sel_dblclick_hint: '双击进入子目录，单击选中',
-        ws_sel_no_subdirs: '此目录下没有子文件夹',
+        ws_sel_no_subdirs: '此目录下没有子文件夹', ws_sel_drives: '此电脑',
         ws_open_external: '在新标签页打开', ws_download: '下载', ws_copy_path: '复制路径',
         ws_close: '关闭', ws_refresh: '刷新', ws_preview: '预览',
         ws_search_placeholder: '搜索文件',
@@ -524,7 +524,7 @@ const I18N = {
         ws_sel_new_subtitle: '將在 {root} 下建立新專案目錄', ws_sel_new_hint: '僅填寫專案名稱，不含路徑分隔符',
         ws_sel_name_required: '請輸入專案名稱', ws_sel_name_no_slash: '專案名稱不能包含 / 或 \\',
         ws_sel_open_here: '開啟此目錄', ws_sel_dblclick_hint: '雙擊進入子目錄，單擊選中',
-        ws_sel_no_subdirs: '此目錄下沒有子資料夾',
+        ws_sel_no_subdirs: '此目錄下沒有子資料夾', ws_sel_drives: '本機',
         ws_open_external: '在新分頁開啟', ws_download: '下載', ws_copy_path: '複製路徑',
         ws_close: '關閉', ws_refresh: '重新整理', ws_preview: '預覽',
         ws_search_placeholder: '搜尋檔案',
@@ -802,7 +802,7 @@ const I18N = {
         ws_sel_new_subtitle: 'Creates a new project directory under {root}', ws_sel_new_hint: 'Project name only, no path separators',
         ws_sel_name_required: 'Please enter a project name', ws_sel_name_no_slash: 'Project name must not contain / or \\',
         ws_sel_open_here: 'Open this folder', ws_sel_dblclick_hint: 'Double-click to enter, single-click to select',
-        ws_sel_no_subdirs: 'No sub-folders here',
+        ws_sel_no_subdirs: 'No sub-folders here', ws_sel_drives: 'This PC',
         ws_open_external: 'Open in new tab', ws_download: 'Download', ws_copy_path: 'Copy path',
         ws_close: 'Close', ws_refresh: 'Refresh', ws_preview: 'Preview',
         ws_search_placeholder: 'Search files',
@@ -2479,6 +2479,9 @@ function _fpBindOnce() {
     });
 }
 
+// Virtual path (Windows) that lists logical drives; not a real openable dir.
+const _FP_DRIVES = '__DRIVES__';
+
 async function _fpBrowse(path) {
     const list = document.getElementById('folder-picker-list');
     list.innerHTML = `<div class="fp-empty"><i class="fas fa-spinner fa-spin"></i></div>`;
@@ -2486,9 +2489,14 @@ async function _fpBrowse(path) {
         const res = await fetch(`/api/projects/browse?path=${encodeURIComponent(path || '')}`);
         const data = await res.json();
         if (data.status !== 'success') { list.innerHTML = `<div class="fp-empty">${escapeHtml(data.message || 'error')}</div>`; return; }
-        _fpCurrent = data.path;
-        document.getElementById('folder-picker-path').textContent = data.path;
-        document.getElementById('folder-picker-path').setAttribute('title', data.path);
+        const isDrives = data.path === _FP_DRIVES;
+        _fpCurrent = isDrives ? null : data.path;
+        // Drives view is a selector, not a real directory: show a label and
+        // disable "Open here" so the sentinel can't be picked as a project.
+        const label = isDrives ? (t('ws_sel_drives') || 'This PC') : data.path;
+        document.getElementById('folder-picker-path').textContent = label;
+        document.getElementById('folder-picker-path').setAttribute('title', label);
+        document.getElementById('folder-picker-open').disabled = isDrives;
         _fpRenderToolbar(data);
         _fpRenderList(data);
     } catch (e) {
@@ -2529,6 +2537,8 @@ function _fpSelectRow(el, path) {
     document.querySelectorAll('#folder-picker-list .fp-row.selected').forEach(r => r.classList.remove('selected'));
     el.classList.add('selected');
     _fpCurrent = path;
+    // Picking a row (e.g. a drive in the drives view) is a valid target again.
+    document.getElementById('folder-picker-open').disabled = false;
     document.getElementById('folder-picker-path').textContent = path;
 }
 
