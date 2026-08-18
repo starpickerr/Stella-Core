@@ -828,13 +828,13 @@
                                     </div>
                                 </div>
 
-                                <!-- Language Config Card -->
+                                <!-- System Config Card -->
                                 <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6">
                                     <div class="flex items-center gap-3 mb-5">
                                         <div class="w-9 h-9 rounded-lg bg-sky-50 dark:bg-sky-900/30 flex items-center justify-center">
-                                            <i class="fas fa-language text-sky-500 text-sm"></i>
+                                            <i class="fas fa-sliders-h text-sky-500 text-sm"></i>
                                         </div>
-                                        <h3 class="font-semibold text-slate-800 dark:text-slate-100" data-i18n="config_language">语言</h3>
+                                        <h3 class="font-semibold text-slate-800 dark:text-slate-100" data-i18n="config_system">系统</h3>
                                     </div>
                                     <div class="space-y-4">
                                         <div>
@@ -849,6 +849,34 @@
                                                 </div>
                                                 <div class="cfg-dropdown-menu"></div>
                                             </div>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <label class="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                                <span data-i18n="config_task_notify">Task Notifications</span>
+                                                <span class="cfg-tip" data-tip-key="config_task_notify_hint"><i class="fas fa-circle-question"></i></span>
+                                            </label>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input id="cfg-task-notify" type="checkbox" class="sr-only peer">
+                                                <div class="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-checked:bg-primary-400 rounded-full
+                                                            after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white
+                                                            after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+                                            </label>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <label class="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                                <span data-i18n="config_task_notify_sound">Notification Sound</span>
+                                                <span class="cfg-tip" data-tip-key="config_task_notify_sound_hint"><i class="fas fa-circle-question"></i></span>
+                                            </label>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input id="cfg-task-notify-sound" type="checkbox" class="sr-only peer">
+                                                <div class="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-checked:bg-primary-400 rounded-full
+                                                            after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white
+                                                            after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+                                            </label>
+                                        </div>
+                                        <div id="cfg-task-notify-blocked" class="hidden flex items-start gap-2 text-xs text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
+                                            <i class="fas fa-triangle-exclamation mt-0.5"></i>
+                                            <span data-i18n="config_task_notify_blocked">系统通知已被浏览器屏蔽，请点击地址栏左侧图标 → 通知 → 允许后刷新页面</span>
                                         </div>
                                     </div>
                                 </div>

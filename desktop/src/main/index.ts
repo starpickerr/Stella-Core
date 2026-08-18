@@ -2,13 +2,13 @@ import { app, BrowserWindow, session, shell, ipcMain, dialog, nativeImage, Notif
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
-import { PythonBackend } from './python-manager'
+import { PythonBackend, BackendError } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
-import { setupAppIconIPC, applyCachedAppIcon } from './app-icon'
+import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
 // where the default Electron binary would otherwise report "Electron". The name
@@ -145,6 +145,16 @@ function createWindow() {
     console.error(`[renderer] did-fail-load ${code} ${desc} ${url}`)
   })
 
+  // Replay the backend's current state to a renderer that has just loaded.
+  // Backend events are fire-and-forget sends, but the renderer only subscribes
+  // once React has mounted — so a failure detected in the first few hundred
+  // milliseconds (a missing executable is detected almost immediately) was
+  // announced to nobody, and the user was left staring at the generic
+  // "initialization failed" with no reason attached.
+  mainWindow.webContents.on('did-finish-load', () => {
+    sendBackendState()
+  })
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
@@ -185,9 +195,36 @@ function getBackendPath(): string {
   return path.join(process.resourcesPath, 'backend')
 }
 
+/**
+ * Push the backend's current state to the renderer. Used both for the initial
+ * replay after a page load and as the shape every live status event follows.
+ */
+function sendBackendState() {
+  if (!pythonBackend || !mainWindow || mainWindow.isDestroyed()) return
+  const status = pythonBackend.getStatus()
+  if (status === 'ready') {
+    mainWindow.webContents.send('backend-status', { status: 'ready', port: pythonBackend.getPort() })
+    return
+  }
+  if (status === 'error') {
+    const err = pythonBackend.getLastError()
+    mainWindow.webContents.send('backend-status', {
+      status: 'error',
+      error: err?.message,
+      code: err?.code,
+      path: err?.path,
+    })
+    return
+  }
+  mainWindow.webContents.send('backend-status', { status: 'starting', port: pythonBackend.getPort() })
+}
+
 async function startBackend() {
   const backendPath = getBackendPath()
-  pythonBackend = new PythonBackend(backendPath)
+  // isDev distinguishes a source checkout from an installed app. The backend
+  // manager needs to know: an installed app must never fall back to looking
+  // for a Python interpreter, and its writable data always lives in ~/.cow.
+  pythonBackend = new PythonBackend(backendPath, !isDev)
 
   pythonBackend.on('ready', (port: number) => {
     console.log(`[backend] ready on port ${port}`)
@@ -211,12 +248,12 @@ async function startBackend() {
     mainWindow?.webContents.send('backend-status', { status: 'lost' })
   })
 
-  pythonBackend.on('error', (error: string) => {
+  pythonBackend.on('error', (error: BackendError) => {
     // Mirror to the main-process stdout too: otherwise backend startup errors
     // are only visible in the renderer devtools, making `npm run dev` hangs
     // impossible to diagnose from the terminal.
-    console.error(`[backend] error: ${error}`)
-    mainWindow?.webContents.send('backend-status', { status: 'error', error })
+    console.error(`[backend] error: ${error.code} — ${error.message}${error.path ? ` [${error.path}]` : ''}`)
+    sendBackendState()
   })
 
   pythonBackend.on('log', (line: string) => {
@@ -237,6 +274,13 @@ function setupIPC() {
 
   ipcMain.handle('get-backend-status', () => {
     return pythonBackend?.getStatus() ?? 'stopped'
+  })
+
+  // Pull-based access to the last failure, so the renderer can always ask why
+  // startup failed instead of depending on having been subscribed at the exact
+  // moment the event fired.
+  ipcMain.handle('get-backend-error', () => {
+    return pythonBackend?.getLastError() ?? null
   })
 
   // Where config.json and run.log live, so the error screen can open the folder
@@ -316,11 +360,24 @@ function setupIPC() {
     event.returnValue = app.getLocale() || app.getSystemLocale?.() || ''
   })
 
-  // Show a native OS notification (e.g. a scheduler reminder). Clicking it
-  // brings the window forward and asks the renderer to open the given session.
-  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string }) => {
+  // Show a native OS notification (e.g. a scheduler reminder or a finished
+  // task). Clicking it brings the window forward and asks the renderer to open
+  // the given session.
+  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) => {
     if (!Notification.isSupported() || !payload?.body) return false
-    const n = new Notification({ title: payload.title || app.name, body: payload.body })
+    // Skip when the window is focused: the user is already watching, so a
+    // notification (and sound) would just be noise, especially for short tasks.
+    if (mainWindow?.isFocused()) return false
+    // Use the runtime app icon if one was set (via set-app-icon), so the
+    // notification matches the current window/Dock icon. Falls back to the
+    // packaged icon.
+    const iconOpt = getRuntimeAppIcon() || getIconPath('png')
+    const n = new Notification({
+      title: payload.title || app.name,
+      body: payload.body,
+      silent: !!payload.silent,
+      ...(iconOpt ? { icon: iconOpt } : {}),
+    })
     n.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()

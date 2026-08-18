@@ -132,6 +132,12 @@ const I18N = {
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
         config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
+        config_system: '系统',
+        config_task_notify: '任务通知', config_task_notify_hint: '窗口在后台且任务完成或失败时发送浏览器通知，点击可跳转会话',
+        config_task_notify_sound: '通知声音', config_task_notify_sound_hint: '通知开启时可单独关闭提示音',
+        config_task_notify_blocked: '系统通知已被浏览器屏蔽，请点击地址栏左侧图标 → 通知 → 允许后刷新页面',
+        notify_task_done: '任务完成',
+        notify_task_error: '任务失败',
         config_model_advanced: '高级配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
@@ -415,6 +421,12 @@ const I18N = {
         config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
         config_model: '模型設定', config_agent: 'Agent 設定',
         config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
+        config_system: '系統',
+        config_task_notify: '任務通知', config_task_notify_hint: '視窗在背景且任務完成或失敗時發送瀏覽器通知，點擊可跳轉會話',
+        config_task_notify_sound: '通知聲音', config_task_notify_sound_hint: '通知開啟時可單獨關閉提示音',
+        config_task_notify_blocked: '系統通知已被瀏覽器封鎖，請點擊網址列左側圖示 → 通知 → 允許後重新整理頁面',
+        notify_task_done: '任務完成',
+        notify_task_error: '任務失敗',
         config_model_advanced: '高階設定',
         config_channel: '管道設定',
         config_agent_enabled: 'Agent 模式',
@@ -693,6 +705,12 @@ const I18N = {
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
         config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
+        config_system: 'System',
+        config_task_notify: 'Task Notifications', config_task_notify_hint: 'Show a browser notification when a task finishes or fails while the window is in the background; click to open the session',
+        config_task_notify_sound: 'Notification Sound', config_task_notify_sound_hint: 'Turn off the alert sound while keeping notifications',
+        config_task_notify_blocked: 'Notifications are blocked by the browser. Click the icon on the left of the address bar → Notifications → Allow, then reload.',
+        notify_task_done: 'Task finished',
+        notify_task_error: 'Task failed',
         config_model_advanced: 'Advanced',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
@@ -1142,6 +1160,169 @@ function toggleTheme() {
     localStorage.setItem('cow_theme', currentTheme);
     applyTheme();
 }
+
+// =====================================================================
+// Task completion notification (client-side preference)
+// =====================================================================
+const TASK_NOTIFY_KEY = 'cow_task_notify';
+const TASK_NOTIFY_SOUND_KEY = 'cow_task_notify_sound';
+let taskNotifyEnabled = localStorage.getItem(TASK_NOTIFY_KEY) !== '0';
+let taskNotifySound = localStorage.getItem(TASK_NOTIFY_SOUND_KEY) !== '0';
+let notifyAudioCtx = null;
+let unreadCount = 0;
+const baseDocTitle = document.title;
+
+// Unlock audio on the first user gesture; browsers block autoplay otherwise.
+document.addEventListener('pointerdown', function() {
+    if (window.AudioContext) notifyAudioCtx = notifyAudioCtx || new AudioContext();
+    if (notifyAudioCtx && notifyAudioCtx.state === 'suspended') {
+        notifyAudioCtx.resume().catch(function() {});
+    }
+}, { once: true });
+
+function playNotifyBeep() {
+    if (!taskNotifySound) return;
+    try {
+        if (!notifyAudioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            notifyAudioCtx = new Ctx();
+        }
+        if (notifyAudioCtx.state === 'suspended') {
+            notifyAudioCtx.resume().catch(function() {});
+        }
+        // Two short sine tones (A5 → D6); no audio asset needed.
+        const t0 = notifyAudioCtx.currentTime;
+        [880, 1174.66].forEach(function(freq, i) {
+            const at = t0 + i * 0.09;
+            const osc = notifyAudioCtx.createOscillator();
+            const gain = notifyAudioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.001, at);
+            gain.gain.exponentialRampToValueAtTime(0.12, at + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, at + 0.09);
+            osc.connect(gain).connect(notifyAudioCtx.destination);
+            osc.start(at);
+            osc.stop(at + 0.1);
+        });
+    } catch (_) {
+        // Autoplay still blocked or AudioContext unavailable; stay silent.
+    }
+}
+
+function firstLineSnippet(text) {
+    return (text || '').split('\n')[0].trim().slice(0, 80);
+}
+
+function sessionTitleOf(sid) {
+    const el = document.querySelector(`.session-item[data-session-id="${sid}"] .session-title`);
+    return el ? el.textContent.trim() : '';
+}
+
+function popNotification(title, body, sid) {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+        const n = new Notification(title, { body: body || title });
+        n.onclick = function() {
+            window.focus();
+            if (sid && sid !== sessionId) switchSession(sid);
+            n.close();
+        };
+    } catch (_) {
+        // Notification API unavailable; beep + title badge still applied.
+    }
+}
+
+function showTaskNotification(title, body, sid) {
+    if (!taskNotifyEnabled) return;
+    // Only notify when the window is not focused. If the user is actively
+    // watching the tab, the reply is already on screen — a notification/beep
+    // would just be noise (especially for short tasks).
+    if (document.hasFocus()) return;
+    playNotifyBeep();
+    if (document.hidden) {
+        unreadCount += 1;
+        document.title = `(${unreadCount}) ${baseDocTitle}`;
+    }
+    if (typeof Notification === 'undefined') return;
+    // First time we actually need to notify (window is in the background):
+    // request permission now, then show this notification once granted. This
+    // is more contextual than prompting on page load.
+    if (Notification.permission === 'default') {
+        Notification.requestPermission()
+            .then(function(perm) {
+                if (perm === 'granted') popNotification(title, body, sid);
+                else refreshNotifyBlockedHint();
+            })
+            .catch(function() {});
+        return;
+    }
+    if (Notification.permission === 'denied') {
+        // Can't notify; surface the hint in settings so the user knows why.
+        refreshNotifyBlockedHint();
+        return;
+    }
+    popNotification(title, body, sid);
+}
+
+function notifyTaskFinished(sid, kind, text) {
+    const label = t(kind === 'error' ? 'notify_task_error' : 'notify_task_done');
+    const snippet = firstLineSnippet(text);
+    showTaskNotification(sessionTitleOf(sid) || label, snippet ? `${label}: ${snippet}` : label, sid);
+}
+
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        unreadCount = 0;
+        document.title = baseDocTitle;
+    }
+});
+
+// Request OS notification permission when notifications are enabled and the
+// browser hasn't decided yet. Safe to call repeatedly.
+function ensureNotifyPermission() {
+    if (taskNotifyEnabled
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'default') {
+        Notification.requestPermission().catch(function() {});
+    }
+}
+
+// Show the "blocked by browser" hint only when notifications are enabled but
+// the browser permission is denied (nothing the app can do about it in code).
+function refreshNotifyBlockedHint() {
+    const el = document.getElementById('cfg-task-notify-blocked');
+    if (!el) return;
+    const blocked = taskNotifyEnabled
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'denied';
+    el.classList.toggle('hidden', !blocked);
+}
+
+function initTaskNotifyToggles() {
+    const notifyEl = document.getElementById('cfg-task-notify');
+    if (notifyEl) {
+        notifyEl.checked = taskNotifyEnabled;
+        notifyEl.addEventListener('change', function() {
+            taskNotifyEnabled = notifyEl.checked;
+            localStorage.setItem(TASK_NOTIFY_KEY, taskNotifyEnabled ? '1' : '0');
+            ensureNotifyPermission();
+            refreshNotifyBlockedHint();
+        });
+    }
+    const soundEl = document.getElementById('cfg-task-notify-sound');
+    if (soundEl) {
+        soundEl.checked = taskNotifySound;
+        soundEl.addEventListener('change', function() {
+            taskNotifySound = soundEl.checked;
+            localStorage.setItem(TASK_NOTIFY_SOUND_KEY, taskNotifySound ? '1' : '0');
+        });
+    }
+    refreshNotifyBlockedHint();
+}
+
+document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 
 // =====================================================================
 // Sidebar & Navigation
@@ -3859,12 +4040,16 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
 
             // done is persisted before it is published. Remember that state
             // even while this session is in the background, where rendering
-            // is intentionally skipped.
+            // is intentionally skipped. Notify for both foreground and
+            // background sessions, before the render guard below.
             if (item.type === 'done') {
                 mainDone = true;
                 if (item.bot_seq !== undefined && item.bot_seq !== null) {
                     completedBotSeq = item.bot_seq;
                 }
+                notifyTaskFinished(ownerSession, 'done', item.content);
+            } else if (item.type === 'error') {
+                if (!cancelled) notifyTaskFinished(ownerSession, 'error', '');
             } else if (
                 item.type === 'voice_attach'
                 && item.url
@@ -3980,8 +4165,8 @@ function startPolling() {
     function poll() {
         if (gen !== pollGeneration) return;
         if (pollInFlight) return;
-        if (document.hidden) { setTimeout(poll, 10000); return; }
-
+        // Keep polling while hidden: push messages are exactly what the
+        // notification below should deliver to a background tab.
         pollInFlight = true;
         fetch('/poll', {
             method: 'POST',
@@ -4010,6 +4195,13 @@ function startPolling() {
                     if (welcomeScreen) welcomeScreen.remove();
                     addBotMessage(data.content, new Date(data.timestamp * 1000), rid);
                     scrollChatToBottom();
+                    // Pushed message (scheduler result, missed reply): show the
+                    // content itself, matching the desktop push notification.
+                    showTaskNotification(
+                        sessionTitleOf(sessionId) || 'CowAgent',
+                        firstLineSnippet(data.content),
+                        sessionId
+                    );
                 }
             }
             const delay = (data.status === 'success' && data.has_content) ? 5000 : 10000;

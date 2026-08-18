@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendPort: () => ipcRenderer.invoke('get-backend-port'),
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
+  getBackendError: () => ipcRenderer.invoke('get-backend-error'),
   getDataDir: () => ipcRenderer.invoke('get-data-dir') as Promise<string>,
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
@@ -11,8 +12,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Each listener registrar returns an unsubscribe fn so renderers can clean
   // up on unmount / effect re-run and avoid accumulating duplicate handlers.
-  onBackendStatus: (callback: (data: { status: string; port?: number; error?: string }) => void) => {
-    const handler = (_event: unknown, data: { status: string; port?: number; error?: string }) => callback(data)
+  onBackendStatus: (
+    callback: (data: { status: string; port?: number; error?: string; code?: string; path?: string }) => void,
+  ) => {
+    const handler = (
+      _event: unknown,
+      data: { status: string; port?: number; error?: string; code?: string; path?: string },
+    ) => callback(data)
     ipcRenderer.on('backend-status', handler)
     return () => ipcRenderer.removeListener('backend-status', handler)
   },
@@ -84,7 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Show a native OS notification; clicking it focuses the window and asks the
   // renderer (via onOpenSession) to open the given session.
-  notify: (payload: { title?: string; body?: string; sessionId?: string }) =>
+  notify: (payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) =>
     ipcRenderer.invoke('notify', payload) as Promise<boolean>,
   onOpenSession: (callback: (sessionId: string) => void) => {
     const handler = (_event: unknown, sessionId: string) => callback(sessionId)
