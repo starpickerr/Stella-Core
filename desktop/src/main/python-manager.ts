@@ -46,9 +46,44 @@ const HEALTH_GRACE_MS = 45_000
 const MAX_RECOVERIES = 3
 const RECOVERY_WINDOW_MS = 10 * 60_000
 
+/**
+ * Why startup failed, as a stable identifier the renderer can map to specific,
+ * actionable advice. The raw message alone is not enough: "app.py not found at
+ * <install dir>" told a customer nothing, and the generic localized fallback
+ * ("the client failed to start") told them even less.
+ */
+export type BackendErrorCode =
+  // The bundle is installed but its executable is gone. On Windows this is
+  // essentially always antivirus quarantining the PyInstaller bootloader.
+  | 'backend_removed'
+  // Nothing usable is installed at the expected location.
+  | 'backend_missing'
+  // The executable is there but the OS refused to launch it.
+  | 'backend_blocked'
+  // It launched and then exited before ever answering.
+  | 'backend_crashed'
+  // It stayed alive but never answered /api/health.
+  | 'backend_timeout'
+  // It served requests, then stopped and could not be restarted.
+  | 'backend_unresponsive'
+
+export interface BackendError {
+  code: BackendErrorCode
+  /** Technical detail, shown verbatim; the renderer localizes from `code`. */
+  message: string
+  /** Path the failure is about (the missing executable, etc.), if any. */
+  path?: string
+}
+
 export class PythonBackend extends EventEmitter {
   private process: ChildProcess | null = null
   private backendPath: string
+  // Whether we're running inside an installed app (as opposed to a source
+  // checkout). Decided by the caller, NOT inferred from the bundle being
+  // present: inferring it meant that a quarantined executable silently
+  // demoted an installed app to "development mode", where it looked for
+  // app.py in the read-only install dir and wrote its log there too.
+  private packaged: boolean
   private port: number = DESKTOP_BACKEND_PORT
   private status: 'stopped' | 'starting' | 'ready' | 'error' = 'stopped'
   // Resolves once start() has settled on a port. The renderer awaits this
@@ -80,10 +115,17 @@ export class PythonBackend extends EventEmitter {
   // "open log folder" button showed a stale run.log with no trace of the crash.
   // Mirroring here closes that gap without touching the Python side.
   private logStream: fs.WriteStream | null = null
+  // The failure that put us in 'error', kept so it can be fetched later. The
+  // renderer subscribes to 'backend-status' only after React mounts, which is
+  // hundreds of milliseconds after launch — every error raised before that
+  // (and a missing executable is detected almost instantly) used to be emitted
+  // into the void, leaving the user with a bare "initialization failed".
+  private lastError: BackendError | null = null
 
-  constructor(backendPath: string) {
+  constructor(backendPath: string, packaged = false) {
     super()
     this.backendPath = backendPath
+    this.packaged = packaged
     this.portReady = new Promise<number>((resolve) => {
       this.markPortReady = resolve
     })
@@ -91,6 +133,11 @@ export class PythonBackend extends EventEmitter {
 
   getPort(): number {
     return this.port
+  }
+
+  /** The failure that put the backend in 'error', or null if none. */
+  getLastError(): BackendError | null {
+    return this.lastError
   }
 
   /**
@@ -105,9 +152,17 @@ export class PythonBackend extends EventEmitter {
     ])
   }
 
-  /** Writable data dir the backend runs against (holds config.json + run.log). */
+  /**
+   * Writable data dir the backend runs against (holds config.json + run.log),
+   * and the folder the failure screen's "open log folder" button reveals.
+   *
+   * Keyed on how the app was built, never on whether the bundle is currently
+   * intact: when the executable went missing this used to return the read-only
+   * install dir, so a user following the on-screen instructions opened a folder
+   * that had no run.log in it at all.
+   */
   getDataDir(): string {
-    return this.findBundledBackend() ? COW_DATA_DIR : this.backendPath
+    return this.packaged ? COW_DATA_DIR : this.backendPath
   }
 
   getStatus(): string {
@@ -144,6 +199,44 @@ export class PythonBackend extends EventEmitter {
       this.logStream.write(`\n[SHELL][${stamp}] --- launching backend (stdout/stderr mirrored below) ---\n`)
     } catch {
       this.logStream = null
+    }
+  }
+
+  /**
+   * Write one line to run.log from the shell side, opening the file if the
+   * failure happened before (or instead of) a spawn. Everything we report to
+   * the user must also land here: the failure screen tells them to read
+   * run.log, so a diagnosis that exists only in an IPC message is a diagnosis
+   * they can never send us.
+   */
+  private writeLog(line: string): void {
+    if (!this.logStream) {
+      this.openLogStream(this.getDataDir())
+    }
+    try {
+      this.logStream?.write(`[SHELL][${new Date().toISOString()}] ${line}\n`)
+    } catch {
+      // ignore — logging must never break startup
+    }
+  }
+
+  /**
+   * Record a startup/liveness failure: remember it, persist it, and announce
+   * it. Single entry point so no failure can reach the user without also
+   * reaching run.log and getLastError().
+   */
+  private fail(code: BackendErrorCode, message: string, failedPath?: string): void {
+    this.status = 'error'
+    this.lastError = { code, message, ...(failedPath ? { path: failedPath } : {}) }
+    this.writeLog(`${code}: ${message}${failedPath ? ` [${failedPath}]` : ''}`)
+    // 'error' is special to EventEmitter: emitting it with no listener attached
+    // THROWS, which would turn "the backend didn't start" into "the main
+    // process died and no window ever appeared" — strictly worse than the
+    // failure we're trying to report. The failure is already stored and
+    // persisted, and the renderer pulls it via getLastError(), so skipping the
+    // emit loses nothing.
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', this.lastError)
     }
   }
 
@@ -256,22 +349,40 @@ export class PythonBackend extends EventEmitter {
   }
 
   /**
-   * Locate the packaged onedir backend executable shipped with the app.
-   * Returns null when not present (e.g. during local development), so we can
-   * fall back to running app.py with a system/venv Python.
+   * Inspect the packaged onedir backend on disk.
+   *
+   * `hasPayload` (the PyInstaller support files: _internal, DLLs, base_library)
+   * is reported separately from `hasExe` on purpose. Antivirus quarantine
+   * deletes ONLY the bootloader executable — it matches the heuristic, the
+   * hundreds of DLLs beside it do not — so "payload intact, executable gone" is
+   * a signature we can recognise and explain, rather than a generic failure.
    */
-  private findBundledBackend(): string | null {
+  private inspectBundle(): { exePath: string; hasExe: boolean; hasPayload: boolean } {
     const exeName = process.platform === 'win32' ? 'cowagent-backend.exe' : 'cowagent-backend'
-    const candidates = [
-      path.join(this.backendPath, 'cowagent-backend', exeName),
-      path.join(this.backendPath, exeName),
-    ]
-    for (const p of candidates) {
-      if (fs.existsSync(p)) {
-        return p
+    const dirs = [path.join(this.backendPath, 'cowagent-backend'), this.backendPath]
+    for (const dir of dirs) {
+      const exePath = path.join(dir, exeName)
+      const hasExe = fs.existsSync(exePath)
+      let hasPayload = false
+      try {
+        hasPayload = fs.readdirSync(dir).some((entry) => entry !== exeName)
+      } catch {
+        // Directory missing/unreadable — leave hasPayload false.
+      }
+      if (hasExe || hasPayload) {
+        return { exePath, hasExe, hasPayload }
       }
     }
-    return null
+    return { exePath: path.join(dirs[0], exeName), hasExe: false, hasPayload: false }
+  }
+
+  /**
+   * Path to the packaged backend executable, or null when it isn't there
+   * (a source checkout, or an install whose executable was removed).
+   */
+  private findBundledBackend(): string | null {
+    const bundle = this.inspectBundle()
+    return bundle.hasExe ? bundle.exePath : null
   }
 
   private findPython(): string {
@@ -539,9 +650,8 @@ export class PythonBackend extends EventEmitter {
       }
       this.recoveryAttempts++
       if (this.recoveryAttempts > MAX_RECOVERIES) {
-        this.status = 'error'
-        this.emit(
-          'error',
+        this.fail(
+          'backend_unresponsive',
           this.withLastError('The app stopped responding and could not be restarted'),
         )
         return
@@ -565,17 +675,40 @@ export class PythonBackend extends EventEmitter {
     this.status = 'starting'
     // Drop the previous run's output so a retry can't report a stale error.
     this.recentLogs = []
+    this.lastError = null
 
-    // Prefer the packaged self-contained backend (production); fall back to
-    // running app.py with a Python interpreter (local development).
-    const bundled = this.findBundledBackend()
     // Packaged app stores writable data in ~/.cow; dev keeps it in the repo.
-    const dataDir = bundled ? COW_DATA_DIR : this.backendPath
+    const dataDir = this.getDataDir()
 
     // Start mirroring backend output to run.log before we spawn, so even an
     // instant bootstrap crash (before Python logging is up) leaves its stderr
     // in the file the user can open from the failure screen.
     this.openLogStream(dataDir)
+
+    // Prefer the packaged self-contained backend (production); fall back to
+    // running app.py with a Python interpreter (local development).
+    const bundle = this.inspectBundle()
+    const bundled = bundle.hasExe ? bundle.exePath : null
+
+    // An installed app has no other way to run: there is no source tree and no
+    // Python to fall back to. Say so now, naming the file that is missing, and
+    // resolve the port promise so nothing downstream waits on a launch that
+    // will never happen. Previously this fell through to the development
+    // branch and reported "app.py not found at <install dir>" — a message that
+    // described our own fallback rather than the user's actual problem.
+    if (!bundled && this.packaged) {
+      this.markPortReady(this.port)
+      if (bundle.hasPayload) {
+        this.fail(
+          'backend_removed',
+          'The backend executable is missing while the rest of its files are intact, which is what antivirus quarantine looks like',
+          bundle.exePath,
+        )
+      } else {
+        this.fail('backend_missing', 'The backend is not present in this installation', bundle.exePath)
+      }
+      return
+    }
 
     // Always launch our OWN backend (re-entrancy is guarded above by the status
     // check, so we never double-spawn for this instance). We don't reuse
@@ -611,8 +744,7 @@ export class PythonBackend extends EventEmitter {
       const pythonPath = this.findPython()
       const appPath = path.join(this.backendPath, 'app.py')
       if (!fs.existsSync(appPath)) {
-        this.status = 'error'
-        this.emit('error', `app.py not found at ${appPath}`)
+        this.fail('backend_missing', 'app.py not found — this is a source checkout with no backend', appPath)
         return
       }
       command = pythonPath
@@ -679,8 +811,7 @@ export class PythonBackend extends EventEmitter {
       }
       this.emit('log', `Python process exited with code ${code}`)
       if (!wasReady && code !== 0 && code !== null) {
-        this.status = 'error'
-        this.emit('error', this.withLastError(`The app exited during startup (code ${code})`))
+        this.fail('backend_crashed', this.withLastError(`The app exited during startup (code ${code})`))
         return
       }
       // Died after serving requests (a late crash, or app.py's own os._exit).
@@ -693,8 +824,15 @@ export class PythonBackend extends EventEmitter {
     })
 
     this.process.on('error', (err) => {
-      this.status = 'error'
-      this.emit('error', `Failed to start Python: ${err.message}`)
+      if (bundled) {
+        // The executable was there when we checked a moment ago. ENOENT means
+        // it vanished in between (a scanner deleting it as we launched);
+        // EACCES/EPERM means something refused to let it run. From the user's
+        // side these are the same problem: security software is in the way.
+        this.fail('backend_blocked', `The backend could not be launched: ${err.message}`, bundled)
+      } else {
+        this.fail('backend_missing', `Failed to start Python: ${err.message}`, command)
+      }
     })
 
     await this.waitForReady()
@@ -747,9 +885,8 @@ export class PythonBackend extends EventEmitter {
           return
         }
         if (Date.now() - startedAt >= timeoutMs) {
-          this.status = 'error'
-          this.emit(
-            'error',
+          this.fail(
+            'backend_timeout',
             this.withLastError(`The app failed to start within ${Math.round(timeoutMs / 1000)} seconds`),
           )
           resolve()

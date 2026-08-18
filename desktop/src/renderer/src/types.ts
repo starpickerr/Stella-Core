@@ -5,6 +5,8 @@
 export interface ElectronAPI {
   getBackendPort: () => Promise<number | null>
   getBackendStatus: () => Promise<string>
+  /** The last backend failure, queryable so it can't be missed by timing. */
+  getBackendError: () => Promise<BackendFailure | null>
   /** Data dir holding config.json and run.log (~/.cow in packaged builds). */
   getDataDir: () => Promise<string>
   restartBackend: () => Promise<boolean>
@@ -65,12 +67,31 @@ export type UpdateStatus =
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string }
 
+/** Why the backend failed. Mirrors BackendErrorCode in main/python-manager.ts. */
+export type BackendErrorCode =
+  | 'backend_removed'
+  | 'backend_missing'
+  | 'backend_blocked'
+  | 'backend_crashed'
+  | 'backend_timeout'
+  | 'backend_unresponsive'
+
+export interface BackendFailure {
+  code: BackendErrorCode
+  message: string
+  path?: string
+}
+
 export interface BackendStatusEvent {
   // 'lost' means a previously-ready backend stopped answering and the main
   // process is restarting it.
   status: 'ready' | 'error' | 'starting' | 'lost'
   port?: number
   error?: string
+  // Present on 'error': lets the UI explain the specific failure and what to
+  // do about it, rather than falling back to one generic sentence.
+  code?: BackendErrorCode
+  path?: string
 }
 
 // ============================================================
