@@ -8,7 +8,7 @@ import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
-import { setupAppIconIPC, applyCachedAppIcon } from './app-icon'
+import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
 // where the default Electron binary would otherwise report "Electron". The name
@@ -368,7 +368,16 @@ function setupIPC() {
     // Skip when the window is focused: the user is already watching, so a
     // notification (and sound) would just be noise, especially for short tasks.
     if (mainWindow?.isFocused()) return false
-    const n = new Notification({ title: payload.title || app.name, body: payload.body, silent: !!payload.silent })
+    // Use the runtime app icon if one was set (via set-app-icon), so the
+    // notification matches the current window/Dock icon. Falls back to the
+    // packaged icon.
+    const iconOpt = getRuntimeAppIcon() || getIconPath('png')
+    const n = new Notification({
+      title: payload.title || app.name,
+      body: payload.body,
+      silent: !!payload.silent,
+      ...(iconOpt ? { icon: iconOpt } : {}),
+    })
     n.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()

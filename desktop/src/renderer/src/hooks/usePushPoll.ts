@@ -64,8 +64,10 @@ export function usePushPoll(ready: boolean): void {
 function notify(sessionId: string, body: string): void {
   const { taskNotify, taskNotifySound } = useUIStore.getState()
   if (!taskNotify) return
+  // Omit title when there's no session name so the main process falls back to
+  // app.name rather than a hardcoded product name.
   const title = useSessionStore.getState().sessions.find((s) => s.session_id === sessionId)?.title
   window.electronAPI
-    ?.notify?.({ title: title || 'CowAgent', body, sessionId, silent: !taskNotifySound })
+    ?.notify?.({ title: title || undefined, body, sessionId, silent: !taskNotifySound })
     .catch(() => {})
 }

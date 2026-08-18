@@ -132,8 +132,10 @@ const I18N = {
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
         config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
-        config_task_notify: '任务通知', config_task_notify_hint: '任务完成或失败时发送浏览器通知，点击可跳转会话',
+        config_system: '系统',
+        config_task_notify: '任务通知', config_task_notify_hint: '窗口在后台且任务完成或失败时发送浏览器通知，点击可跳转会话',
         config_task_notify_sound: '通知声音', config_task_notify_sound_hint: '通知开启时可单独关闭提示音',
+        config_task_notify_blocked: '系统通知已被浏览器屏蔽，请点击地址栏左侧图标 → 通知 → 允许后刷新页面',
         notify_task_done: '任务完成',
         notify_task_error: '任务失败',
         config_model_advanced: '高级配置',
@@ -419,8 +421,10 @@ const I18N = {
         config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
         config_model: '模型設定', config_agent: 'Agent 設定',
         config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
-        config_task_notify: '任務通知', config_task_notify_hint: '任務完成或失敗時發送瀏覽器通知，點擊可跳轉會話',
+        config_system: '系統',
+        config_task_notify: '任務通知', config_task_notify_hint: '視窗在背景且任務完成或失敗時發送瀏覽器通知，點擊可跳轉會話',
         config_task_notify_sound: '通知聲音', config_task_notify_sound_hint: '通知開啟時可單獨關閉提示音',
+        config_task_notify_blocked: '系統通知已被瀏覽器封鎖，請點擊網址列左側圖示 → 通知 → 允許後重新整理頁面',
         notify_task_done: '任務完成',
         notify_task_error: '任務失敗',
         config_model_advanced: '高階設定',
@@ -701,8 +705,10 @@ const I18N = {
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
         config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
-        config_task_notify: 'Task Notifications', config_task_notify_hint: 'Show a browser notification when a task finishes or fails; click to open the session',
+        config_system: 'System',
+        config_task_notify: 'Task Notifications', config_task_notify_hint: 'Show a browser notification when a task finishes or fails while the window is in the background; click to open the session',
         config_task_notify_sound: 'Notification Sound', config_task_notify_sound_hint: 'Turn off the alert sound while keeping notifications',
+        config_task_notify_blocked: 'Notifications are blocked by the browser. Click the icon on the left of the address bar → Notifications → Allow, then reload.',
         notify_task_done: 'Task finished',
         notify_task_error: 'Task failed',
         config_model_advanced: 'Advanced',
@@ -1214,13 +1220,7 @@ function sessionTitleOf(sid) {
     return el ? el.textContent.trim() : '';
 }
 
-function showTaskNotification(title, body, sid) {
-    if (!taskNotifyEnabled) return;
-    playNotifyBeep();
-    if (document.hidden) {
-        unreadCount += 1;
-        document.title = `(${unreadCount}) ${baseDocTitle}`;
-    }
+function popNotification(title, body, sid) {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     try {
         const n = new Notification(title, { body: body || title });
@@ -1232,6 +1232,38 @@ function showTaskNotification(title, body, sid) {
     } catch (_) {
         // Notification API unavailable; beep + title badge still applied.
     }
+}
+
+function showTaskNotification(title, body, sid) {
+    if (!taskNotifyEnabled) return;
+    // Only notify when the window is not focused. If the user is actively
+    // watching the tab, the reply is already on screen — a notification/beep
+    // would just be noise (especially for short tasks).
+    if (document.hasFocus()) return;
+    playNotifyBeep();
+    if (document.hidden) {
+        unreadCount += 1;
+        document.title = `(${unreadCount}) ${baseDocTitle}`;
+    }
+    if (typeof Notification === 'undefined') return;
+    // First time we actually need to notify (window is in the background):
+    // request permission now, then show this notification once granted. This
+    // is more contextual than prompting on page load.
+    if (Notification.permission === 'default') {
+        Notification.requestPermission()
+            .then(function(perm) {
+                if (perm === 'granted') popNotification(title, body, sid);
+                else refreshNotifyBlockedHint();
+            })
+            .catch(function() {});
+        return;
+    }
+    if (Notification.permission === 'denied') {
+        // Can't notify; surface the hint in settings so the user knows why.
+        refreshNotifyBlockedHint();
+        return;
+    }
+    popNotification(title, body, sid);
 }
 
 function notifyTaskFinished(sid, kind, text) {
@@ -1247,6 +1279,27 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
+// Request OS notification permission when notifications are enabled and the
+// browser hasn't decided yet. Safe to call repeatedly.
+function ensureNotifyPermission() {
+    if (taskNotifyEnabled
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'default') {
+        Notification.requestPermission().catch(function() {});
+    }
+}
+
+// Show the "blocked by browser" hint only when notifications are enabled but
+// the browser permission is denied (nothing the app can do about it in code).
+function refreshNotifyBlockedHint() {
+    const el = document.getElementById('cfg-task-notify-blocked');
+    if (!el) return;
+    const blocked = taskNotifyEnabled
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'denied';
+    el.classList.toggle('hidden', !blocked);
+}
+
 function initTaskNotifyToggles() {
     const notifyEl = document.getElementById('cfg-task-notify');
     if (notifyEl) {
@@ -1254,11 +1307,8 @@ function initTaskNotifyToggles() {
         notifyEl.addEventListener('change', function() {
             taskNotifyEnabled = notifyEl.checked;
             localStorage.setItem(TASK_NOTIFY_KEY, taskNotifyEnabled ? '1' : '0');
-            if (taskNotifyEnabled
-                && typeof Notification !== 'undefined'
-                && Notification.permission === 'default') {
-                Notification.requestPermission();
-            }
+            ensureNotifyPermission();
+            refreshNotifyBlockedHint();
         });
     }
     const soundEl = document.getElementById('cfg-task-notify-sound');
@@ -1269,6 +1319,7 @@ function initTaskNotifyToggles() {
             localStorage.setItem(TASK_NOTIFY_SOUND_KEY, taskNotifySound ? '1' : '0');
         });
     }
+    refreshNotifyBlockedHint();
 }
 
 document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);

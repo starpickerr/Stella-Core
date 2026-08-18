@@ -13,10 +13,12 @@ export function notifyRunDone(sid: string, kind: 'done' | 'error', text: string)
   if (!taskNotify) return
   const prefix = t(kind === 'error' ? 'notify_task_error' : 'notify_task_done')
   const snippet = text.split('\n')[0].trim().slice(0, SNIPPET_LIMIT)
+  // Omit title when there's no session name so the main process falls back to
+  // app.name rather than a hardcoded product name.
   const title = useSessionStore.getState().sessions.find((s) => s.session_id === sid)?.title
   window.electronAPI
     ?.notify?.({
-      title: title || 'CowAgent',
+      title: title || undefined,
       body: snippet ? `${prefix}: ${snippet}` : prefix,
       sessionId: sid,
       silent: !taskNotifySound,
