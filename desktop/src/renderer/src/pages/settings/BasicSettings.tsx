@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Cpu, Bot, ShieldCheck, Bell, Languages, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
+import { Cpu, Bot, ShieldCheck, Settings, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
 import { t, getLang, setLang, localizedLabel, type Lang } from '../../i18n'
 import apiClient from '../../api/client'
 import { product } from '@product'
@@ -530,9 +530,19 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
         </div>
       </Card>
 
-      {/* Notifications — client-side preference, no save button needed */}
-      <Card icon={<Bell size={16} />} title={t('config_notifications')}>
+      {/* System — language + notification preferences (client-side, no save) */}
+      <Card icon={<Settings size={16} />} title={t('config_system')}>
         <div className="space-y-4">
+          <Field label={t('config_language')} hint={t('config_language_hint')}>
+            <Dropdown
+              value={getLang()}
+              options={[
+                { value: 'zh', label: '简体中文' },
+                { value: 'en', label: 'English' },
+              ]}
+              onChange={(v) => changeLanguage(v as Lang)}
+            />
+          </Field>
           <div className="flex items-center justify-between py-1">
             <div>
               <div className="text-sm font-medium text-content">{t('config_task_notify')}</div>
@@ -548,20 +558,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             <Toggle checked={taskNotifySound} onChange={setTaskNotifySound} />
           </div>
         </div>
-      </Card>
-
-      {/* Language */}
-      <Card icon={<Languages size={16} />} title={t('config_language')}>
-        <Field label={t('config_language')} hint={t('config_language_hint')}>
-          <Dropdown
-            value={getLang()}
-            options={[
-              { value: 'zh', label: '简体中文' },
-              { value: 'en', label: 'English' },
-            ]}
-            onChange={(v) => changeLanguage(v as Lang)}
-          />
-        </Field>
       </Card>
     </div>
   )
