@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Cpu, Bot, ShieldCheck, Languages, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
+import { Cpu, Bot, ShieldCheck, Settings, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
 import { t, getLang, setLang, localizedLabel, type Lang } from '../../i18n'
 import apiClient from '../../api/client'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
+import { useUIStore } from '../../store/uiStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
 
 const CustomModelPicker = product.models?.ModelPicker
@@ -19,6 +20,12 @@ interface BasicSettingsProps {
 const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, onOpenModels }) => {
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // notifications card (client-side preference, applied instantly)
+  const taskNotify = useUIStore((s) => s.taskNotify)
+  const taskNotifySound = useUIStore((s) => s.taskNotifySound)
+  const setTaskNotify = useUIStore((s) => s.setTaskNotify)
+  const setTaskNotifySound = useUIStore((s) => s.setTaskNotifySound)
 
   // model card — credentials (key/base) now live in the Models tab
   const [provider, setProvider] = useState('')
@@ -523,18 +530,34 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
         </div>
       </Card>
 
-      {/* Language */}
-      <Card icon={<Languages size={16} />} title={t('config_language')}>
-        <Field label={t('config_language')} hint={t('config_language_hint')}>
-          <Dropdown
-            value={getLang()}
-            options={[
-              { value: 'zh', label: '简体中文' },
-              { value: 'en', label: 'English' },
-            ]}
-            onChange={(v) => changeLanguage(v as Lang)}
-          />
-        </Field>
+      {/* System — language + notification preferences (client-side, no save) */}
+      <Card icon={<Settings size={16} />} title={t('config_system')}>
+        <div className="space-y-4">
+          <Field label={t('config_language')} hint={t('config_language_hint')}>
+            <Dropdown
+              value={getLang()}
+              options={[
+                { value: 'zh', label: '简体中文' },
+                { value: 'en', label: 'English' },
+              ]}
+              onChange={(v) => changeLanguage(v as Lang)}
+            />
+          </Field>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <div className="text-sm font-medium text-content">{t('config_task_notify')}</div>
+              <div className="text-xs text-content-tertiary mt-0.5">{t('config_task_notify_hint')}</div>
+            </div>
+            <Toggle checked={taskNotify} onChange={setTaskNotify} />
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <div className="text-sm font-medium text-content">{t('config_task_notify_sound')}</div>
+              <div className="text-xs text-content-tertiary mt-0.5">{t('config_task_notify_sound_hint')}</div>
+            </div>
+            <Toggle checked={taskNotifySound} onChange={setTaskNotifySound} />
+          </div>
+        </div>
       </Card>
     </div>
   )

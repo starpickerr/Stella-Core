@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
+import { notifyRunDone } from '../lib/taskNotify'
 import { parseAttachmentMarkers } from '../lib/fileKind'
 import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
 
@@ -192,6 +193,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     const es = apiClient.createSSEStream(requestId)
     streams[sid] = es
     let tailTimer: ReturnType<typeof setTimeout> | null = null
+    // Set on a user-initiated cancel so a trailing error event doesn't fire a
+    // spurious "task failed" notification.
+    let userCancelled = false
 
     const closeStream = () => {
       if (tailTimer) {
@@ -369,6 +373,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         }
 
         case 'cancelled':
+          userCancelled = true
           updateMsg(sid, botId, (m) => ({ ...m, isCancelled: true }))
           break
 
@@ -397,6 +402,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
           // The answer is final: free the UI now (don't wait for onerror).
           completeTurn()
+          notifyRunDone(sid, 'done', data.content || '')
           useWorkspaceStore.getState().maybeAutoOpen()
           // Backend keeps the stream open for a short tail (e.g. TTS audio via
           // voice_attach). Close it ourselves if nothing else arrives.
@@ -416,6 +422,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
         case 'error':
           updateMsg(sid, botId, (m) => ({ ...m, error: data.message || 'stream error', isStreaming: false }))
+          if (!userCancelled) notifyRunDone(sid, 'error', data.message || 'stream error')
           finishStream()
           break
       }
