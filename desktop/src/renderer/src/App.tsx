@@ -163,6 +163,8 @@ const App: React.FC = () => {
       <StatusScreen
         status={backend.status}
         error={backend.error}
+        code={backend.code}
+        path={backend.path}
         slow={backend.slow}
         reconnecting={backend.reconnecting}
         onRetry={backend.restart}
