@@ -272,6 +272,11 @@ available_setting = {
     "agent_max_context_tokens": 64000,  # max context tokens in Agent mode
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
+    # Default permission mode for sessions that have not picked one of their own:
+    # "read-only" | "workspace-write" | "full-access". Kept at full-access so an
+    # existing install behaves exactly as before an upgrade; fresh installs get
+    # the stricter workspace-write from config-template.json.
+    "agent_permission_mode": "full-access",
     # In-process sub agents: the Agent hands a self-contained task to a
     # short-lived worker with its own context, and gets back only the result.
     # Set enabled to false to withhold the subagent tool entirely.

@@ -1624,6 +1624,38 @@ class AgentStreamExecutor:
             self._record_tool_result(tool_name, arguments, False)
             return result
 
+        # Permission gate. Resolved per call so switching mode mid-conversation
+        # applies to the very next tool call. A refusal is reported as a normal
+        # tool error: the model reads why, and can either take an allowed route
+        # or tell the user which mode the task needs.
+        denial = self._permission_denial(tool_name, arguments)
+        if denial:
+            logger.info(f"🔐 Permission denied for tool {tool_name}: {denial}")
+            result = {"status": "error", "result": denial, "execution_time": 0}
+            self._emit_event("tool_execution_start", {
+                "tool_call_id": tool_id,
+                "tool_name": tool_name,
+                "arguments": arguments,
+            })
+            # Flag this as a permission refusal (not an ordinary tool error) and
+            # carry the mode that refused, so the UI can render an actionable
+            # "switch permission" hint instead of a generic failure.
+            try:
+                denied_mode = self.agent.effective_permission_mode()
+            except Exception:
+                denied_mode = None
+            self._emit_event("tool_execution_end", {
+                "tool_call_id": tool_id,
+                "tool_name": tool_name,
+                "permission_denied": True,
+                "permission_mode": denied_mode,
+                **result,
+            })
+            # Deliberately not recorded as a tool failure: a refusal is not the
+            # tool misbehaving, and it must not count toward the consecutive
+            # failure limit that aborts the conversation.
+            return result
+
         # Check for consecutive failures (retry protection)
         should_stop, stop_reason, is_critical = self._check_consecutive_failures(tool_name, arguments)
         if should_stop:
@@ -1751,6 +1783,34 @@ class AgentStreamExecutor:
                 **error_result
             })
             return error_result
+
+    def _permission_denial(self, tool_name: str, arguments: Dict) -> Optional[str]:
+        """Reason this call is not allowed, or None when it may run.
+
+        Never raises: a broken permission check must not take the conversation
+        down with it, so an error here falls through to the historical
+        unrestricted behavior.
+        """
+        agent = self.agent
+        if agent is None:
+            return None
+        try:
+            from agent.permission import FULL_ACCESS, check_tool_call
+
+            mode = agent.effective_permission_mode()
+            if mode == FULL_ACCESS:
+                return None
+            decision = check_tool_call(
+                mode,
+                tool_name,
+                arguments,
+                cwd=agent.effective_cwd(),
+                write_roots=agent.write_roots(),
+            )
+            return None if decision.allowed else decision.reason
+        except Exception as e:
+            logger.warning(f"[Permission] Check skipped for {tool_name}: {e}")
+            return None
 
     def _build_tool_not_found_message(self, tool_name: str) -> str:
         """Build a helpful error message when a tool is not found.
