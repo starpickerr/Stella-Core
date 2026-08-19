@@ -83,7 +83,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
                     src={url}
                     alt={att.file_name}
                     onClick={() => openLightbox(url)}
-                    className="max-w-[180px] max-h-[150px] rounded-xl object-cover border border-default cursor-zoom-in"
+                    className="max-w-[260px] max-h-[220px] rounded-xl object-cover border border-default cursor-zoom-in"
                   />
                 )
               }
