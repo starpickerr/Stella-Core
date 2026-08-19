@@ -3,6 +3,7 @@ import apiClient from '../api/client'
 import type { SessionItem } from '../types'
 
 const ACTIVE_KEY = 'cow_session_id'
+export const DEFAULT_SPACE_KEY = '__default__'
 
 interface SessionState {
   sessions: SessionItem[]
@@ -11,6 +12,8 @@ interface SessionState {
   hasMore: boolean
   loading: boolean
   activeId: string
+  groupMode: 'project' | 'time'
+  projectOrder: string[]
 
   loadSessions: (page?: number) => Promise<void>
   loadMore: () => Promise<void>
@@ -18,6 +21,8 @@ interface SessionState {
   newSession: () => string
   rename: (id: string, title: string) => Promise<void>
   remove: (id: string) => Promise<void>
+  togglePin: (id: string) => Promise<void>
+  reorderSpaces: (fromKey: string, beforeKey: string) => void
 }
 
 function genId(): string {
@@ -28,6 +33,15 @@ function readActive(): string {
   return localStorage.getItem(ACTIVE_KEY) || genId()
 }
 
+function sortSessions(list: SessionItem[]): SessionItem[] {
+  return [...list].sort((a, b) => {
+    const pa = a.pinned ? 1 : 0
+    const pb = b.pinned ? 1 : 0
+    if (pa !== pb) return pb - pa
+    return (b.last_active || 0) - (a.last_active || 0)
+  })
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   total: 0,
@@ -35,6 +49,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   hasMore: false,
   loading: false,
   activeId: readActive(),
+  groupMode: 'time',
+  projectOrder: [],
 
   loadSessions: async (page = 1) => {
     set({ loading: true })
@@ -45,6 +61,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         total: res.total,
         page: res.page,
         hasMore: res.has_more,
+        groupMode: res.group_mode || 'time',
+        projectOrder: res.project_order || s.projectOrder,
         loading: false,
       }))
     } catch {
@@ -80,7 +98,56 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   remove: async (id) => {
     await apiClient.deleteSession(id)
     set((s) => ({ sessions: s.sessions.filter((sess) => sess.session_id !== id) }))
-    // If we removed the active one, start a fresh session
     if (get().activeId === id) get().newSession()
+  },
+
+  togglePin: async (id) => {
+    const entry = get().sessions.find((s) => s.session_id === id)
+    if (!entry) return
+    const pinned = !entry.pinned
+    set((s) => ({
+      sessions: sortSessions(
+        s.sessions.map((sess) => (sess.session_id === id ? { ...sess, pinned } : sess))
+      ),
+    }))
+    try {
+      const res = await apiClient.setSessionPinned(id, pinned)
+      if (res.status !== 'success') throw new Error(res.message || 'pin failed')
+    } catch {
+      set((s) => ({
+        sessions: sortSessions(
+          s.sessions.map((sess) => (sess.session_id === id ? { ...sess, pinned: !pinned } : sess))
+        ),
+      }))
+    }
+  },
+
+  reorderSpaces: (fromKey, beforeKey) => {
+    const { projectOrder, sessions, groupMode } = get()
+    const current = projectOrder.length
+      ? [...projectOrder]
+      : Array.from(
+          new Set(
+            sessions.map((s) => s.project?.path || DEFAULT_SPACE_KEY)
+          )
+        )
+    // Include any visible keys the saved order does not yet know about.
+    if (groupMode === 'project') {
+      for (const s of sessions) {
+        const k = s.project?.path || DEFAULT_SPACE_KEY
+        if (!current.includes(k)) current.push(k)
+      }
+      if (!current.includes(DEFAULT_SPACE_KEY) && sessions.some((s) => !s.project?.path)) {
+        current.unshift(DEFAULT_SPACE_KEY)
+      }
+    }
+    const order = current.filter((k) => k !== fromKey)
+    const idx = order.indexOf(beforeKey)
+    if (idx < 0) order.push(fromKey)
+    else order.splice(idx, 0, fromKey)
+    set({ projectOrder: order })
+    apiClient.setProjectsOrder(order).catch(() => {
+      /* keep optimistic order; next loadSessions will reconcile */
+    })
   },
 }))
