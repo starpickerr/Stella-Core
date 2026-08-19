@@ -82,6 +82,7 @@ const I18N = {
         models_embedding_saved_msg: '请在聊天框输入 /memory rebuild-index 重建索引。',
         models_embedding_saved_ok: '去执行',
         models_pick_provider: '待选择',
+        models_manage_api_key: '管理 API Key',
         models_clear_confirm_title: '清除厂商凭据',
         models_clear_confirm_msg: '确认清除该厂商的 API Key 与 Base URL 吗？相关能力将不再可用。',
         cancel: '取消',
@@ -398,6 +399,7 @@ const I18N = {
         models_embedding_saved_msg: '請在聊天框輸入 /memory rebuild-index 重建索引。',
         models_embedding_saved_ok: '去執行',
         models_pick_provider: '待選擇',
+        models_manage_api_key: '管理 API Key',
         models_clear_confirm_title: '清除廠商憑據',
         models_clear_confirm_msg: '確認清除該廠商的 API Key 與 Base URL 嗎？相關能力將不再可用。',
         cancel: '取消',
@@ -709,6 +711,7 @@ const I18N = {
         models_embedding_saved_msg: 'Send /memory rebuild-index in the chat to rebuild the index.',
         models_embedding_saved_ok: 'Go',
         models_pick_provider: 'Pick a provider',
+        models_manage_api_key: 'Manage API keys',
         models_clear_confirm_title: 'Clear provider credentials',
         models_clear_confirm_msg: 'Remove this provider\'s API Key and Base URL? Capabilities relying on it will stop working.',
         cancel: 'Cancel',
@@ -6567,6 +6570,11 @@ function onProviderChange(pid) {
     const keyField = p.api_key_field;
     const keyWrap = document.getElementById('cfg-api-key-wrap');
     const keyInput = document.getElementById('cfg-api-key');
+
+    // Only LinkAI (an aggregation platform) gets a link to its console for
+    // managing the aggregated key; other providers manage keys on their sites.
+    const cfgManageKey = document.getElementById('cfg-manage-key');
+    if (cfgManageKey) cfgManageKey.classList.toggle('hidden', cfgProviderValue !== 'linkai');
     if (keyField) {
         keyWrap.classList.remove('hidden');
         keyInput.classList.add('cfg-key-masked');
@@ -8598,6 +8606,12 @@ function fillVendorModalForProvider(providerId) {
     if (!meta) return;
     document.getElementById('vendor-modal-title').textContent = localizedLabel(meta.label);
     document.getElementById('vendor-modal-subtitle').textContent = meta.id;
+
+    // LinkAI aggregates many vendors, so only for it do we surface a link to its
+    // console for creating/managing the aggregated key. Other providers manage
+    // their keys on their own sites.
+    const manageKey = document.getElementById('vendor-modal-manage-key');
+    if (manageKey) manageKey.classList.toggle('hidden', meta.id !== 'linkai');
 
     // ----- API Base -----
     // Always reflect the *current effective* base as the input value so the

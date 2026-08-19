@@ -13,6 +13,7 @@ import {
   Pencil,
   Eye as EyeIcon,
   EyeOff,
+  ExternalLink,
 } from 'lucide-react'
 import { t, localizedLabel } from '../../i18n'
 import apiClient from '../../api/client'
@@ -24,6 +25,22 @@ import { product } from '@product'
 
 // Whether the "add custom provider" entry is available. Defaults to true.
 const allowCustomProviders = product.models?.allowCustomProviders !== false
+
+// LinkAI is an aggregation platform, so when the LinkAI provider is selected we
+// point users to its console to create/manage the aggregated key. Only shown
+// for that provider — other vendors manage keys on their own sites.
+const ManageLinkAIKeyLink: React.FC = () => (
+  <button
+    type="button"
+    onClick={() =>
+      window.open('https://link-ai.tech/console/models?apikey=1', '_blank', 'noopener,noreferrer')
+    }
+    className="inline-flex items-center gap-1 text-xs text-accent hover:underline cursor-pointer"
+  >
+    {t('models_manage_api_key')}
+    <ExternalLink size={11} className="shrink-0" />
+  </button>
+)
 
 interface ModelsTabProps {
   baseUrl: string
@@ -410,7 +427,10 @@ const VendorModal: React.FC<{
           <Dropdown value={pickId} options={pickOptions} onChange={onPick} />
         </Field>
       )}
-      <Field label="API Key">
+      <Field
+        label="API Key"
+        labelAction={effective?.id === 'linkai' ? <ManageLinkAIKeyLink /> : undefined}
+      >
         <div className="relative">
           <TextInput
             type={keyVisible ? 'text' : 'password'}
