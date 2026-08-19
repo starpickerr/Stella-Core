@@ -1039,7 +1039,7 @@ const FileLeaf: React.FC<{
 }> = ({ path, title, active, onOpen }) => (
   <button
     onClick={() => onOpen(path, title)}
-    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-btn text-sm cursor-pointer transition-colors text-left ${
+    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-btn text-[13px] cursor-pointer transition-colors text-left ${
       active ? 'bg-accent-soft text-accent' : 'text-content-secondary hover:bg-surface-2'
     }`}
   >

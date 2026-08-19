@@ -5,11 +5,16 @@ import apiClient from '../../api/client'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { useUIStore } from '../../store/uiStore'
+import { useSessionStore } from '../../store/sessionStore'
+import { useSessionSettingsStore } from '../../store/sessionSettingsStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
+import { PERMISSION_META, PERMISSION_MODE_ORDER, asPermissionMode } from '../../lib/permission'
 
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
 const showManagedApiKey = product.models?.showManagedApiKey === true
+const ModelFieldLink = product.models?.ModelFieldLink
+const ApiKeyFieldLink = product.models?.ApiKeyFieldLink
 
 interface BasicSettingsProps {
   baseUrl: string
@@ -54,6 +59,8 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [pwDirty, setPwDirty] = useState(false)
   const [pwVisible, setPwVisible] = useState(false)
   const [pwStatus, setPwStatus] = useState('')
+  const [permissionMode, setPermissionMode] = useState('full-access')
+  const [permStatus, setPermStatus] = useState('')
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
@@ -106,6 +113,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setReasoningEffort(data.reasoning_effort || 'high')
       setSubagent(data.subagent_enabled !== false)
       setEvolution(!!data.self_evolution_enabled)
+      setPermissionMode(asPermissionMode(data.agent_permission_mode))
       // Prefer the real password (desktop only) so it can be edited in place;
       // fall back to the masked value for browser access.
       setPassword(data.web_password ?? data.web_password_masked ?? '')
@@ -272,6 +280,19 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setTimeout(() => setPwStatus(''), 3000)
   }
 
+  const savePermission = async (mode: string) => {
+    setPermissionMode(mode)
+    try {
+      await apiClient.updateConfig({ agent_permission_mode: mode })
+      setPermStatus(t('config_saved'))
+      const sid = useSessionStore.getState().activeId
+      if (sid) useSessionSettingsStore.getState().refresh(sid)
+    } catch {
+      setPermStatus(t('config_save_error'))
+    }
+    setTimeout(() => setPermStatus(''), 2000)
+  }
+
   const changeLanguage = async (lang: Lang) => {
     setLang(lang)
     onLangChange?.()
@@ -340,7 +361,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               <Dropdown value={provider} options={providerOptions} onChange={handleProviderChange} />
             </Field>
           )}
-          <Field label={t('config_model_name')}>
+          <Field
+            label={t('config_model_name')}
+            labelAction={ModelFieldLink ? <ModelFieldLink /> : undefined}
+          >
             {CustomModelPicker ? (
               <CustomModelPicker value={model} onChange={setModel} />
             ) : isCustomProvider ? (
@@ -374,7 +398,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               partially-masked value (e.g. sk-1****9aL7). Editable in place; if
               left untouched (still contains a mask char) it is not overwritten. */}
           {showManagedApiKey && currentKeyField && (
-            <Field label={t('onboarding_apikey')}>
+            <Field
+              label={t('onboarding_apikey')}
+              labelAction={ApiKeyFieldLink ? <ApiKeyFieldLink /> : undefined}
+            >
               <div className="relative">
                 <TextInput
                   type={apiKeyVisible ? 'text' : 'password'}
@@ -496,6 +523,20 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       {/* Security */}
       <Card icon={<ShieldCheck size={16} />} title={t('config_security')}>
         <div className="space-y-4">
+          <Field label={t('config_permission')} hint={t('config_permission_desc')}>
+            <Dropdown
+              value={permissionMode}
+              options={PERMISSION_MODE_ORDER.filter(
+                (m) => !config?.permission_modes?.length || config.permission_modes.includes(m)
+              ).map((m) => ({
+                value: m,
+                label: t(PERMISSION_META[m].key),
+                hint: t(PERMISSION_META[m].descKey),
+              }))}
+              onChange={savePermission}
+            />
+            {permStatus && <p className="text-xs text-accent mt-1">{permStatus}</p>}
+          </Field>
           <Field label={t('config_password')} hint={t('config_password_hint')}>
             <div className="relative">
               <TextInput

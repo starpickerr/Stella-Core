@@ -127,6 +127,11 @@ export interface MessageStep {
   display?: string
   /** Work done inside this step, for a tool that drives sub agents. */
   substeps?: SubStep[]
+  /** Set when the tool was refused by the session's permission mode, so the UI
+   * can render an actionable "adjust permissions" hint rather than a plain error. */
+  permission_denied?: boolean
+  /** The mode that refused the call (read-only / workspace-write / full-access). */
+  permission_mode?: string
 }
 
 /** Local UI message model (superset of backend history message). */
@@ -289,6 +294,10 @@ export interface StreamEvent {
   display?: string
   execution_time?: number
   has_tool_calls?: boolean
+  /** `tool_end`: true when the call was refused by the session permission mode. */
+  permission_denied?: boolean
+  /** `tool_end`: the mode that refused the call. */
+  permission_mode?: string
   /** `subagent_step` event fields: which step of which card, and how it went. */
   card_id?: string
   step_id?: string
@@ -324,6 +333,10 @@ export interface SessionItem {
   created_at: number
   last_active: number
   msg_count: number
+  /** User-pinned to the top of its group. */
+  pinned?: boolean
+  /** Bound project workspace, or null/absent for the default workspace. */
+  project?: { path: string; name: string } | null
 }
 
 export interface SessionsPage {
@@ -332,6 +345,36 @@ export interface SessionsPage {
   page: number
   page_size: number
   has_more: boolean
+  /** "project" once more than one distinct workspace is in play, else "time". */
+  group_mode?: 'project' | 'time'
+  /** Number of distinct project spaces across all sessions (decides group_mode). */
+  space_count?: number
+  default_workspace?: string
+  /** User-defined order of project spaces; "__default__" marks the default one. */
+  project_order?: string[]
+}
+
+/** Per-session model + permission overrides (from /api/sessions/{id}/settings). */
+export interface SessionModelProvider {
+  id: string
+  label: string | { zh: string; en: string }
+  models: string[]
+}
+
+export interface SessionSettingsState {
+  model: {
+    model: string
+    provider: string
+    source: 'session' | 'global'
+    global: { model: string; provider: string }
+    providers: SessionModelProvider[]
+  }
+  permission: {
+    mode: 'read-only' | 'workspace-write' | 'full-access'
+    source: 'session' | 'global'
+    global: string
+    modes: string[]
+  }
 }
 
 /** Backend history message (as returned by /api/history). */
@@ -401,6 +444,9 @@ export interface ConfigData {
   agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
+  /** Global default permission for sessions that have not picked one. */
+  agent_permission_mode?: string
+  permission_modes?: string[]
   enable_thinking?: boolean
   reasoning_effort?: string
   reasoning_effort_by_model?: Record<string, string>

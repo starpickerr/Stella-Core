@@ -60,6 +60,10 @@ class Agent:
         # directory (bash cwd, relative file paths) while memory/skills stay
         # anchored to workspace_dir. None means "use workspace_dir".
         self.project_dir = None
+        # How much this session may change (see agent.permission). None means
+        # "follow the global setting", resolved at check time so a change to the
+        # global default reaches sessions that never picked a mode themselves.
+        self.permission_mode = None
         self.enable_skills = enable_skills  # Skills enabled flag
         self.runtime_info = runtime_info  # Runtime info for dynamic time update
         self.skip_context_files = skip_context_files
@@ -147,6 +151,38 @@ class Agent:
                 pass
         return self.project_dir
 
+    def effective_permission_mode(self) -> str:
+        """The permission mode in force: this session's, else the global default."""
+        from agent.permission import global_mode, normalize_mode
+
+        if self.permission_mode:
+            return normalize_mode(self.permission_mode, global_mode())
+        return global_mode()
+
+    def apply_permission_mode(self, mode):
+        """Set (or clear, with None) this session's permission mode.
+
+        Takes effect on the next tool call: the executor resolves the mode per
+        call, so a mid-conversation change applies without rebuilding the agent.
+        The system prompt is rebuilt per turn and picks the new mode up there.
+        """
+        from agent.permission import normalize_mode
+
+        self.permission_mode = normalize_mode(mode) if mode else None
+        return self.permission_mode
+
+    def write_roots(self) -> list:
+        """Directories that stay writable under the workspace-write mode.
+
+        The working directory is where the user's work belongs; the Agent's own
+        state root has to stay writable regardless, or memory, skills and
+        knowledge - which live there by design - would break in project mode.
+        """
+        roots = [self.effective_cwd()]
+        if self.workspace_dir:
+            roots.append(self.workspace_dir)
+        return roots
+
     def get_skills_prompt(self, skill_filter=None) -> str:
         """
         Get the skills prompt to append to system prompt.
@@ -197,6 +233,7 @@ class Agent:
                 memory_manager=self.memory_manager,
                 runtime_info=self.runtime_info,
                 project_dir=self.project_dir,
+                permission_mode=self.effective_permission_mode(),
             )
             if self.extra_system_suffix:
                 full = f"{full}\n\n{self.extra_system_suffix}"
