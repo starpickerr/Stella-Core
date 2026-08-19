@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
+import { t } from '../i18n'
 import type { SessionSettingsState } from '../types'
 
 /**
@@ -16,6 +17,9 @@ interface SessionSettingsStore {
    *  session is ignored. */
   sessionId: string | null
   loading: boolean
+  /** Last apply failure, shown inline in the open menu; cleared on the next
+   *  attempt or when a menu opens. */
+  error: string | null
   /** Which composer menu is open. Shared so the three chips exclude each other,
    *  and so a permission-denied hint can open the permission menu. */
   openMenu: ComposerMenu
@@ -32,42 +36,60 @@ interface SessionSettingsStore {
   setOpenMenu: (menu: ComposerMenu) => void
 }
 
+// Monotonic token for the latest settings request. A response is only applied
+// when its token is still the newest one, so a slow fetch for a session the user
+// has switched away from can never overwrite the current session's chips.
+let requestSeq = 0
+
 export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) => ({
   cfg: null,
   sessionId: null,
   loading: false,
+  error: null,
   openMenu: null,
 
-  setOpenMenu: (menu) => set({ openMenu: menu }),
+  // Opening or closing a menu clears any stale failure from a previous attempt.
+  setOpenMenu: (menu) => set({ openMenu: menu, error: null }),
 
   refresh: async (sessionId) => {
     if (!sessionId) return
+    const token = ++requestSeq
     set({ loading: true })
     try {
       const data = await apiClient.getSessionSettings(sessionId)
+      // A newer request has superseded this one: drop the response entirely.
+      if (token !== requestSeq) return
       if (data.status !== 'success') {
         set({ loading: false })
         return
       }
-      // Ignore a response that arrived after the user switched sessions.
       set({ cfg: { model: data.model, permission: data.permission }, sessionId, loading: false })
     } catch {
-      set({ loading: false })
+      if (token === requestSeq) set({ loading: false })
     }
   },
 
   apply: async (sessionId, body) => {
+    // An explicit change is the latest intent for this session; claim the token
+    // so an in-flight refresh cannot clobber the echo we are about to write.
+    const token = ++requestSeq
+    set({ error: null })
     try {
       const data = await apiClient.updateSessionSettings(sessionId, body)
-      if (data.status !== 'success' || !data.model || !data.permission) return false
+      if (data.status !== 'success' || !data.model || !data.permission) {
+        set({ error: t('session_settings_failed') })
+        return false
+      }
+      if (token !== requestSeq) return true
       set({ cfg: { model: data.model, permission: data.permission }, sessionId })
       return true
     } catch {
+      set({ error: t('session_settings_failed') })
       return false
     }
   },
 
-  reset: () => set({ cfg: null, sessionId: null, openMenu: null }),
+  reset: () => set({ cfg: null, sessionId: null, openMenu: null, error: null }),
 }))
 
 /** True when `cfg` is loaded and belongs to the given session. */
