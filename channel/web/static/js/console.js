@@ -5646,6 +5646,9 @@ function _renderSessionList() {
 
     container.innerHTML = '';
     const projectMode = _sessionGroupMode === 'project';
+    // Indent sessions under their project header when several projects are
+    // shown, so the list reads as a tree aligned to the folder icon above.
+    const indentItems = projectMode && _sessionGroups().length > 1;
     _sessionGroups().forEach(group => {
         const collapsed = projectMode && _collapsedProjects.has(group.key);
         const header = document.createElement('div');
@@ -5683,7 +5686,7 @@ function _renderSessionList() {
         container.appendChild(header);
 
         if (!collapsed) {
-            group.items.forEach(s => container.appendChild(_sessionItemEl(s)));
+            group.items.forEach(s => container.appendChild(_sessionItemEl(s, indentItems)));
         }
     });
 }
@@ -5784,10 +5787,11 @@ function deleteProject(path, name) {
     );
 }
 
-function _sessionItemEl(s) {
+function _sessionItemEl(s, indent) {
     const item = document.createElement('div');
     const isActive = s.session_id === sessionId;
-    item.className = 'session-item' + (isActive ? ' active' : '') + (s.pinned ? ' pinned' : '');
+    item.className = 'session-item' + (isActive ? ' active' : '') + (s.pinned ? ' pinned' : '')
+        + (indent ? ' session-item-indent' : '');
     item.dataset.sessionId = s.session_id;
 
     const title = s.title || t('untitled_session');

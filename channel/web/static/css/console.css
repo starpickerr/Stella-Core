@@ -335,25 +335,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* Breathing room at rest so the title doesn't run flush to the edge; the
+       gap collapses on hover when the action buttons take that space. */
+    padding-right: 20px;
 }
+.session-item:hover .session-title { padding-right: 0; }
+/* Under a multi-project list, sessions indent so their leading icon lines up
+   with the folder icon of the project header above them. The session icon sits
+   in a centered 16px box, so it needs a touch less left padding than the raw
+   folder-icon offset (24px) to visually align. */
+.session-item-indent { padding-left: 21px; }
 .session-delete {
     flex-shrink: 0;
     width: 22px;
     height: 22px;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     border-radius: 5px;
     font-size: 10px;
     color: #9ca3af;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s;
     cursor: pointer;
     background: none;
     border: none;
     padding: 0;
 }
-.session-item:hover .session-delete { opacity: 1; }
+.session-item:hover .session-delete { display: flex; }
 .session-delete:hover {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
@@ -367,20 +375,19 @@
     margin-right: -6px;
     width: 22px;
     height: 22px;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     border-radius: 6px;
     color: #9ca3af;
     font-size: 11px;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s;
     cursor: pointer;
     background: none;
     border: none;
     padding: 0;
 }
-.session-item:hover .session-rename { opacity: 1; }
+.session-item:hover .session-rename { display: flex; }
 .session-rename:hover {
     color: #4ABE6E;
     background: rgba(74, 190, 110, 0.12);
@@ -394,20 +401,19 @@
     margin-right: -6px;
     width: 22px;
     height: 22px;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     border-radius: 6px;
     color: #9ca3af;
     font-size: 10px;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s;
     cursor: pointer;
     background: none;
     border: none;
     padding: 0;
 }
-.session-item:hover .session-pin { opacity: 1; }
+.session-item:hover .session-pin { display: flex; }
 .session-pin:hover {
     color: #4ABE6E;
     background: rgba(74, 190, 110, 0.12);
