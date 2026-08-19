@@ -10,6 +10,7 @@ import type {
   SchedulerTask,
   Attachment,
   SessionsPage,
+  SessionSettingsState,
   HistoryPage,
   ModelsData,
   ModelsAction,
@@ -285,6 +286,30 @@ class ApiClient {
     })
   }
 
+  /** Persist the user-defined order of project spaces in the sidebar. */
+  async setProjectsOrder(order: string[]): Promise<ApiResult> {
+    return this.request('/api/projects/order', {
+      method: 'POST',
+      body: JSON.stringify({ order }),
+    })
+  }
+
+  /** Rename a project's display label (record only; files on disk untouched). */
+  async renameProject(path: string, name: string): Promise<ApiResult & { name?: string }> {
+    return this.request('/api/projects/manage', {
+      method: 'PUT',
+      body: JSON.stringify({ path, name }),
+    })
+  }
+
+  /** Forget a project record and unbind its sessions (files on disk kept). */
+  async deleteProject(path: string): Promise<ApiResult & { unbound?: number }> {
+    return this.request('/api/projects/manage', {
+      method: 'DELETE',
+      body: JSON.stringify({ path }),
+    })
+  }
+
   /** Absolute URL for a `/preview/...` path. The signed token in the path is
    *  what authorizes it, so no auth token is appended. */
   getPreviewUrl(previewPath: string): string {
@@ -308,6 +333,31 @@ class ApiClient {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PUT',
       body: JSON.stringify({ title }),
+    })
+  }
+
+  /** Pin or unpin a session; pinned sessions sort to the top of their group. */
+  async setSessionPinned(sessionId: string, pinned: boolean): Promise<ApiResult> {
+    return this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ pinned }),
+    })
+  }
+
+  /** This session's effective model + permission, with the catalog to switch. */
+  async getSessionSettings(sessionId: string): Promise<{ status: string } & SessionSettingsState> {
+    return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`)
+  }
+
+  /** Set or clear this session's model / permission override. Pass null to a
+   *  field to drop the override and follow the global default. */
+  async updateSessionSettings(
+    sessionId: string,
+    body: { provider?: string | null; model?: string | null; permission?: string | null }
+  ): Promise<{ status: string } & Partial<SessionSettingsState> & { message?: string }> {
+    return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     })
   }
 

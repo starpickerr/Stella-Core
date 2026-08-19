@@ -285,6 +285,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                     display: data.display ?? s.display,
                     execution_time: data.execution_time,
                     is_error: data.status !== 'success',
+                    permission_denied: data.permission_denied,
+                    permission_mode: data.permission_mode,
                   }
                 : s
             ),
