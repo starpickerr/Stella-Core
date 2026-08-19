@@ -658,7 +658,15 @@
                                         </div>
                                         <!-- API Key -->
                                         <div id="cfg-api-key-wrap">
-                                            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
+                                            <div class="flex items-center justify-between gap-2 mb-1.5">
+                                                <label class="block text-sm font-medium text-slate-600 dark:text-slate-400">API Key</label>
+                                                <a id="cfg-manage-key" href="https://link-ai.tech/console/models?apikey=1"
+                                                   target="_blank" rel="noopener noreferrer"
+                                                   class="hidden inline-flex items-center gap-1 text-xs text-primary-500 hover:underline">
+                                                    <span data-i18n="models_manage_api_key">管理 API Key</span>
+                                                    <i class="fas fa-arrow-up-right-from-square text-[10px]"></i>
+                                                </a>
+                                            </div>
                                             <div class="relative">
                                                 <input id="cfg-api-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
                                                        class="w-full px-3 py-2 pr-10 rounded-lg border border-slate-200 dark:border-slate-600
@@ -1432,7 +1440,15 @@
 
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400">API Key</label>
+                            <a id="vendor-modal-manage-key" href="https://link-ai.tech/console/models?apikey=1"
+                               target="_blank" rel="noopener noreferrer"
+                               class="hidden inline-flex items-center gap-1 text-xs text-primary-500 hover:underline">
+                                <span data-i18n="models_manage_api_key">管理 API Key</span>
+                                <i class="fas fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                        </div>
                         <input id="vendor-modal-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
                                class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
                                       bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
