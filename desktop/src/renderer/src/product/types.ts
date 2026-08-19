@@ -66,6 +66,17 @@ export interface ProductModels {
   // Set true to show a masked+editable API key field for the current provider
   // inside basic settings, useful when the standalone models tab is hidden.
   showManagedApiKey?: boolean
+  // Optional replacement for the per-session model chip in the chat composer.
+  // When set, the core renders this instead of its built-in provider-grouped
+  // menu, so a build whose models come from a different source can present them
+  // however it likes. `sessionId` identifies the conversation being edited.
+  SessionModelPicker?: React.FC<{ sessionId: string }>
+  // Optional helper link rendered on the model field's label row (e.g. "view
+  // model details"). Lets a managed build deep-link to its own console.
+  ModelFieldLink?: React.FC
+  // Optional helper link rendered on the managed API-key field's label row
+  // (e.g. "manage API keys"). Only shown when showManagedApiKey is set.
+  ApiKeyFieldLink?: React.FC
 }
 
 // Optional nav-rail customization. Lets a build tailor the footer menu's

@@ -13,6 +13,8 @@ import { PERMISSION_META, PERMISSION_MODE_ORDER, asPermissionMode } from '../../
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
 const showManagedApiKey = product.models?.showManagedApiKey === true
+const ModelFieldLink = product.models?.ModelFieldLink
+const ApiKeyFieldLink = product.models?.ApiKeyFieldLink
 
 interface BasicSettingsProps {
   baseUrl: string
@@ -359,7 +361,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               <Dropdown value={provider} options={providerOptions} onChange={handleProviderChange} />
             </Field>
           )}
-          <Field label={t('config_model_name')}>
+          <Field
+            label={t('config_model_name')}
+            labelAction={ModelFieldLink ? <ModelFieldLink /> : undefined}
+          >
             {CustomModelPicker ? (
               <CustomModelPicker value={model} onChange={setModel} />
             ) : isCustomProvider ? (
@@ -393,7 +398,10 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               partially-masked value (e.g. sk-1****9aL7). Editable in place; if
               left untouched (still contains a mask char) it is not overwritten. */}
           {showManagedApiKey && currentKeyField && (
-            <Field label={t('onboarding_apikey')}>
+            <Field
+              label={t('onboarding_apikey')}
+              labelAction={ApiKeyFieldLink ? <ApiKeyFieldLink /> : undefined}
+            >
               <div className="relative">
                 <TextInput
                   type={apiKeyVisible ? 'text' : 'password'}
