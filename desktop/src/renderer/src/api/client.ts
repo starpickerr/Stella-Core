@@ -83,16 +83,47 @@ class ApiClient {
    * the header, never the cookie.
    */
   private async postFormData<T>(path: string, formData: FormData): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : undefined,
-    })
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    const url = `${this.baseUrl}${path}`
+    // A plain `fetch` that never reaches the backend throws a bare
+    // `TypeError: Failed to fetch`, which is useless in a bug report. The most
+    // common cause here is a transient connection refusal (the local backend
+    // still booting, or briefly restarting), so retry once after a short delay
+    // and, on a persistent network failure, raise an actionable message that
+    // names the target URL instead of the opaque browser error.
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 600))
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+          headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : undefined,
+        })
+        if (!res.ok) {
+          // The backend returns JSON errors even on failure; surface its message
+          // when present so the user sees the real reason (e.g. file too large).
+          let detail = res.statusText
+          try {
+            const body = await res.clone().json()
+            if (body?.message) detail = body.message
+          } catch {
+            /* non-JSON error body */
+          }
+          throw new Error(`HTTP ${res.status}: ${detail}`)
+        }
+        return res.json()
+      } catch (e) {
+        lastErr = e
+        // Only retry the network-level failure; a real HTTP error is final.
+        const isNetwork = e instanceof TypeError
+        if (!isNetwork) throw e
+      }
     }
-    return res.json()
+    console.error(`[api] upload network failure to ${url}:`, lastErr)
+    throw new Error(
+      `无法连接到本地服务 (${url})，请确认客户端后台正在运行后重试`,
+    )
   }
 
   // ---------------------------------------------------------
@@ -179,7 +210,20 @@ class ApiClient {
     message?: string
   }> {
     const formData = new FormData()
-    formData.append('file', file)
+    // Read the file into memory (a Blob) instead of appending the File directly.
+    // In Electron, `fetch` streaming a File straight from disk intermittently
+    // rejects with a bare "Failed to fetch" (net::ERR while reading the backing
+    // file — moved/locked path, sandbox, special chars in the name), even for
+    // small files. Materializing the bytes first sidesteps that disk-streaming
+    // path; the original name is preserved so the backend keeps the extension.
+    try {
+      const buf = await file.arrayBuffer()
+      formData.append('file', new Blob([buf], { type: file.type }), file.name)
+    } catch {
+      // Reading failed (rare): fall back to the raw File so behavior degrades
+      // gracefully rather than blocking the upload entirely.
+      formData.append('file', file)
+    }
     if (sessionId) formData.append('session_id', sessionId)
     return this.postFormData('/upload', formData)
   }
@@ -506,6 +550,12 @@ class ApiClient {
 
   createLogStream(): EventSource {
     return new EventSource(this.withToken(`${this.baseUrl}/api/logs`))
+  }
+
+  // Full run.log as a downloadable attachment. Carries the token in the query
+  // string like the other file endpoints so it works under web_password.
+  getLogDownloadUrl(): string {
+    return this.withToken(`${this.baseUrl}/api/logs/download`)
   }
 
   async getVersion(): Promise<string> {
