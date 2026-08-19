@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react'
 import { Check, Cpu } from 'lucide-react'
+import { product } from '@product'
 import { t, localizedLabel } from '../i18n'
 import ComposerChip from './ComposerChip'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
@@ -8,7 +9,11 @@ interface ModelSelectorProps {
   sessionId: string
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
+// A build may replace the per-session model chip entirely (e.g. models sourced
+// from a different catalog). Absent -> the built-in provider-grouped menu below.
+const CustomSessionModelPicker = product.models?.SessionModelPicker
+
+const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
   const cfg = useSessionSettingsStore((s) => (s.sessionId === sessionId ? s.cfg : null))
   const openMenu = useSessionSettingsStore((s) => s.openMenu)
   const setOpenMenu = useSessionSettingsStore((s) => s.setOpenMenu)
@@ -89,5 +94,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
     </ComposerChip>
   )
 }
+
+const ModelSelector: React.FC<ModelSelectorProps> = (props) =>
+  CustomSessionModelPicker ? <CustomSessionModelPicker {...props} /> : <CatalogModelSelector {...props} />
 
 export default ModelSelector

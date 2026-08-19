@@ -795,7 +795,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
 
           <div className="flex items-center gap-1 shrink-0 pl-1">
-            <div className="max-w-[160px] min-w-0">
+            <div className="max-w-[200px] min-w-0">
               <ModelSelector sessionId={sessionId} />
             </div>
             {micSupported && (
