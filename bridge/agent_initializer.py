@@ -134,6 +134,15 @@ class AgentInitializer:
         agent.agent_profile = profile
         agent.workspace_dir = workspace_root
 
+        # Bind the system-prompt model line to the agent's *effective* model so a
+        # per-session override (see AgentLLMModel.set_session_override) shows up
+        # there too. Without this the prompt keeps reporting the global config
+        # model, and the LLM — which reads that line — answers with the wrong
+        # model name even though the actual API call used the session's model.
+        llm = getattr(agent, "model", None)
+        if llm is not None and hasattr(llm, "model"):
+            runtime_info["_get_model"] = lambda: getattr(llm, "model", None) or conf().get("model", "unknown")
+
         # Restore persisted conversation history for this session
         if session_id:
             self._restore_conversation_history(agent, session_id)

@@ -19,7 +19,10 @@ import { PaperPlaneIcon } from './icons'
 import { WORKSPACE_DRAG_TYPE } from './FileTree'
 import { iconFor, colorFor } from '../lib/fileKind'
 import WorkspaceSelector from './WorkspaceSelector'
+import PermissionSelector from './PermissionSelector'
+import ModelSelector from './ModelSelector'
 import Tooltip from './Tooltip'
+import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 
 export type ChatInputHandle = (text: string, attachments: Attachment[]) => void
 
@@ -201,6 +204,12 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Per-session model / permission chips follow the active conversation.
+  useEffect(() => {
+    useSessionSettingsStore.getState().refresh(sessionId)
+    useSessionSettingsStore.getState().setOpenMenu(null)
+  }, [sessionId])
+
   // Local actions ('new'/'clear') plus completion commands handled by backend
   // command plugins (cow_cli/godcmd). Commands ending with a space expect an
   // argument, so selecting them keeps focus in the input instead of sending.
@@ -230,16 +239,16 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   // never shows a scrollbar (matches the web console behavior).
   const autoSize = (el: HTMLTextAreaElement | null) => {
     if (!el) return
-    el.style.height = '42px'
-    const h = Math.min(el.scrollHeight, 180)
+    el.style.height = '48px'
+    const h = Math.min(el.scrollHeight, 200)
     el.style.height = h + 'px'
-    el.style.overflowY = el.scrollHeight > 180 ? 'auto' : 'hidden'
+    el.style.overflowY = el.scrollHeight > 200 ? 'auto' : 'hidden'
   }
 
   const resetHeight = () => {
     const el = textareaRef.current
     if (!el) return
-    el.style.height = '42px'
+    el.style.height = '48px'
     el.style.overflowY = 'hidden'
   }
 
@@ -579,9 +588,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
 
   return (
     <div className="flex-shrink-0 border-t border-default bg-surface px-4 py-3">
+      {/* One tall rounded card holds the textarea on top and a toolbar row
+          (chips + actions) at the bottom, matching the web console composer. */}
       <div
-        className={`max-w-3xl mx-auto relative rounded-2xl transition-all ${
-          dragOver ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''
+        className={`max-w-3xl mx-auto relative rounded-2xl border bg-inset transition-colors ${
+          dragOver ? 'border-accent ring-2 ring-accent/30' : 'border-strong focus-within:border-accent'
         }`}
       >
         {dragOver && (
@@ -663,13 +674,9 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
         )}
 
-        {/* Workspace selector (always present) + attachment preview share a row.
-            The selector stays left; attachments grow to its right and scroll.
-            No bottom gap by default (selector sits snug above the input); add a
-            little breathing room only when attachments are shown. */}
-        <div className={`flex items-center gap-2 relative ${attachments.length > 0 ? 'mb-2' : 'mb-0.5'}`}>
-          <WorkspaceSelector sessionId={sessionId} />
-          {attachments.length > 0 && (
+        {/* Attachment previews sit at the top of the card, above the textarea. */}
+        {attachments.length > 0 && (
+          <div className="flex items-center gap-2 relative px-3 pt-2.5">
             <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto overflow-y-visible">
               {attachments.map((att, i) => (
                 <div key={i} className="relative shrink-0">
@@ -712,64 +719,85 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          multiple
+          onChange={handleFileSelect}
+        />
+
+        {/* Textarea sits at the top of the card, borderless (the card owns the
+            border) and taller than a single line so the composer reads tall. */}
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            id="chat-input"
+            value={text}
+            onChange={handleTextChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onCompositionStart={() => (composingRef.current = true)}
+            onCompositionEnd={() => (composingRef.current = false)}
+            placeholder={t('input_placeholder')}
+            rows={1}
+            className="w-full px-4 pt-3 pb-0 bg-transparent text-content placeholder:text-content-tertiary focus:outline-none text-sm leading-relaxed resize-none overflow-y-hidden"
+          />
+          {micError && (
+            // Transient error tip above the input, mirroring the web console.
+            <div className="absolute right-3 bottom-full mb-2 px-2 py-1 rounded-md text-xs text-white bg-black/80 dark:bg-white/20 shadow-md pointer-events-none whitespace-nowrap z-10">
+              {micError}
+            </div>
           )}
         </div>
 
-        <div className="flex items-end gap-2">
-          <div className="flex items-center flex-shrink-0 gap-0.5 pb-0.5">
-            <Tooltip label={t('session_new')}>
-              <button
-                onClick={onNewChat}
-                className="w-9 h-9 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors"
-              >
-                <Plus size={18} />
-              </button>
-            </Tooltip>
-            <Tooltip label={t('chat_attach')}>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="w-9 h-9 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors disabled:opacity-50"
-              >
-                {uploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-              </button>
-            </Tooltip>
-            <Tooltip label={t('chat_clear_context')}>
-              <button
-                onClick={onClearContext}
-                className="w-9 h-9 flex items-center justify-center rounded-btn text-content-secondary hover:text-danger hover:bg-danger-soft cursor-pointer transition-colors"
-              >
-                <Trash2 size={18} />
-              </button>
-            </Tooltip>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            multiple
-            onChange={handleFileSelect}
-          />
+        {/* Toolbar row inside the card: chips on the left, actions on the right.
+            This is what makes the composer read as one tall card like the web
+            console, instead of a short input with controls floating around it.
+            The middle chip group shrinks/truncates so a narrow composer (right
+            panel open) never overflows the card. */}
+        <div className="flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
+          <Tooltip label={t('session_new')}>
+            <button
+              onClick={onNewChat}
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors"
+            >
+              <Plus size={17} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t('chat_attach')}>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors disabled:opacity-50"
+            >
+              {uploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={t('chat_clear_context')}>
+            <button
+              onClick={onClearContext}
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-danger hover:bg-danger-soft cursor-pointer transition-colors"
+            >
+              <Trash2 size={17} />
+            </button>
+          </Tooltip>
 
-          {/* flex items-center mirrors the web console's input wrapper: a plain
-              block div would grow past the textarea (inline-block baseline
-              gap) and throw the overlaid mic button off vertical center. */}
-          <div className="relative flex-1 min-w-0 flex items-center">
-            <textarea
-              ref={textareaRef}
-              id="chat-input"
-              value={text}
-              onChange={handleTextChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onCompositionStart={() => (composingRef.current = true)}
-              onCompositionEnd={() => (composingRef.current = false)}
-              placeholder={t('input_placeholder')}
-              rows={1}
-              // Right padding leaves room for the mic button overlaid inside
-              // the input (same layout as the web console's chat.html).
-              className="w-full pl-4 pr-10 py-[10px] rounded-xl border border-strong bg-inset text-content placeholder:text-content-tertiary focus:outline-none focus:border-accent text-sm leading-relaxed transition-colors resize-none overflow-y-hidden"
-            />
+          <div className="mx-1 h-4 w-px bg-default shrink-0" />
+
+          {/* Chips share the flexible middle; each may shrink and truncate. */}
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            <WorkspaceSelector sessionId={sessionId} />
+            <PermissionSelector sessionId={sessionId} />
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0 pl-1">
+            <div className="max-w-[200px] min-w-0">
+              <ModelSelector sessionId={sessionId} />
+            </div>
             {micSupported && (
               <Tooltip
                 label={
@@ -783,7 +811,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                 <button
                   onClick={toggleMic}
                   disabled={micState === 'busy'}
-                  className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-btn cursor-pointer transition-colors disabled:cursor-not-allowed ${
+                  className={`w-8 h-8 flex items-center justify-center rounded-btn cursor-pointer transition-colors disabled:cursor-not-allowed ${
                     micState === 'recording'
                       ? 'text-red-500 animate-pulse hover:text-red-600'
                       : micState === 'busy'
@@ -801,34 +829,27 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                 </button>
               </Tooltip>
             )}
-            {micError && (
-              // Transient error tip right above the mic, mirroring the web console.
-              <div className="absolute right-0 bottom-full mb-2 px-2 py-1 rounded-md text-xs text-white bg-black/80 dark:bg-white/20 shadow-md pointer-events-none whitespace-nowrap z-10">
-                {micError}
-              </div>
+            {isStreaming ? (
+              <Tooltip label={t('msg_stop')}>
+                <button
+                  onClick={onStop}
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-btn bg-surface-2 text-content hover:bg-inset cursor-pointer transition-colors"
+                >
+                  <Square size={14} className="fill-current" />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip label={t('chat_send')}>
+                <button
+                  onClick={handleSubmit}
+                  disabled={!canSend}
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-btn bg-accent text-white hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-disabled disabled:cursor-not-allowed cursor-pointer transition-none [&_*]:transition-none"
+                >
+                  <PaperPlaneIcon size={14} />
+                </button>
+              </Tooltip>
             )}
           </div>
-
-          {isStreaming ? (
-            <Tooltip label={t('msg_stop')}>
-              <button
-                onClick={onStop}
-                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-btn bg-surface-2 text-content hover:bg-inset cursor-pointer transition-colors"
-              >
-                <Square size={15} className="fill-current" />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip label={t('chat_send')}>
-              <button
-                onClick={handleSubmit}
-                disabled={!canSend}
-                className="flex-shrink-0 w-[42px] h-[42px] flex items-center justify-center rounded-btn bg-accent text-white hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-disabled disabled:cursor-not-allowed cursor-pointer transition-none [&_*]:transition-none"
-              >
-                <PaperPlaneIcon size={15} />
-              </button>
-            </Tooltip>
-          )}
         </div>
       </div>
     </div>

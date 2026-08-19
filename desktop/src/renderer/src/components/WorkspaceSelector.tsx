@@ -5,6 +5,8 @@ import apiClient from '../api/client'
 import type { ProjectState } from '../types'
 import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useSessionStore } from '../store/sessionStore'
+import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 import Tooltip from './Tooltip'
 
 interface WorkspaceSelectorProps {
@@ -19,7 +21,9 @@ interface WorkspaceSelectorProps {
  */
 const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
   const [state, setState] = useState<ProjectState | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const openMenu = useSessionSettingsStore((s) => s.openMenu)
+  const setOpenMenu = useSessionSettingsStore((s) => s.setOpenMenu)
+  const menuOpen = openMenu === 'workspace'
   const [newOpen, setNewOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newError, setNewError] = useState('')
@@ -48,11 +52,11 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
   useEffect(() => {
     if (!menuOpen) return
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMenuOpen(false)
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenMenu(null)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [menuOpen])
+  }, [menuOpen, setOpenMenu])
 
   const current = state?.current || null
   const label = current ? current.name : t('ws_default_workspace')
@@ -65,10 +69,12 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
     setState(next)
     openPanel('files')
     reloadRoot()
+    // Grouping in the session list depends on how many spaces are in play.
+    useSessionStore.getState().loadSessions(1)
   }
 
   const selectProject = async (projectDir: string | null) => {
-    setMenuOpen(false)
+    setOpenMenu(null)
     setBusy(true)
     try {
       const res = await apiClient.selectProject(sessionId, projectDir)
@@ -82,13 +88,13 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
 
   // Open project: native OS folder picker (Electron), then bind the directory.
   const openProject = async () => {
-    setMenuOpen(false)
+    setOpenMenu(null)
     const picked = await window.electronAPI?.selectDirectory?.()
     if (picked) await selectProject(picked)
   }
 
   const openNewDialog = () => {
-    setMenuOpen(false)
+    setOpenMenu(null)
     setNewName('')
     setNewError('')
     setNewOpen(true)
@@ -123,16 +129,20 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
   const recents = state?.recents || []
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-0">
       <Tooltip label={fullPath || t('ws_sel_tip')}>
         <button
           type="button"
-          onClick={() => setMenuOpen((v) => !v)}
+          onClick={() => setOpenMenu(menuOpen ? null : 'workspace')}
           disabled={busy}
-          className="flex-shrink-0 inline-flex items-center gap-1.5 pl-2 pr-2 py-0.5 rounded-btn text-xs text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors max-w-[240px] disabled:opacity-50"
+          className={`inline-flex items-center gap-1.5 h-8 px-2 rounded-btn text-xs cursor-pointer transition-colors max-w-full min-w-0 disabled:opacity-50 ${
+            menuOpen
+              ? 'text-accent bg-accent-soft'
+              : 'text-content-secondary hover:text-accent hover:bg-accent-soft'
+          }`}
         >
           <FolderOpen size={13} className="shrink-0" />
-          <span className="truncate max-w-[190px]">{label}</span>
+          <span className="truncate">{label}</span>
           <ChevronDown size={11} className="opacity-60 shrink-0" />
         </button>
       </Tooltip>

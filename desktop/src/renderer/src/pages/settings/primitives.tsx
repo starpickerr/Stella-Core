@@ -23,13 +23,19 @@ export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: s
   </div>
 )
 
-export const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({
-  label,
-  hint,
-  children,
-}) => (
+export const Field: React.FC<{
+  label: string
+  hint?: string
+  // Optional trailing element on the label row (right-aligned), e.g. a helper
+  // link. Kept generic so any build can attach an action next to a field.
+  labelAction?: React.ReactNode
+  children: React.ReactNode
+}> = ({ label, hint, labelAction, children }) => (
   <div>
-    <label className="block text-sm font-medium text-content-secondary mb-1.5">{label}</label>
+    <div className="mb-1.5 flex items-center justify-between gap-2">
+      <label className="block text-sm font-medium text-content-secondary">{label}</label>
+      {labelAction}
+    </div>
     {children}
     {hint && <p className="text-xs text-content-tertiary mt-1">{hint}</p>}
   </div>
