@@ -37,6 +37,11 @@ from config import (
     sync_image_generation_custom_provider_env,
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
+from agent.permission import (
+    MODES as PERMISSION_MODES,
+    global_mode as permission_global_mode,
+    normalize_mode as permission_normalize_mode,
+)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -984,6 +989,11 @@ class WebChannel(ChatChannel):
                     "result": result_str,
                     "execution_time": round(exec_time, 2)
                 }
+                # Carry the permission-refusal marker so the UI can offer a
+                # one-click "switch permission" hint rather than a generic error.
+                if data.get("permission_denied"):
+                    payload["permission_denied"] = True
+                    payload["permission_mode"] = data.get("permission_mode")
                 # A tool that wrote its outcome for a person sends that
                 # instead. It gets a far larger budget than `result`: this is
                 # the report itself, not a trace of how it was produced.
@@ -1964,6 +1974,8 @@ class WebChannel(ChatChannel):
             '/api/projects/select', 'ProjectSelectHandler',
             '/api/projects/create', 'ProjectCreateHandler',
             '/api/projects/browse', 'ProjectBrowseHandler',
+            '/api/projects/order', 'ProjectOrderHandler',
+            '/api/projects/manage', 'ProjectManageHandler',
             '/api/voice/asr', 'VoiceAsrHandler',
             '/api/voice/tts', 'VoiceTtsHandler',
             '/poll', 'PollHandler',
@@ -1993,9 +2005,11 @@ class WebChannel(ChatChannel):
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
             '/api/prompt/optimize', 'PromptOptimizeHandler',
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
+            '/api/sessions/(.*)/settings', 'SessionSettingsHandler',
             '/api/sessions/(.*)', 'SessionDetailHandler',
             '/api/history', 'HistoryHandler',
             '/api/messages/delete', 'MessageDeleteHandler',
+            '/api/logs/download', 'LogsDownloadHandler',
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
             '/mcp/oauth/callback', 'McpOAuthCallbackHandler',
@@ -2022,6 +2036,14 @@ class WebChannel(ChatChannel):
         server.timeout = 300
         server.requests.min = 20
         server.requests.max = 80
+        # Allow large attachments (screenshots, PDFs, short videos). cheroot's
+        # default is unlimited (0), but pin an explicit, generous cap so an
+        # oversized body fails with a clean 413 instead of a connection reset
+        # that surfaces in the client as an opaque "Failed to fetch".
+        try:
+            server.max_request_body_size = 512 * 1024 * 1024  # 512 MB
+        except Exception:
+            pass
         self._http_server = server
         # Reclaim orphaned SSE logs so disconnected clients don't leak memory.
         self._start_sse_janitor()
@@ -2618,6 +2640,7 @@ class ConfigHandler:
         "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
+        "agent_permission_mode",
     }
 
     # Switches the API exposes flat - one key, one control - while the config
@@ -2725,6 +2748,9 @@ class ConfigHandler:
                 # applies to an absent setting is the one shown here.
                 "self_evolution_enabled": get_evolution_config().enabled,
                 "subagent_enabled": SubagentSettings.from_config().enabled,
+                # Default permission mode for sessions that have not pinned one.
+                "agent_permission_mode": permission_global_mode(),
+                "permission_modes": list(PERMISSION_MODES),
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
                 "providers": providers,
@@ -2763,6 +2789,10 @@ class ConfigHandler:
                     value = int(value)
                 if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)
+                # Never persist an unknown mode: every later read would silently
+                # fall back and the UI would show a setting that does nothing.
+                if key == "agent_permission_mode":
+                    value = permission_normalize_mode(value)
                 # reasoning_effort_by_model is a dict that must be *merged* with
                 # the persisted map, not replaced. A frontend submits only the
                 # entries it changed (merged locally), so whole-key replacement
@@ -5698,12 +5728,58 @@ class SchedulerDeleteHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _annotate_sessions_with_projects(store, result: dict, agent_id: Optional[str]) -> None:
+    """Attach each session's project space, and say how to group the list.
+
+    ``group_mode`` is decided here rather than in the browser because the client
+    only ever holds one page: whether more than one space is in play is a fact
+    about all sessions, not about the fifty currently on screen.
+
+    - ``time``    one space in use (the common case) - group by 今天/昨天/更早,
+                  exactly as before projects existed.
+    - ``project`` several spaces in use - group by project, so multi-project
+                  users can find a conversation by where it belongs.
+    """
+    from agent.workspace import project_store
+    from common.state_dir import state_root_str
+
+    project_map = project_store.get_project_map(agent_id)
+    default_workspace = state_root_str()
+
+    for session in result.get("sessions") or []:
+        path = project_map.get(session["session_id"])
+        session["project"] = (
+            {"path": path, "name": project_store.display_name_for(path)}
+            if path else None
+        )
+
+    # Distinct spaces across every web session, default workspace included as
+    # one space when any session is still using it.
+    space_paths = set()
+    uses_default = False
+    for sid in store.list_session_ids(channel_type="web"):
+        path = project_map.get(sid)
+        if path:
+            space_paths.add(path)
+        else:
+            uses_default = True
+
+    result["space_count"] = len(space_paths) + (1 if uses_default else 0)
+    result["group_mode"] = "project" if result["space_count"] > 1 else "time"
+    result["default_workspace"] = default_workspace
+    # The user's chosen sidebar order of spaces (project paths + the default
+    # sentinel). The client uses it to sort project groups; unspecified spaces
+    # fall back after the ordered ones.
+    result["project_order"] = project_store.get_order()
+
+
 class SessionsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            params = web.input(page='1', page_size='50')
+            params = web.input(page='1', page_size='50', agent='')
+            agent_id = params.agent or None
             from agent.memory import get_conversation_store
             store = get_conversation_store()
             result = store.list_sessions(
@@ -5711,6 +5787,7 @@ class SessionsHandler:
                 page=int(params.page),
                 page_size=int(params.page_size),
             )
+            _annotate_sessions_with_projects(store, result, agent_id)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Sessions API error: {e}")
@@ -5745,6 +5822,16 @@ class SessionDetailHandler:
             store = get_conversation_store()
             store.clear_session(session_id)
 
+            # Drop the session's side stores too. Left behind, a stale project
+            # binding would keep inflating the "how many spaces are in use"
+            # count that decides how the session list is grouped.
+            try:
+                from agent.workspace import project_store, session_prefs
+                project_store.forget_session(session_id)
+                session_prefs.forget_session(session_id)
+            except Exception as e:
+                logger.debug(f"[WebChannel] Session side-store cleanup skipped: {e}")
+
             # Also remove the Agent instance from AgentBridge if exists
             try:
                 from bridge.bridge import Bridge
@@ -5769,24 +5856,199 @@ class SessionDetailHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
     def PUT(self, session_id: str):
+        """Update a session's title and/or its pinned flag."""
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
             body = json.loads(web.data())
-            title = body.get("title", "").strip()
-            if not title:
-                return json.dumps({"status": "error", "message": "title required"})
+            title = (body.get("title") or "").strip()
+            pinned = body.get("pinned")
+            if not title and pinned is None:
+                return json.dumps({"status": "error", "message": "title or pinned required"})
 
             from agent.memory import get_conversation_store
             store = get_conversation_store()
-            found = store.rename_session(session_id, title)
+
+            found = True
+            if title:
+                found = store.rename_session(session_id, title)
+            if pinned is not None:
+                found = store.set_pinned(session_id, bool(pinned)) and found
             if not found:
+                # A session only gets a row once its first message is stored, so
+                # this is also what a pin on a brand-new empty chat looks like.
                 return json.dumps({"status": "error", "message": "session not found"})
             return json.dumps({"status": "success"})
         except Exception as e:
-            logger.error(f"[WebChannel] Session rename error: {e}")
+            logger.error(f"[WebChannel] Session update error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+def _session_model_catalog() -> List[dict]:
+    """Providers a session may switch to, newest-first within each provider.
+
+    Only providers with a credential on file are offered: listing one without an
+    API key would let the user pick a model that fails on the next message.
+    The globally active provider is always included, even if its key lives in
+    the environment rather than in config.json.
+    """
+    local_config = conf()
+    active_bot_type = local_config.get("bot_type") or ""
+    active_provider = "openai" if active_bot_type == const.CHATGPT else active_bot_type
+    if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
+        active_provider = "linkai"
+
+    catalog: List[dict] = []
+    for pid, pinfo in ConfigHandler.PROVIDER_MODELS.items():
+        if pid == "custom" or not pinfo.get("models"):
+            continue
+        key_field = pinfo.get("api_key_field")
+        has_key = bool(key_field and str(local_config.get(key_field) or "").strip())
+        if not has_key and pid != active_provider:
+            continue
+        catalog.append({
+            "id": pid,
+            "label": pinfo["label"],
+            "models": list(pinfo["models"]),
+        })
+
+    # User-defined OpenAI-compatible providers carry their own credentials.
+    try:
+        from models.custom_provider import get_custom_providers
+        for cp in get_custom_providers():
+            if not cp.get("model"):
+                continue
+            name = cp.get("name") or cp.get("id")
+            catalog.append({
+                "id": f"custom:{cp.get('id')}",
+                "label": {"zh": name, "en": name},
+                "models": [cp["model"]],
+            })
+    except Exception as e:
+        logger.debug(f"[WebChannel] custom providers unavailable: {e}")
+
+    return catalog
+
+
+def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
+    """Effective model + permission for a session, and what it can be changed to.
+
+    ``source`` tells the UI whether a value is this conversation's own choice or
+    inherited, so it can show "follow global" as a real, selectable state instead
+    of silently duplicating the global value onto every session.
+    """
+    from agent.workspace import session_prefs
+
+    local_config = conf()
+    prefs = session_prefs.get_prefs(session_id, agent_id)
+
+    global_bot_type = local_config.get("bot_type") or ""
+    global_provider = "openai" if global_bot_type == const.CHATGPT else global_bot_type
+    if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
+        global_provider = "linkai"
+    global_model = local_config.get("model") or ""
+    global_permission = permission_global_mode()
+
+    return {
+        "model": {
+            "model": prefs.get("model") or global_model,
+            "provider": prefs.get("provider") or global_provider,
+            "source": "session" if prefs.get("model") else "global",
+            "global": {"model": global_model, "provider": global_provider},
+            "providers": _session_model_catalog(),
+        },
+        "permission": {
+            "mode": (
+                permission_normalize_mode(prefs["permission"], global_permission)
+                if prefs.get("permission") else global_permission
+            ),
+            "source": "session" if prefs.get("permission") else "global",
+            "global": global_permission,
+            "modes": list(PERMISSION_MODES),
+        },
+    }
+
+
+class SessionSettingsHandler:
+    """Per-session model and permission overrides.
+
+    Both are stored outside the sessions table (see session_prefs) so they can be
+    set before the conversation has its first message, and both fall back to the
+    global config when unset.
+    """
+
+    def GET(self, session_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            if not session_id:
+                return json.dumps({"status": "error", "message": "session_id required"})
+            params = web.input(agent='')
+            state = _session_settings_state(session_id, params.agent or None)
+            return json.dumps({"status": "success", **state}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Session settings read error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self, session_id: str):
+        """Set or clear this session's model / permission.
+
+        Send ``null`` for a field to drop the override and follow the global
+        setting again. ``model`` and ``provider`` move together: a model without
+        its provider would be routed by the global bot type.
+        """
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            if not session_id:
+                return json.dumps({"status": "error", "message": "session_id required"})
+
+            from agent.workspace import session_prefs
+            body = json.loads(web.data() or b"{}")
+            agent_id = body.get("agent") or body.get("agent_id")
+
+            updates = {}
+            if "permission" in body:
+                mode = body.get("permission")
+                updates["permission"] = (
+                    permission_normalize_mode(mode) if mode else None
+                )
+            if "model" in body or "provider" in body:
+                model = (body.get("model") or "").strip() or None
+                provider = (body.get("provider") or "").strip() or None
+                # Clearing the model clears its provider too: a pinned provider
+                # with no model would route the global model to the wrong vendor.
+                updates["model"] = model
+                updates["provider"] = provider if model else None
+
+            if not updates:
+                return json.dumps({
+                    "status": "error",
+                    "message": "permission, model or provider required",
+                })
+
+            session_prefs.set_prefs(session_id, agent_id, **updates)
+
+            # Retarget the live agent so the change lands on the next message
+            # without waiting for a fresh get_agent.
+            try:
+                from bridge.bridge import Bridge
+                ab = Bridge().get_agent_bridge()
+                agent = ab.get_cached_agent(session_id, agent_id)
+                if agent is not None:
+                    ab.apply_session_prefs(agent, session_id, agent_id)
+            except Exception as e:
+                logger.debug(f"[WebChannel] session prefs apply-to-agent skipped: {e}")
+
+            logger.info(
+                f"[WebChannel] Session settings updated: sid={session_id}, {updates}"
+            )
+            state = _session_settings_state(session_id, agent_id)
+            return json.dumps({"status": "success", **state}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Session settings update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5980,6 +6242,35 @@ class LogsHandler:
                 return
 
         return generate()
+
+
+class LogsDownloadHandler:
+    """Serve the full run.log as a file download for offline troubleshooting.
+
+    The /api/logs stream only replays the last 200 lines; this returns the whole
+    file so users can attach it to a bug report.
+    """
+
+    def GET(self):
+        _require_auth()
+        log_path = os.path.join(get_data_root(), "run.log")
+        if not os.path.isfile(log_path):
+            raise web.notfound()
+
+        try:
+            with open(log_path, 'rb') as f:
+                data = f.read()
+        except Exception as e:
+            logger.error(f"[WebChannel] Log download error: {e}")
+            raise web.internalerror()
+
+        # Timestamped name so multiple downloads don't overwrite each other.
+        fname = f"cowagent-{time.strftime('%Y%m%d-%H%M%S')}.log"
+        web.header('Content-Type', 'text/plain; charset=utf-8')
+        web.header('Content-Disposition', f'attachment; filename="{fname}"')
+        web.header('Content-Length', str(len(data)))
+        web.header('Cache-Control', 'no-store')
+        return data
 
 
 class AssetsHandler:
@@ -6275,6 +6566,65 @@ class ProjectCreateHandler:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
             logger.error(f"[WebChannel] Project create error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class ProjectOrderHandler:
+    """Persist the user's chosen sidebar order of project spaces."""
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.workspace import project_store
+            body = json.loads(web.data() or b"{}")
+            order = body.get("order")
+            if not isinstance(order, list):
+                return json.dumps({"status": "error", "message": "order must be a list"})
+            saved = project_store.set_order(order)
+            return json.dumps({"status": "success", "order": saved}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Project order error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class ProjectManageHandler:
+    """Rename (PUT) or delete (DELETE) a project record.
+
+    Neither touches the folder on disk: a rename only sets a display name, and a
+    delete only forgets the CowAgent record and unbinds any sessions (they revert
+    to the default workspace). The files stay exactly where they are.
+    """
+
+    def PUT(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.workspace import project_store
+            body = json.loads(web.data() or b"{}")
+            path = (body.get("path") or "").strip()
+            if not path:
+                return json.dumps({"status": "error", "message": "path is required"})
+            name = project_store.rename_project(path, body.get("name") or "")
+            return json.dumps({"status": "success", "name": name}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Project rename error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def DELETE(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.workspace import project_store
+            body = json.loads(web.data() or b"{}")
+            path = (body.get("path") or "").strip()
+            agent_id = body.get("agent") or body.get("agent_id")
+            if not path:
+                return json.dumps({"status": "error", "message": "path is required"})
+            unbound = project_store.delete_project(path, agent_id)
+            return json.dumps({"status": "success", "unbound": unbound}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Project delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
