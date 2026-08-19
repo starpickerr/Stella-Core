@@ -19,6 +19,7 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
   const setOpenMenu = useSessionSettingsStore((s) => s.setOpenMenu)
   const apply = useSessionSettingsStore((s) => s.apply)
   const refresh = useSessionSettingsStore((s) => s.refresh)
+  const error = useSessionSettingsStore((s) => s.error)
   const open = openMenu === 'model'
 
   const state = cfg?.model
@@ -41,8 +42,9 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
   }
 
   const select = async (provider: string | null, nextModel: string | null) => {
-    close()
-    await apply(sessionId, { provider, model: nextModel })
+    // Keep the menu open if the change fails, so the inline error is visible.
+    const ok = await apply(sessionId, { provider, model: nextModel })
+    if (ok) close()
   }
 
   const tip =
@@ -63,6 +65,7 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
       <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold text-content-tertiary">
         {t('model_menu_title')}
       </div>
+      {error && <div className="px-2.5 pb-1.5 text-[11px] text-red-500">{error}</div>}
       {providers.length === 0 && (
         <div className="px-2.5 py-2 text-[13px] text-content-tertiary">{t('model_unset')}</div>
       )}
