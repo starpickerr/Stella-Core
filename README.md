@@ -215,6 +215,8 @@ Learn more: [Skills overview](https://docs.cowagent.ai/skills/index) · [Creatin
 
 ## 🏷 Changelog
 
+> **2026.08.20:** [v2.1.7](https://github.com/zhayujie/CowAgent/releases/tag/2.1.7) — Multiple workspaces, session-level permission modes, task notifications, desktop improvements, plus new model support.
+
 > **2026.08.12:** [v2.1.6](https://github.com/zhayujie/CowAgent/releases/tag/2.1.6) — Sub agents for parallel task delegation, reasoning-effort settings, a pluggable memory vector backend, plus experience and security improvements.
 
 > **2026.07.29:** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — Workspace with file preview, core tool improvements (file search, write-time validation, background commands), context compaction (`/compact`), one-click prompt optimization, security hardening.

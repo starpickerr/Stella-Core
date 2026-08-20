@@ -7,17 +7,17 @@ description: CowAgent 2.1.7：支持多工作空间与会话隔离，新增会�
 
 ## 🗂 多工作空间与会话隔离
 
-Agent 不再固定在单一目录下工作，可创建多个工作空间并按会话隔离使用，Web 控制台和桌面客户端均支持：
+Agent 不再固定在单一目录下工作，可创建多个项目工作空间并按会话隔离使用，Web 控制台和桌面客户端均支持：
 
 - **多工作空间**：可新建或打开任意目录作为项目空间，Agent 的文稿、网页、代码等产物在其中生成与管理。
-- **空间切换**：每个会话可绑定各自的工作空间，多任务运行互不干扰。
+- **空间切换**：每个会话可绑定各自的项目空间，多任务运行互不干扰。
 - **模型切换**：可为单个会话切换不同模型，新会话默认使用全局配置的默认模型。
 - **会话分组**：会话列表按所属工作空间分组展示，支持置顶、重排、重命名与删除。
-- **系统资源共用**：记忆、技能、知识库等资源仍保留在系统空间（默认为 `~/cow`）。
+- **系统资源共用**：记忆、技能、知识库等资源仍保留在系统工作空间（默认为 `~/cow`）。
 
 <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-workspace-project-demo.png" width="800" />
 
-相关文档：[架构与目录](https://docs.cowagent.ai/zh/intro/architecture)
+相关文档：[工作空间](https://docs.cowagent.ai/zh/intro/architecture#workspace)
 
 ## 🔐 权限模式
 
@@ -27,7 +27,7 @@ Agent 不再固定在单一目录下工作，可创建多个工作空间并按�
 - **默认权限设置**：支持设置默认权限模式，新会话按该默认值创建。
 - **拒绝提示可点击**：工具调用因权限被拦截时，给出可点击的提示，便于快速调整权限。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-access-mode.png" width="800" />
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-access-mode.png" width="600" />
 
 ## 🖥 桌面客户端
 
