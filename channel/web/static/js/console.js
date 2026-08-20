@@ -14,7 +14,7 @@ const I18N = {
     zh: {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_config: '配置', menu_models: '模型', menu_skills: '技能',
+        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
         models_title: '模型管理',
@@ -140,6 +140,8 @@ const I18N = {
         notify_task_done: '任务完成',
         notify_task_error: '任务失败',
         config_model_advanced: '高级配置',
+        settings_tab_basic: '基础配置',
+        settings_tab_models: '模型配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
         config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '对话中 Agent 能输入的最大 Token 长度，超过后会智能压缩处理',
@@ -331,7 +333,7 @@ const I18N = {
 
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
-        menu_chat: '對話', menu_config: '設定', menu_models: '模型', menu_skills: '技能',
+        menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
         menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
         menu_logs: '日誌',
         models_title: '模型管理',
@@ -457,6 +459,8 @@ const I18N = {
         notify_task_done: '任務完成',
         notify_task_error: '任務失敗',
         config_model_advanced: '高階設定',
+        settings_tab_basic: '基礎設定',
+        settings_tab_models: '模型設定',
         config_channel: '管道設定',
         config_agent_enabled: 'Agent 模式',
         config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '對話中 Agent 能輸入的最大 Token 長度，超過後會智慧壓縮處理',
@@ -643,7 +647,7 @@ const I18N = {
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_config: 'Config', menu_models: 'Models', menu_skills: 'Skills',
+        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
         menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
         menu_logs: 'Logs',
         models_title: 'Models',
@@ -769,6 +773,8 @@ const I18N = {
         notify_task_done: 'Task finished',
         notify_task_error: 'Task failed',
         config_model_advanced: 'Advanced',
+        settings_tab_basic: 'Basic',
+        settings_tab_models: 'Models',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
         config_max_tokens: 'Max Context Tokens', config_max_tokens_hint: 'Max tokens the Agent can input per conversation, auto-compressed when exceeded',
@@ -1141,7 +1147,7 @@ document.addEventListener('click', (e) => {
 // Refresh JS-rendered views after a language switch. Each branch uses the
 // lightweight in-memory re-render path (no extra network round-trips).
 function rerenderDynamicViews() {
-    if (currentView === 'models' && typeof renderModelsView === 'function'
+    if (currentView === 'config' && _configModelsLoaded && typeof renderModelsView === 'function'
             && modelsState && (modelsState.providers || modelsState.capabilities)) {
         renderModelsView();
     }
@@ -1414,7 +1420,6 @@ document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 const VIEW_META = {
     chat:     { group: 'nav_chat',    page: 'menu_chat' },
     config:   { group: 'nav_manage',  page: 'menu_config' },
-    models:   { group: 'nav_manage',  page: 'menu_models' },
     skills:   { group: 'nav_manage',  page: 'menu_skills' },
     memory:   { group: 'nav_manage',  page: 'menu_memory' },
     knowledge:{ group: 'nav_manage',  page: 'menu_knowledge' },
@@ -7093,6 +7098,28 @@ function switchMemoryTab(tab) {
     loadMemoryView(1);
 }
 
+// Tracks whether the "模型配置" tab has fetched its data at least once, so we
+// only hit /api/models when the user actually opens that tab.
+let _configModelsLoaded = false;
+
+function switchConfigTab(tab) {
+    document.querySelectorAll('.config-tab').forEach(el => el.classList.remove('active'));
+    const tabBtn = document.getElementById('config-tab-' + tab);
+    if (tabBtn) tabBtn.classList.add('active');
+
+    const basicPanel = document.getElementById('config-panel-basic');
+    const modelsPanel = document.getElementById('config-panel-models');
+    if (basicPanel) basicPanel.classList.toggle('hidden', tab !== 'basic');
+    if (modelsPanel) modelsPanel.classList.toggle('hidden', tab !== 'models');
+
+    if (tab === 'models' && !_configModelsLoaded) {
+        // Lazy-load the advanced vendor/capability data on first open only;
+        // afterwards the rendered content persists in the DOM.
+        loadModelsView();
+        _configModelsLoaded = true;
+    }
+}
+
 function loadMemoryView(page) {
     page = page || 1;
     memoryPage = page;
@@ -7271,7 +7298,7 @@ function loadModelsView(opts) {
     const preserveScroll = !!(opts && opts.preserveScroll);
     // The Models pane has its own scrollable container; capture its position
     // (not window.scrollY) so we can put the user back exactly where they were.
-    const scroller = document.querySelector('#view-models .overflow-y-auto');
+    const scroller = document.querySelector('#view-config .overflow-y-auto');
     const savedTop = preserveScroll && scroller ? scroller.scrollTop : null;
 
     loading.classList.remove('hidden');
@@ -7330,6 +7357,11 @@ function renderVendorsSection() {
                 <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_section_vendors')}</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t('models_section_vendors_desc')}</p>
             </div>
+            <button onclick="openVendorModal('')"
+                    class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                           bg-primary-500 hover:bg-primary-600 text-white cursor-pointer transition-colors duration-150">
+                <i class="fas fa-plus text-[10px]"></i>${t('models_add_vendor')}
+            </button>
         </div>`;
 
     let body;
@@ -7337,10 +7369,6 @@ function renderVendorsSection() {
         body = `
             <div class="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-slate-200 dark:border-white/10">
                 <p class="text-sm text-slate-500 dark:text-slate-400 text-center">${t('models_not_configured')}</p>
-                <button onclick="openVendorModal('')"
-                        class="mt-3 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer transition-colors">
-                    <i class="fas fa-plus text-[10px] mr-1"></i>${t('models_add_vendor')}
-                </button>
             </div>`;
     } else {
         body = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10161,11 +10189,19 @@ navigateTo = function(viewId) {
     // Stop log stream when leaving logs view
     if (currentView === 'logs' && viewId !== 'logs') stopLogStream();
 
+    // Back-compat: the standalone "models" view is now a tab inside "config".
+    // Redirect any legacy navigateTo('models') to config + models tab.
+    if (viewId === 'models') {
+        _origNavigateTo('config');
+        loadConfigView();
+        switchConfigTab('models');
+        return;
+    }
+
     _origNavigateTo(viewId);
 
     // Lazy-load view data
-    if (viewId === 'config') loadConfigView();
-    else if (viewId === 'models') loadModelsView();
+    if (viewId === 'config') { loadConfigView(); switchConfigTab('basic'); }
     else if (viewId === 'skills') loadSkillsView();
     else if (viewId === 'memory') {
         document.getElementById('memory-panel-viewer').classList.add('hidden');
