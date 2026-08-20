@@ -262,17 +262,14 @@ class Agent:
 
     def _get_model_context_window(self) -> int:
         """
-        Get the model's context window size in tokens.
+        Get the model's *total* context window size in tokens (input + output).
         Auto-detect based on model name.
-        
-        Model context windows:
-        - Claude 3.5/3.7 Sonnet: 200K tokens
-        - Claude 3 Opus: 200K tokens
-        - GPT-4 Turbo/128K: 128K tokens
-        - GPT-4: 8K-32K tokens
-        - GPT-3.5: 16K tokens
-        - DeepSeek: 64K tokens
-        
+
+        This is the hard ceiling the provider enforces on prompt tokens plus
+        the completion budget. Trimming must leave room for the completion (see
+        `_get_output_reserve_tokens`), otherwise a full-window prompt plus the
+        server-side default `max_tokens` overflows and the request 400s.
+
         :return: Context window size in tokens
         """
         if self.model and hasattr(self.model, 'model'):
@@ -298,10 +295,12 @@ class Agent:
                 else:
                     return 4000
 
-            # DeepSeek
+            # DeepSeek: V4 family ships a 1M window; legacy chat/reasoner is 64K.
             elif 'deepseek' in model_name:
+                if 'v4' in model_name:
+                    return 1000000
                 return 64000
-            
+
             # Gemini models
             elif 'gemini' in model_name:
                 if '2.0' in model_name or 'exp' in model_name:
@@ -311,6 +310,27 @@ class Agent:
 
         # Default conservative value
         return 128000
+
+    def _get_output_reserve_tokens(self) -> int:
+        """
+        Tokens to hold back from the input budget for the model's completion.
+
+        A model's context window is shared by the prompt and the reply. Providers
+        (and proxies such as LinkAI) attach a large default `max_tokens` for
+        agent-mode models — DeepSeek V4, for example, can be asked for up to 384K
+        output tokens. If we let the trimmed prompt fill the whole window, prompt +
+        that completion budget exceeds the window and the request is rejected with
+        "maximum context length ... you requested N tokens", which then loops.
+
+        Scale the reserve with the window so small models keep a modest buffer and
+        large ones (V4's 1M) reserve enough for their oversized completion default,
+        while never eating more than ~40% of the window.
+        """
+        context_window = self._get_model_context_window()
+        # ~40% of the window, clamped to a sane floor/ceiling. 400K covers the
+        # 384K completion default that large-window agent models request.
+        reserve = int(context_window * 0.4)
+        return max(8000, min(400000, reserve))
 
     def _get_context_reserve_tokens(self) -> int:
         """
