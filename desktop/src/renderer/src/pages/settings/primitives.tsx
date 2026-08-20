@@ -151,7 +151,15 @@ export const Dropdown: React.FC<{
             {options.map((o) => (
               <div
                 key={o.value}
-                onClick={() => {
+                // Select on mousedown, not click: the document-level mousedown
+                // listener that closes the menu can otherwise fire first (e.g.
+                // on the very first open, before menuRef is populated) and swallow
+                // the click, which made the first option look unselectable.
+                // preventDefault keeps focus stable; stopPropagation stops the
+                // outside-close handler from also running for this same event.
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
                   onChange(o.value)
                   setOpen(false)
                 }}
