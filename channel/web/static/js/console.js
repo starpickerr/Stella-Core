@@ -269,6 +269,7 @@ const I18N = {
         unpin_session: '取消置顶',
         project_rename: '重命名项目',
         project_delete: '删除项目',
+        project_new_chat: '新建会话',
         project_rename_title: '重命名项目',
         project_delete_title: '删除项目',
         project_delete_confirm: '确认删除项目「{name}」？仅移除项目记录，磁盘上的文件不会被删除，其下会话将回到默认空间。',
@@ -588,6 +589,7 @@ const I18N = {
         unpin_session: '取消置頂',
         project_rename: '重新命名專案',
         project_delete: '刪除專案',
+        project_new_chat: '新建會話',
         project_rename_title: '重新命名專案',
         project_delete_title: '刪除專案',
         project_delete_confirm: '確認刪除專案「{name}」？僅移除專案記錄，磁碟上的檔案不會被刪除，其下會話將回到預設空間。',
@@ -902,6 +904,7 @@ const I18N = {
         unpin_session: 'Unpin',
         project_rename: 'Rename project',
         project_delete: 'Delete project',
+        project_new_chat: 'New chat',
         project_rename_title: 'Rename project',
         project_delete_title: 'Delete project',
         project_delete_confirm: 'Delete project “{name}”? Only the project record is removed — files on disk are kept, and its chats revert to the default workspace.',
@@ -1060,6 +1063,10 @@ function setLanguage(lang) {
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
+    // Session-panel labels (default space, today/yesterday, pinned group) are
+    // produced via t() at render time, so repaint the list to pick up the new
+    // language instead of leaving stale text like "默认空间" under English.
+    if (sessionPanelOpen && _sessionItems.length) _renderSessionList();
     // Keep the language switch button and config selector visually in sync.
     try { updateLangControls(); } catch (e) {}
     
@@ -2872,8 +2879,40 @@ async function _wsSelApply(url, body) {
         if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
         _wsSelUpdateLabel();
         _wsSelRevealFiles();
+        // Surface the change in the history sidebar too: opening/creating a
+        // project should immediately show its group with the current session
+        // filed inside it. Open the panel if closed, uncollapse the target
+        // group, then reload so grouping/counts reflect the new binding.
+        _revealSpaceInSessionPanel(_wsSelState.current ? _wsSelState.current.path : DEFAULT_SPACE_KEY);
         return true;
     } catch (e) { _wsToast(String(e.message || e)); return false; }
+}
+
+// Ensure the history sidebar is open and the given space's group is expanded,
+// then reload the session list so the just-bound session shows under it.
+function _revealSpaceInSessionPanel(spaceKey) {
+    const panel = document.getElementById('session-panel');
+    if (panel && !sessionPanelOpen) {
+        sessionPanelOpen = true;
+        panel.classList.remove('hidden');
+        _showSessionOverlay();
+        _persistPanelState();
+    }
+    if (spaceKey && _collapsedProjects.has(spaceKey)) {
+        _collapsedProjects.delete(spaceKey);
+        _saveCollapsed(_collapsedProjects);
+    }
+    // Keep the current session visible even if it has no backend record yet
+    // (a fresh chat that just got a workspace but no first message): re-add it
+    // as an optimistic item so it appears inside the newly opened space.
+    const curSid = sessionId;
+    loadSessionList(() => {
+        if (!_sessionItems.some(s => s.session_id === curSid)) {
+            _addOptimisticSessionItem(curSid);
+        }
+        // Select the current session in the reloaded list and scroll to it.
+        _revealActiveSession();
+    });
 }
 
 // Open (or refresh) the right-hand file panel on the Files tab so the newly
@@ -5385,6 +5424,53 @@ function newChat(optimistic = true) {
     }
 }
 
+// Start a fresh conversation filed under a given space (project path, or null
+// for the default workspace), triggered by the "+" on a session-group header.
+// The default case is just newChat(); a project also binds the fresh session to
+// that project so the optimistic item lands under the right group.
+async function newChatInSpace(projectPath) {
+    // newChat() already: resets the view, auto-opens the history panel, and
+    // prepends an optimistic item (which inherits _wsSelState.current). For the
+    // default space that is exactly what we want.
+    newChat();
+    if (!projectPath) return;
+
+    const newSid = sessionId;
+    try {
+        const res = await fetch('/api/projects/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: newSid, project_dir: projectPath }),
+        });
+        const data = await res.json();
+        if (data.status !== 'success') { _wsToast(data.message || 'failed'); return; }
+        // Reflect the binding in the composer selector state + label.
+        _wsSelState.current = data.current || null;
+        if (Array.isArray(data.recents)) _wsSelState.recents = data.recents;
+        if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
+        _wsSelUpdateLabel();
+        _wsSelRevealFiles();
+        // Make sure the target group is expanded so the new session is visible.
+        if (_collapsedProjects.has(projectPath)) {
+            _collapsedProjects.delete(projectPath);
+            _saveCollapsed(_collapsedProjects);
+        }
+        // Re-file the optimistic item under the bound project and re-render so it
+        // appears immediately inside that group, without waiting for a reload.
+        const entry = _sessionItems.find(s => s.session_id === newSid);
+        if (entry && _wsSelState.current) {
+            entry.project = { path: _wsSelState.current.path, name: _wsSelState.current.name };
+        }
+        _sessionGroupMode = 'project';
+        _renderSessionList();
+        _revealActiveSession();
+        // newChat() fired refreshWorkspaceSelector() before this bind existed;
+        // that in-flight GET could resolve late and reset the label to default.
+        // Re-sync from the backend (now bound) so the final label is correct.
+        refreshWorkspaceSelector();
+    } catch (e) { _wsToast(String(e.message || e)); }
+}
+
 // =====================================================================
 // Session Panel
 // =====================================================================
@@ -5509,7 +5595,15 @@ function _addOptimisticSessionItem(sid) {
             ? { path: _wsSelState.current.path, name: _wsSelState.current.name }
             : null,
     });
+    // Make sure the space the new session lands in is expanded, otherwise a
+    // collapsed group (default space included) would hide the new conversation.
+    const spaceKey = _wsSelState.current ? _wsSelState.current.path : DEFAULT_SPACE_KEY;
+    if (_collapsedProjects.has(spaceKey)) {
+        _collapsedProjects.delete(spaceKey);
+        _saveCollapsed(_collapsedProjects);
+    }
     _renderSessionList();
+    _revealActiveSession();
 }
 
 function _sessionTimeGroup(ts) {
@@ -5669,15 +5763,25 @@ function _renderSessionList() {
             header.draggable = true;
             header.dataset.spaceKey = group.key;
             const isDefault = group.key === DEFAULT_SPACE_KEY;
-            const actions = isDefault ? '' : `
-                <button class="session-group-action" title="${escapeHtml(t('project_rename'))}"
+            // "New chat" starts a fresh conversation inside this space. The
+            // default space passes null (no project binding); a project passes
+            // its path so the new chat lands under it.
+            const newArg = isDefault ? 'null' : `'${_wsAttr(group.key)}'`;
+            const newBtn = `
+                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_new_chat'))}" data-tooltip-pos="top"
+                        onclick="event.stopPropagation(); newChatInSpace(${newArg})">
+                    <i class="fas fa-plus"></i>
+                </button>`;
+            const manageBtns = isDefault ? '' : `
+                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_rename'))}" data-tooltip-pos="top"
                         onclick="event.stopPropagation(); renameProject('${_wsAttr(group.key)}','${_wsAttr(group.label)}')">
                     <i class="fas fa-pen"></i>
                 </button>
-                <button class="session-group-action" title="${escapeHtml(t('project_delete'))}"
+                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_delete'))}" data-tooltip-pos="top"
                         onclick="event.stopPropagation(); deleteProject('${_wsAttr(group.key)}','${_wsAttr(group.label)}')">
                     <i class="fas fa-trash-can"></i>
                 </button>`;
+            const actions = newBtn + manageBtns;
             header.innerHTML = `
                 <i class="fas fa-chevron-down session-group-caret ${collapsed ? 'collapsed' : ''}"></i>
                 <i class="fas ${group.icon} session-group-icon"></i>
@@ -5704,6 +5808,38 @@ function _toggleProjectCollapse(key) {
     else _collapsedProjects.add(key);
     _saveCollapsed(_collapsedProjects);
     _renderSessionList();
+}
+
+// Which space (project path or the default sentinel) a session is filed under.
+function _sessionSpaceKey(s) {
+    return s && s.project ? s.project.path : DEFAULT_SPACE_KEY;
+}
+
+// Make the currently-active session visible in the list: expand its space if
+// collapsed, re-render if needed, then scroll the active item into view. Called
+// after new chat / switch session / project switch so the user always sees
+// which conversation is selected. No-op when the panel is closed or the active
+// session isn't in the loaded list.
+function _revealActiveSession() {
+    if (!sessionPanelOpen) return;
+    const active = _sessionItems.find(s => s.session_id === sessionId);
+    if (!active) return;
+
+    // Expand the active session's group if the user (or a stale state) collapsed it.
+    if (_sessionGroupMode === 'project') {
+        const key = _sessionSpaceKey(active);
+        if (_collapsedProjects.has(key)) {
+            _collapsedProjects.delete(key);
+            _saveCollapsed(_collapsedProjects);
+            _renderSessionList();
+        }
+    }
+
+    // Scroll after layout settles so getBoundingClientRect is accurate.
+    requestAnimationFrame(() => {
+        const el = document.querySelector(`.session-item[data-session-id="${sessionId}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest' });
+    });
 }
 
 // --- Project group drag-to-reorder -------------------------------------------
@@ -5982,6 +6118,8 @@ function switchSession(newSessionId) {
     document.querySelectorAll('.session-item').forEach(el => {
         el.classList.toggle('active', el.dataset.sessionId === sessionId);
     });
+    // Expand the target session's group (if collapsed) and scroll it into view.
+    _revealActiveSession();
 
     if (_isMobileView()) closeSessionPanel();
     if (currentView !== 'chat') navigateTo('chat');

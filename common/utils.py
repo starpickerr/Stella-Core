@@ -2,6 +2,8 @@ import io
 import os
 import re
 import sys
+from contextvars import ContextVar
+from typing import Optional
 from urllib.parse import urlparse
 from common.log import logger
 
@@ -247,6 +249,21 @@ def _client_os() -> str:
     return p or ""
 
 
+_run_id: "ContextVar[Optional[str]]" = ContextVar("agent_run_id", default=None)
+
+
+def set_agent_run_id(run_id: Optional[str]):
+    value = str(run_id).strip() if run_id is not None and str(run_id).strip() else None
+    return _run_id.set(value)
+
+
+def clear_agent_run_id(token) -> None:
+    try:
+        _run_id.reset(token)
+    except Exception:
+        pass
+
+
 def apply_client_source(headers: dict) -> dict:
     """Tag headers with the runtime origin (and deployment id when set)."""
     headers["X-Client-Source"] = get_client_source()
@@ -256,6 +273,9 @@ def apply_client_source(headers: dict) -> dict:
     version = (os.environ.get("COW_CLIENT_VERSION") or "").strip()
     if version:
         headers["X-Client-Version"] = version
+    run_id = _run_id.get()
+    if run_id:
+        headers["X-Agent-Run-Id"] = run_id
     dep = _deployment_id()
     if dep:
         headers["X-Deployment-Id"] = dep
