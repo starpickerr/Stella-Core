@@ -52,7 +52,9 @@ GEMINI_3_FLASH_PRE = "gemini-3-flash-preview"  # Gemini 3 Flash Preview - Agent 
 GEMINI_3_PRO_PRE = "gemini-3-pro-preview"  # Gemini 3 Pro Preview
 GEMINI_31_PRO_PRE = "gemini-3.1-pro-preview"  # Gemini 3.1 Pro Preview - Agent recommended model
 GEMINI_31_FLASH_LITE_PRE = "gemini-3.1-flash-lite-preview"  # Gemini 3.1 Flash Lite Preview - Agent recommended model
-GEMINI_35_FLASH = "gemini-3.5-flash"  # Gemini 3.5 Flash - Agent recommended model
+GEMINI_35_FLASH = "gemini-3.5-flash"  # Gemini 3.5 Flash
+GEMINI_36_FLASH = "gemini-3.6-flash"  # Gemini 3.6 Flash
+GEMINI_37_FLASH = "gemini-3.7-flash"  # Gemini 3.7 Flash - Agent recommended model (default)
 
 # OpenAI
 GPT35 = "gpt-3.5-turbo"
@@ -212,7 +214,7 @@ MODEL_LIST = [
               "claude", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3.5-sonnet",
 
               # Gemini
-              GEMINI_35_FLASH, GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
+              GEMINI_37_FLASH, GEMINI_36_FLASH, GEMINI_35_FLASH, GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
               GEMINI_20_FLASH, GEMINI_20_flash_exp, GEMINI_15_PRO, GEMINI_15_flash, GEMINI_PRO, GEMINI,
 
               # OpenAI
