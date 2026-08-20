@@ -350,12 +350,28 @@ function setupIPC() {
   // Launch-at-login: backed by the OS login-item registry on macOS and the
   // Run registry key on Windows (both handled natively by Electron). Linux has
   // no reliable cross-desktop mechanism, so it reports/accepts nothing there.
-  ipcMain.handle('get-login-item', () => {
-    if (isMac || isWin) return app.getLoginItemSettings().openAtLogin
+  //
+  // Windows caveat: we register the Run key WITH `args: ['--hidden']`. Electron's
+  // `openAtLogin` only reports true if getLoginItemSettings() is called with the
+  // SAME args — otherwise it always reads false, which made the settings toggle
+  // "snap back" to off (the optimistic flip was overwritten by a false readback)
+  // and never persist. Use `executableWillLaunchAtLogin` on Windows instead: it
+  // ignores args and simply reports whether the Run key is active.
+  const isLaunchAtLoginEnabled = (): boolean => {
+    if (isWin) return app.getLoginItemSettings().executableWillLaunchAtLogin === true
+    if (isMac) return app.getLoginItemSettings().openAtLogin
     return false
-  })
+  }
+  ipcMain.handle('get-login-item', () => isLaunchAtLoginEnabled())
+  // Returns the real outcome so the UI never lies: { ok, enabled, error }.
+  // - ok=false + error: writing the login item threw (surface it, don't swallow).
+  // - ok=true but enabled!=requested: the OS/policy silently refused the change.
+  // The renderer shows the reason instead of just snapping the toggle back.
   ipcMain.handle('set-login-item', (_event, enabled: boolean) => {
-    if (isMac || isWin) {
+    if (!isMac && !isWin) {
+      return { ok: false, enabled: false, error: 'unsupported-platform' }
+    }
+    try {
       app.setLoginItemSettings({
         openAtLogin: !!enabled,
         // Start hidden/minimized so autostart is unobtrusive; the window can
@@ -363,8 +379,13 @@ function setupIPC() {
         openAsHidden: isMac ? true : undefined,
         args: isWin ? ['--hidden'] : undefined,
       })
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      console.error('[login-item] setLoginItemSettings failed:', error)
+      return { ok: false, enabled: isLaunchAtLoginEnabled(), error }
     }
-    return app.getLoginItemSettings().openAtLogin
+    const effective = isLaunchAtLoginEnabled()
+    return { ok: effective === !!enabled, enabled: effective, error: '' }
   })
 
   // Auto-update controls (renderer-driven: check, then opt-in download/install).

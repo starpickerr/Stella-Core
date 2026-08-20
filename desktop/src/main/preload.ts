@@ -50,10 +50,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Current app version (e.g. "0.0.5"), shown in the NavRail footer.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
-  // Launch-at-login toggle (macOS + Windows). Returns the effective state.
+  // Launch-at-login toggle (macOS + Windows). get returns the effective state;
+  // set returns the real outcome so the UI can surface refusals/errors.
   getLoginItemEnabled: () => ipcRenderer.invoke('get-login-item') as Promise<boolean>,
   setLoginItemEnabled: (enabled: boolean) =>
-    ipcRenderer.invoke('set-login-item', enabled) as Promise<boolean>,
+    ipcRenderer.invoke('set-login-item', enabled) as Promise<{
+      ok: boolean
+      enabled: boolean
+      error: string
+    }>,
 
   // Themes (bundled + user themes from ~/.cow/themes), assets inlined.
   listThemes: () => ipcRenderer.invoke('themes-list') as Promise<Record<string, unknown>[]>,
