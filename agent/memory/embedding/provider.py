@@ -211,6 +211,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
         self.api_base = api_base or "https://api.openai.com/v1"
         self.extra_headers = extra_headers or {}
+        _host = (urlparse(self.api_base).hostname or "").lower()
+        self._source_tagged = _host == "link-ai.tech" or _host.endswith(".link-ai.tech")
         self.supports_dim_param = supports_dim_param
         self.needs_client_truncate = needs_client_truncate
         self.needs_client_normalize = needs_client_normalize
@@ -226,6 +228,16 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             # Legacy heuristic for OpenAI text-embedding-3-* family
             self._dimensions = 1536 if "small" in model else 3072
 
+    def _request_headers(self) -> dict:
+        headers = dict(self.extra_headers)
+        if self._source_tagged:
+            try:
+                from common.utils import apply_client_source
+                apply_client_source(headers)
+            except Exception:
+                pass
+        return headers
+
     def _call_api(self, input_data):
         """Call OpenAI-compatible /embeddings endpoint"""
         import requests
@@ -234,7 +246,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
-            **self.extra_headers,
+            **self._request_headers(),
         }
         data = {
             "input": input_data,
@@ -466,14 +478,6 @@ def create_embedding_provider(
             f"Unsupported embedding provider: {provider}. "
             f"Supported: {sorted(EMBEDDING_VENDORS.keys())}"
         )
-
-    resolved_host = (urlparse(api_base or meta.get("default_base_url") or "").hostname or "").lower()
-    if resolved_host == "link-ai.tech" or resolved_host.endswith(".link-ai.tech"):
-        try:
-            from common.utils import apply_client_source
-            extra_headers = apply_client_source(dict(extra_headers or {}))
-        except Exception:
-            pass
 
     # Doubao uses a non-OpenAI-compatible multimodal endpoint.
     if meta.get("provider_class") == "doubao":
