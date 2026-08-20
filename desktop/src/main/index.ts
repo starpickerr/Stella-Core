@@ -29,6 +29,18 @@ let isQuitting = false
 const isDev = !app.isPackaged
 const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
 
+// Launched by the OS at login (Windows passes --hidden; macOS reports it via
+// getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
+// autostart is unobtrusive.
+function launchedHidden(): boolean {
+  if (process.argv.includes('--hidden')) return true
+  try {
+    return app.getLoginItemSettings().wasOpenedAsHidden === true
+  } catch {
+    return false
+  }
+}
+
 function probePort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(`http://localhost:${port}`, (res) => {
@@ -156,6 +168,9 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    // Skip the initial paint when autostarted hidden: the window stays in the
+    // tray/Dock until the user opens it, matching the "unobtrusive" intent.
+    if (launchedHidden()) return
     mainWindow?.show()
   })
 
@@ -331,6 +346,26 @@ function setupIPC() {
 
   // Current app version, shown in the NavRail footer.
   ipcMain.handle('get-app-version', () => app.getVersion())
+
+  // Launch-at-login: backed by the OS login-item registry on macOS and the
+  // Run registry key on Windows (both handled natively by Electron). Linux has
+  // no reliable cross-desktop mechanism, so it reports/accepts nothing there.
+  ipcMain.handle('get-login-item', () => {
+    if (isMac || isWin) return app.getLoginItemSettings().openAtLogin
+    return false
+  })
+  ipcMain.handle('set-login-item', (_event, enabled: boolean) => {
+    if (isMac || isWin) {
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        // Start hidden/minimized so autostart is unobtrusive; the window can
+        // still be brought up from the Dock/tray.
+        openAsHidden: isMac ? true : undefined,
+        args: isWin ? ['--hidden'] : undefined,
+      })
+    }
+    return app.getLoginItemSettings().openAtLogin
+  })
 
   // Auto-update controls (renderer-driven: check, then opt-in download/install).
   // The renderer passes its current UI language so downloads can be routed to
