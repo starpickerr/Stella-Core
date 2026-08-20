@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { ChildProcess, spawn, execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
 import path from 'path'
@@ -163,6 +164,21 @@ export class PythonBackend extends EventEmitter {
    */
   getDataDir(): string {
     return this.packaged ? COW_DATA_DIR : this.backendPath
+  }
+
+  // Optional runtime-origin tag from the bundled app-config, forwarded to the
+  // backend so it can be attached to outbound requests for stats.
+  private clientSource(): string {
+    try {
+      const cfgPath = this.packaged
+        ? path.join(process.resourcesPath, 'app-config.json')
+        : path.resolve(__dirname, '../../resources', 'app-config.json')
+      const raw = fs.readFileSync(cfgPath, 'utf8')
+      const val = JSON.parse(raw)?.clientSource
+      return typeof val === 'string' ? val.trim() : ''
+    } catch {
+      return ''
+    }
   }
 
   getStatus(): string {
@@ -770,6 +786,8 @@ export class PythonBackend extends EventEmitter {
         // two sides can never disagree (and we avoid the 9899 web-console clash).
         COW_WEB_PORT: String(this.port),
         ...(bundled ? { COW_DATA_DIR } : {}),
+        ...(this.clientSource() ? { COW_CLIENT_SOURCE: this.clientSource() } : {}),
+        COW_CLIENT_VERSION: app.getVersion(),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
