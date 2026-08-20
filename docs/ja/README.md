@@ -122,7 +122,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 | [DeepSeek](https://docs.cowagent.ai/ja/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
 | [Claude](https://docs.cowagent.ai/ja/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/ja/models/openai) | gpt-5.6 シリーズ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/ja/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
+| [Gemini](https://docs.cowagent.ai/ja/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/ja/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [GLM](https://docs.cowagent.ai/ja/models/glm) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Qwen](https://docs.cowagent.ai/ja/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

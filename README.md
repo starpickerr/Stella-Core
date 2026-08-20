@@ -122,7 +122,7 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | [DeepSeek](https://docs.cowagent.ai/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
 | [Claude](https://docs.cowagent.ai/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/models/openai) | gpt-5.6 series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/models/gemini) | gemini-3.5-flash | ✅ | ✅ | ✅ | | | |
+| [Gemini](https://docs.cowagent.ai/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [GLM](https://docs.cowagent.ai/models/glm) | glm-5.3, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Qwen](https://docs.cowagent.ai/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
