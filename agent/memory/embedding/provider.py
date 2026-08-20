@@ -23,6 +23,7 @@ import hashlib
 import math
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from urllib.parse import urlparse
 
 # HTTP read timeout for a single embeddings request (seconds). A batch of
 # 64+ chunks can take 30-50s end-to-end from China-side networks, so 30s is
@@ -465,6 +466,14 @@ def create_embedding_provider(
             f"Unsupported embedding provider: {provider}. "
             f"Supported: {sorted(EMBEDDING_VENDORS.keys())}"
         )
+
+    resolved_host = (urlparse(api_base or meta.get("default_base_url") or "").hostname or "").lower()
+    if resolved_host == "link-ai.tech" or resolved_host.endswith(".link-ai.tech"):
+        try:
+            from common.utils import apply_client_source
+            extra_headers = apply_client_source(dict(extra_headers or {}))
+        except Exception:
+            pass
 
     # Doubao uses a non-OpenAI-compatible multimodal endpoint.
     if meta.get("provider_class") == "doubao":

@@ -164,7 +164,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
           }`}
         >
           <FolderOpen size={13} className="shrink-0" />
-          <span className="truncate">{label}</span>
+          <span className="composer-chip-label truncate">{label}</span>
           <ChevronDown size={11} className="opacity-60 shrink-0" />
         </button>
       </Tooltip>

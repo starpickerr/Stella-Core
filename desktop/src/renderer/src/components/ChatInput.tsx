@@ -759,7 +759,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             console, instead of a short input with controls floating around it.
             The middle chip group shrinks/truncates so a narrow composer (right
             panel open) never overflows the card. */}
-        <div className="flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
+        <div className="composer-toolbar flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
           <Tooltip label={t('session_new')}>
             <button
               onClick={onNewChat}
