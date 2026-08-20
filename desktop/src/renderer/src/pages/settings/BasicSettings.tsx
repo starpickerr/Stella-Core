@@ -32,6 +32,30 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const setTaskNotify = useUIStore((s) => s.setTaskNotify)
   const setTaskNotifySound = useUIStore((s) => s.setTaskNotifySound)
 
+  // Launch-at-login (macOS + Windows only). State lives in the OS registry, so
+  // read it from the main process rather than persisting it ourselves.
+  const platform = window.electronAPI?.platform
+  const supportsLaunchAtLogin =
+    !!window.electronAPI?.setLoginItemEnabled && (platform === 'darwin' || platform === 'win32')
+  const [launchAtLogin, setLaunchAtLogin] = useState(false)
+
+  useEffect(() => {
+    if (!supportsLaunchAtLogin) return
+    window.electronAPI?.getLoginItemEnabled?.().then((v) => setLaunchAtLogin(!!v)).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportsLaunchAtLogin])
+
+  const toggleLaunchAtLogin = async (v: boolean) => {
+    setLaunchAtLogin(v)
+    try {
+      const effective = await window.electronAPI?.setLoginItemEnabled?.(v)
+      if (typeof effective === 'boolean') setLaunchAtLogin(effective)
+    } catch {
+      // Revert the optimistic flip if the OS rejected the change.
+      setLaunchAtLogin(!v)
+    }
+  }
+
   // model card — credentials (key/base) now live in the Models tab
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
@@ -598,6 +622,15 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             </div>
             <Toggle checked={taskNotifySound} onChange={setTaskNotifySound} />
           </div>
+          {supportsLaunchAtLogin && (
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <div className="text-sm font-medium text-content">{t('config_launch_at_login')}</div>
+                <div className="text-xs text-content-tertiary mt-0.5">{t('config_launch_at_login_hint')}</div>
+              </div>
+              <Toggle checked={launchAtLogin} onChange={toggleLaunchAtLogin} />
+            </div>
+          )}
         </div>
       </Card>
     </div>
