@@ -7,17 +7,17 @@ description: "CowAgent 2.1.7: multiple workspaces isolated per session, session-
 
 ## 🗂 Multiple Workspaces
 
-The Agent is no longer tied to a single directory — you can set up several workspaces and give each session its own. Available in both the Web console and the desktop client:
+The Agent is no longer tied to a single directory — you can set up several project workspaces and give each session its own. Available in both the Web console and the desktop client:
 
-- **Multiple workspaces**: create or open any directory as a workspace; the documents, web pages, and code the Agent produces are created and managed there.
-- **Per-session workspace**: each session is bound to its own workspace, so tasks running side by side stay out of each other's way.
+- **Multiple workspaces**: create or open any directory as a project workspace; the documents, web pages, and code the Agent produces are created and managed there.
+- **Per-session workspace**: each session is bound to its own project workspace, so tasks running side by side stay out of each other's way.
 - **Per-session model**: switch the model for a single session; new sessions start from the global default.
 - **Grouped sessions**: the session list is grouped by workspace, with pinning, reordering, renaming, and deleting.
-- **Shared system resources**: memory, skills, and the knowledge base still live in the system space (`~/cow` by default).
+- **Shared system resources**: memory, skills, and the knowledge base still live in the system workspace (`~/cow` by default).
 
-TODO: screenshot
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-workspace-project-demo.png" width="800" />
 
-Docs: [Architecture](https://docs.cowagent.ai/intro/architecture)
+Docs: [Workspace](https://docs.cowagent.ai/intro/architecture#workspace)
 
 ## 🔐 Permission Modes
 
@@ -27,7 +27,7 @@ Sessions now carry their own permission mode, which works together with workspac
 - **Default mode**: pick a default permission mode, and new sessions start with it.
 - **Actionable denials**: when a tool call is blocked, the hint is clickable so you can adjust the permission on the spot.
 
-TODO: screenshot
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-access-mode.png" width="600" />
 
 ## 🖥 Desktop Client
 

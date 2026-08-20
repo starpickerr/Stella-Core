@@ -34,9 +34,11 @@ When Agent mode is enabled, CowAgent runs as an autonomous agent with the follow
 5. **Update Memory & Knowledge** — Store important information in long-term memory and organize structured knowledge into the knowledge base
 6. **Return Result** — Send execution results back to the user
 
-## Workspace Directory Structure
+## Workspace {#workspace}
 
-The Agent workspace is located at `~/cow` by default and stores system prompts, memory files, and skill files:
+### System Workspace {#system-workspace}
+
+The Agent's system workspace is located at `~/cow` by default and stores system prompts, memory files, and skill files:
 
 ```
 ~/cow/
@@ -60,11 +62,11 @@ Secret keys are stored separately in `~/.cow` directory for security:
 └── .env               # Secret keys for skills
 ```
 
-### Project Workspace
+### Project Workspace {#project-workspace}
 
 Besides the default workspace, each session can be bound to its own **project directory**. The Agent's file reads/writes and command execution happen inside that directory, giving you multi-project isolation; memory, skills, and the like still live in the default workspace. When more than one project is in use, the Web/desktop history list automatically groups sessions by project.
 
-### Per-Session Model & Permission
+### Per-Session Model & Permission {#session-settings}
 
 Workspace, model, and permission can all be **set per session**, falling back to the global default when unset:
 
