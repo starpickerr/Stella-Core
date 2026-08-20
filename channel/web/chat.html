@@ -160,11 +160,6 @@
                             <span data-i18n="menu_config">配置</span>
                         </a>
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
-                           data-view="models">
-                            <i class="fas fa-microchip item-icon text-xs w-5 text-center"></i>
-                            <span data-i18n="menu_models">模型</span>
-                        </a>
-                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="skills">
                             <i class="fas fa-bolt item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_skills">技能</span>
@@ -600,6 +595,15 @@
                 <!-- VIEW: Config                                            -->
                 <!-- ====================================================== -->
                 <div id="view-config" class="view">
+                    <!-- Tailwind JIT safelist: models capability-card icon colors
+                         are emitted from JS template strings. Listing them here
+                         (display:none) guarantees the CDN-side compiler picks
+                         them up regardless of render timing. -->
+                    <div class="hidden bg-blue-50 dark:bg-blue-900/30 text-blue-500
+                                       bg-orange-50 dark:bg-orange-900/30 text-orange-500
+                                       bg-purple-50 dark:bg-purple-900/30 text-purple-500
+                                       bg-amber-50 dark:bg-amber-900/30 text-amber-500
+                                       bg-primary-50 dark:bg-primary-900/30 text-primary-500"></div>
                     <div class="flex-1 overflow-y-auto p-6">
                         <div class="max-w-4xl mx-auto">
                             <div class="flex items-center justify-between mb-6">
@@ -608,7 +612,21 @@
                                     <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="config_desc">管理模型和 Agent 配置</p>
                                 </div>
                             </div>
-                            <div class="grid gap-6">
+
+                            <!-- Tabs: 基础配置 / 模型配置 -->
+                            <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 mb-6 w-max">
+                                <button id="config-tab-basic" onclick="switchConfigTab('basic')"
+                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                    <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
+                                </button>
+                                <button id="config-tab-models" onclick="switchConfigTab('models')"
+                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                    <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
+                                </button>
+                            </div>
+
+                            <!-- Panel: 基础配置 -->
+                            <div id="config-panel-basic" class="grid gap-6">
 
                                 <!-- Model Config Card -->
                                 <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6">
@@ -618,7 +636,7 @@
                                         </div>
                                         <h3 class="font-semibold text-slate-800 dark:text-slate-100" data-i18n="config_model">模型配置</h3>
                                         <a class="ml-auto text-xs text-slate-500 dark:text-slate-400 hover:text-primary-500 dark:hover:text-primary-400 cursor-pointer transition-colors flex items-center gap-1"
-                                           onclick="navigateTo('models')">
+                                           onclick="switchConfigTab('models')">
                                             <span data-i18n="config_model_advanced">高级配置</span>
                                             <i class="fas fa-arrow-right text-[10px]"></i>
                                         </a>
@@ -896,6 +914,15 @@
                                 </div>
 
                             </div>
+
+                            <!-- Panel: 模型配置 (advanced vendor / capability management) -->
+                            <div id="config-panel-models" class="hidden">
+                                <div id="models-loading" class="flex items-center gap-2 py-12 justify-center text-slate-400 dark:text-slate-500 text-sm">
+                                    <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span>
+                                </div>
+                                <div id="models-content" class="grid gap-6 hidden"></div>
+                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -1142,41 +1169,6 @@
                                 </div>
                             </div>
 
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ====================================================== -->
-                <!-- VIEW: Models                                            -->
-                <!-- ====================================================== -->
-                <div id="view-models" class="view">
-                    <!-- Tailwind JIT safelist: capability-card icon colors are
-                         emitted from JS template strings. Listing them here
-                         (display:none) guarantees the CDN-side compiler picks
-                         them up regardless of render timing. -->
-                    <div class="hidden bg-blue-50 dark:bg-blue-900/30 text-blue-500
-                                       bg-orange-50 dark:bg-orange-900/30 text-orange-500
-                                       bg-purple-50 dark:bg-purple-900/30 text-purple-500
-                                       bg-amber-50 dark:bg-amber-900/30 text-amber-500
-                                       bg-primary-50 dark:bg-primary-900/30 text-primary-500"></div>
-                    <div class="flex-1 overflow-y-auto p-6">
-                        <div class="max-w-4xl mx-auto">
-                            <div class="flex items-center justify-between mb-6">
-                                <div>
-                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="models_title">模型管理</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="models_desc">统一管理对话、视觉、语音、向量、图像、搜索能力</p>
-                                </div>
-                                <button id="models-add-vendor-btn" onclick="openVendorModal('')"
-                                        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600
-                                               text-white text-sm font-medium cursor-pointer transition-colors duration-150">
-                                    <i class="fas fa-plus text-xs"></i>
-                                    <span data-i18n="models_add_vendor">添加厂商</span>
-                                </button>
-                            </div>
-                            <div id="models-loading" class="flex items-center gap-2 py-12 justify-center text-slate-400 dark:text-slate-500 text-sm">
-                                <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span>
-                            </div>
-                            <div id="models-content" class="grid gap-6 hidden"></div>
                         </div>
                     </div>
                 </div>
