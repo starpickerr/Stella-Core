@@ -2504,7 +2504,7 @@ class ConfigHandler:
         const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
         const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
+        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
@@ -2577,7 +2577,7 @@ class ConfigHandler:
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
+            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
         }),
         ("doubao", {
             "label": {"zh": "豆包", "en": "Doubao"},
@@ -5970,6 +5970,7 @@ def _session_model_catalog() -> List[dict]:
     active_provider = "openai" if active_bot_type == const.CHATGPT else active_bot_type
     if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
         active_provider = "linkai"
+    active_model = str(local_config.get("model") or "").strip()
 
     catalog: List[dict] = []
     for pid, pinfo in ConfigHandler.PROVIDER_MODELS.items():
@@ -5979,23 +5980,50 @@ def _session_model_catalog() -> List[dict]:
         has_key = bool(key_field and str(local_config.get(key_field) or "").strip())
         if not has_key and pid != active_provider:
             continue
+        models = list(pinfo["models"])
+        # The user can pin a custom model name to a built-in provider (via the
+        # global config / capability "custom model" field). That model won't be
+        # in the preset list, so surface it here for the active provider so the
+        # chat picker can both display and re-select it.
+        if pid == active_provider and active_model and active_model not in models:
+            models.insert(0, active_model)
         catalog.append({
             "id": pid,
             "label": pinfo["label"],
-            "models": list(pinfo["models"]),
+            "models": models,
         })
 
-    # User-defined OpenAI-compatible providers carry their own credentials.
+    # User-defined OpenAI-compatible providers carry their own credentials, so
+    # offer any that have a key on file (or are the active provider). Their model
+    # list combines the provider's configured default with the globally active
+    # model when this custom provider is the one in use — otherwise a custom
+    # provider added without a preset model would be unselectable in chat.
     try:
         from models.custom_provider import get_custom_providers
         for cp in get_custom_providers():
-            if not cp.get("model"):
+            cid = cp.get("id")
+            if not cid:
                 continue
-            name = cp.get("name") or cp.get("id")
+            pid = f"custom:{cid}"
+            is_active = pid == active_provider
+            has_key = bool(str(cp.get("api_key") or "").strip())
+            if not has_key and not is_active:
+                continue
+            models = []
+            cp_model = str(cp.get("model") or "").strip()
+            if cp_model:
+                models.append(cp_model)
+            if is_active and active_model and active_model not in models:
+                models.insert(0, active_model)
+            if not models:
+                # Nothing concrete to select yet (no default model and not the
+                # active provider) — skip rather than render an empty group.
+                continue
+            name = cp.get("name") or cid
             catalog.append({
-                "id": f"custom:{cp.get('id')}",
+                "id": pid,
                 "label": {"zh": name, "en": name},
-                "models": [cp["model"]],
+                "models": models,
             })
     except Exception as e:
         logger.debug(f"[WebChannel] custom providers unavailable: {e}")
