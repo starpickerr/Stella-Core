@@ -64,6 +64,7 @@ Thanks @chimyves (#3056, #3055)
 - **Windows shell guidance**: better recovery guidance when a shell command fails on Windows. Thanks @dajiaohuang (#3065)
 - **Cleaner IM replies**: Agent replies on IM channels no longer carry thinking content. Thanks @LHMQ878 (#3044)
 - **Scheduled tasks**: fixed a task that failed across midnight never getting back on schedule (Thanks @chimyves #3054), and scheduled tasks being acknowledged instead of run.
+- **Faster first message**: streamlined memory system initialization so it no longer blocks a session's first message, noticeably cutting the wait before the initial reply.
 - **Context trimming**: fixed the AI reply not being saved when the context was trimmed.
 - **Feishu channel**: the streaming card now accumulates text across turns.
 - **Docker**: `config.json` survives container upgrades through the `COW_DATA_DIR` mount.
