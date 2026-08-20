@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect } from 'react'
-import { Check, Eye, Globe, Shield } from 'lucide-react'
+import { Check, Eye, LockOpen, Shield } from 'lucide-react'
 import { t } from '../i18n'
 import ComposerChip from './ComposerChip'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
@@ -12,7 +12,7 @@ import {
 } from '../lib/permission'
 
 const ICONS: Record<PermissionMode, React.ReactNode> = {
-  'full-access': <Globe size={13} />,
+  'full-access': <LockOpen size={13} />,
   'workspace-write': <Shield size={13} />,
   'read-only': <Eye size={13} />,
 }
