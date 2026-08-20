@@ -89,6 +89,8 @@ const translations: Record<string, Record<string, string>> = {
     ws_truncated: '文件过多，仅显示部分',
     // workspace / project selector
     ws_sel_title: '工作空间',
+    ws_sel_system_space: '系统空间',
+    ws_sel_project_space: '项目空间',
     ws_default_workspace: '默认空间',
     ws_sel_recents: '最近项目',
     ws_sel_open: '打开项目…',
@@ -594,6 +596,8 @@ const translations: Record<string, Record<string, string>> = {
     ws_truncated: 'Too many files, showing a subset',
     // workspace / project selector
     ws_sel_title: 'Workspace',
+    ws_sel_system_space: 'System space',
+    ws_sel_project_space: 'Project space',
     ws_default_workspace: 'Default',
     ws_sel_recents: 'Recent projects',
     ws_sel_open: 'Open project…',

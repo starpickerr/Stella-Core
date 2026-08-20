@@ -49,6 +49,13 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
     refresh()
   }, [refresh])
 
+  // Also reload when project records change elsewhere (e.g. a project is
+  // renamed/deleted from the session sidebar), so recents stay in sync.
+  const projectsRev = useSessionStore((s) => s.projectsRev)
+  useEffect(() => {
+    refresh()
+  }, [projectsRev, refresh])
+
   // Close the menu on outside click.
   useEffect(() => {
     if (!menuOpen) return
@@ -165,7 +172,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
       {menuOpen && (
         <div className="absolute bottom-full left-0 mb-1.5 w-80 max-h-[380px] overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
           <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
-            {t('ws_sel_title')}
+            {t('ws_sel_system_space')}
           </div>
 
           {/* Default workspace (~/cow) */}
@@ -181,33 +188,33 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
             {!current && <Check size={14} className="shrink-0" />}
           </button>
 
-          {recents.length > 0 && (
-            <>
-              <div className="my-1 h-px bg-default" />
-              <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
-                {t('ws_sel_recents')}
-              </div>
-              {recents.map((r) => {
-                const active = current?.path === r.path
-                return (
-                  <button
-                    key={r.path}
-                    onClick={() => selectProject(r.path)}
-                    title={r.path}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
-                      active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
-                    }`}
-                  >
-                    <Folder size={14} className="shrink-0" />
-                    <span className="flex-1 min-w-0 text-[13px] truncate">{r.name}</span>
-                    {active && <Check size={14} className="shrink-0" />}
-                  </button>
-                )
-              })}
-            </>
-          )}
+          {/* Project space: recent projects plus the open/new actions all live
+              under one heading, separated from the system space by a divider. */}
+          <div className="my-1 mx-1.5 border-t border-default" />
+          <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('ws_sel_project_space')}
+          </div>
 
-          <div className="my-1 h-px bg-default" />
+          {recents.map((r) => {
+            const active = current?.path === r.path
+            return (
+              <button
+                key={r.path}
+                onClick={() => selectProject(r.path)}
+                title={r.path}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
+                  active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
+                }`}
+              >
+                <Folder size={14} className="shrink-0" />
+                <span className="flex-1 min-w-0 text-[13px] truncate">{r.name}</span>
+                {active && <Check size={14} className="shrink-0" />}
+              </button>
+            )
+          })}
+
+          {/* Divider between the project list and the open/new-project actions. */}
+          <div className="my-1 mx-1.5 border-t border-default" />
           <button
             onClick={openProject}
             className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors hover:bg-surface-2 text-content"

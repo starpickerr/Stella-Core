@@ -15,6 +15,10 @@ interface SessionState {
   activeId: string
   groupMode: 'project' | 'time'
   projectOrder: string[]
+  /** Bumped whenever project records change (rename/delete), so other views
+   *  (e.g. the workspace selector's recents) can refresh in lockstep. */
+  projectsRev: number
+  bumpProjects: () => void
 
   loadSessions: (page?: number) => Promise<void>
   loadMore: () => Promise<void>
@@ -58,6 +62,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeId: readActive(),
   groupMode: 'time',
   projectOrder: [],
+  projectsRev: 0,
+
+  bumpProjects: () => set((s) => ({ projectsRev: s.projectsRev + 1 })),
 
   loadSessions: async (page = 1) => {
     set({ loading: true })
@@ -97,7 +104,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   addOptimistic: (id, project) => {
     set((s) => {
-      if (s.sessions.some((sess) => sess.session_id === id)) return s
+      const existing = s.sessions.find((sess) => sess.session_id === id)
+      // Already present: just re-file it under the given space (e.g. the user
+      // bound a fresh chat to a project after creating it) and float it to top.
+      if (existing) {
+        const rest = s.sessions.filter((sess) => sess.session_id !== id)
+        return { sessions: [{ ...existing, project: project ?? null }, ...rest] }
+      }
       const now = Math.floor(Date.now() / 1000)
       const item: SessionItem = {
         session_id: id,

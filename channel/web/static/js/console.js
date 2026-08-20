@@ -247,6 +247,7 @@ const I18N = {
         session_history: '历史会话',
         ws_toggle: '工作空间', ws_tab_preview: '预览', ws_tab_files: '文件',
         ws_default_workspace: '默认空间', ws_sel_title: '选择工作空间',
+        ws_sel_system_space: '系统空间', ws_sel_project_space: '项目空间',
         ws_sel_default_hint: '使用默认工作空间（~/cow）', ws_sel_recents: '最近使用',
         ws_sel_open: '打开项目…', ws_sel_new: '新建项目', ws_sel_new_placeholder: '项目名称',
         ws_sel_create: '创建', ws_sel_up: '上一级',
@@ -567,6 +568,7 @@ const I18N = {
         session_history: '歷史會話',
         ws_toggle: '工作空間', ws_tab_preview: '預覽', ws_tab_files: '檔案',
         ws_default_workspace: '預設空間', ws_sel_title: '選擇工作空間',
+        ws_sel_system_space: '系統空間', ws_sel_project_space: '專案空間',
         ws_sel_default_hint: '使用預設工作空間（~/cow）', ws_sel_recents: '最近使用',
         ws_sel_open: '開啟專案…', ws_sel_new: '新建專案', ws_sel_new_placeholder: '專案名稱',
         ws_sel_create: '建立', ws_sel_up: '上一層',
@@ -882,6 +884,7 @@ const I18N = {
         session_history: 'History',
         ws_toggle: 'Workspace', ws_tab_preview: 'Preview', ws_tab_files: 'Files',
         ws_default_workspace: 'Default', ws_sel_title: 'Select workspace',
+        ws_sel_system_space: 'System space', ws_sel_project_space: 'Project space',
         ws_sel_default_hint: 'Use the default workspace (~/cow)', ws_sel_recents: 'Recent',
         ws_sel_open: 'Open project…', ws_sel_new: 'New project', ws_sel_new_placeholder: 'Project name',
         ws_sel_create: 'Create', ws_sel_up: 'Up',
@@ -2705,7 +2708,7 @@ function renderWorkspaceSelectorMenu() {
 
     const parts = [];
     const isDefault = !_wsSelState.current;
-    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_title'))}</div>`);
+    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_system_space'))}</div>`);
     // Default workspace: hovering shows the full ~/cow absolute path.
     parts.push(`
         <button class="ws-sel-item ${isDefault ? 'active' : ''}" onclick="selectWorkspaceProject(null)"
@@ -2715,21 +2718,22 @@ function renderWorkspaceSelectorMenu() {
             ${isDefault ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
         </button>`);
 
-    if ((_wsSelState.recents || []).length) {
-        parts.push(`<div class="ws-sel-divider"></div>`);
-        parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_recents'))}</div>`);
-        _wsSelState.recents.forEach(r => {
-            const active = _wsSelState.current && _wsSelState.current.path === r.path;
-            parts.push(`
-                <button class="ws-sel-item ${active ? 'active' : ''}" onclick="selectWorkspaceProject('${_wsAttr(r.path)}')"
-                        data-tip-float data-tooltip="${escapeHtml(r.path)}" data-tooltip-pos="bottom">
-                    <i class="fas fa-folder"></i>
-                    <span class="ws-sel-name">${escapeHtml(r.name)}</span>
-                    ${active ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
-                </button>`);
-        });
-    }
+    // Project space: recent projects plus the open/new actions share one
+    // heading, separated from the system space above by a divider.
+    parts.push(`<div class="ws-sel-divider"></div>`);
+    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_project_space'))}</div>`);
+    (_wsSelState.recents || []).forEach(r => {
+        const active = _wsSelState.current && _wsSelState.current.path === r.path;
+        parts.push(`
+            <button class="ws-sel-item ${active ? 'active' : ''}" onclick="selectWorkspaceProject('${_wsAttr(r.path)}')"
+                    data-tip-float data-tooltip="${escapeHtml(r.path)}" data-tooltip-pos="bottom">
+                <i class="fas fa-folder"></i>
+                <span class="ws-sel-name">${escapeHtml(r.name)}</span>
+                ${active ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
+            </button>`);
+    });
 
+    // Divider between the project list and the open/new-project actions.
     parts.push(`<div class="ws-sel-divider"></div>`);
     parts.push(`
         <button class="ws-sel-item" onclick="wsSelOpenProjectDialog()">
@@ -5835,10 +5839,12 @@ function _revealActiveSession() {
         }
     }
 
-    // Scroll after layout settles so getBoundingClientRect is accurate.
+    // Scroll after layout settles so getBoundingClientRect is accurate. Use
+    // 'center' so a newly created project (which lands at the bottom of the
+    // list) is clearly brought into view rather than just peeking at the edge.
     requestAnimationFrame(() => {
         const el = document.querySelector(`.session-item[data-session-id="${sessionId}"]`);
-        if (el) el.scrollIntoView({ block: 'nearest' });
+        if (el) el.scrollIntoView({ block: 'center' });
     });
 }
 
@@ -5904,6 +5910,8 @@ function renameProject(path, currentName) {
             .then(data => {
                 if (data.status !== 'success') { _wsToast(data.message || t('session_settings_failed')); return; }
                 loadSessionList();
+                // Keep the composer's recents in sync with the sidebar change.
+                refreshWorkspaceSelector();
             })
             .catch(() => _wsToast(t('session_settings_failed')));
     });
@@ -5925,6 +5933,8 @@ function deleteProject(path, name) {
                 .then(data => {
                     if (data.status !== 'success') { _wsToast(data.message || t('session_settings_failed')); return; }
                     loadSessionList();
+                    // Keep the composer's recents in sync with the sidebar change.
+                    refreshWorkspaceSelector();
                 })
                 .catch(() => _wsToast(t('session_settings_failed')));
         }

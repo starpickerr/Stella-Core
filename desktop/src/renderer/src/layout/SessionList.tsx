@@ -251,12 +251,16 @@ const SessionList: React.FC = () => {
   }, [activeId, sessions, groupMode])
 
   // Scroll the active session into view after its group is expanded/rendered.
+  // Depends on `sessions` too, so switching/creating a project (which inserts a
+  // new group, often at the bottom) re-scrolls to the active session even
+  // though activeId itself did not change. `center` makes a bottom group clearly
+  // visible rather than just peeking above the fold.
   useEffect(() => {
     const el = activeRef.current
     if (!el) return
-    const id = requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }))
+    const id = requestAnimationFrame(() => el.scrollIntoView({ block: 'center' }))
     return () => cancelAnimationFrame(id)
-  }, [activeId, collapsed])
+  }, [activeId, collapsed, sessions])
 
   const commitRename = async () => {
     if (!renameTarget) return
@@ -268,6 +272,7 @@ const SessionList: React.FC = () => {
       if (res.status === 'success') {
         setRenameTarget(null)
         await loadSessions(1)
+        useSessionStore.getState().bumpProjects()
       }
     } finally {
       setBusy(false)
@@ -282,6 +287,7 @@ const SessionList: React.FC = () => {
       if (res.status === 'success') {
         setDeleteTarget(null)
         await loadSessions(1)
+        useSessionStore.getState().bumpProjects()
       }
     } finally {
       setBusy(false)
