@@ -181,7 +181,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
     const id = newSession()
     ensureSession(id)
     loadHistory(id, 1)
-    // Auto-expand the session list so the user sees the new/switched session.
+    // Show the fresh chat in the list immediately (default space), and expand
+    // the session list so the user sees the new session.
+    useSessionStore.getState().addOptimistic(id, null)
     setSessionsCollapsed(false)
   }, [newSession, ensureSession, loadHistory, setSessionsCollapsed])
 

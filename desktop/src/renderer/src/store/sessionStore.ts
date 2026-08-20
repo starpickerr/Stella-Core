@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
+import { t } from '../i18n'
 import type { SessionItem } from '../types'
 
 const ACTIVE_KEY = 'cow_session_id'
@@ -19,6 +20,12 @@ interface SessionState {
   loadMore: () => Promise<void>
   setActive: (id: string) => void
   newSession: () => string
+  /**
+   * Insert a not-yet-persisted session at the top of the list so it is visible
+   * immediately (before its first message). `project` files it under the right
+   * space group. No-op if the id is already present.
+   */
+  addOptimistic: (id: string, project?: { path: string; name: string } | null) => void
   rename: (id: string, title: string) => Promise<void>
   remove: (id: string) => Promise<void>
   togglePin: (id: string) => Promise<void>
@@ -86,6 +93,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     localStorage.setItem(ACTIVE_KEY, id)
     set({ activeId: id })
     return id
+  },
+
+  addOptimistic: (id, project) => {
+    set((s) => {
+      if (s.sessions.some((sess) => sess.session_id === id)) return s
+      const now = Math.floor(Date.now() / 1000)
+      const item: SessionItem = {
+        session_id: id,
+        title: t('session_new'),
+        created_at: now,
+        last_active: now,
+        msg_count: 0,
+        pinned: false,
+        project: project ?? null,
+      }
+      return { sessions: [item, ...s.sessions] }
+    })
   },
 
   rename: async (id, title) => {
