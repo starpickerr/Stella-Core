@@ -351,14 +351,17 @@ function setupIPC() {
   // Run registry key on Windows (both handled natively by Electron). Linux has
   // no reliable cross-desktop mechanism, so it reports/accepts nothing there.
   //
-  // Windows caveat: we register the Run key WITH `args: ['--hidden']`. Electron's
-  // `openAtLogin` only reports true if getLoginItemSettings() is called with the
-  // SAME args — otherwise it always reads false, which made the settings toggle
-  // "snap back" to off (the optimistic flip was overwritten by a false readback)
-  // and never persist. Use `executableWillLaunchAtLogin` on Windows instead: it
-  // ignores args and simply reports whether the Run key is active.
+  // Windows caveat: we register our Run key WITH `args: ['--hidden']`. Per the
+  // Electron docs, `openAtLogin` only reports true when getLoginItemSettings()
+  // is called with the SAME `args` — so we MUST pass them here to match, or the
+  // toggle "snaps back" to off (a false readback overwrites the flip). We do NOT
+  // use `executableWillLaunchAtLogin`: it ignores args and reports true for ANY
+  // startup entry for this exe (e.g. one added by an installer / Startup-folder
+  // shortcut), which made the toggle appear ON by default. Matching args keeps
+  // the default OFF and only reflects the entry this app actually created.
+  const WIN_LOGIN_ARGS = ['--hidden']
   const isLaunchAtLoginEnabled = (): boolean => {
-    if (isWin) return app.getLoginItemSettings().executableWillLaunchAtLogin === true
+    if (isWin) return app.getLoginItemSettings({ args: WIN_LOGIN_ARGS }).openAtLogin === true
     if (isMac) return app.getLoginItemSettings().openAtLogin
     return false
   }
@@ -377,7 +380,7 @@ function setupIPC() {
         // Start hidden/minimized so autostart is unobtrusive; the window can
         // still be brought up from the Dock/tray.
         openAsHidden: isMac ? true : undefined,
-        args: isWin ? ['--hidden'] : undefined,
+        args: isWin ? WIN_LOGIN_ARGS : undefined,
       })
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
