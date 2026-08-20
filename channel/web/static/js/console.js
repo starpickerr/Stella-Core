@@ -5309,10 +5309,18 @@ function addLoadingIndicator() {
     return el;
 }
 
-function newChat(optimistic = true) {
+function newChat(optimistic = true, inherit = true) {
     // Do NOT close active streams: other sessions keep streaming in the
     // background (each stream self-guards against the foreign view) and their
     // replies still complete and persist.
+
+    // Inherit the current session's project so a new chat stays in the same
+    // space; captured before we switch ids / refresh the selector to default.
+    // `inherit=false` forces the default workspace (used by the "+" on the
+    // default-space header, and by newChatInSpace which binds explicitly).
+    const _inheritProject = inherit && _wsSelState.current
+        ? { path: _wsSelState.current.path, name: _wsSelState.current.name }
+        : null;
 
     // Generate a fresh session and persist it so the next page load also starts clean
     sessionId = generateSessionId();
@@ -5426,6 +5434,39 @@ function newChat(optimistic = true) {
     } else {
         loadSessionList();
     }
+
+    // If the previous session was inside a project, bind the fresh one to the
+    // same project so it stays in that space (not the default workspace).
+    if (optimistic && _inheritProject) {
+        _bindNewChatToProject(newSid, _inheritProject);
+    }
+}
+
+// Bind a freshly created session to a project and reflect it locally, so the
+// optimistic item lands in that project group instead of the default space.
+async function _bindNewChatToProject(newSid, project) {
+    try {
+        const res = await fetch('/api/projects/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: newSid, project_dir: project.path }),
+        });
+        const data = await res.json();
+        if (data.status !== 'success') return;
+        // Only apply if the user hasn't switched away from this new session.
+        if (sessionId !== newSid) return;
+        _wsSelState.current = data.current || null;
+        if (Array.isArray(data.recents)) _wsSelState.recents = data.recents;
+        if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
+        _wsSelUpdateLabel();
+        const entry = _sessionItems.find(s => s.session_id === newSid);
+        if (entry && _wsSelState.current) {
+            entry.project = { path: _wsSelState.current.path, name: _wsSelState.current.name };
+        }
+        _sessionGroupMode = 'project';
+        _renderSessionList();
+        _revealActiveSession();
+    } catch (e) { /* transient; optimistic item still visible */ }
 }
 
 // Start a fresh conversation filed under a given space (project path, or null
@@ -5433,10 +5474,11 @@ function newChat(optimistic = true) {
 // The default case is just newChat(); a project also binds the fresh session to
 // that project so the optimistic item lands under the right group.
 async function newChatInSpace(projectPath) {
-    // newChat() already: resets the view, auto-opens the history panel, and
-    // prepends an optimistic item (which inherits _wsSelState.current). For the
-    // default space that is exactly what we want.
-    newChat();
+    // newChat() resets the view, auto-opens the history panel, and prepends an
+    // optimistic item. Pass inherit=false so it starts on the default space;
+    // this function then binds the explicit project below (or leaves it on the
+    // default space when projectPath is null).
+    newChat(true, false);
     if (!projectPath) return;
 
     const newSid = sessionId;
@@ -5717,16 +5759,21 @@ function _sessionGroups() {
             const icon = s.project ? 'fa-folder' : 'fa-house';
             bucket(key, name, icon, s.project ? s.project.path : '', !!s.project).items.push(s);
         });
-        // Sort groups by the user's chosen order; spaces without a saved
-        // position keep their natural (recency) order after the ordered ones.
-        if (_projectOrder.length) {
-            const rank = new Map(_projectOrder.map((k, i) => [k, i]));
-            groups.sort((a, b) => {
-                const ra = rank.has(a.key) ? rank.get(a.key) : Infinity;
-                const rb = rank.has(b.key) ? rank.get(b.key) : Infinity;
-                return ra - rb;
-            });
-        }
+        // Sort groups by the user's chosen order. Group order must be
+        // independent of the session array order: creating a new chat unshifts
+        // a session to the top, which would otherwise float its project group
+        // to the front. Groups without a saved position fall back to their
+        // "birth time" (earliest session created_at/last_active) — a stable key
+        // an optimistic (now-timestamped) session never changes.
+        const rank = new Map(_projectOrder.map((k, i) => [k, i]));
+        const birthOf = g => Math.min.apply(null, g.items.map(s => s.created_at || s.last_active || 0));
+        const birth = new Map(groups.map(g => [g.key, birthOf(g)]));
+        groups.sort((a, b) => {
+            const ra = rank.has(a.key) ? rank.get(a.key) : Infinity;
+            const rb = rank.has(b.key) ? rank.get(b.key) : Infinity;
+            if (ra !== rb) return ra - rb;
+            return (birth.get(a.key) || 0) - (birth.get(b.key) || 0);
+        });
         return groups;
     }
 

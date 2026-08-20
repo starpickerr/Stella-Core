@@ -24,6 +24,8 @@ interface SessionState {
   loadMore: () => Promise<void>
   setActive: (id: string) => void
   newSession: () => string
+  /** The project the currently-active session is bound to, or null (default). */
+  currentProject: () => { path: string; name: string } | null
   /**
    * Insert a not-yet-persisted session at the top of the list so it is visible
    * immediately (before its first message). `project` files it under the right
@@ -33,7 +35,7 @@ interface SessionState {
   rename: (id: string, title: string) => Promise<void>
   remove: (id: string) => Promise<void>
   togglePin: (id: string) => Promise<void>
-  reorderSpaces: (fromKey: string, beforeKey: string) => void
+  reorderSpaces: (fromKey: string, beforeKey: string, currentOrder?: string[]) => void
 }
 
 function genId(): string {
@@ -102,6 +104,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return id
   },
 
+  currentProject: () => {
+    const { activeId, sessions } = get()
+    return sessions.find((s) => s.session_id === activeId)?.project ?? null
+  },
+
   addOptimistic: (id, project) => {
     set((s) => {
       const existing = s.sessions.find((sess) => sess.session_id === id)
@@ -159,15 +166,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  reorderSpaces: (fromKey, beforeKey) => {
+  reorderSpaces: (fromKey, beforeKey, currentOrder) => {
     const { projectOrder, sessions, groupMode } = get()
-    const current = projectOrder.length
-      ? [...projectOrder]
-      : Array.from(
-          new Set(
-            sessions.map((s) => s.project?.path || DEFAULT_SPACE_KEY)
-          )
-        )
+    // Prefer the caller's currently-displayed group order (already stable via
+    // buildGroups) so dragging matches what the user sees, and is never skewed
+    // by a freshly created session sitting at the top of the array. Fall back
+    // to the saved order, then to a derived one.
+    const current =
+      currentOrder && currentOrder.length
+        ? [...currentOrder]
+        : projectOrder.length
+          ? [...projectOrder]
+          : Array.from(
+              new Set(sessions.map((s) => s.project?.path || DEFAULT_SPACE_KEY))
+            )
     // Include any visible keys the saved order does not yet know about.
     if (groupMode === 'project') {
       for (const s of sessions) {

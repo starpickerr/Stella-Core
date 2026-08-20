@@ -20,6 +20,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import { usePlatform } from '../hooks/usePlatform'
 import type { SessionItem } from '../types'
 import apiClient from '../api/client'
+import Tooltip from '../components/Tooltip'
 import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 
 const COLLAPSED_KEY = 'cow_collapsed_projects'
@@ -92,14 +93,27 @@ function buildGroups(
       buckets.get(key)!.items.push(s)
     }
     const groups = Array.from(buckets.values())
-    if (projectOrder.length) {
-      const rank = new Map(projectOrder.map((k, i) => [k, i]))
-      groups.sort((a, b) => {
-        const ra = rank.has(a.key) ? rank.get(a.key)! : Infinity
-        const rb = rank.has(b.key) ? rank.get(b.key)! : Infinity
-        return ra - rb
-      })
-    }
+    // Group order must be independent of the session array order: creating a
+    // new chat unshifts a session to the top, which would otherwise float its
+    // project group to the front. We rank by the user's saved projectOrder
+    // first, then fall back to each group's "birth time" (its earliest session
+    // created_at) — a stable key that an optimistic (now-timestamped) session
+    // never changes. This preserves the manual drag order and keeps untouched
+    // groups put.
+    const rank = new Map(projectOrder.map((k, i) => [k, i]))
+    const birth = new Map(
+      groups.map((g) => [
+        g.key,
+        Math.min(...g.items.map((s) => s.created_at || s.last_active || 0)),
+      ])
+    )
+    groups.sort((a, b) => {
+      const ra = rank.has(a.key) ? rank.get(a.key)! : Infinity
+      const rb = rank.has(b.key) ? rank.get(b.key)! : Infinity
+      if (ra !== rb) return ra - rb
+      // Neither (or both) in the saved order: oldest group first, stable.
+      return (birth.get(a.key) ?? 0) - (birth.get(b.key) ?? 0)
+    })
     return groups
   }
 
@@ -297,21 +311,23 @@ const SessionList: React.FC = () => {
   return (
     <div className="w-[240px] flex-shrink-0 flex flex-col h-full bg-surface border-r border-default">
       <div className="flex items-center justify-between px-2 h-[44px] flex-shrink-0 titlebar-drag border-b border-default">
-        <button
-          onClick={toggleSessions}
-          title={t('session_history')}
-          className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${trafficDrop} ${trafficOffset}`}
-        >
-          <History size={16} />
-        </button>
+        <Tooltip label={t('session_history')}>
+          <button
+            onClick={toggleSessions}
+            className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${trafficDrop} ${trafficOffset}`}
+          >
+            <History size={16} />
+          </button>
+        </Tooltip>
         <button
           onClick={() => {
+            // Inherit the current session's project; fall back to default.
+            const inherited = useSessionStore.getState().currentProject()
             const id = newSession()
-            // Show the fresh chat right away; default space (no project binding).
-            addOptimistic(id, null)
-            expandSpace(DEFAULT_SPACE_KEY)
+            addOptimistic(id, inherited)
+            expandSpace(inherited ? inherited.path : DEFAULT_SPACE_KEY)
+            if (inherited) apiClient.selectProject(id, inherited.path).catch(() => {})
           }}
-          title={t('session_new')}
           className={`titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent hover:bg-accent-soft cursor-pointer transition-colors ${trafficDrop}`}
         >
           <Plus size={15} />
@@ -359,7 +375,8 @@ const SessionList: React.FC = () => {
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
-                    if (dragKey && dragKey !== group.key) reorderSpaces(dragKey, group.key)
+                    if (dragKey && dragKey !== group.key)
+                      reorderSpaces(dragKey, group.key, groups.map((g) => g.key))
                     setDragKey(null)
                     setDropKey(null)
                   }}
@@ -628,16 +645,18 @@ const IconBtn: React.FC<{
   title?: string
   danger?: boolean
   children: React.ReactNode
-}> = ({ onClick, title, danger, children }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className={`inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer transition-colors text-content-tertiary ${
-      danger ? 'hover:text-danger hover:bg-danger-soft' : 'hover:text-content hover:bg-surface'
-    }`}
-  >
-    {children}
-  </button>
-)
+}> = ({ onClick, title, danger, children }) => {
+  const btn = (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer transition-colors text-content-tertiary ${
+        danger ? 'hover:text-danger hover:bg-danger-soft' : 'hover:text-content hover:bg-surface'
+      }`}
+    >
+      {children}
+    </button>
+  )
+  return title ? <Tooltip label={title}>{btn}</Tooltip> : btn
+}
 
 export default SessionList

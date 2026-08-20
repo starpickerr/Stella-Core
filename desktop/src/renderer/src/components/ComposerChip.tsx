@@ -58,7 +58,7 @@ const ComposerChip: React.FC<ComposerChipProps> = ({
           }`}
         >
           <span className="shrink-0">{icon}</span>
-          <span className="truncate">{label}</span>
+          <span className="composer-chip-label truncate">{label}</span>
           <ChevronDown size={11} className={`opacity-60 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       </Tooltip>
