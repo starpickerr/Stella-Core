@@ -3423,6 +3423,65 @@ class ModelsHandler:
         items.sort(key=_sort_key)
         return items
 
+    # Map a chat `model` name to a provider id in PROVIDER_MODELS. Mirrors the
+    # inference in bridge.py::Bridge.__init__ so that a config with an empty
+    # `bot_type` (valid at runtime, since the bridge derives the provider from
+    # `model`) is still recognized as "configured" by the models handler and
+    # doesn't wrongly trigger the onboarding wizard. Prefix rules are ordered
+    # most-specific first; the returned ids are the PROVIDER_MODELS keys.
+    @staticmethod
+    def _infer_provider_from_model(model: str) -> str:
+        """Best-effort provider id from a model name. Returns "" when unknown.
+
+        Kept deliberately tolerant: any unexpected input yields "" rather than
+        raising, so callers can treat "no inference" and "bad input" the same.
+        """
+        try:
+            if not model or not isinstance(model, str):
+                return ""
+            m = model.strip().lower()
+            if not m:
+                return ""
+            # Exact matches first (models whose name isn't a clean prefix).
+            exact = {
+                "wenxin": "qianfan",
+                "wenxin-4": "qianfan",
+                "abab6.5": "minimax",
+                "abab6.5-chat": "minimax",
+            }
+            if m in exact:
+                return exact[m]
+            # Prefix rules — order matters where prefixes could overlap.
+            prefix_rules = (
+                ("deepseek", "deepseek"),
+                ("gemini", "gemini"),
+                ("glm", "zhipu"),
+                ("claude", "claudeAPI"),
+                ("kimi", "moonshot"),
+                ("moonshot", "moonshot"),
+                ("doubao", "doubao"),
+                ("mimo-", "mimo"),
+                ("qwen", "dashscope"),
+                ("qwq", "dashscope"),
+                ("qvq", "dashscope"),
+                ("ernie", "qianfan"),
+                ("minimax", "minimax"),
+                ("gpt", "openai"),
+                ("o1", "openai"),
+                ("o3", "openai"),
+                ("o4", "openai"),
+            )
+            for prefix, pid in prefix_rules:
+                if m.startswith(prefix):
+                    return pid
+            # `qianfan` is sometimes used directly as the model name.
+            if m == "qianfan":
+                return "qianfan"
+            return ""
+        except Exception:
+            # Never let inference break the models endpoint / startup.
+            return ""
+
     @classmethod
     def _chat_capability(cls, local_config: dict) -> dict:
         """Main chat model — drives the agent. bot_type maps to a provider id."""
@@ -3432,6 +3491,18 @@ class ModelsHandler:
         if (provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id
                 and local_config.get("use_linkai")):
             provider_id = "linkai"
+        # When `bot_type` doesn't resolve to a known provider (e.g. it was
+        # left empty by a config edit, which the runtime bridge tolerates by
+        # inferring from `model`), fall back to the same model-based inference
+        # here. Otherwise the wizard would treat a working setup as unconfigured
+        # and re-open on every launch. Guarded so a failure can't affect startup.
+        if provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id:
+            try:
+                inferred = cls._infer_provider_from_model(local_config.get("model", ""))
+                if inferred in ConfigHandler.PROVIDER_MODELS:
+                    provider_id = inferred
+            except Exception:
+                pass
         # In multi-provider mode, replace the single "custom" entry with the
         # expanded "custom:<id>" ids so the chat dropdown matches the cards.
         # The legacy "custom" entry stays when its flat config is still used.

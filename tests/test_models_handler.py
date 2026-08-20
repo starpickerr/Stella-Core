@@ -178,6 +178,68 @@ class TestModelsHandler(unittest.TestCase):
         self.assertEqual(file_config["voice_to_text_model"], "qwen3-asr-flash")
         self.assertEqual(result["model"], "qwen3-asr-flash")
 
+    def test_chat_capability_infers_provider_when_bot_type_empty(self):
+        """A config with an empty bot_type but a recognizable model should
+        resolve to the right provider (mirrors the runtime bridge inference),
+        so onboarding isn't wrongly re-triggered for a working setup."""
+        from channel.web.web_channel import ModelsHandler
+
+        cap = ModelsHandler._chat_capability({
+            "bot_type": "",
+            "use_linkai": False,
+            "model": "deepseek-v4-flash",
+            "deepseek_api_key": "sk-test-placeholder",
+        })
+        self.assertEqual(cap["current_provider"], "deepseek")
+        self.assertEqual(cap["current_model"], "deepseek-v4-flash")
+
+    def test_chat_capability_empty_bot_type_use_linkai_stays_linkai(self):
+        """use_linkai must still win when bot_type is empty (unchanged behavior)."""
+        from channel.web.web_channel import ModelsHandler
+
+        cap = ModelsHandler._chat_capability({
+            "bot_type": "",
+            "use_linkai": True,
+            "model": "deepseek-v4-flash",
+        })
+        self.assertEqual(cap["current_provider"], "linkai")
+
+    def test_chat_capability_unknown_model_stays_empty(self):
+        """An unrecognizable model must not be force-mapped to a provider,
+        so genuinely-unconfigured setups still surface onboarding."""
+        from channel.web.web_channel import ModelsHandler
+
+        cap = ModelsHandler._chat_capability({
+            "bot_type": "",
+            "use_linkai": False,
+            "model": "some-unknown-model",
+        })
+        self.assertEqual(cap["current_provider"], "")
+
+    def test_infer_provider_from_model_is_robust(self):
+        from channel.web.web_channel import ModelsHandler
+
+        cases = {
+            "deepseek-v4-flash": "deepseek",
+            "gemini-3-flash": "gemini",
+            "glm-5": "zhipu",
+            "claude-sonnet-5": "claudeAPI",
+            "kimi-k3": "moonshot",
+            "doubao-seed-2-pro": "doubao",
+            "mimo-v2.5-pro": "mimo",
+            "qwen38-max": "dashscope",
+            "ernie-5": "qianfan",
+            "minimax-m3": "minimax",
+            "gpt-55": "openai",
+            "abab6.5": "minimax",
+            "wenxin": "qianfan",
+        }
+        for model, expected in cases.items():
+            self.assertEqual(ModelsHandler._infer_provider_from_model(model), expected, model)
+        # Bad / empty input never raises and yields "".
+        for bad in ("", "   ", None, 123, "totally-unknown"):
+            self.assertEqual(ModelsHandler._infer_provider_from_model(bad), "")
+
     def test_asr_capability_exposes_provider_models(self):
         from channel.web.web_channel import ModelsHandler
 
