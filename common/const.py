@@ -127,7 +127,8 @@ MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax multimodal (vision)
 MINIMAX_ABAB6_5 = "abab6.5-chat"  # MiniMax abab6.5
 
 # GLM (Zhipu AI)
-GLM_5_2 = "glm-5.2"  # GLM-5.2 - Agent recommended model (default)
+GLM_5_3 = "glm-5.3"  # GLM-5.3 - Agent recommended model (default)
+GLM_5_2 = "glm-5.2"  # GLM-5.2
 GLM_5_1 = "glm-5.1"  # GLM-5.1
 GLM_5_TURBO = "glm-5-turbo"  # GLM-5-Turbo
 GLM_5 = "glm-5"  # GLM-5
@@ -226,7 +227,7 @@ MODEL_LIST = [
               O1, O1_MINI,
 
               # GLM (Zhipu AI)
-              ZHIPU_AI, GLM_5_2, GLM_5_1, GLM_5_TURBO, GLM_5, GLM_4, GLM_4_PLUS, GLM_4_flash, GLM_4_LONG, GLM_4_ALLTOOLS,
+              ZHIPU_AI, GLM_5_3, GLM_5_2, GLM_5_1, GLM_5_TURBO, GLM_5, GLM_4, GLM_4_PLUS, GLM_4_flash, GLM_4_LONG, GLM_4_ALLTOOLS,
               GLM_4_0520, GLM_4_AIR, GLM_4_AIRX, GLM_4_7,
 
               # Qwen

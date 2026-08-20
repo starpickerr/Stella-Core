@@ -211,6 +211,57 @@ def apply_cloud_user(headers: dict) -> dict:
     return headers
 
 
+def _deployment_id() -> str:
+    """Server-side deployment id, or '' when unset."""
+    dep = os.environ.get("CLOUD_DEPLOYMENT_ID", "")
+    if dep:
+        return dep
+    try:
+        from config import conf
+        return conf().get("cloud_deployment_id", "") or ""
+    except Exception:
+        return ""
+
+
+def get_client_source() -> str:
+    """Coarse runtime origin, for stats only. First match wins."""
+    if _deployment_id():
+        return "cloud"
+    explicit = (os.environ.get("COW_CLIENT_SOURCE") or "").strip()
+    if explicit:
+        return explicit
+    if os.environ.get("COW_DESKTOP") == "1":
+        return "desktop"
+    return "open-source"
+
+
+def _client_os() -> str:
+    """Coarse OS family (mac / windows / linux), for stats only."""
+    p = sys.platform
+    if p.startswith("darwin"):
+        return "mac"
+    if p.startswith("win"):
+        return "windows"
+    if p.startswith("linux"):
+        return "linux"
+    return p or ""
+
+
+def apply_client_source(headers: dict) -> dict:
+    """Tag headers with the runtime origin (and deployment id when set)."""
+    headers["X-Client-Source"] = get_client_source()
+    os_family = _client_os()
+    if os_family:
+        headers["X-Client-OS"] = os_family
+    version = (os.environ.get("COW_CLIENT_VERSION") or "").strip()
+    if version:
+        headers["X-Client-Version"] = version
+    dep = _deployment_id()
+    if dep:
+        headers["X-Deployment-Id"] = dep
+    return headers
+
+
 def get_cloud_headers(api_key: str) -> dict:
     """
     Build standard headers for LinkAI API requests,
@@ -227,4 +278,5 @@ def get_cloud_headers(api_key: str) -> dict:
             headers["X-Client-Id"] = client_id
     except Exception:
         pass
+    apply_client_source(headers)
     return apply_cloud_user(headers)
