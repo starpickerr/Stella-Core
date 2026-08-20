@@ -7,6 +7,7 @@ import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useSessionStore } from '../store/sessionStore'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
+import { useUIStore } from '../store/uiStore'
 import Tooltip from './Tooltip'
 
 interface WorkspaceSelectorProps {
@@ -69,8 +70,22 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
     setState(next)
     openPanel('files')
     reloadRoot()
+    // Reveal the history sidebar so the current session shows under the space
+    // it was just bound to (mirrors the web console behavior).
+    useUIStore.getState().setSessionsCollapsed(false)
     // Grouping in the session list depends on how many spaces are in play.
-    useSessionStore.getState().loadSessions(1)
+    const sessionStore = useSessionStore.getState()
+    sessionStore.loadSessions(1).then(() => {
+      // A brand-new session has no backend record yet, so the reload above
+      // won't include it. Add it optimistically under the space it was just
+      // bound to, so the user sees the current conversation inside the project.
+      const inList = useSessionStore.getState().sessions.some((s) => s.session_id === sessionId)
+      if (!inList) {
+        useSessionStore
+          .getState()
+          .addOptimistic(sessionId, next.current ? { path: next.current.path, name: next.current.name } : null)
+      }
+    })
   }
 
   const selectProject = async (projectDir: string | null) => {
