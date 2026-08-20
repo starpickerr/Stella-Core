@@ -25,9 +25,12 @@ export interface ElectronAPI {
   onMenuAction?: (callback: (action: string) => void) => () => void
   // Current app version string (e.g. "0.0.5").
   getAppVersion?: () => Promise<string>
-  // Launch-at-login toggle (macOS + Windows). Returns the effective state.
+  // Launch-at-login toggle (macOS + Windows). get returns the effective state;
+  // set returns the real outcome so the UI can surface refusals/errors.
   getLoginItemEnabled?: () => Promise<boolean>
-  setLoginItemEnabled?: (enabled: boolean) => Promise<boolean>
+  setLoginItemEnabled?: (
+    enabled: boolean
+  ) => Promise<{ ok: boolean; enabled: boolean; error: string }>
   // Themes (bundled + user themes from ~/.cow/themes), images inlined.
   listThemes?: () => Promise<Record<string, unknown>[]>
   getThemesDir?: () => Promise<string>

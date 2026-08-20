@@ -38,6 +38,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const supportsLaunchAtLogin =
     !!window.electronAPI?.setLoginItemEnabled && (platform === 'darwin' || platform === 'win32')
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
+  const [launchAtLoginError, setLaunchAtLoginError] = useState('')
 
   useEffect(() => {
     if (!supportsLaunchAtLogin) return
@@ -47,12 +48,24 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const toggleLaunchAtLogin = async (v: boolean) => {
     setLaunchAtLogin(v)
+    setLaunchAtLoginError('')
     try {
-      const effective = await window.electronAPI?.setLoginItemEnabled?.(v)
-      if (typeof effective === 'boolean') setLaunchAtLogin(effective)
-    } catch {
-      // Revert the optimistic flip if the OS rejected the change.
+      const res = await window.electronAPI?.setLoginItemEnabled?.(v)
+      if (!res) return
+      // Reflect what the OS actually did — never silently pretend it worked.
+      setLaunchAtLogin(res.enabled)
+      if (!res.ok) {
+        setLaunchAtLoginError(
+          res.error
+            ? `${t('config_launch_at_login_error')}: ${res.error}`
+            : t('config_launch_at_login_refused')
+        )
+      }
+    } catch (e) {
+      // IPC itself failed: revert and surface it rather than swallowing.
       setLaunchAtLogin(!v)
+      const msg = e instanceof Error ? e.message : String(e)
+      setLaunchAtLoginError(`${t('config_launch_at_login_error')}: ${msg}`)
     }
   }
 
@@ -623,12 +636,17 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             <Toggle checked={taskNotifySound} onChange={setTaskNotifySound} />
           </div>
           {supportsLaunchAtLogin && (
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <div className="text-sm font-medium text-content">{t('config_launch_at_login')}</div>
-                <div className="text-xs text-content-tertiary mt-0.5">{t('config_launch_at_login_hint')}</div>
+            <div className="py-1">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-content">{t('config_launch_at_login')}</div>
+                  <div className="text-xs text-content-tertiary mt-0.5">{t('config_launch_at_login_hint')}</div>
+                </div>
+                <Toggle checked={launchAtLogin} onChange={toggleLaunchAtLogin} />
               </div>
-              <Toggle checked={launchAtLogin} onChange={toggleLaunchAtLogin} />
+              {launchAtLoginError && (
+                <div className="text-xs text-danger mt-1.5">{launchAtLoginError}</div>
+              )}
             </div>
           )}
         </div>
