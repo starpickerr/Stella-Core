@@ -410,6 +410,18 @@ function setupIPC() {
     // Squirrel.Mac can't swap the app bundle (the update silently no-ops and
     // relaunching still shows the old version).
     isQuitting = true
+    // Kill the backend SYNCHRONOUSLY before handing off to the installer. On
+    // Windows the NSIS silent updater deletes the old install right away, and a
+    // still-running cowagent-backend.exe locks those files, aborting the update
+    // with "卸载旧应用程序文件失败:2". before-quit's async stop() sends SIGTERM
+    // and returns immediately (a no-op for a native Windows exe), so it loses
+    // the race. stopSync() blocks until the process tree is gone. Best-effort:
+    // never let a teardown hiccup block the update.
+    try {
+      pythonBackend?.stopSync()
+    } catch {
+      // ignore — proceed with the install regardless
+    }
     quitAndInstall()
   })
 

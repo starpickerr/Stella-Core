@@ -939,6 +939,64 @@ export class PythonBackend extends EventEmitter {
     this.status = 'stopped'
   }
 
+  /**
+   * Synchronously, forcefully tear the backend down and BLOCK until its files
+   * are no longer held. Used only on the update-install path: the NSIS silent
+   * updater starts deleting the old install almost immediately, and on Windows a
+   * still-running cowagent-backend.exe (plus the hundreds of DLLs it maps from
+   * _internal) keeps those files locked, so the installer aborts with "卸载旧
+   * 应用程序文件失败:2". The normal stop() only sends SIGTERM and returns before
+   * the process is actually gone — which on Windows is a no-op for a native exe.
+   *
+   * Best-effort throughout: any failure here must never block the update, so we
+   * still fall through to quitAndInstall even if the kill didn't fully succeed.
+   */
+  stopSync(): void {
+    this.shuttingDown = true
+    this.stopHealthMonitor()
+    this.closeLogStream()
+    const proc = this.process
+    this.process = null
+    this.status = 'stopped'
+    const pid = proc?.pid
+    if (process.platform === 'win32') {
+      // SIGTERM/SIGKILL are effectively meaningless for a native Windows exe, so
+      // use taskkill to end the whole process TREE (/T) forcibly (/F). This
+      // reaches child processes the backend may have spawned (rg.exe, agent bash
+      // tool, etc.) that would otherwise keep files locked. taskkill is
+      // synchronous, so once it returns the handles are released.
+      try {
+        if (pid) {
+          execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
+            stdio: 'ignore',
+            timeout: 5000,
+          })
+        }
+      } catch {
+        // already gone / access denied — fall through to the by-name sweep
+      }
+      // Belt-and-suspenders: kill any stray backend by image name too, in case
+      // the tree walk missed a re-parented child. Scoped to our exe name so it
+      // can't touch unrelated processes.
+      try {
+        execFileSync('taskkill', ['/im', 'cowagent-backend.exe', '/T', '/F'], {
+          stdio: 'ignore',
+          timeout: 5000,
+        })
+      } catch {
+        // no such process / nothing to do
+      }
+    } else if (proc) {
+      // POSIX: SIGKILL is immediate and reliable; no file-lock concern for the
+      // in-place bundle swap, but we still want the child gone before we quit.
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        // already gone — ignore
+      }
+    }
+  }
+
   async restart(): Promise<void> {
     // A manual retry from the UI earns a fresh recovery budget; a restart that
     // the recovery path itself triggered must keep counting toward the limit.
