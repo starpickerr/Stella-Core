@@ -264,6 +264,12 @@ def clear_agent_run_id(token) -> None:
         pass
 
 
+def current_agent_run_id() -> Optional[str]:
+    """Current run id: in-process ContextVar first, else the value passed to a
+    child process via the COW_AGENT_RUN_ID env var."""
+    return _run_id.get() or (os.environ.get("COW_AGENT_RUN_ID") or "").strip() or None
+
+
 def apply_client_source(headers: dict) -> dict:
     """Tag headers with the runtime origin (and deployment id when set)."""
     headers["X-Client-Source"] = get_client_source()
@@ -273,7 +279,7 @@ def apply_client_source(headers: dict) -> dict:
     version = (os.environ.get("COW_CLIENT_VERSION") or "").strip()
     if version:
         headers["X-Client-Version"] = version
-    run_id = _run_id.get()
+    run_id = current_agent_run_id()
     if run_id:
         headers["X-Agent-Run-Id"] = run_id
     dep = _deployment_id()
