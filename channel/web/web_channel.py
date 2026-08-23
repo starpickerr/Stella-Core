@@ -630,10 +630,11 @@ def _ensure_list(value):
     return [value]
 
 
-def _generate_session_title(user_message: str, assistant_reply: str = "") -> str:
+def _generate_session_title(user_message: str, assistant_reply: str = "",
+                            session_id: str = "") -> str:
     """Delegate to the shared SessionService implementation."""
     from agent.chat.session_service import generate_session_title
-    return generate_session_title(user_message, assistant_reply)
+    return generate_session_title(user_message, assistant_reply, session_id)
 
 
 class WebMessage(ChatMessage):
@@ -6165,7 +6166,7 @@ class SessionTitleHandler:
             if not user_message:
                 return json.dumps({"status": "error", "message": "user_message required"})
 
-            title = _generate_session_title(user_message, assistant_reply)
+            title = _generate_session_title(user_message, assistant_reply, session_id)
 
             from agent.memory import get_conversation_store
             store = get_conversation_store()
