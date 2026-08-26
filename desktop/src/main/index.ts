@@ -12,13 +12,13 @@ import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-ic
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
 // where the default Electron binary would otherwise report "Electron". The name
-// can be overridden by the bundled app-config (appName); defaults to CowAgent.
-app.setName(loadAppConfig()?.appName || 'CowAgent')
+// can be overridden by the bundled app-config (appName); defaults to Stella.
+app.setName(loadAppConfig()?.appName || 'Stella')
 
 // Windows shows notifications only when an AppUserModelID is set; without it
 // they are silently dropped. Harmless on macOS/Linux.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.cowagent.desktop')
+  app.setAppUserModelId('com.stella.desktop')
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -238,7 +238,7 @@ async function startBackend() {
   const backendPath = getBackendPath()
   // isDev distinguishes a source checkout from an installed app. The backend
   // manager needs to know: an installed app must never fall back to looking
-  // for a Python interpreter, and its writable data always lives in ~/.cow.
+  // for a Python interpreter, and its writable data always lives in ~/.stella.
   pythonBackend = new PythonBackend(backendPath, !isDev)
 
   pythonBackend.on('ready', (port: number) => {
@@ -412,7 +412,7 @@ function setupIPC() {
     isQuitting = true
     // Kill the backend SYNCHRONOUSLY before handing off to the installer. On
     // Windows the NSIS silent updater deletes the old install right away, and a
-    // still-running cowagent-backend.exe locks those files, aborting the update
+    // still-running stella-backend.exe locks those files, aborting the update
     // with "卸载旧应用程序文件失败:2". before-quit's async stop() sends SIGTERM
     // and returns immediately (a no-op for a native Windows exe), so it loses
     // the race. stopSync() blocks until the process tree is gone. Best-effort:

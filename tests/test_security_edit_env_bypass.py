@@ -5,7 +5,7 @@ Unit tests for the shared credential-path guard across the file tools.
 The read tool was hardened against credential access twice (issues #2863 and
 #2913), but the edit tool never applied the same check. Since a successful edit
 returns a unified diff, whose context lines include neighbouring file content,
-an unguarded edit leaked the contents of ~/.cow/.env straight into the model's
+an unguarded edit leaked the contents of ~/.stella/.env straight into the model's
 context. These tests pin the guard on every tool that can surface that content.
 
 HOME is redirected to a temp dir so the real credential file is never touched.
@@ -35,12 +35,12 @@ class _TempHomeCase(unittest.TestCase):
         self._real_home = os.environ.get("HOME")
         os.environ["HOME"] = self.tmp
 
-        os.makedirs(os.path.join(self.tmp, ".cow"))
-        self.env_path = os.path.join(self.tmp, ".cow", ".env")
+        os.makedirs(os.path.join(self.tmp, ".stella"))
+        self.env_path = os.path.join(self.tmp, ".stella", ".env")
         with open(self.env_path, "w", encoding="utf-8") as f:
             f.write(f"OPENAI_API_KEY={_SECRET}\nANTHROPIC_KEY=sk-ant-other\n")
 
-        self.workspace = os.path.join(self.tmp, "cow")
+        self.workspace = os.path.join(self.tmp, "stella")
         os.makedirs(self.workspace)
         self.config = {"cwd": self.workspace}
 
@@ -86,7 +86,7 @@ class TestEditCredentialGuard(_TempHomeCase):
 
     def test_tilde_path_blocked(self):
         result = Edit(self.config).execute(
-            {"path": "~/.cow/.env", "oldText": "", "newText": "x\n"}
+            {"path": "~/.stella/.env", "oldText": "", "newText": "x\n"}
         )
         self.assertEqual(result.status, "error")
         self.assertIn(_DENIED, str(result.result))
@@ -173,7 +173,7 @@ class TestSharedGuard(_TempHomeCase):
 
     def test_ordinary_paths_not_blocked(self):
         self.assertFalse(is_credential_path(os.path.join(self.workspace, "a.txt")))
-        self.assertFalse(is_credential_path(os.path.join(self.tmp, ".cow", "config.json")))
+        self.assertFalse(is_credential_path(os.path.join(self.tmp, ".stella", "config.json")))
 
 
 if __name__ == "__main__":

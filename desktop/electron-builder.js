@@ -19,7 +19,7 @@
  * keychain exists, so `codesign` couldn't find the identity.
  *
  * Paths are resolved relative to the `.app` at signing time. We enumerate the
- * pre-build backend source dir (build/dist/cowagent-backend, produced by
+ * pre-build backend source dir (build/dist/stella-backend, produced by
  * PyInstaller before packaging) — its layout mirrors the in-app copy — and map
  * each Mach-O to its in-app relative path.
  *
@@ -35,9 +35,9 @@ const path = require('path')
 const config = require('./package.json').build
 
 // PyInstaller output that gets copied into the app at
-// Contents/Resources/backend/cowagent-backend (see extraResources).
-const backendSrc = path.join(__dirname, 'build', 'dist', 'cowagent-backend')
-const inAppPrefix = path.join('Contents', 'Resources', 'backend', 'cowagent-backend')
+// Contents/Resources/backend/stella-backend (see extraResources).
+const backendSrc = path.join(__dirname, 'build', 'dist', 'stella-backend')
+const inAppPrefix = path.join('Contents', 'Resources', 'backend', 'stella-backend')
 
 function isMachO(file) {
   try {

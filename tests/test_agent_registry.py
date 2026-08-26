@@ -6,7 +6,7 @@ from agent.registry import AgentProfile, AgentRegistry, AgentRegistryError
 
 
 def test_legacy_config_synthesizes_default_agent(tmp_path):
-    workspace = tmp_path / "cow"
+    workspace = tmp_path / "stella"
     registry = AgentRegistry.from_config({"agent_workspace": str(workspace)})
 
     profile = registry.get()
@@ -57,7 +57,7 @@ def test_an_omitted_workspace_is_derived_from_the_instance_root(tmp_path):
     the instance root because that is where a single-Agent install already has
     everything: writing an `agents` list around an existing workspace must not
     relocate it."""
-    root = tmp_path / "cow"
+    root = tmp_path / "stella"
     registry = AgentRegistry.from_config(
         {
             "agent_workspace": str(root),
@@ -70,7 +70,7 @@ def test_an_omitted_workspace_is_derived_from_the_instance_root(tmp_path):
 
 
 def test_the_explicit_default_is_the_one_that_keeps_the_instance_root(tmp_path):
-    root = tmp_path / "cow"
+    root = tmp_path / "stella"
     registry = AgentRegistry.from_config(
         {
             "agent_workspace": str(root),
@@ -86,7 +86,7 @@ def test_the_explicit_default_is_the_one_that_keeps_the_instance_root(tmp_path):
 def test_an_explicit_workspace_still_wins_and_an_empty_one_still_fails(tmp_path):
     registry = AgentRegistry.from_config(
         {
-            "agent_workspace": str(tmp_path / "cow"),
+            "agent_workspace": str(tmp_path / "stella"),
             "agents": [{"id": "main"}, {"id": "sales", "workspace": str(tmp_path / "elsewhere")}],
         }
     )
@@ -94,7 +94,7 @@ def test_an_explicit_workspace_still_wins_and_an_empty_one_still_fails(tmp_path)
 
     with pytest.raises(AgentRegistryError, match="non-empty string"):
         AgentRegistry.from_config(
-            {"agent_workspace": str(tmp_path / "cow"), "agents": [{"id": "main", "workspace": ""}]}
+            {"agent_workspace": str(tmp_path / "stella"), "agents": [{"id": "main", "workspace": ""}]}
         )
 
 

@@ -245,7 +245,7 @@ class ApiClient {
   // ---------------------------------------------------------
 
   // Workspace endpoints accept an optional session so they resolve against the
-  // session's project dir (when one is open) instead of always ~/cow.
+  // session's project dir (when one is open) instead of always ~/stella.
   private sessionQuery(session?: string): string {
     return session ? `&session=${encodeURIComponent(session)}` : ''
   }
@@ -270,7 +270,7 @@ class ApiClient {
     return this.request(`/api/projects?session=${encodeURIComponent(session)}`)
   }
 
-  /** Bind the session to a project dir, or clear it (projectDir=null → ~/cow). */
+  /** Bind the session to a project dir, or clear it (projectDir=null → ~/stella). */
   async selectProject(session: string, projectDir: string | null): Promise<ProjectState & ApiResult> {
     return this.request('/api/projects/select', {
       method: 'POST',

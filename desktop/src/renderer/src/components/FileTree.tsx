@@ -7,7 +7,7 @@ import { iconFor, colorFor, formatSize } from '../lib/fileKind'
 import type { WorkspaceEntry } from '../types'
 
 /** MIME type used to tell a workspace-file drag apart from an OS file drop. */
-export const WORKSPACE_DRAG_TYPE = 'application/x-cow-workspace-file'
+export const WORKSPACE_DRAG_TYPE = 'application/x-stella-workspace-file'
 
 const FileTree: React.FC = () => {
   const preview = useWorkspaceStore((s) => s.preview)
@@ -117,7 +117,7 @@ const FileTree: React.FC = () => {
           >
             <Home size={11} className="shrink-0" />
             {/* At the root, show the absolute root path so the user knows which
-                directory (project or ~/cow) the panel is anchored to. */}
+                directory (project or ~/stella) the panel is anchored to. */}
             {crumbs.length === 0 && root && (
               <span className="truncate max-w-[240px]">{root}</span>
             )}

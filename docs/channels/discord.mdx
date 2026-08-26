@@ -1,15 +1,15 @@
 ---
 title: Discord
-description: Integrate CowAgent with a Discord Bot
+description: Integrate Stella with a Discord Bot
 ---
 
-> Integrate CowAgent into Discord via a Discord Bot using the **Gateway** (persistent WebSocket). Supports direct messages (DM) and server channels (triggered by @mention or replying to the bot). The Gateway uses a persistent WebSocket connection — no public IP or callback URL required, works out of the box.
+> Integrate Stella into Discord via a Discord Bot using the **Gateway** (persistent WebSocket). Supports direct messages (DM) and server channels (triggered by @mention or replying to the bot). The Gateway uses a persistent WebSocket connection — no public IP or callback URL required, works out of the box.
 
 ## 1. Setup
 
 ### Step 1: Create a Discord Application and Bot
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications), click **New Application**, enter a name (e.g. `CowAgent`), and create it.
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications), click **New Application**, enter a name (e.g. `Stella`), and create it.
 2. Go to the **Bot** page in the left sidebar, click **Reset Token** to generate a Bot Token, then copy and store it safely (shown only once).
 
 <Tip>
@@ -38,14 +38,14 @@ Reading message text in both DMs and channels depends on this privileged intent.
   You can skip this step if you only need DMs, but you still need a DM channel with the bot (e.g. the user messages the bot directly).
 </Note>
 
-### Step 4: Connect to CowAgent
+### Step 4: Connect to Stella
 
 <Tabs>
   <Tab title="Web Console (Recommended)">
     Open the Web Console (default `http://127.0.0.1:9899`), go to **Channels**, click **Add Channel**, choose **Discord**, paste the Bot Token, and click connect.
   </Tab>
   <Tab title="Config File">
-    Add the following to `config.json` and start Cow:
+    Add the following to `config.json` and start Stella:
 
     ```json
     {
@@ -65,7 +65,7 @@ Reading message text in both DMs and channels depends on this privileged intent.
 The integration is ready when you see logs like:
 
 ```
-[Discord] Bot logged in as CowAgent#1234 (id=123456789)
+[Discord] Bot logged in as Stella#1234 (id=123456789)
 [Discord] ✅ Discord bot ready, listening for messages
 ```
 

@@ -40,7 +40,7 @@ const LoginGate: React.FC<LoginGateProps> = ({ onAuthenticated }) => {
   return (
     <div className="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-[#111111]">
       <form onSubmit={submit} className="text-center space-y-6 max-w-md px-8 w-full">
-        <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
+        <img src="./logo.jpg" alt="Stella" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
         <div className="space-y-2">
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t('login_title')}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{t('login_desc')}</p>

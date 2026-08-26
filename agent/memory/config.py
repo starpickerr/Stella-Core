@@ -26,7 +26,7 @@ def _default_workspace():
 class MemoryConfig:
     """Configuration for memory storage and search"""
     
-    # Storage paths (default: ~/cow)
+    # Storage paths (default: ~/stella)
     workspace_root: str = field(default_factory=_default_workspace)
     
     # Embedding config
@@ -86,7 +86,7 @@ _memory_config_lock = threading.RLock()
 
 def _key(workspace_root: str) -> str:
     """Canonicalize so a registration and a lookup for the same directory
-    agree. ``~/cow``, ``/var/...`` and ``/private/var/...`` all reach the same
+    agree. ``~/stella``, ``/var/...`` and ``/private/var/...`` all reach the same
     place; keying on the raw string would silently miss the registered config
     and hand back a bare default instead."""
     import os

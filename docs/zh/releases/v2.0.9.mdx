@@ -1,6 +1,6 @@
 ---
 title: v2.0.9
-description: CowAgent 2.0.9 - 新增模型管理、MCP 协议支持、浏览器登录态持久化、新模型接入
+description: Stella 2.0.9 - 新增模型管理、MCP 协议支持、浏览器登录态持久化、新模型接入
 ---
 
 ## 🖥️ 新增模型管理
@@ -23,7 +23,7 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 支持 **MCP（Model Context Protocol）** 协议，从固定工具集扩展为开放可插拔的工具生态，任何兼容 MCP 协议的服务均可作为工具直接接入 Agent。
 
 - 原生 JSON-RPC 实现，零额外依赖，同时支持 `stdio` 和 `sse` 两种传输
-- 兼容 Claude Desktop / Cursor 等主流风格的 `mcpServers` 配置，优先读取 `~/cow/mcp.json`
+- 兼容 Claude Desktop / Cursor 等主流风格的 `mcpServers` 配置，优先读取 `~/stella/mcp.json`
 
 相关文档：[MCP 工具](https://docs.cowagent.ai/tools/mcp)。Thanks @yangluxin613 (#2801)
 
@@ -31,7 +31,7 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 
 针对需要登录、有反爬机制的网站，浏览器工具支持登录一次后长期复用登录态，并允许接入用户自己的真实 Chrome 以通过指纹检测：
 
-- **持久化用户配置（默认）**：默认使用 `~/.cow/browser_profile` 作为浏览器用户目录，登录一次后下次自动复用登录态
+- **持久化用户配置（默认）**：默认使用 `~/.stella/browser_profile` 作为浏览器用户目录，登录一次后下次自动复用登录态
 - **CDP 模式**：通过 `tools.browser.cdp_endpoint` 接管真实 Chrome 浏览器，享有完整浏览器权限
 
 相关文档：[浏览器工具](https://docs.cowagent.ai/tools/browser)。Thanks @leafmove (#2809)
@@ -60,6 +60,6 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 
 ## 📦 升级方式
 
-源码部署可执行 `cow update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
+源码部署可执行 `stella update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
 
-**发布日期**：2026.05.22 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.0.8...2.0.9)
+**发布日期**：2026.05.22 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.8...2.0.9)

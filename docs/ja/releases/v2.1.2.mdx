@@ -1,6 +1,6 @@
 ---
 title: v2.1.2
-description: CowAgent 2.1.2 - Web コンソールの管理機能強化、自己進化の改善、新モデル、企業微信スマートボットのコールバックモード、セキュリティ強化
+description: Stella 2.1.2 - Web コンソールの管理機能強化、自己進化の改善、新モデル、企業微信スマートボットのコールバックモード、セキュリティ強化
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.2) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.2)
@@ -53,7 +53,7 @@ Thanks @6vision (#2896 #2869)
 ## 🛠 改善と修正
 
 - **CLI セルフ再起動**：self-restart コマンドを追加し、Agent が自身のプロセスを再起動できるようになりました
-- **Windows 互換性**：cow CLI のディレクトリをユーザー PATH に永続化。`python -c` の長いコマンドが `cmd.exe` の長さ制限を超える問題を修正。インストール時に greenlet をソースからビルドしないように修正
+- **Windows 互換性**：stella CLI のディレクトリをユーザー PATH に永続化。`python -c` の長いコマンドが `cmd.exe` の長さ制限を超える問題を修正。インストール時に greenlet をソースからビルドしないように修正
 - **カスタムロール**：ロールプラグインが `roles/*.json` 配下の独立したプロンプトファイルによるカスタマイズに対応しました。Thanks @sufan721 (#2891)
 - **安定性の修正**：`/cancel` 時の KeyError と画像圧縮の無限ループを修正（Thanks @kirs-hi #2888）
 - **インストールの改善**：起動スクリプトとデフォルト設定を更新。ASR/TTS のデフォルト値、自己進化フラグ、インストール時のハングを修正
@@ -62,6 +62,6 @@ Thanks @6vision (#2896 #2869)
 
 ## 📦 アップグレード
 
-ソースコードでデプロイしている場合は `cow update` でワンクリックアップグレードするか、最新コードを取得して手動で再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
+ソースコードでデプロイしている場合は `stella update` でワンクリックアップグレードするか、最新コードを取得して手動で再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
 
-**リリース日**：2026.06.18 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.1...2.1.2)
+**リリース日**：2026.06.18 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.1...2.1.2)

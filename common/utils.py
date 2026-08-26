@@ -229,10 +229,10 @@ def get_client_source() -> str:
     """Coarse runtime origin, for stats only. First match wins."""
     if _deployment_id():
         return "cloud"
-    explicit = (os.environ.get("COW_CLIENT_SOURCE") or "").strip()
+    explicit = (os.environ.get("STELLA_CLIENT_SOURCE") or "").strip()
     if explicit:
         return explicit
-    if os.environ.get("COW_DESKTOP") == "1":
+    if os.environ.get("STELLA_DESKTOP") == "1":
         return "desktop"
     return "open-source"
 
@@ -266,8 +266,8 @@ def clear_agent_run_id(token) -> None:
 
 def current_agent_run_id() -> Optional[str]:
     """Current run id: in-process ContextVar first, else the value passed to a
-    child process via the COW_AGENT_RUN_ID env var."""
-    return _run_id.get() or (os.environ.get("COW_AGENT_RUN_ID") or "").strip() or None
+    child process via the STELLA_AGENT_RUN_ID env var."""
+    return _run_id.get() or (os.environ.get("STELLA_AGENT_RUN_ID") or "").strip() or None
 
 
 def apply_client_source(headers: dict) -> dict:
@@ -276,7 +276,7 @@ def apply_client_source(headers: dict) -> dict:
     os_family = _client_os()
     if os_family:
         headers["X-Client-OS"] = os_family
-    version = (os.environ.get("COW_CLIENT_VERSION") or "").strip()
+    version = (os.environ.get("STELLA_CLIENT_VERSION") or "").strip()
     if version:
         headers["X-Client-Version"] = version
     run_id = current_agent_run_id()

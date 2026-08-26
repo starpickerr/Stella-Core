@@ -1,6 +1,5 @@
 import { app, BrowserWindow } from 'electron'
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 // electron-updater is CommonJS: its members live on module.exports, with no
 // meaningful default export. Under module=commonjs + esModuleInterop, a named
@@ -25,35 +24,9 @@ export type UpdateStatus =
 
 let getWindow: () => BrowserWindow | null = () => null
 
-// Legacy Windows (7/8/8.1) runs the separate Electron-22 build, which must
-// update to OTHER legacy builds — never the standard build (Electron 33 won't
-// launch on Win7). The update Function serves that build under /update/legacy/.
-// We detect the old OS at runtime (os.release() reports the Windows NT version:
-// 6.1 = Win7, 6.2/6.3 = Win8/8.1, 10.x = Win10/11) rather than via a build
-// flag, so the same source serves the right feed on whatever it runs on.
-function isLegacyWindows(): boolean {
-  if (process.platform !== 'win32') return false
-  const major = Number((os.release() || '').split('.')[0])
-  // NT 6.x = Win7/8/8.1; NT 10.x = Win10/11. Old = major < 10.
-  return Number.isFinite(major) && major < 10
-}
-
-// A bundled app-config may point the updater at a different feed origin. When
-// set, that single URL is used as-is (no China/R2 dual-origin switching, which
-// is specific to the default build's infrastructure). Absent -> default feed.
+// A bundled app-config may point the updater at a different feed origin.
+// Absent -> GitHub Releases for starpickerr/Stella.
 const CONFIGURED_FEED = (loadAppConfig()?.updateFeedUrl || '').trim()
-
-// The update feed. Both entries hit the same Pages Function
-// (https://cowagent.ai/update/); the ?lang=zh query tells it to 302 installer
-// downloads to the China CDN mirror instead of R2. The feed metadata is
-// identical either way, so we can freely switch the feed URL between attempts
-// to fall back from one download origin to the other. Legacy Windows appends a
-// /legacy/ segment so it gets the win-legacy release instead of the standard.
-const FEED_BASE = 'https://cowagent.ai/update/' + (isLegacyWindows() ? 'legacy/' : '')
-const feedUrlFor = (china: boolean) => {
-  if (CONFIGURED_FEED) return CONFIGURED_FEED
-  return china ? `${FEED_BASE}?lang=zh` : FEED_BASE
-}
 
 // Which origin the current session prefers, derived from the app UI language
 // (zh -> China mirror). Downloads that fail on the preferred origin retry once
@@ -63,10 +36,18 @@ let preferChina = false
 let downloadFellBack = false
 
 function applyFeedUrl(): void {
-  const url = feedUrlFor(preferChina)
   try {
-    autoUpdater.setFeedURL({ provider: 'generic', url })
-    log(`feed url set: ${url} (preferChina=${preferChina})`)
+    if (CONFIGURED_FEED) {
+      autoUpdater.setFeedURL({ provider: 'generic', url: CONFIGURED_FEED })
+      log(`feed url set: ${CONFIGURED_FEED}`)
+      return
+    }
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'starpickerr',
+      repo: 'Stella',
+    })
+    log('feed url set: github.com/starpickerr/Stella')
   } catch (err) {
     log(`feed url set failed: ${(err as Error)?.message || String(err)}`)
   }
@@ -206,11 +187,11 @@ let userInitiatedCheck = false
 export function checkForUpdates(userInitiated = false): void {
   userInitiatedCheck = userInitiated
   if (!app.isPackaged) {
-    // Dev-only UI harness: set COW_MOCK_UPDATE=1 to simulate an available
+    // Dev-only UI harness: set STELLA_MOCK_UPDATE=1 to simulate an available
     // update so the update panel/menu interactions can be exercised in
     // `npm run dev` (where there's no real feed). Never runs in a packaged app.
-    if (process.env.COW_MOCK_UPDATE) {
-      const version = process.env.COW_MOCK_UPDATE_VERSION || '9.9.9'
+    if (process.env.STELLA_MOCK_UPDATE) {
+      const version = process.env.STELLA_MOCK_UPDATE_VERSION || '9.9.9'
       log(`checkForUpdates: not packaged, MOCK available version=${version}`)
       send({ state: 'available', version, userInitiated: userInitiatedCheck })
       return

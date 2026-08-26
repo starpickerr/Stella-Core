@@ -1,4 +1,4 @@
-"""Tests for portable CowAgent backup archives."""
+"""Tests for portable Stella backup archives."""
 
 import json
 import zipfile
@@ -32,7 +32,7 @@ def test_backup_restore_round_trip(tmp_path):
     (source_workspace / "tmp").mkdir()
     (source_workspace / "tmp" / "scratch.txt").write_text("skip", encoding="utf-8")
 
-    archive = tmp_path / "cow-backup.zip"
+    archive = tmp_path / "stella-backup.zip"
     summary = create_backup_archive(archive, source_data, source_workspace)
     assert summary["contents"]["workspace_files"] == 5
     assert archive.exists()
@@ -57,7 +57,7 @@ def test_restore_merges_without_deleting_unrelated_files(tmp_path):
     _write_json(source_data / "config.json", {"agent_workspace": str(source_workspace)})
     source_workspace.mkdir()
     (source_workspace / "MEMORY.md").write_text("new\n", encoding="utf-8")
-    archive = tmp_path / "cow-backup.zip"
+    archive = tmp_path / "stella-backup.zip"
     create_backup_archive(archive, source_data, source_workspace)
 
     target_workspace = tmp_path / "target-workspace"
@@ -72,7 +72,7 @@ def test_restore_merges_without_deleting_unrelated_files(tmp_path):
 
 def test_restore_rejects_path_traversal(tmp_path):
     archive = tmp_path / "malicious.zip"
-    manifest = {"format": "cowagent-backup", "version": 1}
+    manifest = {"format": "stella-backup", "version": 1}
     with zipfile.ZipFile(str(archive), "w") as output:
         output.writestr("manifest.json", json.dumps(manifest))
         output.writestr("workspace/../../escape.txt", "nope")
@@ -94,7 +94,7 @@ def test_fresh_restore_ignores_archive_controlled_destinations(tmp_path, monkeyp
     (source_workspace / "MEMORY.md").write_text("portable\n", encoding="utf-8")
     outside_appdata.mkdir()
     (outside_appdata / "user_datas.pkl").write_bytes(b"legacy")
-    archive = tmp_path / "cow-backup.zip"
+    archive = tmp_path / "stella-backup.zip"
     create_backup_archive(archive, source_data, source_workspace)
 
     fake_home = tmp_path / "home"
@@ -102,8 +102,8 @@ def test_fresh_restore_ignores_archive_controlled_destinations(tmp_path, monkeyp
     target_data = tmp_path / "target-data"
     result = restore_backup_archive(archive, target_data)
 
-    assert result["workspace"] == str((fake_home / "cow").resolve())
-    assert (fake_home / "cow" / "MEMORY.md").exists()
+    assert result["workspace"] == str((fake_home / "stella").resolve())
+    assert (fake_home / "stella" / "MEMORY.md").exists()
     assert not archive_workspace.exists()
     assert (target_data / "user_datas.pkl").read_bytes() == b"legacy"
     restored_config = json.loads((target_data / "config.json").read_text(encoding="utf-8"))

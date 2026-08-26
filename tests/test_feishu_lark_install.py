@@ -26,8 +26,8 @@ def _unpacked(path):
 @pytest.fixture
 def offline(monkeypatch, tmp_path):
     """Isolate the vendor dir and pretend lark_oapi is not installed."""
-    monkeypatch.setenv("COW_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("COW_DESKTOP", raising=False)
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("STELLA_DESKTOP", raising=False)
     monkeypatch.setattr(lark_install, "is_available", lambda: False)
     return tmp_path
 
@@ -48,18 +48,18 @@ def test_needs_download_only_when_nothing_is_unpacked(offline):
 
 
 def test_needs_download_false_when_sdk_importable(monkeypatch, tmp_path):
-    monkeypatch.setenv("COW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(lark_install, "is_available", lambda: True)
     assert lark_install.needs_download() is False
 
 
 def test_vendor_dir_is_versioned(monkeypatch, tmp_path):
-    monkeypatch.setenv("COW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
     assert lark_install.vendor_dir().endswith(lark_install.VENDOR_VERSION)
 
 
 def test_vendor_urls_prefer_the_china_mirror(monkeypatch):
-    monkeypatch.delenv("COW_FEISHU_VENDOR_URL", raising=False)
+    monkeypatch.delenv("STELLA_FEISHU_VENDOR_URL", raising=False)
     urls = lark_install.vendor_urls()
     assert len(urls) > 1, "expected a fallback mirror"
     assert "link-ai" in urls[0], "the China CDN should be tried first"
@@ -67,7 +67,7 @@ def test_vendor_urls_prefer_the_china_mirror(monkeypatch):
 
 
 def test_vendor_url_can_be_overridden(monkeypatch):
-    monkeypatch.setenv("COW_FEISHU_VENDOR_URL", "https://example.test/b.zip")
+    monkeypatch.setenv("STELLA_FEISHU_VENDOR_URL", "https://example.test/b.zip")
     assert lark_install.vendor_urls() == ["https://example.test/b.zip"]
 
 
@@ -111,7 +111,7 @@ def test_ensure_non_desktop_raises(offline):
 
 
 def test_ensure_allow_install_false_raises(offline, monkeypatch):
-    monkeypatch.setenv("COW_DESKTOP", "1")
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
     with pytest.raises(ImportError):
         lark_install.ensure(allow_install=False)
 
@@ -129,7 +129,7 @@ def test_ensure_reuses_previously_unpacked_bundle(offline, monkeypatch):
 
 
 def test_ensure_downloads_and_unpacks(offline, monkeypatch):
-    monkeypatch.setenv("COW_DESKTOP", "1")
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
     payload = _make_bundle()
     monkeypatch.setattr(lark_install, "VENDOR_SHA256",
                         hashlib.sha256(payload).hexdigest())
@@ -147,7 +147,7 @@ def test_ensure_downloads_and_unpacks(offline, monkeypatch):
 
 
 def test_ensure_rejects_checksum_mismatch(offline, monkeypatch):
-    monkeypatch.setenv("COW_DESKTOP", "1")
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
     monkeypatch.setattr(lark_install, "VENDOR_SHA256", "0" * 64)
     monkeypatch.setattr(lark_install, "_fetch", lambda url: _make_bundle())
 
@@ -157,7 +157,7 @@ def test_ensure_rejects_checksum_mismatch(offline, monkeypatch):
 
 
 def test_ensure_download_failure_raises(offline, monkeypatch):
-    monkeypatch.setenv("COW_DESKTOP", "1")
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
 
     def boom(url):
         raise OSError("no network")

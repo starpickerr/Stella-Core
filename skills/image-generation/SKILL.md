@@ -2,7 +2,7 @@
 name: image-generation
 description: Generate or edit images from text prompts. Use when the user asks to create, draw, design, or edit an image, illustration, photo, icon, poster, or any visual content.
 metadata:
-  cowagent:
+  stella:
     requires:
       anyEnv:
         - OPENAI_API_KEY

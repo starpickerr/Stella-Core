@@ -61,7 +61,7 @@ const LogsPage: React.FC<LogsPageProps> = ({ baseUrl }) => {
       const ts = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
       const a = document.createElement('a')
       a.href = url
-      a.download = `cowagent-${ts}.log`
+      a.download = `stella-${ts}.log`
       document.body.appendChild(a)
       a.click()
       a.remove()

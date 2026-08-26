@@ -64,8 +64,8 @@ Under thinking mode, `reasoning_effort` controls reasoning intensity:
 
 ### Behavior Notes
 
-- **Sampling parameters**: in thinking mode, `temperature`, `top_p`, `presence_penalty`, and `frequency_penalty` are ignored by the server (without errors). CowAgent automatically skips them.
-- **Multi-turn tool calls**: when the history contains tool calls, DeepSeek requires every assistant message to include `reasoning_content`. CowAgent handles this automatically, so toggling thinking mode across turns will not cause errors.
+- **Sampling parameters**: in thinking mode, `temperature`, `top_p`, `presence_penalty`, and `frequency_penalty` are ignored by the server (without errors). Stella automatically skips them.
+- **Multi-turn tool calls**: when the history contains tool calls, DeepSeek requires every assistant message to include `reasoning_content`. Stella handles this automatically, so toggling thinking mode across turns will not cause errors.
 
 <Tip>
   `deepseek-v4-flash` is used by default; switch to `deepseek-v4-pro` for complex tasks; enable `enable_thinking` when deep reasoning is needed.

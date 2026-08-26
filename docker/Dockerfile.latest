@@ -46,7 +46,7 @@ RUN apt-get update \
         fi; \
     fi \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /home/agent/cow \
+    && mkdir -p /home/agent/stella \
     && groupadd -r agent \
     && useradd -r -g agent -s /bin/bash -d /home/agent agent \
     && chown -R agent:agent /home/agent ${BUILD_PREFIX} /usr/local/lib

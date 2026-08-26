@@ -8,7 +8,7 @@ from agent.tools.bash.bash import Bash
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        ("findstr -i -e cow -e agent", "findstr uses /I"),
+        ("findstr -i -e stella -e agent", "findstr uses /I"),
         ("python task.py 2>/dev/null", "redirect to nul"),
         ("bash script.sh", "do not invoke bash/sh"),
         ("echo 'hello'", "single quotes literally"),
@@ -45,7 +45,7 @@ def test_failed_windows_command_returns_the_corrective_hint(monkeypatch, tmp_pat
     )
 
     result = tool.execute(
-        {"command": "pip list 2>nul | findstr -i -e cow -e agent"}
+        {"command": "pip list 2>nul | findstr -i -e stella -e agent"}
     )
 
     assert result.status == "error"

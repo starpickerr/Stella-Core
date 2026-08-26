@@ -1,25 +1,25 @@
-<p align="center"><img src="https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="CowAgent" width="420" /></p>
+<p align="center"><img src="https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
 
 <p align="center">
-  <a href="https://github.com/zhayujie/CowAgent/releases/latest"><img src="https://img.shields.io/github/v/release/zhayujie/CowAgent?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
+  <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
+  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://docs.cowagent.ai/ja"><img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="ドキュメント" /></a>
-  <a href="https://cdn.link-ai.tech/code/cow/cowagent-wechat-group.png"><img src="https://img.shields.io/badge/WeChat-Group-07C160?style=flat&logo=wechat&logoColor=white" alt="WeChat Group" /></a>
+  <a href="https://cdn.link-ai.tech/code/cow/stella-wechat-group.png"><img src="https://img.shields.io/badge/WeChat-Group-07C160?style=flat&logo=wechat&logoColor=white" alt="WeChat Group" /></a>
   <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/25763" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25763" alt="zhayujie%2FCowAgent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/25763" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25763" alt="zhayujie%2FStella | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
 <p align="center">
   [<a href="../../README.md">English</a>] | [<a href="../zh/README.md">中文</a>] | [<a href="../zh/README-Hant.md">繁體中文</a>] | [日本語]
 </p>
 
-**CowAgent** は、自律的にタスクを計画し、コンピュータや外部リソースを操作し、Skill を作成・実行し、パーソナルナレッジベースと長期記憶を構築し、自己進化によってユーザーとともに成長するオープンソースのスーパー AI アシスタントです。エンドツーエンドの Agent Harness のリファレンス実装の一つでもあります。
+**Stella** は、自律的にタスクを計画し、コンピュータや外部リソースを操作し、Skill を作成・実行し、パーソナルナレッジベースと長期記憶を構築し、自己進化によってユーザーとともに成長するオープンソースのスーパー AI アシスタントです。エンドツーエンドの Agent Harness のリファレンス実装の一つでもあります。
 
-CowAgent は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、Web や主要な IM プラットフォーム上で動作。個人 PC やサーバー上で 24 時間 365 日稼働できます。
+Stella は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、Web や主要な IM プラットフォーム上で動作。個人 PC やサーバー上で 24 時間 365 日稼働できます。
 
 <p align="center">
   <a href="https://cowagent.ai/">🌐 ウェブサイト</a> &nbsp;·&nbsp;
@@ -62,9 +62,9 @@ CowAgent は軽量でデプロイしやすく、拡張性に優れています�
 
 ## 🏗️ アーキテクチャ
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.png" alt="CowAgent Architecture" width="750"/>
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.png" alt="Stella Architecture" width="750"/>
 
-CowAgent は完全な **Agent Harness** です：メッセージは各種**チャネル**から流入し、**Agent Core** が記憶・知識・利用可能なツール／Skill を組み合わせてタスクを計画・判断、**モデル**が応答を生成し、結果は元のチャネルに返されます。各レイヤーは疎結合で、独立して拡張可能です。
+Stella は完全な **Agent Harness** です：メッセージは各種**チャネル**から流入し、**Agent Core** が記憶・知識・利用可能なツール／Skill を組み合わせてタスクを計画・判断、**モデル**が応答を生成し、結果は元のチャネルに返されます。各レイヤーは疎結合で、独立して拡張可能です。
 
 詳細は [アーキテクチャ](https://docs.cowagent.ai/ja/intro/architecture) を参照してください。
 
@@ -99,23 +99,23 @@ docker compose up -d
 
 > 📖 詳細ガイド: [クイックスタート](https://docs.cowagent.ai/ja/guide/quick-start) · [ソースからインストール](https://docs.cowagent.ai/ja/guide/manual-install) · [アップグレード](https://docs.cowagent.ai/ja/guide/upgrade)
 
-インストール後は、[`cow` CLI](https://docs.cowagent.ai/ja/cli/index) でサービスを管理できます：
+インストール後は、[`stella` CLI](https://docs.cowagent.ai/ja/cli/index) でサービスを管理できます：
 
 ```bash
-cow start | stop | restart        # サービス制御
-cow status | logs                  # ステータスとログ
-cow update                         # 最新コード取得後に再起動
-cow skill install <名前>           # Skill のインストール
-cow install-browser                # ブラウザツールのインストール
+stella start | stop | restart        # サービス制御
+stella status | logs                  # ステータスとログ
+stella update                         # 最新コード取得後に再起動
+stella skill install <名前>           # Skill のインストール
+stella install-browser                # ブラウザツールのインストール
 ```
 
-> 💻 デスクトップクライアント：**[CowAgent デスクトップクライアント](https://cowagent.ai/download/)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
+> 💻 デスクトップクライアント：**[Stella デスクトップクライアント](https://cowagent.ai/download/)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
 
 <br/>
 
 ## 🤖 モデル
 
-CowAgent は主要な LLM プロバイダーすべてに対応しています。**チャット、画像認識、画像生成、ASR/TTS、埋め込み（Embedding）** の各機能はそれぞれ別のベンダーで設定可能です。
+Stella は主要な LLM プロバイダーすべてに対応しています。**チャット、画像認識、画像生成、ASR/TTS、埋め込み（Embedding）** の各機能はそれぞれ別のベンダーで設定可能です。
 
 | プロバイダー | 代表的なモデル | チャット | 画像認識 | 画像生成 | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -158,7 +158,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 > Feishu と WeCom Bot は **Web コンソール内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](https://docs.cowagent.ai/ja/channels/index) を参照してください。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-chat.png" alt="CowAgent Web Console" width="800"/>
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-chat.png" alt="Stella Web Console" width="800"/>
 
 *Web コンソールはデフォルトのチャネルであると同時に、Agent の設定・管理を統一的に行う場でもあります。*
 
@@ -215,21 +215,21 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🏷 更新履歴
 
-> **2026.08.20:** [v2.1.7](https://github.com/zhayujie/CowAgent/releases/tag/2.1.7) — セッションごとに分離できる複数ワークスペース、セッション単位の権限モード、タスク通知、デスクトップの改善、新モデルの追加。
+> **2026.08.20:** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — セッションごとに分離できる複数ワークスペース、セッション単位の権限モード、タスク通知、デスクトップの改善、新モデルの追加。
 
-> **2026.08.12:** [v2.1.6](https://github.com/zhayujie/CowAgent/releases/tag/2.1.6) — 独立タスクを並行実行するサブ Agent、推論強度の設定、差し替え可能なメモリのベクトルバックエンド、体験とセキュリティの改善。
+> **2026.08.12:** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — 独立タスクを並行実行するサブ Agent、推論強度の設定、差し替え可能なメモリのベクトルバックエンド、体験とセキュリティの改善。
 
-> **2026.07.29:** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — ワークスペースとファイルプレビュー、基本ツールの最適化（ファイル検索、書き込み検証、コマンドのバックグラウンド実行）、コンテキスト圧縮（`/compact`）、プロンプトのワンクリック最適化、セキュリティ強化。
+> **2026.07.29:** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — ワークスペースとファイルプレビュー、基本ツールの最適化（ファイル検索、書き込み検証、コマンドのバックグラウンド実行）、コンテキスト圧縮（`/compact`）、プロンプトのワンクリック最適化、セキュリティ強化。
 
-> **2026.07.20:** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
+> **2026.07.20:** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
 
-> **2026.07.08:** [v2.1.3](https://github.com/zhayujie/CowAgent/releases/tag/2.1.3) — [デスクトップクライアント](https://cowagent.ai/download/)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。
+> **2026.07.08:** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [デスクトップクライアント](https://cowagent.ai/download/)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。
 
-> **2026.06.18:** [v2.1.2](https://github.com/zhayujie/CowAgent/releases/tag/2.1.2) — Web コンソールの強化（定期タスク管理、ナレッジベースのカテゴリ、複数のカスタムモデルプロバイダー）、自己進化の改善、新モデル（kimi-k2.7-code、glm-5.2）、セキュリティ強化と改善。
+> **2026.06.18:** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web コンソールの強化（定期タスク管理、ナレッジベースのカテゴリ、複数のカスタムモデルプロバイダー）、自己進化の改善、新モデル（kimi-k2.7-code、glm-5.2）、セキュリティ強化と改善。
 
-> **2026.06.09:** [v2.1.1](https://github.com/zhayujie/CowAgent/releases/tag/2.1.1) — 自己進化、Web コンソールの強化（メッセージ管理、マルチセッション並行）、クロスプラットフォーム対応の MCP 強化と並行呼び出し、新モデル（MiniMax-M3、qwen3.7-plus）、Python 3.13 対応。
+> **2026.06.09:** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — 自己進化、Web コンソールの強化（メッセージ管理、マルチセッション並行）、クロスプラットフォーム対応の MCP 強化と並行呼び出し、新モデル（MiniMax-M3、qwen3.7-plus）、Python 3.13 対応。
 
-> **2026.06.01:** [v2.1.0](https://github.com/zhayujie/CowAgent/releases/tag/2.1.0) — 国際化対応、新チャネル（Telegram、Discord、Slack、WeChat カスタマーサービス）、CLI インタラクション強化、ワンライナーインストールの最適化、MCP Streamable HTTP 対応、新モデル（claude-opus-4-8、MiMo）。
+> **2026.06.01:** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国際化対応、新チャネル（Telegram、Discord、Slack、WeChat カスタマーサービス）、CLI インタラクション強化、ワンライナーインストールの最適化、MCP Streamable HTTP 対応、新モデル（claude-opus-4-8、MiMo）。
 
 完全な履歴: [リリースノート](https://docs.cowagent.ai/ja/releases/overview)
 
@@ -241,7 +241,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-コミュニティに参加-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord に参加" /></a>
 
-GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
+GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
 
 <img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
 
@@ -249,7 +249,7 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) した
 
 ## 🔗 関連プロジェクト
 
-- **[Cow Skill Hub](https://github.com/zhayujie/cow-skill-hub)** — AI エージェント向けのオープン Skill マーケットプレイス；CowAgent、OpenClaw、Claude Code などに対応
+- **[Stella Skill Hub](https://github.com/zhayujie/cow-skill-hub)** — AI エージェント向けのオープン Skill マーケットプレイス；Stella、OpenClaw、Claude Code などに対応
 - **[bot-on-anything](https://github.com/zhayujie/bot-on-anything)** — 軽量な LLM アプリケーションフレームワーク；Slack、Telegram、Discord、Gmail などに対応
 - **[AgentMesh](https://github.com/MinimalFuture/AgentMesh)** — チーム協調による複雑な問題解決のためのオープンソースのマルチエージェントフレームワーク
 
@@ -257,10 +257,10 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) した
 
 ## 🏢 エンタープライズサービス
 
-[**LinkAI**](https://link-ai.tech/) は企業や開発者向けのワンストップ AI Agent プラットフォームで、CowAgent にマネージドホスティングとエンタープライズグレードのサポートを提供します：
+[**LinkAI**](https://link-ai.tech/) は企業や開発者向けのワンストップ AI Agent プラットフォームで、Stella にマネージドホスティングとエンタープライズグレードのサポートを提供します：
 
-- **🚀 デプロイ不要のホスト型ランタイム** — [CowAgent オンラインアシスタント](https://link-ai.tech/cowagent/create) を 1 分以内に起動、サーバー不要
-- **🧠 Agent インフラ** — 主要 LLM・ナレッジベース・データベース・Skill・ワークフローへの統一アクセス。CowAgent の機能を拡張する、すぐに使えるビルディングブロック
+- **🚀 デプロイ不要のホスト型ランタイム** — [Stella オンラインアシスタント](https://link-ai.tech/cowagent/create) を 1 分以内に起動、サーバー不要
+- **🧠 Agent インフラ** — 主要 LLM・ナレッジベース・データベース・Skill・ワークフローへの統一アクセス。Stella の機能を拡張する、すぐに使えるビルディングブロック
 - **🏢 チーム & エンタープライズ機能** — ワークスペース、ロールベースのアクセス制御、監査ログ、本番運用向けプライベートデプロイ
 
 エンタープライズに関するお問い合わせ：**sales@simple-future.tech** または [QR コードをスキャン](https://cdn.link-ai.tech/contact/customer-support.png) して WeChat でお問い合わせください。
@@ -275,7 +275,7 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) した
 
 ## 🌟 コントリビューター
 
-![cow contributors](https://contrib.rocks/image?repo=zhayujie/CowAgent&max=1000)
+![stella contributors](https://contrib.rocks/image?repo=starpickerr/Stella&max=1000)
 
 <br/>
 
@@ -283,10 +283,10 @@ GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) した
 
 1. 本プロジェクトは [MIT License](/LICENSE) に基づき、技術研究と学習を目的としています。利用者は所在地の法令・規制を遵守する必要があり、本プロジェクトの利用に起因するいかなる結果についてもメンテナーは責任を負いません。
 2. **コストと安全性：** Agent モードは通常のチャットよりトークン消費が大幅に多いため、品質とコストのバランスを考慮してモデルを選択してください。Agent はローカル OS にアクセスできるため、信頼できる環境にのみデプロイしてください。
-3. CowAgent は純粋なオープンソースプロジェクトであり、暗号通貨の発行・参加・承認は一切行いません。
+3. Stella は純粋なオープンソースプロジェクトであり、暗号通貨の発行・参加・承認は一切行いません。
 
 <br/>
 
 ## 📌 プロジェクト改名のお知らせ
 
-本プロジェクトは旧名 `chatgpt-on-wechat` から、2026.04.13 に **CowAgent** へ正式に改名されました。元の GitHub URL は自動的にリダイレクトされます。既存ユーザーは `git remote set-url origin https://github.com/zhayujie/CowAgent.git` でローカルのリモートを更新できます。
+本プロジェクトは旧名 `chatgpt-on-wechat` から、2026.04.13 に **Stella** へ正式に改名されました。元の GitHub URL は自動的にリダイレクトされます。既存ユーザーは `git remote set-url origin https://github.com/starpickerr/Stella.git` でローカルのリモートを更新できます。

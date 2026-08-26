@@ -1,6 +1,6 @@
 ---
 title: 手动安装
-description: 手动部署 CowAgent（源码 / Docker）
+description: 手动部署 Stella（源码 / Docker）
 ---
 
 ## 源码部署
@@ -8,12 +8,12 @@ description: 手动部署 CowAgent（源码 / Docker）
 ### 1. 克隆项目代码
 
 ```bash
-git clone https://github.com/zhayujie/CowAgent
-cd CowAgent/
+git clone https://github.com/starpickerr/Stella
+cd Stella/
 ```
 
 <Tip>
-  若遇到网络问题可使用国内仓库地址：https://gitee.com/zhayujie/CowAgent
+  若遇到网络问题可使用国内仓库地址：https://github.com/starpickerr/Stella
 </Tip>
 
 ### 2. 安装依赖
@@ -32,7 +32,7 @@ pip3 install -r requirements-optional.txt
 
 > 国内网络可使用镜像源加速：`pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
-### 3. 安装 Cow CLI
+### 3. 安装 Stella CLI
 
 安装命令行工具，用于管理服务和技能：
 
@@ -40,14 +40,14 @@ pip3 install -r requirements-optional.txt
 pip3 install -e .
 ```
 
-安装后即可使用 `cow` 命令：
+安装后即可使用 `stella` 命令：
 
 ```bash
-cow help
+stella help
 ```
 
 <Note>
-  此步骤为推荐操作。安装后可以使用 `cow start`、`cow stop`、`cow update` 等命令管理服务，也可以使用 `cow skill` 管理技能。如果不安装 CLI，可以使用 `./run.sh` 或 `python3 app.py` 运行。
+  此步骤为推荐操作。安装后可以使用 `stella start`、`stella stop`、`stella update` 等命令管理服务，也可以使用 `stella skill` 管理技能。如果不安装 CLI，可以使用 `./run.sh` 或 `python3 app.py` 运行。
 </Note>
 
 ### 3.1 安装浏览器工具（可选）
@@ -55,7 +55,7 @@ cow help
 如需使用浏览器工具（控制浏览器访问网页、填写表单等），运行：
 
 ```bash
-cow install-browser
+stella install-browser
 ```
 
 该命令会自动安装 Playwright 和 Chromium 浏览器。详细说明参考 [浏览器工具文档](/zh/tools/browser)。
@@ -76,10 +76,10 @@ cp config-template.json config.json
 
 ### 5. 运行
 
-**使用 Cow CLI 运行（推荐）：**
+**使用 Stella CLI 运行（推荐）：**
 
 ```bash
-cow start
+stella start
 ```
 
 **或者本地前台运行：**
@@ -131,8 +131,8 @@ sudo docker logs -f chatgpt-on-wechat
 <Note>
   **数据持久化**：`docker-compose.yml` 默认将两个目录挂载到宿主机，容器重启、`docker compose pull` 升级换镜像后数据都不会丢失：
 
-  - `./cow` → 容器内 `/home/agent/cow`：工作空间，存放对话安装的技能、记忆、知识库、`mcp.json` 及对话产物。
-  - `./cow-data` → 容器内 `/home/agent/.cow`：数据目录，由 `COW_DATA_DIR` 指定，存放 Web 控制台保存的 `config.json`、运行日志、通道凭据等。
+  - `./stella` → 容器内 `/home/agent/stella`：工作空间，存放对话安装的技能、记忆、知识库、`mcp.json` 及对话产物。
+  - `./stella-data` → 容器内 `/home/agent/.stella`：数据目录，由 `STELLA_DATA_DIR` 指定，存放 Web 控制台保存的 `config.json`、运行日志、通道凭据等。
 
   两个目录默认位于 `docker-compose.yml` 同级路径下，请勿删除。
 </Note>
@@ -151,11 +151,11 @@ sudo docker logs -f chatgpt-on-wechat
       "model": "deepseek-v4-flash",
       "deepseek_api_key": "",
       "agent": true,
-      "agent_workspace": "~/cow",
+      "agent_workspace": "~/stella",
       "agent_max_context_tokens": 40000,
       "agent_max_context_turns": 30,
       "agent_max_steps": 15,
-      "cow_lang": "auto"
+      "stella_lang": "auto"
     }
     ```
   </Tab>
@@ -170,7 +170,7 @@ sudo docker logs -f chatgpt-on-wechat
       AGENT_MAX_CONTEXT_TOKENS: 40000
       AGENT_MAX_CONTEXT_TURNS: 30
       AGENT_MAX_STEPS: 15
-      COW_LANG: 'auto'
+      STELLA_LANG: 'auto'
     ```
   </Tab>
 </Tabs>
@@ -180,12 +180,12 @@ sudo docker logs -f chatgpt-on-wechat
 | `channel_type` | `CHANNEL_TYPE` | 接入渠道类型 | `web` |
 | `model` | `MODEL` | 模型名称 | `deepseek-v4-flash` |
 | `agent` | `AGENT` | 是否启用 Agent 模式 | `true` |
-| `agent_workspace` | - | Agent 工作空间路径 | `~/cow` |
+| `agent_workspace` | - | Agent 工作空间路径 | `~/stella` |
 | `agent_max_context_tokens` | `AGENT_MAX_CONTEXT_TOKENS` | 最大上下文 tokens | `40000` |
 | `agent_max_context_turns` | `AGENT_MAX_CONTEXT_TURNS` | 最大上下文记忆轮次 | `30` |
 | `agent_max_steps` | `AGENT_MAX_STEPS` | 单次任务最大决策步数 | `15` |
-| `cow_lang` | `COW_LANG` | 界面、命令文案、系统提示词等的语言，`auto` 自动检测，可设为 `zh` / `en` | `auto` |
+| `stella_lang` | `STELLA_LANG` | 界面、命令文案、系统提示词等的语言，`auto` 自动检测，可设为 `zh` / `en` | `auto` |
 
 <Tip>
-  全部配置项可在项目 [`config.py`](https://github.com/zhayujie/CowAgent/blob/master/config.py) 文件中查看。Docker 部署时，配置项名称需转为大写环境变量格式。
+  全部配置项可在项目 [`config.py`](https://github.com/starpickerr/Stella/blob/master/config.py) 文件中查看。Docker 部署时，配置项名称需转为大写环境变量格式。
 </Tip>

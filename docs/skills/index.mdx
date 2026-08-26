@@ -1,6 +1,6 @@
 ---
 title: Skills Overview
-description: CowAgent skills system introduction
+description: Stella skills system introduction
 ---
 
 Skills provide infinite extensibility for the Agent. Each Skill consists of a description file (`SKILL.md`), execution scripts (optional), and resources (optional), describing how to accomplish specific types of tasks.
@@ -9,9 +9,9 @@ The difference between Skills and Tools: Tools are atomic operations implemented
 
 ## Getting Skills
 
-CowAgent offers multiple ways to acquire skills:
+Stella offers multiple ways to acquire skills:
 
-- **Cow Skill Hub** — Browse and install community skills via `/skill list --remote`
+- **Stella Skill Hub** — Browse and install community skills via `/skill list --remote`
 - **GitHub** — Install directly from GitHub repositories, with batch install support
 - **ClawHub** — Install ClawHub skills via `/skill install clawhub:name`
 - **URL** — Install from zip archives or SKILL.md links
@@ -21,7 +21,7 @@ See [Install Skills](/skills/install) and [Skill Management Commands](/cli/skill
 
 ## Skill Loading Priority
 
-1. **Workspace skills** (highest): `~/cow/skills/`
+1. **Workspace skills** (highest): `~/stella/skills/`
 2. **Project built-in skills** (lowest): `skills/`
 
 Skills with the same name are overridden by priority.

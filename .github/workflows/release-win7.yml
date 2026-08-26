@@ -72,7 +72,7 @@ jobs:
           pip install -r /tmp/requirements-win7.txt
           pip install pyinstaller
           # Run from repo root so the spec's relative datas resolve correctly.
-          pyinstaller desktop/build/cowagent-backend.spec \
+          pyinstaller desktop/build/stella-backend.spec \
             --noconfirm \
             --distpath desktop/build/dist \
             --workpath desktop/build/build-work
@@ -129,7 +129,7 @@ jobs:
       # Windows npx.cmd wrapper returning early (see release.yml).
       #
       # -c.win.artifactName injects a "win7" segment into the file name
-      # (CowAgent-Setup-<ver>-win7-x64.exe). That's exactly how the two mac
+      # (Stella-Setup-<ver>-win7-x64.exe). That's exactly how the two mac
       # builds differ by ${arch}: it keeps the legacy exe from colliding with
       # the standard win exe in the same v<version>/ folder, and lets
       # register-releases.mjs map it to the win-legacy platform by name.
@@ -140,7 +140,7 @@ jobs:
           SIGNTOOL_ACCESS_KEY: ${{ secrets.SIGNTOOL_ACCESS_KEY }}
           SIGNTOOL_ACCESS_SECRET: ${{ secrets.SIGNTOOL_ACCESS_SECRET }}
           SIGNTOOL_CERT_CODE: ${{ secrets.SIGNTOOL_CERT_CODE }}
-          COW_SIGN_DRY_RUN: ${{ vars.COW_SIGN_DRY_RUN }}
+          STELLA_SIGN_DRY_RUN: ${{ vars.STELLA_SIGN_DRY_RUN }}
         run: |
           node node_modules/electron-builder/cli.js --win --x64 \
             --config electron-builder.win.js \
@@ -154,7 +154,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cowagent-win7-x64
+          name: stella-win7-x64
           path: |
             desktop/release/*.exe
             desktop/release/*.blockmap
@@ -194,7 +194,7 @@ jobs:
         if: steps.guard.outputs.enabled == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: cowagent-win7-x64
+          name: stella-win7-x64
           path: dist
 
       - name: Upload installer to R2
@@ -202,7 +202,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          R2_BUCKET: ${{ vars.R2_BUCKET != '' && vars.R2_BUCKET || 'cow-skills' }}
+          R2_BUCKET: ${{ vars.R2_BUCKET != '' && vars.R2_BUCKET || 'stella-skills' }}
           VER: ${{ github.event.inputs.version }}
         run: |
           shopt -s nullglob
@@ -240,4 +240,4 @@ jobs:
         run: |
           node .github/scripts/register-releases.mjs --dir dist --version "$VER" --sql d1.sql
           echo "==> D1 statements:"; cat d1.sql
-          npx --yes wrangler@latest d1 execute cow-desktop --remote --file d1.sql
+          npx --yes wrangler@latest d1 execute stella-desktop --remote --file d1.sql

@@ -1,14 +1,14 @@
 ---
 title: アップデート
-description: CowAgent のアップグレード方法
+description: Stella のアップグレード方法
 ---
 
 ## コマンドによるアップグレード（推奨）
 
-`cow update` でコードの更新とサービスの再起動をワンクリックで実行できます：
+`stella update` でコードの更新とサービスの再起動をワンクリックで実行できます：
 
 ```bash
-cow update
+stella update
 ```
 
 このコマンドは以下のフローを自動的に実行します：
@@ -20,7 +20,7 @@ cow update
 5. サービスを起動
 
 <Note>
-  Cow CLI がインストールされていない場合は、`./run.sh update` でも同様の操作が可能です。
+  Stella CLI がインストールされていない場合は、`./run.sh update` でも同様の操作が可能です。
 </Note>
 
 ## 手動アップグレード
@@ -36,8 +36,8 @@ pip3 install -e .
 更新完了後、サービスを再起動します：
 
 ```bash
-# Cow CLI を使用
-cow restart
+# Stella CLI を使用
+stella restart
 
 # または run.sh を使用
 ./run.sh restart

@@ -132,7 +132,7 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                     "clientSecret": client.credential.client_secret,
                     "subscriptions": [{"type": "CALLBACK",
                                        "topic": dingtalk_stream.chatbot.ChatbotMessage.TOPIC}],
-                    "ua": "dingtalk-sdk-python/cow",
+                    "ua": "dingtalk-sdk-python/stella",
                     "localIp": "",
                 },
                 timeout=10,

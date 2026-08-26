@@ -1,7 +1,7 @@
 """
 Telegram message adapter.
 
-Convert a python-telegram-bot Update into cow's unified ChatMessage.
+Convert a python-telegram-bot Update into stella's unified ChatMessage.
 File downloads are NOT performed here; the channel layer triggers
 bot.get_file() on demand because it requires the async event loop.
 """

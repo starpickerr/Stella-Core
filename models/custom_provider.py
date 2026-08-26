@@ -3,7 +3,7 @@
 """
 Centralized resolver for custom (OpenAI-compatible) provider credentials.
 
-CowAgent historically supported only a *single* custom provider via the flat
+Stella historically supported only a *single* custom provider via the flat
 config keys ``custom_api_key`` / ``custom_api_base``. This module adds support
 for *multiple* custom providers (see issue #2838) while remaining 100%
 backward compatible.

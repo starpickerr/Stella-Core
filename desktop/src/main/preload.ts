@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       error: string
     }>,
 
-  // Themes (bundled + user themes from ~/.cow/themes), assets inlined.
+  // Themes (bundled + user themes from ~/.stella/themes), assets inlined.
   listThemes: () => ipcRenderer.invoke('themes-list') as Promise<Record<string, unknown>[]>,
   getThemesDir: () => ipcRenderer.invoke('themes-dir') as Promise<string>,
   // Optional app config (first-run default theme + display name). Null in

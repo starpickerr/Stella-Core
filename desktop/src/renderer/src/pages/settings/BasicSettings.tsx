@@ -334,7 +334,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setLang(lang)
     onLangChange?.()
     try {
-      await apiClient.updateConfig({ cow_lang: lang })
+      await apiClient.updateConfig({ stella_lang: lang })
     } catch {
       /* non-blocking */
     }

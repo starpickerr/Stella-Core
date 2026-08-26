@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    CowAgent installer & management script for Windows.
+    Stella installer & management script for Windows.
 .DESCRIPTION
     One-liner install:
       irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
     Or from a local clone:
       .\scripts\run.ps1              # install / configure
-      .\scripts\run.ps1 start        # start service  (delegates to cow CLI)
+      .\scripts\run.ps1 start        # start service  (delegates to stella CLI)
       .\scripts\run.ps1 stop|restart|status|logs|config|update|help
 #>
 
@@ -71,7 +71,7 @@ public static class ConsoleQuickEdit {
 } catch {}
 
 # ── colours ──────────────────────────────────────────────────────
-function Write-Cow   { param([string]$M) Write-Host $M -ForegroundColor Green  }
+function Write-Stella   { param([string]$M) Write-Host $M -ForegroundColor Green  }
 function Write-Warn  { param([string]$M) Write-Host $M -ForegroundColor Yellow }
 function Write-Err   { param([string]$M) Write-Host $M -ForegroundColor Red    }
 function Write-Info  { param([string]$M) Write-Host $M -ForegroundColor Cyan   }
@@ -111,7 +111,7 @@ if (-not $IsProjectDir) {
     $IsProjectDir = (Test-Path "$BaseDir\app.py") -and (Test-Path "$BaseDir\config-template.json")
 }
 
-# Initialize $UiLang for management commands: prefer cow_lang from an existing
+# Initialize $UiLang for management commands: prefer stella_lang from an existing
 # config.json, otherwise fall back to environment detection.
 function Initialize-UiLang {
     if ($script:UiLang) { return }
@@ -119,7 +119,7 @@ function Initialize-UiLang {
     if (Test-Path "$BaseDir\config.json") {
         try {
             $cfg = Get-Content "$BaseDir\config.json" -Raw | ConvertFrom-Json
-            if ($cfg.cow_lang) { $cfgLang = "$($cfg.cow_lang)" }
+            if ($cfg.stella_lang) { $cfgLang = "$($cfg.stella_lang)" }
         } catch {}
     }
     switch ($cfgLang) {
@@ -274,16 +274,16 @@ function Assert-Python {
         Read-Host (T "按回车退出" "Press Enter to exit")
         exit 1
     }
-    Write-Cow ((T "找到 Python" "Found Python") + ": $PythonCmd")
+    Write-Stella ((T "找到 Python" "Found Python") + ": $PythonCmd")
 }
 
 # ── clone project ────────────────────────────────────────────────
 function Install-Project {
-    if (Test-Path "CowAgent") {
+    if (Test-Path "Stella") {
         # Auto-backup the existing directory without prompting.
-        $backup = "CowAgent_backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Rename-Item "CowAgent" $backup
-        Write-Warn ((T "已存在 CowAgent 目录，已自动备份为" "Existing 'CowAgent' directory backed up to") + " '$backup'")
+        $backup = "Stella_backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+        Rename-Item "Stella" $backup
+        Write-Warn ((T "已存在 Stella 目录，已自动备份为" "Existing 'Stella' directory backed up to") + " '$backup'")
     }
 
     $gitBin = Get-Command git -ErrorAction SilentlyContinue
@@ -293,44 +293,44 @@ function Install-Project {
         exit 1
     }
 
-    Write-Cow (T "正在克隆 CowAgent 项目..." "Cloning CowAgent project...")
+    Write-Stella (T "正在克隆 Stella 项目..." "Cloning Stella project...")
     $cloneOk = $false
 
     # Test GitHub connectivity before attempting clone
     try {
         $null = Invoke-WebRequest -Uri "https://github.com" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-        Write-Cow (T "GitHub 可达，正在从 GitHub 克隆..." "GitHub is reachable, cloning from GitHub...")
+        Write-Stella (T "GitHub 可达，正在从 GitHub 克隆..." "GitHub is reachable, cloning from GitHub...")
         $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        git clone --depth 10 --progress "https://github.com/zhayujie/CowAgent.git" 2>&1 | ForEach-Object { Write-Host $_ }
+        git clone --depth 10 --progress "https://github.com/starpickerr/Stella.git" 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -eq 0) { $cloneOk = $true }
         $ErrorActionPreference = $prevEAP
         if (-not $cloneOk) {
-            if (Test-Path "CowAgent") { Remove-Item -Recurse -Force "CowAgent" }
+            if (Test-Path "Stella") { Remove-Item -Recurse -Force "Stella" }
         }
     } catch {}
 
     if (-not $cloneOk) {
         Write-Warn (T "GitHub 克隆失败或超时，切换到 Gitee 镜像..." "GitHub clone failed or timed out, switching to Gitee mirror...")
         $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        git clone --depth 10 --progress "https://gitee.com/zhayujie/CowAgent.git" 2>&1 | ForEach-Object { Write-Host $_ }
+        git clone --depth 10 --progress "https://github.com/starpickerr/Stella.git" 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -eq 0) { $cloneOk = $true }
         $ErrorActionPreference = $prevEAP
         if (-not $cloneOk) {
-            if (Test-Path "CowAgent") { Remove-Item -Recurse -Force "CowAgent" }
+            if (Test-Path "Stella") { Remove-Item -Recurse -Force "Stella" }
         }
     }
 
     if (-not $cloneOk) {
         Write-Err (T "GitHub 和 Gitee 均克隆失败，请检查网络连接。" "Clone failed from both GitHub and Gitee. Please check your network connection.")
-        Write-Err (T "你也可以手动克隆: git clone https://gitee.com/zhayujie/CowAgent.git" "You can also manually clone: git clone https://gitee.com/zhayujie/CowAgent.git")
+        Write-Err (T "你也可以手动克隆: git clone https://github.com/starpickerr/Stella.git" "You can also manually clone: git clone https://github.com/starpickerr/Stella.git")
         Read-Host (T "按回车退出" "Press Enter to exit")
         exit 1
     }
 
-    Set-Location "CowAgent"
+    Set-Location "Stella"
     $script:BaseDir = $PWD.Path
     $script:IsProjectDir = $true
-    Write-Cow ((T "项目已克隆" "Project cloned") + ": $BaseDir")
+    Write-Stella ((T "项目已克隆" "Project cloned") + ": $BaseDir")
 }
 
 # Test whether a URL is reachable within a short timeout. Uses a HEAD request
@@ -372,7 +372,7 @@ function Get-PipMirrorArgs {
 
 # ── install dependencies ─────────────────────────────────────────
 function Install-Dependencies {
-    Write-Cow (T "正在安装依赖..." "Installing dependencies...")
+    Write-Stella (T "正在安装依赖..." "Installing dependencies...")
 
     # Probe the mirror first (with progress hidden so the slow IWR call doesn't
     # leave the screen blank for too long).
@@ -397,23 +397,23 @@ function Install-Dependencies {
         Write-Warn (T "部分依赖可能有问题，但继续安装..." "Some dependencies may have issues, but continuing...")
     }
 
-    Write-Cow (T "正在注册 cow CLI..." "Registering cow CLI...")
+    Write-Stella (T "正在注册 stella CLI..." "Registering stella CLI...")
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
     & $PythonCmd -m pip install -e $BaseDir @pipMirror 2>&1 | Out-Null
     $ErrorActionPreference = $prevEAP
 
-    # Add the Scripts dir (where pip puts cow.exe) to PATH, both for this
-    # session and persistently, so `cow` keeps working after a reboot.
+    # Add the Scripts dir (where pip puts stella.exe) to PATH, both for this
+    # session and persistently, so `stella` keeps working after a reboot.
     $scriptsDir = & $PythonCmd -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
     if ($scriptsDir -and (Test-Path $scriptsDir)) {
         Add-ScriptsDirToPath $scriptsDir
     }
 
-    $cowBin = Get-Command cow -ErrorAction SilentlyContinue
+    $cowBin = Get-Command stella -ErrorAction SilentlyContinue
     if ($cowBin) {
-        Write-Cow ((T "cow CLI 注册成功" "cow CLI registered") + ": $($cowBin.Source)")
+        Write-Stella ((T "stella CLI 注册成功" "stella CLI registered") + ": $($cowBin.Source)")
     } else {
-        Write-Warn ((T "cow CLI 不在 PATH 中，你可以使用" "cow CLI not in PATH. You can use") + ": $PythonCmd -m cli.cli")
+        Write-Warn ((T "stella CLI 不在 PATH 中，你可以使用" "stella CLI not in PATH. You can use") + ": $PythonCmd -m cli.cli")
     }
 
     # Optional: bundle ripgrep for a faster search_files tool. Never fatal.
@@ -431,7 +431,7 @@ function Install-Ripgrep {
     try {
         # Already available on PATH? Nothing to do.
         if (Get-Command rg -ErrorAction SilentlyContinue) {
-            Write-Cow (T "已检测到 ripgrep (rg)，跳过安装" "ripgrep (rg) already available, skipping")
+            Write-Stella (T "已检测到 ripgrep (rg)，跳过安装" "ripgrep (rg) already available, skipping")
             return
         }
 
@@ -444,7 +444,7 @@ function Install-Ripgrep {
         $rgTarget = Join-Path $scriptsDir "rg.exe"
         if (Test-Path $rgTarget) { return }
 
-        Write-Cow (T "正在安装 ripgrep（加速文件搜索）..." "Installing ripgrep (faster file search)...")
+        Write-Stella (T "正在安装 ripgrep（加速文件搜索）..." "Installing ripgrep (faster file search)...")
 
         $asset = "ripgrep-$RgVersion-x86_64-pc-windows-msvc.zip"
         # GitHub first, then the jsDelivr/Gitee-style mirror for zh networks.
@@ -453,8 +453,8 @@ function Install-Ripgrep {
             "https://cdn.link-ai.tech/code/cow/vendor/$asset"
         )
 
-        $tmpZip = Join-Path $env:TEMP "cow-$asset"
-        $tmpDir = Join-Path $env:TEMP "cow-rg-$([guid]::NewGuid().ToString('N'))"
+        $tmpZip = Join-Path $env:TEMP "stella-$asset"
+        $tmpDir = Join-Path $env:TEMP "stella-rg-$([guid]::NewGuid().ToString('N'))"
         $downloaded = $false
         foreach ($u in $urls) {
             try {
@@ -478,7 +478,7 @@ function Install-Ripgrep {
         $rgExe = Get-ChildItem -Path $tmpDir -Recurse -Filter "rg.exe" | Select-Object -First 1
         if ($rgExe) {
             Copy-Item $rgExe.FullName $rgTarget -Force
-            Write-Cow ((T "ripgrep 安装成功" "ripgrep installed") + ": $rgTarget")
+            Write-Stella ((T "ripgrep 安装成功" "ripgrep installed") + ": $rgTarget")
         } else {
             Write-Warn (T "ripgrep 解压异常，将使用内置兜底搜索" "ripgrep extraction failed; built-in fallback search will be used")
         }
@@ -493,7 +493,7 @@ function Install-Ripgrep {
 }
 
 # Add the Python Scripts dir to PATH for this session and persist it to the
-# user PATH (User scope needs no admin rights), so `cow` survives a reboot.
+# user PATH (User scope needs no admin rights), so `stella` survives a reboot.
 function Add-ScriptsDirToPath {
     param([string]$ScriptsDir)
 
@@ -518,7 +518,7 @@ function Add-ScriptsDirToPath {
         if (-not $already) {
             $newPath = if ($userPath) { "$userPath;$ScriptsDir" } else { $ScriptsDir }
             [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-            Write-Cow ((T "已将 cow 命令目录加入用户 PATH（重启后仍可用）" "Added cow command directory to user PATH (persists after reboot)") + ": $ScriptsDir")
+            Write-Stella ((T "已将 stella 命令目录加入用户 PATH（重启后仍可用）" "Added stella command directory to user PATH (persists after reboot)") + ": $ScriptsDir")
         }
     } catch {
         Write-Warn (T "无法自动写入持久化 PATH，重启后可能需要重新配置。" "Could not persist PATH automatically; you may need to reconfigure after reboot.")
@@ -581,7 +581,7 @@ function Configure-Model {
     }
 
     $m = $ModelChoices[$script:ModelChoice]
-    Write-Cow ((T "正在配置" "Configuring") + " $($m.Provider)...")
+    Write-Stella ((T "正在配置" "Configuring") + " $($m.Provider)...")
     # Show where to obtain a LinkAI key.
     if ($m.Linkai) {
         Write-Info ((T "获取 LinkAI Key" "Get your LinkAI Key") + ": https://link-ai.tech/console/interface")
@@ -650,7 +650,7 @@ function Configure-Channel {
         }
         "feishu" {
             $script:ChannelType = "feishu"
-            Write-Cow (T "配置飞书（WebSocket 模式）..." "Configure Feishu (WebSocket mode)...")
+            Write-Stella (T "配置飞书（WebSocket 模式）..." "Configure Feishu (WebSocket mode)...")
             $script:ChannelExtra["feishu_app_id"]     = Read-Host (T "请输入飞书 App ID" "Enter Feishu App ID")
             $script:ChannelExtra["feishu_app_secret"] = Read-Host (T "请输入飞书 App Secret" "Enter Feishu App Secret")
             $script:ChannelExtra["feishu_event_mode"] = "websocket"
@@ -658,28 +658,28 @@ function Configure-Channel {
         }
         "dingtalk" {
             $script:ChannelType = "dingtalk"
-            Write-Cow (T "配置钉钉..." "Configure DingTalk...")
+            Write-Stella (T "配置钉钉..." "Configure DingTalk...")
             $script:ChannelExtra["dingtalk_client_id"]     = Read-Host (T "请输入钉钉 Client ID" "Enter DingTalk Client ID")
             $script:ChannelExtra["dingtalk_client_secret"] = Read-Host (T "请输入钉钉 Client Secret" "Enter DingTalk Client Secret")
             $script:AccessInfo = T "钉钉渠道已配置" "DingTalk channel configured"
         }
         "wecom_bot" {
             $script:ChannelType = "wecom_bot"
-            Write-Cow (T "配置企微智能机器人..." "Configure WeCom Bot...")
+            Write-Stella (T "配置企微智能机器人..." "Configure WeCom Bot...")
             $script:ChannelExtra["wecom_bot_id"]     = Read-Host (T "请输入 WeCom Bot ID" "Enter WeCom Bot ID")
             $script:ChannelExtra["wecom_bot_secret"] = Read-Host (T "请输入 WeCom Bot Secret" "Enter WeCom Bot Secret")
             $script:AccessInfo = T "企微智能机器人渠道已配置" "WeCom Bot channel configured"
         }
         "qq" {
             $script:ChannelType = "qq"
-            Write-Cow (T "配置 QQ 机器人..." "Configure QQ Bot...")
+            Write-Stella (T "配置 QQ 机器人..." "Configure QQ Bot...")
             $script:ChannelExtra["qq_app_id"]     = Read-Host (T "请输入 QQ App ID" "Enter QQ App ID")
             $script:ChannelExtra["qq_app_secret"] = Read-Host (T "请输入 QQ App Secret" "Enter QQ App Secret")
             $script:AccessInfo = T "QQ 机器人渠道已配置" "QQ Bot channel configured"
         }
         "wechatcom_app" {
             $script:ChannelType = "wechatcom_app"
-            Write-Cow (T "配置企微自建应用..." "Configure WeCom App...")
+            Write-Stella (T "配置企微自建应用..." "Configure WeCom App...")
             $script:ChannelExtra["wechatcom_corp_id"]     = Read-Host (T "请输入企业 Corp ID" "Enter WeChat Corp ID")
             $script:ChannelExtra["wechatcomapp_token"]    = Read-Host (T "请输入应用 Token" "Enter WeChat Com App Token")
             $script:ChannelExtra["wechatcomapp_secret"]   = Read-Host (T "请输入应用 Secret" "Enter WeChat Com App Secret")
@@ -692,20 +692,20 @@ function Configure-Channel {
         }
         "telegram" {
             $script:ChannelType = "telegram"
-            Write-Cow (T "配置 Telegram..." "Configure Telegram...")
+            Write-Stella (T "配置 Telegram..." "Configure Telegram...")
             $script:ChannelExtra["telegram_token"] = Read-Host (T "请输入 Telegram Bot Token" "Enter Telegram Bot Token")
             $script:AccessInfo = T "Telegram 渠道已配置" "Telegram channel configured"
         }
         "slack" {
             $script:ChannelType = "slack"
-            Write-Cow (T "配置 Slack..." "Configure Slack...")
+            Write-Stella (T "配置 Slack..." "Configure Slack...")
             $script:ChannelExtra["slack_bot_token"] = Read-Host ((T "请输入 Slack Bot Token" "Enter Slack Bot Token") + " (xoxb-...)")
             $script:ChannelExtra["slack_app_token"] = Read-Host ((T "请输入 Slack App Token" "Enter Slack App Token") + " (xapp-...)")
             $script:AccessInfo = T "Slack 渠道已配置" "Slack channel configured"
         }
         "discord" {
             $script:ChannelType = "discord"
-            Write-Cow (T "配置 Discord..." "Configure Discord...")
+            Write-Stella (T "配置 Discord..." "Configure Discord...")
             $script:ChannelExtra["discord_token"] = Read-Host (T "请输入 Discord Bot Token" "Enter Discord Bot Token")
             $script:AccessInfo = T "Discord 渠道已配置" "Discord channel configured"
         }
@@ -714,12 +714,12 @@ function Configure-Channel {
 
 # ── generate config.json ─────────────────────────────────────────
 function New-ConfigFile {
-    Write-Cow (T "正在生成 config.json..." "Generating config.json...")
+    Write-Stella (T "正在生成 config.json..." "Generating config.json...")
 
     $config = [ordered]@{
         channel_type              = if ($script:ChannelType) { $script:ChannelType } else { "web" }
         model                     = if ($script:ModelName)  { $script:ModelName }  else { "" }
-        cow_lang                  = if ($script:InstallLang) { $script:InstallLang } else { "auto" }
+        stella_lang                  = if ($script:InstallLang) { $script:InstallLang } else { "auto" }
         open_ai_api_key           = ""
         open_ai_api_base          = "https://api.openai.com/v1"
         claude_api_key            = ""
@@ -769,53 +769,53 @@ function New-ConfigFile {
 
     $jsonText = $config | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText("$BaseDir\config.json", $jsonText, (New-Object System.Text.UTF8Encoding $false))
-    Write-Cow (T "配置文件创建成功。" "Configuration file created.")
+    Write-Stella (T "配置文件创建成功。" "Configuration file created.")
 }
 
-# Resolve the `cow` command, self-healing PATH if needed. When `cow` is missing
+# Resolve the `stella` command, self-healing PATH if needed. When `stella` is missing
 # (e.g. an older install whose PATH was never persisted), locate the Scripts dir,
 # re-add it to PATH (session + persistent), and retry. Returns $true if callable.
 function Resolve-CowCommand {
-    if (Get-Command cow -ErrorAction SilentlyContinue) { return $true }
+    if (Get-Command stella -ErrorAction SilentlyContinue) { return $true }
 
     $py = if ($PythonCmd) { $PythonCmd } else { Find-Python }
     if ($py) {
         $scriptsDir = & $py -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
-        if ($scriptsDir -and (Test-Path "$scriptsDir\cow.exe")) {
+        if ($scriptsDir -and (Test-Path "$scriptsDir\stella.exe")) {
             Add-ScriptsDirToPath $scriptsDir
-            if (Get-Command cow -ErrorAction SilentlyContinue) { return $true }
+            if (Get-Command stella -ErrorAction SilentlyContinue) { return $true }
         }
     }
     return $false
 }
 
-# ── start via cow CLI ─────────────────────────────────────────────
-function Start-CowAgent {
-    Write-Cow (T "正在启动 CowAgent..." "Starting CowAgent...")
+# ── start via stella CLI ─────────────────────────────────────────────
+function Start-Stella {
+    Write-Stella (T "正在启动 Stella..." "Starting Stella...")
     if (Resolve-CowCommand) {
-        & cow start
+        & stella start
     } else {
-        Write-Warn (T "未找到 cow CLI，直接启动..." "cow CLI not found, starting directly...")
+        Write-Warn (T "未找到 stella CLI，直接启动..." "stella CLI not found, starting directly...")
         & $PythonCmd "$BaseDir\app.py"
     }
 }
 
-# ── delegate management commands to cow CLI ──────────────────────
+# ── delegate management commands to stella CLI ──────────────────────
 function Invoke-CowCommand {
     param([string]$Cmd)
     if (Resolve-CowCommand) {
-        & cow $Cmd
+        & stella $Cmd
     } else {
         # Fall back to the module entrypoint so management commands still work
-        # even when cow.exe isn't on PATH (e.g. right after a fresh reboot on
+        # even when stella.exe isn't on PATH (e.g. right after a fresh reboot on
         # an older install).
         $py = if ($PythonCmd) { $PythonCmd } else { Find-Python }
         if ($py -and (Test-Path "$BaseDir\app.py")) {
-            Write-Warn (T "未找到 cow 命令，使用 python -m cli.cli 兜底运行..." "cow command not found, falling back to python -m cli.cli...")
+            Write-Warn (T "未找到 stella 命令，使用 python -m cli.cli 兜底运行..." "stella command not found, falling back to python -m cli.cli...")
             Push-Location $BaseDir
             try { & $py -m cli.cli $Cmd } finally { Pop-Location }
         } else {
-            Write-Err (T "未找到 cow CLI，请先不带参数运行本脚本进行安装。" "cow CLI not found. Run this script without arguments first to install.")
+            Write-Err (T "未找到 stella CLI，请先不带参数运行本脚本进行安装。" "stella CLI not found. Run this script without arguments first to install.")
             exit 1
         }
     }
@@ -824,7 +824,7 @@ function Invoke-CowCommand {
 # ── usage ─────────────────────────────────────────────────────────
 function Show-Usage {
     Write-Info "========================================="
-    Write-Info "   CowAgent Management Script (Windows)"
+    Write-Info "   Stella Management Script (Windows)"
     Write-Info "========================================="
     Write-Host ""
     Write-Host (T "用法:" "Usage:")
@@ -847,7 +847,7 @@ function Show-Usage {
 function Install-Mode {
     Clear-Host
     Write-Info "========================================="
-    Write-Info "   CowAgent Installation (Windows)"
+    Write-Info "   Stella Installation (Windows)"
     Write-Info "========================================="
     Write-Host ""
 
@@ -856,9 +856,9 @@ function Install-Mode {
     Write-Host ""
 
     if ($IsProjectDir) {
-        Write-Cow (T "检测到已有项目目录。" "Detected existing project directory.")
+        Write-Stella (T "检测到已有项目目录。" "Detected existing project directory.")
         if (Test-Path "$BaseDir\config.json") {
-            Write-Cow (T "项目已配置。" "Project already configured.")
+            Write-Stella (T "项目已配置。" "Project already configured.")
             Write-Host ""
             Show-Usage
             return
@@ -880,26 +880,26 @@ function Install-Mode {
 
     # Auto-start after configuration for a true out-of-the-box experience.
     Write-Host ""
-    if ($script:AccessInfo) { Write-Cow $script:AccessInfo }
-    Write-Warn (T "提示：需要让 Agent 浏览网页时，运行 cow install-browser 安装浏览器工具" "Tip: to let the Agent browse the web, run 'cow install-browser' to install the browser tool")
-    Start-CowAgent
+    if ($script:AccessInfo) { Write-Stella $script:AccessInfo }
+    Write-Warn (T "提示：需要让 Agent 浏览网页时，运行 stella install-browser 安装浏览器工具" "Tip: to let the Agent browse the web, run 'stella install-browser' to install the browser tool")
+    Start-Stella
 }
 
 # ── update ────────────────────────────────────────────────────────
 function Update-Project {
-    Write-Cow (T "正在更新 CowAgent..." "Updating CowAgent...")
+    Write-Stella (T "正在更新 Stella..." "Updating Stella...")
     Set-Location $BaseDir
 
     # Stop if running
-    $cowBin = Get-Command cow -ErrorAction SilentlyContinue
+    $cowBin = Get-Command stella -ErrorAction SilentlyContinue
     if ($cowBin) {
         $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        & cow stop 2>&1 | Out-Null
+        & stella stop 2>&1 | Out-Null
         $ErrorActionPreference = $prevEAP
     }
 
     if (Test-Path "$BaseDir\.git") {
-        Write-Cow (T "正在拉取最新代码..." "Pulling latest code...")
+        Write-Stella (T "正在拉取最新代码..." "Pulling latest code...")
         $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
         git pull 2>&1 | Out-Null
         $pullExit = $LASTEXITCODE
@@ -907,7 +907,7 @@ function Update-Project {
         if ($pullExit -ne 0) {
             Write-Warn (T "GitHub 拉取失败，尝试 Gitee..." "GitHub failed, trying Gitee...")
             $ErrorActionPreference = "Continue"
-            git remote set-url origin https://gitee.com/zhayujie/CowAgent.git 2>&1 | Out-Null
+            git remote set-url origin https://github.com/starpickerr/Stella.git 2>&1 | Out-Null
             git pull 2>&1 | Out-Null
             $ErrorActionPreference = $prevEAP
         }
@@ -918,9 +918,9 @@ function Update-Project {
     Assert-Python
     Install-Dependencies
 
-    # Start via python -m cli.cli instead of cow.exe, because the exe may
+    # Start via python -m cli.cli instead of stella.exe, because the exe may
     # still be cached/locked from the previous installation on Windows.
-    Write-Cow (T "正在启动 CowAgent..." "Starting CowAgent...")
+    Write-Stella (T "正在启动 Stella..." "Starting Stella...")
     & $PythonCmd -m cli.cli start
 }
 

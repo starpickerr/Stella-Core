@@ -1,6 +1,6 @@
 ---
 title: v2.1.5
-description: "CowAgent 2.1.5：ワークスペースとファイルプレビューを追加、基本ツールを全面的に最適化、コンテキスト管理を強化、プロンプトのワンクリック最適化に対応"
+description: "Stella 2.1.5：ワークスペースとファイルプレビューを追加、基本ツールを全面的に最適化、コンテキスト管理を強化、プロンプトのワンクリック最適化に対応"
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.5) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.5)
@@ -43,7 +43,7 @@ description: "CowAgent 2.1.5：ワークスペースとファイルプレビュ�
 - **更新通知の改善**：同一バージョンの更新ダイアログは自動で一度だけ表示されます。
 - **ファイル検索バックエンドを内蔵**：Windows クライアントに ripgrep を同梱し、ファイル検索をそのまま利用できます。
 
-ダウンロード：[CowAgent デスクトップ](https://cowagent.ai/download/)
+ダウンロード：[Stella デスクトップ](https://cowagent.ai/download/)
 
 ドキュメント：[デスクトップクライアント](https://docs.cowagent.ai/ja/guide/desktop)
 
@@ -54,7 +54,7 @@ Web 版の入力欄にプロンプト最適化機能を追加しました。入�
 ## 🔒 セキュリティ強化
 
 - **MCP とファイル書き込みの強化**：プロンプトインジェクションで悪用可能な攻撃経路を修正しました。悪意ある内容によって Agent が MCP 設定を書き換えるよう誘導され、そこから任意のコマンド実行や鍵の窃取につながるものです。Thanks @Correctover (#2968)
-- **認証情報ファイルの保護**：`edit` ツールが認証情報の保護を回避して `~/.cow/.env` を読み書きできる問題を修正しました。
+- **認証情報ファイルの保護**：`edit` ツールが認証情報の保護を回避して `~/.stella/.env` を読み書きできる問題を修正しました。
 
 ## 🛠 改善と修正
 
@@ -67,7 +67,7 @@ Web 版の入力欄にプロンプト最適化機能を追加しました。入�
 
 ## 📦 アップグレード方法
 
-- **ソースデプロイ**：`cow update` でワンクリックアップグレード、または最新コードを取得して再起動してください。詳しくは [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
+- **ソースデプロイ**：`stella update` でワンクリックアップグレード、または最新コードを取得して再起動してください。詳しくは [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
 - **デスクトップクライアント**：クライアント内で更新を確認しワンクリックで更新するか、[ダウンロードページ](https://cowagent.ai/download/) から最新版を入手してください。
 
-**リリース日**：2026.07.28 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.4...2.1.5)
+**リリース日**：2026.07.28 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.4...2.1.5)

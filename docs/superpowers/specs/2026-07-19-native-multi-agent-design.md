@@ -2,9 +2,9 @@
 
 ## Goal
 
-Allow one CowAgent process to host multiple agents without changing the
+Allow one Stella process to host multiple agents without changing the
 behaviour of existing single-agent installations. Each agent is a complete
-CowAgent workspace, not a lightweight persona overlay.
+Stella workspace, not a lightweight persona overlay.
 
 ## Workspace model
 
@@ -43,7 +43,7 @@ The optional configuration is:
     {
       "id": "default",
       "name": "Default",
-      "workspace": "~/cow",
+      "workspace": "~/stella",
       "enabled": true
     }
   ],
@@ -51,7 +51,7 @@ The optional configuration is:
 }
 ```
 
-When `agents` is absent, CowAgent synthesizes one `default` profile from the
+When `agents` is absent, Stella synthesizes one `default` profile from the
 existing `agent_workspace` value. Existing configuration and data therefore
 continue to work without a migration.
 
@@ -144,7 +144,7 @@ preserve the zero-configuration single-agent path.
 
 ## Acceptance criteria
 
-- Existing configurations still use `~/cow` exactly as before.
+- Existing configurations still use `~/stella` exactly as before.
 - Two agents with the same session ID cannot share runtime state or data.
 - Memory, conversation history, scheduled tasks, skills, and knowledge remain
   inside the selected workspace.

@@ -47,13 +47,13 @@ Frontmatter fields in the SKILL.md header:
 | --- | --- |
 | `name` | Skill name — lowercase with hyphens, must match the directory name |
 | `description` | **The most important field.** Clearly state what the skill does and when to use it. The Agent reads this to decide whether to invoke it. All trigger-related descriptions go here, not in the body |
-| `metadata.cowagent.requires.bins` | System CLI tools that must be installed |
-| `metadata.cowagent.requires.env` | Required environment variables (all must be present) |
-| `metadata.cowagent.requires.anyEnv` | Multiple API keys — at least one must be set |
-| `metadata.cowagent.requires.anyBins` | Multiple tools — at least one must be installed |
-| `metadata.cowagent.always` | Set to `true` to always load, skipping dependency checks |
-| `metadata.cowagent.emoji` | Display emoji (optional) |
-| `metadata.cowagent.os` | OS restriction, e.g. `["darwin", "linux"]` |
+| `metadata.stella.requires.bins` | System CLI tools that must be installed |
+| `metadata.stella.requires.env` | Required environment variables (all must be present) |
+| `metadata.stella.requires.anyEnv` | Multiple API keys — at least one must be set |
+| `metadata.stella.requires.anyBins` | Multiple tools — at least one must be installed |
+| `metadata.stella.always` | Set to `true` to always load, skipping dependency checks |
+| `metadata.stella.emoji` | Display emoji (optional) |
+| `metadata.stella.os` | OS restriction, e.g. `["darwin", "linux"]` |
 
 <Note>
 The `category` field does not need to be set manually — the system automatically sets it to `skill`.
@@ -63,14 +63,14 @@ Two ways to declare API key dependencies:
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       env: ["MYAPI_KEY"]            # Must be present
 ```
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       anyEnv: ["OPENAI_API_KEY", "LINKAI_API_KEY"]   # At least one
 ```

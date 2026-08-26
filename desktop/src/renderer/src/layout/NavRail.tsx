@@ -23,6 +23,11 @@ import {
   MessageSquareWarning,
   Palette,
   Check,
+  ChevronRight,
+  ListChecks,
+  CalendarDays,
+  Receipt,
+  Shield,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Theme } from '../theme/themes'
@@ -47,9 +52,9 @@ const FALLBACK_VERSION = '2.1.5'
 // language-agnostic.
 const SKILL_HUB_URL = 'https://skills.cowagent.ai/'
 // GitHub issues — where users report bugs / request features.
-const FEEDBACK_URL = 'https://github.com/zhayujie/CowAgent/issues'
+const FEEDBACK_URL = 'https://github.com/starpickerr/Stella/issues'
 
-const websiteUrl = () => (getLang() === 'zh' ? 'https://cowagent.ai/zh' : 'https://cowagent.ai')
+const websiteUrl = () => 'https://github.com/starpickerr/Stella'
 const docsUrl = () => (getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai')
 
 const openExternal = (url: string) => {
@@ -62,15 +67,63 @@ interface NavItem {
   icon: LucideIcon
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { path: '/', labelKey: 'menu_chat', icon: MessageSquare },
-  { path: '/knowledge', labelKey: 'menu_knowledge', icon: BookOpen },
-  { path: '/memory', labelKey: 'menu_memory', icon: Brain },
-  { path: '/skills', labelKey: 'menu_skills', icon: Zap },
-  { path: '/channels', labelKey: 'menu_channels', icon: Radio },
-  { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
-  { path: '/settings', labelKey: 'menu_settings', icon: Settings },
+interface NavGroup {
+  id: string
+  labelKey: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'chat',
+    labelKey: 'nav_chat',
+    items: [{ path: '/', labelKey: 'menu_chat', icon: MessageSquare }],
+  },
+  {
+    id: 'apps',
+    labelKey: 'nav_work',
+    items: [
+      { path: '/todos', labelKey: 'menu_todos', icon: ListChecks },
+      { path: '/calendar', labelKey: 'menu_calendar', icon: CalendarDays },
+      { path: '/briefing', labelKey: 'menu_briefing', icon: Sun },
+      { path: '/bills', labelKey: 'menu_bills', icon: Receipt },
+      { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
+    ],
+  },
+  {
+    id: 'info',
+    labelKey: 'nav_info',
+    items: [
+      { path: '/memory', labelKey: 'menu_memory', icon: Brain },
+      { path: '/knowledge', labelKey: 'menu_knowledge', icon: BookOpen },
+    ],
+  },
+  {
+    id: 'channels',
+    labelKey: 'nav_channels',
+    items: [{ path: '/channels', labelKey: 'menu_channels', icon: Radio }],
+  },
+  {
+    id: 'system',
+    labelKey: 'nav_system',
+    items: [
+      { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
+      { path: '/security', labelKey: 'menu_security', icon: Shield },
+      { path: '/settings', labelKey: 'menu_config', icon: Settings },
+      { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
+    ],
+  },
 ]
+
+const GROUP_OPEN_DEFAULT: Record<string, boolean> = Object.fromEntries(
+  NAV_GROUPS.map((g) => [g.id, true])
+)
+
+function pathActive(pathname: string, itemPath: string): boolean {
+  if (itemPath === '/') return pathname === '/'
+  if (itemPath === '/settings') return pathname === '/settings' || pathname === '/models'
+  return pathname === itemPath
+}
 
 interface NavRailProps {
   onLangChange: () => void
@@ -98,6 +151,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
   const checking = updateState.status?.state === 'checking'
 
   const [menuOpen, setMenuOpen] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(GROUP_OPEN_DEFAULT)
   // Local fallback so a version always shows even if the main-process IPC is
   // unavailable (e.g. dev/web preview). The real value comes from
   // app.getVersion() (packaged package.json), never from a remote service.
@@ -195,26 +249,48 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
       {/* Content area carries the right divider, starting below the titlebar */}
       <div className="flex-1 flex flex-col min-h-0 border-r border-default">
       {/* Nav items */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon
-          const isActive = location.pathname === item.path
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        {NAV_GROUPS.map((group, gi) => {
+          const groupOpen = collapsed || openGroups[group.id] !== false
           return (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              title={collapsed ? t(item.labelKey) : undefined}
-              className={`group w-full flex items-center gap-3 rounded-btn cursor-pointer transition-colors h-9 ${
-                collapsed ? 'justify-center px-0' : 'px-3'
-              } ${
-                isActive
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-content-secondary hover:bg-surface-2 hover:text-content'
-              }`}
-            >
-              <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} className="flex-shrink-0" />
-              {!collapsed && <span className="text-[13px] truncate">{t(item.labelKey)}</span>}
-            </button>
+            <div key={group.id} className={gi > 0 ? (collapsed ? 'mt-2' : 'mt-1') : ''}>
+              {!collapsed && (
+                <button
+                  onClick={() =>
+                    setOpenGroups((prev) => ({ ...prev, [group.id]: prev[group.id] === false }))
+                  }
+                  className="w-full flex items-center gap-2 px-3 h-7 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary hover:text-content-secondary cursor-pointer transition-colors"
+                >
+                  <ChevronRight
+                    size={10}
+                    className={`flex-shrink-0 transition-transform ${groupOpen ? 'rotate-90' : ''}`}
+                  />
+                  <span className="truncate">{t(group.labelKey)}</span>
+                </button>
+              )}
+              {groupOpen &&
+                group.items.map((item) => {
+                  const Icon = item.icon
+                  const isActive = pathActive(location.pathname, item.path)
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => navigate(item.path)}
+                      title={collapsed ? t(item.labelKey) : undefined}
+                      className={`group w-full flex items-center gap-3 rounded-btn cursor-pointer transition-colors h-9 ${
+                        collapsed ? 'justify-center px-0' : 'px-3'
+                      } ${
+                        isActive
+                          ? 'bg-accent-soft text-accent'
+                          : 'text-content-secondary hover:bg-surface-2 hover:text-content'
+                      }`}
+                    >
+                      <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} className="flex-shrink-0" />
+                      {!collapsed && <span className="text-[13px] truncate">{t(item.labelKey)}</span>}
+                    </button>
+                  )
+                })}
+            </div>
           )
         })}
       </nav>
@@ -300,7 +376,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 const BrandLogo: React.FC = () => (
   <img
     src={brandLogo}
-    alt="CowAgent"
+    alt="Stella"
     draggable={false}
     className="flex-shrink-0 w-7 h-7 object-contain"
   />

@@ -1,5 +1,5 @@
 """
-Self-evolution subsystem for CowAgent.
+Self-evolution subsystem for Stella.
 
 Runs a lightweight, isolated review pass after a conversation goes idle to
 decide whether anything is worth durably learning (memory / skill) or whether

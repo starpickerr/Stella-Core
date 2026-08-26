@@ -7,8 +7,8 @@ import io
 def _log_path():
     # Mirror config.get_data_root() without importing config (avoids a circular
     # import, since config imports this module). The desktop build sets
-    # COW_DATA_DIR (e.g. ~/.cow); source deployments fall back to CWD.
-    data_dir = os.environ.get("COW_DATA_DIR")
+    # STELLA_DATA_DIR (e.g. ~/.stella); source deployments fall back to CWD.
+    data_dir = os.environ.get("STELLA_DATA_DIR")
     if data_dir:
         data_dir = os.path.expanduser(data_dir)
         os.makedirs(data_dir, exist_ok=True)

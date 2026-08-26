@@ -193,9 +193,9 @@ def test_credential_directory_is_blocked(tmp_path):
     # Matches read.py's test_security_read_env_bypass.py convention: the
     # direct _is_credential_path check and the execute() end-to-end check
     # (which must reject before any filesystem walk happens, and doesn't
-    # depend on ~/.cow actually existing) live in the same test.
+    # depend on ~/.stella actually existing) live in the same test.
     tool = _make_tool(tmp_path)
-    cow_dir = expand_path("~/.cow")
+    cow_dir = expand_path("~/.stella")
     assert tool._is_credential_path(cow_dir) is True
     assert tool._is_credential_path(cow_dir + "/some/nested/file.db") is True
     assert tool._is_credential_path(str(tmp_path)) is False
@@ -206,15 +206,15 @@ def test_credential_directory_is_blocked(tmp_path):
 
 
 def test_credential_directory_is_pruned_mid_walk(tmp_path, monkeypatch):
-    # A broad search rooted above ~/.cow (not directly targeting it) must
+    # A broad search rooted above ~/.stella (not directly targeting it) must
     # still prune it during traversal rather than walking into it. Points
-    # expand_path("~/.cow") at a fake dir under tmp_path so this exercises
+    # expand_path("~/.stella") at a fake dir under tmp_path so this exercises
     # the real _is_credential_path logic without touching the real home dir.
     import agent.tools.search_files.search_files as sf_module
-    fake_cow = tmp_path / ".cow"
+    fake_cow = tmp_path / ".stella"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=leaked\n", encoding="utf-8")
-    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.cow" else p)
+    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.stella" else p)
 
     tool = _make_tool(tmp_path)
     result = tool.execute({"pattern": "API_KEY"})
@@ -246,7 +246,7 @@ def test_symlink_to_credential_file_is_skipped_not_opened(tmp_path, monkeypatch)
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
-    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.cow" else p)
+    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.stella" else p)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -272,7 +272,7 @@ def test_symlinked_directory_pointing_at_credential_dir_is_pruned(tmp_path, monk
     fake_cow = tmp_path / "fake_cow"
     fake_cow.mkdir()
     (fake_cow / "secret.env").write_text("API_KEY=super-secret-value\n", encoding="utf-8")
-    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.cow" else p)
+    monkeypatch.setattr(sf_module, "expand_path", lambda p: str(fake_cow) if p == "~/.stella" else p)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

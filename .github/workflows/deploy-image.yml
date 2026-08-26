@@ -16,11 +16,11 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE: zhayujie/chatgpt-on-wechat
+  DOCKERHUB_IMAGE: starpickerr/stella
 
 jobs:
   build-and-push-image:
-    if: github.repository == 'zhayujie/CowAgent'
+    if: github.repository == 'starpickerr/Stella'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,10 +48,8 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: |
-            zhayujie/chatgpt-on-wechat
-            zhayujie/cowagent
-            ${{ env.REGISTRY }}/zhayujie/chatgpt-on-wechat
-            ${{ env.REGISTRY }}/zhayujie/cowagent
+            starpickerr/stella
+            ${{ env.REGISTRY }}/starpickerr/stella
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch

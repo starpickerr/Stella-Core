@@ -1,33 +1,23 @@
-<p align="center"><img src= "https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="CowAgent" width="420" /></p>
+<p align="center"><img src= "https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
 
 <p align="center">
-  <a href="https://github.com/zhayujie/CowAgent/releases/latest"><img src="https://img.shields.io/github/v/release/zhayujie/CowAgent?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/zhayujie/CowAgent/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/zhayujie/CowAgent"><img src="https://img.shields.io/github/stars/zhayujie/CowAgent?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
-  <a href="https://docs.cowagent.ai/zh"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="文档" /></a>
-  <a href="https://cdn.link-ai.tech/code/cow/cowagent-wechat-group.png"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?style=flat&logo=wechat&logoColor=white" alt="微信交流群" /></a>
-  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
-</p>
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/25763" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25763" alt="zhayujie%2FCowAgent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
+  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
 </p>
 
 <p align="center">
   [<a href="../../README.md">English</a>] | [中文] | [<a href="README-Hant.md">繁體中文</a>] | [<a href="../ja/README.md">日本語</a>]
 </p>
 
-**CowAgent** 是一个开源的超级 AI 助理，能够主动思考和规划任务、操作计算机和外部资源、创造和执行 Skills、构建知识库与长期记忆、通过自主进化与你一同成长，是 Agent Harness 工程的最佳实践之一。
+**Stella** 是一个 AI 私人秘书。它能规划任务、操作电脑和外部服务、记住重要信息，并逐步积累你的个人知识库，在网页、桌面和各类即时通讯里替你处理日常事务。
 
-CowAgent 轻量、易部署、可扩展，自由接入主流大模型，覆盖微信、飞书、钉钉、企微、QQ、Telegram、Slack、网页等多渠道，7×24 运行于个人电脑或服务器中。
+项目基于可扩展的 Agent Harness：可接入主流大模型，7×24 运行在个人电脑或服务器上，并用工具、技能和消息通道继续扩展。
 
 <p align="center">
-  <a href="https://cowagent.ai/?lang=zh">🌐 官网</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/">📖 文档中心</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/guide/quick-start">🚀 快速开始</a> &nbsp;·&nbsp;
-  <a href="https://skills.cowagent.ai/">🧩 技能广场</a> &nbsp;·&nbsp;
-  <a href="https://cowagent.ai/zh/download/">💻 下载客户端</a> &nbsp;·&nbsp;
-  <a href="https://link-ai.tech/cowagent/create">☁️ 在线体验</a>
+  <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
+  <a href="intro/index.mdx">📖 文档</a> &nbsp;·&nbsp;
+  <a href="guide/quick-start.mdx">🚀 快速开始</a>
 </p>
 
 <br/>
@@ -62,9 +52,9 @@ CowAgent 轻量、易部署、可扩展，自由接入主流大模型，覆盖�
 
 ## 🏗️ 架构总览
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/zh/architecture.jpg" alt="CowAgent Architecture" width="750"/>
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/zh/architecture.jpg" alt="Stella Architecture" width="750"/>
 
-CowAgent 是一个完整的 **Agent Harness**：消息从各类**通道**进入，**Agent Core** 结合记忆、知识库与可用工具/技能进行任务规划与决策，调用**模型**生成结果，再回传至原通道。各模块解耦清晰，按需扩展。
+Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，**Agent Core** 结合记忆、知识库与可用工具/技能进行任务规划与决策，调用**模型**生成结果，再回传至原通道。各模块解耦清晰，按需扩展。
 
 详见 [项目架构](https://docs.cowagent.ai/zh/intro/architecture)。
 
@@ -72,50 +62,43 @@ CowAgent 是一个完整的 **Agent Harness**：消息从各类**通道**进入�
 
 ## 🚀 快速开始
 
-项目提供一键安装脚本，自动完成依赖安装、配置和启动：
-
-**Linux / macOS：**
+克隆本仓库，安装依赖后启动 Stella：
 
 ```bash
-bash <(curl -fsSL https://cdn.link-ai.tech/code/cow/run.sh)
-```
-
-**Windows（PowerShell）：**
-
-```powershell
-irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+pip install -r requirements.txt
+pip install -e .
+stella start
 ```
 
 **Docker：**
 
 ```bash
-curl -O https://cdn.link-ai.tech/code/cow/docker-compose.yml
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-启动成功后访问 `http://localhost:9899` 进入 **Web 控制台**，在控制台内即可完成模型配置、渠道接入、技能安装等全部操作。
+启动成功后访问 `http://localhost:9899` 进入 **Web 控制台**，即可对话、配置模型、接入通道和安装技能。
 
 > 服务器部署且需要公网访问控制台时，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（同时强烈建议设置 `web_password` 启用鉴权），然后访问 `http://<server-ip>:9899`，并确保防火墙/安全组放行 `9899` 端口。
 
-> 📖 详细安装指南：[快速开始](https://docs.cowagent.ai/zh/guide/quick-start) · [源码安装](https://docs.cowagent.ai/zh/guide/manual-install) · [升级](https://docs.cowagent.ai/zh/guide/upgrade)
+> 📖 仓库内指南：[快速开始](guide/quick-start.mdx) · [源码安装](guide/manual-install.mdx) · [升级](guide/upgrade.mdx)
 
-安装后可使用 `cow` [CLI 命令](https://docs.cowagent.ai/zh/cli) 管理服务：
+安装后可使用 `stella` CLI 管理服务：
 
 ```bash
-cow start | stop | restart        # 服务管理
-cow status | logs                  # 状态和日志
-cow update                         # 拉取最新代码并重启
-cow skill install <名称>           # 安装技能
-cow install-browser                # 安装浏览器工具
+stella start | stop | restart        # 服务管理
+stella status | logs                  # 状态和日志
+stella update                         # 拉取最新代码并重启
+stella skill install <名称>           # 安装技能
+stella install-browser                # 安装浏览器工具
 ```
-
-> 💻 桌面客户端：前往 **[下载 CowAgent 桌面客户端](https://cowagent.ai/zh/download/)**（macOS / Windows），内置 Agent 运行环境，开箱即用。
 
 <br/>
 
 ## 🤖 模型支持
 
-CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像理解、图像生成、语音识别/合成、向量** 等能力均可独立配置厂商。
+Stella 支持国内外主流厂商的大语言模型。**文本对话、图像理解、图像生成、语音识别/合成、向量** 等能力均可独立配置厂商。
 
 | 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -158,7 +141,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 > 飞书、企微智能机器人支持在 Web 控制台内**扫码一键接入**，无需公网 IP。详见 [通道概览](https://docs.cowagent.ai/zh/channels)。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-chat.png" alt="CowAgent Web 控制台" width="800"/>
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-chat.png" alt="Stella Web 控制台" width="800"/>
 
 *Web 控制台是默认通道，也是统一的 Agent 配置和管理入口*
 
@@ -216,87 +199,39 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏷 更新日志
 
-> **2026.08.20：** [v2.1.7](https://github.com/zhayujie/CowAgent/releases/tag/2.1.7) — 多工作空间与会话隔离、会话级权限模式、任务通知、桌面端优化、新模型接入
+> **2026.08.20：** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — 多工作空间与会话隔离、会话级权限模式、任务通知、桌面端优化、新模型接入
 
-> **2026.08.12：** [v2.1.6](https://github.com/zhayujie/CowAgent/releases/tag/2.1.6) — 子 Agent 并行任务分配、推理强度配置、记忆向量库可插拔、体验和安全优化
+> **2026.08.12：** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — 子 Agent 并行任务分配、推理强度配置、记忆向量库可插拔、体验和安全优化
 
-> **2026.07.29：** [v2.1.5](https://github.com/zhayujie/CowAgent/releases/tag/2.1.5) — 工作空间与文件预览、基础工具优化（文件搜索、写入校验、命令后台运行）、上下文压缩（`/compact`）、提示词一键优化、安全加固
+> **2026.07.29：** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — 工作空间与文件预览、基础工具优化（文件搜索、写入校验、命令后台运行）、上下文压缩（`/compact`）、提示词一键优化、安全加固
 
-> **2026.07.20：** [v2.1.4](https://github.com/zhayujie/CowAgent/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
+> **2026.07.20：** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
 
-> **2026.07.08：** [v2.1.3](https://github.com/zhayujie/CowAgent/releases/tag/2.1.3) — [桌面客户端](https://cowagent.ai/zh/download/)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
+> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客户端](https://cowagent.ai/zh/download/)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
 
-> **2026.06.18：** [v2.1.2](https://github.com/zhayujie/CowAgent/releases/tag/2.1.2) — Web 控制台升级（定时任务管理、知识库分类、多模型自定义厂商）、自主进化优化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和体验优化
+> **2026.06.18：** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web 控制台升级（定时任务管理、知识库分类、多模型自定义厂商）、自主进化优化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和体验优化
 
-> **2026.06.09：** [v2.1.1](https://github.com/zhayujie/CowAgent/releases/tag/2.1.1) — 自进化能力、Web 控制台升级（消息管理、多会话并行）、新模型接入（MiniMax-M3、qwen3.7-plus）、Python 3.13 支持
+> **2026.06.09：** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — 自进化能力、Web 控制台升级（消息管理、多会话并行）、新模型接入（MiniMax-M3、qwen3.7-plus）、Python 3.13 支持
 
-> **2026.06.01：** [v2.1.0](https://github.com/zhayujie/CowAgent/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
+> **2026.06.01：** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
 
 完整更新历史：[Release Notes](https://docs.cowagent.ai/zh/releases)
 
 <br/>
 
-## 🤝 社区与支持
+## 🛠️ 开发
 
-微信扫码添加小助手，加入 CowAgent 开源项目交流群：
+开发说明见 [CONTRIBUTING.md](/CONTRIBUTING.md)。本项目远程仓库为：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
-
-也欢迎在 GitHub [提交 Issue](https://github.com/zhayujie/CowAgent/issues)，或加入 [**Discord 服务器**](https://discord.gg/9U8eA8v9TR) 交流：
-
-<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-加入社区-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Discord" /></a>
-
-还可通过以下方式获取支持：
-
-- 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues)
-- 🤖 在线 AI 助手：[项目小助手](https://link-ai.tech/app/Kv2fXJcH)（基于项目知识库）
-
-<br/>
-
-## 🔗 相关项目
-
-- **[Cow Skill Hub](https://github.com/zhayujie/cow-skill-hub)** — 开源的 AI Agent 技能广场，支持 CowAgent、OpenClaw、Claude Code 等多种 Agent
-- **[bot-on-anything](https://github.com/zhayujie/bot-on-anything)** — 轻量大模型应用框架，支持 Slack、Telegram、Discord、Gmail 等海外平台
-- **[AgentMesh](https://github.com/MinimalFuture/AgentMesh)** — 开源多智能体（Multi-Agent）框架，通过团队协同解决复杂问题
-
-<br/>
-
-## 🏢 企业服务
-
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg" /></a>
-
-> [LinkAI](https://link-ai.tech/) 是面向企业和个人的一站式 AI 智能体平台，为 CowAgent 提供云端托管和企业级支持：
->
-> - **🚀 免部署在线运行**：无需服务器即可创建 [CowAgent 在线助理](https://link-ai.tech/cowagent/create)，1 分钟拥有专属 Agent
-> - **🧠 Agent 基础设施**：聚合主流大模型、知识库、数据库、技能、工作流，提供开箱即用的 Agent 能力扩展
-> - **🏢 企业级协作**：提供团队协作、权限分级、审计日志、私有化部署等能力，让 Agent 安全落地企业场景
-
-**产品咨询和企业服务** 可联系产品客服：
-
-<img width="130" src="https://cdn.link-ai.tech/portal/linkai-customer-service.png" />
-
-<br/>
-
-## 🛠️ 开发与贡献
-
-欢迎各种形式的贡献：新功能、Bug 修复、性能优化、文档完善，或向 [Skill Hub](https://skills.cowagent.ai/submit) 分享你的技能。请先阅读 [CONTRIBUTING.md](/CONTRIBUTING.md) 了解如何开始，然后提交 Issue 讨论或直接发起 PR。
-
-欢迎 ⭐ Star 支持项目，并通过 Watch → Custom → Releases 订阅新版本通知。也欢迎提交 PR、Issue 进行反馈。
-
-## 🌟 贡献者
-
-![cow contributors](https://contrib.rocks/image?repo=zhayujie/CowAgent&max=1000)
-
-<br/>
+```bash
+git remote set-url origin https://github.com/starpickerr/Stella.git
+```
 
 ## ⚠️ 声明
 
-1. 本项目遵循 [MIT 开源协议](/LICENSE)，主要用于技术研究和学习。使用时请遵守所在地法律法规及相关政策，因使用本项目所产生的一切后果由使用者自行承担。
-2. **成本与安全：** Agent 模式 Token 消耗显著高于普通对话，请根据效果与成本权衡选择模型；Agent 具备访问本地操作系统的能力，请谨慎选择部署环境。
-3. CowAgent 项目专注于开源技术开发，不会参与、授权或发行任何加密货币。
+1. 本项目遵循 [MIT 开源协议](/LICENSE)。使用时请遵守所在地法律法规，因使用本项目所产生的一切后果由使用者自行承担。
+2. **成本与安全：** Agent 模式 Token 消耗显著高于普通对话。Stella 可以访问本地操作系统，请只在可信环境中部署。
 
-<br/>
+## 📌 来源
 
-## 📌 项目更名说明
-
-本项目原名 `chatgpt-on-wechat`，于 2026.04.13 正式更名为 **CowAgent**。原 GitHub 地址已自动重定向，老用户可选择执行 `git remote set-url origin https://github.com/zhayujie/CowAgent.git` 更新本地远程地址。
+Stella 是在 MIT 开源 Agent Harness 基础上改造的个人 AI 私人秘书项目。仓库地址：[github.com/starpickerr/Stella](https://github.com/starpickerr/Stella)。

@@ -32,13 +32,13 @@ _PREFERRED_CHANNELS = ("chrome", "msedge", "chrome-beta", "msedge-beta")
 
 
 def get_data_root() -> str:
-    """Writable data root (~/.cow on desktop, else CWD-based).
+    """Writable data root (~/.stella on desktop, else CWD-based).
 
     Mirrors the logic in common/log.py without importing config, to avoid a
-    circular import. The desktop build sets COW_DATA_DIR; source deployments
+    circular import. The desktop build sets STELLA_DATA_DIR; source deployments
     fall back to the current working directory.
     """
-    data_dir = os.environ.get("COW_DATA_DIR")
+    data_dir = os.environ.get("STELLA_DATA_DIR")
     if data_dir:
         return os.path.expanduser(data_dir)
     return os.getcwd()
@@ -47,7 +47,7 @@ def get_data_root() -> str:
 def browsers_download_dir() -> str:
     """Directory Playwright downloads its Chromium into.
 
-    We pin it under the writable data root (~/.cow/ms-playwright) rather than
+    We pin it under the writable data root (~/.stella/ms-playwright) rather than
     Playwright's default (~/.cache/ms-playwright or %USERPROFILE%). This keeps
     the frozen desktop build self-contained and makes the download survive app
     updates. Set as PLAYWRIGHT_BROWSERS_PATH for both install and runtime.
@@ -77,12 +77,12 @@ def is_frozen() -> bool:
 def is_desktop() -> bool:
     """True when running as the Electron desktop client (dev or packaged).
 
-    The desktop shell always sets COW_DESKTOP=1 (see python-manager.ts), both in
+    The desktop shell always sets STELLA_DESKTOP=1 (see python-manager.ts), both in
     `npm run dev` (runs app.py with the user's Python) and in the packaged build
-    (frozen exe). Desktop users have no `cow` CLI, so onboarding must point them
+    (frozen exe). Desktop users have no `stella` CLI, so onboarding must point them
     at the in-chat `/install-browser` command rather than a terminal command.
     """
-    return os.environ.get("COW_DESKTOP") == "1"
+    return os.environ.get("STELLA_DESKTOP") == "1"
 
 
 def has_playwright_package() -> bool:

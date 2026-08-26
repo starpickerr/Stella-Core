@@ -1,6 +1,6 @@
-# Contributing to CowAgent
+# Contributing to Stella
 
-Thanks for taking the time to contribute! 🎉 CowAgent is built by a global
+Thanks for taking the time to contribute! 🎉 Stella is built by a global
 community, and contributions of all sizes are welcome — from typo fixes to new
 features.
 
@@ -14,7 +14,7 @@ pull requests, code comments, and commit messages in English.**
 
 ## Reporting issues
 
-Found a bug or have an idea? [Open an issue](https://github.com/zhayujie/CowAgent/issues/new/choose).
+Found a bug or have an idea? [Open an issue](https://github.com/starpickerr/Stella/issues/new/choose).
 
 Before opening one, please search existing issues (including closed ones) to
 avoid duplicates, and make sure you're on the latest version.
@@ -48,14 +48,14 @@ See the [Install from Source](https://docs.cowagent.ai/guide/manual-install)
 guide. In short:
 
 ```bash
-git clone https://github.com/zhayujie/CowAgent.git
-cd CowAgent
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
 pip install -r requirements.txt
 pip install -e .
-cow start
+stella start
 ```
 
 ## Code of conduct
 
-Be respectful and constructive. We want CowAgent to be a welcoming place for
+Be respectful and constructive. We want Stella to be a welcoming place for
 everyone.

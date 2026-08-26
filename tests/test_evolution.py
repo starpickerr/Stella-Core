@@ -96,7 +96,7 @@ class FakeAgentBridge:
 def _setup_workspace():
     """Create a realistic temp workspace: seeded memory + real editable skills.
 
-    Mirrors a real CowAgent workspace closely enough that the model has genuine
+    Mirrors a real Stella workspace closely enough that the model has genuine
     content to read, reason about, and edit during a real evolution pass.
     """
     ws = Path(tempfile.mkdtemp(prefix="evo_test_"))
@@ -845,9 +845,9 @@ def run_real():
 if __name__ == "__main__":
     if "--debug" in sys.argv:
         import logging
-        from common.log import logger as _cow_logger
-        _cow_logger.setLevel(logging.DEBUG)
-        for _h in _cow_logger.handlers:
+        from common.log import logger as _stella_logger
+        _stella_logger.setLevel(logging.DEBUG)
+        for _h in _stella_logger.handlers:
             _h.setLevel(logging.DEBUG)
     if "--real" in sys.argv:
         run_real()

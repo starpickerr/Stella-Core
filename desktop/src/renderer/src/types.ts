@@ -7,7 +7,7 @@ export interface ElectronAPI {
   getBackendStatus: () => Promise<string>
   /** The last backend failure, queryable so it can't be missed by timing. */
   getBackendError: () => Promise<BackendFailure | null>
-  /** Data dir holding config.json and run.log (~/.cow in packaged builds). */
+  /** Data dir holding config.json and run.log (~/.stella in packaged builds). */
   getDataDir: () => Promise<string>
   restartBackend: () => Promise<boolean>
   selectDirectory: () => Promise<string | null>
@@ -31,7 +31,7 @@ export interface ElectronAPI {
   setLoginItemEnabled?: (
     enabled: boolean
   ) => Promise<{ ok: boolean; enabled: boolean; error: string }>
-  // Themes (bundled + user themes from ~/.cow/themes), images inlined.
+  // Themes (bundled + user themes from ~/.stella/themes), images inlined.
   listThemes?: () => Promise<Record<string, unknown>[]>
   getThemesDir?: () => Promise<string>
   // Optional app config: first-run default theme + display name. Null when
@@ -237,7 +237,7 @@ export interface ProjectRef {
 
 /** Project picker state for a session (from /api/projects). */
 export interface ProjectState {
-  /** null when the session uses the default workspace (~/cow). */
+  /** null when the session uses the default workspace (~/stella). */
   current: ProjectRef | null
   default_workspace: string
   projects_root?: string

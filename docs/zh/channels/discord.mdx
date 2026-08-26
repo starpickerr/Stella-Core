@@ -1,15 +1,15 @@
 ---
 title: Discord
-description: 将 CowAgent 接入 Discord Bot
+description: 将 Stella 接入 Discord Bot
 ---
 
-> 通过 Discord Bot 的 **Gateway 长连接** 接入 CowAgent，支持私聊（DM）与服务器频道（@机器人 / 回复机器人触发）。Gateway 基于 WebSocket 长连接，无需公网 IP 与回调地址，开箱即用。
+> 通过 Discord Bot 的 **Gateway 长连接** 接入 Stella，支持私聊（DM）与服务器频道（@机器人 / 回复机器人触发）。Gateway 基于 WebSocket 长连接，无需公网 IP 与回调地址，开箱即用。
 
 ## 一、接入步骤
 
 ### 步骤一：创建 Discord 应用与 Bot
 
-1. 打开 [Discord 开发者后台](https://discord.com/developers/applications)，点击 **New Application**，填写名称（如 `CowAgent`）并创建。
+1. 打开 [Discord 开发者后台](https://discord.com/developers/applications)，点击 **New Application**，填写名称（如 `Stella`）并创建。
 2. 左侧菜单进入 **Bot** 页面，点击 **Reset Token** 生成 Bot Token，复制并妥善保存（仅显示一次）。
 
 <Tip>
@@ -38,7 +38,7 @@ description: 将 CowAgent 接入 Discord Bot
   仅需私聊（DM）可跳过此步，但仍需先在任意共同服务器中与机器人建立 DM 通道，或由用户主动私聊机器人。
 </Note>
 
-### 步骤四：接入 CowAgent
+### 步骤四：接入 Stella
 
 <Tabs>
   <Tab title="Web 控制台（推荐）">
@@ -62,10 +62,10 @@ description: 将 CowAgent 接入 Discord Bot
   </Tab>
 </Tabs>
 
-启动 Cow 后，日志中出现以下输出即表示接入成功：
+启动 Stella 后，日志中出现以下输出即表示接入成功：
 
 ```
-[Discord] Bot logged in as CowAgent#1234 (id=123456789)
+[Discord] Bot logged in as Stella#1234 (id=123456789)
 [Discord] ✅ Discord bot ready, listening for messages
 ```
 

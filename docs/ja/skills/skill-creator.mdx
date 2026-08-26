@@ -47,13 +47,13 @@ SKILL.md ヘッダーの `frontmatter` フィールド：
 | --- | --- |
 | `name` | スキル名。小文字＋ハイフン、ディレクトリ名と一致させる |
 | `description` | **最も重要なフィールド**。「このスキルが何をするか」「いつ使うべきか」を明記する。Agent はこれを見て呼び出すかどうかを判断する。トリガーに関する記述はすべてここに書き、本文には書かない |
-| `metadata.cowagent.requires.bins` | システムに必要な CLI ツール |
-| `metadata.cowagent.requires.env` | 必要な環境変数（すべて揃っている必要がある） |
-| `metadata.cowagent.requires.anyEnv` | 複数の API Key のうち 1 つあればよい |
-| `metadata.cowagent.requires.anyBins` | 複数のツールのうち 1 つあればよい |
-| `metadata.cowagent.always` | `true` にすると常にロードされ、依存チェックをスキップ |
-| `metadata.cowagent.emoji` | 表示用の絵文字（任意） |
-| `metadata.cowagent.os` | OS 制限、例: `["darwin", "linux"]` |
+| `metadata.stella.requires.bins` | システムに必要な CLI ツール |
+| `metadata.stella.requires.env` | 必要な環境変数（すべて揃っている必要がある） |
+| `metadata.stella.requires.anyEnv` | 複数の API Key のうち 1 つあればよい |
+| `metadata.stella.requires.anyBins` | 複数のツールのうち 1 つあればよい |
+| `metadata.stella.always` | `true` にすると常にロードされ、依存チェックをスキップ |
+| `metadata.stella.emoji` | 表示用の絵文字（任意） |
+| `metadata.stella.os` | OS 制限、例: `["darwin", "linux"]` |
 
 <Note>
 `category` フィールドは手動で設定する必要はありません。システムが自動的に `skill` に設定します。
@@ -63,14 +63,14 @@ API Key 依存の宣言方法は 2 通り：
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       env: ["MYAPI_KEY"]            # 必須
 ```
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       anyEnv: ["OPENAI_API_KEY", "LINKAI_API_KEY"]   # いずれか 1 つ
 ```

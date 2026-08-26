@@ -216,6 +216,13 @@ def output_dir(identity=None, ensure: bool = False, base=None) -> Path:
     return _ensure(_user_base(identity, base) / "output", ensure)
 
 
+def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Personal ledger. User-scoped: spending is a fact about the person,
+    not about one Agent."""
+    bills_dir = _ensure(_user_base(identity, base) / "bills", ensure)
+    return bills_dir / "bills.db"
+
+
 def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     """Task execution records. User-scoped because a trace holds full tool
     output: one user's runs must not be readable by another."""

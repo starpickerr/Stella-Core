@@ -500,7 +500,7 @@ document.addEventListener('click', async (e) => {
 // Inline path chips: turn local paths mentioned in text into clickable chips
 // =====================================================================
 const WS_PATH_EXTS = Object.values(WS_KIND_BY_EXT).flat().join('|');
-// Absolute (/Users/..., C:\...), home-relative (~/cow/...) or workspace-relative
+// Absolute (/Users/..., C:\...), home-relative (~/stella/...) or workspace-relative
 // (websites/report.html) paths, always anchored on a known file extension and
 // containing at least one separator, which keeps prose like "see report.html"
 // from turning into chips. Excluding `:` and `/` before the match is what stops
@@ -749,7 +749,7 @@ function initWorkspaceFilesTab() {
         const row = e.target.closest('.ws-file-row[data-ws-file]');
         if (!row) return;
         e.dataTransfer.effectAllowed = 'copy';
-        e.dataTransfer.setData('application/x-cow-workspace-file', row.dataset.wsFile);
+        e.dataTransfer.setData('application/x-stella-workspace-file', row.dataset.wsFile);
     });
 
     input?.addEventListener('input', () => {
@@ -781,7 +781,7 @@ function initWorkspaceDropTarget() {
     if (!target) return;
 
     const isWorkspaceDrag = (e) =>
-        Array.from(e.dataTransfer?.types || []).includes('application/x-cow-workspace-file');
+        Array.from(e.dataTransfer?.types || []).includes('application/x-stella-workspace-file');
 
     target.addEventListener('dragover', (e) => {
         if (!isWorkspaceDrag(e)) return;
@@ -803,7 +803,7 @@ function initWorkspaceDropTarget() {
         e.preventDefault();
         target.classList.remove('ws-drop-active');
         try {
-            addWorkspaceRefAttachment(JSON.parse(e.dataTransfer.getData('application/x-cow-workspace-file')));
+            addWorkspaceRefAttachment(JSON.parse(e.dataTransfer.getData('application/x-stella-workspace-file')));
         } catch (_) {}
     });
 }

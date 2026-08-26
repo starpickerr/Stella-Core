@@ -4,16 +4,27 @@ const translations: Record<string, Record<string, string>> = {
     nav_chat: '对话',
     nav_manage: '管理',
     nav_monitor: '监控',
+    nav_work: '应用',
+    nav_info: '信息',
+    nav_channels: '通道',
+    nav_system: '系统',
     menu_chat: '对话',
     menu_config: '配置',
     menu_skills: '技能',
+    menu_evolution: '进化',
     menu_memory: '记忆',
     menu_channels: '通道',
     menu_tasks: '定时',
+    menu_todos: '事务',
+    menu_calendar: '日程',
+    menu_briefing: '简报',
+    menu_bills: '账单',
+    menu_security: '安全',
     menu_logs: '日志',
     menu_models: '模型',
     menu_knowledge: '知识',
     menu_settings: '设置',
+    placeholder_coming: '即将推出',
     // knowledge
     knowledge_title: '知识库',
     knowledge_desc: '浏览和探索你的知识库',
@@ -129,7 +140,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_skill_hub: '技能广场',
     menu_feedback: '反馈',
     // onboarding
-    onboarding_welcome_title: '欢迎使用 CowAgent',
+    onboarding_welcome_title: '欢迎使用 Stella',
     onboarding_welcome_desc: '你的私人超级 AI 助手。几步设置，即可开始对话。',
     onboarding_lang_label: '界面语言',
     onboarding_model_title: '配置对话模型',
@@ -385,7 +396,7 @@ const translations: Record<string, Record<string, string>> = {
     channels_available_section: '可添加',
     channels_empty_connected: '暂无已连接的通道',
     channels_empty: '暂未接入任何通道',
-    channels_empty_desc: '点击右上角「接入通道」按钮，即可将 CowAgent 接入微信、飞书、钉钉等消息通道',
+    channels_empty_desc: '点击右上角「接入通道」按钮，即可将 Stella 接入微信、飞书、钉钉等消息通道',
     channels_qr_hint: '该通道通过扫码登录，请前往 Web 控制台完成扫码连接',
     channels_save_ok: '已保存',
     channels_save_error: '保存失败',
@@ -513,12 +524,22 @@ const translations: Record<string, Record<string, string>> = {
     nav_chat: 'Chat',
     nav_manage: 'Management',
     nav_monitor: 'Monitor',
+    nav_work: 'Apps',
+    nav_info: 'Info',
+    nav_channels: 'Channels',
+    nav_system: 'System',
     menu_chat: 'Chat',
     menu_config: 'Config',
     menu_skills: 'Skills',
+    menu_evolution: 'Evolution',
     menu_memory: 'Memory',
     menu_channels: 'Channels',
-    menu_tasks: 'Tasks',
+    menu_tasks: 'Schedule',
+    menu_todos: 'To-dos',
+    menu_calendar: 'Calendar',
+    menu_briefing: 'Briefing',
+    menu_bills: 'Bills',
+    menu_security: 'Security',
     menu_logs: 'Logs',
     menu_models: 'Models',
     menu_knowledge: 'Knowledge',
@@ -575,6 +596,7 @@ const translations: Record<string, Record<string, string>> = {
     knowledge_import_result: '{imported} imported · {skipped} skipped · {failed} failed',
     knowledge_drop_hint: 'Drop .md / .txt files here to import',
     menu_settings: 'Settings',
+    placeholder_coming: 'Coming soon',
     nav_expand: 'Expand sidebar',
     nav_collapse: 'Collapse sidebar',
     session_history: 'Chat history',
@@ -638,7 +660,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_skill_hub: 'Skill Hub',
     menu_feedback: 'Feedback',
     // onboarding
-    onboarding_welcome_title: 'Welcome to CowAgent',
+    onboarding_welcome_title: 'Welcome to Stella',
     onboarding_welcome_desc: 'Your personal super AI assistant. A few quick steps and you are ready to chat.',
     onboarding_lang_label: 'Language',
     onboarding_model_title: 'Set up your chat model',
@@ -894,7 +916,7 @@ const translations: Record<string, Record<string, string>> = {
     channels_available_section: 'Available',
     channels_empty_connected: 'No connected channels yet',
     channels_empty: 'No channels connected',
-    channels_empty_desc: 'Click "Add channel" above to connect CowAgent to WeChat, Feishu, DingTalk and more',
+    channels_empty_desc: 'Click "Add channel" above to connect Stella to WeChat, Feishu, DingTalk and more',
     channels_qr_hint: 'This channel uses QR login — please connect it from the Web console',
     channels_save_ok: 'Saved',
     channels_save_error: 'Failed to save',
@@ -1028,13 +1050,13 @@ export type Lang = 'zh' | 'en'
 
 // First-run default: follow the OS language so zh-* systems start in Chinese
 // and everyone else in English. Once the user picks a language it's persisted
-// in cow_lang and always wins. Falls back to 'en' when the locale is unknown.
+// in stella_lang and always wins. Falls back to 'en' when the locale is unknown.
 function detectDefaultLang(): Lang {
   const locale = (window.electronAPI?.systemLocale || navigator.language || '').toLowerCase()
   return locale.startsWith('zh') ? 'zh' : 'en'
 }
 
-const savedLang = localStorage.getItem('cow_lang') as Lang | null
+const savedLang = localStorage.getItem('stella_lang') as Lang | null
 let currentLang: Lang = savedLang === 'zh' || savedLang === 'en' ? savedLang : detectDefaultLang()
 
 export function t(key: string): string {
@@ -1047,7 +1069,7 @@ export function getLang(): Lang {
 
 export function setLang(lang: Lang) {
   currentLang = lang
-  localStorage.setItem('cow_lang', lang)
+  localStorage.setItem('stella_lang', lang)
 }
 
 /** Resolve a possibly-localized label ({zh,en} or plain string) for the current language. */

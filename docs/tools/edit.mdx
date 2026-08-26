@@ -30,7 +30,7 @@ A few checks run before writing, and report back in the result:
 
 - **Modified elsewhere**: if the file changed after the Agent last read it, the result carries a warning so another program's changes are not silently overwritten.
 - **Syntax check**: if the edited content is JSON / YAML / TOML and fails to parse, the write is **refused** and the file is left untouched - these formats are corrupt when half-written. Source files (`.py`, for example) only warn, and only when this edit introduced a new syntax error.
-- **Credential protection**: `~/.cow/.env`, which holds API keys, cannot be modified through this tool. Use the `env_config` tool instead.
+- **Credential protection**: `~/.stella/.env`, which holds API keys, cannot be modified through this tool. Use the `env_config` tool instead.
 
 ## Use Cases
 

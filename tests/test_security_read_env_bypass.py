@@ -2,7 +2,7 @@
 """
 Unit tests for Read tool credential-bypass protection (issue #2913).
 
-Verifies that the read tool blocks not just the literal ~/.cow/.env file but
+Verifies that the read tool blocks not just the literal ~/.stella/.env file but
 also its process-environment aliases (/proc/<pid>/environ) and symlinks that
 resolve to it, WITHOUT re-broadening the scope narrowed by #2863.
 """
@@ -47,8 +47,8 @@ class TestReadCredentialBypass(unittest.TestCase):
     # ---- control: the literal credential file stays blocked --------------
 
     def test_direct_env_file_blocked(self):
-        """Direct ~/.cow/.env access must remain blocked (regression control)."""
-        env_path = expand_path("~/.cow/.env")
+        """Direct ~/.stella/.env access must remain blocked (regression control)."""
+        env_path = expand_path("~/.stella/.env")
         self.assertTrue(self.read._is_credential_path(env_path))
         result = self.read.execute({"path": env_path})
         self.assertEqual(result.status, "error")
@@ -76,8 +76,8 @@ class TestReadCredentialBypass(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlink not supported")
     def test_symlink_to_env_file_blocked(self):
-        """A symlink resolving to ~/.cow/.env must be blocked."""
-        env_path = expand_path("~/.cow/.env")
+        """A symlink resolving to ~/.stella/.env must be blocked."""
+        env_path = expand_path("~/.stella/.env")
         os.makedirs(os.path.dirname(env_path), exist_ok=True)
         created_env = False
         if not os.path.exists(env_path):

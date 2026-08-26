@@ -8,7 +8,7 @@ import os from 'os'
 //   1. Bundled themes — resources/themes/ shipped inside the app package
 //      (read-only). Present only in builds produced from a flavor; absent
 //      in the standard build.
-//   2. User themes — ~/.cow/themes/, the shared data dir users can add to
+//   2. User themes — ~/.stella/themes/, the shared data dir users can add to
 //      (via a future in-app store/import). Each theme is its own folder:
 //
 //        <id>/
@@ -33,8 +33,8 @@ const IMAGE_MIME: Record<string, string> = {
 }
 
 function cowRoot(): string {
-  // Honor an explicit override, else default to ~/.cow to match the backend.
-  return process.env.COW_HOME || path.join(os.homedir(), '.cow')
+  // Honor an explicit override, else default to ~/.stella to match the backend.
+  return process.env.STELLA_HOME || path.join(os.homedir(), '.stella')
 }
 
 export function themesDir(): string {
@@ -173,7 +173,7 @@ function scanDir(dir: string): Record<string, unknown>[] {
 }
 
 // Merge bundled themes (read-only, shipped in the package) with user themes
-// (~/.cow/themes). Bundled themes take precedence on id conflicts so a shipped
+// (~/.stella/themes). Bundled themes take precedence on id conflicts so a shipped
 // theme can't be shadowed by a user folder of the same id.
 export function loadThemes(): Record<string, unknown>[] {
   ensureThemesDir()

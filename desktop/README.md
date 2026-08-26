@@ -1,6 +1,6 @@
-# CowAgent Desktop
+# Stella Desktop
 
-Cross-platform desktop client for CowAgent, built with Electron + React + TypeScript.
+Cross-platform desktop client for Stella, built with Electron + React + TypeScript.
 
 ## Development
 

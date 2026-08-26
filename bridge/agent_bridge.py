@@ -1,5 +1,5 @@
 """
-Agent Bridge - Integrates Agent system with existing COW bridge
+Agent Bridge - Integrates Agent system with existing STELLA bridge
 """
 
 import os
@@ -70,7 +70,7 @@ def add_openai_compatible_support(bot_instance):
 
 class AgentLLMModel(LLMModel):
     """
-    LLM Model adapter that uses COW's existing bot infrastructure
+    LLM Model adapter that uses STELLA's existing bot infrastructure
     """
 
     _MODEL_BOT_TYPE_MAP = {
@@ -205,7 +205,7 @@ class AgentLLMModel(LLMModel):
 
     def call(self, request: LLMRequest):
         """
-        Call the model using COW's bot infrastructure
+        Call the model using STELLA's bot infrastructure
         """
         try:
             # For non-streaming calls, we'll use the existing reply method
@@ -270,7 +270,7 @@ class AgentLLMModel(LLMModel):
     
     def call_stream(self, request: LLMRequest):
         """
-        Call the model with streaming using COW's bot infrastructure
+        Call the model with streaming using STELLA's bot infrastructure
         """
         try:
             if hasattr(self.bot, 'call_with_tools'):
@@ -349,7 +349,7 @@ class AgentLLMModel(LLMModel):
 
 class AgentBridge:
     """
-    Bridge class that integrates super Agent with COW
+    Bridge class that integrates super Agent with STELLA
     Manages multiple agent instances per session for conversation isolation
     """
     
@@ -396,7 +396,7 @@ class AgentBridge:
 
     def create_agent(self, system_prompt: str, tools: List = None, **kwargs) -> Agent:
         """
-        Create the super agent with COW integration
+        Create the super agent with STELLA integration
         
         Args:
             system_prompt: System prompt
@@ -406,7 +406,7 @@ class AgentBridge:
         Returns:
             Agent instance
         """
-        # Create LLM model that uses COW's bot infrastructure
+        # Create LLM model that uses STELLA's bot infrastructure
         model = AgentLLMModel(self.bridge)
         
         # Default tools if none provided
@@ -651,7 +651,7 @@ class AgentBridge:
         
         Args:
             query: User query
-            context: COW context (optional, contains session_id for user isolation)
+            context: STELLA context (optional, contains session_id for user isolation)
             on_event: Event callback (optional)
             clear_history: Whether to clear conversation history
             
@@ -842,7 +842,7 @@ class AgentBridge:
                 except Exception:
                     pass
 
-            # Post-message hot-reload: detect edits to ~/cow/mcp.json and
+            # Post-message hot-reload: detect edits to ~/stella/mcp.json and
             # sync any new/removed MCP tools into the live agent in the
             # background. Off the critical path so user latency is unaffected;
             # changes take effect on the user's next message.
@@ -998,7 +998,7 @@ class AgentBridge:
             "linkai_api_key": "LINKAI_API_KEY",
         }
         
-        env_file = expand_path("~/.cow/.env")
+        env_file = expand_path("~/.stella/.env")
         
         # Read existing env vars (key -> value)
         existing_env_vars = {}

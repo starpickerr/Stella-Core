@@ -3,13 +3,13 @@ title: MCP Tools
 description: Integrate external tool ecosystems via the Model Context Protocol
 ---
 
-CowAgent supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), allowing the Agent to directly invoke tens of thousands of community MCP tools. Configure `mcp.json` once and the tools are exposed to the LLM in exactly the same way as built-in tools — automatically selected and invoked.
+Stella supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), allowing the Agent to directly invoke tens of thousands of community MCP tools. Configure `mcp.json` once and the tools are exposed to the LLM in exactly the same way as built-in tools — automatically selected and invoked.
 
 ## Configuration File
 
-CowAgent reads `~/cow/mcp.json`. If the file does not exist, no MCP tools are loaded — and no error is raised.
+Stella reads `~/stella/mcp.json`. If the file does not exist, no MCP tools are loaded — and no error is raised.
 
-For Docker deployments, the official `docker-compose.yml` already mounts the host's `./cow` directory to `/home/agent/cow` inside the container (i.e. the container user's `~/cow`). Just drop `mcp.json` into the host's `./cow/` directory and it will take effect.
+For Docker deployments, the official `docker-compose.yml` already mounts the host's `./stella` directory to `/home/agent/stella` inside the container (i.e. the container user's `~/stella`). Just drop `mcp.json` into the host's `./stella/` directory and it will take effect.
 
 ### Standard Format
 
@@ -65,12 +65,12 @@ Fully compatible with the MCP community standard, identical to Claude Desktop / 
 
 ## Let the Agent Configure It for You
 
-CowAgent ships with `read` / `write` / `edit` tools, so **you can simply send the MCP config to the Agent and ask it to write the file**:
+Stella ships with `read` / `write` / `edit` tools, so **you can simply send the MCP config to the Agent and ask it to write the file**:
 
 For example:
 
 ```markdown
-Add this MCP to ~/cow/mcp.json:
+Add this MCP to ~/stella/mcp.json:
 
 {"mcpServers":{"fetch":{"command":"uvx","args":["mcp-server-fetch"]}}}
 ```
@@ -82,7 +82,7 @@ The Agent will:
 
 ## Web Authorization (OAuth)
 
-Some remote MCP servers require OAuth web authorization, and connecting to them directly returns `401`. CowAgent has a built-in standard OAuth flow, so **no manual token is needed** — just configure the server normally, for example:
+Some remote MCP servers require OAuth web authorization, and connecting to them directly returns `401`. Stella has a built-in standard OAuth flow, so **no manual token is needed** — just configure the server normally, for example:
 
 ```json
 {
@@ -98,13 +98,13 @@ Some remote MCP servers require OAuth web authorization, and connecting to them 
 When a server returns `401` on its first load, authorization starts automatically: running locally **opens the browser automatically**, while server deployments **print the authorization link to the log** for you to open in a browser. Once you approve, the server comes online immediately; tokens are refreshed automatically on expiry, so you never have to re-authorize.
 
 - **Requires the web service**: The authorization callback is received by the web console (default port `9899`), so the Web channel must be running.
-- **Credential storage**: Tokens are persisted in `~/.cow/mcp_oauth.json` and reused across restarts.
+- **Credential storage**: Tokens are persisted in `~/.stella/mcp_oauth.json` and reused across restarts.
 - **Callback URL**: Defaults to `http://127.0.0.1:9899/mcp/oauth/callback`. If deployed on a server with the authorizing browser on another device, set `mcp_oauth_redirect_base` in `config.json` (e.g. `http://YOUR_IP:9899`).
 
 ## How It Works
 
 - **Async loading at startup**: All servers configured in `mcp.json` are loaded asynchronously in the background, never blocking the main loop — chat is usable immediately.
-- **Hot reload**: When you or the Agent modifies `mcp.json`, changed servers are automatically reloaded after the current message — no need to restart cow.
+- **Hot reload**: When you or the Agent modifies `mcp.json`, changed servers are automatically reloaded after the current message — no need to restart stella.
 - **Flat exposure**: Each method exposed by an MCP server appears as an individual tool. The LLM picks one directly without a second-stage decision.
 
 ## Supported Transports
@@ -119,10 +119,10 @@ When a server returns `401` on its first load, authorization starts automaticall
 
 | Symptom | What to Check |
 | --- | --- |
-| Agent has no MCP tools after startup | Verify that `~/cow/mcp.json` exists and contains valid JSON |
+| Agent has no MCP tools after startup | Verify that `~/stella/mcp.json` exists and contains valid JSON |
 | A specific server fails to load | Look for `[MCP] Server 'xxx' load failed` in startup logs — usually missing dependencies or API keys |
 | Changes to `mcp.json` aren't applied | Changes take effect on **the next message**. If the server config didn't actually change (e.g. only comments edited), no restart is triggered |
-| Docker deployment | Make sure host's `./cow` is mounted to `/home/agent/cow` in the container, then just drop `mcp.json` into host's `./cow/`. Or just ask the Agent to do it |
+| Docker deployment | Make sure host's `./stella` is mounted to `/home/agent/stella` in the container, then just drop `mcp.json` into host's `./stella/`. Or just ask the Agent to do it |
 
 ## Recommended MCP Marketplaces
 
@@ -131,4 +131,4 @@ You can browse third-party MCP marketplaces and copy a JSON config to use direct
 - [mcp.so](https://mcp.so) — Global MCP service index
 - [ModelScope MCP Hub](https://modelscope.cn/mcp) — ModelScope's MCP hub, more reliable from mainland China
 
-Any MCP server that follows the standard protocol (stdio / SSE / Streamable HTTP) integrates with CowAgent out of the box.
+Any MCP server that follows the standard protocol (stdio / SSE / Streamable HTTP) integrates with Stella out of the box.

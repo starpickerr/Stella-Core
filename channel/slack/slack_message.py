@@ -1,7 +1,7 @@
 """
 Slack message adapter.
 
-Convert a Slack event payload into cow's unified ChatMessage.
+Convert a Slack event payload into stella's unified ChatMessage.
 File downloads are NOT performed here; the channel layer downloads files
 on demand because it needs the bot token for authenticated download URLs.
 """

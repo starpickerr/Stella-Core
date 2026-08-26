@@ -1,13 +1,13 @@
 ---
 title: 功能介绍
-description: CowAgent 长期记忆、个人知识库、任务规划、技能系统、CLI 命令、浏览器工具详细说明
+description: Stella 长期记忆、个人知识库、任务规划、技能系统、CLI 命令、浏览器工具详细说明
 ---
 
 ## 1. 长期记忆
 
 > 记忆系统让 Agent 能够长期记住重要信息，采用三层记忆流转架构：对话上下文（短期）→ 天级记忆（中期）→ MEMORY.md（长期），形成完整的记忆生命周期。
 
-第一次启动 Agent 时，Agent 会主动询问关键信息，并记录至工作空间（默认 `~/cow`）中的智能体设定、用户身份、记忆文件中。
+第一次启动 Agent 时，Agent 会主动询问关键信息，并记录至工作空间（默认 `~/stella`）中的智能体设定、用户身份、记忆文件中。
 
 在后续的长期对话中，Agent 会在需要时智能记录或检索记忆，并对自身设定、用户偏好、记忆文件等进行不断更新。每日自动执行 **梦境蒸馏（Deep Dream）**，将分散的天级记忆整合为精炼的长期记忆，同时生成叙事风格的梦境日记。
 
@@ -27,7 +27,7 @@ description: CowAgent 长期记忆、个人知识库、任务规划、技能系�
 
 > 知识库系统让 Agent 能够持续积累和组织结构化知识。与按时间线记录的记忆不同，知识库以主题为维度，将文章、对话洞察、学习材料等整理为互相关联的 Markdown 页面，形成持续增长的知识网络。
 
-Agent 会在对话中自动将有价值的信息整理为知识页面，维护交叉引用和索引，通过 Web 控制台可浏览文档和查看知识图谱。知识库存储在工作空间的 `~/cow/knowledge/` 目录下。
+Agent 会在对话中自动将有价值的信息整理为知识页面，维护交叉引用和索引，通过 Web 控制台可浏览文档和查看知识图谱。知识库存储在工作空间的 `~/stella/knowledge/` 目录下。
 
 - **自动整理**：Agent 在对话中自主提取和整理结构化知识，维护索引和交叉引用
 - **知识图谱**：基于页面间的交叉引用自动构建知识图谱，Web 控制台提供可视化关系图浏览
@@ -72,7 +72,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 ### 3.4 浏览器操作
 
-内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `cow install-browser` 一键安装，自动适配服务器（无头模式）和桌面环境：
+内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `stella install-browser` 一键安装，自动适配服务器（无头模式）和桌面环境：
 
 <Frame>
   <img src="https://cdn.link-ai.tech/doc/20260401115728.png" width="750" />
@@ -92,9 +92,9 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 - [Skill Hub](https://skills.cowagent.ai/)：开放的技能广场，汇集官方推荐、社区贡献和第三方技能，支持一键安装。
 - **内置技能：** 在项目的 `skills/` 目录下，包含技能创造器、图像识别、LinkAI 智能体、网页抓取等。内置 Skill 根据依赖条件（API Key、系统命令等）自动判断是否启用。
-- **自定义技能：** 由用户通过对话创建，存放在工作空间中（`~/cow/skills/`），可实现任何复杂的业务流程和第三方系统对接。
+- **自定义技能：** 由用户通过对话创建，存放在工作空间中（`~/stella/skills/`），可实现任何复杂的业务流程和第三方系统对接。
 
-安装技能：`/skill install <名称>` 或 `cow skill install <名称>`，支持从 Skill Hub、GitHub、ClawHub、URL 等来源安装。
+安装技能：`/skill install <名称>` 或 `stella skill install <名称>`，支持从 Skill Hub、GitHub、ClawHub、URL 等来源安装。
 
 ### 4.1 创建技能
 
@@ -130,17 +130,17 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 ## 5. CLI 命令系统
 
-CowAgent 提供两种命令交互方式，覆盖服务管理、技能安装、配置调整等日常运维操作：
+Stella 提供两种命令交互方式，覆盖服务管理、技能安装、配置调整等日常运维操作：
 
-- **终端 CLI：** 在系统终端执行 `cow <命令>`，支持 `start`、`stop`、`restart`、`update`、`status`、`logs`、`skill` 等
+- **终端 CLI：** 在系统终端执行 `stella <命令>`，支持 `start`、`stop`、`restart`、`update`、`status`、`logs`、`skill` 等
 - **对话命令：** 在对话中输入 `/<命令>`，Web 控制台输入 `/` 可弹出指令菜单快速选择
 
 ```bash
-cow start              # 启动服务
-cow stop               # 停止服务
-cow update             # 更新并重启
-cow skill install pptx # 安装技能
-cow install-browser    # 安装浏览器工具
+stella start              # 启动服务
+stella stop               # 停止服务
+stella update             # 更新并重启
+stella skill install pptx # 安装技能
+stella install-browser    # 安装浏览器工具
 ```
 
 详细命令参考 [命令总览](https://docs.cowagent.ai/cli)。

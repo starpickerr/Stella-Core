@@ -269,7 +269,7 @@ class TestSkillServiceFilePathTraversal(unittest.TestCase):
     def test_absolute_posix_file_path_blocked(self):
         """An absolute POSIX path must be rejected, not silently honoured."""
         with self.assertRaises(ValueError) as ctx:
-            self._add_url_with_path("/tmp/cow-evil-marker.py")
+            self._add_url_with_path("/tmp/stella-evil-marker.py")
         self.assertIn("path traversal", str(ctx.exception))
 
     def test_absolute_native_file_path_blocked(self):

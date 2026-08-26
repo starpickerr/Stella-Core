@@ -211,7 +211,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   }, [sessionId])
 
   // Local actions ('new'/'clear') plus completion commands handled by backend
-  // command plugins (cow_cli/godcmd). Commands ending with a space expect an
+  // command plugins (stella_cli/godcmd). Commands ending with a space expect an
   // argument, so selecting them keeps focus in the input instead of sending.
   const slashCommands: SlashCommand[] = [
     { cmd: '/new', desc: t('slash_new'), action: 'new' },

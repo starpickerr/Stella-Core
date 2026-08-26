@@ -1,13 +1,13 @@
 ---
 title: v2.1.1
-description: CowAgent 2.1.1 - 自己進化、Web コンソールのメッセージ管理とマルチセッション並行、クロスプラットフォーム対応の MCP 強化、新モデルと改善
+description: Stella 2.1.1 - 自己進化、Web コンソールのメッセージ管理とマルチセッション並行、クロスプラットフォーム対応の MCP 強化、新モデルと改善
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.1) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.1)
 
 ## 🧬 自己進化
 
-CowAgent に **自己進化（Self-Evolution）** が加わりました。Agent は単発のタスクをこなすだけでなく、日々の協働を通じて成長し続けます：
+Stella に **自己進化（Self-Evolution）** が加わりました。Agent は単発のタスクをこなすだけでなく、日々の協働を通じて成長し続けます：
 
 - **アイドル後の自動レビュー**：会話がアイドルになると、Agent はバックグラウンドでその会話をレビューし、使用中に表面化した Skill の問題を修正し、再利用可能な新しい Skill を作成し、未完了のタスクを引き継ぎ、重要な情報を記憶とナレッジベースに記録します
 - **静かに実行、必要なときだけ通知**：実際に変更があったときのみ調整内容を一言で伝え、変更がなければ何も通知しません
@@ -50,12 +50,12 @@ Thanks [@xliu123321](https://github.com/xliu123321) (#2859)
 - **Python 3.13 対応**：Python 3.13 環境でのインストールと依存関係の互換性を修正
 - **国際化**：チャネル一覧を UI の言語順に表示。`auto` モードでの言語自動フォールバックを改善
 - **より確実なキャンセル**：ストリーミング応答を中断できない場合がある問題を修正
-- **CLI**：`cow status` に現在のプロジェクトパスを表示
-- **デプロイのセキュリティ強化**：認証ファイルのブロック範囲を `~/.cow/.env` に限定し、他のディレクトリに影響しないように修正（Thanks [@orbisai0security](https://github.com/orbisai0security) #2863）。WeChat 公式アカウントは `wechatmp_token` が空の場合に Webhook リクエストを拒否します
+- **CLI**：`stella status` に現在のプロジェクトパスを表示
+- **デプロイのセキュリティ強化**：認証ファイルのブロック範囲を `~/.stella/.env` に限定し、他のディレクトリに影響しないように修正（Thanks [@orbisai0security](https://github.com/orbisai0security) #2863）。WeChat 公式アカウントは `wechatmp_token` が空の場合に Webhook リクエストを拒否します
 - **グループタスクボードプラグイン**：グループタスクボードプラグインのソースを追加。Thanks [@Wyh-max-star](https://github.com/Wyh-max-star) (#2853)
 
 ## 📦 アップグレード
 
-ソースコードでデプロイしている場合は `cow update` でワンクリックアップグレードするか、最新コードを取得して手動で再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
+ソースコードでデプロイしている場合は `stella update` でワンクリックアップグレードするか、最新コードを取得して手動で再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照してください。
 
-**リリース日**：2026.06.09 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.0...2.1.1)
+**リリース日**：2026.06.09 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.0...2.1.1)

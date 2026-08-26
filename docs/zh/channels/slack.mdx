@@ -1,16 +1,16 @@
 ---
 title: Slack
-description: 将 CowAgent 接入 Slack App
+description: 将 Stella 接入 Slack App
 ---
 
-> 通过 Slack App 的 **Socket Mode** 接入 CowAgent，支持私聊（DM）与频道（@机器人 / 线程内回复触发）。Socket Mode 基于长连接，无需公网 IP 与回调地址，开箱即用。
+> 通过 Slack App 的 **Socket Mode** 接入 Stella，支持私聊（DM）与频道（@机器人 / 线程内回复触发）。Socket Mode 基于长连接，无需公网 IP 与回调地址，开箱即用。
 
 ## 一、接入步骤
 
 ### 步骤一：创建 Slack App
 
 1. 打开 [Slack API 应用管理页](https://api.slack.com/apps)，点击 **Create New App** → **From scratch**。
-2. 填写 **App Name**（如 `CowAgent`），选择要安装的 **Workspace**，点击创建。
+2. 填写 **App Name**（如 `Stella`），选择要安装的 **Workspace**，点击创建。
 
 ### 步骤二：开启 Socket Mode 并获取 App Token
 
@@ -60,7 +60,7 @@ description: 将 CowAgent 接入 Slack App
   若 Slack 客户端仍提示「向此应用发送消息的功能已关闭」，请确认已完成上一步的 App Home 设置，并刷新或重启 Slack 客户端（必要时把 App 从对话列表移除后重新打开）。
 </Tip>
 
-### 步骤四：接入 CowAgent
+### 步骤四：接入 Stella
 
 <Tabs>
   <Tab title="Web 控制台（推荐）">
@@ -86,7 +86,7 @@ description: 将 CowAgent 接入 Slack App
   </Tab>
 </Tabs>
 
-启动 Cow 后，日志中出现以下输出即表示接入成功：
+启动 Stella 后，日志中出现以下输出即表示接入成功：
 
 ```
 [Slack] Bot logged in as user_id=U0XXXXXXX, team=Txxxxxxxx

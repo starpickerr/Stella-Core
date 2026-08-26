@@ -132,10 +132,10 @@ class Write(BaseTool):
         real = os.path.realpath(absolute)
 
         # Always block the credentials file, mirroring the bash tool's guard.
-        # The suffix rule also covers non-home .cow/.env files; the shared guard
+        # The suffix rule also covers non-home .stella/.env files; the shared guard
         # adds symlink resolution and the /proc environ aliases.
-        if real.endswith(os.path.join(".cow", ".env")) or is_credential_path(absolute):
-            raise PermissionError("writing to ~/.cow/.env is not allowed")
+        if real.endswith(os.path.join(".stella", ".env")) or is_credential_path(absolute):
+            raise PermissionError("writing to ~/.stella/.env is not allowed")
 
         # Optional workspace confinement. Off by default to preserve existing
         # behavior; enable via config.json tools.write.restrict_to_workspace.

@@ -103,7 +103,7 @@ def handle_scheduler_action(
     value: Dict[str, Any], task_store: Any, allowed_receivers: Set[str]
 ) -> Dict[str, Any]:
     """Apply an owned scheduler action and return a Feishu callback response."""
-    if value.get("cowagent") != "scheduler":
+    if value.get("stella") != "scheduler":
         return {}
 
     task_id = str(value.get("task_id") or "")
@@ -166,7 +166,7 @@ def _button(
         "text": {"tag": "plain_text", "content": text},
         "type": button_type,
         "value": {
-            "cowagent": "scheduler",
+            "stella": "scheduler",
             "action": action,
             "task_id": task_id,
             "receiver": receiver,

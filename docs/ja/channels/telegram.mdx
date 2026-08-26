@@ -1,9 +1,9 @@
 ---
 title: Telegram
-description: Telegram Bot API 経由で CowAgent を接続
+description: Telegram Bot API 経由で Stella を接続
 ---
 
-> 公式の Telegram Bot API を通じて CowAgent を接続します。1 対 1 チャットおよびグループチャット（@メンションまたはボットへの返信で起動）に対応。Long Polling 方式のため公開 IP は不要で、すぐに利用できます。
+> 公式の Telegram Bot API を通じて Stella を接続します。1 対 1 チャットおよびグループチャット（@メンションまたはボットへの返信で起動）に対応。Long Polling 方式のため公開 IP は不要で、すぐに利用できます。
 
 
 ## 1. 接続手順
@@ -12,8 +12,8 @@ description: Telegram Bot API 経由で CowAgent を接続
 
 1. Telegram で公式アカウント [@BotFather](https://t.me/BotFather) を開きます。
 2. `/newbot` を送り、案内に従って入力します:
-   - **Bot 名**（表示名、例: `My CowAgent Bot`）
-   - **Bot ユーザー名**（`bot` で終わる必要があります、例: `my_cowagent_bot`）
+   - **Bot 名**（表示名、例: `My Stella Bot`）
+   - **Bot ユーザー名**（`bot` で終わる必要があります、例: `my_stella_bot`）
 3. 作成完了後、BotFather から **HTTP API Token**（例: `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`）が返されます。大切に保管してください。
 
 <Tip>
@@ -34,14 +34,14 @@ description: Telegram Bot API 経由で CowAgent を接続
   設定後もグループで反応しない場合は、Bot を一度グループから外して再度追加してみてください。
 </Note>
 
-### ステップ 3: CowAgent に接続
+### ステップ 3: Stella に接続
 
 <Tabs>
   <Tab title="Web コンソール（推奨）">
     Web コンソール（既定 `http://127.0.0.1:9899`）を開き、**チャネル** メニュー → **チャネルを追加** → **Telegram** を選択し、Bot Token を貼り付けて接続をクリックします。
   </Tab>
   <Tab title="設定ファイル">
-    `config.json` に以下を追加して Cow を起動します:
+    `config.json` に以下を追加して Stella を起動します:
 
     ```json
     {
@@ -62,7 +62,7 @@ description: Telegram Bot API 経由で CowAgent を接続
 ログに以下のような出力が表示されれば接続成功です:
 
 ```
-[Telegram] Bot logged in as @my_cowagent_bot (id=123456789)
+[Telegram] Bot logged in as @my_stella_bot (id=123456789)
 [Telegram] Registered 10 bot commands
 [Telegram] ✅ Telegram bot ready, polling for updates
 ```
@@ -106,7 +106,7 @@ description: Telegram Bot API 経由で CowAgent を接続
 
 接続が完了したら:
 
-- **1 対 1 チャット**: Telegram で Bot のユーザー名（例: `@my_cowagent_bot`）を検索し、`Start` をタップして会話を開始します。
+- **1 対 1 チャット**: Telegram で Bot のユーザー名（例: `@my_stella_bot`）を検索し、`Start` をタップして会話を開始します。
 - **グループチャット**: Bot をグループに追加し、`@bot こんにちは` または **Bot のメッセージに返信** することで起動します。グループで反応しない場合は [ステップ 2](#ステップ-2-グループ利用時-privacy-mode-を無効化) の Privacy Mode 設定を確認してください。
 
 画像やファイルを送るときは、添付欄の上の入力欄に **キャプション**（説明・質問）を直接書いて一緒に送信できます。Bot は添付ファイルとキャプションを合わせて回答します。先に添付を送り、その後に質問を送る形でも、2 つのメッセージは自動でまとめて処理されます。

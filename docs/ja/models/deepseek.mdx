@@ -64,8 +64,8 @@ V4 シリーズ（`deepseek-v4-flash` / `deepseek-v4-pro`）は明示的な「�
 
 ### 動作の補足
 
-- **サンプリングパラメータ**：思考モードでは `temperature`、`top_p`、`presence_penalty`、`frequency_penalty` がサーバ側で無視されます（エラーにはなりません）。CowAgent は自動的にこれらの送信をスキップします。
-- **マルチターンのツール呼び出し**：履歴にツール呼び出しが含まれる場合、DeepSeek はすべての assistant メッセージで `reasoning_content` を返却することを要求します。CowAgent は返却ロジックを自動的に処理しており、ターンをまたいで思考スイッチを切り替えてもエラーにはなりません。
+- **サンプリングパラメータ**：思考モードでは `temperature`、`top_p`、`presence_penalty`、`frequency_penalty` がサーバ側で無視されます（エラーにはなりません）。Stella は自動的にこれらの送信をスキップします。
+- **マルチターンのツール呼び出し**：履歴にツール呼び出しが含まれる場合、DeepSeek はすべての assistant メッセージで `reasoning_content` を返却することを要求します。Stella は返却ロジックを自動的に処理しており、ターンをまたいで思考スイッチを切り替えてもエラーにはなりません。
 
 <Tip>
   デフォルトでは `deepseek-v4-flash` を使用します。複雑なタスクには `deepseek-v4-pro` を使用でき、深い推論が必要な場合は `enable_thinking` をオンにできます。

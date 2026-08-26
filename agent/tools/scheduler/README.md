@@ -49,7 +49,7 @@ Agent: [调用 scheduler 工具]
       tool_call:
         tool_name: read
         tool_params:
-          file_path: ~/cow/schedule.txt
+          file_path: ~/stella/schedule.txt
         result_prefix: 📅 今日日程
       schedule_type: cron
       schedule_value: 0 8 * * *
@@ -135,7 +135,7 @@ Agent: [调用 scheduler 工具]
 
 任务保存在 JSON 文件中：
 ```
-~/cow/scheduler/tasks.json
+~/stella/scheduler/tasks.json
 ```
 
 任务数据结构：
@@ -181,7 +181,7 @@ Agent: [调用 scheduler 工具]
     "type": "tool_call",
     "tool_name": "read",
     "tool_params": {
-      "file_path": "~/cow/schedule.txt"
+      "file_path": "~/stella/schedule.txt"
     },
     "result_prefix": "📅 今日日程",
     "receiver": "wxid_xxx",
@@ -242,7 +242,7 @@ Agent: [创建 interval: 3600]
 Agent: ✅ 定时任务创建成功
        任务ID: schedule001
        调度: 每天 8:00
-       工具: read(file_path='~/cow/schedule.txt')
+       工具: read(file_path='~/stella/schedule.txt')
        前缀: 📅 今日日程
 ```
 
@@ -250,7 +250,7 @@ Agent: ✅ 定时任务创建成功
 ```
 用户: 每天晚上11点备份工作文件
 Agent: [创建 cron: 0 23 * * *]
-       工具: bash(command='cp ~/cow/work.txt ~/cow/backup/work_$(date +%Y%m%d).txt')
+       工具: bash(command='cp ~/stella/work.txt ~/stella/backup/work_$(date +%Y%m%d).txt')
        前缀: ✅ 文件已备份
 ```
 

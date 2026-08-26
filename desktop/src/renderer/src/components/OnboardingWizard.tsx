@@ -51,7 +51,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
   // option (driven by OS locale) also reaches the backend, even if the user
   // doesn't tap the language buttons.
   useEffect(() => {
-    if (!localStorage.getItem('cow_lang')) switchLang(lang)
+    if (!localStorage.getItem('stella_lang')) switchLang(lang)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -85,7 +85,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
     setLangState(next)
     // Mirror the choice to the backend so the agent/logs use the same language
     // (matches BasicSettings). Non-blocking: the UI already switched locally.
-    apiClient.updateConfig({ cow_lang: next }).catch(() => {})
+    apiClient.updateConfig({ stella_lang: next }).catch(() => {})
   }
 
   // Step 1 (language) can always advance; step 2 needs a provider, key, model.

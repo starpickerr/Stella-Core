@@ -71,7 +71,7 @@ def _oauth_redirect_uri() -> str:
         from config import conf
         base = (conf().get("mcp_oauth_redirect_base") or "").strip().rstrip("/")
         if not base:
-            port = int(os.environ.get("COW_WEB_PORT") or conf().get("web_port", 9899))
+            port = int(os.environ.get("STELLA_WEB_PORT") or conf().get("web_port", 9899))
             base = f"http://127.0.0.1:{port}"
     except Exception:
         base = "http://127.0.0.1:9899"
@@ -544,7 +544,7 @@ class McpClient:
             f"    {auth_url}"
         )
         # On a machine with a local browser (desktop/dev), open it directly.
-        if os.environ.get("COW_DESKTOP") == "1" or not os.environ.get("COW_HEADLESS"):
+        if os.environ.get("STELLA_DESKTOP") == "1" or not os.environ.get("STELLA_HEADLESS"):
             try:
                 import webbrowser
                 webbrowser.open(auth_url)
@@ -762,7 +762,7 @@ class McpClient:
         init_params = {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "CowAgent", "version": "1.0"},
+            "clientInfo": {"name": "Stella", "version": "1.0"},
         }
         # Temporarily mark as initialized so _send_request doesn't block
         self._initialized = True

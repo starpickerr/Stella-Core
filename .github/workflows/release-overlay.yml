@@ -66,7 +66,7 @@ permissions:
 
 env:
   OVERLAY_REPO: zhayujie/cow-private-overlay
-  R2_BUCKET: cow-skills
+  R2_BUCKET: stella-skills
 
 jobs:
   build:
@@ -150,7 +150,7 @@ jobs:
           pip install -r desktop/build/requirements-desktop.txt
           pip install pyinstaller
           # Run from repo root so the spec's relative datas resolve correctly.
-          pyinstaller desktop/build/cowagent-backend.spec \
+          pyinstaller desktop/build/stella-backend.spec \
             --noconfirm \
             --distpath desktop/build/dist \
             --workpath desktop/build/build-work
@@ -220,7 +220,7 @@ jobs:
         working-directory: overlay
         shell: bash
         env:
-          COW_CORE_DIR: ${{ github.workspace }}/desktop
+          STELLA_CORE_DIR: ${{ github.workspace }}/desktop
           # Trusted-client SMS secret (matches client.sms.secret on the server).
           CLIENT_SMS_SECRET: ${{ secrets.CLIENT_SMS_SECRET }}
           # Signing secrets, shared with the core release workflow. Passed through
@@ -230,12 +230,12 @@ jobs:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           # Windows code signing via the signing CLI; SIGNTOOL_PATH was exported
-          # by the download step above. COW_SIGN_DRY_RUN (repo variable) validates
+          # by the download step above. STELLA_SIGN_DRY_RUN (repo variable) validates
           # the pipeline with a self-signed cert, consuming no signing quota.
           SIGNTOOL_ACCESS_KEY: ${{ secrets.SIGNTOOL_ACCESS_KEY }}
           SIGNTOOL_ACCESS_SECRET: ${{ secrets.SIGNTOOL_ACCESS_SECRET }}
           SIGNTOOL_CERT_CODE: ${{ secrets.SIGNTOOL_CERT_CODE }}
-          COW_SIGN_DRY_RUN: ${{ vars.COW_SIGN_DRY_RUN }}
+          STELLA_SIGN_DRY_RUN: ${{ vars.STELLA_SIGN_DRY_RUN }}
         run: |
           # Pick the signing cert for THIS platform only. Both secrets sit in the
           # job env, but a mac cert must never reach a Windows build (electron-
@@ -269,7 +269,7 @@ jobs:
             # App names carry the (masked) product name — report the out dir.
             leg="$(basename "$(dirname "$app")")"
             shell_bin="$app/Contents/MacOS/$(basename "$app" .app)"
-            backend="$app/Contents/Resources/backend/cowagent-backend/cowagent-backend"
+            backend="$app/Contents/Resources/backend/stella-backend/stella-backend"
             if [ ! -f "$backend" ]; then
               echo "::error::$leg: the app carries no backend"
               exit 1
@@ -289,7 +289,7 @@ jobs:
         working-directory: overlay
         shell: bash
         env:
-          COW_CORE_DIR: ${{ github.workspace }}/desktop
+          STELLA_CORE_DIR: ${{ github.workspace }}/desktop
         run: node rewrite-yml.mjs "${{ inputs.version }}"
 
       # wrangler@latest needs Node >=22 while the packager runs on Node 20.
@@ -309,7 +309,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          COW_CORE_DIR: ${{ github.workspace }}/desktop
+          STELLA_CORE_DIR: ${{ github.workspace }}/desktop
           R2_PREFIX: ${{ secrets.OVERLAY_R2_PREFIX }}
           R2_VERSION: ${{ inputs.version }}
           R2_META_VERSIONED: "1"
@@ -368,7 +368,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          COW_CORE_DIR: ${{ github.workspace }}/stage
+          STELLA_CORE_DIR: ${{ github.workspace }}/stage
           R2_PREFIX: ${{ secrets.OVERLAY_R2_PREFIX }}
           R2_VERSION: ${{ inputs.version }}
           UPLOAD_TOOL: wrangler

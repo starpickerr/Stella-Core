@@ -1,6 +1,6 @@
 ---
 title: v2.0.9
-description: CowAgent 2.0.9 - モデル管理機能、MCP プロトコル対応、ブラウザログイン状態の永続化、新モデル追加とデプロイ・セキュリティ強化
+description: Stella 2.0.9 - モデル管理機能、MCP プロトコル対応、ブラウザログイン状態の永続化、新モデル追加とデプロイ・セキュリティ強化
 ---
 
 ## 🖥️ モデル管理機能の追加
@@ -23,7 +23,7 @@ Web コンソールに「モデル」ページを新設。**モデルプロバ�
 **MCP（Model Context Protocol）** プロトコルに対応。固定のツールセットから、開放的でプラグイン可能なツールエコシステムへと拡張され、MCP 互換のあらゆるサービスを Agent のツールとして直接接続できます。
 
 - ネイティブ JSON-RPC 実装、追加依存ゼロ。`stdio` と `sse` の両伝送方式に対応
-- Claude Desktop / Cursor などの主流形式の `mcpServers` 設定に互換、`~/cow/mcp.json` を優先的に読み込み
+- Claude Desktop / Cursor などの主流形式の `mcpServers` 設定に互換、`~/stella/mcp.json` を優先的に読み込み
 
 ドキュメント：[MCP ツール](https://docs.cowagent.ai/ja/tools/mcp)。Thanks [@yangluxin613](https://github.com/yangluxin613) (#2801)
 
@@ -31,7 +31,7 @@ Web コンソールに「モデル」ページを新設。**モデルプロバ�
 
 ログインが必要なサイトや反クロウル機構のあるサイトに対して、ブラウザツールが一度のログイン状態を長期的に再利用できるようになりました。さらに自前の本物の Chrome に接続することで、フィンガープリント検出も回避可能です：
 
-- **永続化ユーザープロファイル（デフォルト）**：`~/.cow/browser_profile` をブラウザのユーザーディレクトリとしてデフォルト使用、一度ログインすれば次回以降は自動で復元
+- **永続化ユーザープロファイル（デフォルト）**：`~/.stella/browser_profile` をブラウザのユーザーディレクトリとしてデフォルト使用、一度ログインすれば次回以降は自動で復元
 - **CDP モード**：`tools.browser.cdp_endpoint` を設定することで実際の Chrome ブラウザを乗っ取り、完全なブラウザ権限を享受可能
 
 ドキュメント：[ブラウザツール](https://docs.cowagent.ai/ja/tools/browser)。Thanks [@leafmove](https://github.com/leafmove) (#2809)
@@ -60,6 +60,6 @@ Web コンソールに「モデル」ページを新設。**モデルプロバ�
 
 ## 📦 アップグレード方法
 
-ソースコードデプロイは `cow update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照。
+ソースコードデプロイは `stella update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照。
 
-**リリース日**：2026.05.22 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.0.8...2.0.9)
+**リリース日**：2026.05.22 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.8...2.0.9)

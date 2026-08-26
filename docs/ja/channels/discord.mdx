@@ -1,15 +1,15 @@
 ---
 title: Discord
-description: Discord Bot 経由で CowAgent を接続
+description: Discord Bot 経由で Stella を接続
 ---
 
-> Discord Bot の **Gateway 常時接続** を通じて CowAgent を接続します。ダイレクトメッセージ（DM）およびサーバーチャンネル（@メンションまたはボットへの返信で起動）に対応。Gateway は WebSocket の常時接続を使うため公開 IP やコールバック URL は不要で、すぐに利用できます。
+> Discord Bot の **Gateway 常時接続** を通じて Stella を接続します。ダイレクトメッセージ（DM）およびサーバーチャンネル（@メンションまたはボットへの返信で起動）に対応。Gateway は WebSocket の常時接続を使うため公開 IP やコールバック URL は不要で、すぐに利用できます。
 
 ## 1. 接続手順
 
 ### ステップ 1: Discord アプリと Bot を作成
 
-1. [Discord 開発者ポータル](https://discord.com/developers/applications) を開き、**New Application** をクリックして名前（例: `CowAgent`）を入力し作成します。
+1. [Discord 開発者ポータル](https://discord.com/developers/applications) を開き、**New Application** をクリックして名前（例: `Stella`）を入力し作成します。
 2. 左メニューの **Bot** ページで **Reset Token** をクリックして Bot Token を生成し、コピーして安全に保管します（一度だけ表示されます）。
 
 <Tip>
@@ -38,14 +38,14 @@ DM・チャンネルいずれもテキスト読み取りにこの権限が必要
   DM のみを利用する場合はこのステップを省略できますが、ボットとの DM チャンネルが必要です（ユーザーがボットに直接メッセージを送るなど）。
 </Note>
 
-### ステップ 4: CowAgent に接続
+### ステップ 4: Stella に接続
 
 <Tabs>
   <Tab title="Web コンソール（推奨）">
     Web コンソール（既定 `http://127.0.0.1:9899`）を開き、**チャネル** メニュー → **チャネルを追加** → **Discord** を選択し、Bot Token を貼り付けて接続をクリックします。
   </Tab>
   <Tab title="設定ファイル">
-    `config.json` に以下を追加して Cow を起動します:
+    `config.json` に以下を追加して Stella を起動します:
 
     ```json
     {
@@ -65,7 +65,7 @@ DM・チャンネルいずれもテキスト読み取りにこの権限が必要
 ログに以下のような出力が表示されれば接続成功です:
 
 ```
-[Discord] Bot logged in as CowAgent#1234 (id=123456789)
+[Discord] Bot logged in as Stella#1234 (id=123456789)
 [Discord] ✅ Discord bot ready, listening for messages
 ```
 

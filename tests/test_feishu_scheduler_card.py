@@ -51,13 +51,13 @@ def test_scheduler_card_has_explicit_idempotent_actions():
     values = [column["elements"][0]["value"] for column in action_row["columns"]]
     assert values == [
         {
-            "cowagent": "scheduler",
+            "stella": "scheduler",
             "action": "disable",
             "task_id": "task-1",
             "receiver": "chat-1",
         },
         {
-            "cowagent": "scheduler",
+            "stella": "scheduler",
             "action": "delete",
             "task_id": "task-1",
             "receiver": "chat-1",
@@ -79,7 +79,7 @@ def test_tasks_are_scoped_to_callback_chat_or_operator():
 
 def test_disable_action_is_idempotent_and_returns_refreshed_card():
     store = FakeTaskStore([_task("task-1", "chat-1")])
-    value = {"cowagent": "scheduler", "action": "disable", "task_id": "task-1"}
+    value = {"stella": "scheduler", "action": "disable", "task_id": "task-1"}
 
     first = handle_scheduler_action(value, store, {"chat-1"})
     second = handle_scheduler_action(value, store, {"chat-1"})
@@ -99,7 +99,7 @@ def test_action_rejects_task_from_another_receiver():
     store = FakeTaskStore([_task("task-1", "chat-2")])
 
     response = handle_scheduler_action(
-        {"cowagent": "scheduler", "action": "delete", "task_id": "task-1"},
+        {"stella": "scheduler", "action": "delete", "task_id": "task-1"},
         store,
         {"chat-1", "user-1"},
     )
@@ -113,7 +113,7 @@ def test_action_rejects_mismatched_receiver_embedded_in_card_value():
 
     response = handle_scheduler_action(
         {
-            "cowagent": "scheduler",
+            "stella": "scheduler",
             "action": "delete",
             "task_id": "task-1",
             "receiver": "chat-1",
@@ -130,7 +130,7 @@ def test_delete_action_removes_owned_task():
     store = FakeTaskStore([_task("task-1", "user-1")])
 
     response = handle_scheduler_action(
-        {"cowagent": "scheduler", "action": "delete", "task_id": "task-1"},
+        {"stella": "scheduler", "action": "delete", "task_id": "task-1"},
         store,
         {"user-1"},
     )
