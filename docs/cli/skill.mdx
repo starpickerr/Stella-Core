@@ -3,7 +3,7 @@ title: Skill Management
 description: Install, uninstall, enable, disable, and manage skills via commands
 ---
 
-Skill management commands are used to install, query, and manage CowAgent skills. Use `/skill <subcommand>` in chat or `cow skill <subcommand>` in the terminal.
+Skill management commands are used to install, query, and manage Stella skills. Use `/skill <subcommand>` in chat or `stella skill <subcommand>` in the terminal.
 
 ## list
 
@@ -15,7 +15,7 @@ List installed skills and their status.
 ```
 
 ```bash Terminal
-cow skill list
+stella skill list
 ```
 </CodeGroup>
 
@@ -45,7 +45,7 @@ Example output:
 ```
 
 ```bash Terminal
-cow skill list --remote
+stella skill list --remote
 ```
 </CodeGroup>
 
@@ -66,13 +66,13 @@ Search for skills on the Skill Hub.
 ```
 
 ```bash Terminal
-cow skill search pptx
+stella skill search pptx
 ```
 </CodeGroup>
 
 ## install
 
-Install skills with a single `install` command from Cow Skill Hub, GitHub, ClawHub, or any URL (zip archives, SKILL.md links) — no manual download or configuration required.
+Install skills with a single `install` command from Stella Skill Hub, GitHub, ClawHub, or any URL (zip archives, SKILL.md links) — no manual download or configuration required.
 
 **From Skill Hub (recommended):**
 
@@ -82,7 +82,7 @@ Install skills with a single `install` command from Cow Skill Hub, GitHub, ClawH
 ```
 
 ```bash Terminal
-cow skill install pptx
+stella skill install pptx
 ```
 </CodeGroup>
 
@@ -102,13 +102,13 @@ cow skill install pptx
 
 ```bash Terminal
 # Install all skills in a repo (auto-discovers subdirectories with SKILL.md)
-cow skill install larksuite/cli
+stella skill install larksuite/cli
 
 # Specify a subdirectory to install a single skill
-cow skill install https://github.com/larksuite/cli/tree/main/skills/lark-im
+stella skill install https://github.com/larksuite/cli/tree/main/skills/lark-im
 
 # Use # to specify a subdirectory
-cow skill install larksuite/cli#skills/lark-minutes
+stella skill install larksuite/cli#skills/lark-minutes
 ```
 </CodeGroup>
 
@@ -122,7 +122,7 @@ Supports full GitHub URLs and `owner/repo` shorthand. For mono-repos (multiple s
 ```
 
 ```bash Terminal
-cow skill install clawhub:baidu-search
+stella skill install clawhub:baidu-search
 ```
 </CodeGroup>
 
@@ -139,10 +139,10 @@ cow skill install clawhub:baidu-search
 
 ```bash Terminal
 # Install from a zip archive (single or batch)
-cow skill install https://cdn.link-ai.tech/skills/pptx.zip
+stella skill install https://cdn.link-ai.tech/skills/pptx.zip
 
 # Install from a SKILL.md link
-cow skill install https://example.com/path/to/SKILL.md
+stella skill install https://example.com/path/to/SKILL.md
 ```
 </CodeGroup>
 
@@ -158,7 +158,7 @@ Uninstall an installed skill.
 ```
 
 ```bash Terminal
-cow skill uninstall pptx
+stella skill uninstall pptx
 ```
 </CodeGroup>
 
@@ -177,8 +177,8 @@ Enable or disable a skill. Disabled skills will not be invoked by the Agent.
 ```
 
 ```bash Terminal
-cow skill enable pptx
-cow skill disable pptx
+stella skill enable pptx
+stella skill disable pptx
 ```
 </CodeGroup>
 
@@ -192,7 +192,7 @@ View details of an installed skill, including a preview of its `SKILL.md`.
 ```
 
 ```bash Terminal
-cow skill info pptx
+stella skill info pptx
 ```
 </CodeGroup>
 
@@ -203,7 +203,7 @@ Installed skills track their origin, viewable via `/skill list`:
 | Source | Description |
 | --- | --- |
 | `builtin` | Built-in project skills |
-| `cowhub` | Installed from CowAgent Skill Hub |
+| `cowhub` | Installed from Stella Skill Hub |
 | `github` | Installed directly from a GitHub URL |
 | `clawhub` | Installed from ClawHub |
 | `url` | Installed from a SKILL.md URL |

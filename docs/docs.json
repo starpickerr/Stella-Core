@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "name": "CowAgent",
-  "description": "CowAgent - AI Super Assistant powered by LLMs, with autonomous task planning, long-term memory, skills system, and multi-channel deployment.",
+  "name": "Stella",
+  "description": "Stella - personal AI secretary with task planning, long-term memory, skills, and multi-channel messaging.",
   "theme": "mint",
   "appearance": {
     "default": "light"
@@ -19,26 +19,14 @@
   "navbar": {
     "links": [
       {
-        "label": "官网",
-        "href": "https://cowagent.ai/"
-      },
-      {
-        "label": "下载",
-        "href": "https://cowagent.ai/download/"
-      },
-      {
-        "label": "博客",
-        "href": "https://cowagent.ai/zh/blog/"
-      },
-      {
         "label": "GitHub",
-        "href": "https://github.com/zhayujie/CowAgent"
+        "href": "https://github.com/starpickerr/Stella"
       }
     ]
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/zhayujie/CowAgent"
+      "github": "https://github.com/starpickerr/Stella"
     }
   },
   "redirects": [
@@ -69,7 +57,7 @@
             },
             {
               "label": "GitHub",
-              "href": "https://github.com/zhayujie/CowAgent"
+              "href": "https://github.com/starpickerr/Stella"
             }
           ]
         },
@@ -313,7 +301,7 @@
             },
             {
               "label": "GitHub",
-              "href": "https://github.com/zhayujie/CowAgent"
+              "href": "https://github.com/starpickerr/Stella"
             }
           ]
         },
@@ -557,7 +545,7 @@
             },
             {
               "label": "GitHub",
-              "href": "https://github.com/zhayujie/CowAgent"
+              "href": "https://github.com/starpickerr/Stella"
             }
           ]
         },

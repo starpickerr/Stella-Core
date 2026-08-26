@@ -1,6 +1,6 @@
 ---
 title: v2.1.2
-description: CowAgent 2.1.2 - Web Console management upgrades, Self-Evolution improvements, new models, WeCom smart-bot callback mode, and security hardening
+description: Stella 2.1.2 - Web Console management upgrades, Self-Evolution improvements, new models, WeCom smart-bot callback mode, and security hardening
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.2) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.2)
@@ -53,7 +53,7 @@ Documentation: [WeCom Smart Bot](https://docs.cowagent.ai/channels/wecom-bot)
 ## 🛠 Improvements & Fixes
 
 - **CLI self-restart**: Added the self-restart command so the agent can restart its own process
-- **Windows compatibility**: Persist the cow CLI directory to the user PATH; fixed `python -c` long commands exceeding the `cmd.exe` length limit; avoid building greenlet from source during install
+- **Windows compatibility**: Persist the stella CLI directory to the user PATH; fixed `python -c` long commands exceeding the `cmd.exe` length limit; avoid building greenlet from source during install
 - **Custom roles**: The role plugin supports customization via standalone prompt files under `roles/*.json`. Thanks @sufan721 (#2891)
 - **Stability fixes**: Fixed a KeyError on `/cancel` and an infinite loop in image compression (Thanks @kirs-hi #2888)
 - **Install improvements**: Updated the startup script and default config; fixed ASR/TTS defaults, the self-evolution flag, and install hangs
@@ -62,6 +62,6 @@ Documentation: [WeCom Smart Bot](https://docs.cowagent.ai/channels/wecom-bot)
 
 ## 📦 Upgrade
 
-Source-code deployments can run `cow update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/guide/upgrade) for details.
+Source-code deployments can run `stella update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/guide/upgrade) for details.
 
-**Release Date**: 2026.06.18 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.1...2.1.2)
+**Release Date**: 2026.06.18 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.1...2.1.2)

@@ -16,7 +16,7 @@ interface WorkspaceSelectorProps {
 
 /**
  * Per-session project workspace picker. Mirrors the web console: pick the
- * default workspace (~/cow), a recent project, create a new project, or open
+ * default workspace (~/stella), a recent project, create a new project, or open
  * an existing directory via the native OS folder dialog. Selecting a project
  * scopes the agent's cwd, previews and `@` picker to that directory.
  */
@@ -175,7 +175,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
             {t('ws_sel_system_space')}
           </div>
 
-          {/* Default workspace (~/cow) */}
+          {/* Default workspace (~/stella) */}
           <button
             onClick={() => selectProject(null)}
             title={state?.default_workspace}

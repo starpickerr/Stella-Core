@@ -1,9 +1,9 @@
 ---
 title: Telegram
-description: Integrate CowAgent with Telegram via the Bot API
+description: Integrate Stella with Telegram via the Bot API
 ---
 
-> Integrate CowAgent into Telegram via the official Bot API. Supports private chat and group chat (triggered by @mention or replying to the bot). Uses Long Polling — no public IP required, works out of the box.
+> Integrate Stella into Telegram via the official Bot API. Supports private chat and group chat (triggered by @mention or replying to the bot). Uses Long Polling — no public IP required, works out of the box.
 
 
 ## 1. Setup
@@ -12,8 +12,8 @@ description: Integrate CowAgent with Telegram via the Bot API
 
 1. Open the official account [@BotFather](https://t.me/BotFather) in Telegram.
 2. Send `/newbot` and follow the prompts:
-   - **Bot name** (display name, e.g. `My CowAgent Bot`)
-   - **Bot username** (must end with `bot`, e.g. `my_cowagent_bot`)
+   - **Bot name** (display name, e.g. `My Stella Bot`)
+   - **Bot username** (must end with `bot`, e.g. `my_stella_bot`)
 3. Once created, BotFather returns an **HTTP API Token** (e.g. `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`). Keep it safe.
 
 <Tip>
@@ -34,14 +34,14 @@ Send the following to `@BotFather`:
   If the bot is still silent in groups after this, try removing it from the group and adding it back.
 </Note>
 
-### Step 3: Connect to CowAgent
+### Step 3: Connect to Stella
 
 <Tabs>
   <Tab title="Web Console (Recommended)">
     Open the Web Console (default `http://127.0.0.1:9899`), go to **Channels**, click **Add Channel**, choose **Telegram**, paste the Bot Token, and click connect.
   </Tab>
   <Tab title="Config File">
-    Add the following to `config.json` and start Cow:
+    Add the following to `config.json` and start Stella:
 
     ```json
     {
@@ -62,7 +62,7 @@ Send the following to `@BotFather`:
 The integration is ready when you see logs like:
 
 ```
-[Telegram] Bot logged in as @my_cowagent_bot (id=123456789)
+[Telegram] Bot logged in as @my_stella_bot (id=123456789)
 [Telegram] Registered 10 bot commands
 [Telegram] ✅ Telegram bot ready, polling for updates
 ```
@@ -106,7 +106,7 @@ On startup, the channel registers a command menu with BotFather. Typing `/` in T
 
 Once connected:
 
-- **Private chat**: search for your bot username (e.g. `@my_cowagent_bot`) in Telegram, click `Start` and chat away.
+- **Private chat**: search for your bot username (e.g. `@my_stella_bot`) in Telegram, click `Start` and chat away.
 - **Group chat**: add the bot to a group, then trigger it with `@bot hello` or by **replying to one of the bot's messages**. If the bot doesn't respond in groups, double-check Privacy Mode in [Step 2](#step-2-group-chat-only-disable-privacy-mode).
 
 When sending an image or file, you can **add a caption** (description / question) directly in the attachment input — the bot will answer based on both. Sending an attachment first and then a follow-up question also works; the two messages are merged automatically.

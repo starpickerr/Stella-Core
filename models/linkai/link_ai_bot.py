@@ -171,7 +171,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             if file_id:
                 body["file_id"] = file_id
             logger.info(f"[LINKAI] query={query}, app_code={app_code}, model={body.get('model')}, file_id={file_id}")
-            headers = {"Authorization": "Bearer " + linkai_api_key, "X-Title": "CowAgent"}
+            headers = {"Authorization": "Bearer " + linkai_api_key, "X-Title": "Stella"}
             utils.apply_client_source(headers)
 
             # do http request
@@ -314,7 +314,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             sid = getattr(session, "session_id", "")
             if sid and sid != "__title_gen__":
                 body["session_id"] = sid
-            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
+            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "Stella"}
             utils.apply_client_source(headers)
             utils.apply_cloud_user(headers)
 
@@ -625,7 +625,7 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
             body["thinking"] = thinking
 
         # Prepare headers
-        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "CowAgent"}
+        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "Stella"}
         utils.apply_client_source(headers)
         utils.apply_cloud_user(headers)
         base_url = _linkai_base_url()

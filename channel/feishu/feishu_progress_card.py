@@ -13,7 +13,7 @@ _MAX_STEP_CHARS = 800
 
 
 class FeishuProgressState:
-    """Reduce CowAgent stream events into one renderable Feishu card state."""
+    """Reduce Stella stream events into one renderable Feishu card state."""
 
     def __init__(self, started_at: Optional[float] = None):
         self.started_at = time.monotonic() if started_at is None else started_at

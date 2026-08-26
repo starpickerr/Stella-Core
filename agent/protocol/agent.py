@@ -55,7 +55,7 @@ class Agent:
         self.messages = []  # Unified message history for stream mode
         self.messages_lock = threading.Lock()  # Lock for thread-safe message operations
         self.memory_manager = memory_manager  # Memory manager for auto memory flush
-        self.workspace_dir = workspace_dir  # Workspace directory (state root, e.g. ~/cow)
+        self.workspace_dir = workspace_dir  # Workspace directory (state root, e.g. ~/stella)
         # Optional per-session project directory that overrides the working
         # directory (bash cwd, relative file paths) while memory/skills stay
         # anchored to workspace_dir. None means "use workspace_dir".

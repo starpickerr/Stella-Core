@@ -10,7 +10,7 @@ description: 控制浏览器访问和操作网页
 <Tabs>
   <Tab title="CLI 安装（推荐）">
     ```bash
-    cow install-browser
+    stella install-browser
     ```
 
     该命令会自动完成：
@@ -52,7 +52,7 @@ description: 控制浏览器访问和操作网页
 <Note>
   **桌面客户端用户**：playwright 已内置于安装包，无需单独安装。首次使用浏览器工具时：
   - 若系统已安装 **Google Chrome / Edge**，会直接驱动系统浏览器，**无需任何下载**（推荐）；
-  - 若未安装，可在对话中发送 `/install-browser`，自动下载一个精简浏览器内核到 `~/.cow`。
+  - 若未安装，可在对话中发送 `/install-browser`，自动下载一个精简浏览器内核到 `~/.stella`。
 </Note>
 
 ## 工作流程
@@ -116,7 +116,7 @@ Agent 使用浏览器的典型流程：
 浏览器内核会自动选择，无需配置：
 
 1. 若检测到本机已安装 **Google Chrome / Edge**，直接驱动系统浏览器，**无需下载 Chromium**，并使用真实浏览器指纹；
-2. 否则使用 `install-browser` 下载到 `~/.cow` 的 Chromium 内核作为兜底。
+2. 否则使用 `install-browser` 下载到 `~/.stella` 的 Chromium 内核作为兜底。
 
 两种方式都使用下面的登录态持久化，行为一致。
 
@@ -126,7 +126,7 @@ Agent 使用浏览器的典型流程：
 
 ### 方式一：Persistent 模式（默认）
 
-开箱即用，登录信息保存在 `~/.cow/browser_profile`。无需任何配置。
+开箱即用，登录信息保存在 `~/.stella/browser_profile`。无需任何配置。
 
 如需关闭持久化模式，每次都用纯净环境：
 
@@ -151,21 +151,21 @@ Agent 使用浏览器的典型流程：
     ```bash
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
       --remote-debugging-port=9222 \
-      --user-data-dir="$HOME/.cow/chrome-cdp"
+      --user-data-dir="$HOME/.stella/chrome-cdp"
     ```
   </Tab>
   <Tab title="Linux">
     ```bash
     google-chrome \
       --remote-debugging-port=9222 \
-      --user-data-dir="$HOME/.cow/chrome-cdp"
+      --user-data-dir="$HOME/.stella/chrome-cdp"
     ```
   </Tab>
   <Tab title="Windows">
     ```powershell
     & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
       --remote-debugging-port=9222 `
-      --user-data-dir="$env:USERPROFILE\.cow\chrome-cdp"
+      --user-data-dir="$env:USERPROFILE\.stella\chrome-cdp"
     ```
   </Tab>
 </Tabs>

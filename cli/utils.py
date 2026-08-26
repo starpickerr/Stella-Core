@@ -1,4 +1,4 @@
-"""Shared utilities for cow CLI."""
+"""Shared utilities for stella CLI."""
 
 import os
 import sys
@@ -6,7 +6,7 @@ import json
 
 
 def get_project_root() -> str:
-    """Get the CowAgent project root directory."""
+    """Get the Stella project root directory."""
     # cli/ is directly under the project root
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -67,14 +67,14 @@ def load_config_json() -> dict:
 def get_cli_language() -> str:
     """Resolve the CLI UI language using the shared i18n detector.
 
-    Reads the `cow_lang` field from config.json (defaults to "auto") and runs
+    Reads the `stella_lang` field from config.json (defaults to "auto") and runs
     the same detection used by the running app, so CLI output matches.
     """
     ensure_sys_path()
     try:
         from common import i18n
 
-        configured = load_config_json().get("cow_lang", "auto")
+        configured = load_config_json().get("stella_lang", "auto")
         return i18n.resolve_language(configured)
     except Exception:
         return "en"

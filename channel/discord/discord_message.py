@@ -1,7 +1,7 @@
 """
 Discord message adapter.
 
-Convert a discord.py Message into cow's unified ChatMessage.
+Convert a discord.py Message into stella's unified ChatMessage.
 File downloads are NOT performed here; the channel layer downloads
 attachments on demand inside the async event loop.
 """

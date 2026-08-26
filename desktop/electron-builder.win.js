@@ -8,7 +8,7 @@
  * A SINGLE sign hook (win.signtoolOptions.sign) covers everything: electron-
  * builder calls it for EVERY .exe it processes, which includes the app
  * launcher, the packaged PyInstaller backend (extraResources/backend/
- * cowagent-backend.exe) and the NSIS installer. We deliberately do NOT add an
+ * stella-backend.exe) and the NSIS installer. We deliberately do NOT add an
  * afterPack pass — that would sign the backend a second time and waste a paid
  * signing call on every release.
  *
@@ -17,7 +17,7 @@
  * any signing configuration.
  *
  * DRY-RUN / SKIP: when SIGNTOOL_CERT_CODE is absent we skip signing entirely
- * (unsigned dev/dry builds keep working). When COW_SIGN_DRY_RUN=1 we pass
+ * (unsigned dev/dry builds keep working). When STELLA_SIGN_DRY_RUN=1 we pass
  * --dry-run so the WHOLE pipeline can be validated in CI with a self-signed
  * cert, WITHOUT a real certificate and WITHOUT consuming any signing quota.
  */
@@ -32,7 +32,7 @@ const config = require('./package.json').build
 const SIGNTOOL = process.env.SIGNTOOL_PATH || ''
 // Dry-run validates the pipeline with a self-signed cert (no quota, no real
 // cert needed). Any truthy value enables it.
-const DRY_RUN = !!process.env.COW_SIGN_DRY_RUN
+const DRY_RUN = !!process.env.STELLA_SIGN_DRY_RUN
 
 // In dry-run the CLI still requires these flags to be NON-EMPTY (it validates
 // presence, not the value, and signs with a self-signed cert). So when no real
@@ -110,7 +110,7 @@ async function customSign(configuration) {
 // builds (this config is only passed via --config on the win matrix leg).
 //
 // electron-builder invokes customSign for EVERY .exe it touches — that already
-// includes the packaged backend (extraResources/backend/cowagent-backend.exe)
+// includes the packaged backend (extraResources/backend/stella-backend.exe)
 // and the NSIS installer, not just the app launcher. So there's no separate
 // afterPack pass: adding one would sign the backend twice (wasting a paid
 // signing call per release). Nested PyInstaller .dll/.pyd files are left

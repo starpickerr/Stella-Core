@@ -1,16 +1,16 @@
 ---
 title: Slack
-description: Slack App 経由で CowAgent を接続
+description: Slack App 経由で Stella を接続
 ---
 
-> Slack App の **Socket Mode** を通じて CowAgent を接続します。ダイレクトメッセージ（DM）およびチャンネル（@メンションまたはスレッド内の返信で起動）に対応。Socket Mode は WebSocket の常時接続を使うため公開 IP やコールバック URL は不要で、すぐに利用できます。
+> Slack App の **Socket Mode** を通じて Stella を接続します。ダイレクトメッセージ（DM）およびチャンネル（@メンションまたはスレッド内の返信で起動）に対応。Socket Mode は WebSocket の常時接続を使うため公開 IP やコールバック URL は不要で、すぐに利用できます。
 
 ## 1. 接続手順
 
 ### ステップ 1: Slack App を作成
 
 1. [Slack API アプリ管理ページ](https://api.slack.com/apps) を開き、**Create New App** → **From scratch** をクリックします。
-2. **App Name**（例: `CowAgent`）を入力し、インストール先の **Workspace** を選択して作成します。
+2. **App Name**（例: `Stella`）を入力し、インストール先の **Workspace** を選択して作成します。
 
 ### ステップ 2: Socket Mode を有効化し App Token を取得
 
@@ -60,14 +60,14 @@ description: Slack App 経由で CowAgent を接続
   Slack クライアントで「このアプリへのメッセージ送信は無効です」と表示される場合は、上記の App Home 設定が完了しているか確認し、Slack クライアントを再読み込み／再起動してください（必要に応じてアプリを会話一覧から削除して再度開きます）。
 </Tip>
 
-### ステップ 4: CowAgent に接続
+### ステップ 4: Stella に接続
 
 <Tabs>
   <Tab title="Web コンソール（推奨）">
     Web コンソール（既定 `http://127.0.0.1:9899`）を開き、**チャネル** メニュー → **チャネルを追加** → **Slack** を選択し、Bot Token（`xoxb-`）と App Token（`xapp-`）を貼り付けて接続をクリックします。
   </Tab>
   <Tab title="設定ファイル">
-    `config.json` に以下を追加して Cow を起動します:
+    `config.json` に以下を追加して Stella を起動します:
 
     ```json
     {

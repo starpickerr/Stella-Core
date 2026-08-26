@@ -1,6 +1,6 @@
 ---
 title: v2.1.7
-description: "CowAgent 2.1.7: multiple workspaces isolated per session, session-level permission modes, task notifications and desktop improvements, and new models"
+description: "Stella 2.1.7: multiple workspaces isolated per session, session-level permission modes, task notifications and desktop improvements, and new models"
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.7) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.7)
@@ -13,7 +13,7 @@ The Agent is no longer tied to a single directory — you can set up several pro
 - **Per-session workspace**: each session is bound to its own project workspace, so tasks running side by side stay out of each other's way.
 - **Per-session model**: switch the model for a single session; new sessions start from the global default.
 - **Grouped sessions**: the session list is grouped by workspace, with pinning, reordering, renaming, and deleting.
-- **Shared system resources**: memory, skills, and the knowledge base still live in the system workspace (`~/cow` by default).
+- **Shared system resources**: memory, skills, and the knowledge base still live in the system workspace (`~/stella` by default).
 
 <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-workspace-project-demo.png" width="800" />
 
@@ -37,7 +37,7 @@ Sessions now carry their own permission mode, which works together with workspac
 - **Startup diagnostics**: when the backend fails to start, the client reports what actually went wrong instead of a generic error.
 - **Log download**: the run-log page can download the log file, and local uploads gained retries and clearer errors.
 
-Download: [CowAgent Desktop](https://cowagent.ai/download/)
+Download: [Stella Desktop](https://cowagent.ai/download/)
 
 Docs: [Desktop Client](https://docs.cowagent.ai/guide/desktop)
 
@@ -67,11 +67,11 @@ Thanks @chimyves (#3056, #3055)
 - **Faster first message**: streamlined memory system initialization so it no longer blocks a session's first message, noticeably cutting the wait before the initial reply.
 - **Context trimming**: fixed the AI reply not being saved when the context was trimmed.
 - **Feishu channel**: the streaming card now accumulates text across turns.
-- **Docker**: `config.json` survives container upgrades through the `COW_DATA_DIR` mount.
+- **Docker**: `config.json` survives container upgrades through the `STELLA_DATA_DIR` mount.
 
 ## 📦 How to Upgrade
 
-- **Source deployment**: run `cow update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
+- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
 - **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://cowagent.ai/download/).
 
-**Release date**: 2026.08.20 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.6...2.1.7)
+**Release date**: 2026.08.20 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.6...2.1.7)

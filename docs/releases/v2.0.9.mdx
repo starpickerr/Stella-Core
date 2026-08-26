@@ -1,6 +1,6 @@
 ---
 title: v2.0.9
-description: CowAgent 2.0.9 - Web Console model management, MCP protocol support, browser persistent login, new models and deployment hardening
+description: Stella 2.0.9 - Web Console model management, MCP protocol support, browser persistent login, new models and deployment hardening
 ---
 
 ## 🖥️ Model Management Console
@@ -23,7 +23,7 @@ Documentation: [Models Overview](https://docs.cowagent.ai/en/models)
 Adds support for **MCP (Model Context Protocol)**, expanding from a fixed built-in toolset to an open, pluggable tool ecosystem — any MCP-compatible service can be plugged in directly as an agent tool.
 
 - Native JSON-RPC implementation, zero extra dependencies, supports both `stdio` and `sse` transports
-- Compatible with the `mcpServers` configuration style used by Claude Desktop / Cursor, reads `~/cow/mcp.json` by default
+- Compatible with the `mcpServers` configuration style used by Claude Desktop / Cursor, reads `~/stella/mcp.json` by default
 
 Documentation: [MCP Tools](https://docs.cowagent.ai/en/tools/mcp). Thanks [@yangluxin613](https://github.com/yangluxin613) (#2801)
 
@@ -31,7 +31,7 @@ Documentation: [MCP Tools](https://docs.cowagent.ai/en/tools/mcp). Thanks [@yang
 
 For sites that require login or have anti-bot protection, the browser tool can now persist a login session for long-term reuse, and supports attaching to your real Chrome browser to bypass fingerprint detection:
 
-- **Persistent user profile (default)**: Uses `~/.cow/browser_profile` as the browser user data dir by default; once logged in, sessions are reused automatically on subsequent runs
+- **Persistent user profile (default)**: Uses `~/.stella/browser_profile` as the browser user data dir by default; once logged in, sessions are reused automatically on subsequent runs
 - **CDP mode**: Configure `tools.browser.cdp_endpoint` to take over a real Chrome instance with full browser permissions
 
 Documentation: [Browser Tool](https://docs.cowagent.ai/en/tools/browser). Thanks [@leafmove](https://github.com/leafmove) (#2809)
@@ -60,6 +60,6 @@ Documentation: [Browser Tool](https://docs.cowagent.ai/en/tools/browser). Thanks
 
 ## 📦 Upgrade
 
-Source-code deployments can run `cow update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/en/guide/upgrade) for details.
+Source-code deployments can run `stella update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/en/guide/upgrade) for details.
 
-**Release Date**: 2026.05.22 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.0.8...2.0.9)
+**Release Date**: 2026.05.22 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.8...2.0.9)

@@ -1,6 +1,6 @@
 ---
 title: 手動インストール
-description: CowAgentの手動デプロイ（ソースコード / Docker）
+description: Stellaの手動デプロイ（ソースコード / Docker）
 ---
 
 ## ソースコードによるデプロイ
@@ -8,12 +8,12 @@ description: CowAgentの手動デプロイ（ソースコード / Docker）
 ### 1. プロジェクトをクローン
 
 ```bash
-git clone https://github.com/zhayujie/CowAgent
-cd CowAgent/
+git clone https://github.com/starpickerr/Stella
+cd Stella/
 ```
 
 <Tip>
-  ネットワークに問題がある場合は、ミラーを使用してください: https://gitee.com/zhayujie/CowAgent
+  ネットワークに問題がある場合は、ミラーを使用してください: https://github.com/starpickerr/Stella
 </Tip>
 
 ### 2. 依存パッケージをインストール
@@ -30,7 +30,7 @@ pip3 install -r requirements.txt
 pip3 install -r requirements-optional.txt
 ```
 
-### 3. Cow CLI をインストール
+### 3. Stella CLI をインストール
 
 サービスとスキルを管理するためのコマンドラインツールをインストールします：
 
@@ -38,14 +38,14 @@ pip3 install -r requirements-optional.txt
 pip3 install -e .
 ```
 
-インストール後、`cow` コマンドが使用可能になります：
+インストール後、`stella` コマンドが使用可能になります：
 
 ```bash
-cow help
+stella help
 ```
 
 <Note>
-  このステップは推奨です。インストール後、`cow start`、`cow stop`、`cow update` でサービスを管理でき、`cow skill` でスキルを管理できます。CLI をインストールしない場合は、`./run.sh` または `python3 app.py` で実行できます。
+  このステップは推奨です。インストール後、`stella start`、`stella stop`、`stella update` でサービスを管理でき、`stella skill` でスキルを管理できます。CLI をインストールしない場合は、`./run.sh` または `python3 app.py` で実行できます。
 </Note>
 
 ### 4. 設定
@@ -60,10 +60,10 @@ cp config-template.json config.json
 
 ### 5. 実行
 
-**Cow CLI を使用して実行（推奨）：**
+**Stella CLI を使用して実行（推奨）：**
 
 ```bash
-cow start
+stella start
 ```
 
 **またはローカルでフォアグラウンド実行：**
@@ -115,8 +115,8 @@ sudo docker logs -f chatgpt-on-wechat
 <Note>
   **データの永続化**：`docker-compose.yml` はデフォルトで 2 つのホストディレクトリをマウントするため、コンテナの再起動や `docker compose pull` によるイメージ更新後もデータは失われません：
 
-  - `./cow` → コンテナ内 `/home/agent/cow`：ワークスペース。会話でインストールしたスキル、メモリ、ナレッジベース、`mcp.json`、会話成果物を保存します。
-  - `./cow-data` → コンテナ内 `/home/agent/.cow`：`COW_DATA_DIR` が指すデータディレクトリ。Web コンソールで保存した `config.json`、実行ログ、チャネル認証情報を保存します。
+  - `./stella` → コンテナ内 `/home/agent/stella`：ワークスペース。会話でインストールしたスキル、メモリ、ナレッジベース、`mcp.json`、会話成果物を保存します。
+  - `./stella-data` → コンテナ内 `/home/agent/.stella`：`STELLA_DATA_DIR` が指すデータディレクトリ。Web コンソールで保存した `config.json`、実行ログ、チャネル認証情報を保存します。
 
   どちらのディレクトリもデフォルトで `docker-compose.yml` と同じ階層に作成されます。削除しないでください。
 </Note>
@@ -133,11 +133,11 @@ sudo docker logs -f chatgpt-on-wechat
   "model": "deepseek-v4-flash",
   "deepseek_api_key": "",
   "agent": true,
-  "agent_workspace": "~/cow",
+  "agent_workspace": "~/stella",
   "agent_max_context_tokens": 40000,
   "agent_max_context_turns": 30,
   "agent_max_steps": 15,
-  "cow_lang": "auto"
+  "stella_lang": "auto"
 }
 ```
 
@@ -146,12 +146,12 @@ sudo docker logs -f chatgpt-on-wechat
 | `channel_type` | チャネルタイプ | `web` |
 | `model` | モデル名 | `deepseek-v4-flash` |
 | `agent` | Agent モードを有効化 | `true` |
-| `agent_workspace` | Agent のワークスペースパス | `~/cow` |
+| `agent_workspace` | Agent のワークスペースパス | `~/stella` |
 | `agent_max_context_tokens` | 最大コンテキストトークン数 | `40000` |
 | `agent_max_context_turns` | 最大コンテキストターン数 | `30` |
 | `agent_max_steps` | タスクごとの最大判断ステップ数 | `15` |
-| `cow_lang` | UI・コマンド文言・システムプロンプトなどの言語。`auto` で自動検出、`zh` / `en` も指定可 | `auto` |
+| `stella_lang` | UI・コマンド文言・システムプロンプトなどの言語。`auto` で自動検出、`zh` / `en` も指定可 | `auto` |
 
 <Tip>
-  すべての設定オプションはプロジェクトの [`config.py`](https://github.com/zhayujie/CowAgent/blob/master/config.py) に記載されています。
+  すべての設定オプションはプロジェクトの [`config.py`](https://github.com/starpickerr/Stella/blob/master/config.py) に記載されています。
 </Tip>

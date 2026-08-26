@@ -1,38 +1,38 @@
 ---
 title: コマンド概要
-description: CowAgent コマンドシステム — ターミナル CLI とチャットコマンド
+description: Stella コマンドシステム — ターミナル CLI とチャットコマンド
 ---
 
-CowAgent は2つのコマンド操作方法を提供しています：
+Stella は2つのコマンド操作方法を提供しています：
 
-- **ターミナル CLI** — システムターミナルで `cow <コマンド>` を実行し、サービス管理やスキル管理を行います
-- **チャットコマンド** — 会話で `/<コマンド>` または `cow <コマンド>` を入力し、ステータス確認、スキル管理、設定変更を行います
+- **ターミナル CLI** — システムターミナルで `stella <コマンド>` を実行し、サービス管理やスキル管理を行います
+- **チャットコマンド** — 会話で `/<コマンド>` または `stella <コマンド>` を入力し、ステータス確認、スキル管理、設定変更を行います
 
-## Cow CLI
+## Stella CLI
 
-ワンクリックインストールスクリプトでデプロイすると、`cow` コマンドが自動的に利用可能になります。手動インストールの場合は以下を実行してください：
+ワンクリックインストールスクリプトでデプロイすると、`stella` コマンドが自動的に利用可能になります。手動インストールの場合は以下を実行してください：
 
 ```bash
 pip install -e .
 ```
 
-インストール後、任意の場所で `cow` コマンドを使用できます：
+インストール後、任意の場所で `stella` コマンドを使用できます：
 
 ```bash
-cow help
+stella help
 ```
 
 出力例：
 
 ```
-🐮 CowAgent CLI
+🐮 Stella CLI
 
-Usage: cow <command>
+Usage: stella <command>
 
 Service:
-  start     Start the CowAgent service
-  stop      Stop the CowAgent service
-  restart   Restart the CowAgent service
+  start     Start the Stella service
+  stop      Stop the Stella service
+  restart   Restart the Stella service
   update    Update code and restart service
   status    Show service status
   logs      View service logs
@@ -76,7 +76,7 @@ Web コンソールや接続されたチャネルの会話で `/` を入力す�
 
 ## コマンド対応表
 
-| コマンド | ターミナル (`cow`) | チャット (`/`) |
+| コマンド | ターミナル (`stella`) | チャット (`/`) |
 | --- | :---: | :---: |
 | help | ✓ | ✓ |
 | version | ✓ | ✓ |

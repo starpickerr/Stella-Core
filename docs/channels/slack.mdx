@@ -1,16 +1,16 @@
 ---
 title: Slack
-description: Integrate CowAgent with a Slack App
+description: Integrate Stella with a Slack App
 ---
 
-> Integrate CowAgent into Slack via a Slack App in **Socket Mode**. Supports direct messages (DM) and channels (triggered by @mention or replying within a thread). Socket Mode uses a persistent WebSocket connection — no public IP or callback URL required, works out of the box.
+> Integrate Stella into Slack via a Slack App in **Socket Mode**. Supports direct messages (DM) and channels (triggered by @mention or replying within a thread). Socket Mode uses a persistent WebSocket connection — no public IP or callback URL required, works out of the box.
 
 ## 1. Setup
 
 ### Step 1: Create a Slack App
 
 1. Open the [Slack API apps page](https://api.slack.com/apps), click **Create New App** → **From scratch**.
-2. Enter an **App Name** (e.g. `CowAgent`), pick the **Workspace** to install into, and create it.
+2. Enter an **App Name** (e.g. `Stella`), pick the **Workspace** to install into, and create it.
 
 ### Step 2: Enable Socket Mode and get the App Token
 
@@ -60,14 +60,14 @@ description: Integrate CowAgent with a Slack App
   If the Slack client still shows "Sending messages to this app has been turned off", make sure you completed the App Home step above, then refresh or restart the Slack client (remove the app from your conversations and reopen it if needed).
 </Tip>
 
-### Step 4: Connect to CowAgent
+### Step 4: Connect to Stella
 
 <Tabs>
   <Tab title="Web Console (Recommended)">
     Open the Web Console (default `http://127.0.0.1:9899`), go to **Channels**, click **Add Channel**, choose **Slack**, paste the Bot Token (`xoxb-`) and App Token (`xapp-`), and click connect.
   </Tab>
   <Tab title="Config File">
-    Add the following to `config.json` and start Cow:
+    Add the following to `config.json` and start Stella:
 
     ```json
     {

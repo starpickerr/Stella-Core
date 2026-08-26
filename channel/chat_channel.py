@@ -38,8 +38,7 @@ class ChatChannel(Channel):
         self.futures = {}
         self.sessions = {}
         self.lock = threading.Lock()
-        _thread = threading.Thread(target=self.consume)
-        _thread.setDaemon(True)
+        _thread = threading.Thread(target=self.consume, daemon=True)
         _thread.start()
 
     # 根据消息构造context，消息内容相关的触发项写在这里
@@ -467,7 +466,7 @@ class ChatChannel(Channel):
 
     # Chat commands that must bypass the per-session serial queue,
     # otherwise /cancel would queue behind the task it tries to cancel.
-    # Use /cancel (not /stop) to avoid colliding with `cow stop` CLI.
+    # Use /cancel (not /stop) to avoid colliding with `stella stop` CLI.
     _BYPASS_QUEUE_COMMANDS = ("/cancel",)
 
     def produce(self, context: Context):

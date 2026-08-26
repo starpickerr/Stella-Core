@@ -1,6 +1,6 @@
 ---
 title: One-click Install
-description: One-click install and manage CowAgent with scripts
+description: One-click install and manage Stella with scripts
 ---
 
 The project provides scripts for one-click install, configuration, startup, and management. Script-based deployment is recommended for quick setup.
@@ -26,8 +26,8 @@ The script automatically performs these steps:
 
 1. Check Python environment (requires Python 3.7+)
 2. Install required tools (git, curl, etc.)
-3. Clone project to `~/CowAgent`
-4. Install Python dependencies and Cow CLI
+3. Clone project to `~/Stella`
+4. Install Python dependencies and Stella CLI
 5. Guided configuration for AI model and channel
 6. Start service
 
@@ -39,20 +39,20 @@ By default, the Web console starts after installation. Access `http://localhost:
 
 ## Management Commands
 
-After installation, use the `cow` command to manage the service:
+After installation, use the `stella` command to manage the service:
 
 | Command | Description |
 | --- | --- |
-| `cow start` | Start service |
-| `cow stop` | Stop service |
-| `cow restart` | Restart service |
-| `cow status` | Check run status |
-| `cow logs` | View real-time logs |
-| `cow update` | Update code and restart |
-| `cow install-browser` | Install browser tool dependencies |
+| `stella start` | Start service |
+| `stella stop` | Stop service |
+| `stella restart` | Restart service |
+| `stella status` | Check run status |
+| `stella logs` | View real-time logs |
+| `stella update` | Update code and restart |
+| `stella install-browser` | Install browser tool dependencies |
 
 See the [Commands documentation](/cli/index) for more details.
 
 <Note>
-  If the `cow` command is not available, you can use `./run.sh <command>` (Linux/macOS) or `.\scripts\run.ps1 <command>` (Windows) as a fallback. Both are functionally equivalent.
+  If the `stella` command is not available, you can use `./run.sh <command>` (Linux/macOS) or `.\scripts\run.ps1 <command>` (Windows) as a fallback. Both are functionally equivalent.
 </Note>

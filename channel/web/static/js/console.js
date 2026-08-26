@@ -1,5 +1,5 @@
 /* =====================================================================
-   CowAgent Console - Main Application Script
+   Stella Console - Main Application Script
    ===================================================================== */
 
 // =====================================================================
@@ -13,10 +13,15 @@ let APP_VERSION = '';
 const I18N = {
     zh: {
         console: '控制台',
+        secretary_tagline: '私人秘书',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
+        nav_work: '应用', nav_info: '信息', nav_collab: '协作', nav_system: '系统',
+        nav_channels: '通道',
+        menu_chat: '对话', menu_config: '配置', menu_skills: '进化',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
+        menu_todos: '事务', menu_calendar: '日程', menu_briefing: '简报', menu_bills: '账单',
+        menu_decisions: '决策', menu_security: '安全',
         models_title: '模型管理',
         models_desc: '统一管理对话、图像、语音、向量、搜索能力',
         models_section_vendors: '厂商凭据',
@@ -248,7 +253,7 @@ const I18N = {
         ws_toggle: '工作空间', ws_tab_preview: '预览', ws_tab_files: '文件',
         ws_default_workspace: '默认空间', ws_sel_title: '选择工作空间',
         ws_sel_system_space: '系统空间', ws_sel_project_space: '项目空间',
-        ws_sel_default_hint: '使用默认工作空间（~/cow）', ws_sel_recents: '最近使用',
+        ws_sel_default_hint: '使用默认工作空间（~/stella）', ws_sel_recents: '最近使用',
         ws_sel_open: '打开项目…', ws_sel_new: '新建项目', ws_sel_new_placeholder: '项目名称',
         ws_sel_create: '创建', ws_sel_up: '上一级',
         ws_sel_new_subtitle: '将在 {root} 下创建新项目目录', ws_sel_new_hint: '仅填写项目名称，不含路径分隔符',
@@ -334,10 +339,15 @@ const I18N = {
     'zh-Hant': {
 
         console: '控制台',
+        secretary_tagline: '私人秘書',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
-        menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
-        menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
+        nav_work: '應用', nav_info: '資訊', nav_collab: '協作', nav_system: '系統',
+        nav_channels: '通道',
+        menu_chat: '對話', menu_config: '設定', menu_skills: '進化',
+        menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '通道管理', menu_tasks: '定時',
         menu_logs: '日誌',
+        menu_todos: '事務', menu_calendar: '日程', menu_briefing: '簡報', menu_bills: '帳單',
+        menu_decisions: '決策', menu_security: '安全',
         models_title: '模型管理',
         models_desc: '統一管理對話、影像、語音、向量、搜尋能力',
         models_section_vendors: '廠商憑據',
@@ -569,7 +579,7 @@ const I18N = {
         ws_toggle: '工作空間', ws_tab_preview: '預覽', ws_tab_files: '檔案',
         ws_default_workspace: '預設空間', ws_sel_title: '選擇工作空間',
         ws_sel_system_space: '系統空間', ws_sel_project_space: '專案空間',
-        ws_sel_default_hint: '使用預設工作空間（~/cow）', ws_sel_recents: '最近使用',
+        ws_sel_default_hint: '使用預設工作空間（~/stella）', ws_sel_recents: '最近使用',
         ws_sel_open: '開啟專案…', ws_sel_new: '新建專案', ws_sel_new_placeholder: '專案名稱',
         ws_sel_create: '建立', ws_sel_up: '上一層',
         ws_sel_new_subtitle: '將在 {root} 下建立新專案目錄', ws_sel_new_hint: '僅填寫專案名稱，不含路徑分隔符',
@@ -650,10 +660,15 @@ const I18N = {
         },
     en: {
         console: 'Console',
+        secretary_tagline: 'Personal secretary',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
-        menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
+        nav_work: 'Apps', nav_info: 'Info', nav_collab: 'Collaborate', nav_system: 'System',
+        nav_channels: 'Channels',
+        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Evolve',
+        menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channel setup', menu_tasks: 'Schedule',
         menu_logs: 'Logs',
+        menu_todos: 'Tasks', menu_calendar: 'Calendar', menu_briefing: 'Briefing', menu_bills: 'Bills',
+        menu_decisions: 'Decisions', menu_security: 'Security',
         models_title: 'Models',
         models_desc: 'Manage chat, image, voice, embedding and search capabilities in one place',
         models_section_vendors: 'Provider Credentials',
@@ -885,7 +900,7 @@ const I18N = {
         ws_toggle: 'Workspace', ws_tab_preview: 'Preview', ws_tab_files: 'Files',
         ws_default_workspace: 'Default', ws_sel_title: 'Select workspace',
         ws_sel_system_space: 'System space', ws_sel_project_space: 'Project space',
-        ws_sel_default_hint: 'Use the default workspace (~/cow)', ws_sel_recents: 'Recent',
+        ws_sel_default_hint: 'Use the default workspace (~/stella)', ws_sel_recents: 'Recent',
         ws_sel_open: 'Open project…', ws_sel_new: 'New project', ws_sel_new_placeholder: 'Project name',
         ws_sel_create: 'Create', ws_sel_up: 'Up',
         ws_sel_new_subtitle: 'Creates a new project directory under {root}', ws_sel_new_hint: 'Project name only, no path separators',
@@ -971,10 +986,10 @@ const I18N = {
 };
 
 // Resolve language by priority: user choice (localStorage) -> backend-detected
-// (cow_lang) -> browser language -> 'zh'. Shares __cowResolveLang__ defined in
+// (stella_lang) -> browser language -> 'zh'. Shares __stellaResolveLang__ defined in
 // chat.html; falls back to a local resolver if loaded standalone.
-let currentLang = (typeof window.__cowResolveLang__ === 'function')
-    ? window.__cowResolveLang__()
+let currentLang = (typeof window.__stellaResolveLang__ === 'function')
+    ? window.__stellaResolveLang__()
     : (function () {
         const norm = (raw) => {
             if (!raw) return '';
@@ -987,8 +1002,8 @@ let currentLang = (typeof window.__cowResolveLang__ === 'function')
             if (v.indexOf('en') === 0) return 'en';
             return '';
         };
-        return norm(localStorage.getItem('cow_lang'))
-            || norm(window.__COW_DEFAULT_LANG__)
+        return norm(localStorage.getItem('stella_lang'))
+            || norm(window.__STELLA_DEFAULT_LANG__)
             || norm(navigator.language)
             || 'zh';
     })();
@@ -1054,7 +1069,7 @@ function applyI18n() {
 
 // Single entry point for switching language. Updates the in-memory language,
 // persists the user choice locally, re-renders the UI, and binds the choice to
-// the backend `cow_lang` config so logs / agent replies / CLI follow suit.
+// the backend `stella_lang` config so logs / agent replies / CLI follow suit.
 function setLanguage(lang) {
     const next = (lang === 'en' || lang === 'zh' || lang === 'zh-Hant') ? lang : 'zh';
     if (next === currentLang) {
@@ -1063,7 +1078,7 @@ function setLanguage(lang) {
         return;
     }
     currentLang = next;
-    localStorage.setItem('cow_lang', currentLang);
+    localStorage.setItem('stella_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
     // Session-panel labels (default space, today/yesterday, pinned group) are
@@ -1080,14 +1095,14 @@ function setLanguage(lang) {
     });
 }
 
-// Persist the language to the backend `cow_lang` config (best-effort; the UI
+// Persist the language to the backend `stella_lang` config (best-effort; the UI
 // has already switched locally, so a network failure is non-blocking).
 function syncLanguageToBackend(lang, callback) {
     try {
         fetch('/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates: { cow_lang: lang } })
+            body: JSON.stringify({ updates: { stella_lang: lang } })
         })
         .then(() => { if (callback) callback(); })
         .catch(() => { if (callback) callback(); });
@@ -1428,14 +1443,20 @@ document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 // Sidebar & Navigation
 // =====================================================================
 const VIEW_META = {
-    chat:     { group: 'nav_chat',    page: 'menu_chat' },
-    config:   { group: 'nav_manage',  page: 'menu_config' },
-    skills:   { group: 'nav_manage',  page: 'menu_skills' },
-    memory:   { group: 'nav_manage',  page: 'menu_memory' },
-    knowledge:{ group: 'nav_manage',  page: 'menu_knowledge' },
-    channels: { group: 'nav_manage',  page: 'menu_channels' },
-    tasks:    { group: 'nav_manage',  page: 'menu_tasks' },
-    logs:     { group: 'nav_monitor', page: 'menu_logs' },
+    chat:      { group: 'nav_work',   page: 'menu_chat' },
+    todos:     { group: 'nav_work',   page: 'menu_todos' },
+    calendar:  { group: 'nav_work',   page: 'menu_calendar' },
+    briefing:  { group: 'nav_work',   page: 'menu_briefing' },
+    tasks:     { group: 'nav_work',   page: 'menu_tasks' },
+    bills:     { group: 'nav_work',   page: 'menu_bills' },
+    memory:    { group: 'nav_info',   page: 'menu_memory' },
+    knowledge: { group: 'nav_info',   page: 'menu_knowledge' },
+    channels:  { group: 'nav_channels', page: 'menu_channels' },
+    decisions: { group: 'nav_collab', page: 'menu_decisions' },
+    skills:    { group: 'nav_system', page: 'menu_skills' },
+    security:  { group: 'nav_system', page: 'menu_security' },
+    config:    { group: 'nav_system', page: 'menu_config' },
+    logs:      { group: 'nav_system', page: 'menu_logs' },
 };
 
 let currentView = 'chat';
@@ -1648,20 +1669,20 @@ function _buildVideoHtml(url) {
 }
 
 function _openImageLightbox(src) {
-    let overlay = document.getElementById('cow-lightbox');
+    let overlay = document.getElementById('stella-lightbox');
     if (!overlay) {
         overlay = document.createElement('div');
-        overlay.id = 'cow-lightbox';
+        overlay.id = 'stella-lightbox';
         overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;opacity:0;transition:opacity .2s';
         overlay.onclick = () => { overlay.style.opacity = '0'; setTimeout(() => overlay.style.display = 'none', 200); };
         const img = document.createElement('img');
-        img.id = 'cow-lightbox-img';
+        img.id = 'stella-lightbox-img';
         img.style.cssText = 'max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.5);object-fit:contain;';
         img.onclick = (e) => e.stopPropagation();
         overlay.appendChild(img);
         document.body.appendChild(overlay);
     }
-    overlay.querySelector('#cow-lightbox-img').src = src;
+    overlay.querySelector('#stella-lightbox-img').src = src;
     overlay.style.display = 'flex';
     requestAnimationFrame(() => overlay.style.opacity = '1');
 }
@@ -1806,7 +1827,7 @@ function updateEditButtonsState() {
 }
 let streamBuffers = {};   // request_id -> { items: [event...], timestamp } for re-attach replay
 let isComposing = false;
-let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
+let appConfig = { use_agent: false, title: 'Stella', subtitle: '', providers: {}, api_bases: {} };
 
 const SESSION_ID_KEY = 'cow_session_id';
 
@@ -1836,7 +1857,7 @@ let historyLoading = false;
 fetch('/config').then(r => r.json()).then(data => {
     if (data.status === 'success') {
         appConfig = data;
-        const title = data.title || 'CowAgent';
+        const title = data.title || 'Stella';
         document.getElementById('welcome-title').textContent = title;
         initConfigView(data);
     }
@@ -2709,7 +2730,7 @@ function renderWorkspaceSelectorMenu() {
     const parts = [];
     const isDefault = !_wsSelState.current;
     parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_system_space'))}</div>`);
-    // Default workspace: hovering shows the full ~/cow absolute path.
+    // Default workspace: hovering shows the full ~/stella absolute path.
     parts.push(`
         <button class="ws-sel-item ${isDefault ? 'active' : ''}" onclick="selectWorkspaceProject(null)"
                 data-tip-float data-tooltip="${escapeHtml(_wsSelState.defaultWorkspace || '')}" data-tooltip-pos="bottom">
@@ -4012,7 +4033,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         // Regenerate button starts hidden; it's revealed in the "done"
         // event handler once seq metadata arrives from the backend.
         botEl.innerHTML = `
-            <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+            <img src="assets/logo.jpg" alt="Stella" class="w-8 h-8 rounded-lg flex-shrink-0">
             <div class="min-w-0 flex-1 max-w-[85%]">
                 <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                     <div class="agent-steps"></div>
@@ -4290,7 +4311,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 scrollChatToBottom();
 
             } else if (item.type === 'phase') {
-                // Coarse progress (e.g. cow install-browser); must not close SSE (unlike "done")
+                // Coarse progress (e.g. stella install-browser); must not close SSE (unlike "done")
                 ensureBotEl();
                 const wrap = document.createElement('div');
                 wrap.className = 'text-xs sm:text-sm text-slate-600 dark:text-slate-400 border-l-2 border-primary-400 pl-2 py-1 my-0.5';
@@ -4611,7 +4632,7 @@ function startPolling() {
                     // Pushed message (scheduler result, missed reply): show the
                     // content itself, matching the desktop push notification.
                     showTaskNotification(
-                        sessionTitleOf(sessionId) || 'CowAgent',
+                        sessionTitleOf(sessionId) || 'Stella',
                         firstLineSnippet(data.content),
                         sessionId
                     );
@@ -4942,7 +4963,7 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
         : '';
 
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        <img src="assets/logo.jpg" alt="Stella" class="w-8 h-8 rounded-lg flex-shrink-0">
         <div class="min-w-0 flex-1 max-w-[85%]">
             <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                 ${evolutionBadge}
@@ -5295,7 +5316,7 @@ function addLoadingIndicator() {
     const el = document.createElement('div');
     el.className = 'flex gap-3 px-4 sm:px-6 py-3';
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        <img src="assets/logo.jpg" alt="Stella" class="w-8 h-8 rounded-lg flex-shrink-0">
         <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3">
             <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-primary-400 animate-pulse-dot" style="animation-delay: 0s"></span>
@@ -5336,8 +5357,8 @@ function newChat(optimistic = true, inherit = true) {
     ws.className = 'flex flex-col items-center justify-center h-full px-6 pb-16';
     ws.style.paddingTop = '6vh';
     ws.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-16 h-16 rounded-2xl mb-6 shadow-lg shadow-primary-500/20">
-        <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">${appConfig.title || 'CowAgent'}</h1>
+        <img src="assets/logo.jpg" alt="Stella" class="w-16 h-16 rounded-2xl mb-6 shadow-lg shadow-primary-500/20">
+        <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">${appConfig.title || 'Stella'}</h1>
         <p class="text-slate-500 dark:text-slate-400 text-center max-w-lg mb-10 leading-relaxed" data-i18n="welcome_subtitle">${t('welcome_subtitle')}</p>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
             <div class="example-card group bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-xl p-4 cursor-pointer hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all duration-200">
@@ -5964,7 +5985,7 @@ function renameProject(path, currentName) {
     });
 }
 
-// Delete a project record. Only the CowAgent record is removed; files stay and
+// Delete a project record. Only the Stella record is removed; files stay and
 // bound sessions revert to the default workspace.
 function deleteProject(path, name) {
     showConfirmModal(
@@ -9687,7 +9708,7 @@ function connectWeixinAfterQr() {
 // "WeCom Bot" channel QR-login flow, so the rest of the console works
 // fully offline.
 const WECOM_BOT_SDK_URL = 'https://wwcdn.weixin.qq.com/node/wework/js/wecom-aibot-sdk@0.1.0.min.js';
-const WECOM_BOT_SOURCE = 'cowagent';
+const WECOM_BOT_SOURCE = 'stella';
 let _wecomSdkLoaded = false;
 
 function ensureWecomSdkLoaded() {
@@ -11456,9 +11477,9 @@ function initApp() {
 
     fetch('/api/version').then(r => r.json()).then(data => {
         APP_VERSION = `v${data.version}`;
-        document.getElementById('sidebar-version').textContent = `CowAgent ${APP_VERSION}`;
+        document.getElementById('sidebar-version').textContent = `Stella ${APP_VERSION}`;
     }).catch(() => {
-        document.getElementById('sidebar-version').textContent = 'CowAgent';
+        document.getElementById('sidebar-version').textContent = 'Stella';
     });
     chatInput.focus();
 }

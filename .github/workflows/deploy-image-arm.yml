@@ -19,7 +19,7 @@ env:
 
 jobs:
   build-and-push-image:
-    if: github.repository == 'zhayujie/CowAgent'
+    if: github.repository == 'starpickerr/Stella'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,8 +51,7 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: |
-            ${{ env.REGISTRY }}/zhayujie/chatgpt-on-wechat
-            ${{ env.REGISTRY }}/zhayujie/cowagent
+            ${{ env.REGISTRY }}/starpickerr/stella
           tags: |
             type=raw,value=latest-arm64,enable={{is_default_branch}}
             type=ref,event=branch,suffix=-arm64

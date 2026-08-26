@@ -331,7 +331,7 @@ This skill requires an API key from [Service Name].
 
 1. Visit https://service.com to get an API key
 2. Configure it using: `env_config(action="set", key="SERVICE_API_KEY", value="your-key")`
-3. Or manually add to `~/cow/.env`: `SERVICE_API_KEY=your-key`
+3. Or manually add to `~/stella/.env`: `SERVICE_API_KEY=your-key`
 4. Restart the agent for changes to take effect
 
 ## Usage
@@ -387,7 +387,7 @@ Validation checks:
 - Description completeness and quality
 - File organization
 
-**Note**: Validation is optional in COW. Mainly useful for troubleshooting format issues.
+**Note**: Validation is optional in STELLA. Mainly useful for troubleshooting format issues.
 
 ### Step 6: Iterate
 

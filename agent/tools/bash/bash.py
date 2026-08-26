@@ -91,7 +91,7 @@ SAFETY:
         self._description_template = self.description
         # Desktop runs on the user's own machine (often non-technical users),
         # so require explicit confirmation for destructive ops outside the workspace.
-        if os.environ.get("COW_DESKTOP") == "1":
+        if os.environ.get("STELLA_DESKTOP") == "1":
             self._description_template = self._description_template.replace(
                 "- For destructive commands out of workspace ({cwd}), explain and confirm first",
                 "- For delete or destructive operations on files out of workspace ({cwd}), "
@@ -150,7 +150,7 @@ SAFETY:
             )
 
         # Security check: Prevent direct access to the credential file
-        if re.search(r'\.cow[/\\]\.env', command):
+        if re.search(r'\.stella[/\\]\.env', command):
             return ToolResult.fail(
                 "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
             )
@@ -174,15 +174,15 @@ SAFETY:
 
             # Pass the current run/source identity into child processes
             try:
-                from common import utils as _cow_utils
+                from common import utils as _stella_utils
                 _attr = {}
-                _cow_utils.apply_client_source(_attr)
+                _stella_utils.apply_client_source(_attr)
                 _header_to_env = {
-                    "X-Agent-Run-Id": "COW_AGENT_RUN_ID",
-                    "X-Client-Source": "COW_CLIENT_SOURCE",
-                    "X-Client-OS": "COW_CLIENT_OS",
-                    "X-Client-Version": "COW_CLIENT_VERSION",
-                    "X-Deployment-Id": "COW_DEPLOYMENT_ID",
+                    "X-Agent-Run-Id": "STELLA_AGENT_RUN_ID",
+                    "X-Client-Source": "STELLA_CLIENT_SOURCE",
+                    "X-Client-OS": "STELLA_CLIENT_OS",
+                    "X-Client-Version": "STELLA_CLIENT_VERSION",
+                    "X-Deployment-Id": "STELLA_DEPLOYMENT_ID",
                 }
                 for _h, _e in _header_to_env.items():
                     if _attr.get(_h):
@@ -190,8 +190,8 @@ SAFETY:
             except Exception:
                 pass
 
-            # Load environment variables from ~/.cow/.env if it exists
-            env_file = expand_path("~/.cow/.env")
+            # Load environment variables from ~/.stella/.env if it exists
+            env_file = expand_path("~/.stella/.env")
             dotenv_vars = {}
             if os.path.exists(env_file):
                 try:
@@ -577,7 +577,7 @@ SAFETY:
         if re.search(r"\bfindstr\b[^\r\n]*(?:^|\s)-[a-z]", lower):
             corrections.append(
                 'findstr uses /I and a quoted search string, for example '
-                'findstr /I "cow agent"; it does not accept grep-style -i/-e flags'
+                'findstr /I "stella agent"; it does not accept grep-style -i/-e flags'
             )
         if "/dev/null" in lower:
             corrections.append("redirect to nul, for example >nul 2>&1, not /dev/null")

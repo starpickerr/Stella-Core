@@ -1,9 +1,9 @@
 ---
 title: WeChat Customer Service
-description: CowAgent を WeChat Customer Service に統合する
+description: Stella を WeChat Customer Service に統合する
 ---
 
-WeCom の自建アプリを WeChat Customer Service アカウントにバインドすることで、CowAgent は外部 WeChat ユーザーからの問い合わせを引き受けることができます。WeChat ミニプログラム、公式アカウント、ビデオチャンネル、ビデオチャンネルストアなどから、リンクや QR コードで WeChat ユーザーに到達できます。
+WeCom の自建アプリを WeChat Customer Service アカウントにバインドすることで、Stella は外部 WeChat ユーザーからの問い合わせを引き受けることができます。WeChat ミニプログラム、公式アカウント、ビデオチャンネル、ビデオチャンネルストアなどから、リンクや QR コードで WeChat ユーザーに到達できます。
 
 <Note>
   WeChat Customer Service は Docker デプロイまたはサーバー Python デプロイのみサポートしており、外部からアクセス可能なコールバック URL が必要です。ローカル実行モードには対応していません。
@@ -49,9 +49,9 @@ WeCom の自建アプリを WeChat Customer Service アカウントにバイン�
 
 <Tabs>
   <Tab title="Web コンソール">
-    Cow プロジェクトを起動した後、Web コンソールを開きます。**チャネル** メニューを選択し、**接入チャネル** をクリックし、**WeChat Customer Service** を選択して、Corp ID / Secret / Token / AES Key を入力し（ポートはデフォルト 9888、変更可能）、接入をクリックします。
+    Stella プロジェクトを起動した後、Web コンソールを開きます。**チャネル** メニューを選択し、**接入チャネル** をクリックし、**WeChat Customer Service** を選択して、Corp ID / Secret / Token / AES Key を入力し（ポートはデフォルト 9888、変更可能）、接入をクリックします。
 
-    <img src="https://cdn.link-ai.tech/doc/cow-weixinkefu-web-control.png" width="800"/>
+    <img src="https://cdn.link-ai.tech/doc/stella-weixinkefu-web-control.png" width="800"/>
   </Tab>
   <Tab title="設定ファイル">
     `config.json` に以下の設定を追加します（各パラメータと WeCom コンソールの対応関係は上のスクリーンショットを参照してください）：

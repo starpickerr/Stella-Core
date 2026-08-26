@@ -15,29 +15,29 @@
 #   4. (optional) re-upload the stapled dmg to R2, overwriting the unpublished
 #      copy, so the CDN serves the notarized bytes.
 #
-# Auth: uses a stored keychain profile (default: cow-notary). Create it once via
-#   xcrun notarytool store-credentials cow-notary \
+# Auth: uses a stored keychain profile (default: stella-notary). Create it once via
+#   xcrun notarytool store-credentials stella-notary \
 #     --apple-id <id> --team-id <team> --password <app-specific-password>
 #
 # Usage:
 #   # notarize + staple only (no upload):
-#   desktop/build/notarize-dmg.sh path/to/CowAgent-1.2.3-arm64.dmg [more.dmg ...]
+#   desktop/build/notarize-dmg.sh path/to/Stella-1.2.3-arm64.dmg [more.dmg ...]
 #
 #   # notarize + staple + re-upload to R2 (needs wrangler + Cloudflare creds):
 #   VER=1.2.3 UPLOAD=1 desktop/build/notarize-dmg.sh *.dmg
 #
 # Env:
-#   PROFILE            keychain profile name (default: cow-notary)
+#   PROFILE            keychain profile name (default: stella-notary)
 #   UPLOAD             set to 1 to re-upload stapled dmgs to R2
 #   VER                version string for the R2 key desktop/v${VER}/<file> (required if UPLOAD=1)
-#   R2_BUCKET          R2 bucket (default: cow-skills)
+#   R2_BUCKET          R2 bucket (default: stella-skills)
 #   POLL_SECONDS       status poll interval (default: 60)
 #   MAX_WAIT_MINUTES   give up polling after this long (default: 720 = 12h)
 #
 set -euo pipefail
 
-PROFILE="${PROFILE:-cow-notary}"
-R2_BUCKET="${R2_BUCKET:-cow-skills}"
+PROFILE="${PROFILE:-stella-notary}"
+R2_BUCKET="${R2_BUCKET:-stella-skills}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 MAX_WAIT_MINUTES="${MAX_WAIT_MINUTES:-720}"
 

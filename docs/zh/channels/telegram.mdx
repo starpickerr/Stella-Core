@@ -1,9 +1,9 @@
 ---
 title: Telegram
-description: 将 CowAgent 接入 Telegram Bot
+description: 将 Stella 接入 Telegram Bot
 ---
 
-> 通过 Telegram Bot API 接入 CowAgent，支持单聊与群聊（@机器人 / 回复机器人触发），使用 Long Polling 模式无需公网 IP，开箱即用。
+> 通过 Telegram Bot API 接入 Stella，支持单聊与群聊（@机器人 / 回复机器人触发），使用 Long Polling 模式无需公网 IP，开箱即用。
 
 
 ## 一、接入步骤
@@ -12,8 +12,8 @@ description: 将 CowAgent 接入 Telegram Bot
 
 1. 在 Telegram 中搜索并打开官方账号 [@BotFather](https://t.me/BotFather)。
 2. 发送 `/newbot` 命令，按提示输入：
-   - **Bot 名称**（显示名，可中文，例如 `My CowAgent Bot`）
-   - **Bot 用户名**（必须以 `bot` 结尾，例如 `my_cowagent_bot`）
+   - **Bot 名称**（显示名，可中文，例如 `My Stella Bot`）
+   - **Bot 用户名**（必须以 `bot` 结尾，例如 `my_stella_bot`）
 3. 创建成功后，BotFather 会返回一段 **HTTP API Token**（形如 `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`），妥善保存。
 
 <Tip>
@@ -34,7 +34,7 @@ description: 将 CowAgent 接入 Telegram Bot
   若设置后群聊仍无响应，可尝试把 Bot 从群里移除并重新拉入。
 </Note>
 
-### 步骤三：接入 CowAgent
+### 步骤三：接入 Stella
 
 <Tabs>
   <Tab title="Web 控制台（推荐）">
@@ -60,10 +60,10 @@ description: 将 CowAgent 接入 Telegram Bot
   </Tab>
 </Tabs>
 
-启动 Cow 后，日志中出现以下输出即表示接入成功：
+启动 Stella 后，日志中出现以下输出即表示接入成功：
 
 ```
-[Telegram] Bot logged in as @my_cowagent_bot (id=123456789)
+[Telegram] Bot logged in as @my_stella_bot (id=123456789)
 [Telegram] Registered 10 bot commands
 [Telegram] ✅ Telegram bot ready, polling for updates
 ```
@@ -107,7 +107,7 @@ description: 将 CowAgent 接入 Telegram Bot
 
 完成接入后：
 
-- **单聊**：在 Telegram 中搜索你创建的 Bot 用户名（如 `@my_cowagent_bot`），点击 `Start` 即可开始对话。
+- **单聊**：在 Telegram 中搜索你创建的 Bot 用户名（如 `@my_stella_bot`），点击 `Start` 即可开始对话。
 - **群聊**：把 Bot 拉进群，使用 `@bot 你好` 或 **回复 Bot 的某条消息** 触发对话。若群聊无响应，请检查 Privacy Mode 是否已按 [步骤二](#步骤二-群聊使用-关闭-privacy-mode) 关闭。
 
 发送图片或文件时，可以直接在附件上方的输入框中 **添加 Caption**（描述/问题）一并发送，机器人会结合附件回答。也支持先发附件再发问题，两条消息会自动合并提问。

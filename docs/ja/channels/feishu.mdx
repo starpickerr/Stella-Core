@@ -1,9 +1,9 @@
 ---
 title: Feishu (Lark)
-description: 企業向けカスタムアプリで CowAgent を Feishu に接続
+description: 企業向けカスタムアプリで Stella を Feishu に接続
 ---
 
-> 飛書（Feishu）の企業向けカスタムアプリを通じて CowAgent を接続。1 対 1 チャット、グループチャット（@メンション）に対応。WebSocket 長接続を使用するため公開 IP 不要、ストリーミングのタイプライター応答や音声メッセージにも対応します。
+> 飛書（Feishu）の企業向けカスタムアプリを通じて Stella を接続。1 対 1 チャット、グループチャット（@メンション）に対応。WebSocket 長接続を使用するため公開 IP 不要、ストリーミングのタイプライター応答や音声メッセージにも対応します。
 
 <Note>
   接続には管理者権限を持つ Feishu 企業ユーザーが必要です。
@@ -13,7 +13,7 @@ description: 企業向けカスタムアプリで CowAgent を Feishu に接続
 
 ### 方式 1: ワンクリック作成（推奨）
 
-事前に Feishu 開発者プラットフォームでアプリを作成する必要はありません。Cow を起動後、Web コンソール（既定 `http://127.0.0.1:9899/`）を開き、**チャネル** メニュー → **チャネルを追加** → **Feishu** を選択し、**QR スキャン** タブで **ワンクリックで Feishu アプリを作成** をクリック。**Feishu アプリ** で QR コードをスキャンするとアプリ作成と接続が自動完了します。
+事前に Feishu 開発者プラットフォームでアプリを作成する必要はありません。Stella を起動後、Web コンソール（既定 `http://127.0.0.1:9899/`）を開き、**チャネル** メニュー → **チャネルを追加** → **Feishu** を選択し、**QR スキャン** タブで **ワンクリックで Feishu アプリを作成** をクリック。**Feishu アプリ** で QR コードをスキャンするとアプリ作成と接続が自動完了します。
 
 <Note>
   作成されたアプリには必要な権限（メッセージ送受信、カード読み書き、グループイベントなど）とイベント購読がすべて事前設定されています。現在は Feishu 中国版のみ対応で、Lark 国際版は未対応です。
@@ -47,7 +47,7 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
 
 <img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/feishu-hosting-appid-secret.jpg" width="800"/>
 
-**ステップ 2: CowAgent に接続**
+**ステップ 2: Stella に接続**
 
 <Tabs>
   <Tab title="Web コンソール">
@@ -76,7 +76,7 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
 
 **ステップ 3: アプリの公開**
 
-1. Cow 起動後、Feishu 開発者プラットフォームの **イベントとコールバック** で **ロングコネクション** モードを選択して保存:
+1. Stella 起動後、Feishu 開発者プラットフォームの **イベントとコールバック** で **ロングコネクション** モードを選択して保存:
 
 <img src="https://cdn.link-ai.tech/doc/202601311731183.png" width="600"/>
 

@@ -143,7 +143,7 @@ def _log_bind_failure(host: str, port: int, err: OSError):
         )
     elif winerror == 10048 or err_no in (48, 98):  # WSAEADDRINUSE / macOS / Linux
         logger.error(
-            f"[WebChannel] 端口 {port} 已被占用，可执行 `cow restart` 清理残留进程，"
+            f"[WebChannel] 端口 {port} 已被占用，可执行 `stella restart` 清理残留进程，"
             f"或在 config.json 中修改 web_port"
         )
     else:
@@ -299,7 +299,7 @@ def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
 
     When a session has opened a project directory, that project is the working
     directory the file panel / preview / ``@`` picker operate in. Otherwise it
-    is the Agent's workspace (``state_root``, e.g. ``~/cow``). Memory and skills
+    is the Agent's workspace (``state_root``, e.g. ``~/stella``). Memory and skills
     always stay in ``state_root`` regardless; only the working root moves.
     """
     if session_id:
@@ -1871,16 +1871,16 @@ class WebChannel(ChatChannel):
         with open(file_path, 'r', encoding='utf-8') as f:
             html = f.read()
         # Inject the backend-resolved default language so the console can use
-        # it on first load (when the user has no saved cow_lang preference).
-        return html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
+        # it on first load (when the user has no saved stella_lang preference).
+        return html.replace("{{STELLA_DEFAULT_LANG}}", i18n.get_language())
 
     def startup(self):
         configured_host = conf().get("web_host", "")
         host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
-        # The desktop app passes its chosen port via COW_WEB_PORT so its backend
+        # The desktop app passes its chosen port via STELLA_WEB_PORT so its backend
         # never collides with a source-run web console (default 9899). This makes
         # the port a single source of truth owned by the Electron shell.
-        port = int(os.environ.get("COW_WEB_PORT") or conf().get("web_port", 9899))
+        port = int(os.environ.get("STELLA_WEB_PORT") or conf().get("web_port", 9899))
         is_public_bind = host in ("0.0.0.0", "::")
 
         self._cleanup_stale_voice_recordings()
@@ -1938,7 +1938,7 @@ class WebChannel(ChatChannel):
 
             # In desktop mode the Electron shell renders the UI, so don't pop a
             # browser window (also avoids issues when running detached/headless).
-            if os.environ.get("COW_DESKTOP") != "1":
+            if os.environ.get("STELLA_DESKTOP") != "1":
                 try:
                     import webbrowser
                     webbrowser.open(f"http://localhost:{port}")
@@ -2491,7 +2491,7 @@ class ChatHandler:
         html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
         html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
         # Inject the backend-resolved default language for first-load fallback.
-        html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
+        html = html.replace("{{STELLA_DEFAULT_LANG}}", i18n.get_language())
         return html
 
 
@@ -2631,7 +2631,7 @@ class ConfigHandler:
     ])
 
     EDITABLE_KEYS = {
-        "cow_lang",
+        "stella_lang",
         "model", "bot_type", "use_linkai",
         "open_ai_api_base", "deepseek_api_base", "qianfan_api_base", "claude_api_base", "gemini_api_base",
         "zhipu_ai_api_base", "moonshot_base_url", "ark_base_url", "custom_api_base", "mimo_api_base",
@@ -2666,7 +2666,7 @@ class ConfigHandler:
 
             local_config = conf()
             use_agent = local_config.get("agent", True)
-            title = "CowAgent" if use_agent else "AI Assistant"
+            title = "Stella" if use_agent else "AI Assistant"
 
             api_bases = {}
             api_keys_masked = {}
@@ -2760,7 +2760,7 @@ class ConfigHandler:
             # The desktop app runs on the local trusted machine, so it can edit
             # the real password in place (cursor at the end, delete to clear).
             # Browser access only ever sees the masked value.
-            if os.environ.get("COW_DESKTOP") == "1":
+            if os.environ.get("STELLA_DESKTOP") == "1":
                 result["web_password"] = raw_pwd
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:
@@ -2836,9 +2836,9 @@ class ConfigHandler:
 
             # Apply a language change immediately so backend logs, agent
             # replies and CLI output switch without a restart.
-            if "cow_lang" in applied:
+            if "stella_lang" in applied:
                 try:
-                    i18n.resolve_language(applied["cow_lang"])
+                    i18n.resolve_language(applied["stella_lang"])
                     logger.info(f"[WebChannel] Language switched to: {i18n.get_language()}")
                 except Exception as lang_err:
                     logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
@@ -4637,7 +4637,7 @@ class ModelsHandler:
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] embedding updated: provider={provider_id!r} model={model!r}")
         # The next /memory rebuild-index command hot-swaps the provider onto
-        # the running MemoryManager (see plugins/cow_cli). The dim may have
+        # the running MemoryManager (see plugins/stella_cli). The dim may have
         # changed, so the frontend prompts the user to rebuild.
         return json.dumps({"status": "success", "provider": provider_id, "model": model})
 
@@ -5356,7 +5356,7 @@ class FeishuRegisterHandler:
                 result = lark.register_app(
                     on_qr_code=_on_qr,
                     on_status_change=_on_status,
-                    source="cowagent",
+                    source="stella",
                     cancel_event=cancel_event,
                 )
                 with cls._lock:
@@ -6365,7 +6365,7 @@ class LogsDownloadHandler:
             raise web.internalerror()
 
         # Timestamped name so multiple downloads don't overwrite each other.
-        fname = f"cowagent-{time.strftime('%Y%m%d-%H%M%S')}.log"
+        fname = f"stella-{time.strftime('%Y%m%d-%H%M%S')}.log"
         web.header('Content-Type', 'text/plain; charset=utf-8')
         web.header('Content-Disposition', f'attachment; filename="{fname}"')
         web.header('Content-Length', str(len(data)))
@@ -6692,7 +6692,7 @@ class ProjectManageHandler:
     """Rename (PUT) or delete (DELETE) a project record.
 
     Neither touches the folder on disk: a rename only sets a display name, and a
-    delete only forgets the CowAgent record and unbinds any sessions (they revert
+    delete only forgets the Stella record and unbinds any sessions (they revert
     to the default workspace). The files stay exactly where they are.
     """
 

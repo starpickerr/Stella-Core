@@ -21,12 +21,12 @@ class TaskStore:
         Initialize task store
         
         Args:
-            store_path: Path to tasks.json file. Defaults to ~/cow/scheduler/tasks.json
+            store_path: Path to tasks.json file. Defaults to ~/stella/scheduler/tasks.json
         """
         if store_path is None:
-            # Default to ~/cow/scheduler/tasks.json
+            # Default to ~/stella/scheduler/tasks.json
             home = expand_path("~")
-            store_path = os.path.join(home, "cow", "scheduler", "tasks.json")
+            store_path = os.path.join(home, "stella", "scheduler", "tasks.json")
         
         self.store_path = store_path
         self.lock = threading.Lock()

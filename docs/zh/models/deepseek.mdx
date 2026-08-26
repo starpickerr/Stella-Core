@@ -64,8 +64,8 @@ V4 系列（`deepseek-v4-flash` / `deepseek-v4-pro`）支持显式的「思考�
 
 ### 行为说明
 
-- **采样参数**：思考模式下 `temperature`、`top_p`、`presence_penalty`、`frequency_penalty` 会被服务端忽略（不会报错），CowAgent 会自动跳过传入。
-- **多轮工具调用**：当历史中包含工具调用时，DeepSeek 要求所有 assistant 消息必须回传 `reasoning_content`。CowAgent 会自动处理回传逻辑，跨轮次切换思考开关也不会出错。
+- **采样参数**：思考模式下 `temperature`、`top_p`、`presence_penalty`、`frequency_penalty` 会被服务端忽略（不会报错），Stella 会自动跳过传入。
+- **多轮工具调用**：当历史中包含工具调用时，DeepSeek 要求所有 assistant 消息必须回传 `reasoning_content`。Stella 会自动处理回传逻辑，跨轮次切换思考开关也不会出错。
 
 <Tip>
   默认使用 `deepseek-v4-flash`；复杂任务可使用 `deepseek-v4-pro`；需要深度推理可开启 `enable_thinking`。

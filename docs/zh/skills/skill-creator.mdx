@@ -47,13 +47,13 @@ SKILL.md 文件头部的 `frontmatter` 字段：
 | --- | --- |
 | `name` | 技能名，小写加中划线，必须和目录名一致 |
 | `description` | **最关键的字段**。写清楚「这个技能干什么」和「什么情况下该用它」，Agent 看到这段来决定要不要调它。注意：所有触发相关的描述都放在这里，不要写到正文里 |
-| `metadata.cowagent.requires.bins` | 系统里必须装了哪些命令行工具 |
-| `metadata.cowagent.requires.env` | 需要哪些环境变量（全部满足才行） |
-| `metadata.cowagent.requires.anyEnv` | 多个 API Key 满足一个就行 |
-| `metadata.cowagent.requires.anyBins` | 多个工具满足一个就行 |
-| `metadata.cowagent.always` | 设为 `true` 会始终加载，不检查依赖 |
-| `metadata.cowagent.emoji` | 展示用的 emoji（可选） |
-| `metadata.cowagent.os` | 限定系统，如 `["darwin", "linux"]` |
+| `metadata.stella.requires.bins` | 系统里必须装了哪些命令行工具 |
+| `metadata.stella.requires.env` | 需要哪些环境变量（全部满足才行） |
+| `metadata.stella.requires.anyEnv` | 多个 API Key 满足一个就行 |
+| `metadata.stella.requires.anyBins` | 多个工具满足一个就行 |
+| `metadata.stella.always` | 设为 `true` 会始终加载，不检查依赖 |
+| `metadata.stella.emoji` | 展示用的 emoji（可选） |
+| `metadata.stella.os` | 限定系统，如 `["darwin", "linux"]` |
 
 <Note>
 `category` 字段不需要手写，系统会自动设成 `skill`。
@@ -63,14 +63,14 @@ SKILL.md 文件头部的 `frontmatter` 字段：
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       env: ["MYAPI_KEY"]            # 必须有
 ```
 
 ```yaml
 metadata:
-  cowagent:
+  stella:
     requires:
       anyEnv: ["OPENAI_API_KEY", "LINKAI_API_KEY"]   # 有一个就行
 ```

@@ -1,6 +1,6 @@
 ---
 title: WeChat
-description: CowAgent を個人の WeChat に接続する
+description: Stella を個人の WeChat に接続する
 ---
 
 > 個人の WeChat に接続します。QR コードをスキャンするだけでログインでき、パブリック IP は不要です。テキスト、画像、音声、ファイル、動画メッセージの送受信に対応しています。
@@ -33,7 +33,7 @@ description: CowAgent を個人の WeChat に接続する
 | --- | --- | --- |
 | `channel_type` | `weixin` または `wx` を指定 | — |
 
-ログイン認証情報は `~/.weixin_cow_credentials.json` に自動保存されます。再ログインするには、このファイルを削除してプログラムを再起動してください。
+ログイン認証情報は `~/.weixin_stella_credentials.json` に自動保存されます。再ログインするには、このファイルを削除してプログラムを再起動してください。
 
 ## 3. ログイン
 
@@ -46,7 +46,7 @@ description: CowAgent を個人の WeChat に接続する
 
 ### 認証情報の永続化
 
-ログイン成功後、認証情報は `~/.weixin_cow_credentials.json` に保存されます。次回起動時は保存された認証情報が再利用され、再スキャンは不要です。
+ログイン成功後、認証情報は `~/.weixin_stella_credentials.json` に保存されます。次回起動時は保存された認証情報が再利用され、再スキャンは不要です。
 
 再ログインするには、認証情報ファイルを削除してプログラムを再起動してください。
 

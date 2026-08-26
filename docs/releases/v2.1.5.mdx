@@ -1,6 +1,6 @@
 ---
 title: v2.1.5
-description: "CowAgent 2.1.5: workspace with file preview, a systematic pass over the core tools, context management improvements, and one-click prompt optimization"
+description: "Stella 2.1.5: workspace with file preview, a systematic pass over the core tools, context management improvements, and one-click prompt optimization"
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.5) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.5)
@@ -43,7 +43,7 @@ Docs: [Context Management](https://docs.cowagent.ai/memory/context)
 - **Update prompt**: the update dialog for a given version only opens automatically once.
 - **Bundled search backend**: the Windows client ships with ripgrep, so file search works out of the box.
 
-Download: [CowAgent Desktop](https://cowagent.ai/download/)
+Download: [Stella Desktop](https://cowagent.ai/download/)
 
 Docs: [Desktop Client](https://docs.cowagent.ai/guide/desktop)
 
@@ -54,7 +54,7 @@ The Web input box can now expand what you typed into a more complete and explici
 ## 🔒 Security Hardening
 
 - **MCP and file-write hardening**: fixed an attack chain exploitable through prompt injection — malicious content could lead the Agent into rewriting the MCP config, and from there run arbitrary commands and steal keys. Thanks @Correctover (#2968)
-- **Credential file protection**: fixed the `edit` tool bypassing credential protection to read and write `~/.cow/.env`.
+- **Credential file protection**: fixed the `edit` tool bypassing credential protection to read and write `~/.stella/.env`.
 
 ## 🛠 Improvements & Fixes
 
@@ -67,7 +67,7 @@ The Web input box can now expand what you typed into a more complete and explici
 
 ## 📦 How to Upgrade
 
-- **Source deployment**: run `cow update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
+- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
 - **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://cowagent.ai/download/).
 
-**Release date**: 2026.07.28 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.4...2.1.5)
+**Release date**: 2026.07.28 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.4...2.1.5)

@@ -5,13 +5,13 @@ import plugins
 
 
 _old_plugin_path = plugins.instance.current_plugin_path
-plugins.instance.current_plugin_path = os.path.join(os.getcwd(), "plugins", "cow_cli")
+plugins.instance.current_plugin_path = os.path.join(os.getcwd(), "plugins", "stella_cli")
 try:
-    from plugins.cow_cli.cow_cli import KNOWN_COMMANDS
+    from plugins.stella_cli.stella_cli import KNOWN_COMMANDS
 finally:
     plugins.instance.current_plugin_path = _old_plugin_path
 
-CowCliPlugin = plugins.instance.plugins["COW_CLI"]
+StellaCliPlugin = plugins.instance.plugins["STELLA_CLI"]
 
 
 class FakeTaskStore:
@@ -52,7 +52,7 @@ def _event_context(channel_type, receiver, session_id):
 
 
 def test_tasks_is_a_known_command_and_is_listed_in_help():
-    plugin = CowCliPlugin()
+    plugin = StellaCliPlugin()
 
     assert "tasks" in KNOWN_COMMANDS
     assert "/tasks" in plugin._cmd_help("", None)
@@ -69,7 +69,7 @@ def test_tasks_command_only_lists_tasks_owned_by_current_channel_and_receiver(mo
     monkeypatch.setattr(
         "agent.tools.scheduler.integration.get_task_store", lambda: store
     )
-    plugin = CowCliPlugin()
+    plugin = StellaCliPlugin()
 
     result = plugin._cmd_tasks(
         "", _event_context("telegram", "user-1", "session-1")
@@ -91,7 +91,7 @@ def test_tasks_command_uses_session_identity_without_channel_context(monkeypatch
     monkeypatch.setattr(
         "agent.tools.scheduler.integration.get_task_store", lambda: store
     )
-    plugin = CowCliPlugin()
+    plugin = StellaCliPlugin()
 
     result = plugin._cmd_tasks("", None, session_id="session-1")
 
@@ -105,7 +105,7 @@ def test_tasks_command_formats_empty_state(monkeypatch):
         "agent.tools.scheduler.integration.get_task_store",
         lambda: FakeTaskStore([]),
     )
-    plugin = CowCliPlugin()
+    plugin = StellaCliPlugin()
 
     result = plugin._cmd_tasks(
         "", _event_context("slack", "channel-1", "session-1")

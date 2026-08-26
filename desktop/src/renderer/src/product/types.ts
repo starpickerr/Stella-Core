@@ -4,7 +4,7 @@
 // The core imports a single `product` object from '@product'. By default
 // that alias resolves to product/default (an empty object → no change).
 // An alternate build can point the alias at another module (see
-// vite.config.ts COW_PRODUCT_DIR) and fill in the fields below. Every
+// vite.config.ts STELLA_PRODUCT_DIR) and fill in the fields below. Every
 // field is optional; absent means "keep the default behavior". The core
 // must degrade gracefully when a field is missing.
 // ============================================================

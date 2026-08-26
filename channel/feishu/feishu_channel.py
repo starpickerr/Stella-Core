@@ -76,7 +76,7 @@ def _ensure_lark_imported():
 def _print_qr_to_terminal(qr_url: str):
     """Render a QR code as ASCII art and emit it via logger.
 
-    走 logger 而非 print 是为了避免 nohup/cow 后台启动场景下 stdout 块缓冲导致
+    走 logger 而非 print 是为了避免 nohup/stella 后台启动场景下 stdout 块缓冲导致
     二维码滞后输出（看起来像出现了两次）。logger 的 StreamHandler 是行缓冲，
     既能在前台终端看到，也能进 run.log。
     """
@@ -205,7 +205,7 @@ def _register_via_qr_in_terminal() -> bool:
         result = lark_mod.register_app(
             on_qr_code=_on_qr,
             on_status_change=_on_status,
-            source="cowagent",
+            source="stella",
         )
     except Exception as e:
         err_cls = e.__class__.__name__
@@ -593,7 +593,7 @@ class FeiShuChanel(ChatChannel):
         """Apply a scheduler card action within its chat/operator ownership scope."""
         action = event.get("action") or {}
         value = action.get("value") or {}
-        if value.get("cowagent") != "scheduler":
+        if value.get("stella") != "scheduler":
             return {}
 
         context = event.get("context") or {}

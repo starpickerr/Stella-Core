@@ -16,7 +16,7 @@ Thanks for your contribution! Please write this PR in English.
 
 ## Checklist
 
-- [ ] I have read the [Contributing Guide](https://github.com/zhayujie/CowAgent/blob/master/CONTRIBUTING.md)
+- [ ] I have read the [Contributing Guide](https://github.com/starpickerr/Stella/blob/master/CONTRIBUTING.md)
 - [ ] I tested this change locally
 - [ ] Code comments and docs are in English
 - [ ] Linked related issue (if any): closes #

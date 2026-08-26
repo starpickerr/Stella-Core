@@ -20,7 +20,7 @@ from common.log import logger
 from common.utils import expand_path, is_cloud_deployment, memory_headroom_mb
 
 
-_DEFAULT_USER_DATA_DIR = "~/.cow/browser_profile"
+_DEFAULT_USER_DATA_DIR = "~/.stella/browser_profile"
 
 # Bounds for the renderer's JS heap cap. The floor is what even simple pages need
 # to run at all; the ceiling is where constraining it stops being useful. The
@@ -639,7 +639,7 @@ class BrowserService:
     def _launch_browser(self):
         """Launch / connect Chromium on the background thread."""
         # Point Playwright at our pinned download dir before any launch so a
-        # bundled-Chromium fallback finds the browser downloaded to ~/.cow.
+        # bundled-Chromium fallback finds the browser downloaded to ~/.stella.
         try:
             from agent.tools.browser.browser_env import apply_browsers_path_env
             apply_browsers_path_env()
@@ -763,7 +763,7 @@ class BrowserService:
             if "singletonlock" in msg or "profile" in msg or "lock" in msg:
                 raise RuntimeError(
                     f"Browser profile '{self._user_data_dir}' is in use by another process. "
-                    "Close the other Chromium / cow instance, or set a different "
+                    "Close the other Chromium / stella instance, or set a different "
                     "tools.browser.user_data_dir."
                 ) from e
             raise

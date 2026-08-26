@@ -1,4 +1,4 @@
-"""Portable local backup and restore commands for CowAgent user data."""
+"""Portable local backup and restore commands for Stella user data."""
 
 import json
 import os
@@ -15,14 +15,14 @@ import click
 from cli.utils import get_project_root
 
 
-BACKUP_FORMAT = "cowagent-backup"
+BACKUP_FORMAT = "stella-backup"
 BACKUP_VERSION = 1
 _SKIP_DIRS = {".git", "__pycache__", "tmp"}
 _SKIP_FILES = {".DS_Store"}
 
 
 def _data_root() -> Path:
-    configured = os.environ.get("COW_DATA_DIR")
+    configured = os.environ.get("STELLA_DATA_DIR")
     return Path(configured).expanduser().resolve() if configured else Path(get_project_root()).resolve()
 
 
@@ -39,7 +39,7 @@ def _read_config(data_root: Path) -> dict:
 
 
 def _workspace_from_config(config: dict) -> Path:
-    return Path(config.get("agent_workspace") or "~/cow").expanduser().resolve()
+    return Path(config.get("agent_workspace") or "~/stella").expanduser().resolve()
 
 
 def _legacy_user_data_path(data_root: Path, config: dict) -> Path:
@@ -106,7 +106,7 @@ def create_backup_archive(
         },
     }
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="cowagent-backup-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="stella-backup-"))
     temp_archive = temp_dir / "backup.zip"
     try:
         with zipfile.ZipFile(
@@ -144,7 +144,7 @@ def _validate_archive(archive: zipfile.ZipFile) -> dict:
     except (ValueError, UnicodeDecodeError) as exc:
         raise ValueError("archive manifest is invalid") from exc
     if manifest.get("format") != BACKUP_FORMAT or manifest.get("version") != BACKUP_VERSION:
-        raise ValueError("unsupported CowAgent backup format or version")
+        raise ValueError("unsupported Stella backup format or version")
 
     for info in archive.infolist():
         name = info.filename
@@ -197,7 +197,7 @@ def restore_backup_archive(
     data_root = Path(data_root).expanduser().resolve()
     current_config = _read_config(data_root)
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="cowagent-restore-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="stella-restore-"))
     try:
         with zipfile.ZipFile(str(archive_path), "r") as archive:
             manifest = _validate_archive(archive)
@@ -220,7 +220,7 @@ def restore_backup_archive(
             # Do not trust an archive-controlled absolute destination on a
             # fresh machine. Portable restores default to the standard local
             # workspace unless the operator supplies --workspace.
-            target_workspace = Path("~/cow").expanduser().resolve()
+            target_workspace = Path("~/stella").expanduser().resolve()
 
         restored_config = dict(archived_config)
         if restored_config:
@@ -271,7 +271,7 @@ def restore_backup_archive(
     "--output",
     "-o",
     type=click.Path(dir_okay=False, path_type=Path),
-    help="Output .zip path (default: ./cow-backup-<timestamp>.zip).",
+    help="Output .zip path (default: ./stella-backup-<timestamp>.zip).",
 )
 def backup_command(output: Optional[Path]):
     """Back up config, persona, memory, skills, knowledge, and schedules."""
@@ -280,7 +280,7 @@ def backup_command(output: Optional[Path]):
     workspace = _workspace_from_config(config)
     if output is None:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output = Path.cwd() / f"cow-backup-{stamp}.zip"
+        output = Path.cwd() / f"stella-backup-{stamp}.zip"
     result = create_backup_archive(output, data_root, workspace)
     click.echo(click.style("✓ Backup created", fg="green"))
     click.echo(f"  Archive: {result['archive']}")
@@ -303,7 +303,7 @@ def restore_command(archive: Path, workspace: Optional[Path], yes: bool):
     pid = _read_pid()
     if pid:
         raise click.ClickException(
-            f"CowAgent is running (PID: {pid}). Run 'cow stop' before restoring."
+            f"Stella is running (PID: {pid}). Run 'stella stop' before restoring."
         )
     if not yes:
         click.confirm(
@@ -317,7 +317,7 @@ def restore_command(archive: Path, workspace: Optional[Path], yes: bool):
     has_current_data = (data_root / "config.json").is_file() or current_workspace.is_dir()
     if has_current_data:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        rollback = archive.resolve().parent / f"cow-pre-restore-{stamp}.zip"
+        rollback = archive.resolve().parent / f"stella-pre-restore-{stamp}.zip"
         create_backup_archive(
             rollback,
             data_root,

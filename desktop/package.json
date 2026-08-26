@@ -1,9 +1,9 @@
 {
-  "name": "cowagent-desktop",
+  "name": "stella-desktop",
   "version": "2.1.6",
-  "description": "CowAgent Desktop Client - AI Agent on your desktop",
+  "description": "Stella Desktop Client - personal AI secretary",
   "main": "dist/main/index.js",
-  "author": "CowAgent",
+  "author": "Stella",
   "license": "MIT",
   "scripts": {
     "dev": "npm run build && electron .",
@@ -46,8 +46,8 @@
     "vite": "^6.0.3"
   },
   "build": {
-    "appId": "com.cowagent.desktop",
-    "productName": "CowAgent",
+    "appId": "com.stella.desktop",
+    "productName": "Stella",
     "directories": {
       "output": "release"
     },
@@ -57,8 +57,8 @@
     ],
     "extraResources": [
       {
-        "from": "build/dist/cowagent-backend",
-        "to": "backend/cowagent-backend"
+        "from": "build/dist/stella-backend",
+        "to": "backend/stella-backend"
       },
       {
         "from": "resources",
@@ -107,8 +107,9 @@
       "createStartMenuShortcut": true
     },
     "publish": {
-      "provider": "generic",
-      "url": "https://cowagent.ai/update/"
+      "provider": "github",
+      "owner": "starpickerr",
+      "repo": "Stella"
     }
   },
   "overrides": {

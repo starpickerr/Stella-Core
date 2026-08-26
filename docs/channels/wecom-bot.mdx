@@ -1,9 +1,9 @@
 ---
 title: WeCom Bot
-description: Connect CowAgent to WeCom AI Bot (WebSocket long connection)
+description: Connect Stella to WeCom AI Bot (WebSocket long connection)
 ---
 
-> Connect CowAgent via WeCom AI Bot, supporting both internal direct messages and group chats. No public IP required — uses a WebSocket long connection, with Markdown rendering and streaming output.
+> Connect Stella via WeCom AI Bot, supporting both internal direct messages and group chats. No public IP required — uses a WebSocket long connection, with Markdown rendering and streaming output.
 
 <Note>
   WeCom Bot and WeCom App are two different integration methods. WeCom Bot uses a WebSocket long connection and requires no public IP or domain, making setup much simpler.
@@ -13,7 +13,7 @@ description: Connect CowAgent to WeCom AI Bot (WebSocket long connection)
 
 ### Option A: One-click QR scan (recommended)
 
-No need to create the bot ahead of time. Start CowAgent and open the Web console (local URL: http://127.0.0.1:9899/), go to the **Channels** tab, click **Connect Channel**, choose **WeCom Bot**, switch to **QR scan** mode, and scan the QR code with **WeCom** — bot creation and connection complete automatically.
+No need to create the bot ahead of time. Start Stella and open the Web console (local URL: http://127.0.0.1:9899/), go to the **Channels** tab, click **Connect Channel**, choose **WeCom Bot**, switch to **QR scan** mode, and scan the QR code with **WeCom** — bot creation and connection complete automatically.
 
 <img src="https://cdn.link-ai.tech/doc/20260401121213.png" width="800"/>
 
@@ -41,7 +41,7 @@ Create the AI Bot in WeCom and obtain the Bot ID and Secret, then connect via th
 
 4. Set the bot name, avatar, and visibility scope. Choose **Long Connection** mode, save the **Bot ID** and **Secret**, then click Save.
 
-**Step 2: Connect to CowAgent**
+**Step 2: Connect to Stella**
 
 <Tabs>
   <Tab title="Web Console">
@@ -50,7 +50,7 @@ Create the AI Bot in WeCom and obtain the Bot ID and Secret, then connect via th
     <img src="https://cdn.link-ai.tech/doc/20260316181711.png" width="800"/>
   </Tab>
   <Tab title="Config File">
-    Add the following to `config.json`, then start CowAgent:
+    Add the following to `config.json`, then start Stella:
 
     ```json
     {

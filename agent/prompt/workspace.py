@@ -432,7 +432,7 @@ _RULE_TEMPLATE_ZH = """# RULE.md - 工作空间规则
 ## 工作空间目录结构
 
 ```
-~/cow/
+~/stella/
 ├── AGENT.md          # 你的身份和灵魂设定
 ├── USER.md           # 用户基本信息（静态）
 ├── RULE.md           # 工作空间规则（本文件）
@@ -531,7 +531,7 @@ This folder is your home. Treat it well.
 ## Workspace directory structure
 
 ```
-~/cow/
+~/stella/
 ├── AGENT.md          # Your identity and soul
 ├── USER.md           # User basics (static)
 ├── RULE.md           # Workspace rules (this file)

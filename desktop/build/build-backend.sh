@@ -7,7 +7,7 @@
 #   bash desktop/build/build-backend.sh            # build
 #   PYTHON=python3.11 bash desktop/build/build-backend.sh   # pick interpreter
 #
-# Output: desktop/build/dist/cowagent-backend/  (folder with the executable)
+# Output: desktop/build/dist/stella-backend/  (folder with the executable)
 set -euo pipefail
 
 # --- resolve paths --------------------------------------------------------
@@ -68,12 +68,12 @@ pip install -q pyinstaller
 # --- run pyinstaller from repo root so relative datas resolve -------------
 cd "$ROOT"
 echo "==> Running PyInstaller (onedir)"
-pyinstaller "$BUILD_DIR/cowagent-backend.spec" \
+pyinstaller "$BUILD_DIR/stella-backend.spec" \
   --noconfirm \
   --distpath "$BUILD_DIR/dist" \
   --workpath "$BUILD_DIR/build-work"
 
 echo ""
-echo "==> Done. Bundle at: $BUILD_DIR/dist/cowagent-backend/"
-du -sh "$BUILD_DIR/dist/cowagent-backend/" 2>/dev/null || true
-echo "==> Smoke test: COW_DESKTOP=1 \"$BUILD_DIR/dist/cowagent-backend/cowagent-backend\""
+echo "==> Done. Bundle at: $BUILD_DIR/dist/stella-backend/"
+du -sh "$BUILD_DIR/dist/stella-backend/" 2>/dev/null || true
+echo "==> Smoke test: STELLA_DESKTOP=1 \"$BUILD_DIR/dist/stella-backend/stella-backend\""

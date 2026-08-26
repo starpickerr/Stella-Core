@@ -27,6 +27,7 @@ import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import LogsPage from './pages/LogsPage'
+import PlaceholderPage from './pages/PlaceholderPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -243,11 +244,16 @@ const App: React.FC = () => {
           ) : (
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
+            <Route path="/todos" element={<PlaceholderPage title={t('menu_todos')} hint={t('placeholder_coming')} />} />
+            <Route path="/calendar" element={<PlaceholderPage title={t('menu_calendar')} hint={t('placeholder_coming')} />} />
+            <Route path="/briefing" element={<PlaceholderPage title={t('menu_briefing')} hint={t('placeholder_coming')} />} />
+            <Route path="/bills" element={<PlaceholderPage title={t('menu_bills')} hint={t('placeholder_coming')} />} />
+            <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
-            <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
+            <Route path="/security" element={<PlaceholderPage title={t('menu_security')} hint={t('placeholder_coming')} />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             {/* Legacy /models route now lives as a tab inside settings */}
             <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

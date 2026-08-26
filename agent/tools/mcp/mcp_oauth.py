@@ -8,7 +8,7 @@ remote MCP servers that guard their endpoint behind OAuth (e.g. Xmind):
      (authorization-server) .well-known documents.
   2. Dynamic Client Registration (RFC 7591) to obtain a client_id.
   3. PKCE (RFC 7636, S256) authorization-code flow.
-  4. Token exchange + refresh, persisted to ~/.cow/mcp_oauth.json.
+  4. Token exchange + refresh, persisted to ~/.stella/mcp_oauth.json.
 
 The actual browser round-trip is completed out-of-band: McpClient generates
 an authorization URL, the user opens it, and the web console callback
@@ -31,14 +31,14 @@ from common.log import logger
 
 
 # ------------------------------------------------------------------
-# Token store: ~/.cow/mcp_oauth.json  {server_name: {...credentials...}}
+# Token store: ~/.stella/mcp_oauth.json  {server_name: {...credentials...}}
 # ------------------------------------------------------------------
 
 _STORE_LOCK = threading.Lock()
 
 
 def _store_path() -> str:
-    base = os.path.expanduser("~/.cow")
+    base = os.path.expanduser("~/.stella")
     try:
         os.makedirs(base, exist_ok=True)
     except OSError:
@@ -136,7 +136,7 @@ def has_pending() -> bool:
 # HTTP helpers (stdlib only)
 # ------------------------------------------------------------------
 
-_UA = "CowAgent-MCP-OAuth/1.0"
+_UA = "Stella-MCP-OAuth/1.0"
 
 
 def _http_get_json(url: str, timeout: int = 15) -> Optional[dict]:
@@ -299,7 +299,7 @@ class OAuthHandler:
     """Drives the OAuth flow and token lifecycle for a single MCP server."""
 
     def __init__(self, server_name: str, resource_url: str, redirect_uri: str,
-                 scope: str = "", client_name: str = "CowAgent"):
+                 scope: str = "", client_name: str = "Stella"):
         self.server_name = server_name
         self.resource_url = resource_url
         self.redirect_uri = redirect_uri

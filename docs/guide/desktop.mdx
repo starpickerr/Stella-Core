@@ -1,12 +1,12 @@
 ---
 title: Desktop Client
-description: Download and use the CowAgent desktop client (macOS / Windows)
+description: Download and use the Stella desktop client (macOS / Windows)
 ---
 
-CowAgent ships a ready-to-use desktop client with the Agent runtime bundled in — **no need to install Python or dependencies manually**. Just download, install, and run your local super AI assistant.
+Stella ships a ready-to-use desktop client with the Agent runtime bundled in — **no need to install Python or dependencies manually**. Just download, install, and run your local super AI assistant.
 
 <Frame caption="It drives your browser, terminal, and file system directly, with long-term memory, a personal knowledge base, and self-evolution — all running locally.">
-  <video controls preload="metadata" playsInline className="w-full rounded-xl" src="https://cdn.cowagent.ai/desktop/video/cow-demo-en-v1.mp4" />
+  <video controls preload="metadata" playsInline className="w-full rounded-xl" src="https://cdn.cowagent.ai/desktop/video/stella-demo-en-v1.mp4" />
 </Frame>
 
 ## Download & Install
@@ -20,13 +20,13 @@ CowAgent ships a ready-to-use desktop client with the Agent runtime bundled in �
     1. Open the [download page](https://cowagent.ai/download/) and pick the build for your chip:
        - Apple Silicon (M1/M2/M3/M4): download the `arm64` build
        - Intel: download the `x64` build
-    2. Open the downloaded `.dmg` and drag CowAgent into your Applications folder.
-    3. Launch CowAgent from Launchpad or Applications.
+    2. Open the downloaded `.dmg` and drag Stella into your Applications folder.
+    3. Launch Stella from Launchpad or Applications.
   </Tab>
   <Tab title="Windows">
     1. Open the [download page](https://cowagent.ai/download/) and download the Windows installer (`.exe`).
     2. Run the installer and follow the prompts (you can choose the install directory).
-    3. Launch CowAgent from the desktop or Start menu.
+    3. Launch Stella from the desktop or Start menu.
   </Tab>
 </Tabs>
 
@@ -49,7 +49,7 @@ If that port is unavailable (for example reserved by Hyper-V/WSL2 on Windows), t
 
 All data of the desktop client is stored on your machine:
 
-- **Config directory**: `~/.cow` in your home folder, holding `config.json` (model keys, channels, etc.) along with logs, cache and other runtime data.
-- **Workspace**: `~/cow` by default, holding chat history, knowledge base, memory, skills, scheduled tasks and other files produced by the Agent.
+- **Config directory**: `~/.stella` in your home folder, holding `config.json` (model keys, channels, etc.) along with logs, cache and other runtime data.
+- **Workspace**: `~/stella` by default, holding chat history, knowledge base, memory, skills, scheduled tasks and other files produced by the Agent.
 
 Uninstalling the client does not delete these two directories, so your data is preserved across reinstalls. To fully clean up or migrate to another device, just back up or remove the corresponding folders manually.

@@ -1,15 +1,15 @@
 ---
 title: Backup and Restore
-description: Export and restore CowAgent configuration and agent workspace data
+description: Export and restore Stella configuration and agent workspace data
 ---
 
-CowAgent can create a portable local archive for migration or disaster recovery.
+Stella can create a portable local archive for migration or disaster recovery.
 
 ## Create a backup
 
 ```bash
-cow backup
-cow backup --output /safe/location/cow-backup.zip
+stella backup
+stella backup --output /safe/location/stella-backup.zip
 ```
 
 The archive contains:
@@ -30,22 +30,22 @@ supports them.
 
 ## Restore a backup
 
-Stop CowAgent before restoring:
+Stop Stella before restoring:
 
 ```bash
-cow stop
-cow restore /safe/location/cow-backup.zip
+stella stop
+stella restore /safe/location/stella-backup.zip
 ```
 
 Use `--workspace` to migrate workspace files to a different location:
 
 ```bash
-cow restore cow-backup.zip --workspace ~/cow-restored
+stella restore stella-backup.zip --workspace ~/stella-restored
 ```
 
 Restore validates the archive format and paths before writing anything. It
 overwrites matching files but does not delete unrelated files already present
-at the destination. When current CowAgent data exists, the command first
-creates a `cow-pre-restore-*.zip` rollback archive beside the selected backup.
+at the destination. When current Stella data exists, the command first
+creates a `stella-pre-restore-*.zip` rollback archive beside the selected backup.
 
 For unattended scripts, pass `--yes` to acknowledge overwrites.

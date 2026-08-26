@@ -25,7 +25,7 @@ def _plugins_resource_dir():
 def _plugins_data_dir():
     """Writable dir for plugin runtime config (plugins.json). In a frozen
     bundle the resource dir is read-only, so redirect writes to the data root
-    (~/.cow); from source it stays the CWD-relative ./plugins."""
+    (~/.stella); from source it stays the CWD-relative ./plugins."""
     if getattr(sys, "frozen", False):
         d = os.path.join(get_data_root(), "plugins")
         os.makedirs(d, exist_ok=True)
@@ -204,7 +204,7 @@ class PluginManager:
 
     # IM-channel-only plugins that make no sense in the single-user desktop app
     # and, worse, write config.json into their bundle dir on init — which breaks
-    # the macOS code-signature seal of the packaged .app. cow_cli stays enabled
+    # the macOS code-signature seal of the packaged .app. stella_cli stays enabled
     # so desktop chat commands (/status, /help, ...) keep working.
     DESKTOP_DISABLED_PLUGINS = {
         "GODCMD", "KEYWORD", "BANWORDS", "ROLE", "DUNGEON", "HELLO", "FINISH",
@@ -215,7 +215,7 @@ class PluginManager:
         plugins.json (bundle default or user copy) says. Runs after scan (which
         syncs enabled from plugins.json) and before activate, so denied plugins
         are never instantiated and never write into the read-only bundle."""
-        if os.environ.get("COW_DESKTOP") != "1":
+        if os.environ.get("STELLA_DESKTOP") != "1":
             return
         for name in list(self.plugins.keys()):
             if name.upper() in self.DESKTOP_DISABLED_PLUGINS and self.plugins[name].enabled:

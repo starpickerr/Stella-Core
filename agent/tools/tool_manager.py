@@ -299,7 +299,7 @@ class ToolManager:
 
     def _read_mcp_json_signature(self):
         """
-        Return (mtime, sha256_of_bytes) for ~/cow/mcp.json without parsing.
+        Return (mtime, sha256_of_bytes) for ~/stella/mcp.json without parsing.
         Returns (None, None) if the file doesn't exist or is unreadable.
         Cheap enough (one stat + one small read) to call on every agent init.
         """
@@ -320,7 +320,7 @@ class ToolManager:
     def _load_mcp_configs(self) -> list:
         """
         Load MCP server configs with priority:
-          1. ~/cow/mcp.json  (supports both mcpServers and mcp_servers keys)
+          1. ~/stella/mcp.json  (supports both mcpServers and mcp_servers keys)
           2. config.json mcp_servers field (fallback)
         """
         import os
@@ -389,7 +389,7 @@ class ToolManager:
 
     def refresh_mcp_if_changed(self):
         """
-        Cheap check whether ~/cow/mcp.json has changed since last load.
+        Cheap check whether ~/stella/mcp.json has changed since last load.
         If it has, do a diff-based reload: start newly added servers,
         shut down removed ones, and restart any whose config was edited.
         Untouched servers are left running.
@@ -573,7 +573,7 @@ class ToolManager:
         and removes tools whose MCP server was torn down. Built-in tools
         on the agent are left untouched.
 
-        Handles both representations CowAgent uses:
+        Handles both representations Stella uses:
           - Agent.tools: list[BaseTool]               (default Agent class)
           - AgentStream.tools: dict[str, BaseTool]    (streaming agent)
 

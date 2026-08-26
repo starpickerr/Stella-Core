@@ -59,7 +59,7 @@ REGEX_MATCH_TIMEOUT_SECONDS = 1  # caps one regex.search() call in the python ba
 _IS_WIN = sys.platform == "win32"
 
 # Matches read.py's issue #2913 fix: /proc/<pid|self|thread-self>/environ
-# mirrors any secrets loaded into the process environment from ~/.cow/.env.
+# mirrors any secrets loaded into the process environment from ~/.stella/.env.
 _PROC_ENVIRON_RE = re.compile(r"^/proc/(\d+|self|thread-self)/environ$")
 
 # VCS + dependency/build dirs excluded by the non-rg backends (rg uses
@@ -160,8 +160,8 @@ class SearchFiles(BaseTool):
         self.config = config or {}
         self.cwd = self.config.get("cwd", os.getcwd())
         self.timeout = self.config.get("timeout", SEARCH_TIMEOUT_SECONDS)
-        # Resolved once (assumes ~/.cow is stable for this session), not per-check.
-        self._cow_dir = os.path.realpath(expand_path("~/.cow")).replace(os.sep, "/")
+        # Resolved once (assumes ~/.stella is stable for this session), not per-check.
+        self._stella_dir = os.path.realpath(expand_path("~/.stella")).replace(os.sep, "/")
 
     # --------------------------------------------------------- file-name search
     def _find_by_name(self, pattern: str, root: str, ignore_case: bool,
@@ -352,7 +352,7 @@ class SearchFiles(BaseTool):
         return os.path.abspath(os.path.join(self.cwd, path))
 
     def _is_credential_path(self, absolute_path: str) -> bool:
-        """Block ~/.cow (like ls.py) and /proc/*/environ (like read.py #2913)."""
+        """Block ~/.stella (like ls.py) and /proc/*/environ (like read.py #2913)."""
         candidates = set()
         try:
             candidates.add(os.path.normpath(absolute_path).replace(os.sep, "/"))
@@ -362,7 +362,7 @@ class SearchFiles(BaseTool):
         for candidate in candidates:
             if _PROC_ENVIRON_RE.match(candidate):
                 return True
-        return any(c == self._cow_dir or c.startswith(self._cow_dir + "/") for c in candidates)
+        return any(c == self._stella_dir or c.startswith(self._stella_dir + "/") for c in candidates)
 
     def _rel(self, file_path: str, root: str) -> str:
         # Always emit forward slashes so paths are consistent across platforms

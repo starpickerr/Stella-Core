@@ -194,11 +194,11 @@ def _apply_attribution_headers(headers: dict) -> None:
     first-party provider so identifiers never leak to third-party vendors.
     """
     mapping = {
-        "COW_AGENT_RUN_ID": "X-Agent-Run-Id",
-        "COW_CLIENT_SOURCE": "X-Client-Source",
-        "COW_CLIENT_OS": "X-Client-OS",
-        "COW_CLIENT_VERSION": "X-Client-Version",
-        "COW_DEPLOYMENT_ID": "X-Deployment-Id",
+        "STELLA_AGENT_RUN_ID": "X-Agent-Run-Id",
+        "STELLA_CLIENT_SOURCE": "X-Client-Source",
+        "STELLA_CLIENT_OS": "X-Client-OS",
+        "STELLA_CLIENT_VERSION": "X-Client-Version",
+        "STELLA_DEPLOYMENT_ID": "X-Deployment-Id",
     }
     for env_name, header in mapping.items():
         value = (os.environ.get(env_name) or "").strip()

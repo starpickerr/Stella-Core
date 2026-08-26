@@ -1,3 +1,4 @@
+ToDoList.md
 .DS_Store
 .idea
 .vscode
@@ -32,7 +33,7 @@ plugins/banwords/lib/__pycache__
 !plugins/role
 !plugins/keyword
 !plugins/linkai
-!plugins/cow_cli
+!plugins/stella_cli
 client_config.json
 # HMAC key for signing /preview URLs; generated per install.
 .preview_secret
@@ -42,18 +43,18 @@ ref/
 local/
 node_modules/
 
-# cow cli
+# stella cli
 dist/
 build/
 *.egg-info/
-.cow.pid
+.stella.pid
 
 # Desktop backend packaging: keep the source files (spec/requirements/script)
 # tracked even though the generic build/ rule above ignores them, but never
 # track the build outputs or local venv.
 !desktop/build/
 desktop/build/*
-!desktop/build/cowagent-backend.spec
+!desktop/build/stella-backend.spec
 !desktop/build/requirements-desktop.txt
 !desktop/build/build-backend.sh
 !desktop/build/build-feishu-vendor.py

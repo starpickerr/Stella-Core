@@ -1,14 +1,14 @@
 version: '2.0'
 services:
-  chatgpt-on-wechat:
-    image: zhayujie/chatgpt-on-wechat
-    container_name: chatgpt-on-wechat
+  stella:
+    image: starpickerr/stella
+    container_name: stella
     security_opt:
       - seccomp:unconfined
     ports:
       - "9899:9899"
     environment:
-      COW_LANG: 'auto'
+      STELLA_LANG: 'auto'
       CHANNEL_TYPE: 'web, weixin'
       MODEL: 'deepseek-v4-flash'
       DEEPSEEK_API_KEY: ''
@@ -50,9 +50,9 @@ services:
       SELF_EVOLUTION_ENABLED: 'True'
       # Writable data root (config.json, run.log, credentials) — kept separate
       # from the workspace so it survives image upgrades / container recreation.
-      COW_DATA_DIR: '/home/agent/.cow'
+      STELLA_DATA_DIR: '/home/agent/.stella'
     volumes:
       # Workspace: skills, memory, knowledge, mcp.json, conversation artifacts
-      - ./cow:/home/agent/cow
+      - ./stella:/home/agent/stella
       # Data root: config.json, run.log, credentials
-      - ./cow-data:/home/agent/.cow
+      - ./stella-data:/home/agent/.stella

@@ -3,7 +3,7 @@ title: スキル管理
 description: コマンドでスキルのインストール、アンインストール、有効化、無効化、管理を行う
 ---
 
-スキル管理コマンドは CowAgent のスキルのインストール、検索、管理に使用します。チャットでは `/skill <サブコマンド>`、ターミナルでは `cow skill <サブコマンド>` を使用します。
+スキル管理コマンドは Stella のスキルのインストール、検索、管理に使用します。チャットでは `/skill <サブコマンド>`、ターミナルでは `stella skill <サブコマンド>` を使用します。
 
 ## list
 
@@ -15,7 +15,7 @@ description: コマンドでスキルのインストール、アンインスト�
 ```
 
 ```bash ターミナル
-cow skill list
+stella skill list
 ```
 </CodeGroup>
 
@@ -27,7 +27,7 @@ cow skill list
 ```
 
 ```bash ターミナル
-cow skill list --remote
+stella skill list --remote
 ```
 </CodeGroup>
 
@@ -48,13 +48,13 @@ cow skill list --remote
 ```
 
 ```bash ターミナル
-cow skill search pptx
+stella skill search pptx
 ```
 </CodeGroup>
 
 ## install
 
-統一された `install` コマンドで、Cow スキル広場、GitHub、ClawHub、任意の URL（zip アーカイブ、SKILL.md リンク）からスキルをワンクリックでインストールできます。手動ダウンロードや設定は不要です。
+統一された `install` コマンドで、Stella スキル広場、GitHub、ClawHub、任意の URL（zip アーカイブ、SKILL.md リンク）からスキルをワンクリックでインストールできます。手動ダウンロードや設定は不要です。
 
 **スキル広場からインストール（推奨）：**
 
@@ -64,7 +64,7 @@ cow skill search pptx
 ```
 
 ```bash ターミナル
-cow skill install pptx
+stella skill install pptx
 ```
 </CodeGroup>
 
@@ -84,13 +84,13 @@ cow skill install pptx
 
 ```bash ターミナル
 # リポジトリ内のすべてのスキルをインストール（SKILL.md を含むサブディレクトリを自動検出）
-cow skill install larksuite/cli
+stella skill install larksuite/cli
 
 # サブディレクトリを指定して単一スキルをインストール
-cow skill install https://github.com/larksuite/cli/tree/main/skills/lark-im
+stella skill install https://github.com/larksuite/cli/tree/main/skills/lark-im
 
 # # でサブディレクトリを指定
-cow skill install larksuite/cli#skills/lark-minutes
+stella skill install larksuite/cli#skills/lark-minutes
 ```
 </CodeGroup>
 
@@ -104,7 +104,7 @@ cow skill install larksuite/cli#skills/lark-minutes
 ```
 
 ```bash ターミナル
-cow skill install clawhub:baidu-search
+stella skill install clawhub:baidu-search
 ```
 </CodeGroup>
 
@@ -121,10 +121,10 @@ cow skill install clawhub:baidu-search
 
 ```bash ターミナル
 # zip アーカイブからインストール（単一またはバッチ）
-cow skill install https://cdn.link-ai.tech/skills/pptx.zip
+stella skill install https://cdn.link-ai.tech/skills/pptx.zip
 
 # SKILL.md リンクからインストール
-cow skill install https://example.com/path/to/SKILL.md
+stella skill install https://example.com/path/to/SKILL.md
 ```
 </CodeGroup>
 
@@ -140,7 +140,7 @@ zip / tar.gz アーカイブ URL からのインストールに対応してお�
 ```
 
 ```bash ターミナル
-cow skill uninstall pptx
+stella skill uninstall pptx
 ```
 </CodeGroup>
 
@@ -159,8 +159,8 @@ cow skill uninstall pptx
 ```
 
 ```bash ターミナル
-cow skill enable pptx
-cow skill disable pptx
+stella skill enable pptx
+stella skill disable pptx
 ```
 </CodeGroup>
 
@@ -174,7 +174,7 @@ cow skill disable pptx
 ```
 
 ```bash ターミナル
-cow skill info pptx
+stella skill info pptx
 ```
 </CodeGroup>
 
@@ -185,7 +185,7 @@ cow skill info pptx
 | ソース | 説明 |
 | --- | --- |
 | `builtin` | プロジェクト内蔵スキル |
-| `cowhub` | CowAgent Skill Hub からインストール |
+| `cowhub` | Stella Skill Hub からインストール |
 | `github` | GitHub URL から直接インストール |
 | `clawhub` | ClawHub からインストール |
 | `url` | SKILL.md URL からインストール |

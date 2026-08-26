@@ -1,7 +1,7 @@
 """Agent profile registry.
 
 The registry is deliberately small: an agent is identified by a stable ID and
-one complete CowAgent workspace. Runtime, routing, and persistence layers build
+one complete Stella workspace. Runtime, routing, and persistence layers build
 on this module without changing the existing single-agent configuration path.
 """
 
@@ -25,7 +25,7 @@ class AgentRegistryError(ValueError):
 
 @dataclass(frozen=True)
 class AgentProfile:
-    """Configuration for one complete CowAgent workspace."""
+    """Configuration for one complete Stella workspace."""
 
     id: str
     name: str
@@ -134,7 +134,7 @@ class AgentRegistry:
 
     @classmethod
     def from_config(cls, settings: Mapping[str, Any]) -> "AgentRegistry":
-        instance_root = _normalise_workspace(settings.get("agent_workspace") or "~/cow")
+        instance_root = _normalise_workspace(settings.get("agent_workspace") or "~/stella")
 
         raw_agents = settings.get("agents")
         if raw_agents is None or raw_agents == []:
@@ -300,7 +300,7 @@ def get_agent_registry() -> AgentRegistry:
                 # Fall back to the default single agent so the app still starts;
                 # the console can then edit the bad block. Source deployments
                 # keep failing loudly so the developer sees the error at once.
-                if os.environ.get("COW_DESKTOP") != "1":
+                if os.environ.get("STELLA_DESKTOP") != "1":
                     raise
                 from common.log import logger
 

@@ -1,6 +1,6 @@
 ---
 title: v2.1.7
-description: CowAgent 2.1.7：支持多工作空间与会话隔离，新增会话级权限模式，任务通知和桌面端优化，新模型接入
+description: Stella 2.1.7：支持多工作空间与会话隔离，新增会话级权限模式，任务通知和桌面端优化，新模型接入
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.7) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.7)
@@ -13,7 +13,7 @@ Agent 不再固定在单一目录下工作，可创建多个项目工作空间�
 - **空间切换**：每个会话可绑定各自的项目空间，多任务运行互不干扰。
 - **模型切换**：可为单个会话切换不同模型，新会话默认使用全局配置的默认模型。
 - **会话分组**：会话列表按所属工作空间分组展示，支持置顶、重排、重命名与删除。
-- **系统资源共用**：记忆、技能、知识库等资源仍保留在系统工作空间（默认为 `~/cow`）。
+- **系统资源共用**：记忆、技能、知识库等资源仍保留在系统工作空间（默认为 `~/stella`）。
 
 <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-workspace-project-demo.png" width="800" />
 
@@ -37,7 +37,7 @@ Agent 不再固定在单一目录下工作，可创建多个项目工作空间�
 - **启动诊断**：后端启动失败时给出具体的诊断信息，替代此前笼统的报错。
 - **日志下载**：运行日志页面支持下载日志文件，本地上传增加重试与更清晰的错误提示。
 
-下载地址：[CowAgent客户端](https://cowagent.ai/zh/download/)
+下载地址：[Stella客户端](https://cowagent.ai/zh/download/)
 
 相关文档：[桌面客户端](https://docs.cowagent.ai/zh/guide/desktop)
 
@@ -67,11 +67,11 @@ Thanks @chimyves (#3056, #3055)
 - **首次对话提速**：优化记忆系统的初始化流程，不再阻塞会话首条消息，显著缩短初次对话的等待时间。
 - **上下文裁剪**：修复上下文被裁剪时 AI 回复未能持久化的问题。
 - **飞书通道**：流式卡片支持多轮文本累积展示。
-- **Docker**：通过 `COW_DATA_DIR` 挂载在容器升级间持久化 `config.json`。
+- **Docker**：通过 `STELLA_DATA_DIR` 挂载在容器升级间持久化 `config.json`。
 
 ## 📦 升级方式
 
-- **源码部署**：执行 `cow update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
+- **源码部署**：执行 `stella update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
 - **桌面客户端**：可在客户端内自动检查并一键更新，或前往 [下载页](https://cowagent.ai/zh/download/) 获取最新版本。
 
-**发布日期**：2026.08.20 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.6...2.1.7)
+**发布日期**：2026.08.20 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.6...2.1.7)

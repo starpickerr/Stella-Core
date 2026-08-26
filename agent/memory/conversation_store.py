@@ -1349,7 +1349,7 @@ def _resolve_store_path(workspace_root=None) -> Path:
         except Exception:
             from common.utils import expand_path
             return (
-                Path(expand_path("~/cow")) / "memory" / "long-term" / "index.db"
+                Path(expand_path("~/stella")) / "memory" / "long-term" / "index.db"
             ).resolve()
     from agent.memory.config import MemoryConfig
     from common.utils import expand_path

@@ -10,7 +10,7 @@ Control a Chromium browser for web navigation, element interaction and content e
 <Tabs>
   <Tab title="CLI install (recommended)">
     ```bash
-    cow install-browser
+    stella install-browser
     ```
 
     This command will:
@@ -52,7 +52,7 @@ Control a Chromium browser for web navigation, element interaction and content e
 <Note>
   **Desktop client users**: playwright is bundled in the installer, no separate install needed. On first use of the browser tool:
   - If **Google Chrome / Edge** is installed, it drives the system browser directly with **no download** (recommended);
-  - Otherwise, send `/install-browser` in chat to download a lightweight browser engine into `~/.cow`.
+  - Otherwise, send `/install-browser` in chat to download a lightweight browser engine into `~/.stella`.
 </Note>
 
 ## Workflow
@@ -116,7 +116,7 @@ You can override it in `config.json`:
 The browser engine is selected automatically, no configuration needed:
 
 1. If **Google Chrome / Edge** is detected on the machine, it drives the system browser directly, with **no Chromium download**, using real browser fingerprints;
-2. Otherwise it falls back to the Chromium engine downloaded into `~/.cow` via `install-browser`.
+2. Otherwise it falls back to the Chromium engine downloaded into `~/.stella` via `install-browser`.
 
 Both use the persistent login below and behave identically.
 
@@ -126,7 +126,7 @@ Both use the persistent login below and behave identically.
 
 ### Option 1: Persistent mode (default)
 
-Works out of the box. Login state is saved under `~/.cow/browser_profile`. No configuration needed.
+Works out of the box. Login state is saved under `~/.stella/browser_profile`. No configuration needed.
 
 To disable persistence and start with a clean environment every time:
 
@@ -151,21 +151,21 @@ Launch Chrome with a debugging port and a dedicated user data directory:
     ```bash
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
       --remote-debugging-port=9222 \
-      --user-data-dir="$HOME/.cow/chrome-cdp"
+      --user-data-dir="$HOME/.stella/chrome-cdp"
     ```
   </Tab>
   <Tab title="Linux">
     ```bash
     google-chrome \
       --remote-debugging-port=9222 \
-      --user-data-dir="$HOME/.cow/chrome-cdp"
+      --user-data-dir="$HOME/.stella/chrome-cdp"
     ```
   </Tab>
   <Tab title="Windows">
     ```powershell
     & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
       --remote-debugging-port=9222 `
-      --user-data-dir="$env:USERPROFILE\.cow\chrome-cdp"
+      --user-data-dir="$env:USERPROFILE\.stella\chrome-cdp"
     ```
   </Tab>
 </Tabs>

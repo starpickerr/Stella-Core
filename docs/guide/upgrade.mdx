@@ -1,14 +1,14 @@
 ---
 title: Upgrade
-description: How to upgrade CowAgent
+description: How to upgrade Stella
 ---
 
 ## Recommended: One-line upgrade
 
-Use `cow update` to pull the latest code and restart the service in one step:
+Use `stella update` to pull the latest code and restart the service in one step:
 
 ```bash
-cow update
+stella update
 ```
 
 The command runs the following automatically:
@@ -20,7 +20,7 @@ The command runs the following automatically:
 5. Start the service
 
 <Note>
-  If the Cow CLI is not installed, `./run.sh update` performs the same operations.
+  If the Stella CLI is not installed, `./run.sh update` performs the same operations.
 </Note>
 
 ## Manual upgrade
@@ -36,8 +36,8 @@ pip3 install -e .
 Then restart the service:
 
 ```bash
-# Using Cow CLI (recommended)
-cow restart
+# Using Stella CLI (recommended)
+stella restart
 
 # Or using run.sh
 ./run.sh restart

@@ -1,6 +1,6 @@
 ---
 title: v2.1.2
-description: CowAgent 2.1.2：Web 控制台多项管理能力升级、自主进化体验优化、模型新增支持、企业微信智能机器人回调模式、安全加固和体验优化
+description: Stella 2.1.2：Web 控制台多项管理能力升级、自主进化体验优化、模型新增支持、企业微信智能机器人回调模式、安全加固和体验优化
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.2) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.2)
@@ -53,7 +53,7 @@ Thanks @6vision (#2896 #2869)
 ## 🛠 体验优化与修复
 
 - **CLI 自重启**：新增 self-restart 命令，Agent 可自行重启进程
-- **Windows 兼容**：将 cow CLI 自动写入用户 PATH；修复 `python -c` 长命令超出 `cmd.exe` 长度限制的问题；安装时避免 greenlet 源码编译
+- **Windows 兼容**：将 stella CLI 自动写入用户 PATH；修复 `python -c` 长命令超出 `cmd.exe` 长度限制的问题；安装时避免 greenlet 源码编译
 - **角色插件自定义**：角色插件支持通过 `roles/*.json` 下的独立提示词文件进行自定义。Thanks @sufan721 (#2891)
 - **稳定性修复**：修复 `/cancel` 时的 KeyError 与图片压缩死循环（Thanks @kirs-hi #2888）
 - **一键安装优化**：更新启动脚本与默认配置，修复 ASR/TTS 默认值、自主进化开关及安装过程卡顿等问题
@@ -62,6 +62,6 @@ Thanks @6vision (#2896 #2869)
 
 ## 📦 升级方式
 
-源码部署可执行 `cow update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
+源码部署可执行 `stella update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/zh/guide/upgrade)。
 
-**发布日期**：2026.06.18 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.1...2.1.2)
+**发布日期**：2026.06.18 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.1...2.1.2)

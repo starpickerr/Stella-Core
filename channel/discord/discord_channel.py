@@ -9,8 +9,8 @@ Features:
 
 Implementation note:
     discord.py is async-first. We run the client inside a dedicated thread
-    with its own asyncio loop so the rest of cow (which is sync) stays
-    untouched. Inbound messages are dispatched onto cow's existing sync
+    with its own asyncio loop so the rest of stella (which is sync) stays
+    untouched. Inbound messages are dispatched onto stella's existing sync
     ChatChannel.produce() pipeline; outbound send() schedules coroutines
     back onto that loop via asyncio.run_coroutine_threadsafe.
 """
@@ -77,7 +77,7 @@ class DiscordChannel(ChatChannel):
             self.report_startup_error(err)
             return
 
-        # Run the asyncio event loop in a dedicated thread so the sync cow body
+        # Run the asyncio event loop in a dedicated thread so the sync stella body
         # is untouched.
         self._loop = asyncio.new_event_loop()
 
@@ -424,7 +424,7 @@ class DiscordChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def send(self, reply: Reply, context: Context):
-        """Called from cow's sync main thread; marshal the coroutine onto the loop thread."""
+        """Called from stella's sync main thread; marshal the coroutine onto the loop thread."""
         if self._loop is None or self._client is None:
             logger.warning("[Discord] client not ready, drop reply")
             return

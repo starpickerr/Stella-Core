@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for the CowAgent desktop backend (onedir).
+PyInstaller spec for the Stella desktop backend (onedir).
 
-Produces a self-contained `cowagent-backend` folder that the Electron app
+Produces a self-contained `stella-backend` folder that the Electron app
 spawns directly, so end users don't need Python installed.
 
 onedir is chosen over onefile because the backend reads data files via paths
@@ -10,7 +10,7 @@ relative to the source tree (e.g. config-template.json, skills/, chat.html);
 onedir preserves that layout, while onefile's temp-extraction would break it.
 
 Build from the repo root:
-    pyinstaller desktop/build/cowagent-backend.spec --noconfirm
+    pyinstaller desktop/build/stella-backend.spec --noconfirm
 """
 import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
@@ -31,7 +31,7 @@ def rp(*parts):
 # present; its heavy lark_oapi SDK is deliberately NOT bundled — see the
 # `excludes` note below and channel/feishu/lark_install.py, which downloads a
 # trimmed bundle the first time the user enables Feishu (fixes
-# zhayujie/CowAgent#2987: "客户端没有飞书通道").
+# starpickerr/Stella#2987: "客户端没有飞书通道").
 hiddenimports = [
     # channels (dynamic import in channel/channel_factory.py)
     'channel.web.web_channel',
@@ -58,9 +58,9 @@ hiddenimports += collect_submodules('bridge')
 
 # Plugin framework + plugins. WebChannel -> ChatChannel imports
 # `from plugins import *`, and desktop mode loads plugins (in a background
-# thread) so command plugins like cow_cli/godcmd (/status, #help) work. Plugin
+# thread) so command plugins like stella_cli/godcmd (/status, #help) work. Plugin
 # modules are imported dynamically by name in scan_plugins(), so list them
-# explicitly. The `cli` package is a cow_cli dependency (`from cli import ...`).
+# explicitly. The `cli` package is a stella_cli dependency (`from cli import ...`).
 hiddenimports += [
     'plugins',
     'plugins.event',
@@ -69,7 +69,7 @@ hiddenimports += [
 ]
 hiddenimports += collect_submodules('plugins')
 
-# `cli` powers cow_cli's slash commands (`cow skill install`, `cow status`, …).
+# `cli` powers stella_cli's slash commands (`stella skill install`, `stella status`, …).
 # Its command modules are imported lazily inside functions, so static analysis
 # misses them. collect_submodules('cli') alone proved unreliable (a build can
 # end up with `cli` but not `cli.commands`), so list the command modules
@@ -117,7 +117,7 @@ hiddenimports += collect_submodules('openpyxl')
 # Playwright powers the browser tool. Only the pure-Python package + its bundled
 # Node driver are shipped (~10-15MB); the ~150MB Chromium binary is NOT bundled
 # and is either satisfied by the user's system Chrome/Edge (preferred, zero
-# download) or downloaded on demand into ~/.cow/ms-playwright at first use.
+# download) or downloaded on demand into ~/.stella/ms-playwright at first use.
 # Playwright imports its transport/driver lazily, so list submodules explicitly.
 hiddenimports += ['playwright', 'playwright.sync_api', 'playwright._impl']
 hiddenimports += collect_submodules('playwright')
@@ -163,9 +163,9 @@ datas += collect_data_files('playwright', include_py_files=True)
 # Feishu's lark_oapi (~122MB unpacked) is intentionally EXCLUDED here. The first
 # time a user enables the Feishu channel, channel/feishu/lark_install.py
 # downloads a trimmed, pure-Python bundle (~1MB, built by
-# desktop/build/build-feishu-vendor.py) into ~/.cow/feishu_vendor and adds it to
+# desktop/build/build-feishu-vendor.py) into ~/.stella/feishu_vendor and adds it to
 # sys.path. This keeps the base download small while Feishu still works out of
-# the box after a one-time fetch (fixes zhayujie/CowAgent#2987).
+# the box after a one-time fetch (fixes starpickerr/Stella#2987).
 excludes = [
     'lark_oapi',          # Feishu SDK — fetched on demand, NOT bundled (see above)
     'tests',
@@ -175,7 +175,7 @@ excludes = [
     # NOTE: playwright is now BUNDLED (pure-Python package + Node driver, ~10-15MB)
     # so the browser tool works out of the box on desktop. The heavy Chromium
     # binary is still NOT bundled: it comes from the user's system Chrome/Edge or
-    # is downloaded on demand into ~/.cow/ms-playwright. See browser_env.py.
+    # is downloaded on demand into ~/.stella/ms-playwright. See browser_env.py.
 ]
 
 block_cipher = None
@@ -203,7 +203,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='cowagent-backend',
+    name='stella-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -222,5 +222,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='cowagent-backend',
+    name='stella-backend',
 )

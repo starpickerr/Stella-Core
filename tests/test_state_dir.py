@@ -54,12 +54,16 @@ def test_user_scoped_paths_collapse_onto_the_root_without_a_user(registry, tmp_p
     with identity_scope(agent_id="alpha"):
         assert state_dir.memory_dir() == tmp_path / "alpha" / "memory"
         assert state_dir.runs_dir() == tmp_path / "alpha" / "runs"
+        assert state_dir.bills_db(ensure=False) == tmp_path / "alpha" / "bills" / "bills.db"
 
 
 def test_user_scoped_paths_split_once_a_user_is_present(registry, tmp_path):
     with identity_scope(agent_id="alpha", user_id="u1"):
         assert state_dir.memory_dir() == tmp_path / "alpha" / "users" / "u1" / "memory"
         assert state_dir.runs_dir() == tmp_path / "alpha" / "users" / "u1" / "runs"
+        assert state_dir.bills_db(ensure=False) == (
+            tmp_path / "alpha" / "users" / "u1" / "bills" / "bills.db"
+        )
         # agent assets stay shared across users
         assert state_dir.skills_dir() == tmp_path / "alpha" / "skills"
         assert state_dir.mcp_config_file() == tmp_path / "alpha" / "mcp.json"
@@ -129,9 +133,9 @@ def test_an_agent_opts_out_by_having_its_own_copy(registry, tmp_path):
 
 
 def test_legacy_config_keeps_the_configured_workspace(tmp_path):
-    set_agent_registry(AgentRegistry.from_config({"agent_workspace": str(tmp_path / "cow")}))
+    set_agent_registry(AgentRegistry.from_config({"agent_workspace": str(tmp_path / "stella")}))
     try:
-        assert state_dir.state_root() == (tmp_path / "cow").resolve()
+        assert state_dir.state_root() == (tmp_path / "stella").resolve()
     finally:
         set_agent_registry(None)
 
@@ -238,12 +242,13 @@ _SINGLE_AGENT_LAYOUT = {
     "memory_index_db": ("memory", "long-term", "index.db"),
     "output_dir": ("output",),
     "runs_dir": ("runs",),
+    "bills_db": ("bills", "bills.db"),
 }
 
 
 @pytest.mark.parametrize("prepopulated", [False, True], ids=["empty", "populated"])
 def test_a_single_agent_install_keeps_every_path_it_has_today(tmp_path, prepopulated):
-    root = tmp_path / "cow"
+    root = tmp_path / "stella"
     if prepopulated:
         for parts in _SINGLE_AGENT_LAYOUT.values():
             (root / Path(*parts)).mkdir(parents=True, exist_ok=True)

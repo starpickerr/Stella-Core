@@ -3,10 +3,10 @@ from agent.tools.bash.bash import Bash
 
 
 @pytest.mark.parametrize("command", [
-    "cat ~/.cow/.env",
-    "cat .cow/.env",
-    "less ~/.cow/.env",
-    "cat /home/user/.cow/.env",
+    "cat ~/.stella/.env",
+    "cat .stella/.env",
+    "less ~/.stella/.env",
+    "cat /home/user/.stella/.env",
 ])
 def test_credential_file_access_is_blocked(command):
     result = Bash().execute({"command": command})
@@ -15,10 +15,10 @@ def test_credential_file_access_is_blocked(command):
 
 
 @pytest.mark.parametrize("command", [
-    "ls ~/.cow/skills",
-    "ls ~/.cow/",
+    "ls ~/.stella/skills",
+    "ls ~/.stella/",
     "echo hello",
 ])
-def test_legitimate_cow_directory_access_is_not_blocked(command):
+def test_legitimate_stella_directory_access_is_not_blocked(command):
     result = Bash().execute({"command": command})
     assert "Access denied" not in str(result.result)

@@ -1,6 +1,6 @@
 ---
 title: Manual Install
-description: Deploy CowAgent manually (source code / Docker)
+description: Deploy Stella manually (source code / Docker)
 ---
 
 ## Source Code Deployment
@@ -8,12 +8,12 @@ description: Deploy CowAgent manually (source code / Docker)
 ### 1. Clone the project
 
 ```bash
-git clone https://github.com/zhayujie/CowAgent
-cd CowAgent/
+git clone https://github.com/starpickerr/Stella
+cd Stella/
 ```
 
 <Tip>
-  For network issues, use the mirror: https://gitee.com/zhayujie/CowAgent
+  For network issues, use the mirror: https://github.com/starpickerr/Stella
 </Tip>
 
 ### 2. Install dependencies
@@ -30,7 +30,7 @@ Optional dependencies (recommended):
 pip3 install -r requirements-optional.txt
 ```
 
-### 3. Install Cow CLI
+### 3. Install Stella CLI
 
 Install the command-line tool for managing services and skills:
 
@@ -38,14 +38,14 @@ Install the command-line tool for managing services and skills:
 pip3 install -e .
 ```
 
-Then use the `cow` command:
+Then use the `stella` command:
 
 ```bash
-cow help
+stella help
 ```
 
 <Note>
-  This step is recommended. After installation you can use `cow start`, `cow stop`, `cow update` to manage the service, and `cow skill` to manage skills. Without the CLI, you can use `./run.sh` or `python3 app.py` to run.
+  This step is recommended. After installation you can use `stella start`, `stella stop`, `stella update` to manage the service, and `stella skill` to manage skills. Without the CLI, you can use `./run.sh` or `python3 app.py` to run.
 </Note>
 
 ### 4. Configure
@@ -60,10 +60,10 @@ Fill in model API keys, channel type, and other settings in `config.json`. See t
 
 ### 5. Run
 
-**Using Cow CLI (recommended):**
+**Using Stella CLI (recommended):**
 
 ```bash
-cow start
+stella start
 ```
 
 **Or run locally in foreground:**
@@ -115,8 +115,8 @@ sudo docker logs -f chatgpt-on-wechat
 <Note>
   **Data persistence**: `docker-compose.yml` mounts two host directories by default, so your data survives container restarts and `docker compose pull` image upgrades:
 
-  - `./cow` → `/home/agent/cow` in the container: the workspace, holding conversation-installed skills, memory, knowledge base, `mcp.json`, and conversation artifacts.
-  - `./cow-data` → `/home/agent/.cow` in the container: the data directory pointed to by `COW_DATA_DIR`, holding the `config.json` saved from the web console, run logs, and channel credentials.
+  - `./stella` → `/home/agent/stella` in the container: the workspace, holding conversation-installed skills, memory, knowledge base, `mcp.json`, and conversation artifacts.
+  - `./stella-data` → `/home/agent/.stella` in the container: the data directory pointed to by `STELLA_DATA_DIR`, holding the `config.json` saved from the web console, run logs, and channel credentials.
 
   Both directories are created next to `docker-compose.yml` by default — don't delete them.
 </Note>
@@ -133,11 +133,11 @@ sudo docker logs -f chatgpt-on-wechat
   "model": "deepseek-v4-flash",
   "deepseek_api_key": "",
   "agent": true,
-  "agent_workspace": "~/cow",
+  "agent_workspace": "~/stella",
   "agent_max_context_tokens": 40000,
   "agent_max_context_turns": 30,
   "agent_max_steps": 15,
-  "cow_lang": "auto"
+  "stella_lang": "auto"
 }
 ```
 
@@ -146,12 +146,12 @@ sudo docker logs -f chatgpt-on-wechat
 | `channel_type` | Channel type | `web` |
 | `model` | Model name | `deepseek-v4-flash` |
 | `agent` | Enable Agent mode | `true` |
-| `agent_workspace` | Agent workspace path | `~/cow` |
+| `agent_workspace` | Agent workspace path | `~/stella` |
 | `agent_max_context_tokens` | Max context tokens | `40000` |
 | `agent_max_context_turns` | Max context turns | `30` |
 | `agent_max_steps` | Max decision steps per task | `15` |
-| `cow_lang` | Language for the UI, command text and system prompts; `auto` to detect, or set `zh` / `en` | `auto` |
+| `stella_lang` | Language for the UI, command text and system prompts; `auto` to detect, or set `zh` / `en` | `auto` |
 
 <Tip>
-  Full configuration options are in the project [`config.py`](https://github.com/zhayujie/CowAgent/blob/master/config.py).
+  Full configuration options are in the project [`config.py`](https://github.com/starpickerr/Stella/blob/master/config.py).
 </Tip>

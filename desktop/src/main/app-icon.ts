@@ -21,7 +21,7 @@ let getMainWindow: (() => BrowserWindow | null) | null = null
 let getTrayIcon: (() => Electron.Tray | null) | null = null
 
 function cacheDir(): string {
-  const root = process.env.COW_HOME || path.join(os.homedir(), '.cow')
+  const root = process.env.STELLA_HOME || path.join(os.homedir(), '.stella')
   return path.join(root, CACHE_DIRNAME)
 }
 

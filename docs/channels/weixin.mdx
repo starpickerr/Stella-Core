@@ -1,15 +1,15 @@
 ---
 title: WeChat
-description: Connect CowAgent to personal WeChat (via the official API)
+description: Connect Stella to personal WeChat (via the official API)
 ---
 
-> Connect CowAgent to your personal WeChat — scan to log in, no public IP required. Supports text, image, voice, file, and video messages in 1-on-1 chats. Backed by WeChat's official API; safe to use. After connecting, a bot assistant is added to your conversation list without affecting normal account usage.
+> Connect Stella to your personal WeChat — scan to log in, no public IP required. Supports text, image, voice, file, and video messages in 1-on-1 chats. Backed by WeChat's official API; safe to use. After connecting, a bot assistant is added to your conversation list without affecting normal account usage.
 
 ## 1. Setup and run
 
 ### Option A: Web console
 
-Start CowAgent and open the Web console (local URL: http://127.0.0.1:9899/). Go to the **Channels** tab, click **Connect Channel**, select **WeChat**, and follow the prompts to scan in.
+Start Stella and open the Web console (local URL: http://127.0.0.1:9899/). Go to the **Channels** tab, click **Connect Channel**, select **WeChat**, and follow the prompts to scan in.
 
 <img src="https://cdn.link-ai.tech/doc/20260322195114.png" width="800" />
 
@@ -23,7 +23,7 @@ Set `channel_type` to `weixin` in `config.json`:
 }
 ```
 
-After starting CowAgent, a QR code is displayed in the terminal. Scan it with WeChat to complete login.
+After starting Stella, a QR code is displayed in the terminal. Scan it with WeChat to complete login.
 
 <img src="https://cdn.link-ai.tech/doc/20260322195509.png" width="800" />
 
@@ -51,13 +51,13 @@ On first startup, a QR code appears in the terminal (valid for around 2 minutes)
 
 ### Credential persistence
 
-After a successful login, credentials are saved to `~/.weixin_cow_credentials.json`. Subsequent startups reuse the saved credentials with no need to re-scan.
+After a successful login, credentials are saved to `~/.weixin_stella_credentials.json`. Subsequent startups reuse the saved credentials with no need to re-scan.
 
 To force a re-login, delete the credentials file and restart.
 
 ### Session expiry
 
-When the WeChat session expires (errcode `-14`), CowAgent automatically clears old credentials and initiates a new QR login — no manual intervention required.
+When the WeChat session expires (errcode `-14`), Stella automatically clears old credentials and initiates a new QR login — no manual intervention required.
 
 ## 4. Supported features
 

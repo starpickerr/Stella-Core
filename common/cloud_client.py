@@ -622,18 +622,18 @@ class CloudClient(LinkAIClient):
                     f"user_id={user_id}, query={query[:80]}")
 
         with _acting_user(user_id):
-            # Intercept cow/slash commands before the agent runs
+            # Intercept stella/slash commands before the agent runs
             try:
                 from plugins import PluginManager
                 mgr = PluginManager()
-                instance = mgr.instances.get("COW_CLI")
+                instance = mgr.instances.get("STELLA_CLI")
                 if instance and hasattr(instance, "execute"):
                     result = instance.execute(query, session_id=session_id)
                     if result is not None:
                         send_chunk_fn({"chunk_type": "content", "delta": result, "segment_id": 0})
                         return
             except Exception as e:
-                logger.warning(f"[CloudClient] cow_cli intercept failed: {e}")
+                logger.warning(f"[CloudClient] stella_cli intercept failed: {e}")
 
             svc = self.chat_service
             if svc is None:
@@ -825,11 +825,11 @@ def get_website_base_url() -> str:
 
 
 # Subdir under websites/ used by the send tool
-COW_SEND_WEB_SUBDIR = "cow-send"
+STELLA_SEND_WEB_SUBDIR = "stella-send"
 
 
 def copy_send_file(src_path: str, workspace_root: str) -> str:
-    """Copy *src_path* into ``websites/cow-send/`` and return its URL.
+    """Copy *src_path* into ``websites/stella-send/`` and return its URL.
 
     Returns empty string in local env.
     """
@@ -842,7 +842,7 @@ def copy_send_file(src_path: str, workspace_root: str) -> str:
     if not base or not src_path or not os.path.isfile(src_path):
         return ""
     ws = os.path.abspath(expand_path(workspace_root))
-    send_dir = os.path.join(ws, "websites", COW_SEND_WEB_SUBDIR)
+    send_dir = os.path.join(ws, "websites", STELLA_SEND_WEB_SUBDIR)
     try:
         os.makedirs(send_dir, exist_ok=True)
     except OSError:
@@ -857,7 +857,7 @@ def copy_send_file(src_path: str, workspace_root: str) -> str:
     except OSError as e:
         logger.warning(f"[cloud] copy_send_file: copy failed: {e}")
         return ""
-    return f"{base}/{COW_SEND_WEB_SUBDIR}/{dest_name}"
+    return f"{base}/{STELLA_SEND_WEB_SUBDIR}/{dest_name}"
 
 
 def build_website_prompt(workspace_dir: str) -> list:

@@ -2,7 +2,7 @@
 
 A "project workspace" is a working directory the user points a conversation at,
 the way a coding agent opens a folder. It is deliberately separate from the
-Agent's ``state_root`` (``~/cow``): memory, skills, MCP and the session database
+Agent's ``state_root`` (``~/stella``): memory, skills, MCP and the session database
 stay anchored to ``state_root``, while only the *working directory* — bash cwd,
 relative file paths, preview root and the ``@`` picker — follows the project.
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=45.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cowagent"
+name = "stella"
 version = "1.0.0"
-description = "CowAgent - AI Agent on WeChat and more"
+description = "Stella - personal AI secretary"
 requires-python = ">=3.7"
 dependencies = [
     "click>=8.0",
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cow = "cli.cli:main"
+stella = "cli.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["cli*"]

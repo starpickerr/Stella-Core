@@ -18,9 +18,9 @@ import threading
 _channel_mgr = None
 
 # Desktop mode: a lighter runtime for the packaged Electron client. Plugins are
-# loaded in a background thread (so command plugins like cow_cli/godcmd work
+# loaded in a background thread (so command plugins like stella_cli/godcmd work
 # without slowing startup), while MCP warmup is still skipped to keep it fast.
-DESKTOP_MODE = os.environ.get("COW_DESKTOP") == "1"
+DESKTOP_MODE = os.environ.get("STELLA_DESKTOP") == "1"
 
 
 def get_channel_manager():
@@ -106,7 +106,7 @@ class ChannelManager:
             if first_start:
                 if DESKTOP_MODE:
                     # Load plugins in the background so command plugins
-                    # (cow_cli / godcmd, e.g. /status, #help) work in the
+                    # (stella_cli / godcmd, e.g. /status, #help) work in the
                     # desktop client, without blocking web-service readiness.
                     threading.Thread(
                         target=PluginManager().load_plugins, daemon=True
@@ -413,9 +413,19 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
+def _init_bills_db():
+    """Create the bills SQLite file on first boot; reuse it afterwards."""
+    try:
+        from agent.bills.store import get_bill_store
+
+        get_bill_store()
+    except Exception as e:
+        logger.warning(f"[App] Bills database init failed (non-fatal): {e}")
+
+
 def _warn_if_legacy_workspace_data_exists():
     """
-    Warn if the hardcoded ~/cow default holds data that agent_workspace
+    Warn if the hardcoded ~/stella default holds data that agent_workspace
     doesn't - e.g. after changing agent_workspace without moving the old
     directory's contents over. The new workspace would otherwise look
     empty even though old data still exists, with no indication why.
@@ -424,7 +434,7 @@ def _warn_if_legacy_workspace_data_exists():
         from common.state_dir import state_root_str
         from common.utils import expand_path
         workspace_root = state_root_str()
-        legacy_root = expand_path("~/cow")
+        legacy_root = expand_path("~/stella")
         # samefile checks filesystem identity, so case-insensitive filesystems
         # (default on Windows and macOS) are handled correctly - normcase
         # alone isn't enough, since it only folds case on Windows. Falls back
@@ -568,6 +578,7 @@ def run():
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
         _scaffold_subagent_assets()
+        _init_bills_db()
 
         # Kick off MCP server loading in the background so first-message
         # latency isn't dominated by npx package downloads. Skipped in desktop

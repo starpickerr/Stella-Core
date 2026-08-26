@@ -7,7 +7,7 @@ close().
 
 Launch modes (configured under `tools.browser` in config.json):
   - persistent (default): Chromium runs with a persistent user_data_dir
-    (default `~/.cow/browser_profile`), so cookies and login state survive
+    (default `~/.stella/browser_profile`), so cookies and login state survive
     across runs. The user only needs to log in once.
   - cdp: When `cdp_endpoint` is set, attach to an externally launched Chrome
     via the Chrome DevTools Protocol. Lets the agent reuse the user's real
@@ -256,12 +256,12 @@ class BrowserTool(BaseTool):
         if summary.get("ready"):
             return None
 
-        # Desktop clients (dev or packaged) have no `cow` CLI — onboard via the
+        # Desktop clients (dev or packaged) have no `stella` CLI — onboard via the
         # in-chat `/install-browser` command. Source / web / server installs use
-        # the `cow install-browser` terminal command.
+        # the `stella install-browser` terminal command.
         install_hint = (
             "reply `/install-browser`" if summary.get("is_desktop")
-            else "run `cow install-browser` in a terminal"
+            else "run `stella install-browser` in a terminal"
         )
         return ToolResult.fail(
             f"Browser tool not ready. Ask the user to {install_hint} (installs a browser engine; "

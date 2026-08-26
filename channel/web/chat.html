@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CowAgent Console</title>
+    <title>Stella Console</title>
     <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
     <!-- Vendored third-party assets (no external CDN dependency).
          See channel/web/static/vendor/README.md for sources & versions. -->
@@ -49,7 +49,7 @@
     <script>
     // Map an arbitrary locale string (zh-CN, en-US, fr ...) to 'zh' / 'zh-Hant' / 'en',
     // or '' when unrecognized so callers can fall through to the next source.
-    window.__cowNormalizeLang__ = function(raw) {
+    window.__stellaNormalizeLang__ = function(raw) {
         if (!raw) return '';
         var v = String(raw).trim().toLowerCase().replace('_', '-');
         if (v === 'auto') return '';
@@ -62,18 +62,18 @@
     };
     // Resolve the console language by priority:
     //   user choice (localStorage) -> backend-detected -> browser -> 'zh'.
-    window.__cowResolveLang__ = function() {
-        return window.__cowNormalizeLang__(localStorage.getItem('cow_lang'))
-            || window.__cowNormalizeLang__(window.__COW_DEFAULT_LANG__)
-            || window.__cowNormalizeLang__(navigator.language || (navigator.languages && navigator.languages[0]))
+    window.__stellaResolveLang__ = function() {
+        return window.__stellaNormalizeLang__(localStorage.getItem('stella_lang'))
+            || window.__stellaNormalizeLang__(window.__STELLA_DEFAULT_LANG__)
+            || window.__stellaNormalizeLang__(navigator.language || (navigator.languages && navigator.languages[0]))
             || 'zh';
     };
     (function() {
-        // Backend-resolved default language (from cow_lang config / auto-detect).
-        window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
+        // Backend-resolved default language (from stella_lang config / auto-detect).
+        window.__STELLA_DEFAULT_LANG__ = '{{STELLA_DEFAULT_LANG}}';
         var theme = localStorage.getItem('cow_theme') || 'dark';
         if (theme === 'dark') document.documentElement.classList.add('dark');
-        document.documentElement.setAttribute('lang', window.__cowResolveLang__());
+        document.documentElement.setAttribute('lang', window.__stellaResolveLang__());
     })();
     </script>
 </head>
@@ -83,8 +83,8 @@
     <div id="login-overlay" class="fixed inset-0 z-[200] bg-gray-50 dark:bg-[#111111] flex items-center justify-center hidden">
         <div class="w-full max-w-sm mx-4">
             <div class="flex flex-col items-center mb-8">
-                <img src="assets/logo.jpg" alt="CowAgent" class="w-16 h-16 rounded-2xl mb-4 shadow-lg">
-                <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">CowAgent</h1>
+                <img src="assets/logo.jpg" alt="Stella" class="w-16 h-16 rounded-2xl mb-4 shadow-lg">
+                <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">Stella</h1>
                 <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" id="login-subtitle">请输入密码以访问控制台</p>
             </div>
             <form id="login-form" class="space-y-4" onsubmit="return false;">
@@ -123,16 +123,17 @@
                                     transition-transform duration-300 ease-in-out">
             <!-- Logo -->
             <div class="flex items-center gap-3 px-5 h-14 border-b border-white/10 flex-shrink-0">
-                <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+                <img src="assets/logo.jpg" alt="Stella" class="w-8 h-8 rounded-lg flex-shrink-0">
                 <div class="flex flex-col min-w-0">
-                    <span class="text-white font-semibold text-sm truncate">CowAgent</span>
-                    <span class="text-neutral-500 text-xs" data-i18n="console">控制台</span>
+                    <span class="text-white font-semibold text-sm truncate">Stella</span>
+                    <span class="text-neutral-500 text-xs" data-i18n="secretary_tagline">控制台</span>
                 </div>
             </div>
 
-            <!-- Navigation -->
+            <!--导航栏 -->
+
             <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-                <!-- Chat Group -->
+                <!-- 对话 -->
                 <div class="menu-group open" data-group="chat">
                     <button class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 cursor-pointer transition-colors duration-150">
                         <i class="fas fa-chevron-right text-[10px] chevron"></i>
@@ -147,23 +148,47 @@
                     </div>
                 </div>
 
-                <!-- Management Group -->
-                <div class="menu-group open" data-group="manage">
+                <!-- 应用 -->
+                <div class="menu-group open" data-group="apps">
                     <button class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 cursor-pointer transition-colors duration-150">
                         <i class="fas fa-chevron-right text-[10px] chevron"></i>
-                        <span data-i18n="nav_manage">管理</span>
+                        <span data-i18n="nav_work">应用</span>
                     </button>
                     <div class="menu-group-items pl-2">
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
-                           data-view="config">
-                            <i class="fas fa-sliders item-icon text-xs w-5 text-center"></i>
-                            <span data-i18n="menu_config">配置</span>
+                           data-view="todos">
+                            <i class="fas fa-list-check item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_todos">事务</span>
                         </a>
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
-                           data-view="skills">
-                            <i class="fas fa-bolt item-icon text-xs w-5 text-center"></i>
-                            <span data-i18n="menu_skills">技能</span>
+                           data-view="calendar">
+                            <i class="fas fa-calendar-days item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_calendar">日程</span>
                         </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="briefing">
+                            <i class="fas fa-sun item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_briefing">简报</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="tasks">
+                            <i class="fas fa-clock item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_tasks">定时</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="bills">
+                            <i class="fas fa-file-invoice-dollar item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_bills">账单</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="menu-group open" data-group="info">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 cursor-pointer transition-colors duration-150">
+                        <i class="fas fa-chevron-right text-[10px] chevron"></i>
+                        <span data-i18n="nav_info">信息</span>
+                    </button>
+                    <div class="menu-group-items pl-2">
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="memory">
                             <i class="fas fa-brain item-icon text-xs w-5 text-center"></i>
@@ -174,26 +199,44 @@
                             <i class="fas fa-book item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_knowledge">知识</span>
                         </a>
+                    </div>
+                </div>
+
+                <div class="menu-group open" data-group="channels">
+                    <button class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 cursor-pointer transition-colors duration-150">
+                        <i class="fas fa-chevron-right text-[10px] chevron"></i>
+                        <span data-i18n="nav_channels">通道</span>
+                    </button>
+                    <div class="menu-group-items pl-2">
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="channels">
                             <i class="fas fa-tower-broadcast item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_channels">通道</span>
                         </a>
-                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
-                           data-view="tasks">
-                            <i class="fas fa-clock item-icon text-xs w-5 text-center"></i>
-                            <span data-i18n="menu_tasks">定时</span>
-                        </a>
                     </div>
                 </div>
 
-                <!-- Monitor Group -->
-                <div class="menu-group open" data-group="monitor">
+                <div class="menu-group open" data-group="system">
                     <button class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-300 cursor-pointer transition-colors duration-150">
                         <i class="fas fa-chevron-right text-[10px] chevron"></i>
-                        <span data-i18n="nav_monitor">监控</span>
+                        <span data-i18n="nav_system">系统</span>
                     </button>
                     <div class="menu-group-items pl-2">
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="skills">
+                            <i class="fas fa-bolt item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_skills">进化</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="security">
+                            <i class="fas fa-shield-halved item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_security">安全</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="config">
+                            <i class="fas fa-sliders item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_config">配置</span>
+                        </a>
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="logs">
                             <i class="fas fa-terminal item-icon text-xs w-5 text-center"></i>
@@ -208,7 +251,7 @@
                 <div class="flex items-center gap-2 text-xs text-neutral-600">
                     <i class="fas fa-circle text-[6px] text-primary-400"></i>
                     <a id="sidebar-version"
-                       href="https://github.com/zhayujie/CowAgent/releases"
+                       href="https://github.com/starpickerr/Stella/releases"
                        target="_blank" rel="noopener noreferrer"
                        class="hover:text-primary-400 transition-colors duration-150 cursor-pointer"></a>
                 </div>
@@ -311,14 +354,14 @@
                 </a>
 
                 <!-- Website Link -->
-                <a href="https://cowagent.ai" target="_blank" rel="noopener noreferrer"
+                <a href="https://github.com/starpickerr/Stella" target="_blank" rel="noopener noreferrer"
                    class="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10
                           cursor-pointer transition-colors duration-150" title="Website">
                     <i class="fas fa-home text-base"></i>
                 </a>
 
                 <!-- GitHub Link -->
-                <a href="https://github.com/zhayujie/chatgpt-on-wechat" target="_blank" rel="noopener noreferrer"
+                <a href="https://github.com/starpickerr/Stella" target="_blank" rel="noopener noreferrer"
                    class="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10
                           cursor-pointer transition-colors duration-150" title="GitHub">
                     <i class="fab fa-github text-lg"></i>
@@ -345,8 +388,8 @@
                     <div id="chat-messages" class="flex-1 overflow-y-auto">
                         <!-- Welcome Screen -->
                         <div id="welcome-screen" class="flex flex-col items-center justify-center h-full px-6 pb-16" style="padding-top: 6vh">
-                            <img src="assets/logo.jpg" alt="CowAgent" class="w-16 h-16 rounded-2xl mb-6 shadow-lg shadow-primary-500/20">
-                            <h1 id="welcome-title" class="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">CowAgent</h1>
+                            <img src="assets/logo.jpg" alt="Stella" class="w-16 h-16 rounded-2xl mb-6 shadow-lg shadow-primary-500/20">
+                            <h1 id="welcome-title" class="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">Stella</h1>
                             <p id="welcome-subtitle" class="text-slate-500 dark:text-slate-400 text-center max-w-lg mb-10 leading-relaxed"
                                data-i18n-html="welcome_subtitle">我可以帮你解答问题、管理计算机、创造和执行技能，并通过<br>长期记忆和知识库不断成长</p>
 
@@ -1281,6 +1324,97 @@
                                     <p class="text-slate-500" data-i18n="logs_coming_msg">日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。</p>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Placeholder views for secretary modules not yet built -->
+                <div id="view-todos" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">事务</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">待办看板、优先级排序、完成/延期闭环。将复用现有任务拆解与定时任务。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>今日 / 本周 / 逾期看板</li>
+                                <li>按截止时间、依赖、精力消耗自动重排</li>
+                                <li>完成确认、延期、拆分子任务并写回记忆</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-calendar" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">日程</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">日历读写、冲突协调、跨时区与出行准备。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>接入本地 / Google / 飞书日历（先做一种）</li>
+                                <li>冲突检测与改期建议</li>
+                                <li>跨时区换算、出行缓冲、场景清单</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-briefing" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">简报</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">主动服务：晨间简报、跟进催办、会前准备。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>晨间简报：日程、待办、风险、待拍板事项</li>
+                                <li>承诺过的事到期前提醒，未回复自动再跟</li>
+                                <li>会前准备：参会人、历史纪要、待决问题</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-decisions" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">决策</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">一页简报、方案对比、决策记录。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>事实、选项、利弊、建议</li>
+                                <li>方案对比（成本、风险、时间）</li>
+                                <li>记录当时为什么选、结果如何</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-bills" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">账单</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">跟踪账单到期、缴费状态和周期性支出。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>账单到期与缴费提醒</li>
+                                <li>周期性支出（房租、订阅、水电）</li>
+                                <li>已缴 / 待缴状态</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-security" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-primary-500 mb-2">即将推出</p>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">安全</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">脱敏、通道权限、重要操作二次确认。现有权限模式与日志可先用。</p>
+                            <ul class="mt-6 space-y-2 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5">
+                                <li>对外发出前脱敏（手机号、证件、密钥）</li>
+                                <li>按通道限制可执行动作</li>
+                                <li>转账、删除、对外发送需二次确认</li>
+                            </ul>
                         </div>
                     </div>
                 </div>

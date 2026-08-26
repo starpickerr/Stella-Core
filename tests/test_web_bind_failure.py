@@ -53,20 +53,20 @@ def test_reserved_windows_port_points_at_the_excluded_range(caplog):
     assert "web_port" in output
     # The stale-process advice would be actively misleading here: nothing is
     # listening on a reserved port.
-    assert "cow restart" not in output
+    assert "stella restart" not in output
 
 
 def test_port_in_use_on_windows_keeps_the_stale_process_advice(caplog):
     output = _capture(caplog, _WinError(10048, "address in use"))
 
-    assert "cow restart" in output
+    assert "stella restart" in output
     assert "excludedportrange" not in output
 
 
 def test_port_in_use_on_posix_keeps_the_stale_process_advice(caplog):
     output = _capture(caplog, OSError(48, "Address already in use"))
 
-    assert "cow restart" in output
+    assert "stella restart" in output
 
 
 def test_unrecognized_failure_still_reports_host_and_port(caplog):
@@ -96,4 +96,4 @@ def test_cheroot_wrapped_port_in_use_is_still_recognized(caplog):
     )
     output = _capture(caplog, wrapped)
 
-    assert "cow restart" in output
+    assert "stella restart" in output

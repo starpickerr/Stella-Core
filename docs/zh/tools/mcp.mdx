@@ -3,13 +3,13 @@ title: MCP 工具
 description: 通过 Model Context Protocol 接入外部工具生态
 ---
 
-CowAgent 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，让 Agent 能够直接调用社区中数以万计的 MCP 工具。配置一次 `mcp.json`，工具就会以与内置工具完全相同的方式呈现给 LLM，可被自动选择和调用。
+Stella 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，让 Agent 能够直接调用社区中数以万计的 MCP 工具。配置一次 `mcp.json`，工具就会以与内置工具完全相同的方式呈现给 LLM，可被自动选择和调用。
 
 ## 配置文件
 
-CowAgent 读取 `~/cow/mcp.json`。文件不存在时不会启用任何 MCP 工具，也不会报错。
+Stella 读取 `~/stella/mcp.json`。文件不存在时不会启用任何 MCP 工具，也不会报错。
 
-Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./cow` 挂载到容器内 `/home/agent/cow`（即容器用户的 `~/cow`），把 `mcp.json` 放进宿主机 `./cow/` 目录即可生效。
+Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./stella` 挂载到容器内 `/home/agent/stella`（即容器用户的 `~/stella`），把 `mcp.json` 放进宿主机 `./stella/` 目录即可生效。
 
 ### 标准格式
 
@@ -65,12 +65,12 @@ Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./cow` 挂载
 
 ## 让 Agent 帮你配置
 
-CowAgent 自带 `read` / `write` / `edit` 工具，**直接把要装的 MCP 配置发给 Agent，让它写到配置文件中：
+Stella 自带 `read` / `write` / `edit` 工具，**直接把要装的 MCP 配置发给 Agent，让它写到配置文件中：
 
 例如：
 
 ```markdown
-帮我把这个 MCP 加到 ~/cow/mcp.json 里：
+帮我把这个 MCP 加到 ~/stella/mcp.json 里：
 
 {"mcpServers":{"fetch":{"command":"uvx","args":["mcp-server-fetch"]}}}
 ```
@@ -82,7 +82,7 @@ Agent 会：
 
 ## 网页授权（OAuth）
 
-部分远程 MCP需要 OAuth 网页授权，直接配置会返回 `401`。CowAgent 内置标准 OAuth 流程，**无需手填 token**，正常配置即可，例如：
+部分远程 MCP需要 OAuth 网页授权，直接配置会返回 `401`。Stella 内置标准 OAuth 流程，**无需手填 token**，正常配置即可，例如：
 
 ```json
 {
@@ -98,13 +98,13 @@ Agent 会：
 server 首次加载遇到 `401` 时会自动发起授权：本机运行会**自动打开浏览器**，服务器部署则把**授权链接打印到日志**，复制到浏览器打开。授权同意后即完成，该 server 随即上线，令牌过期自动刷新，无需重复授权。
 
 - **依赖 Web 服务**：授权回调由 Web 控制台（默认端口 `9899`）接收，需保证 Web channel 正在运行。
-- **凭证存储**：令牌持久化在 `~/.cow/mcp_oauth.json`，重启后复用。
+- **凭证存储**：令牌持久化在 `~/.stella/mcp_oauth.json`，重启后复用。
 - **回调地址**：默认 `http://127.0.0.1:9899/mcp/oauth/callback`；若部署在服务器、授权浏览器在另一台设备，在 `config.json` 设置 `mcp_oauth_redirect_base`（如 `http://你的IP:9899`）即可。
 
 ## 工作方式
 
 - 启动时**异步加载**：`mcp.json` 中配置的所有 server 会在后台异步加载，不阻塞主流程，对话可以立刻使用
-- **热更新**：用户或 Agent 修改 `mcp.json` 后，消息处理完成时会自动重载变更的 server，无需重启 cow
+- **热更新**：用户或 Agent 修改 `mcp.json` 后，消息处理完成时会自动重载变更的 server，无需重启 stella
 - **平铺呈现**：每个 MCP server 暴露的多个方法会平铺为独立的工具，LLM 直接选择调用，不需要二次决策
 
 ## 支持的传输协议
@@ -119,10 +119,10 @@ server 首次加载遇到 `401` 时会自动发起授权：本机运行会**自�
 
 | 现象 | 排查方向 |
 | --- | --- |
-| 启动后 Agent 没有 MCP 工具 | 检查 `~/cow/mcp.json` 是否存在、JSON 格式是否合法 |
+| 启动后 Agent 没有 MCP 工具 | 检查 `~/stella/mcp.json` 是否存在、JSON 格式是否合法 |
 | 某个 server 加载失败 | 查看启动日志中的 `[MCP] Server 'xxx' load failed`，常见为依赖未装、API Key 缺失 |
 | 修改 `mcp.json` 没有生效 | 改动会在**下一条消息**生效；若 server 配置不变（如只改注释），不会触发重启 |
-| Docker 部署 | 确认宿主机 `./cow` 已挂载到容器内 `/home/agent/cow`，`mcp.json` 直接放进宿主机 `./cow/` 目录即可，或者直接对话 Agent 安装 |
+| Docker 部署 | 确认宿主机 `./stella` 已挂载到容器内 `/home/agent/stella`，`mcp.json` 直接放进宿主机 `./stella/` 目录即可，或者直接对话 Agent 安装 |
 
 ## MCP 市场推荐
 
@@ -131,4 +131,4 @@ server 首次加载遇到 `401` 时会自动发起授权：本机运行会**自�
 - [mcp.so](https://mcp.so) — 全球 MCP 服务索引
 - [ModelScope MCP 广场](https://modelscope.cn/mcp) — 魔搭社区 MCP 广场，国内访问更稳定
 
-只要遵循 MCP 标准协议（stdio / SSE / Streamable HTTP），都可以直接接入 CowAgent。
+只要遵循 MCP 标准协议（stdio / SSE / Streamable HTTP），都可以直接接入 Stella。

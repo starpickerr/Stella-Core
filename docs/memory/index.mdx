@@ -1,6 +1,6 @@
 ---
 title: Long-term Memory
-description: CowAgent long-term memory system — file persistence, automatic writing, and hybrid retrieval
+description: Stella long-term memory system — file persistence, automatic writing, and hybrid retrieval
 ---
 
 Long-term memory is stored in workspace files, persisting across sessions. The Agent loads historical memory on demand via retrieval tools during conversation, and automatically writes conversation summaries to long-term memory when context is trimmed.
@@ -11,15 +11,15 @@ Long-term memory is stored in workspace files, persisting across sessions. The A
 
 ### Core Memory (MEMORY.md)
 
-Stored in `~/cow/MEMORY.md`, containing long-term user preferences, important decisions, key facts, and other information that doesn't fade over time. The Agent reads and writes this file via tools to maintain long-term knowledge.
+Stored in `~/stella/MEMORY.md`, containing long-term user preferences, important decisions, key facts, and other information that doesn't fade over time. The Agent reads and writes this file via tools to maintain long-term knowledge.
 
 ### Daily Memory (memory/YYYY-MM-DD.md)
 
-Stored in `~/cow/memory/` directory, named by date (e.g., `2026-03-08.md`), recording daily conversation summaries and key events. Files are only created on first write to avoid generating empty files.
+Stored in `~/stella/memory/` directory, named by date (e.g., `2026-03-08.md`), recording daily conversation summaries and key events. Files are only created on first write to avoid generating empty files.
 
 ### Dream Diary (memory/dreams/YYYY-MM-DD.md)
 
-A byproduct of the Deep Dream (memory distillation) process, recording discoveries, deduplication operations, and new insights from each consolidation. Stored in `~/cow/memory/dreams/` directory, named by date.
+A byproduct of the Deep Dream (memory distillation) process, recording discoveries, deduplication operations, and new insights from each consolidation. Stored in `~/stella/memory/dreams/` directory, named by date.
 
 ## Automatic Writing
 
@@ -43,7 +43,7 @@ The Agent automatically triggers memory retrieval during conversation as needed,
 
 ## Related Files
 
-Files related to memory in the workspace (default `~/cow`):
+Files related to memory in the workspace (default `~/stella`):
 
 | File | Description |
 | --- | --- |
@@ -66,6 +66,6 @@ The memory management page in the Web console allows browsing memory files and d
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `agent_workspace` | Workspace path, memory files stored under this directory | `~/cow` |
+| `agent_workspace` | Workspace path, memory files stored under this directory | `~/stella` |
 | `agent_max_context_tokens` | Max context tokens; when exceeded, content is trimmed and summarized into memory | `50000` |
 | `agent_max_context_turns` | Max context turns; when exceeded, content is trimmed and summarized into memory | `20` |

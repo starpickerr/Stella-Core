@@ -40,7 +40,7 @@ class AgentInitializer:
         Initialize agent initializer
         
         Args:
-            bridge: COW bridge instance
+            bridge: STELLA bridge instance
             agent_bridge: AgentBridge instance (for create_agent method)
         """
         self.bridge = bridge
@@ -285,7 +285,7 @@ class AgentInitializer:
     
     def _load_env_file(self):
         """Load environment variables from .env file"""
-        env_file = expand_path("~/.cow/.env")
+        env_file = expand_path("~/.stella/.env")
         if os.path.exists(env_file):
             try:
                 from dotenv import load_dotenv
@@ -626,7 +626,7 @@ class AgentInitializer:
             "linkai_api_key": "LINKAI_API_KEY",
         }
         
-        env_file = expand_path("~/.cow/.env")
+        env_file = expand_path("~/.stella/.env")
         
         # Read existing env vars (key -> value)
         existing_env_vars = {}

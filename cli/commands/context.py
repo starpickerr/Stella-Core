@@ -1,4 +1,4 @@
-"""cow context - Context management commands."""
+"""stella context - Context management commands."""
 
 import click
 

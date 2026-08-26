@@ -1,13 +1,13 @@
 ---
 title: v2.1.1
-description: CowAgent 2.1.1 - Self-Evolution, Web Console message management and parallel sessions, cross-platform MCP enhancements, new models and improvements
+description: Stella 2.1.1 - Self-Evolution, Web Console message management and parallel sessions, cross-platform MCP enhancements, new models and improvements
 ---
 
 🌐 [English](https://docs.cowagent.ai/releases/v2.1.1) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.1)
 
 ## 🧬 Self-Evolution
 
-CowAgent introduces **Self-Evolution**, letting the agent go beyond completing a single task and keep improving through everyday collaboration with you:
+Stella introduces **Self-Evolution**, letting the agent go beyond completing a single task and keep improving through everyday collaboration with you:
 
 - **Automatic review after idle**: Once a conversation goes idle, the agent reviews it in the background to fix problems a skill exposed in use, create reusable new skills, follow up on unfinished tasks, and record important information into memory and the knowledge base
 - **Silent by default, notify on demand**: It reports what it changed only when it actually made a change, and stays silent otherwise
@@ -52,12 +52,12 @@ Documentation: [Models Overview](https://docs.cowagent.ai/models)
 - **Python 3.13 support**: Fixed installation and dependency compatibility on Python 3.13
 - **Internationalization**: The channel list is now ordered by the interface language; refined the automatic language fallback under `auto` mode
 - **More reliable cancellation**: Fixed cases where a streaming reply could not be interrupted
-- **CLI**: `cow status` now shows the current project path
-- **Hardened deployment security**: The credential-file block is narrowed to `~/.cow/.env` so other directories are no longer affected (Thanks [@orbisai0security](https://github.com/orbisai0security) #2863); the WeChat Official Account now rejects webhook requests when `wechatmp_token` is empty
+- **CLI**: `stella status` now shows the current project path
+- **Hardened deployment security**: The credential-file block is narrowed to `~/.stella/.env` so other directories are no longer affected (Thanks [@orbisai0security](https://github.com/orbisai0security) #2863); the WeChat Official Account now rejects webhook requests when `wechatmp_token` is empty
 - **Group task board plugin**: Added the group task board plugin source. Thanks [@Wyh-max-star](https://github.com/Wyh-max-star) (#2853)
 
 ## 📦 Upgrade
 
-Source-code deployments can run `cow update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/guide/upgrade) for details.
+Source-code deployments can run `stella update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/guide/upgrade) for details.
 
-**Release Date**: 2026.06.09 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.0...2.1.1)
+**Release Date**: 2026.06.09 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.0...2.1.1)

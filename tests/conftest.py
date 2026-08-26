@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 def workspace_out_of_the_way():
     import config as config_module
 
-    with tempfile.TemporaryDirectory(prefix="cow-tests-") as tmp:
-        workspace = os.path.join(tmp, "cow")
+    with tempfile.TemporaryDirectory(prefix="stella-tests-") as tmp:
+        workspace = os.path.join(tmp, "stella")
         real_load = config_module.load_config
 
         def load_then_redirect():
