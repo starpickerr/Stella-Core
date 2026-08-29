@@ -744,6 +744,8 @@ export interface PeriodStatement {
 
 export type LedgerEntryType = 'income' | 'expense'
 
+export type LedgerStatus = 'pending' | 'posted' | 'reversed'
+
 export interface PeriodStatementItem {
   id: string
   statement_id: string
@@ -752,6 +754,23 @@ export interface PeriodStatementItem {
   entry_type: LedgerEntryType
   amount_minor: number
   entry_count: number
+}
+
+/** Mirrors financial_events + ledger_entries. */
+export interface LedgerEntry {
+  id: string
+  amount_minor: number
+  currency: string
+  category: string
+  name: string
+  note: string
+  entry_type: LedgerEntryType
+  txn_type: string
+  counterparty: string
+  occurred_at: string
+  status: LedgerStatus
+  created_at: string
+  updated_at: string
 }
 
 // ============================================================
