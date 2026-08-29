@@ -21,6 +21,10 @@ import type {
   WorkspaceEntry,
   WorkspaceTree,
   ProjectState,
+  LedgerEntry,
+  PeriodStatement,
+  PeriodStatementItem,
+  PeriodType,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -564,6 +568,66 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId }),
     })
+  }
+
+  // ---------------------------------------------------------
+  // Bills
+  // ---------------------------------------------------------
+
+  async getLedgerEntries(year: number, month: number): Promise<LedgerEntry[]> {
+    const data = await this.request<{ status: string; entries?: LedgerEntry[]; message?: string }>(
+      `/api/bills/ledger?year=${year}&month=${month}`,
+    )
+    if (data.status !== 'success') throw new Error(data.message || 'Failed to load ledger')
+    return data.entries || []
+  }
+
+  async createLedgerEntry(payload: Omit<LedgerEntry, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<LedgerEntry> {
+    const data = await this.request<{ status: string; entry?: LedgerEntry; message?: string }>(
+      '/api/bills/ledger',
+      { method: 'POST', body: JSON.stringify(payload) },
+    )
+    if (data.status !== 'success' || !data.entry) throw new Error(data.message || 'Failed to create entry')
+    return data.entry
+  }
+
+  async updateLedgerEntry(entryId: string, payload: Partial<LedgerEntry> & { id?: string }): Promise<LedgerEntry> {
+    const data = await this.request<{ status: string; entry?: LedgerEntry; message?: string }>(
+      '/api/bills/ledger/update',
+      { method: 'POST', body: JSON.stringify({ ...payload, id: entryId }) },
+    )
+    if (data.status !== 'success' || !data.entry) throw new Error(data.message || 'Failed to update entry')
+    return data.entry
+  }
+
+  async deleteLedgerEntry(entryId: string): Promise<void> {
+    const data = await this.request<ApiResult>('/api/bills/ledger/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id: entryId }),
+    })
+    if (data.status !== 'success') throw new Error(data.message || 'Failed to delete entry')
+  }
+
+  async getPeriodStatements(periodType: PeriodType, year?: number): Promise<PeriodStatement[]> {
+    const params = new URLSearchParams({ period_type: periodType })
+    if (year != null) params.set('year', String(year))
+    const data = await this.request<{ status: string; statements?: PeriodStatement[]; message?: string }>(
+      `/api/bills/statements?${params.toString()}`,
+    )
+    if (data.status !== 'success') throw new Error(data.message || 'Failed to load statements')
+    return data.statements || []
+  }
+
+  async getPeriodStatement(statementId: string): Promise<PeriodStatement & { items: PeriodStatementItem[] }> {
+    const data = await this.request<{
+      status: string
+      statement?: PeriodStatement & { items: PeriodStatementItem[] }
+      message?: string
+    }>(`/api/bills/statements/${encodeURIComponent(statementId)}`)
+    if (data.status !== 'success' || !data.statement) {
+      throw new Error(data.message || 'Failed to load statement')
+    }
+    return { ...data.statement, items: data.statement.items || [] }
   }
 
   // ---------------------------------------------------------
