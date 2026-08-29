@@ -28,6 +28,7 @@ import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import LogsPage from './pages/LogsPage'
 import PlaceholderPage from './pages/PlaceholderPage'
+import BillsPage from './pages/BillsPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -247,7 +248,7 @@ const App: React.FC = () => {
             <Route path="/todos" element={<PlaceholderPage title={t('menu_todos')} hint={t('placeholder_coming')} />} />
             <Route path="/calendar" element={<PlaceholderPage title={t('menu_calendar')} hint={t('placeholder_coming')} />} />
             <Route path="/briefing" element={<PlaceholderPage title={t('menu_briefing')} hint={t('placeholder_coming')} />} />
-            <Route path="/bills" element={<PlaceholderPage title={t('menu_bills')} hint={t('placeholder_coming')} />} />
+            <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
