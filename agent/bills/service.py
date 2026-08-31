@@ -9,7 +9,7 @@ period statements are derived.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from agent.bills.store import BillStore, get_bill_store
@@ -38,10 +38,23 @@ def _year_month(occurred_at: str) -> tuple[int, int]:
     return dt.year, dt.month
 
 
+def _occurred_date(occurred_at: str) -> date:
+    return parse_occurred_at(occurred_at).date()
+
+
+def parse_date(value: str) -> date:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("date is required")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"invalid date: {value}") from exc
+
+
 def _month_bounds(year: int, month: int) -> tuple[str, str]:
     start = datetime(year, month, 1)
     if month == 12:
-        end = datetime(year + 1, 1, 1)
+         end = datetime(year + 1, 1, 1)
     else:
         end = datetime(year, month + 1, 1)
     return start.isoformat(), end.isoformat()
@@ -83,6 +96,17 @@ class BillsService:
             row
             for row in self.store.list_ledgers()
             if _year_month(row["occurred_at"]) == (year, month)
+        ]
+
+    def list_ledger_between(self, start: str, end: str) -> list:
+        start_d = parse_date(start)
+        end_d = parse_date(end)
+        if start_d > end_d:
+            raise ValueError("start must be on or before end")
+        return [
+            row
+            for row in self.store.list_ledgers()
+            if start_d <= _occurred_date(row["occurred_at"]) <= end_d
         ]
 
     def get_ledger(self, entry_id: str) -> Optional[dict]:

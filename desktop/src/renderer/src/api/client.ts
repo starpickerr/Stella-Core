@@ -608,6 +608,26 @@ class ApiClient {
     if (data.status !== 'success') throw new Error(data.message || 'Failed to delete entry')
   }
 
+  async exportLedgerXlsx(start: string, end: string): Promise<Blob> {
+    const params = new URLSearchParams({ start, end, lang: getLang() })
+    const res = await fetch(`${this.baseUrl}/api/bills/ledger/export?${params.toString()}`, {
+      credentials: 'include',
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {},
+    })
+    const ct = res.headers.get('content-type') || ''
+    if (!res.ok || ct.includes('json')) {
+      let message = `HTTP ${res.status}`
+      try {
+        const data = await res.json()
+        if (data?.message) message = data.message
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message)
+    }
+    return res.blob()
+  }
+
   async getPeriodStatements(periodType: PeriodType, year?: number): Promise<PeriodStatement[]> {
     const params = new URLSearchParams({ period_type: periodType })
     if (year != null) params.set('year', String(year))
