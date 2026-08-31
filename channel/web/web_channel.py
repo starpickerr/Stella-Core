@@ -2003,6 +2003,7 @@ class WebChannel(ChatChannel):
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
+            '/api/bills/ledger/export', 'BillsLedgerExportHandler',
             '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
             '/api/bills/ledger/delete', 'BillsLedgerDeleteHandler',
             '/api/bills/statements', 'BillsStatementsHandler',
@@ -5840,6 +5841,38 @@ class BillsLedgerHandler:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
             logger.error(f"[WebChannel] Bills ledger POST error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsLedgerExportHandler:
+    def GET(self):
+        _require_auth()
+        try:
+            params = web.input(start='', end='', lang='')
+            start = (params.start or "").strip()
+            end = (params.end or "").strip()
+            if not start or not end:
+                web.header('Content-Type', 'application/json; charset=utf-8')
+                return json.dumps({"status": "error", "message": "start and end are required"})
+            lang = "en" if str(params.lang or "").lower().startswith("en") else "zh"
+            entries = _bills_service().list_ledger_between(start, end)
+            from agent.bills.export import build_ledger_xlsx
+            data = build_ledger_xlsx(entries, start=start, end=end, lang=lang)
+            fname = f"bills-{start}-{end}.xlsx"
+            web.header(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            web.header('Content-Disposition', f'attachment; filename="{fname}"')
+            web.header('Content-Length', str(len(data)))
+            web.header('Cache-Control', 'no-store')
+            return data
+        except ValueError as e:
+            web.header('Content-Type', 'application/json; charset=utf-8')
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger export error: {e}")
+            web.header('Content-Type', 'application/json; charset=utf-8')
             return json.dumps({"status": "error", "message": str(e)})
 
 

@@ -114,3 +114,50 @@ def test_validation_rejects_bad_payloads(tmp_path):
         svc.create_ledger(_lunch(occurred_at="not-a-date"))
     with pytest.raises(KeyError):
         svc.delete_ledger("missing")
+
+
+def test_list_ledger_between_is_inclusive(tmp_path):
+    svc = _service(tmp_path)
+    svc.create_ledger(_lunch())
+    svc.create_ledger(_lunch(occurred_at="2026-07-08T12:20:00+08:00", name="七月午餐"))
+    svc.create_ledger(_lunch(occurred_at="2026-08-31T23:50:00+08:00", name="月末晚餐"))
+
+    rows = svc.list_ledger_between("2026-08-01", "2026-08-31")
+    assert [row["name"] for row in rows] == ["午餐", "月末晚餐"]
+
+    with pytest.raises(ValueError, match="start must be on or before end"):
+        svc.list_ledger_between("2026-08-31", "2026-08-01")
+
+
+def test_ledger_xlsx_contains_rows_and_totals(tmp_path):
+    import zipfile
+    from io import BytesIO
+
+    from agent.bills.export import build_ledger_xlsx
+
+    svc = _service(tmp_path)
+    svc.create_ledger(_lunch())
+    svc.create_ledger(
+        {
+            "name": "月薪",
+            "category": "工资",
+            "entry_type": "income",
+            "amount_minor": 1200000,
+            "occurred_at": "2026-08-01T09:00:00+08:00",
+        }
+    )
+    data = build_ledger_xlsx(
+        svc.list_ledger_between("2026-08-01", "2026-08-31"),
+        start="2026-08-01",
+        end="2026-08-31",
+        lang="zh",
+    )
+    assert data[:2] == b"PK"
+    with zipfile.ZipFile(BytesIO(data)) as zf:
+        xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert "午餐" in xml
+    assert "月薪" in xml
+    assert "-32.00" in xml
+    assert "12000.00" in xml
+    assert "收入合计" in xml
+

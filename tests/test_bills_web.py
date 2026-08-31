@@ -187,18 +187,51 @@ def test_update_and_delete_require_id(tmp_path):
     assert deleted == {"status": "error", "message": "id required"}
 
 
+def test_ledger_export_returns_xlsx(tmp_path):
+    svc = _service(tmp_path)
+    svc.create_ledger(_lunch())
+
+    with patch("channel.web.web_channel._require_auth") as require_auth, \
+         patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.input",
+               return_value=types.SimpleNamespace(
+                   start="2026-08-01", end="2026-08-31", lang="zh")), \
+         patch("channel.web.web_channel._bills_service", return_value=svc):
+        data = web_channel.BillsLedgerExportHandler().GET()
+
+    require_auth.assert_called_once_with()
+    assert isinstance(data, (bytes, bytearray))
+    assert data[:2] == b"PK"
+
+
+def test_ledger_export_requires_dates(tmp_path):
+    svc = _service(tmp_path)
+    with patch("channel.web.web_channel._require_auth"), \
+         patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.input",
+               return_value=types.SimpleNamespace(start="", end="", lang="")), \
+         patch("channel.web.web_channel._bills_service", return_value=svc):
+        response = json.loads(web_channel.BillsLedgerExportHandler().GET())
+
+    assert response["status"] == "error"
+    assert "start and end" in response["message"]
+
+
 def test_bills_routes_are_wired_in_web_and_desktop():
     web_source = (ROOT / "channel/web/web_channel.py").read_text(encoding="utf-8")
     desktop_client = (ROOT / "desktop/src/renderer/src/api/client.ts").read_text(
         encoding="utf-8"
     )
 
+    assert "'/api/bills/ledger/export', 'BillsLedgerExportHandler'" in web_source
     assert "'/api/bills/ledger', 'BillsLedgerHandler'" in web_source
     assert "'/api/bills/ledger/update', 'BillsLedgerUpdateHandler'" in web_source
     assert "'/api/bills/ledger/delete', 'BillsLedgerDeleteHandler'" in web_source
     assert "'/api/bills/statements', 'BillsStatementsHandler'" in web_source
     assert "'/api/bills/statements/(.*)', 'BillsStatementDetailHandler'" in web_source
 
+    assert "async exportLedgerXlsx(" in desktop_client
+    assert "/api/bills/ledger/export" in desktop_client
     assert "async getLedgerEntries(" in desktop_client
     assert "'/api/bills/ledger'" in desktop_client
     assert "'/api/bills/ledger/update'" in desktop_client

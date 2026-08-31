@@ -62,6 +62,15 @@ function formatIsoDate(iso: string, loc: string): string {
   return d.toLocaleDateString(loc, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+export function monthDateRange(year: number, month: number): { start: string; end: string } {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const last = new Date(year, month, 0).getDate()
+  return {
+    start: `${year}-${pad(month)}-01`,
+    end: `${year}-${pad(month)}-${pad(last)}`,
+  }
+}
+
 export function monthLabel(month: number): string {
   if (getLang() === 'zh') return `${month} 月`
   return String(month).padStart(2, '0')

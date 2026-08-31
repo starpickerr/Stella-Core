@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, Receipt } from 'lucide-react'
+import { Download, Loader2, Plus, Receipt } from 'lucide-react'
 import { t } from '../../i18n'
 import apiClient from '../../api/client'
 import type { LedgerEntry } from '../../types'
 import { LedgerEditor } from './LedgerEditor'
+import { LedgerExport } from './LedgerExport'
 import {
   formatClock,
   formatDayHeading,
@@ -23,6 +24,7 @@ export const LedgerList: React.FC<LedgerListProps> = ({ baseUrl }) => {
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<LedgerEntry | 'new' | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -120,6 +122,14 @@ export const LedgerList: React.FC<LedgerListProps> = ({ baseUrl }) => {
           <Plus size={14} />
           {t('bills_ledger_add')}
         </button>
+        <button
+          type="button"
+          onClick={() => setExporting(true)}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-btn border border-strong text-content-secondary hover:bg-surface-2 text-sm font-medium cursor-pointer transition-colors"
+        >
+          <Download size={14} />
+          {t('bills_ledger_export')}
+        </button>
       </div>
 
       {loading ? (
@@ -200,6 +210,9 @@ export const LedgerList: React.FC<LedgerListProps> = ({ baseUrl }) => {
           onSave={save}
           onDelete={editing === 'new' ? undefined : remove}
         />
+      )}
+      {exporting && (
+        <LedgerExport year={year} month={month} onClose={() => setExporting(false)} />
       )}
     </>
   )
