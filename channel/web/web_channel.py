@@ -2002,6 +2002,12 @@ class WebChannel(ChatChannel):
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
+            '/api/bills/ledger', 'BillsLedgerHandler',
+            '/api/bills/ledger/export', 'BillsLedgerExportHandler',
+            '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
+            '/api/bills/ledger/delete', 'BillsLedgerDeleteHandler',
+            '/api/bills/statements', 'BillsStatementsHandler',
+            '/api/bills/statements/(.*)', 'BillsStatementDetailHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
             '/api/prompt/optimize', 'PromptOptimizeHandler',
@@ -5797,6 +5803,147 @@ class SchedulerDeleteHandler:
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler delete error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+def _bills_service():
+    from agent.bills.service import BillsService
+    return BillsService()
+
+
+class BillsLedgerHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(year='', month='')
+            try:
+                year = int(params.year)
+                month = int(params.month)
+            except (TypeError, ValueError):
+                return json.dumps({"status": "error", "message": "year and month are required"})
+            entries = _bills_service().list_ledger(year, month)
+            return json.dumps({"status": "success", "entries": entries}, ensure_ascii=False)
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger GET error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            entry = _bills_service().create_ledger(body)
+            return json.dumps({"status": "success", "entry": entry}, ensure_ascii=False)
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger POST error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsLedgerExportHandler:
+    def GET(self):
+        _require_auth()
+        try:
+            params = web.input(start='', end='', lang='')
+            start = (params.start or "").strip()
+            end = (params.end or "").strip()
+            if not start or not end:
+                web.header('Content-Type', 'application/json; charset=utf-8')
+                return json.dumps({"status": "error", "message": "start and end are required"})
+            lang = "en" if str(params.lang or "").lower().startswith("en") else "zh"
+            entries = _bills_service().list_ledger_between(start, end)
+            from agent.bills.export import build_ledger_xlsx
+            data = build_ledger_xlsx(entries, start=start, end=end, lang=lang)
+            fname = f"bills-{start}-{end}.xlsx"
+            web.header(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            web.header('Content-Disposition', f'attachment; filename="{fname}"')
+            web.header('Content-Length', str(len(data)))
+            web.header('Cache-Control', 'no-store')
+            return data
+        except ValueError as e:
+            web.header('Content-Type', 'application/json; charset=utf-8')
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger export error: {e}")
+            web.header('Content-Type', 'application/json; charset=utf-8')
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsLedgerUpdateHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            entry_id = body.get("id")
+            if not entry_id:
+                return json.dumps({"status": "error", "message": "id required"})
+            entry = _bills_service().update_ledger(entry_id, body)
+            return json.dumps({"status": "success", "entry": entry}, ensure_ascii=False)
+        except KeyError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger update error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsLedgerDeleteHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            entry_id = body.get("id")
+            if not entry_id:
+                return json.dumps({"status": "error", "message": "id required"})
+            _bills_service().delete_ledger(entry_id)
+            return json.dumps({"status": "success"}, ensure_ascii=False)
+        except KeyError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills ledger delete error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsStatementsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(period_type='', year='')
+            period_type = params.period_type or None
+            year = int(params.year) if params.year else None
+            statements = _bills_service().list_statements(period_type, year)
+            return json.dumps({"status": "success", "statements": statements}, ensure_ascii=False)
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills statements GET error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class BillsStatementDetailHandler:
+    def GET(self, statement_id):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from urllib.parse import unquote
+            statement_id = unquote(statement_id or "")
+            statement = _bills_service().get_statement(statement_id)
+            if statement is None:
+                return json.dumps({"status": "error", "message": "statement not found"})
+            return json.dumps({"status": "success", "statement": statement}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Bills statement GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

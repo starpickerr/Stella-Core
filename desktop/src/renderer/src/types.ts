@@ -719,6 +719,61 @@ export interface SchedulerTask {
 }
 
 // ============================================================
+// Bills (mirrors agent/bills/schema.sql period_statements)
+// ============================================================
+
+export type PeriodType = 'monthly' | 'yearly'
+
+export interface PeriodStatement {
+  id: string
+  period_type: PeriodType
+  year: number
+  month: number | null
+  start_at: string
+  end_at: string
+  currency: string
+  income_minor: number
+  expense_minor: number
+  net_minor: number
+  status: 'open' | 'closed'
+  note: string
+  generated_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type LedgerEntryType = 'income' | 'expense'
+
+export type LedgerStatus = 'pending' | 'posted' | 'reversed'
+
+export interface PeriodStatementItem {
+  id: string
+  statement_id: string
+  category: string
+  name: string
+  entry_type: LedgerEntryType
+  amount_minor: number
+  entry_count: number
+}
+
+/** Mirrors financial_events + ledger_entries. */
+export interface LedgerEntry {
+  id: string
+  amount_minor: number
+  currency: string
+  category: string
+  name: string
+  note: string
+  entry_type: LedgerEntryType
+  txn_type: string
+  counterparty: string
+  occurred_at: string
+  status: LedgerStatus
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
 // Logs
 // ============================================================
 

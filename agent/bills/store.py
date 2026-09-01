@@ -9,16 +9,43 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterator, List, Optional
 
 from common.log import logger
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
+_LEDGER_SELECT = """
+SELECT
+    e.id,
+    e.amount_minor,
+    e.currency,
+    e.category,
+    e.name,
+    e.note,
+    e.created_at,
+    e.updated_at,
+    l.entry_type,
+    l.txn_type,
+    l.counterparty,
+    l.occurred_at,
+    l.status,
+    l.account_id,
+    l.planned_payment_id
+FROM financial_events e
+JOIN ledger_entries l ON l.event_id = e.id
+WHERE e.event_type = 'ledger_entry'
+"""
+
 
 def load_schema_sql() -> str:
     return _SCHEMA_PATH.read_text(encoding="utf-8")
+
+
+def _row_dict(row: sqlite3.Row) -> dict:
+    return {key: row[key] for key in row.keys()}
 
 
 class BillStore:
@@ -45,20 +72,285 @@ class BillStore:
             logger.info(f"[BillStore] Using existing bills database at {self._db_path}")
 
     def table_names(self) -> set:
-        conn = self._raw_connect()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
             return {row[0] for row in rows}
-        finally:
-            conn.close()
 
     def _raw_connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path), timeout=10)
+        conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         return conn
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        with self._lock:
+            conn = self._raw_connect()
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+
+    # ------------------------------------------------------------------
+    # Ledger
+    # ------------------------------------------------------------------
+
+    def get_ledger(self, entry_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                _LEDGER_SELECT + " AND e.id = ?", (entry_id,)
+            ).fetchone()
+            return _row_dict(row) if row else None
+
+    def list_ledgers(self) -> List[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                _LEDGER_SELECT + " ORDER BY l.occurred_at ASC, e.id ASC"
+            ).fetchall()
+            return [_row_dict(row) for row in rows]
+
+    def insert_ledger(self, entry: dict) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO financial_events (
+                    id, event_type, amount_minor, currency, category, name, note,
+                    created_at, updated_at
+                ) VALUES (?, 'ledger_entry', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry["id"],
+                    entry["amount_minor"],
+                    entry["currency"],
+                    entry["category"],
+                    entry["name"],
+                    entry["note"],
+                    entry["created_at"],
+                    entry["updated_at"],
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ledger_entries (
+                    event_id, entry_type, txn_type, counterparty, occurred_at,
+                    status, account_id, planned_payment_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry["id"],
+                    entry["entry_type"],
+                    entry["txn_type"],
+                    entry["counterparty"],
+                    entry["occurred_at"],
+                    entry["status"],
+                    entry.get("account_id"),
+                    entry.get("planned_payment_id"),
+                ),
+            )
+        return self.get_ledger(entry["id"])
+
+    def update_ledger(self, entry: dict) -> Optional[dict]:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE financial_events
+                SET amount_minor = ?, currency = ?, category = ?, name = ?,
+                    note = ?, updated_at = ?
+                WHERE id = ? AND event_type = 'ledger_entry'
+                """,
+                (
+                    entry["amount_minor"],
+                    entry["currency"],
+                    entry["category"],
+                    entry["name"],
+                    entry["note"],
+                    entry["updated_at"],
+                    entry["id"],
+                ),
+            )
+            if cur.rowcount == 0:
+                return None
+            conn.execute(
+                """
+                UPDATE ledger_entries
+                SET entry_type = ?, txn_type = ?, counterparty = ?,
+                    occurred_at = ?, status = ?, account_id = ?,
+                    planned_payment_id = ?
+                WHERE event_id = ?
+                """,
+                (
+                    entry["entry_type"],
+                    entry["txn_type"],
+                    entry["counterparty"],
+                    entry["occurred_at"],
+                    entry["status"],
+                    entry.get("account_id"),
+                    entry.get("planned_payment_id"),
+                    entry["id"],
+                ),
+            )
+        return self.get_ledger(entry["id"])
+
+    def delete_ledger(self, entry_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM financial_events WHERE id = ? AND event_type = 'ledger_entry'",
+                (entry_id,),
+            )
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Period statements
+    # ------------------------------------------------------------------
+
+    def get_statement(self, statement_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM period_statements WHERE id = ?", (statement_id,)
+            ).fetchone()
+            return _row_dict(row) if row else None
+
+    def get_statement_by_period(
+        self,
+        period_type: str,
+        year: int,
+        month: Optional[int],
+        currency: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            if period_type == "yearly":
+                row = conn.execute(
+                    """
+                    SELECT * FROM period_statements
+                    WHERE period_type = 'yearly' AND year = ? AND month IS NULL
+                      AND currency = ?
+                    """,
+                    (year, currency),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT * FROM period_statements
+                    WHERE period_type = 'monthly' AND year = ? AND month = ?
+                      AND currency = ?
+                    """,
+                    (year, month, currency),
+                ).fetchone()
+            return _row_dict(row) if row else None
+
+    def list_statements(
+        self, period_type: Optional[str] = None, year: Optional[int] = None
+    ) -> List[dict]:
+        clauses = []
+        args: list = []
+        if period_type:
+            clauses.append("period_type = ?")
+            args.append(period_type)
+        if year is not None:
+            clauses.append("year = ?")
+            args.append(year)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM period_statements {where}
+                ORDER BY year DESC, month DESC
+                """,
+                args,
+            ).fetchall()
+            return [_row_dict(row) for row in rows]
+
+    def list_statement_items(self, statement_id: str) -> List[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM period_statement_items
+                WHERE statement_id = ?
+                ORDER BY entry_type ASC, amount_minor DESC, name ASC
+                """,
+                (statement_id,),
+            ).fetchall()
+            return [_row_dict(row) for row in rows]
+
+    def upsert_statement(self, statement: dict) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO period_statements (
+                    id, period_type, year, month, start_at, end_at, currency,
+                    income_minor, expense_minor, net_minor, status, note,
+                    generated_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    start_at = excluded.start_at,
+                    end_at = excluded.end_at,
+                    income_minor = excluded.income_minor,
+                    expense_minor = excluded.expense_minor,
+                    net_minor = excluded.net_minor,
+                    note = excluded.note,
+                    generated_at = excluded.generated_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    statement["id"],
+                    statement["period_type"],
+                    statement["year"],
+                    statement["month"],
+                    statement["start_at"],
+                    statement["end_at"],
+                    statement["currency"],
+                    statement["income_minor"],
+                    statement["expense_minor"],
+                    statement["net_minor"],
+                    statement["status"],
+                    statement["note"],
+                    statement["generated_at"],
+                    statement["created_at"],
+                    statement["updated_at"],
+                ),
+            )
+        return self.get_statement(statement["id"])
+
+    def replace_statement_items(self, statement_id: str, items: List[dict]) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM period_statement_items WHERE statement_id = ?",
+                (statement_id,),
+            )
+            conn.executemany(
+                """
+                INSERT INTO period_statement_items (
+                    id, statement_id, category, name, entry_type,
+                    amount_minor, entry_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item["id"],
+                        statement_id,
+                        item["category"],
+                        item["name"],
+                        item["entry_type"],
+                        item["amount_minor"],
+                        item["entry_count"],
+                    )
+                    for item in items
+                ],
+            )
+
+    def delete_statement(self, statement_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM period_statements WHERE id = ?", (statement_id,)
+            )
+            return cur.rowcount > 0
 
 
 _store_instances: Dict[str, BillStore] = {}
