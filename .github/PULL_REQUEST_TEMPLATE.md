@@ -3,20 +3,34 @@ Thanks for your contribution! Please write this PR in English.
 推荐使用英文填写，感谢 ❤️
 -->
 
-## What does this PR do?
+## Summary
 
-<!-- A short description of the change and why it's needed. -->
+<!-- What does this PR do and why? 1–3 sentences. -->
 
-## Type of change
+## Changes
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Docs
-- [ ] Refactor / chore
+<!-- List the main changes. Be specific. -->
 
-## Checklist
+*
 
-- [ ] I have read the [Contributing Guide](https://github.com/starpickerr/Stella/blob/master/CONTRIBUTING.md)
-- [ ] I tested this change locally
-- [ ] Code comments and docs are in English
-- [ ] Linked related issue (if any): closes #
+## Type
+
+* [ ] Bug fix
+* [ ] New feature
+* [ ] Improvement
+* [ ] Refactor
+* [ ] Documentation
+* [ ] Chore
+
+## Testing
+
+<!-- How did you verify this change? -->
+
+* [ ] Tested locally
+* [ ] Tests pass
+
+## Known issues
+
+<!-- List leftover risks, follow-ups, or "None". -->
+
+None.
