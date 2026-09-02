@@ -140,6 +140,8 @@ datas = [
     # entry alongside the Electron UI.
     (rp('channel', 'web', 'chat.html'), 'channel/web'),
     (rp('channel', 'web', 'static'), 'channel/web/static'),
+    # BillStore reads this non-Python file at runtime to initialize SQLite.
+    (rp('agent', 'bills', 'schema.sql'), 'agent/bills'),
 ]
 
 # Some libraries (tiktoken encodings, etc.) ship data files.
