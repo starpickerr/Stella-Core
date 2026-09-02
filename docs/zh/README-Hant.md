@@ -1,11 +1,11 @@
-<p align="center"><img src= "https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
+<p align="center"><img src= "../images/logo.jpg" alt="Stella" width="420" /></p>
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
   <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
-  <a href="https://docs.cowagent.ai/zh"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="文件" /></a>
-  <a href="https://cdn.link-ai.tech/code/cow/stella-wechat-group.png"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?style=flat&logo=wechat&logoColor=white" alt="微信交流群" /></a>
+  <a href="https://github.com/starpickerr/Stella/tree/main/docs"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-Stella-blue?style=flat&logo=readthedocs&logoColor=white" alt="文件" /></a>
+  <a href="https://github.com/starpickerr/Stella/issues"><img src="https://img.shields.io/badge/%E7%A4%BE%E5%8D%80-GitHub-2F93F0?style=flat&logo=github&logoColor=white" alt="社區" /></a>
   <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
@@ -22,12 +22,12 @@
 Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微信、飛書、釘釘、企微、QQ、Telegram、Slack、網頁等多渠道，7×24 執行於個人電腦或伺服器中。
 
 <p align="center">
-  <a href="https://cowagent.ai/?lang=zh">🌐 官網</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/">📖 文件中心</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/guide/quick-start">🚀 快速開始</a> &nbsp;·&nbsp;
-  <a href="https://skills.cowagent.ai/">🧩 技能廣場</a> &nbsp;·&nbsp;
-  <a href="https://cowagent.ai/zh/download/">💻 下載客戶端</a> &nbsp;·&nbsp;
-  <a href="https://link-ai.tech/cowagent/create">☁️ 線上體驗</a>
+  <a href="https://github.com/starpickerr/Stella">🌐 官網</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella/tree/main/docs">📖 文件中心</a> &nbsp;·&nbsp;
+  <a href="guide/quick-start.mdx">🚀 快速開始</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella/tree/main/skills">🧩 技能廣場</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella/releases">💻 下載客戶端</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella">☁️ 線上體驗</a>
 </p>
 
 <br/>
@@ -35,10 +35,7 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微�
 ## 🎬 示範
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/a2d8fb12-f294-42d6-a569-c4a6ceedab1d" controls muted playsinline width="720">
-    你的瀏覽器無法播放該影片。
-    <a href="https://cowagent.ai/?lang=zh">前往官網觀看示範 →</a>
-  </video>
+  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -47,26 +44,26 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微�
 
 | 能力 | 說明 |
 | :--- | :--- |
-| [任務規劃](https://docs.cowagent.ai/zh/intro/architecture) | 理解複雜任務並自主分解執行，迴圈呼叫工具直到完成目標 |
-| [長期記憶](https://docs.cowagent.ai/zh/memory) | 三層記憶架構（上下文 → 天級 → 核心），夢境蒸餾自動整理，支援關鍵詞與向量混合檢索 |
-| [知識庫](https://docs.cowagent.ai/zh/knowledge) | 自動整理結構化知識為 Markdown Wiki，構建持續增長的知識圖譜，視覺化瀏覽 |
-| [自主進化](https://docs.cowagent.ai/zh/memory/self-evolution) | 自動覆盤對話，最佳化技能、處理未完成事項、沉澱記憶與知識，在使用中持續成長 |
-| [技能](https://docs.cowagent.ai/zh/skills) | 從 [Skill Hub](https://skills.cowagent.ai/)、GitHub、ClawHub 等一鍵安裝；也可透過對話創造自定義技能 |
-| [工具](https://docs.cowagent.ai/zh/tools) | 內建檔案讀寫、終端、瀏覽器、定時任務、記憶檢索、聯網搜尋等 10+ 工具，支援 MCP 協議 |
-| [通道](https://docs.cowagent.ai/zh/channels) | 一個 Agent 同時接入 Web、微信、飛書、釘釘、企微、QQ、公眾號、Telegram、Slack 等多個渠道 |
+| [任務規劃](intro/architecture.mdx) | 理解複雜任務並自主分解執行，迴圈呼叫工具直到完成目標 |
+| [長期記憶](memory/index.mdx) | 三層記憶架構（上下文 → 天級 → 核心），夢境蒸餾自動整理，支援關鍵詞與向量混合檢索 |
+| [知識庫](knowledge/index.mdx) | 自動整理結構化知識為 Markdown Wiki，構建持續增長的知識圖譜，視覺化瀏覽 |
+| [自主進化](memory/self-evolution.mdx) | 自動覆盤對話，最佳化技能、處理未完成事項、沉澱記憶與知識，在使用中持續成長 |
+| [技能](skills/index.mdx) | 從 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub 等一鍵安裝；也可透過對話創造自定義技能 |
+| [工具](tools/index.mdx) | 內建檔案讀寫、終端、瀏覽器、定時任務、記憶檢索、聯網搜尋等 10+ 工具，支援 MCP 協議 |
+| [通道](channels/index.mdx) | 一個 Agent 同時接入 Web、微信、飛書、釘釘、企微、QQ、公眾號、Telegram、Slack 等多個渠道 |
 | 多模態 | 文字、圖片、語音、檔案全訊息型別支援，覆蓋識別、生成、收發 |
-| [模型](https://docs.cowagent.ai/zh/models) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流廠商，設定一行切換 |
-| [部署](https://docs.cowagent.ai/zh/guide/quick-start) | 一鍵指令碼安裝，Web 控制台統一管理；本地、Docker、伺服器多種部署方式 |
+| [模型](models/index.mdx) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流廠商，設定一行切換 |
+| [部署](guide/quick-start.mdx) | 一鍵指令碼安裝，Web 控制台統一管理；本地、Docker、伺服器多種部署方式 |
 
 <br/>
 
 ## 🏗️ 架構總覽
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/zh/architecture.jpg" alt="Stella Architecture" width="750"/>
+<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
 
 Stella 是一個完整的 **Agent Harness**：訊息從各類**通道**進入，**Agent Core** 結合記憶、知識庫與可用工具/技能進行任務規劃與決策，呼叫**模型**生成結果，再回傳至原通道。各模組解耦清晰，按需擴充。
 
-詳見 [專案架構](https://docs.cowagent.ai/zh/intro/architecture)。
+詳見 [專案架構](intro/architecture.mdx)。
 
 <br/>
 
@@ -77,19 +74,19 @@ Stella 是一個完整的 **Agent Harness**：訊息從各類**通道**進入，
 **Linux / macOS：**
 
 ```bash
-bash <(curl -fsSL https://cdn.link-ai.tech/code/cow/run.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
 ```
 
 **Windows（PowerShell）：**
 
 ```powershell
-irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
+irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
 ```
 
 **Docker：**
 
 ```bash
-curl -O https://cdn.link-ai.tech/code/cow/docker-compose.yml
+curl -O https://raw.githubusercontent.com/starpickerr/Stella/main/docker/docker-compose.yml
 docker compose up -d
 ```
 
@@ -97,9 +94,9 @@ docker compose up -d
 
 > 伺服器部署且需要從外部網路存取控制台時，請在 `config.json` 中將 `web_host` 設為 `0.0.0.0`（同時強烈建議設定 `web_password` 啟用身分驗證），然後訪問 `http://<server-ip>:9899`，並確保防火牆/安全組放行 `9899` 埠。
 
-> 📖 詳細安裝指南：[快速開始](https://docs.cowagent.ai/zh/guide/quick-start) · [原始碼安裝](https://docs.cowagent.ai/zh/guide/manual-install) · [升級](https://docs.cowagent.ai/zh/guide/upgrade)
+> 📖 詳細安裝指南：[快速開始](guide/quick-start.mdx) · [原始碼安裝](guide/manual-install.mdx) · [升級](guide/upgrade.mdx)
 
-安裝後可使用 `stella` [CLI 命令](https://docs.cowagent.ai/zh/cli) 管理服務：
+安裝後可使用 `stella` [CLI 命令](cli/index.mdx) 管理服務：
 
 ```bash
 stella start | stop | restart        # 服務管理
@@ -109,7 +106,7 @@ stella skill install <名稱>           # 安裝技能
 stella install-browser                # 安裝瀏覽器工具
 ```
 
-> 💻 桌面客戶端：前往 **[下載 Stella 桌面客戶端](https://cowagent.ai/zh/download/)**（macOS / Windows），內建 Agent 執行環境，開箱即用。
+> 💻 桌面客戶端：前往 **[下載 Stella 桌面客戶端](https://github.com/starpickerr/Stella/releases)**（macOS / Windows），內建 Agent 執行環境，開箱即用。
 
 <br/>
 
@@ -119,21 +116,21 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 | 廠商 | 代表模型 | 文字 | 影像理解 | 影像生成 | 語音識別 | 語音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [智譜 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [通義千問](https://docs.cowagent.ai/zh/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](https://docs.cowagent.ai/zh/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
-| [豆包 Doubao](https://docs.cowagent.ai/zh/models/doubao) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [百度ERNIE](https://docs.cowagent.ai/zh/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [小米 MiMo](https://docs.cowagent.ai/zh/models/mimo) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](https://docs.cowagent.ai/zh/models/linkai) | 一個 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定義](https://docs.cowagent.ai/zh/models/custom) | 本地模型 / 三方代理 | ✅ | | | | | |
+| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
+| [OpenAI](models/openai.mdx) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
+| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
+| [智譜 GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [通義千問](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
+| [豆包 Doubao](models/doubao.mdx) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
+| [百度ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
+| [小米 MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
+| [LinkAI](models/linkai.mdx) | 一個 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [自定義](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
 
-> 推薦透過 Web 控制台線上設定，無需手動編輯檔案。手動設定請參考各廠商文件，詳見 [模型概覽](https://docs.cowagent.ai/zh/models)。
+> 推薦透過 Web 控制台線上設定，無需手動編輯檔案。手動設定請參考各廠商文件，詳見 [模型概覽](models/index.mdx)。
 
 <br/>
 
@@ -143,22 +140,22 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 | 通道 | 文字 | 圖片 | 檔案 | 語音 | 群聊 |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web 控制台](https://docs.cowagent.ai/zh/channels/web)（預設） | ✅ | ✅ | ✅ | ✅ | |
-| [微信](https://docs.cowagent.ai/zh/channels/weixin) | ✅ | ✅ | ✅ | ✅ | |
-| [飛書](https://docs.cowagent.ai/zh/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [釘釘](https://docs.cowagent.ai/zh/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [企微智慧機器人](https://docs.cowagent.ai/zh/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [QQ](https://docs.cowagent.ai/zh/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
-| [企業微信應用](https://docs.cowagent.ai/zh/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
-| [微信客服](https://docs.cowagent.ai/zh/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
-| [微信公眾號](https://docs.cowagent.ai/zh/channels/wechatmp) | ✅ | ✅ | | ✅ | |
-| [Telegram](https://docs.cowagent.ai/zh/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](https://docs.cowagent.ai/zh/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
-| [Discord](https://docs.cowagent.ai/zh/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
+| [Web 控制台](channels/web.mdx)（預設） | ✅ | ✅ | ✅ | ✅ | |
+| [微信](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [飛書](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [釘釘](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [企微智慧機器人](channels/wecom-bot.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [QQ](channels/qq.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [企業微信應用](channels/wecom.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [微信客服](channels/wechat-kf.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [微信公眾號](channels/wechatmp.mdx) | ✅ | ✅ | | ✅ | |
+| [Telegram](channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> 飛書、企微智慧機器人支援在 Web 控制台內**掃碼一鍵接入**，無需公有 IP。詳見 [通道概覽](https://docs.cowagent.ai/zh/channels)。
+> 飛書、企微智慧機器人支援在 Web 控制台內**掃碼一鍵接入**，無需公有 IP。詳見 [通道概覽](channels/index.mdx)。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-chat.png" alt="Stella Web 控制台" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella Web 控制台" width="800"/>
 
 *Web 控制台是預設通道，也是統一的 Agent 設定和管理入口*
 
@@ -166,18 +163,18 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## 🧠 記憶與知識庫
 
-**長期記憶**採用三層架構：對話上下文（短期）→ 天級記憶（中期）→ MEMORY.md（長期）。每日自動執行**夢境蒸餾（Deep Dream）**，將分散記憶整合為精煉的長期記憶並生成敘事日記。詳見 [長期記憶](https://docs.cowagent.ai/zh/memory) · [夢境蒸餾](https://docs.cowagent.ai/zh/memory/deep-dream)。
+**長期記憶**採用三層架構：對話上下文（短期）→ 天級記憶（中期）→ MEMORY.md（長期）。每日自動執行**夢境蒸餾（Deep Dream）**，將分散記憶整合為精煉的長期記憶並生成敘事日記。詳見 [長期記憶](memory/index.mdx) · [夢境蒸餾](memory/deep-dream.mdx)。
 
-**個人知識庫** 與按時間記錄的記憶不同，以**主題為維度**組織結構化知識。Agent 在對話中自動整理有價值資訊，維護交叉引用與索引，Web 控制台可視覺化瀏覽知識圖譜。詳見 [個人知識庫](https://docs.cowagent.ai/zh/knowledge)。
+**個人知識庫** 與按時間記錄的記憶不同，以**主題為維度**組織結構化知識。Agent 在對話中自動整理有價值資訊，維護交叉引用與索引，Web 控制台可視覺化瀏覽知識圖譜。詳見 [個人知識庫](knowledge/index.mdx)。
 
 <table>
   <tr>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-memory.png" alt="長期記憶" />
+      <img src="../images/placeholder-image.svg" alt="長期記憶" />
       <p align="center"><em>長期記憶 · 三層記憶 + 夢境蒸餾</em></p>
     </td>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-knowledge.png" alt="個人知識庫" />
+      <img src="../images/placeholder-image.svg" alt="個人知識庫" />
       <p align="center"><em>個人知識庫 · 自動整理的 Markdown Wiki</em></p>
     </td>
   </tr>
@@ -196,11 +193,11 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 **MCP 協議** 透過 [Model Context Protocol](https://modelcontextprotocol.io) 接入開放生態中的各種 MCP 服務，設定一次 `mcp.json` 即用即得，支援 stdio / SSE 協議、熱更新、零程式碼接入。
 
-詳見 [工具概覽](https://docs.cowagent.ai/zh/tools) · [MCP 整合](https://docs.cowagent.ai/zh/tools/mcp)。
+詳見 [工具概覽](tools/index.mdx) · [MCP 整合](tools/mcp.mdx)。
 
 ### 技能系統
 
-- **[Skill Hub](https://skills.cowagent.ai/)** — 開源的技能廣場，瀏覽、搜尋、一鍵安裝
+- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — 開源的技能廣場，瀏覽、搜尋、一鍵安裝
 - **GitHub / ClawHub / URL 等** — 任意來源一鍵安裝
 - **對話創造** — 透過 `skill-creator` 用對話快速生成自定義技能，可將工作流程或第三方介面直接固化為技能
 
@@ -210,7 +207,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 /skill install <名稱>          # 一鍵安裝
 ```
 
-詳見 [技能概覽](https://docs.cowagent.ai/zh/skills) · [建立技能](https://docs.cowagent.ai/zh/skills/create)。
+詳見 [技能概覽](skills/index.mdx) · [建立技能](skills/create.mdx)。
 
 <br/>
 
@@ -224,7 +221,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 > **2026.07.20：** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — 桌面客戶端體驗最佳化、MCP 支援 OAuth 授權、飛書通道能力增強、定時任務與資料備份、新模型接入
 
-> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客戶端](https://cowagent.ai/zh/download/)正式發布（macOS / Windows）、知識庫文件管理增強、MCP 工具智能檢索、繁體中文支援、新模型接入
+> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客戶端](https://github.com/starpickerr/Stella/releases)正式發布（macOS / Windows）、知識庫文件管理增強、MCP 工具智能檢索、繁體中文支援、新模型接入
 
 > **2026.06.18：** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web 控制台升級（定時任務管理、知識庫分類、多模型自定義廠商）、自主進化最佳化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和體驗最佳化
 
@@ -232,7 +229,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 > **2026.06.01：** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 國際化支援、新增通道（Telegram、Discord、Slack、微信客服）、命令列互動升級、一鍵安裝指令碼最佳化、MCP Streamable HTTP 支援、新模型接入（claude-opus-4-8、MiMo）
 
-完整更新歷史：[Release Notes](https://docs.cowagent.ai/zh/releases)
+完整更新歷史：[Release Notes](https://github.com/starpickerr/Stella/tree/main/docs)
 
 <br/>
 
@@ -244,7 +241,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 也歡迎在 GitHub [提交 Issue](https://github.com/starpickerr/Stella/issues)，或掃碼加入微信開源交流群：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
+<img width="130" src="../images/placeholder-image.svg" />
 
 也可透過以下方式獲取支援：
 
@@ -263,23 +260,23 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## 🏢 企業服務
 
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg" /></a>
+<a href="https://link-ai.tech" target="_blank"><img width="650" src="../images/placeholder-image.svg" /></a>
 
 > [LinkAI](https://link-ai.tech/) 是面向企業和個人的一站式 AI 智慧體平臺，為 Stella 提供雲端託管和企業級支援：
 >
-> - **🚀 免部署線上執行**：無需伺服器即可建立 [Stella 線上助理](https://link-ai.tech/cowagent/create)，1 分鐘擁有專屬 Agent
+> - **🚀 免部署線上執行**：無需伺服器即可建立 [Stella 線上助理](https://github.com/starpickerr/Stella)，1 分鐘擁有專屬 Agent
 > - **🧠 Agent 基礎設施**：聚合主流大模型、知識庫、資料庫、技能、工作流，提供開箱即用的 Agent 能力擴充
 > - **🏢 企業級協作**：提供團隊協作、許可權分級、審計日誌、私有化部署等能力，讓 Agent 安全落地企業場景
 
 **產品諮詢和企業服務** 可聯絡產品客服：
 
-<img width="130" src="https://cdn.link-ai.tech/portal/linkai-customer-service.png" />
+<img width="130" src="../images/placeholder-image.svg" />
 
 <br/>
 
 ## 🛠️ 開發與貢獻
 
-歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [Skill Hub](https://skills.cowagent.ai/submit) 分享你的技能。請先閱讀 [CONTRIBUTING.md](/CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
+歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills) 分享你的技能。請先閱讀 [CONTRIBUTING.md](/CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
 
 歡迎 ⭐ Star 支援專案，並透過 Watch → Custom → Releases 訂閱新版本通知。也歡迎提交 PR、Issue 進行反饋。
 

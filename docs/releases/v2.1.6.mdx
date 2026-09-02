@@ -3,7 +3,7 @@ title: v2.1.6
 description: "Stella 2.1.6: sub agents for parallel task delegation, native reasoning-effort settings, a pluggable memory vector backend, and desktop client improvements"
 ---
 
-🌐 [English](https://docs.cowagent.ai/releases/v2.1.6) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.6)
+🌐 [English](/releases/v2.1.6) | [中文](/zh/releases/v2.1.6)
 
 ## 🤝 Sub Agents
 
@@ -14,9 +14,9 @@ The main Agent can hand independent tasks off to sub agents and run them in para
 - **Customizable**: two built-in types, `general-purpose` and `explore`, plus your own — drop a `.md` file under the workspace `subagents/` directory to define a type with its own system prompt and tool set.
 - **On by default**: no setup needed; the main Agent decides when to delegate. Toggle it under Config → Agent, and tune nesting depth, concurrency, and timeout in `config.json`.
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/stella-subagent-demo.png" width="800" />
+<img src="/images/placeholder-image.svg" width="800" />
 
-Docs: [Sub Agents](https://docs.cowagent.ai/multi-agent/subagent)
+Docs: [Sub Agents](/multi-agent/subagent)
 
 ## 🖥 Desktop Client
 
@@ -25,9 +25,9 @@ Docs: [Sub Agents](https://docs.cowagent.ai/multi-agent/subagent)
 - **Custom provider models**: custom providers get a free-form model input.
 - **Startup fixes**: fixed the backend startup hanging, added automatic port retry, and surfaced the real error on failure.
 
-Download: [Stella Desktop](https://cowagent.ai/download/)
+Download: [Stella Desktop](https://github.com/starpickerr/Stella/releases)
 
-Docs: [Desktop Client](https://docs.cowagent.ai/guide/desktop)
+Docs: [Desktop Client](/guide/desktop)
 
 ## 🧠 Reasoning Effort & Thinking
 
@@ -45,7 +45,7 @@ Docs: [Desktop Client](https://docs.cowagent.ai/guide/desktop)
 - **Pluggable vector backend**: memory's vector storage and retrieval sit behind a single interface, with SQLite as the default, making it easy to plug in an external vector store later. Thanks @AaronZ345 (#3021)
 - **Index repair**: fixed trigram FTS5 index corruption on chunk updates; a corrupted shared database now self-repairs.
 
-Docs: [Memory](https://docs.cowagent.ai/memory)
+Docs: [Memory](/memory)
 
 ## 🛠 Improvements & Fixes
 
@@ -64,7 +64,7 @@ Docs: [Memory](https://docs.cowagent.ai/memory)
 
 ## 📦 How to Upgrade
 
-- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
-- **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://cowagent.ai/download/).
+- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](/guide/upgrade).
+- **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://github.com/starpickerr/Stella/releases).
 
 **Release date**: 2026.08.12 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.5...2.1.6)

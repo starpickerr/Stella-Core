@@ -7,9 +7,9 @@
     "default": "light"
   },
   "colors": {
-    "primary": "#35A85B",
-    "light": "#4ABE6E",
-    "dark": "#228547"
+    "primary": "#2F93F0",
+    "light": "#56A9F5",
+    "dark": "#1D6FBD"
   },
   "logo": {
     "light": "/images/logo.jpg",
@@ -45,15 +45,15 @@
           "links": [
             {
               "label": "Website",
-              "href": "https://cowagent.ai/"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "Download",
-              "href": "https://cowagent.ai/download/"
+              "href": "https://github.com/starpickerr/Stella/releases"
             },
             {
               "label": "Blog",
-              "href": "https://cowagent.ai/blog/"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "GitHub",
@@ -289,15 +289,15 @@
           "links": [
             {
               "label": "官网",
-              "href": "https://cowagent.ai/?lang=zh"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "下载",
-              "href": "https://cowagent.ai/zh/download/"
+              "href": "https://github.com/starpickerr/Stella/releases"
             },
             {
               "label": "博客",
-              "href": "https://cowagent.ai/zh/blog/"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "GitHub",
@@ -533,15 +533,15 @@
           "links": [
             {
               "label": "ウェブサイト",
-              "href": "https://cowagent.ai/"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "ダウンロード",
-              "href": "https://cowagent.ai/download/"
+              "href": "https://github.com/starpickerr/Stella/releases"
             },
             {
               "label": "ブログ",
-              "href": "https://cowagent.ai/blog/"
+              "href": "https://github.com/starpickerr/Stella"
             },
             {
               "label": "GitHub",

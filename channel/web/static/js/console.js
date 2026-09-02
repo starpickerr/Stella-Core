@@ -1062,7 +1062,11 @@ function applyI18n() {
     });
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
-    if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
+    if (docsLink) {
+        docsLink.href = currentLang === 'zh'
+            ? 'https://github.com/starpickerr/Stella/tree/main/docs/zh'
+            : 'https://github.com/starpickerr/Stella/tree/main/docs';
+    }
     // Workspace panel content is rendered by JS, not data-i18n attributes.
     if (typeof relocalizeWorkspacePanel === 'function') relocalizeWorkspacePanel();
 }

@@ -1,11 +1,11 @@
-<p align="center"><img src="https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
+<p align="center"><img src="../images/logo.jpg" alt="Stella" width="420" /></p>
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
   <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
-  <a href="https://docs.cowagent.ai/ja"><img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-cowagent.ai-blue?style=flat&logo=readthedocs&logoColor=white" alt="ドキュメント" /></a>
-  <a href="https://cdn.link-ai.tech/code/cow/stella-wechat-group.png"><img src="https://img.shields.io/badge/WeChat-Group-07C160?style=flat&logo=wechat&logoColor=white" alt="WeChat Group" /></a>
+  <a href="https://github.com/starpickerr/Stella/tree/main/docs"><img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-Stella-blue?style=flat&logo=readthedocs&logoColor=white" alt="ドキュメント" /></a>
+  <a href="https://github.com/starpickerr/Stella/issues"><img src="https://img.shields.io/badge/Community-GitHub-2F93F0?style=flat&logo=github&logoColor=white" alt="Community" /></a>
   <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
@@ -22,12 +22,12 @@
 Stella は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、Web や主要な IM プラットフォーム上で動作。個人 PC やサーバー上で 24 時間 365 日稼働できます。
 
 <p align="center">
-  <a href="https://cowagent.ai/">🌐 ウェブサイト</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/ja/intro/index">📖 ドキュメント</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/ja/guide/quick-start">🚀 クイックスタート</a> &nbsp;·&nbsp;
-  <a href="https://skills.cowagent.ai/">🧩 Skill Hub</a> &nbsp;·&nbsp;
-  <a href="https://cowagent.ai/download/">💻 ダウンロード</a> &nbsp;·&nbsp;
-  <a href="https://link-ai.tech/cowagent/create">☁️ オンラインで試す</a>
+  <a href="https://github.com/starpickerr/Stella">🌐 ウェブサイト</a> &nbsp;·&nbsp;
+  <a href="intro/index.mdx">📖 ドキュメント</a> &nbsp;·&nbsp;
+  <a href="guide/quick-start.mdx">🚀 クイックスタート</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella/tree/main/skills">🧩 Skill Hub</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella/releases">💻 ダウンロード</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella">☁️ オンラインで試す</a>
 </p>
 
 <br/>
@@ -35,10 +35,7 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
 ## 🎬 デモ
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8625a19f-615c-4343-8be8-3707ce4d4d4e" controls muted playsinline width="720">
-    このブラウザでは動画を再生できません。
-    <a href="https://cowagent.ai/">公式サイトでデモを見る →</a>
-  </video>
+  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -47,26 +44,26 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
 
 | 機能 | 説明 |
 | :--- | :--- |
-| [タスク計画](https://docs.cowagent.ai/ja/intro/architecture) | 複雑なタスクを分解し、目標達成までツールを繰り返し呼び出して段階的に実行 |
-| [長期記憶](https://docs.cowagent.ai/ja/memory/index) | 三層構造（コンテキスト → デイリー → コア）、Deep Dream による自動蒸留、キーワードとベクトルのハイブリッド検索 |
-| [ナレッジベース](https://docs.cowagent.ai/ja/knowledge/index) | 構造化された知識を Markdown Wiki として自動整理し、進化し続けるナレッジグラフを可視化ブラウジング |
-| [自己進化](https://docs.cowagent.ai/ja/memory/self-evolution) | 会話を自動でレビューして Skill を改善し、未完了のタスクを引き継ぎ、記憶と知識を補完。日々の利用を通じて成長 |
-| [Skill](https://docs.cowagent.ai/ja/skills/index) | [Skill Hub](https://skills.cowagent.ai/)、GitHub、ClawHub からワンクリックでインストール；対話によるカスタム Skill 作成にも対応 |
-| [ツール](https://docs.cowagent.ai/ja/tools/index) | ファイル I/O、ターミナル、ブラウザ、スケジューラ、記憶検索、Web 検索など 10+ の組み込みツール — MCP プロトコルに完全対応 |
-| [チャネル](https://docs.cowagent.ai/ja/channels/index) | 一つの Agent で Web、WeChat、Feishu、DingTalk、WeCom、QQ、公式アカウント、Telegram、Slack を同時にサポート |
+| [タスク計画](intro/architecture.mdx) | 複雑なタスクを分解し、目標達成までツールを繰り返し呼び出して段階的に実行 |
+| [長期記憶](memory/index.mdx) | 三層構造（コンテキスト → デイリー → コア）、Deep Dream による自動蒸留、キーワードとベクトルのハイブリッド検索 |
+| [ナレッジベース](knowledge/index.mdx) | 構造化された知識を Markdown Wiki として自動整理し、進化し続けるナレッジグラフを可視化ブラウジング |
+| [自己進化](memory/self-evolution.mdx) | 会話を自動でレビューして Skill を改善し、未完了のタスクを引き継ぎ、記憶と知識を補完。日々の利用を通じて成長 |
+| [Skill](skills/index.mdx) | [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub からワンクリックでインストール；対話によるカスタム Skill 作成にも対応 |
+| [ツール](tools/index.mdx) | ファイル I/O、ターミナル、ブラウザ、スケジューラ、記憶検索、Web 検索など 10+ の組み込みツール — MCP プロトコルに完全対応 |
+| [チャネル](channels/index.mdx) | 一つの Agent で Web、WeChat、Feishu、DingTalk、WeCom、QQ、公式アカウント、Telegram、Slack を同時にサポート |
 | マルチモーダル | テキスト・画像・音声・ファイルをフルサポート — 認識・生成・双方向送受信 |
-| [モデル](https://docs.cowagent.ai/ja/models/index) | Claude、GPT、Gemini、DeepSeek、GLM、Qwen、Kimi、MiniMax、Doubao など、設定 1 行で切り替え可能 |
-| [デプロイ](https://docs.cowagent.ai/ja/guide/quick-start) | ワンラインインストーラー、統合された Web コンソール、複数のデプロイモード（ローカル / Docker / サーバー） |
+| [モデル](models/index.mdx) | Claude、GPT、Gemini、DeepSeek、GLM、Qwen、Kimi、MiniMax、Doubao など、設定 1 行で切り替え可能 |
+| [デプロイ](guide/quick-start.mdx) | ワンラインインストーラー、統合された Web コンソール、複数のデプロイモード（ローカル / Docker / サーバー） |
 
 <br/>
 
 ## 🏗️ アーキテクチャ
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.png" alt="Stella Architecture" width="750"/>
+<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
 
 Stella は完全な **Agent Harness** です：メッセージは各種**チャネル**から流入し、**Agent Core** が記憶・知識・利用可能なツール／Skill を組み合わせてタスクを計画・判断、**モデル**が応答を生成し、結果は元のチャネルに返されます。各レイヤーは疎結合で、独立して拡張可能です。
 
-詳細は [アーキテクチャ](https://docs.cowagent.ai/ja/intro/architecture) を参照してください。
+詳細は [アーキテクチャ](intro/architecture.mdx) を参照してください。
 
 <br/>
 
@@ -77,19 +74,19 @@ Stella は完全な **Agent Harness** です：メッセージは各種**チャ�
 **Linux / macOS:**
 
 ```bash
-bash <(curl -fsSL https://cdn.link-ai.tech/code/cow/run.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
+irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
 ```
 
 **Docker:**
 
 ```bash
-curl -O https://cdn.link-ai.tech/code/cow/docker-compose.yml
+curl -O https://raw.githubusercontent.com/starpickerr/Stella/main/docker/docker-compose.yml
 docker compose up -d
 ```
 
@@ -97,9 +94,9 @@ docker compose up -d
 
 > サーバーデプロイでコンソールに公開アクセスする場合は、`config.json` の `web_host` を `0.0.0.0` に設定してください（あわせて `web_password` の設定も強く推奨）。その後 `http://<server-ip>:9899` にアクセスし、ファイアウォール／セキュリティグループで `9899` ポートを開放することも忘れずに。
 
-> 📖 詳細ガイド: [クイックスタート](https://docs.cowagent.ai/ja/guide/quick-start) · [ソースからインストール](https://docs.cowagent.ai/ja/guide/manual-install) · [アップグレード](https://docs.cowagent.ai/ja/guide/upgrade)
+> 📖 詳細ガイド: [クイックスタート](guide/quick-start.mdx) · [ソースからインストール](guide/manual-install.mdx) · [アップグレード](guide/upgrade.mdx)
 
-インストール後は、[`stella` CLI](https://docs.cowagent.ai/ja/cli/index) でサービスを管理できます：
+インストール後は、[`stella` CLI](cli/index.mdx) でサービスを管理できます：
 
 ```bash
 stella start | stop | restart        # サービス制御
@@ -109,7 +106,7 @@ stella skill install <名前>           # Skill のインストール
 stella install-browser                # ブラウザツールのインストール
 ```
 
-> 💻 デスクトップクライアント：**[Stella デスクトップクライアント](https://cowagent.ai/download/)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
+> 💻 デスクトップクライアント：**[Stella デスクトップクライアント](https://github.com/starpickerr/Stella/releases)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
 
 <br/>
 
@@ -119,21 +116,21 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 | プロバイダー | 代表的なモデル | チャット | 画像認識 | 画像生成 | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/ja/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](https://docs.cowagent.ai/ja/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/ja/models/openai) | gpt-5.6 シリーズ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/ja/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](https://docs.cowagent.ai/ja/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [GLM](https://docs.cowagent.ai/ja/models/glm) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [Qwen](https://docs.cowagent.ai/ja/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](https://docs.cowagent.ai/ja/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
-| [Doubao](https://docs.cowagent.ai/ja/models/doubao) | doubao-seed-2.1 シリーズ | ✅ | ✅ | ✅ | | | ✅ |
-| [ERNIE](https://docs.cowagent.ai/ja/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [MiMo](https://docs.cowagent.ai/ja/models/mimo) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](https://docs.cowagent.ai/ja/models/linkai) | 1 つの Key で 100+ モデルに接続 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [カスタム](https://docs.cowagent.ai/ja/models/custom) | ローカルモデル / サードパーティプロキシ | ✅ | | | | | |
+| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
+| [OpenAI](models/openai.mdx) | gpt-5.6 シリーズ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
+| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
+| [GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [Qwen](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
+| [Doubao](models/doubao.mdx) | doubao-seed-2.1 シリーズ | ✅ | ✅ | ✅ | | | ✅ |
+| [ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
+| [MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
+| [LinkAI](models/linkai.mdx) | 1 つの Key で 100+ モデルに接続 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [カスタム](models/custom.mdx) | ローカルモデル / サードパーティプロキシ | ✅ | | | | | |
 
-> Web コンソールでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](https://docs.cowagent.ai/ja/models/index) を参照してください。
+> Web コンソールでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](models/index.mdx) を参照してください。
 
 <br/>
 
@@ -143,22 +140,22 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 | チャネル | テキスト | 画像 | ファイル | 音声 | グループ |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web コンソール](https://docs.cowagent.ai/ja/channels/web)（デフォルト） | ✅ | ✅ | ✅ | ✅ | |
-| [WeChat](https://docs.cowagent.ai/ja/channels/weixin) | ✅ | ✅ | ✅ | ✅ | |
-| [Feishu / Lark](https://docs.cowagent.ai/ja/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [DingTalk](https://docs.cowagent.ai/ja/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [WeCom Bot](https://docs.cowagent.ai/ja/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [QQ](https://docs.cowagent.ai/ja/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
-| [WeCom App](https://docs.cowagent.ai/ja/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
-| [WeChat カスタマーサービス](https://docs.cowagent.ai/ja/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
-| [WeChat 公式アカウント](https://docs.cowagent.ai/ja/channels/wechatmp) | ✅ | ✅ | | ✅ | |
-| [Telegram](https://docs.cowagent.ai/ja/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](https://docs.cowagent.ai/ja/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
-| [Discord](https://docs.cowagent.ai/ja/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
+| [Web コンソール](channels/web.mdx)（デフォルト） | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [Feishu / Lark](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [DingTalk](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [WeCom Bot](channels/wecom-bot.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [QQ](channels/qq.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [WeCom App](channels/wecom.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat カスタマーサービス](channels/wechat-kf.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat 公式アカウント](channels/wechatmp.mdx) | ✅ | ✅ | | ✅ | |
+| [Telegram](channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> Feishu と WeCom Bot は **Web コンソール内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](https://docs.cowagent.ai/ja/channels/index) を参照してください。
+> Feishu と WeCom Bot は **Web コンソール内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](channels/index.mdx) を参照してください。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-chat.png" alt="Stella Web Console" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella Web Console" width="800"/>
 
 *Web コンソールはデフォルトのチャネルであると同時に、Agent の設定・管理を統一的に行う場でもあります。*
 
@@ -166,18 +163,18 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 ## 🧠 記憶とナレッジベース
 
-**長期記憶**は三層構造：会話コンテキスト（短期）→ デイリー記憶（中期）→ MEMORY.md（長期）。毎晩の **Deep Dream** が散在する記憶を洗練された長期記憶とナラティブな日記に蒸留します。詳細は [長期記憶](https://docs.cowagent.ai/ja/memory/index) · [Deep Dream](https://docs.cowagent.ai/ja/memory/deep-dream) を参照してください。
+**長期記憶**は三層構造：会話コンテキスト（短期）→ デイリー記憶（中期）→ MEMORY.md（長期）。毎晩の **Deep Dream** が散在する記憶を洗練された長期記憶とナラティブな日記に蒸留します。詳細は [長期記憶](memory/index.mdx) · [Deep Dream](memory/deep-dream.mdx) を参照してください。
 
-**パーソナルナレッジベース**は時系列の記憶とは異なり、構造化された知識を**トピック単位**で整理します。Agent が会話中に有用な情報を自動でキュレーションし、相互参照とインデックスを維持し、Web コンソールでナレッジグラフを可視化できます。詳細は [パーソナルナレッジベース](https://docs.cowagent.ai/ja/knowledge/index) を参照してください。
+**パーソナルナレッジベース**は時系列の記憶とは異なり、構造化された知識を**トピック単位**で整理します。Agent が会話中に有用な情報を自動でキュレーションし、相互参照とインデックスを維持し、Web コンソールでナレッジグラフを可視化できます。詳細は [パーソナルナレッジベース](knowledge/index.mdx) を参照してください。
 
 <table>
   <tr>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-memory.png" alt="長期記憶" />
+      <img src="../images/placeholder-image.svg" alt="長期記憶" />
       <p align="center"><em>長期記憶 · 三層構造 + Deep Dream</em></p>
     </td>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-knowledge.png" alt="パーソナルナレッジベース" />
+      <img src="../images/placeholder-image.svg" alt="パーソナルナレッジベース" />
       <p align="center"><em>ナレッジベース · 自動キュレーションされた Markdown Wiki</em></p>
     </td>
   </tr>
@@ -195,11 +192,11 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 **MCP プロトコル**は [Model Context Protocol](https://modelcontextprotocol.io) のオープンエコシステムを統合します。`mcp.json` を一度設定すれば即利用可能で、stdio / SSE トランスポート、ホットリロード、ノーコード統合をサポートします。
 
-詳細: [ツール概要](https://docs.cowagent.ai/ja/tools/index) · [MCP 統合](https://docs.cowagent.ai/ja/tools/mcp)。
+詳細: [ツール概要](tools/index.mdx) · [MCP 統合](tools/mcp.mdx)。
 
 ### Skill システム
 
-- **[Skill Hub](https://skills.cowagent.ai/)** — オープン Skill マーケットプレイス：閲覧、検索、ワンクリックインストール
+- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — オープン Skill マーケットプレイス：閲覧、検索、ワンクリックインストール
 - **GitHub / ClawHub / URL など** — 任意のソースからワンクリックでインストール
 - **対話による作成** — `skill-creator` を使って対話でカスタム Skill を生成；ワークフローやサードパーティ API を再利用可能な Skill に変換
 
@@ -209,7 +206,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 /skill install <名前>          # ワンクリックインストール
 ```
 
-詳細: [Skill 概要](https://docs.cowagent.ai/ja/skills/index) · [Skill 作成](https://docs.cowagent.ai/ja/skills/create)。
+詳細: [Skill 概要](skills/index.mdx) · [Skill 作成](skills/create.mdx)。
 
 <br/>
 
@@ -223,7 +220,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 > **2026.07.20:** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
 
-> **2026.07.08:** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [デスクトップクライアント](https://cowagent.ai/download/)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。
+> **2026.07.08:** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [デスクトップクライアント](https://github.com/starpickerr/Stella/releases)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。
 
 > **2026.06.18:** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web コンソールの強化（定期タスク管理、ナレッジベースのカテゴリ、複数のカスタムモデルプロバイダー）、自己進化の改善、新モデル（kimi-k2.7-code、glm-5.2）、セキュリティ強化と改善。
 
@@ -231,7 +228,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 > **2026.06.01:** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国際化対応、新チャネル（Telegram、Discord、Slack、WeChat カスタマーサービス）、CLI インタラクション強化、ワンライナーインストールの最適化、MCP Streamable HTTP 対応、新モデル（claude-opus-4-8、MiMo）。
 
-完全な履歴: [リリースノート](https://docs.cowagent.ai/ja/releases/overview)
+完全な履歴: [リリースノート](releases/overview.mdx)
 
 <br/>
 
@@ -243,7 +240,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
+<img width="130" src="../images/placeholder-image.svg" />
 
 <br/>
 
@@ -259,17 +256,17 @@ GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) し�
 
 [**LinkAI**](https://link-ai.tech/) は企業や開発者向けのワンストップ AI Agent プラットフォームで、Stella にマネージドホスティングとエンタープライズグレードのサポートを提供します：
 
-- **🚀 デプロイ不要のホスト型ランタイム** — [Stella オンラインアシスタント](https://link-ai.tech/cowagent/create) を 1 分以内に起動、サーバー不要
+- **🚀 デプロイ不要のホスト型ランタイム** — [Stella オンラインアシスタント](https://github.com/starpickerr/Stella) を 1 分以内に起動、サーバー不要
 - **🧠 Agent インフラ** — 主要 LLM・ナレッジベース・データベース・Skill・ワークフローへの統一アクセス。Stella の機能を拡張する、すぐに使えるビルディングブロック
 - **🏢 チーム & エンタープライズ機能** — ワークスペース、ロールベースのアクセス制御、監査ログ、本番運用向けプライベートデプロイ
 
-エンタープライズに関するお問い合わせ：**sales@simple-future.tech** または [QR コードをスキャン](https://cdn.link-ai.tech/contact/customer-support.png) して WeChat でお問い合わせください。
+お問い合わせは [GitHub Issues](https://github.com/starpickerr/Stella/issues) をご利用ください。
 
 <br/>
 
 ## 🛠️ 開発とコントリビューション
 
-あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [Skill Hub](https://skills.cowagent.ai/submit) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
+あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
 
 ⭐ Star でプロジェクトを応援し、Watch → Custom → Releases で新バージョンの通知を受け取れます。PR や Issue の提出も歓迎します。
 

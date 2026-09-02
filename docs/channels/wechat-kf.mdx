@@ -25,19 +25,19 @@ Required resources:
 
 1. In the [WeCom Admin Console](https://work.weixin.qq.com/wework_admin/frame#apps), go to **Application Management → Create Application**:
 
-<img src="https://cdn.link-ai.tech/doc/20260228103156.png" width="480"/>
+<img src="/images/placeholder-image.svg" width="480"/>
 
 2. Click **My Enterprise** and find the **Corp ID** at the bottom of the page (it goes into `wechat_kf_corp_id`):
 
-<img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-companyid.png" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
 3. Open the app you just created and click **"View"** next to Secret. The Secret will be pushed to the admin's phone via the WeCom app, where it can be viewed:
 
-<img src="https://cdn.link-ai.tech/doc/wechatcom-hosting-agent-secret.png" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
 4. Open the app's **Receive Messages → Set API Reception** page, click **"Random Generate"** to generate the **Token** and **EncodingAESKey**, and save them:
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wechatcom-hosting-token-aeskey.jpg" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
 <Note>
   Saving the API reception configuration will fail at this point because the program has not started yet. Come back to save it after the project is running.
@@ -51,7 +51,7 @@ Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token 
   <Tab title="Web Console">
     Start the Stella project and open the Web Console. Go to the **Channels** menu, click **Connect**, choose **WeChat Customer Service**, fill in Corp ID / Secret / Token / AES Key (port defaults to 9888, configurable), and click Connect.
 
-    <img src="https://cdn.link-ai.tech/doc/stella-weixinkefu-web-control.png" width="800"/>
+    <img src="/images/placeholder-image.svg" width="800"/>
   </Tab>
   <Tab title="Config File">
     Add the following configuration to `config.json` (each parameter maps to a field shown in the screenshots above):
@@ -81,9 +81,9 @@ After connecting, start the program (the Web Console method restarts the channel
 
 Then go back to **Receive Messages → Set API Reception** in the WeCom console and set the callback URL to `http://<your-host>:9888/wxkf/`, then click Save. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
 
-<img src="https://cdn.link-ai.tech/doc/wechat-com_config.png" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
-<img src="https://cdn.link-ai.tech/doc/20260228103224.png" width="520"/>
+<img src="/images/placeholder-image.svg" width="520"/>
 
 <Warning>
   If URL verification fails or the configuration is unsuccessful:
@@ -96,11 +96,11 @@ Then go back to **Receive Messages → Set API Reception** in the WeCom console 
 
 In the WeCom Admin Console, go to **WeChat Customer Service**, create a customer service account, and bind it to the custom app you created above:
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-step1.jpg" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-step2.jpg" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-step3.jpg" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
 After binding, go to **WeChat Customer Service → Account Details**, and under **"Access Link"**:
 
@@ -109,17 +109,17 @@ After binding, go to **WeChat Customer Service → Account Details**, and under 
 
 Distribute the link or QR code to your WeChat customers:
 
-<img src="https://cdn.link-ai.tech/doc/wechat-customer-service_use.png" width="600"/>
+<img src="/images/placeholder-image.svg" width="600"/>
 
 ## 5. Usage
 
 After WeChat users enter the customer service conversation via the link or QR code, they can chat with the AI across multiple turns, with support for text, image, and voice messages:
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-chat-demo.jpg" width="900"/>
+<img src="/images/placeholder-image.svg" width="900"/>
 
 Beyond that, leveraging the official WeChat ecosystem, WeChat Customer Service can also be embedded into Official Accounts, Mini Programs, Video Channels and more. See the **WeChat Customer Service → Access Scenarios** section in the [WeCom Admin Console](https://work.weixin.qq.com/wework_admin/frame#/app/servicer) for details:
 
-<img src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/wxcustomer-hosting-interface-demo.png" width="800"/>
+<img src="/images/placeholder-image.svg" width="800"/>
 
 ## FAQ
 

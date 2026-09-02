@@ -4,7 +4,7 @@ Skills are reusable instruction sets that extend the agent's capabilities. Each 
 
 ## Skill Hub
 
-Browse, search, and install skills from [Stella Skill Hub](https://skills.cowagent.ai/).
+Browse, search, and install skills from [Stella Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills).
 
 Open source: [github.com/zhayujie/cow-skill-hub](https://github.com/zhayujie/cow-skill-hub)
 
@@ -86,4 +86,4 @@ Skills with the same name in the custom directory override builtin ones.
 
 ## Create & Contribute
 
-See the [Skill Creation docs](https://docs.cowagent.ai/skills/create) for details, or submit your skill to [Skill Hub](https://skills.cowagent.ai/submit).
+See the [Skill Creation docs](../docs/skills/create.mdx) for details, or submit your skill to [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills).

@@ -6,7 +6,10 @@ import os from 'os'
 // Let the web layer override the window icon/title at runtime and remember it,
 // so it also applies on the next launch before the page loads.
 
-const CACHE_DIRNAME = 'app-icon'
+// Namespace the cache for this branded client. Reusing the legacy "app-icon"
+// directory would restore a previously cached CowAgent icon on startup and
+// override Stella's bundled icon.
+const CACHE_DIRNAME = 'app-icon-stella'
 const ICON_FILE = 'icon.png'
 const ICO_FILE = 'icon.ico'
 const META_FILE = 'meta.json'

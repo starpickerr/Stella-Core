@@ -12,13 +12,13 @@ On first launch, the Agent proactively asks the user for key information and rec
 In subsequent long-term conversations, the Agent intelligently stores or retrieves memory as needed, continuously updating its own settings, user preferences, and memory files. **Deep Dream** distillation runs daily, consolidating scattered daily memories into refined long-term memory and generating a narrative-style dream diary.
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260203000455.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 Building on this, **Self-Evolution** lets the Agent keep growing through everyday use: after a conversation goes idle, it reviews it automatically to improve skills, follow up on unfinished tasks, and backfill memory and knowledge. It speaks up only when it actually made a change, and every change can be undone. Enabled by default for new installs.
 
 <Frame>
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-evolution-demo.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 See [Long-term Memory](/memory), [Deep Dream](/memory/deep-dream), and [Self-Evolution](/memory/self-evolution) for details.
@@ -35,7 +35,7 @@ The Agent automatically organizes valuable information from conversations into k
 - **CLI management**: Use `/knowledge` commands to view stats, browse directory, and toggle the feature with `/knowledge on|off`
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260413105435.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 See [Personal Knowledge Base](/knowledge) for details.
@@ -51,7 +51,7 @@ Tools are the core of how the Agent accesses operating system resources. The Age
 Access to the OS terminal and file system is the most fundamental and core capability. Many other tools and skills build on top of this. Users can interact with the Agent from a mobile device to operate resources on their personal computer or server:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202181130.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.2 Programming Capability
@@ -59,7 +59,7 @@ Access to the OS terminal and file system is the most fundamental and core capab
 Combining programming and system access, the Agent can execute the complete **Vibecoding workflow** — from information search, asset generation, coding, testing, deployment, Nginx configuration, to publishing — all triggered by a single command from your phone:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260318211018.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.3 Scheduled Tasks
@@ -67,7 +67,7 @@ Combining programming and system access, the Agent can execute the complete **Vi
 The `scheduler` tool enables dynamic scheduled tasks, supporting **one-time tasks, fixed intervals, and Cron expressions**. Tasks can be triggered as either a **fixed message send** or an **Agent dynamic task** execution:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202195402.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.4 Browser
@@ -75,7 +75,7 @@ The `scheduler` tool enables dynamic scheduled tasks, supporting **one-time task
 The built-in `browser` tool allows the Agent to control a Chromium browser to visit web pages, fill forms, click elements, and take screenshots, with support for dynamic JS-rendered pages. Run `stella install-browser` to install with one command, automatically adapting to server (headless) and desktop environments:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260401110103.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.5 Environment Variable Management
@@ -83,14 +83,14 @@ The built-in `browser` tool allows the Agent to control a Chromium browser to vi
 Secrets required by skills are stored in an environment variable file, managed by the `env_config` tool. You can update secrets through conversation, with built-in security protection and desensitization:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202234939.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ## 4. Skills System
 
 The Skills system provides infinite extensibility for the Agent. Each Skill consists of a description file, execution scripts (optional), and resources (optional), describing how to complete specific types of tasks. Skills allow the Agent to follow instructions for complex workflows, invoke tools, or integrate third-party systems.
 
-- [Skill Hub](https://skills.cowagent.ai/): An open skill marketplace featuring official, community, and third-party skills. Install with one command.
+- [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills): An open skill marketplace featuring official, community, and third-party skills. Install with one command.
 - **Built-in skills:** Located in the project's `skills/` directory, including skill creator, image recognition, LinkAI agent, web fetch, and more. Built-in skills are automatically enabled based on dependency conditions (API keys, system commands, etc.).
 - **Custom skills:** Created by users through conversation, stored in the workspace (`~/stella/skills/`), capable of implementing any complex business process or third-party integration.
 
@@ -101,7 +101,7 @@ Install skills: `/skill install <name>` or `stella skill install <name>`, suppor
 The `skill-creator` skill enables rapid skill creation through conversation. You can ask the Agent to codify a workflow as a skill, or send any API documentation and examples for the Agent to complete the integration directly:
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202202247.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 4.2 Web Search and Image Recognition
@@ -110,12 +110,12 @@ The `skill-creator` skill enables rapid skill creation through conversation. You
 - **Image recognition:** Built-in `openai-image-vision` skill, supports `gpt-4.1-mini`, `gpt-4.1`, and other models. Requires `OPENAI_API_KEY`.
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202213219.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 4.3 Skill Hub
 
-Visit [skills.cowagent.ai](https://skills.cowagent.ai/) to browse all available skills, or use commands in conversation:
+Visit [Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) to browse all available skills, or use commands in conversation:
 
 ```text
 /skill list --remote          # Browse Skill Hub
@@ -125,7 +125,7 @@ Visit [skills.cowagent.ai](https://skills.cowagent.ai/) to browse all available 
 
 Also supports installing skills from GitHub, ClawHub, LinkAI, and other third-party platforms. See [Install Skills](/skills/install) for details.
 
-<img src="https://cdn.link-ai.tech/doc/20260401110103.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 ## 5. CLI Command System
 
@@ -142,4 +142,4 @@ stella skill install pptx # Install a skill
 stella install-browser    # Install browser tool
 ```
 
-See [Command Overview](https://docs.cowagent.ai/en/cli) for details.
+See [Command Overview](/en/cli) for details.

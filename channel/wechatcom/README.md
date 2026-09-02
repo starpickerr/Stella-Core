@@ -82,4 +82,4 @@ Error code: 60020, message: "not allow to access from your ip, ...from ip: xx.xx
 
 ~~AIGC开放社区中已经部署了多个可免费使用的Bot，扫描下方的二维码会自动邀请你来体验。~~
 
-~~<img width="200" src="../../docs/images/aigcopen.png">~~
+~~<img width="200" src="../../docs/images/placeholder-image.svg">~~

@@ -20,9 +20,9 @@ description: Stella 2.0.6 - 知识库系统、梦境记忆蒸馏、上下文智�
 - **可视化**：支持文件树浏览和知识图谱可视化，文档内链接可直接跳转查看
 - **命令管理**：`/knowledge` 查看统计、`/knowledge list` 查看目录结构、`/knowledge on|off` 开关知识库
 
-<img src="https://cdn.link-ai.tech/doc/20260413105435.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
-相关文档：[知识库](https://docs.cowagent.ai/knowledge)
+相关文档：[知识库](/knowledge)
 
 Inspired by Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
@@ -36,9 +36,9 @@ Inspired by Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914
 - **手动触发**：支持 `/memory dream [N]` 手动触发，可指定整理天数（默认 3 天，最大 30 天），完成后在对话中通知结果
 - **Web 控制台**：记忆管理页面新增「梦境日记」tab，可浏览和查看所有梦境日记
 
-相关文档：[梦境蒸馏](https://docs.cowagent.ai/memory/deep-dream)
+相关文档：[梦境蒸馏](/memory/deep-dream)
 
-<img src="https://cdn.link-ai.tech/doc/20260414120158.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 ## 🧠 上下文智能压缩
 
@@ -47,7 +47,7 @@ Inspired by Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914
 - **LLM 异步摘要**：裁剪的消息由 LLM 总结为关键信息，同时写入天级记忆文件和注入保留的上下文
 - **多模型兼容**：优先使用主模型进行摘要，兼容 Claude、OpenAI、MiniMax 等不同模型的消息格式要求
 
-相关文档：[短期记忆](https://docs.cowagent.ai/memory/context)
+相关文档：[短期记忆](/memory/context)
 
 ## 💬 Web 控制台升级
 
@@ -61,7 +61,7 @@ Web 控制台多项功能增强：
 
 ## 🤖 模型相关
 
-- **视觉识别优化**：图片识别工具优先使用主模型，支持多模型厂商自动降级。相关文档：[视觉工具](https://docs.cowagent.ai/tools/vision)
+- **视觉识别优化**：图片识别工具优先使用主模型，支持多模型厂商自动降级。相关文档：[视觉工具](/tools/vision)
 - **MiniMax 新模型**：新增 MiniMax-M2.7-highspeed 模型和 MiniMax TTS 语音合成支持。Thanks @octo-patch
 - **通义千问**：新增 qwen3.6-plus 模型支持
 
@@ -78,6 +78,6 @@ Web 控制台多项功能增强：
 
 ## 📦 升级方式
 
-源码部署可执行 `stella update` 或 `./run.sh update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
+源码部署可执行 `stella update` 或 `./run.sh update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](/guide/upgrade)。
 
 **发布日期**：2026.04.14 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.5...master)

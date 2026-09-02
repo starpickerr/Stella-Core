@@ -13,9 +13,9 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 - **向量模型**：支持配置 Embedding 模型（用于记忆及知识库检索），新增支持 OpenAI、通义、豆包、智谱等；切换模型后需执行 `/memory rebuild-index` 在线重建索引
 - **搜索能力**：联网搜索能力升级，支持博查、百度、智谱等多个厂商，自动模式下 Agent 可综合多来源搜索结果进行深度研究
 
-相关文档：[模型概览](https://docs.cowagent.ai/models)
+相关文档：[模型概览](/models)
 
-<img width="720" alt="20260522113305" src="https://cdn.link-ai.tech/doc/20260522113305.png" />
+<img width="720" alt="20260522113305" src="/images/placeholder-image.svg" />
 
 
 ## 🧩 MCP 协议支持
@@ -25,7 +25,7 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 - 原生 JSON-RPC 实现，零额外依赖，同时支持 `stdio` 和 `sse` 两种传输
 - 兼容 Claude Desktop / Cursor 等主流风格的 `mcpServers` 配置，优先读取 `~/stella/mcp.json`
 
-相关文档：[MCP 工具](https://docs.cowagent.ai/tools/mcp)。Thanks @yangluxin613 (#2801)
+相关文档：[MCP 工具](/tools/mcp)。Thanks @yangluxin613 (#2801)
 
 ## 🌐 浏览器登录态持久化
 
@@ -34,7 +34,7 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 - **持久化用户配置（默认）**：默认使用 `~/.stella/browser_profile` 作为浏览器用户目录，登录一次后下次自动复用登录态
 - **CDP 模式**：通过 `tools.browser.cdp_endpoint` 接管真实 Chrome 浏览器，享有完整浏览器权限
 
-相关文档：[浏览器工具](https://docs.cowagent.ai/tools/browser)。Thanks @leafmove (#2809)
+相关文档：[浏览器工具](/tools/browser)。Thanks @leafmove (#2809)
 
 ## 🤖 模型新增与优化
 
@@ -48,7 +48,7 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 
 ## 🛠 体验优化与修复
 
-- **TTS 适配更多通道**：Web对话、个人微信、飞书、钉钉、企微智能机器人均已支持回复语音，详情查看 [通道概览](https://docs.cowagent.ai/channels)
+- **TTS 适配更多通道**：Web对话、个人微信、飞书、钉钉、企微智能机器人均已支持回复语音，详情查看 [通道概览](/channels)
 - **日志面板增强**：根据日志等级差异化高亮展示、支持根据等级筛选。Thanks @yangluxin613 (#2807)
 - **Web 控制台自动启动**：程序启动后自动打开 Web 控制台。Thanks @yangluxin613 (#2804)
 - **Ctrl+C 干净退出**：不再打印一长串 `KeyboardInterrupt` 堆栈。Thanks @yangluxin613 (#2806)
@@ -60,6 +60,6 @@ Web 控制台新增「模型」页面，按 **模型厂商 + 模型能力** 进�
 
 ## 📦 升级方式
 
-源码部署可执行 `stella update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
+源码部署可执行 `stella update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](/guide/upgrade)。
 
 **发布日期**：2026.05.22 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.8...2.0.9)

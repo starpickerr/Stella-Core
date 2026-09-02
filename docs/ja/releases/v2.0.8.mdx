@@ -9,7 +9,7 @@ description: Stella 2.0.8 - 飛書チャネル全面アップグレード（音�
 
 飛書オープンプラットフォームで手動でアプリを作成し、権限とイベントサブスクリプションを設定する必要がなくなりました。Web コンソールおよびコマンドライン起動時に `feishu_app_id` が未設定の場合、QR スキャン入口が自動的に表示されます。飛書でスキャン・認可するとボットが自動作成され、設定が自動で書き戻され、すぐに使い始められます。
 
-ドキュメント：[飛書チャネル](https://docs.cowagent.ai/ja/channels/feishu)
+ドキュメント：[飛書チャネル](/ja/channels/feishu)
 
 ### 2. 音声メッセージ送受信
 
@@ -32,7 +32,7 @@ description: Stella 2.0.8 - 飛書チャネル全面アップグレード（音�
 - **思考モデルスイッチの統一**：DeepSeek V4、Qwen3 など思考対応モデルの切り替え動作を `enable_thinking` に統一
 - **百度千帆 / ERNIE のファーストクラス対応**：新たな `qianfan` プロバイダーを追加。`ernie-5.0`（デフォルト推奨）、`ernie-x1.1`、`ernie-4.5-turbo-128k`、`ernie-4.5-turbo-32k` をサポート。`qianfan_api_key` / `qianfan_api_base` の独立設定により OpenAI 設定を汚染せず、旧来の `wenxin` / `wenxin-4` パスも完全互換 #2790 Thanks [@jimmyzhuu](https://github.com/jimmyzhuu)
 
-  ドキュメント：[百度千帆 / ERNIE](https://docs.cowagent.ai/ja/models/qianfan)
+  ドキュメント：[百度千帆 / ERNIE](/ja/models/qianfan)
 
 ## 🌐 翻訳プロバイダー
 
@@ -61,7 +61,7 @@ description: Stella 2.0.8 - 飛書チャネル全面アップグレード（音�
 
 ## 📦 アップグレード
 
-ソースコードデプロイは `stella update` または `./run.sh update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は[アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade)を参照。
+ソースコードデプロイは `stella update` または `./run.sh update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は[アップグレードガイド](/ja/guide/upgrade)を参照。
 
 > ⚠️ 飛書のワンクリックアプリ作成は `lark-oapi>=1.5.5` が必要です。`stella update` は自動で取得します。手動デプロイの場合は依存関係の更新を確認してください。
 

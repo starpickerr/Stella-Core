@@ -1,4 +1,4 @@
-<p align="center"><img src="https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
+<p align="center"><img src="docs/images/logo.jpg" alt="Stella" width="420" /></p>
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release"></a>
@@ -25,10 +25,7 @@ The codebase is an Agent Harness: plug in any major LLM, run it 24/7 on a person
 ## 🎬 Demo
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8625a19f-615c-4343-8be8-3707ce4d4d4e" controls muted playsinline width="720">
-    Your browser can't play this video.
-    <a href="https://github.com/starpickerr/Stella">Watch the demo in the repository →</a>
-  </video>
+  <img src="docs/images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -37,26 +34,26 @@ The codebase is an Agent Harness: plug in any major LLM, run it 24/7 on a person
 
 | Capability | Description |
 | :--- | :--- |
-| [Planning](https://docs.cowagent.ai/intro/architecture) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
-| [Memory](https://docs.cowagent.ai/memory/index) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
-| [Knowledge](https://docs.cowagent.ai/knowledge/index) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
-| [Evolution](https://docs.cowagent.ai/memory/self-evolution) | Self-Evolution reviews conversations automatically to improve skills, follow up on unfinished tasks, and consolidate memory and knowledge, growing through everyday use |
-| [Skills](https://docs.cowagent.ai/skills/index) | One-click install from [Skill Hub](https://skills.cowagent.ai/), GitHub, ClawHub; or create custom skills via natural-language conversation |
-| [Tools](https://docs.cowagent.ai/tools/index) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
-| [Channels](https://docs.cowagent.ai/channels/index) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, Official Accounts, Telegram, and Slack |
+| [Planning](docs/intro/architecture.mdx) | Decomposes complex tasks and executes them step by step, looping over tools until the goal is reached |
+| [Memory](docs/memory/index.mdx) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
+| [Knowledge](docs/knowledge/index.mdx) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
+| [Evolution](docs/memory/self-evolution.mdx) | Self-Evolution reviews conversations automatically to improve skills, follow up on unfinished tasks, and consolidate memory and knowledge, growing through everyday use |
+| [Skills](docs/skills/index.mdx) | One-click install from [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills), GitHub, ClawHub; or create custom skills via natural-language conversation |
+| [Tools](docs/tools/index.mdx) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
+| [Channels](docs/channels/index.mdx) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, Official Accounts, Telegram, and Slack |
 | Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
-| [Models](https://docs.cowagent.ai/models/index) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
-| [Deploy](https://docs.cowagent.ai/guide/quick-start) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
+| [Models](docs/models/index.mdx) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
+| [Deploy](docs/guide/quick-start.mdx) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
 
 <br/>
 
 ## 🏗️ Architecture
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/en/architecture.png" alt="Stella Architecture" width="750"/>
+<img src="docs/images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
 
 Stella is a complete **Agent Harness**: messages flow in through **Channels**; the **Agent Core** plans and reasons over memory, knowledge, and the available tools and skills; **Models** generate the response, which is sent back through the originating channel. Every layer is decoupled and independently extensible.
 
-Read more in [Architecture](https://docs.cowagent.ai/intro/architecture).
+Read more in [Architecture](docs/intro/architecture.mdx).
 
 <br/>
 
@@ -102,21 +99,21 @@ Stella supports all mainstream LLM providers. **Chat, vision, image generation, 
 
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](https://docs.cowagent.ai/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/models/openai) | gpt-5.6 series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](https://docs.cowagent.ai/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [GLM](https://docs.cowagent.ai/models/glm) | glm-5.3, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [Qwen](https://docs.cowagent.ai/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
-| [Doubao](https://docs.cowagent.ai/models/doubao) | doubao-seed-2.1 series | ✅ | ✅ | ✅ | | | ✅ |
-| [ERNIE](https://docs.cowagent.ai/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [MiMo](https://docs.cowagent.ai/models/mimo) | mimo-v2.5 / pro | ✅ | ✅ | | | ✅ | |
-| [LinkAI](https://docs.cowagent.ai/models/linkai) | One key for 100+ models | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Custom](https://docs.cowagent.ai/models/custom) | Local models / third-party proxy | ✅ | | | | | |
+| [DeepSeek](docs/models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [Claude](docs/models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
+| [OpenAI](docs/models/openai.mdx) | gpt-5.6 series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](docs/models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
+| [MiniMax](docs/models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
+| [GLM](docs/models/glm.mdx) | glm-5.3, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [Qwen](docs/models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](docs/models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
+| [Doubao](docs/models/doubao.mdx) | doubao-seed-2.1 series | ✅ | ✅ | ✅ | | | ✅ |
+| [ERNIE](docs/models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
+| [MiMo](docs/models/mimo.mdx) | mimo-v2.5 / pro | ✅ | ✅ | | | ✅ | |
+| [LinkAI](docs/models/linkai.mdx) | One key for 100+ models | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Custom](docs/models/custom.mdx) | Local models / third-party proxy | ✅ | | | | | |
 
-> For details on each provider, see the [Models overview](https://docs.cowagent.ai/models/index).
+> For details on each provider, see the [Models overview](docs/models/index.mdx).
 
 <br/>
 
@@ -126,22 +123,22 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 
 | Channel | Text | Image | File | Voice | Group |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web Console](https://docs.cowagent.ai/channels/web) (default) | ✅ | ✅ | ✅ | ✅ | |
-| [Telegram](https://docs.cowagent.ai/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](https://docs.cowagent.ai/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
-| [Discord](https://docs.cowagent.ai/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
-| [WeChat](https://docs.cowagent.ai/channels/weixin) | ✅ | ✅ | ✅ | ✅ | |
-| [Feishu / Lark](https://docs.cowagent.ai/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [DingTalk](https://docs.cowagent.ai/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [WeCom Bot](https://docs.cowagent.ai/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [QQ](https://docs.cowagent.ai/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
-| [WeCom App](https://docs.cowagent.ai/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
-| [WeChat Customer Service](https://docs.cowagent.ai/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
-| [WeChat Official Account](https://docs.cowagent.ai/channels/wechatmp) | ✅ | ✅ | | ✅ | |
+| [Web Console](docs/channels/web.mdx) (default) | ✅ | ✅ | ✅ | ✅ | |
+| [Telegram](docs/channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Slack](docs/channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](docs/channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [WeChat](docs/channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [Feishu / Lark](docs/channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [DingTalk](docs/channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [WeCom Bot](docs/channels/wecom-bot.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [QQ](docs/channels/qq.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [WeCom App](docs/channels/wecom.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat Customer Service](docs/channels/wechat-kf.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [WeChat Official Account](docs/channels/wechatmp.mdx) | ✅ | ✅ | | ✅ | |
 
-> See the [Channels overview](https://docs.cowagent.ai/channels/index) for setup details.
+> See the [Channels overview](docs/channels/index.mdx) for setup details.
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-chat.png" alt="Stella Web Console" width="800"/>
+<img src="docs/images/placeholder-image.svg" alt="Stella Web Console" width="800"/>
 
 *The Web console is the default channel and the unified entry point to configure models, channels, skills, memory, and more.*
 
@@ -149,18 +146,18 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 
 ## 🧠 Memory & Knowledge Base
 
-**Long-term memory** uses a three-tier architecture: conversation context (short-term) → daily memory (mid-term) → MEMORY.md (long-term). A nightly **Deep Dream** pass distills scattered memories into refined long-term entries and a narrative journal. See [Long-term Memory](https://docs.cowagent.ai/memory/index) · [Deep Dream](https://docs.cowagent.ai/memory/deep-dream).
+**Long-term memory** uses a three-tier architecture: conversation context (short-term) → daily memory (mid-term) → MEMORY.md (long-term). A nightly **Deep Dream** pass distills scattered memories into refined long-term entries and a narrative journal. See [Long-term Memory](docs/memory/index.mdx) · [Deep Dream](docs/memory/deep-dream.mdx).
 
-**Personal knowledge base** complements the time-ordered memory by organizing structured knowledge **by topic**. The Agent automatically curates valuable information from conversations, maintains cross-references and indexes, and the Web console offers an interactive knowledge-graph view. See [Personal Knowledge Base](https://docs.cowagent.ai/knowledge/index).
+**Personal knowledge base** complements the time-ordered memory by organizing structured knowledge **by topic**. The Agent automatically curates valuable information from conversations, maintains cross-references and indexes, and the Web console offers an interactive knowledge-graph view. See [Personal Knowledge Base](docs/knowledge/index.mdx).
 
 <table>
   <tr>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-memory.png" alt="Long-term Memory" />
+      <img src="docs/images/placeholder-image.svg" alt="Long-term Memory" />
       <p align="center"><em>Long-term Memory · Three-tier architecture + Deep Dream</em></p>
     </td>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-knowledge.png" alt="Personal Knowledge Base" />
+      <img src="docs/images/placeholder-image.svg" alt="Personal Knowledge Base" />
       <p align="center"><em>Knowledge Base · Auto-curated Markdown wiki</em></p>
     </td>
   </tr>
@@ -178,11 +175,11 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 
 **MCP protocol** integrates the open ecosystem of [Model Context Protocol](https://modelcontextprotocol.io) servers. A single `mcp.json` is enough — supports stdio / SSE transports, hot reload, and zero-code integration.
 
-Learn more: [Tools overview](https://docs.cowagent.ai/tools/index) · [MCP integration](https://docs.cowagent.ai/tools/mcp).
+Learn more: [Tools overview](docs/tools/index.mdx) · [MCP integration](docs/tools/mcp.mdx).
 
 ### Skills System
 
-- **[Skill Hub](https://skills.cowagent.ai/)** — open skill marketplace: browse, search, install in one click
+- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — open skill marketplace: browse, search, install in one click
 - **GitHub / ClawHub / URL and more** — install skills from any source
 - **Conversational authoring** — generate custom skills through dialogue with `skill-creator`; turn any workflow or third-party API into a reusable skill
 
@@ -192,7 +189,7 @@ Learn more: [Tools overview](https://docs.cowagent.ai/tools/index) · [MCP integ
 /skill install <name>          # one-click install
 ```
 
-Learn more: [Skills overview](https://docs.cowagent.ai/skills/index) · [Creating Skills](https://docs.cowagent.ai/skills/create).
+Learn more: [Skills overview](docs/skills/index.mdx) · [Creating Skills](docs/skills/create.mdx).
 
 <br/>
 
@@ -214,7 +211,7 @@ Learn more: [Skills overview](https://docs.cowagent.ai/skills/index) · [Creatin
 
 > **2026.06.01:** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — Internationalization, new channels (Telegram, Discord, Slack, WeChat Customer Service), CLI interaction upgrades, streamlined one-line install, MCP Streamable HTTP support, new models (claude-opus-4-8, MiMo).
 
-Full history: [Release Notes](https://docs.cowagent.ai/releases/overview)
+Full history: [Release Notes](docs/releases/overview.mdx)
 
 <br/>
 

@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Theme } from '../theme/themes'
-// The desktop app's own brand icon (transparent PNG), bundled by Vite.
+// The desktop app's own white-background brand icon, bundled by Vite.
 import brandLogo from '../assets/logo.png'
 import { t, getLang, setLang, Lang } from '../i18n'
 import { useUIStore } from '../store/uiStore'
@@ -44,18 +44,21 @@ import { product } from '@product'
 // Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
 // in sync with desktop/package.json "version"; the packaged app overrides this
 // with the real value via IPC, so it only matters outside a packaged build.
-const FALLBACK_VERSION = '2.1.5'
+const FALLBACK_VERSION = '0.0.1'
 
 // External links opened in the user's default browser. The window-open handler
 // in the main process routes window.open() through shell.openExternal.
 // English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
 // language-agnostic.
-const SKILL_HUB_URL = 'https://skills.cowagent.ai/'
+const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
 // GitHub issues — where users report bugs / request features.
 const FEEDBACK_URL = 'https://github.com/starpickerr/Stella/issues'
 
 const websiteUrl = () => 'https://github.com/starpickerr/Stella'
-const docsUrl = () => (getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai')
+const docsUrl = () =>
+  getLang() === 'zh'
+    ? 'https://github.com/starpickerr/Stella/tree/main/docs/zh'
+    : 'https://github.com/starpickerr/Stella/tree/main/docs'
 
 const openExternal = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
