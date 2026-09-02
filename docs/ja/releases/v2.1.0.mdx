@@ -3,7 +3,7 @@ title: v2.1.0
 description: Stella 2.1.0 - 国際化対応、Telegram / Discord / Slack / WeChat カスタマーサービスチャネルの追加、CLI インタラクション強化、MCP プロトコル強化、新モデル追加
 ---
 
-🌐 [English](https://docs.cowagent.ai/releases/v2.1.0) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.0)
+🌐 [English](/releases/v2.1.0) | [中文](/zh/releases/v2.1.0)
 
 ## 📱 接続チャネルの追加
 
@@ -14,7 +14,7 @@ description: Stella 2.1.0 - 国際化対応、Telegram / Discord / Slack / WeCha
 - **Slack Bot**：Slack ボットに接続、チームのワークフローに統合
 - **WeChat カスタマーサービス**：WeChat カスタマーサービスチャネルを新設。画像・ファイルの受信に対応し、自動で次のターンに統合。マルチメディアのコンテキスト体験が他チャネルと同等に。Thanks [@6vision](https://github.com/6vision) (#2840)
 
-ドキュメント：[チャネル概要](https://docs.cowagent.ai/ja/channels)
+ドキュメント：[チャネル概要](/ja/channels)
 
 ## 🌍 国際化対応
 
@@ -31,20 +31,20 @@ Stella は全世界の開発者に向けたエンドツーエンドの国際化�
 - **コマンドのあいまいマッチング**：コマンドの省略形や近似タイポの自動サジェストに対応。よく使うショートカットを内蔵し、設定ファイルでカスタムエイリアスも定義可能。Thanks [@lyteen](https://github.com/lyteen) (#2850)
 - **タスクのキャンセル対応**：実行中の Agent タスクを能動的に中断可能。Web 端に中止ボタンを追加、その他のチャネルでは `/cancel` を送信して中止
 
-ドキュメント：[CLI ガイド](https://docs.cowagent.ai/ja/cli/general)
+ドキュメント：[CLI ガイド](/ja/cli/general)
 
 ## 🧩 MCP プロトコル強化
 
 MCP ツールが **Streamable HTTP** 伝送に新対応。既存の `stdio`・`sse` に加え、より多くの MCP サービスに互換となり、ストリーミング HTTP プロトコルを用いるリモートツールへ直接接続できます。
 
-ドキュメント：[MCP ツール](https://docs.cowagent.ai/ja/tools/mcp)
+ドキュメント：[MCP ツール](/ja/tools/mcp)
 
 ## 🤖 モデル追加と最適化
 
 - **モデル新規追加**：`claude-opus-4-8`、Xiaomi `MiMo`
 - **モデル最適化**：一部モデルが返すツール呼び出し引数の JSON 解析に失敗する問題を修正 (#2823)
 
-ドキュメント：[モデル概要](https://docs.cowagent.ai/ja/models)
+ドキュメント：[モデル概要](/ja/models)
 
 ## 🧠 記憶と検索の最適化
 
@@ -64,6 +64,6 @@ Thanks [@yangluxin613](https://github.com/yangluxin613) (#2832)
 
 ## 📦 アップグレード方法
 
-ソースコードデプロイは `stella update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は [アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade) を参照。
+ソースコードデプロイは `stella update` でワンクリックアップグレード、または最新コードを手動で pull して再起動してください。詳細は [アップグレードガイド](/ja/guide/upgrade) を参照。
 
 **リリース日**：2026.06.01 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.9...2.1.0)

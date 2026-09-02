@@ -1,4 +1,4 @@
-<p align="center"><img src= "https://github.com/user-attachments/assets/eca9a9ec-8534-4615-9e0f-96c5ac1d10a3" alt="Stella" width="420" /></p>
+<p align="center"><img src= "../images/logo.jpg" alt="Stella" width="420" /></p>
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
@@ -25,10 +25,7 @@
 ## 🎬 演示
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/a2d8fb12-f294-42d6-a569-c4a6ceedab1d" controls muted playsinline width="720">
-    你的浏览器无法播放该视频。
-    <a href="https://cowagent.ai/?lang=zh">前往官网观看演示 →</a>
-  </video>
+  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -37,26 +34,26 @@
 
 | 能力 | 说明 |
 | :--- | :--- |
-| [任务规划](https://docs.cowagent.ai/zh/intro/architecture) | 理解复杂任务并自主分解执行，循环调用工具直到完成目标 |
-| [长期记忆](https://docs.cowagent.ai/zh/memory) | 三层记忆架构（上下文 → 天级 → 核心），梦境蒸馏自动整理，支持关键词与向量混合检索 |
-| [知识库](https://docs.cowagent.ai/zh/knowledge) | 自动整理结构化知识为 Markdown Wiki，构建持续增长的知识图谱，可视化浏览 |
-| [自主进化](https://docs.cowagent.ai/zh/memory/self-evolution) | 自动复盘对话，优化技能、处理未完成事项、沉淀记忆与知识，在使用中持续成长 |
-| [技能](https://docs.cowagent.ai/zh/skills) | 从 [Skill Hub](https://skills.cowagent.ai/)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
-| [工具](https://docs.cowagent.ai/zh/tools) | 内置文件读写、终端、浏览器、定时任务、记忆检索、联网搜索等 10+ 工具，支持 MCP 协议 |
-| [通道](https://docs.cowagent.ai/zh/channels) | 一个 Agent 同时接入 Web、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
+| [任务规划](intro/architecture.mdx) | 理解复杂任务并自主分解执行，循环调用工具直到完成目标 |
+| [长期记忆](memory/index.mdx) | 三层记忆架构（上下文 → 天级 → 核心），梦境蒸馏自动整理，支持关键词与向量混合检索 |
+| [知识库](knowledge/index.mdx) | 自动整理结构化知识为 Markdown Wiki，构建持续增长的知识图谱，可视化浏览 |
+| [自主进化](memory/self-evolution.mdx) | 自动复盘对话，优化技能、处理未完成事项、沉淀记忆与知识，在使用中持续成长 |
+| [技能](skills/index.mdx) | 从 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
+| [工具](tools/index.mdx) | 内置文件读写、终端、浏览器、定时任务、记忆检索、联网搜索等 10+ 工具，支持 MCP 协议 |
+| [通道](channels/index.mdx) | 一个 Agent 同时接入 Web、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
 | 多模态 | 文本、图片、语音、文件全消息类型支持，覆盖识别、生成、收发 |
-| [模型](https://docs.cowagent.ai/zh/models) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流厂商，配置一行切换 |
-| [部署](https://docs.cowagent.ai/zh/guide/quick-start) | 一键脚本安装，Web 控制台统一管理；本地、Docker、服务器多种部署方式 |
+| [模型](models/index.mdx) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流厂商，配置一行切换 |
+| [部署](guide/quick-start.mdx) | 一键脚本安装，Web 控制台统一管理；本地、Docker、服务器多种部署方式 |
 
 <br/>
 
 ## 🏗️ 架构总览
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/architecture/zh/architecture.jpg" alt="Stella Architecture" width="750"/>
+<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
 
 Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，**Agent Core** 结合记忆、知识库与可用工具/技能进行任务规划与决策，调用**模型**生成结果，再回传至原通道。各模块解耦清晰，按需扩展。
 
-详见 [项目架构](https://docs.cowagent.ai/zh/intro/architecture)。
+详见 [项目架构](intro/architecture.mdx)。
 
 <br/>
 
@@ -102,21 +99,21 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 | 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [智谱 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [通义千问](https://docs.cowagent.ai/zh/models/qwen) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](https://docs.cowagent.ai/zh/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
-| [豆包 Doubao](https://docs.cowagent.ai/zh/models/doubao) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [百度ERNIE](https://docs.cowagent.ai/zh/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
-| [小米 MiMo](https://docs.cowagent.ai/zh/models/mimo) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](https://docs.cowagent.ai/zh/models/linkai) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定义](https://docs.cowagent.ai/zh/models/custom) | 本地模型 / 三方代理 | ✅ | | | | | |
+| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
+| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
+| [OpenAI](models/openai.mdx) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
+| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
+| [智谱 GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
+| [通义千问](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
+| [豆包 Doubao](models/doubao.mdx) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
+| [百度ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
+| [小米 MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
+| [LinkAI](models/linkai.mdx) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [自定义](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
 
-> 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](https://docs.cowagent.ai/zh/models)。
+> 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](models/index.mdx)。
 
 <br/>
 
@@ -126,22 +123,22 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 | 通道 | 文本 | 图片 | 文件 | 语音 | 群聊 |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web 控制台](https://docs.cowagent.ai/zh/channels/web)（默认） | ✅ | ✅ | ✅ | ✅ | |
-| [微信](https://docs.cowagent.ai/zh/channels/weixin) | ✅ | ✅ | ✅ | ✅ | |
-| [飞书](https://docs.cowagent.ai/zh/channels/feishu) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [钉钉](https://docs.cowagent.ai/zh/channels/dingtalk) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [企微智能机器人](https://docs.cowagent.ai/zh/channels/wecom-bot) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [QQ](https://docs.cowagent.ai/zh/channels/qq) | ✅ | ✅ | ✅ | | ✅ |
-| [企业微信应用](https://docs.cowagent.ai/zh/channels/wecom) | ✅ | ✅ | ✅ | ✅ | |
-| [微信客服](https://docs.cowagent.ai/zh/channels/wechat-kf) | ✅ | ✅ | ✅ | ✅ | |
-| [微信公众号](https://docs.cowagent.ai/zh/channels/wechatmp) | ✅ | ✅ | | ✅ | |
-| [Telegram](https://docs.cowagent.ai/zh/channels/telegram) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](https://docs.cowagent.ai/zh/channels/slack) | ✅ | ✅ | ✅ | | ✅ |
-| [Discord](https://docs.cowagent.ai/zh/channels/discord) | ✅ | ✅ | ✅ | | ✅ |
+| [Web 控制台](channels/web.mdx)（默认） | ✅ | ✅ | ✅ | ✅ | |
+| [微信](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [飞书](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [钉钉](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [企微智能机器人](channels/wecom-bot.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [QQ](channels/qq.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [企业微信应用](channels/wecom.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [微信客服](channels/wechat-kf.mdx) | ✅ | ✅ | ✅ | ✅ | |
+| [微信公众号](channels/wechatmp.mdx) | ✅ | ✅ | | ✅ | |
+| [Telegram](channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
+| [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> 飞书、企微智能机器人支持在 Web 控制台内**扫码一键接入**，无需公网 IP。详见 [通道概览](https://docs.cowagent.ai/zh/channels)。
+> 飞书、企微智能机器人支持在 Web 控制台内**扫码一键接入**，无需公网 IP。详见 [通道概览](channels/index.mdx)。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-chat.png" alt="Stella Web 控制台" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella Web 控制台" width="800"/>
 
 *Web 控制台是默认通道，也是统一的 Agent 配置和管理入口*
 
@@ -149,18 +146,18 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 ## 🧠 记忆与知识库
 
-**长期记忆**采用三层架构：对话上下文（短期）→ 天级记忆（中期）→ MEMORY.md（长期）。每日自动执行**梦境蒸馏（Deep Dream）**，将分散记忆整合为精炼的长期记忆并生成叙事日记。详见 [长期记忆](https://docs.cowagent.ai/zh/memory) · [梦境蒸馏](https://docs.cowagent.ai/zh/memory/deep-dream)。
+**长期记忆**采用三层架构：对话上下文（短期）→ 天级记忆（中期）→ MEMORY.md（长期）。每日自动执行**梦境蒸馏（Deep Dream）**，将分散记忆整合为精炼的长期记忆并生成叙事日记。详见 [长期记忆](memory/index.mdx) · [梦境蒸馏](memory/deep-dream.mdx)。
 
-**个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，Web 控制台可可视化浏览知识图谱。详见 [个人知识库](https://docs.cowagent.ai/zh/knowledge)。
+**个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，Web 控制台可可视化浏览知识图谱。详见 [个人知识库](knowledge/index.mdx)。
 
 <table>
   <tr>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-memory.png" alt="长期记忆" />
+      <img src="../images/placeholder-image.svg" alt="长期记忆" />
       <p align="center"><em>长期记忆 · 三层记忆 + 梦境蒸馏</em></p>
     </td>
     <td width="50%">
-      <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-knowledge.png" alt="个人知识库" />
+      <img src="../images/placeholder-image.svg" alt="个人知识库" />
       <p align="center"><em>个人知识库 · 自动整理的 Markdown Wiki</em></p>
     </td>
   </tr>
@@ -179,11 +176,11 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 **MCP 协议** 通过 [Model Context Protocol](https://modelcontextprotocol.io) 接入开放生态中的各种 MCP 服务，配置一次 `mcp.json` 即用即得，支持 stdio / SSE 协议、热更新、零代码接入。
 
-详见 [工具概览](https://docs.cowagent.ai/zh/tools) · [MCP 集成](https://docs.cowagent.ai/zh/tools/mcp)。
+详见 [工具概览](tools/index.mdx) · [MCP 集成](tools/mcp.mdx)。
 
 ### 技能系统
 
-- **[Skill Hub](https://skills.cowagent.ai/)** — 开源的技能广场，浏览、搜索、一键安装
+- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — 开源的技能广场，浏览、搜索、一键安装
 - **GitHub / ClawHub / URL 等** — 任意来源一键安装
 - **对话创造** — 通过 `skill-creator` 用对话快速生成自定义技能，可将工作流程或第三方接口直接固化为技能
 
@@ -193,7 +190,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 /skill install <名称>          # 一键安装
 ```
 
-详见 [技能概览](https://docs.cowagent.ai/zh/skills) · [创建技能](https://docs.cowagent.ai/zh/skills/create)。
+详见 [技能概览](skills/index.mdx) · [创建技能](skills/create.mdx)。
 
 <br/>
 
@@ -207,7 +204,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 > **2026.07.20：** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
 
-> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客户端](https://cowagent.ai/zh/download/)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
+> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客户端](https://github.com/starpickerr/Stella/releases)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
 
 > **2026.06.18：** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web 控制台升级（定时任务管理、知识库分类、多模型自定义厂商）、自主进化优化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和体验优化
 
@@ -215,7 +212,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 > **2026.06.01：** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
 
-完整更新历史：[Release Notes](https://docs.cowagent.ai/zh/releases)
+完整更新历史：[Release Notes](https://github.com/starpickerr/Stella/tree/main/docs)
 
 <br/>
 

@@ -9,7 +9,7 @@ interface SkillsPageProps {
   baseUrl: string
 }
 
-const SKILL_HUB_URL = 'https://skills.cowagent.ai/'
+const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [tools, setTools] = useState<ToolInfo[]>([])

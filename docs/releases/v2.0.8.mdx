@@ -9,7 +9,7 @@ description: Stella 2.0.8 - Major Feishu channel upgrade (voice, streaming typew
 
 No more manual app setup, permission scopes and event subscriptions in the Feishu Open Platform. When `feishu_app_id` is not configured, both the Web Console and CLI startup flow now show a QR-scan entry — scan with Feishu, authorize, and the bot is created and config is filled back automatically. Out-of-the-box.
 
-Documentation: [Feishu Channel](https://docs.cowagent.ai/en/channels/feishu)
+Documentation: [Feishu Channel](/en/channels/feishu)
 
 ### 2. Voice Messages
 
@@ -32,7 +32,7 @@ The voice and streaming building blocks come from a community contribution #2791
 - **Unified thinking-mode toggle**: DeepSeek V4, Qwen3 and other thinking-capable models now share the same `enable_thinking` switch
 - **ERNIE first-class integration**: New `qianfan` provider supporting `ernie-5.0` (default recommendation), `ernie-x1.1`, `ernie-4.5-turbo-128k`, `ernie-4.5-turbo-32k`. Dedicated `qianfan_api_key` / `qianfan_api_base` settings keep OpenAI config clean; legacy `wenxin` / `wenxin-4` paths are fully preserved. #2790 Thanks [@jimmyzhuu](https://github.com/jimmyzhuu)
 
-  Documentation: [ERNIE](https://docs.cowagent.ai/en/models/qianfan)
+  Documentation: [ERNIE](/en/models/qianfan)
 
 ## 🌐 Translation Provider
 
@@ -61,7 +61,7 @@ The voice and streaming building blocks come from a community contribution #2791
 
 ## 📦 Upgrade
 
-Source-code deployments can run `stella update` or `./run.sh update` for a one-click upgrade, or pull the latest code and restart manually. See [Upgrade Guide](https://docs.cowagent.ai/en/guide/upgrade) for details.
+Source-code deployments can run `stella update` or `./run.sh update` for a one-click upgrade, or pull the latest code and restart manually. See [Upgrade Guide](/en/guide/upgrade) for details.
 
 > ⚠️ One-click Feishu app creation requires `lark-oapi>=1.5.5`. `stella update` pulls it automatically; manual deployments must update dependencies.
 

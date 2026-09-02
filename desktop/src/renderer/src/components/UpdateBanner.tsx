@@ -11,8 +11,7 @@ function releaseNotesUrl(version: string): string {
   const lang = getLang()
   const override = product.links?.releaseNotesUrl?.(version, lang)
   if (override) return override
-  const base = lang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai'
-  return `${base}/releases/v${version}`
+  return `https://github.com/starpickerr/Stella/releases/tag/v${version}`
 }
 
 // Compact update panel anchored to the NavRail footer. Shown whenever an update

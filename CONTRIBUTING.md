@@ -44,7 +44,7 @@ docs: clarify Docker setup
 
 ## Development setup
 
-See the [Install from Source](https://docs.cowagent.ai/guide/manual-install)
+See the [Install from Source](docs/guide/manual-install.mdx)
 guide. In short:
 
 ```bash

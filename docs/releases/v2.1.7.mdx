@@ -3,7 +3,7 @@ title: v2.1.7
 description: "Stella 2.1.7: multiple workspaces isolated per session, session-level permission modes, task notifications and desktop improvements, and new models"
 ---
 
-🌐 [English](https://docs.cowagent.ai/releases/v2.1.7) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.7)
+🌐 [English](/releases/v2.1.7) | [中文](/zh/releases/v2.1.7)
 
 ## 🗂 Multiple Workspaces
 
@@ -15,9 +15,9 @@ The Agent is no longer tied to a single directory — you can set up several pro
 - **Grouped sessions**: the session list is grouped by workspace, with pinning, reordering, renaming, and deleting.
 - **Shared system resources**: memory, skills, and the knowledge base still live in the system workspace (`~/stella` by default).
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-workspace-project-demo.png" width="800" />
+<img src="/images/placeholder-image.svg" width="800" />
 
-Docs: [Workspace](https://docs.cowagent.ai/intro/architecture#workspace)
+Docs: [Workspace](/intro/architecture#workspace)
 
 ## 🔐 Permission Modes
 
@@ -27,7 +27,7 @@ Sessions now carry their own permission mode, which works together with workspac
 - **Default mode**: pick a default permission mode, and new sessions start with it.
 - **Actionable denials**: when a tool call is blocked, the hint is clickable so you can adjust the permission on the spot.
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-access-mode.png" width="600" />
+<img src="/images/placeholder-image.svg" width="600" />
 
 ## 🖥 Desktop Client
 
@@ -37,9 +37,9 @@ Sessions now carry their own permission mode, which works together with workspac
 - **Startup diagnostics**: when the backend fails to start, the client reports what actually went wrong instead of a generic error.
 - **Log download**: the run-log page can download the log file, and local uploads gained retries and clearer errors.
 
-Download: [Stella Desktop](https://cowagent.ai/download/)
+Download: [Stella Desktop](https://github.com/starpickerr/Stella/releases)
 
-Docs: [Desktop Client](https://docs.cowagent.ai/guide/desktop)
+Docs: [Desktop Client](/guide/desktop)
 
 ## 🔔 Task Notifications
 
@@ -71,7 +71,7 @@ Thanks @chimyves (#3056, #3055)
 
 ## 📦 How to Upgrade
 
-- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
-- **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://cowagent.ai/download/).
+- **Source deployment**: run `stella update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](/guide/upgrade).
+- **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://github.com/starpickerr/Stella/releases).
 
 **Release date**: 2026.08.20 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.6...2.1.7)

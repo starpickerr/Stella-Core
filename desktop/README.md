@@ -52,6 +52,58 @@ npm run dist:win
 
 Build outputs are placed in the `release/` directory.
 
+### Build Stella.app from source (macOS)
+
+Run the complete build from the repository root so the packaged application
+contains the latest Python backend, Web console, and Electron UI:
+
+```bash
+# 1. Install Electron dependencies (first build, or after package changes)
+cd desktop
+npm install
+cd ..
+
+# 2. Freeze the Python backend and Web assets
+bash desktop/build/build-backend.sh
+
+# 3. Build Stella.app, DMG, ZIP, and updater metadata
+cd desktop
+npm run dist:mac
+```
+
+The outputs are:
+
+```text
+desktop/release/mac-arm64/Stella.app
+desktop/release/Stella-<version>-arm64.dmg
+desktop/release/Stella-<version>-arm64.zip
+desktop/release/latest-mac.yml
+```
+
+To build a new release, update the version first:
+
+```bash
+cd desktop
+npm version 0.0.2 --no-git-tag-version
+cd ..
+bash desktop/build/build-backend.sh
+cd desktop
+npm run dist:mac
+```
+
+If GitHub downloads require the macOS system proxy, expose it to the build
+process explicitly:
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890 \
+HTTPS_PROXY=http://127.0.0.1:7890 \
+NO_PROXY=127.0.0.1,localhost \
+npm run dist:mac
+```
+
+An unsigned local build can be opened for testing. Public distribution should
+use an Apple Developer ID certificate and notarization.
+
 ## Architecture
 
 ```

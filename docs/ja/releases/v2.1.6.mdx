@@ -3,7 +3,7 @@ title: v2.1.6
 description: "Stella 2.1.6：サブ Agent を追加、推論強度をネイティブに設定可能、差し替え可能なメモリのベクトルバックエンド、デスクトップクライアントの改善"
 ---
 
-🌐 [English](https://docs.cowagent.ai/releases/v2.1.6) | [中文](https://docs.cowagent.ai/zh/releases/v2.1.6)
+🌐 [English](/releases/v2.1.6) | [中文](/zh/releases/v2.1.6)
 
 ## 🤝 サブ Agent
 
@@ -14,9 +14,9 @@ description: "Stella 2.1.6：サブ Agent を追加、推論強度をネイテ�
 - **カスタマイズ可能**：組み込みの `general-purpose` と `explore` に加え、ワークスペースの `subagents/` に `.md` ファイルを置けば、独自のシステムプロンプトと利用ツールを持つタイプを追加できます。
 - **デフォルトで有効**：設定は不要で、メイン Agent が委任するかどうかを自動で判断します。「設定 → Agent 設定」で切り替えられ、ネストの深さ・並列数・タイムアウトは `config.json` で調整できます。
 
-<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/stella-subagent-demo.png" width="800" />
+<img src="/images/placeholder-image.svg" width="800" />
 
-ドキュメント：[サブ Agent](https://docs.cowagent.ai/ja/multi-agent/subagent)
+ドキュメント：[サブ Agent](/ja/multi-agent/subagent)
 
 ## 🖥 デスクトップクライアント
 
@@ -25,9 +25,9 @@ description: "Stella 2.1.6：サブ Agent を追加、推論強度をネイテ�
 - **カスタムプロバイダーのモデル**：カスタムプロバイダーで自由に入力できるモデル欄を用意しました。
 - **起動の改善**：バックエンドの起動が止まる問題を修正し、ポートの自動リトライと失敗時のエラー表示を追加しました。
 
-ダウンロード：[Stella デスクトップ](https://cowagent.ai/download/)
+ダウンロード：[Stella デスクトップ](https://github.com/starpickerr/Stella/releases)
 
-ドキュメント：[デスクトップクライアント](https://docs.cowagent.ai/ja/guide/desktop)
+ドキュメント：[デスクトップクライアント](/ja/guide/desktop)
 
 ## 🧠 推論強度と思考プロセス
 
@@ -45,7 +45,7 @@ description: "Stella 2.1.6：サブ Agent を追加、推論強度をネイテ�
 - **差し替え可能なベクトルバックエンド**：メモリのベクトル保存と検索を統一インターフェースの背後に置き、SQLite をデフォルトとしつつ、外部ベクトルストアの接続を後から容易にしました。Thanks @AaronZ345 (#3021)
 - **インデックス修復**：チャンク更新時の trigram FTS5 インデックス破損を修正し、共有データベースが壊れても自己修復するようにしました。
 
-ドキュメント：[メモリ](https://docs.cowagent.ai/ja/memory)
+ドキュメント：[メモリ](/ja/memory)
 
 ## 🛠 改善と修正
 
@@ -64,7 +64,7 @@ description: "Stella 2.1.6：サブ Agent を追加、推論強度をネイテ�
 
 ## 📦 アップグレード方法
 
-- **ソースデプロイ**：`stella update` でワンクリック更新するか、最新コードを取得して再起動します。詳しくは[アップグレードガイド](https://docs.cowagent.ai/ja/guide/upgrade)を参照してください。
-- **デスクトップクライアント**：クライアント内で更新を確認してワンクリックで更新するか、[ダウンロードページ](https://cowagent.ai/download/)から最新版を入手できます。
+- **ソースデプロイ**：`stella update` でワンクリック更新するか、最新コードを取得して再起動します。詳しくは[アップグレードガイド](/ja/guide/upgrade)を参照してください。
+- **デスクトップクライアント**：クライアント内で更新を確認してワンクリックで更新するか、[ダウンロードページ](https://github.com/starpickerr/Stella/releases)から最新版を入手できます。
 
 **リリース日**：2026.08.12 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.1.5...2.1.6)

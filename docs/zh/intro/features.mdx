@@ -12,13 +12,13 @@ description: Stella 长期记忆、个人知识库、任务规划、技能系统
 在后续的长期对话中，Agent 会在需要时智能记录或检索记忆，并对自身设定、用户偏好、记忆文件等进行不断更新。每日自动执行 **梦境蒸馏（Deep Dream）**，将分散的天级记忆整合为精炼的长期记忆，同时生成叙事风格的梦境日记。
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260203000455.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 在此基础上，**自主进化（Self-Evolution）** 让 Agent 在使用中持续成长：对话空闲后自动复盘，优化技能、处理遗留任务、补全记忆与知识，仅在确有改动时简短告知，且每次改动可随时撤销。
 
 <Frame>
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/web-console-evolution-demo-zh.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 详细说明请参考 [长期记忆](/zh/memory)、[梦境蒸馏](/zh/memory/deep-dream) 和 [自主进化](/zh/memory/self-evolution)。
@@ -35,7 +35,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 - **CLI 管理**：通过 `/knowledge` 命令查看统计、浏览目录，通过 `/knowledge on|off` 开关功能
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260413105435.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 详细说明请参考 [个人知识库](/zh/knowledge)。
@@ -51,7 +51,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 针对操作系统的终端和文件的访问能力，是最基础和核心的工具，其他很多工具或技能都是基于此进行扩展。用户可通过手机端与 Agent 交互，操作个人电脑或服务器上的资源：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202181130.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.2 编程能力
@@ -59,7 +59,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 基于编程能力和系统访问能力，Agent 可以实现从信息搜索、图片等素材生成、编码、测试、部署、Nginx 配置修改、发布的 **Vibecoding 全流程**，通过手机端简单的一句命令完成应用的快速 demo：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260318211018.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.3 定时任务
@@ -67,7 +67,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 基于 `scheduler` 工具实现动态定时任务，支持**一次性任务、固定时间间隔、Cron 表达式**三种形式，任务触发可选择**固定消息发送**或 **Agent 动态任务**执行两种模式：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202195402.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 3.4 浏览器操作
@@ -75,7 +75,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `stella install-browser` 一键安装，自动适配服务器（无头模式）和桌面环境：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260401115728.png" width="750" />
+  <img src="/images/placeholder-image.svg" width="750" />
 </Frame>
 
 ### 3.5 环境变量管理
@@ -83,14 +83,14 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 技能所需的秘钥存储在环境变量文件中，由 `env_config` 工具进行管理，你可以通过对话的方式更新秘钥，工具内置安全保护和脱敏策略：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202234939.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ## 4. 技能系统
 
 技能系统为 Agent 提供无限的扩展性，每个 Skill 由说明文件、运行脚本（可选）、资源（可选）组成，描述如何完成特定类型的任务。通过 Skill 可以让 Agent 遵循说明完成复杂流程、调用各类工具或对接第三方系统。
 
-- [Skill Hub](https://skills.cowagent.ai/)：开放的技能广场，汇集官方推荐、社区贡献和第三方技能，支持一键安装。
+- [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)：开放的技能广场，汇集官方推荐、社区贡献和第三方技能，支持一键安装。
 - **内置技能：** 在项目的 `skills/` 目录下，包含技能创造器、图像识别、LinkAI 智能体、网页抓取等。内置 Skill 根据依赖条件（API Key、系统命令等）自动判断是否启用。
 - **自定义技能：** 由用户通过对话创建，存放在工作空间中（`~/stella/skills/`），可实现任何复杂的业务流程和第三方系统对接。
 
@@ -101,7 +101,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 通过 `skill-creator` 技能可以通过对话的方式快速创建技能。你可以让 Agent 将某个工作流程固化为技能，或者把任意接口文档和示例发送给 Agent，让他直接完成对接：
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202202247.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 4.2 搜索和图像识别
@@ -110,12 +110,12 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 - **图像识别：** 内置 `openai-image-vision` 技能，可使用 `gpt-4.1-mini`、`gpt-4.1` 等模型，依赖 `OPENAI_API_KEY`。
 
 <Frame>
-  <img src="https://cdn.link-ai.tech/doc/20260202213219.png" width="800" />
+  <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
 ### 4.3 技能广场
 
-访问 [skills.cowagent.ai](https://skills.cowagent.ai/) 浏览所有可用技能，或在对话中执行：
+访问 [Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) 浏览所有可用技能，或在对话中执行：
 
 ```text
 /skill list --remote          # 浏览技能广场
@@ -125,7 +125,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 同时还支持安装Github、ClawHub、LinkAI等第三方平台上的所有技能，详情查看 [技能安装](/zh/skills/install)
 
-<img src="https://cdn.link-ai.tech/doc/20260401110103.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 
 ## 5. CLI 命令系统
@@ -143,6 +143,6 @@ stella skill install pptx # 安装技能
 stella install-browser    # 安装浏览器工具
 ```
 
-详细命令参考 [命令总览](https://docs.cowagent.ai/cli)。
+详细命令参考 [命令总览](/cli)。
 
-<img src="https://cdn.link-ai.tech/doc/20260401114549.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />

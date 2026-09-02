@@ -13,9 +13,9 @@ The Web Console adds a new **Models** page that organizes everything by **provid
 - **Embedding models**: Configurable embedding models (used for memory and knowledge-base retrieval), with new support for OpenAI, Tongyi, Doubao, Zhipu and others; run `/memory rebuild-index` after switching to rebuild the index online
 - **Search capability**: Web search has been upgraded to support Bocha, Baidu, Zhipu and more providers — in auto mode the agent can synthesize results from multiple sources for deeper research
 
-Documentation: [Models Overview](https://docs.cowagent.ai/en/models)
+Documentation: [Models Overview](/en/models)
 
-<img width="720" alt="20260522113305" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-models-config.png" />
+<img width="720" alt="20260522113305" src="/images/placeholder-image.svg" />
 
 
 ## 🧩 MCP Protocol Support
@@ -25,7 +25,7 @@ Adds support for **MCP (Model Context Protocol)**, expanding from a fixed built-
 - Native JSON-RPC implementation, zero extra dependencies, supports both `stdio` and `sse` transports
 - Compatible with the `mcpServers` configuration style used by Claude Desktop / Cursor, reads `~/stella/mcp.json` by default
 
-Documentation: [MCP Tools](https://docs.cowagent.ai/en/tools/mcp). Thanks [@yangluxin613](https://github.com/yangluxin613) (#2801)
+Documentation: [MCP Tools](/en/tools/mcp). Thanks [@yangluxin613](https://github.com/yangluxin613) (#2801)
 
 ## 🌐 Browser Persistent Login
 
@@ -34,7 +34,7 @@ For sites that require login or have anti-bot protection, the browser tool can n
 - **Persistent user profile (default)**: Uses `~/.stella/browser_profile` as the browser user data dir by default; once logged in, sessions are reused automatically on subsequent runs
 - **CDP mode**: Configure `tools.browser.cdp_endpoint` to take over a real Chrome instance with full browser permissions
 
-Documentation: [Browser Tool](https://docs.cowagent.ai/en/tools/browser). Thanks [@leafmove](https://github.com/leafmove) (#2809)
+Documentation: [Browser Tool](/en/tools/browser). Thanks [@leafmove](https://github.com/leafmove) (#2809)
 
 ## 🤖 New Models and Improvements
 
@@ -48,7 +48,7 @@ Documentation: [Browser Tool](https://docs.cowagent.ai/en/tools/browser). Thanks
 
 ## 🛠 UX Improvements & Fixes
 
-- **TTS rolls out to more channels**: Web Console, Personal WeChat, Feishu, DingTalk and WeCom Smart Bot all support voice replies — see the [Channels Overview](https://docs.cowagent.ai/en/channels)
+- **TTS rolls out to more channels**: Web Console, Personal WeChat, Feishu, DingTalk and WeCom Smart Bot all support voice replies — see the [Channels Overview](/en/channels)
 - **Log panel enhancements**: Differentiated highlighting by log level, with level-based filtering. Thanks [@yangluxin613](https://github.com/yangluxin613) (#2807)
 - **Auto-launch Web Console**: The Web Console now opens automatically on startup. Thanks [@yangluxin613](https://github.com/yangluxin613) (#2804)
 - **Clean Ctrl+C exit**: No more long `KeyboardInterrupt` stack traces. Thanks [@yangluxin613](https://github.com/yangluxin613) (#2806)
@@ -60,6 +60,6 @@ Documentation: [Browser Tool](https://docs.cowagent.ai/en/tools/browser). Thanks
 
 ## 📦 Upgrade
 
-Source-code deployments can run `stella update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](https://docs.cowagent.ai/en/guide/upgrade) for details.
+Source-code deployments can run `stella update` for a one-click upgrade, or pull the latest code and restart manually. See the [Upgrade Guide](/en/guide/upgrade) for details.
 
 **Release Date**: 2026.05.22 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.8...2.0.9)

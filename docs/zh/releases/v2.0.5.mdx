@@ -12,25 +12,25 @@ description: Stella 2.0.5 - Stella CLI、Skill Hub 开源、浏览器工具、�
 - **web控制台**：Web 控制台输入框输入 `/` 即可弹出指令菜单，支持方向键回溯历史输入
 - **Windows 支持**：新增 PowerShell 一键安装脚本 `scripts/run.ps1`，同时支持 `stella` 命令
 
-相关文档：[命令总览](https://docs.cowagent.ai/cli)
+相关文档：[命令总览](/cli)
 
-<img src="https://cdn.link-ai.tech/doc/20260401114549.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 ## 🧩 Stella Skill Hub 开源
 
-[Stella Skill Hub](https://skills.cowagent.ai)（技能广场）正式开源并上线，提供 AI Agent 技能的浏览、搜索、安装和发布，汇集精选技能、社区贡献技能、三方技能：
+[Stella Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)（技能广场）正式开源并上线，提供 AI Agent 技能的浏览、搜索、安装和发布，汇集精选技能、社区贡献技能、三方技能：
 
 - **一键安装**：在对话中 `/skill install <名称>` 或终端 `stella skill install <名称>` 一键安装
 - **多来源支持**：支持安装 Skill Hub、GitHub、ClawHub、LinkAI 上的全部技能，支持 GitHub 批量安装和子目录指定
 - **技能搜索**：`/skill search` 和 `/skill list --remote` 浏览和搜索技能广场
-- **技能发布**：通过 [skills.cowagent.ai/submit](https://skills.cowagent.ai/submit) 提交自己的技能
+- **技能发布**：通过 [Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) 提交自己的技能
 - **镜像加速**：支持 Skill Hub 镜像加速，国内环境下载更流畅
 
 Skill Hub 开源仓库：[stella-skill-hub](https://github.com/zhayujie/cow-skill-hub)。
 
-相关文档：[技能广场](https://docs.cowagent.ai/skills/hub)、[安装技能](https://docs.cowagent.ai/skills/install)
+相关文档：[技能广场](/skills/hub)、[安装技能](/skills/install)
 
-<img src="https://cdn.link-ai.tech/doc/20260401110103.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 
 ## 🌐 新增浏览器工具
@@ -44,9 +44,9 @@ Skill Hub 开源仓库：[stella-skill-hub](https://github.com/zhayujie/cow-skil
 - **CLI 安装**：通过 `stella install-browser` 一键安装浏览器及依赖，自动适配系统环境
 - **Docker 支持**：Docker 镜像已内置浏览器安装支持
 
-相关文档：[浏览器工具](https://docs.cowagent.ai/tools/browser)。
+相关文档：[浏览器工具](/tools/browser)。
 
-<img src="https://cdn.link-ai.tech/doc/20260401115728.png" width="750" />
+<img src="/images/placeholder-image.svg" width="750" />
 
 
 ## 🤖 企微智能机器人扫码创建
@@ -57,7 +57,7 @@ Skill Hub 开源仓库：[stella-skill-hub](https://github.com/zhayujie/cow-skil
 - **手动模式保留**：同时保留「手动填写」模式，可输入已有的 Bot ID 和 Secret 接入
 - **流式推送优化**：增加推送节流，避免 WebSocket 拥塞
 
-相关文档：[企微智能机器人接入](https://docs.cowagent.ai/channels/wecom-bot)。
+相关文档：[企微智能机器人接入](/channels/wecom-bot)。
 
 相关提交：[#2735](https://github.com/starpickerr/Stella/pull/2735)
 
@@ -79,6 +79,6 @@ Thanks [@WecomTeam](https://github.com/WecomTeam)
 
 ## 📦 升级方式
 
-源码部署可执行 `stella update` 或 `./run.sh update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](https://docs.cowagent.ai/guide/upgrade)。
+源码部署可执行 `stella update` 或 `./run.sh update` 一键升级，或手动拉取代码后重启。详见 [更新升级文档](/guide/upgrade)。
 
 **发布日期**：2026.04.01 | [Full Changelog](https://github.com/starpickerr/Stella/compare/2.0.4...master)
