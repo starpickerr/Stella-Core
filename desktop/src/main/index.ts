@@ -18,7 +18,7 @@ app.setName(loadAppConfig()?.appName || 'Stella')
 // Windows shows notifications only when an AppUserModelID is set; without it
 // they are silently dropped. Harmless on macOS/Linux.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.stella.desktop')
+  app.setAppUserModelId('com.starpickerr.stella')
 }
 
 let mainWindow: BrowserWindow | null = null

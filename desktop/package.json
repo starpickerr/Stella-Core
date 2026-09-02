@@ -1,6 +1,6 @@
 {
   "name": "stella-desktop",
-  "version": "2.1.6",
+  "version": "0.0.1",
   "description": "Stella Desktop Client - personal AI secretary",
   "main": "dist/main/index.js",
   "author": "Stella",
@@ -38,7 +38,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
+    "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
@@ -46,7 +46,7 @@
     "vite": "^6.0.3"
   },
   "build": {
-    "appId": "com.stella.desktop",
+    "appId": "com.starpickerr.stella",
     "productName": "Stella",
     "directories": {
       "output": "release"
@@ -115,5 +115,8 @@
   "overrides": {
     "js-yaml": "4.3.1",
     "linkify-it": "5.0.2"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }
