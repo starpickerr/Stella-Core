@@ -172,7 +172,6 @@ excludes = [
     'lark_oapi',          # Feishu SDK — fetched on demand, NOT bundled (see above)
     'tests',
     'pip',
-    'wheel',
     'pytest',
     # NOTE: playwright is now BUNDLED (pure-Python package + Node driver, ~10-15MB)
     # so the browser tool works out of the box on desktop. The heavy Chromium
