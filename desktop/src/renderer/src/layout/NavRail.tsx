@@ -45,7 +45,7 @@ import { product } from '@product'
 // in the main process routes window.open() through shell.openExternal.
 // English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
 // language-agnostic.
-const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
+const SKILL_HUB_URL = 'https://www.skill-marketplace.com/'
 // GitHub issues — where users report bugs / request features.
 const FEEDBACK_URL = 'https://github.com/starpickerr/Stella/issues'
 

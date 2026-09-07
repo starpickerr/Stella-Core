@@ -30,9 +30,11 @@ Stella ships a ready-to-use desktop client with the Agent runtime bundled in —
   </Tab>
 </Tabs>
 
-## Auto Update
+## Updates
 
-The desktop client has built-in auto-update. When a new version is available it is detected automatically; you can also manually "Check for updates" from the menu in the bottom-left corner and upgrade with one click.
+When a newer GitHub Release is published, the desktop client **prompts** you and opens the download page. It does not install in the background. macOS builds are `.dmg` only; unsigned apps may need a right-click → Open the first time.
+
+To ship a new version: bump the repo-root `VERSION` file, run `bash desktop/build/build-backend.sh` then `cd desktop && npm run dist:mac`, tag `vX.Y.Z`, and upload the dmg to a GitHub Release. Details: the desktop README in this repository.
 
 ## Desktop vs. Command-line Deployment
 

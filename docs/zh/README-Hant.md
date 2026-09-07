@@ -22,10 +22,10 @@
 Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微信、飛書、釘釘、企微、QQ、Telegram、Slack、網頁等多渠道，7×24 執行於個人電腦或伺服器中。
 
 <p align="center">
-  <a href="https://github.com/starpickerr/Stella">🌐 官網</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella/tree/main/docs">📖 文件中心</a> &nbsp;·&nbsp;
   <a href="guide/quick-start.mdx">🚀 快速開始</a> &nbsp;·&nbsp;
-  <a href="https://github.com/starpickerr/Stella/tree/main/skills">🧩 技能廣場</a> &nbsp;·&nbsp;
+  <a href="https://www.skill-marketplace.com/">🧩 skill廣場</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella/releases">💻 下載客戶端</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella">☁️ 線上體驗</a>
 </p>
@@ -48,7 +48,7 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微�
 | [長期記憶](memory/index.mdx) | 三層記憶架構（上下文 → 天級 → 核心），夢境蒸餾自動整理，支援關鍵詞與向量混合檢索 |
 | [知識庫](knowledge/index.mdx) | 自動整理結構化知識為 Markdown Wiki，構建持續增長的知識圖譜，視覺化瀏覽 |
 | [自主進化](memory/self-evolution.mdx) | 自動覆盤對話，最佳化技能、處理未完成事項、沉澱記憶與知識，在使用中持續成長 |
-| [技能](skills/index.mdx) | 從 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub 等一鍵安裝；也可透過對話創造自定義技能 |
+| [技能](skills/index.mdx) | 從 [skill廣場](https://www.skill-marketplace.com/)、GitHub、ClawHub 等一鍵安裝；也可透過對話創造自定義技能 |
 | [工具](tools/index.mdx) | 內建檔案讀寫、終端、瀏覽器、定時任務、記憶檢索、聯網搜尋等 10+ 工具，支援 MCP 協議 |
 | [通道](channels/index.mdx) | 一個 Agent 同時接入 Web、微信、飛書、釘釘、企微、QQ、公眾號、Telegram、Slack 等多個渠道 |
 | 多模態 | 文字、圖片、語音、檔案全訊息型別支援，覆蓋識別、生成、收發 |
@@ -197,13 +197,13 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ### 技能系統
 
-- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — 開源的技能廣場，瀏覽、搜尋、一鍵安裝
+- **[skill廣場](https://www.skill-marketplace.com/)** — 瀏覽、搜尋、一鍵安裝
 - **GitHub / ClawHub / URL 等** — 任意來源一鍵安裝
 - **對話創造** — 透過 `skill-creator` 用對話快速生成自定義技能，可將工作流程或第三方介面直接固化為技能
 
 ```bash
 /skill list                   # 檢視當前技能
-/skill search <關鍵詞>         # 在技能廣場搜尋
+/skill search <關鍵詞>         # 在 skill廣場搜尋
 /skill install <名稱>          # 一鍵安裝
 ```
 
@@ -213,23 +213,9 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## 🏷 更新日誌
 
-> **2026.08.20：** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — 多工作空間與會話隔離、會話級權限模式、任務通知、桌面端最佳化、新模型接入
+> **2026.09.07：** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — Stella 首個測試版。桌面端發現新版本後提示並打開 GitHub Release 手動下載（macOS 只提供 `.dmg`）。產品版本號以倉庫根目錄 `VERSION` 為準。
 
-> **2026.08.12：** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — 子 Agent 並行任務分配、推理強度設定、記憶向量庫可插拔、體驗與安全最佳化
-
-> **2026.07.29：** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — 工作空間與檔案預覽、基礎工具最佳化（檔案搜尋、寫入校驗、命令背景執行）、上下文壓縮（`/compact`）、提示詞一鍵最佳化、安全強化
-
-> **2026.07.20：** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — 桌面客戶端體驗最佳化、MCP 支援 OAuth 授權、飛書通道能力增強、定時任務與資料備份、新模型接入
-
-> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客戶端](https://github.com/starpickerr/Stella/releases)正式發布（macOS / Windows）、知識庫文件管理增強、MCP 工具智能檢索、繁體中文支援、新模型接入
-
-> **2026.06.18：** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web 控制台升級（定時任務管理、知識庫分類、多模型自定義廠商）、自主進化最佳化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和體驗最佳化
-
-> **2026.06.09：** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — 自進化能力、Web 控制台升級（訊息管理、多會話並行）、新模型接入（MiniMax-M3、qwen3.7-plus）、Python 3.13 支援
-
-> **2026.06.01：** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 國際化支援、新增通道（Telegram、Discord、Slack、微信客服）、命令列互動升級、一鍵安裝指令碼最佳化、MCP Streamable HTTP 支援、新模型接入（claude-opus-4-8、MiMo）
-
-完整更新歷史：[Release Notes](https://github.com/starpickerr/Stella/tree/main/docs)
+發版步驟見 [desktop/README.md](../../desktop/README.md)。完整說明：[Release Notes](releases/overview.mdx)
 
 <br/>
 
@@ -252,7 +238,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## 🔗 相關專案
 
-- **[Stella Skill Hub](https://github.com/zhayujie/cow-skill-hub)** — 開源的 AI Agent 技能廣場，支援 Stella、OpenClaw、Claude Code 等多種 Agent
+- **[skill廣場](https://www.skill-marketplace.com/)** — AI Agent 技能市場
 - **[bot-on-anything](https://github.com/zhayujie/bot-on-anything)** — 輕量大模型應用框架，支援 Slack、Telegram、Discord、Gmail 等海外平臺
 - **[AgentMesh](https://github.com/MinimalFuture/AgentMesh)** — 開源多智慧體（Multi-Agent）框架，透過團隊協同解決複雜問題
 
@@ -276,7 +262,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## 🛠️ 開發與貢獻
 
-歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills) 分享你的技能。請先閱讀 [CONTRIBUTING.md](/CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
+歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [skill廣場](https://www.skill-marketplace.com/) 分享你的技能。請先閱讀 [CONTRIBUTING.md](/CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
 
 歡迎 ⭐ Star 支援專案，並透過 Watch → Custom → Releases 訂閱新版本通知。也歡迎提交 PR、Issue 進行反饋。
 

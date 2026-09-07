@@ -2,7 +2,7 @@ import { app, Menu, BrowserWindow, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 
 const isMac = process.platform === 'darwin'
-const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
+const SKILL_HUB_URL = 'https://www.skill-marketplace.com/'
 const DOCS_URL = 'https://github.com/starpickerr/Stella/tree/main/docs'
 
 // Send a menu-triggered action to the renderer (e.g. new chat, open settings).
@@ -95,7 +95,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null) {
       { label: 'View Logs', click: () => emit(win(), 'view-logs') },
       { type: 'separator' },
       { label: 'Documentation', click: () => shell.openExternal(DOCS_URL) },
-      { label: 'Skill Hub', click: () => shell.openExternal(SKILL_HUB_URL) },
+      { label: 'Skill Marketplace', click: () => shell.openExternal(SKILL_HUB_URL) },
     ],
   }
 
