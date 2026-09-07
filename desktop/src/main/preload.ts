@@ -83,11 +83,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       body: string
     }>,
 
-  // Auto-update: trigger checks/download/install and subscribe to status. The
-  // optional lang routes installer downloads to the China CDN mirror (zh) or R2.
-  checkForUpdate: (lang?: string) => ipcRenderer.invoke('update-check', lang),
-  downloadUpdate: (lang?: string) => ipcRenderer.invoke('update-download', lang),
-  installUpdate: () => ipcRenderer.invoke('update-install'),
+  // Update checks: ask main to poll GitHub Releases, then open a download URL
+  // in the system browser. There is no in-app installer.
+  checkForUpdate: () => ipcRenderer.invoke('update-check'),
+  downloadUpdate: (url?: string) => ipcRenderer.invoke('update-download', url),
   onUpdateStatus: (callback: (status: unknown) => void) => {
     const handler = (_event: unknown, status: unknown) => callback(status)
     ipcRenderer.on('update-status', handler)

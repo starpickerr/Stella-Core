@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Clock, CalendarClock, Play } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Loader2, Clock, CalendarClock, Play, Plus } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
+import { useSessionStore } from '../store/sessionStore'
 import type { SchedulerTask, TaskSchedule, TaskAction } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 
@@ -34,10 +34,10 @@ const formatNextRun = (iso?: string): string => {
 }
 
 const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
-  const navigate = useNavigate()
+  const activeSessionId = useSessionStore((s) => s.activeId)
   const [tasks, setTasks] = useState<SchedulerTask[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<SchedulerTask | null>(null)
+  const [editing, setEditing] = useState<SchedulerTask | 'new' | null>(null)
 
   const loadTasks = async () => {
     try {
@@ -70,9 +70,17 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-6 pt-5 pb-3 flex-shrink-0">
-        <h2 className="text-xl font-bold text-content">{t('tasks_title')}</h2>
-        <p className="text-xs text-content-tertiary mt-1">{t('tasks_desc')}</p>
+      <div className="px-6 pt-5 pb-3 flex-shrink-0 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-content">{t('tasks_title')}</h2>
+          <p className="text-xs text-content-tertiary mt-1">{t('tasks_desc')}</p>
+        </div>
+        <Btn variant="primary" onClick={() => setEditing('new')}>
+          <span className="flex items-center gap-1.5">
+            <Plus size={15} />
+            {t('tasks_add')}
+          </span>
+        </Btn>
       </div>
 
       <div className="flex-1 overflow-y-auto border-t border-default">
@@ -86,13 +94,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <CalendarClock size={32} className="mb-3 text-content-tertiary opacity-60" />
               <p className="text-content font-medium mb-1">{t('tasks_empty')}</p>
-              <p className="text-sm text-content-tertiary max-w-sm mb-5">{t('tasks_empty_guide')}</p>
-              <button
-                onClick={() => navigate('/')}
-                className="px-4 py-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm font-medium cursor-pointer transition-colors"
-              >
-                {t('tasks_go_chat')}
-              </button>
+              <p className="text-sm text-content-tertiary max-w-sm">{t('tasks_empty_guide')}</p>
             </div>
           ) : (
             <div className="grid gap-3">
@@ -134,7 +136,9 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
 
       {editing && (
         <TaskEditModal
-          task={editing}
+          key={editing === 'new' ? 'new' : editing.id}
+          task={editing === 'new' ? null : editing}
+          sessionId={activeSessionId}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -151,19 +155,21 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
 }
 
 const TaskEditModal: React.FC<{
-  task: SchedulerTask
+  task: SchedulerTask | null
+  sessionId: string
   onClose: () => void
   onSaved: () => void
   onDeleted: () => void
-}> = ({ task, onClose, onSaved, onDeleted }) => {
-  const [name, setName] = useState(task.name || '')
-  const [enabled, setEnabled] = useState(task.enabled)
-  const [schedType, setSchedType] = useState<TaskSchedule['type']>(task.schedule.type || 'cron')
-  const [cron, setCron] = useState(task.schedule.expression || '')
-  const [interval, setIntervalVal] = useState(task.schedule.seconds ? String(task.schedule.seconds) : '')
-  const [runAt, setRunAt] = useState(task.schedule.run_at ? task.schedule.run_at.slice(0, 16) : '')
-  const [actionType, setActionType] = useState<TaskAction['type']>(task.action.type || 'send_message')
-  const [content, setContent] = useState(task.action.content || task.action.task_description || '')
+}> = ({ task, sessionId, onClose, onSaved, onDeleted }) => {
+  const isCreate = task == null
+  const [name, setName] = useState(task?.name || '')
+  const [enabled, setEnabled] = useState(task?.enabled ?? true)
+  const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
+  const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
+  const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
+  const [runAt, setRunAt] = useState(task?.schedule.run_at ? task.schedule.run_at.slice(0, 16) : '')
+  const [actionType, setActionType] = useState<TaskAction['type']>(task?.action.type || 'send_message')
+  const [content, setContent] = useState(task?.action.content || task?.action.task_description || '')
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -176,22 +182,45 @@ const TaskEditModal: React.FC<{
   }
 
   const buildAction = (): TaskAction => {
-    const a: TaskAction = { ...task.action, type: actionType }
+    const a: TaskAction = { ...(task?.action || {}), type: actionType }
     if (actionType === 'send_message') a.content = content
     else a.task_description = content
     return a
   }
 
   const save = async () => {
+    if (!name.trim()) {
+      setError(t('task_save_error'))
+      return
+    }
+    if (!content.trim()) {
+      setError(t('task_save_error'))
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      await apiClient.updateTask(task.id, {
-        name: name.trim(),
-        enabled,
-        schedule: buildSchedule(),
-        action: buildAction(),
-      })
+      if (isCreate) {
+        const result = await apiClient.createTask({
+          name: name.trim(),
+          enabled,
+          schedule: buildSchedule(),
+          action: {
+            type: actionType,
+            content: actionType === 'send_message' ? content : undefined,
+            task_description: actionType === 'agent_task' ? content : undefined,
+          },
+          session_id: sessionId,
+        })
+        if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
+      } else if (task) {
+        await apiClient.updateTask(task.id, {
+          name: name.trim(),
+          enabled,
+          schedule: buildSchedule(),
+          action: buildAction(),
+        })
+      }
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : t('task_save_error'))
@@ -201,7 +230,7 @@ const TaskEditModal: React.FC<{
   }
 
   const del = async () => {
-    if (!window.confirm(t('task_delete_confirm'))) return
+    if (!task || !window.confirm(t('task_delete_confirm'))) return
     setSaving(true)
     try {
       await apiClient.deleteTask(task.id)
@@ -212,7 +241,7 @@ const TaskEditModal: React.FC<{
   }
 
   const runNow = async () => {
-    if (!window.confirm(t('task_run_confirm'))) return
+    if (!task || !window.confirm(t('task_run_confirm'))) return
     setRunning(true)
     setRunStatus('')
     setError('')
@@ -230,17 +259,21 @@ const TaskEditModal: React.FC<{
   return (
     <Modal
       open
-      title={t('task_edit_title')}
+      title={isCreate ? t('task_add_title') : t('task_edit_title')}
       onClose={onClose}
       footer={
         <>
-          <Btn variant="danger" onClick={del} disabled={saving} className="mr-auto">
-            {t('task_delete')}
-          </Btn>
-          <Btn variant="ghost" onClick={runNow} disabled={saving || running}>
-            {running ? <Loader2 size={14} className="inline animate-spin mr-1" /> : <Play size={14} className="inline mr-1" />}
-            {t('task_run_now')}
-          </Btn>
+          {!isCreate && (
+            <Btn variant="danger" onClick={del} disabled={saving} className="mr-auto">
+              {t('task_delete')}
+            </Btn>
+          )}
+          {!isCreate && (
+            <Btn variant="ghost" onClick={runNow} disabled={saving || running}>
+              {running ? <Loader2 size={14} className="inline animate-spin mr-1" /> : <Play size={14} className="inline mr-1" />}
+              {t('task_run_now')}
+            </Btn>
+          )}
           <Btn variant="ghost" onClick={onClose} disabled={saving}>
             {t('task_cancel')}
           </Btn>
@@ -272,9 +305,12 @@ const TaskEditModal: React.FC<{
       </Field>
 
       {schedType === 'cron' && (
-        <Field label={t('task_cron_expr')} hint={t('task_cron_hint')}>
-          <TextInput value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 9 * * *" className="font-mono" />
-        </Field>
+        <div>
+          <Field label={t('task_cron_expr')}>
+            <TextInput value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 9 * * *" className="font-mono" />
+          </Field>
+          <CronHelp />
+        </div>
       )}
       {schedType === 'interval' && (
         <Field label={t('task_interval_seconds')}>
@@ -308,23 +344,38 @@ const TaskEditModal: React.FC<{
       </Field>
 
       {/* Channel and receiver are channel-bound and read-only after creation. */}
-      {(task.action.channel_type || task.action.receiver) && (
+      {!isCreate && (task?.action.channel_type || task?.action.receiver) && (
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('task_channel')}>
-            <TextInput value={task.action.channel_type || 'web'} disabled />
+            <TextInput value={task?.action.channel_type || 'web'} disabled />
           </Field>
           <Field label={t('task_receiver')}>
-            <TextInput value={task.action.receiver_name || task.action.receiver || '--'} disabled />
+            <TextInput value={task?.action.receiver_name || task?.action.receiver || '--'} disabled />
           </Field>
         </div>
       )}
-      <p className="text-xs text-content-tertiary">{t('task_channel_locked')}</p>
+      <p className="text-xs text-content-tertiary">{isCreate ? t('task_create_hint') : t('task_channel_locked')}</p>
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
     </Modal>
   )
 }
+
+const CronHelp: React.FC = () => (
+  <details className="mt-2 rounded-btn border border-default px-3 py-2 text-xs text-content-tertiary">
+    <summary className="cursor-pointer select-none font-medium text-content-secondary">
+      {t('task_cron_help_summary')}
+    </summary>
+    <div className="mt-2 space-y-2 leading-relaxed">
+      <p className="font-mono whitespace-pre-wrap">{t('task_cron_help_5')}</p>
+      <p className="font-mono whitespace-pre-wrap">{t('task_cron_help_6')}</p>
+      <p>{t('task_cron_help_note')}</p>
+      <p className="font-mono whitespace-pre-wrap">{t('task_cron_help_symbols')}</p>
+      <p className="font-mono whitespace-pre-wrap">{t('task_cron_help_examples')}</p>
+    </div>
+  </details>
+)
 
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
   <div>

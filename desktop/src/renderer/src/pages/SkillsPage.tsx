@@ -9,7 +9,7 @@ interface SkillsPageProps {
   baseUrl: string
 }
 
-const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
+const SKILL_HUB_URL = 'https://www.skill-marketplace.com/'
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [tools, setTools] = useState<ToolInfo[]>([])

@@ -38,7 +38,7 @@ The codebase is an Agent Harness: plug in any major LLM, run it 24/7 on a person
 | [Memory](docs/memory/index.mdx) | Three-tier architecture (context → daily → core), automatic Deep Dream distillation, hybrid keyword + vector retrieval |
 | [Knowledge](docs/knowledge/index.mdx) | Auto-curates structured knowledge into a Markdown wiki, builds an evolving knowledge graph with visual browsing |
 | [Evolution](docs/memory/self-evolution.mdx) | Self-Evolution reviews conversations automatically to improve skills, follow up on unfinished tasks, and consolidate memory and knowledge, growing through everyday use |
-| [Skills](docs/skills/index.mdx) | One-click install from [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills), GitHub, ClawHub; or create custom skills via natural-language conversation |
+| [Skills](docs/skills/index.mdx) | One-click install from [skill广场](https://www.skill-marketplace.com/), GitHub, ClawHub; or create custom skills via natural-language conversation |
 | [Tools](docs/tools/index.mdx) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
 | [Channels](docs/channels/index.mdx) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, Official Accounts, Telegram, and Slack |
 | Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
@@ -179,7 +179,7 @@ Learn more: [Tools overview](docs/tools/index.mdx) · [MCP integration](docs/too
 
 ### Skills System
 
-- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — open skill marketplace: browse, search, install in one click
+- **[skill广场](https://www.skill-marketplace.com/)** — browse, search, and install skills in one click
 - **GitHub / ClawHub / URL and more** — install skills from any source
 - **Conversational authoring** — generate custom skills through dialogue with `skill-creator`; turn any workflow or third-party API into a reusable skill
 
@@ -195,23 +195,9 @@ Learn more: [Skills overview](docs/skills/index.mdx) · [Creating Skills](docs/s
 
 ## 🏷 Changelog
 
-> **2026.08.20:** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — Multiple workspaces, session-level permission modes, task notifications, desktop improvements, plus new model support.
+> **2026.09.07:** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — First Stella test release. Desktop updates prompt you to download a GitHub Release (macOS `.dmg` only). Product version lives in the repo-root `VERSION` file.
 
-> **2026.08.12:** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — Sub agents for parallel task delegation, reasoning-effort settings, a pluggable memory vector backend, plus experience and security improvements.
-
-> **2026.07.29:** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — Workspace with file preview, core tool improvements (file search, write-time validation, background commands), context compaction (`/compact`), one-click prompt optimization, security hardening.
-
-> **2026.07.20:** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — Desktop experience improvements, MCP OAuth authorization, Lark channel enhancements, scheduler improvements and data backup, new models.
-
-> **2026.07.08:** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — Desktop client for macOS / Windows, knowledge base document management, on-demand MCP tool retrieval, Traditional Chinese support, new models.
-
-> **2026.06.18:** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web console upgrades (scheduled task management, knowledge base categories, multiple custom model providers), Self-Evolution improvements, new models (kimi-k2.7-code, glm-5.2), security hardening and refinements.
-
-> **2026.06.09:** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — Self-Evolution, Web console upgrades (message management, parallel sessions), cross-platform MCP enhancements with concurrent calls, new models (MiniMax-M3, qwen3.7-plus), Python 3.13 support.
-
-> **2026.06.01:** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — Internationalization, new channels (Telegram, Discord, Slack, WeChat Customer Service), CLI interaction upgrades, streamlined one-line install, MCP Streamable HTTP support, new models (claude-opus-4-8, MiMo).
-
-Full history: [Release Notes](docs/releases/overview.mdx)
+How to publish a desktop build: see [desktop/README.md](desktop/README.md#publish-a-github-release-v001-and-later). Full notes: [Release Notes](docs/releases/overview.mdx)
 
 <br/>
 

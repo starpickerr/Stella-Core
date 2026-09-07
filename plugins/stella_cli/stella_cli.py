@@ -361,7 +361,7 @@ class StellaCliPlugin(Plugin):
                 "/compact: Summarize older turns to free up context",
                 "/tasks: List scheduled tasks for this chat",
                 "/skill list: List installed skills",
-                "/skill list --remote: Browse Skill Hub",
+                "/skill list --remote: Browse skill广场",
                 "/skill search <keyword>: Search skills",
                 "/skill install <name>: Install a skill",
                 "/skill info <name>: Show skill details",
@@ -391,7 +391,7 @@ class StellaCliPlugin(Plugin):
                 "/compact: 总结较早的对话以释放上下文",
                 "/tasks: 查看当前会话的定时任务",
                 "/skill list: 查看已安装的技能",
-                "/skill list --remote: 浏览技能广场",
+                "/skill list --remote: 浏览 skill广场",
                 "/skill search <关键词>: 搜索技能",
                 "/skill install <名称>: 安装技能",
                 "/skill info <名称>: 查看技能详情",
@@ -419,11 +419,11 @@ class StellaCliPlugin(Plugin):
     # ------------------------------------------------------------------
 
     def _cmd_tasks(self, args: str, e_context, session_id: str = "", **_) -> str:
-        from agent.tools.scheduler.integration import get_task_store
+        from agent.scheduler import get_task_store
 
         task_store = get_task_store()
         if task_store is None:
-            from agent.tools.scheduler.task_store import TaskStore
+            from agent.scheduler import TaskStore
             from common.state_dir import scheduler_file
 
             task_store = TaskStore(str(scheduler_file()))
@@ -1021,8 +1021,8 @@ class StellaCliPlugin(Plugin):
                             entries.append({"name": name, "source": source, "enabled": True})
             if not entries:
                 return _t(
-                    "暂无已安装的技能\n\n💡 /skill list --remote: 浏览技能广场",
-                    "No skills installed yet\n\n💡 /skill list --remote: Browse Skill Hub",
+                    "暂无已安装的技能\n\n💡 /skill list --remote: 浏览 skill广场",
+                    "No skills installed yet\n\n💡 /skill list --remote: Browse skill广场",
                 )
             config = {e["name"]: e for e in entries}
 
@@ -1050,7 +1050,7 @@ class StellaCliPlugin(Plugin):
             lines.append("")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append(_t("💡 /skill list --remote: 浏览技能广场", "💡 /skill list --remote: Browse Skill Hub"))
+        lines.append(_t("💡 /skill list --remote: 浏览 skill广场", "💡 /skill list --remote: Browse skill广场"))
         lines.append(_t("💡 /skill info <名称>: 查看详情", "💡 /skill info <name>: Show details"))
         return "\n".join(lines)
 
@@ -1081,16 +1081,16 @@ class StellaCliPlugin(Plugin):
             skills = data.get("skills", [])
             total = data.get("total", len(skills))
         except Exception as e:
-            return _t(f"获取技能广场失败: {e}", f"Failed to fetch Skill Hub: {e}")
+            return _t(f"获取 skill广场失败: {e}", f"Failed to fetch skill广场: {e}")
 
         if not skills and page == 1:
-            return _t("技能广场暂无可用技能", "No skills available on Skill Hub")
+            return _t("skill广场暂无可用技能", "No skills available on skill广场")
 
         total_pages = max(1, (total + page_size - 1) // page_size)
         page = min(page, total_pages)
         installed = set(load_skills_config().keys())
 
-        lines = [_t("🌐 技能广场", "🌐 Skill Hub"), ""]
+        lines = [_t("🌐 skill广场", "🌐 skill广场"), ""]
         for s in skills:
             name = s.get("name", "")
             display = s.get("display_name", "") or name
@@ -1112,7 +1112,7 @@ class StellaCliPlugin(Plugin):
             lines.append(_t(f"💡 /skill list --remote --page {page - 1}: 上一页", f"💡 /skill list --remote --page {page - 1}: Previous page"))
         lines.append(_t("💡 /skill install <名称>: 安装技能", "💡 /skill install <name>: Install a skill"))
         lines.append(_t("💡 /skill search <关键词>: 搜索技能", "💡 /skill search <keyword>: Search skills"))
-        lines.append(_t("🌐 https://skills.cowagent.ai  在线浏览全部技能", "🌐 https://skills.cowagent.ai  Browse all skills online"))
+        lines.append(_t("🌐 https://www.skill-marketplace.com/  在线浏览全部技能", "🌐 https://www.skill-marketplace.com/  Browse all skills online"))
         return "\n".join(lines)
 
     def _skill_search(self, query: str) -> str:

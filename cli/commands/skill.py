@@ -636,10 +636,10 @@ def skill():
 # stella skill list
 # ------------------------------------------------------------------
 @skill.command("list")
-@click.option("--remote", is_flag=True, help="Browse skills on Skill Hub")
+@click.option("--remote", is_flag=True, help="Browse skills on Skill Marketplace")
 @click.option("--page", default=1, type=int, help="Page number for remote listing")
 def skill_list(remote, page):
-    """List installed skills or browse Skill Hub."""
+    """List installed skills or browse Skill Marketplace."""
     if remote:
         _list_remote(page=page)
     else:
@@ -734,7 +734,7 @@ _REMOTE_PAGE_SIZE = 10
 
 
 def _list_remote(page: int = 1):
-    """List skills from remote Skill Hub with server-side pagination."""
+    """List skills from remote Skill Marketplace with server-side pagination."""
     try:
         resp = requests.get(
             f"{SKILL_HUB_API}/skills",
@@ -744,14 +744,14 @@ def _list_remote(page: int = 1):
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        click.echo(f"Error: Failed to fetch from Skill Hub: {e}", err=True)
+        click.echo(f"Error: Failed to fetch from Skill Marketplace: {e}", err=True)
         sys.exit(1)
 
     skills = data.get("skills", [])
     total = data.get("total", len(skills))
 
     if not skills and page == 1:
-        click.echo("No skills available on Skill Hub.")
+        click.echo("No skills available on Skill Marketplace.")
         return
 
     total_pages = max(1, (total + _REMOTE_PAGE_SIZE - 1) // _REMOTE_PAGE_SIZE)
@@ -761,7 +761,7 @@ def _list_remote(page: int = 1):
     name_w = max((len(s.get("name", "")) for s in skills), default=4)
     name_w = max(name_w, 4) + 2
 
-    click.echo(f"\n  Skill Hub ({total} available) — page {page}/{total_pages}\n")
+    click.echo(f"\n  Skill Marketplace ({total} available) — page {page}/{total_pages}\n")
     click.echo(f"  {'Name':<{name_w}} {'Status':<12} {'Description'}")
     click.echo(f"  {'─' * (name_w + 12 + 50)}")
 
@@ -782,7 +782,7 @@ def _list_remote(page: int = 1):
     if nav_parts:
         click.echo(f"  Navigate: {' | '.join(nav_parts)}")
     click.echo(f"  Install:  stella skill install <name>")
-    click.echo(f"  Browse:   https://skills.cowagent.ai\n")
+    click.echo(f"  Browse:   https://www.skill-marketplace.com/\n")
 
 
 # ------------------------------------------------------------------
@@ -791,13 +791,13 @@ def _list_remote(page: int = 1):
 @skill.command()
 @click.argument("query")
 def search(query):
-    """Search skills on Skill Hub."""
+    """Search skills on Skill Marketplace."""
     try:
         resp = requests.get(f"{SKILL_HUB_API}/skills/search", params={"q": query}, timeout=10)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        click.echo(f"Error: Failed to search Skill Hub: {e}", err=True)
+        click.echo(f"Error: Failed to search Skill Marketplace: {e}", err=True)
         sys.exit(1)
 
     skills = data.get("skills", [])
@@ -831,7 +831,7 @@ def search(query):
 def install_skill(name: str) -> InstallResult:
     """Core install logic, usable from CLI and chat plugin.
 
-    Accepts all formats: Skill Hub name, owner/repo, GitHub/GitLab URL,
+    Accepts all formats: Skill Marketplace name, owner/repo, GitHub/GitLab URL,
     git@ SSH, local path, SKILL.md URL.
     Returns InstallResult with installed skill names and messages.
     """
@@ -927,7 +927,7 @@ def _route_install(name: str, result: InstallResult):
         _install_github(spec, result, subpath=subpath)
         return
 
-    # --- Fallback: Skill Hub by name ---
+    # --- Fallback: Skill Marketplace by name ---
     _check_skill_name(name)
     _install_hub(name, result)
 
@@ -938,7 +938,7 @@ def _route_install(name: str, result: InstallResult):
 @skill.command()
 @click.argument("name")
 def install(name):
-    """Install skill(s) from Skill Hub, GitHub, GitLab, git URL, or local path.
+    """Install skill(s) from Skill Marketplace, GitHub, GitLab, git URL, or local path.
 
     When given an owner/repo (or full URL), downloads the repo and
     auto-discovers all skills/ subdirectories containing SKILL.md,
@@ -946,7 +946,7 @@ def install(name):
 
     Examples:
 
-      stella skill install pptx                          (from Skill Hub)
+      stella skill install pptx                          (from Skill Marketplace)
 
       stella skill install larksuite/cli                 (GitHub shorthand, all skills)
 
@@ -971,7 +971,7 @@ def install(name):
 
 
 def _install_hub(name, result: InstallResult, provider=None):
-    """Install a skill from Skill Hub."""
+    """Install a skill from Skill Marketplace."""
     skills_dir = get_skills_dir()
     os.makedirs(skills_dir, exist_ok=True)
 
@@ -989,12 +989,12 @@ def _install_hub(name, result: InstallResult, provider=None):
         resp.raise_for_status()
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 404:
-            raise SkillInstallError(f"Skill '{name}' not found on Skill Hub.")
+            raise SkillInstallError(f"Skill '{name}' not found on Skill Marketplace.")
         raise SkillInstallError(f"Failed to fetch skill: {e}")
     except SkillInstallError:
         raise
     except Exception as e:
-        raise SkillInstallError(f"Failed to connect to Skill Hub: {e}")
+        raise SkillInstallError(f"Failed to connect to Skill Marketplace: {e}")
 
     content_type = resp.headers.get("Content-Type", "")
     hub_display_name = ""
@@ -1026,7 +1026,7 @@ def _install_hub(name, result: InstallResult, provider=None):
                 if not has_mirror:
                     raise SkillInstallError(f"GitHub download failed: {e}")
 
-            # Fallback: download mirror from Skill Hub
+            # Fallback: download mirror from Skill Marketplace
             result.messages.append(f"GitHub download failed ({gh_err}), trying mirror...")
             try:
                 mirror_resp = requests.post(
@@ -1091,7 +1091,7 @@ def _install_hub(name, result: InstallResult, provider=None):
                         result.messages.append(f"Installed '{name}' from {src_provider}.")
                     return
 
-                # Fallback: download mirror from Skill Hub
+                # Fallback: download mirror from Skill Marketplace
                 result.messages.append(f"Direct download failed ({dl_err}), trying mirror...")
                 try:
                     mirror_resp = requests.post(
@@ -1143,10 +1143,10 @@ def _install_hub(name, result: InstallResult, provider=None):
         if len(result.installed) == installed_before:
             _register_installed_skill(name)
             result.installed.append(name)
-            result.messages.append(f"Installed '{name}' from Skill Hub.")
+            result.messages.append(f"Installed '{name}' from Skill Marketplace.")
         return
 
-    raise SkillInstallError("Unexpected response from Skill Hub.")
+    raise SkillInstallError("Unexpected response from Skill Marketplace.")
 
 
 def _install_github(spec, result: InstallResult, subpath=None, skill_name=None, branch="main", source="github", timeout=30):

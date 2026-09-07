@@ -67,7 +67,7 @@ def test_tasks_command_only_lists_tasks_owned_by_current_channel_and_receiver(mo
         ]
     )
     monkeypatch.setattr(
-        "agent.tools.scheduler.integration.get_task_store", lambda: store
+        "agent.scheduler.get_task_store", lambda: store
     )
     plugin = StellaCliPlugin()
 
@@ -89,7 +89,7 @@ def test_tasks_command_uses_session_identity_without_channel_context(monkeypatch
         ]
     )
     monkeypatch.setattr(
-        "agent.tools.scheduler.integration.get_task_store", lambda: store
+        "agent.scheduler.get_task_store", lambda: store
     )
     plugin = StellaCliPlugin()
 
@@ -102,7 +102,7 @@ def test_tasks_command_uses_session_identity_without_channel_context(monkeypatch
 
 def test_tasks_command_formats_empty_state(monkeypatch):
     monkeypatch.setattr(
-        "agent.tools.scheduler.integration.get_task_store",
+        "agent.scheduler.get_task_store",
         lambda: FakeTaskStore([]),
     )
     plugin = StellaCliPlugin()

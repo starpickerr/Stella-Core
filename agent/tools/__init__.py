@@ -21,6 +21,9 @@ from agent.tools.evolution_undo.evolution_undo import EvolutionUndoTool
 # Import sub agent tools
 from agent.tools.subagent.subagent import SubagentTool
 
+# Import bills tool (personal ledger; SQLite only, no extra dependencies)
+from agent.tools.bills.bills_tool import BillsTool
+
 # Import tools with optional dependencies
 def _import_optional_tools():
     """Import tools that have optional dependencies"""
@@ -139,6 +142,7 @@ __all__ = [
     'MemoryGetTool',
     'EvolutionUndoTool',
     'SubagentTool',
+    'BillsTool',
     'EnvConfig',
     'SchedulerTool',
     'WebSearch',

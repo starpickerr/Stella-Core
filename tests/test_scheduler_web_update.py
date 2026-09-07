@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from agent.tools.scheduler.task_store import TaskStore
+from agent.scheduler import TaskStore
 
 # Keep this unit test independent from the optional web.py dependency.
 if "web" not in sys.modules:
@@ -64,7 +64,7 @@ def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
     with patch("channel.web.web_channel._require_auth") as require_auth, \
          patch("channel.web.web_channel.web.header"), \
          patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
-         patch("agent.tools.scheduler.integration.get_scheduler_service", return_value=service):
+         patch("agent.scheduler.get_scheduler_service", return_value=service):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
     require_auth.assert_called_once_with()
@@ -81,7 +81,7 @@ def test_web_manual_run_rejects_unavailable_scheduler():
     with patch("channel.web.web_channel._require_auth"), \
          patch("channel.web.web_channel.web.header"), \
          patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
-         patch("agent.tools.scheduler.integration.get_scheduler_service", return_value=None):
+         patch("agent.scheduler.get_scheduler_service", return_value=None):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
     assert response == {
@@ -166,3 +166,67 @@ def test_switch_to_message_drops_agent_only_fields(tmp_path):
     assert "task_description" not in action
     assert "silent" not in action
     assert action["notify_session_id"] == "session-1"
+
+
+SchedulerHandler = web_channel.SchedulerHandler
+
+
+def _post_create(tmp_path, payload):
+    with patch("channel.web.web_channel._require_auth"), \
+         patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
+         patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+        return json.loads(SchedulerHandler().POST())
+
+
+def test_web_create_persists_task_for_current_session(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "morning briefing",
+        "enabled": True,
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": {"type": "send_message", "content": "good morning"},
+        "session_id": "session-web-1",
+    })
+
+    assert result["status"] == "success"
+    task = result["task"]
+    assert task["name"] == "morning briefing"
+    assert task["schedule"] == {"type": "cron", "expression": "0 9 * * *"}
+    assert task["action"]["type"] == "send_message"
+    assert task["action"]["content"] == "good morning"
+    assert task["action"]["channel_type"] == "web"
+    assert task["action"]["receiver"] == "session-web-1"
+    assert task["action"]["notify_session_id"] == "session-web-1"
+    assert task["next_run_at"]
+
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    saved = store.get_task(task["id"])
+    assert saved["name"] == "morning briefing"
+
+
+def test_web_create_rejects_missing_session(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "orphan",
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": {"type": "send_message", "content": "hi"},
+    })
+    assert result["status"] == "error"
+    assert "session_id" in result["message"]
+
+
+def test_create_is_exposed_by_web_and_desktop_controls():
+    root = Path(__file__).parents[1]
+    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
+    web_html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
+    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
+    desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
+
+    handler = web_source[web_source.index("class SchedulerHandler"):]
+    assert "def POST(self):" in handler
+    assert 'onclick="openTaskCreateModal()"' in web_html
+    assert "function openTaskCreateModal()" in web_console
+    assert "const url = isCreate ? '/api/scheduler'" in web_console
+    assert "async createTask" in desktop_client
+    assert "setEditing('new')" in desktop_page
+

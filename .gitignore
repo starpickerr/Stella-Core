@@ -58,15 +58,12 @@ desktop/build/*
 !desktop/build/requirements-desktop.txt
 !desktop/build/build-backend.sh
 !desktop/build/build-feishu-vendor.py
-!desktop/build/entitlements.mac.plist
-!desktop/build/notarize-dmg.sh
 
 # Icon authoring scratch dir: intermediate assets used to produce the final
 # icons. Only the finished icons under desktop/resources/ should be committed.
 desktop/resources/.icon-work/
 
-# Bundled ripgrep binary: downloaded by CI (release workflow) at build time,
-# never committed — it's a multi-MB platform-specific executable.
+# Bundled ripgrep binary: platform-specific, never committed.
 desktop/resources/bin/
 
 .wrangler/

@@ -43,15 +43,30 @@ pick_python() {
 PYTHON="$(pick_python)"
 
 echo "==> Repo root: $ROOT"
-echo "==> Using Python: $($PYTHON --version 2>&1) ($PYTHON)"
 
 # --- isolated build venv --------------------------------------------------
-if [ ! -d "$VENV_DIR" ]; then
-  echo "==> Creating build venv at $VENV_DIR"
+venv_is_usable() {
+  [ -x "$VENV_DIR/bin/python" ] &&
+    "$VENV_DIR/bin/python" -c \
+      'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix else 1)' \
+      >/dev/null 2>&1
+}
+
+if ! venv_is_usable; then
+  if [ -d "$VENV_DIR" ]; then
+    echo "==> Existing build venv is invalid; recreating it"
+    rm -rf "$VENV_DIR"
+  fi
+  if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "!! Python interpreter not found: $PYTHON" >&2
+    exit 1
+  fi
+  echo "==> Creating build venv at $VENV_DIR with $PYTHON"
   "$PYTHON" -m venv "$VENV_DIR"
 fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+echo "==> Using Python: $(python --version 2>&1) ($(command -v python))"
 
 echo "==> Installing build dependencies"
 pip install -q --upgrade pip
