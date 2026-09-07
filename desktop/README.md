@@ -80,12 +80,11 @@ desktop/release/Stella-<version>-arm64.zip
 desktop/release/latest-mac.yml
 ```
 
-To build a new release, update the version first:
+To build a new release, bump the repo-root `VERSION` file first (that is
+the single source for the CLI, the Python package, and the desktop app):
 
 ```bash
-cd desktop
-npm version 0.0.2 --no-git-tag-version
-cd ..
+echo 0.0.2 > VERSION
 bash desktop/build/build-backend.sh
 cd desktop
 npm run dist:mac
