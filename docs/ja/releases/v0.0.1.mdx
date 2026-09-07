@@ -1,0 +1,40 @@
+---
+title: v0.0.1
+description: Stella 最初のテストリリース
+---
+
+🌐 [English](/releases/v0.0.1) | [中文](/zh/releases/v0.0.1)
+
+**リリース日**：2026.09.07 | [GitHub Release](https://github.com/starpickerr/Stella/releases/tag/v0.0.1)
+
+Stella ブランドとしての最初のテストビルドです。上流の 2.1.x 番号は引き継ぎません。
+
+## デスクトップ
+
+- macOS は `.dmg` のみ（`Stella-<version>-arm64.dmg` / `x64`）。
+- 新しい GitHub Release があると**案内**し、ダウンロードページを開きます。バックグラウンドインストールはしません。
+- 未署名ビルドは初回、右クリック → 開くが必要な場合があります。
+
+## バージョンと公開
+
+製品バージョンはリポジトリ直下の `VERSION` だけを編集します（`X.Y.Z`、`v` なし）。ビルド時に `desktop/package.json` へコピーします。Git タグは **必ず** `vX.Y.Z` です。
+
+| 場所 | 形式 | 例 |
+| --- | --- | --- |
+| `VERSION` | `X.Y.Z` | `0.0.1` |
+| `package.json` | `X.Y.Z` | `0.0.1` |
+| git tag | `vX.Y.Z` | `v0.0.1` |
+| dmg | `Stella-X.Y.Z-arm64.dmg` | `Stella-0.0.1-arm64.dmg` |
+
+```bash
+echo 0.0.1 > VERSION
+bash desktop/build/build-backend.sh
+cd desktop && npm run dist:mac
+git tag v0.0.1 && git push --tags
+```
+
+そのタグで GitHub Release を作り、dmg をアップロードします。手順の全文は [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md)。
+
+## Skill
+
+[skill広場](https://www.skill-marketplace.com/) で Skill を閲覧・インストールできます。

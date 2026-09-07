@@ -30,13 +30,15 @@ Stella 提供开箱即用的桌面客户端，内置 Agent 运行环境，**无�
   </Tab>
 </Tabs>
 
-## 自动更新
+## 更新
 
-桌面客户端内置自动更新能力。有新版本时会自动检测并提示，你也可以在应用左下角菜单中手动「检查更新」，一键下载并重启完成升级。
+GitHub 上有新 Release 时，桌面端会**提示**并打开下载页，不会在后台自动安装。macOS 只提供 `.dmg`；未签名应用首次打开可能需要右键 → 打开。
+
+发版：仓库根目录 `VERSION` 写 `X.Y.Z`（同步到 `package.json`；git tag 为 `vX.Y.Z`），执行 `bash desktop/build/build-backend.sh` 再 `cd desktop && npm run dist:mac`，把 dmg 上传到 GitHub Release。完整命令见仓库里的 desktop README。
 
 ## 与命令行部署的区别
 
-- **桌面客户端**：适合个人用户开箱即用，无需安装任何依赖，图形界面操作，支持自动更新。
+- **桌面客户端**：适合个人用户开箱即用，无需安装任何依赖，图形界面操作；有新 GitHub Release 时提示手动下载。
 - **命令行部署**：源码运行方式，适合开发者在本地或服务器部署，方便扩展功能，可定制性更强，详见 [一键安装](/zh/guide/quick-start)。
 
 ## 通过浏览器访问

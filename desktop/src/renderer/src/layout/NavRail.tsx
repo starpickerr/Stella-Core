@@ -41,16 +41,11 @@ import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/u
 import UpdateBanner from '../components/UpdateBanner'
 import { product } from '@product'
 
-// Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
-// in sync with desktop/package.json "version"; the packaged app overrides this
-// with the real value via IPC, so it only matters outside a packaged build.
-const FALLBACK_VERSION = '0.0.1'
-
 // External links opened in the user's default browser. The window-open handler
 // in the main process routes window.open() through shell.openExternal.
 // English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
 // language-agnostic.
-const SKILL_HUB_URL = 'https://github.com/starpickerr/Stella/tree/main/skills'
+const SKILL_HUB_URL = 'https://www.skill-marketplace.com/'
 // GitHub issues — where users report bugs / request features.
 const FEEDBACK_URL = 'https://github.com/starpickerr/Stella/issues'
 
@@ -155,10 +150,9 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(GROUP_OPEN_DEFAULT)
-  // Local fallback so a version always shows even if the main-process IPC is
-  // unavailable (e.g. dev/web preview). The real value comes from
-  // app.getVersion() (packaged package.json), never from a remote service.
-  const [version, setVersion] = useState(FALLBACK_VERSION)
+  // First paint uses the version Vite stamped from the repo-root VERSION file.
+  // IPC then confirms app.getVersion() (synced into package.json at build).
+  const [version, setVersion] = useState(__APP_VERSION__)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -204,7 +198,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
       return () => clearTimeout(id)
     }
     // A pending update opens its own panel; no need for the inline hint.
-    if (updateStatusState === 'available' || updateStatusState === 'downloaded') {
+    if (updateStatusState === 'available') {
       setCheckedManually(false)
     }
     return

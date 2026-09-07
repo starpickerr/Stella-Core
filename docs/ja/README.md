@@ -22,10 +22,10 @@
 Stella は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、Web や主要な IM プラットフォーム上で動作。個人 PC やサーバー上で 24 時間 365 日稼働できます。
 
 <p align="center">
-  <a href="https://github.com/starpickerr/Stella">🌐 ウェブサイト</a> &nbsp;·&nbsp;
+  <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
   <a href="intro/index.mdx">📖 ドキュメント</a> &nbsp;·&nbsp;
   <a href="guide/quick-start.mdx">🚀 クイックスタート</a> &nbsp;·&nbsp;
-  <a href="https://github.com/starpickerr/Stella/tree/main/skills">🧩 Skill Hub</a> &nbsp;·&nbsp;
+  <a href="https://www.skill-marketplace.com/">🧩 skill広場</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella/releases">💻 ダウンロード</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella">☁️ オンラインで試す</a>
 </p>
@@ -48,7 +48,7 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
 | [長期記憶](memory/index.mdx) | 三層構造（コンテキスト → デイリー → コア）、Deep Dream による自動蒸留、キーワードとベクトルのハイブリッド検索 |
 | [ナレッジベース](knowledge/index.mdx) | 構造化された知識を Markdown Wiki として自動整理し、進化し続けるナレッジグラフを可視化ブラウジング |
 | [自己進化](memory/self-evolution.mdx) | 会話を自動でレビューして Skill を改善し、未完了のタスクを引き継ぎ、記憶と知識を補完。日々の利用を通じて成長 |
-| [Skill](skills/index.mdx) | [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub からワンクリックでインストール；対話によるカスタム Skill 作成にも対応 |
+| [Skill](skills/index.mdx) | [skill広場](https://www.skill-marketplace.com/)、GitHub、ClawHub からワンクリックでインストール；対話によるカスタム Skill 作成にも対応 |
 | [ツール](tools/index.mdx) | ファイル I/O、ターミナル、ブラウザ、スケジューラ、記憶検索、Web 検索など 10+ の組み込みツール — MCP プロトコルに完全対応 |
 | [チャネル](channels/index.mdx) | 一つの Agent で Web、WeChat、Feishu、DingTalk、WeCom、QQ、公式アカウント、Telegram、Slack を同時にサポート |
 | マルチモーダル | テキスト・画像・音声・ファイルをフルサポート — 認識・生成・双方向送受信 |
@@ -196,7 +196,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 ### Skill システム
 
-- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — オープン Skill マーケットプレイス：閲覧、検索、ワンクリックインストール
+- **[skill広場](https://www.skill-marketplace.com/)** — 閲覧、検索、ワンクリックインストール
 - **GitHub / ClawHub / URL など** — 任意のソースからワンクリックでインストール
 - **対話による作成** — `skill-creator` を使って対話でカスタム Skill を生成；ワークフローやサードパーティ API を再利用可能な Skill に変換
 
@@ -212,23 +212,9 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 ## 🏷 更新履歴
 
-> **2026.08.20:** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — セッションごとに分離できる複数ワークスペース、セッション単位の権限モード、タスク通知、デスクトップの改善、新モデルの追加。
+> **2026.09.07:** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — Stella 最初のテストリリース。デスクトップは GitHub Release への手動ダウンロードを案内します（macOS は `.dmg` のみ）。製品バージョンはリポジトリ直下の `VERSION` です。
 
-> **2026.08.12:** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — 独立タスクを並行実行するサブ Agent、推論強度の設定、差し替え可能なメモリのベクトルバックエンド、体験とセキュリティの改善。
-
-> **2026.07.29:** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — ワークスペースとファイルプレビュー、基本ツールの最適化（ファイル検索、書き込み検証、コマンドのバックグラウンド実行）、コンテキスト圧縮（`/compact`）、プロンプトのワンクリック最適化、セキュリティ強化。
-
-> **2026.07.20:** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — デスクトップの体験改善、MCP の OAuth 認可対応、Feishu チャネルの機能向上、定期タスクとデータバックアップ、新モデル追加。
-
-> **2026.07.08:** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [デスクトップクライアント](https://github.com/starpickerr/Stella/releases)（macOS / Windows）、ナレッジベースのドキュメント管理、MCP ツールのオンデマンド検索、繁体字中国語対応、新モデル追加。
-
-> **2026.06.18:** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web コンソールの強化（定期タスク管理、ナレッジベースのカテゴリ、複数のカスタムモデルプロバイダー）、自己進化の改善、新モデル（kimi-k2.7-code、glm-5.2）、セキュリティ強化と改善。
-
-> **2026.06.09:** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — 自己進化、Web コンソールの強化（メッセージ管理、マルチセッション並行）、クロスプラットフォーム対応の MCP 強化と並行呼び出し、新モデル（MiniMax-M3、qwen3.7-plus）、Python 3.13 対応。
-
-> **2026.06.01:** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国際化対応、新チャネル（Telegram、Discord、Slack、WeChat カスタマーサービス）、CLI インタラクション強化、ワンライナーインストールの最適化、MCP Streamable HTTP 対応、新モデル（claude-opus-4-8、MiMo）。
-
-完全な履歴: [リリースノート](releases/overview.mdx)
+公開手順は [desktop/README.md](../../desktop/README.md) を参照。詳細: [リリースノート](releases/overview.mdx)
 
 <br/>
 
@@ -246,7 +232,7 @@ GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) し�
 
 ## 🔗 関連プロジェクト
 
-- **[Stella Skill Hub](https://github.com/zhayujie/cow-skill-hub)** — AI エージェント向けのオープン Skill マーケットプレイス；Stella、OpenClaw、Claude Code などに対応
+- **[skill広場](https://www.skill-marketplace.com/)** — AI エージェント向け Skill マーケットプレイス
 - **[bot-on-anything](https://github.com/zhayujie/bot-on-anything)** — 軽量な LLM アプリケーションフレームワーク；Slack、Telegram、Discord、Gmail などに対応
 - **[AgentMesh](https://github.com/MinimalFuture/AgentMesh)** — チーム協調による複雑な問題解決のためのオープンソースのマルチエージェントフレームワーク
 
@@ -266,7 +252,7 @@ GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) し�
 
 ## 🛠️ 開発とコントリビューション
 
-あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
+あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [skill広場](https://www.skill-marketplace.com/) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
 
 ⭐ Star でプロジェクトを応援し、Watch → Custom → Releases で新バージョンの通知を受け取れます。PR や Issue の提出も歓迎します。
 

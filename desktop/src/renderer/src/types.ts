@@ -44,10 +44,10 @@ export interface ElectronAPI {
     headers?: Record<string, string>
     body?: string
   }) => Promise<{ ok: boolean; status: number; headers: Record<string, string>; body: string }>
-  // Auto-update. lang (e.g. "zh") routes installer downloads to the China CDN.
-  checkForUpdate?: (lang?: string) => Promise<void>
-  downloadUpdate?: (lang?: string) => Promise<void>
-  installUpdate?: () => Promise<void>
+  // Update checks against GitHub Releases. downloadUpdate opens the given URL
+  // (or the releases page) in the system browser.
+  checkForUpdate?: () => Promise<void>
+  downloadUpdate?: (url?: string) => Promise<void>
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   // Override the window/Dock/taskbar icon and title at runtime (cached across
   // launches). Used by product extensions; unused by the standard build.
@@ -67,11 +67,16 @@ export type UpdateStatus =
   | { state: 'checking' }
   // userInitiated: true when the check came from an explicit "check for update"
   // click; drives whether a dismissed version re-opens the panel (see store).
-  | { state: 'available'; version: string; notes?: string; userInitiated?: boolean }
+  | {
+      state: 'available'
+      version: string
+      notes?: string
+      pageUrl: string
+      assetUrl?: string
+      userInitiated?: boolean
+    }
   | { state: 'not-available' }
-  | { state: 'downloading'; percent: number }
-  | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string }
+  | { state: 'error'; message: string; pageUrl: string; userInitiated?: boolean }
 
 /** Why the backend failed. Mirrors BackendErrorCode in main/python-manager.ts. */
 export type BackendErrorCode =

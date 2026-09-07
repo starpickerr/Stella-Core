@@ -2,18 +2,16 @@
 
 Skills are reusable instruction sets that extend the agent's capabilities. Each skill is a `SKILL.md` file in its own directory, providing specialized knowledge, workflows, and tool integrations for specific tasks.
 
-## Skill Hub
+## skill广场
 
-Browse, search, and install skills from [Stella Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills).
-
-Open source: [github.com/zhayujie/cow-skill-hub](https://github.com/zhayujie/cow-skill-hub)
+Browse, search, and install skills from [skill广场](https://www.skill-marketplace.com/).
 
 ## Install Skills
 
 Install skills from multiple sources via chat (`/skill`) or terminal (`stella skill`):
 
 ```bash
-/skill install <name>                   # From Skill Hub
+/skill install <name>                   # From skill广场
 /skill install <owner>/<repo>           # From GitHub
 /skill install clawhub:<name>           # From ClawHub
 /skill install linkai:<code>            # From LinkAI
@@ -86,4 +84,4 @@ Skills with the same name in the custom directory override builtin ones.
 
 ## Create & Contribute
 
-See the [Skill Creation docs](../docs/skills/create.mdx) for details, or submit your skill to [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills).
+See the [Skill Creation docs](../docs/skills/create.mdx) for details, or submit your skill to [skill广场](https://www.skill-marketplace.com/).

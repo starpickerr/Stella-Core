@@ -66,7 +66,7 @@ cd ..
 # 2. Freeze the Python backend and Web assets
 bash desktop/build/build-backend.sh
 
-# 3. Build Stella.app, DMG, ZIP, and updater metadata
+# 3. Build Stella.app and the .dmg installer
 cd desktop
 npm run dist:mac
 ```
@@ -76,20 +76,40 @@ The outputs are:
 ```text
 desktop/release/mac-arm64/Stella.app
 desktop/release/Stella-<version>-arm64.dmg
-desktop/release/Stella-<version>-arm64.zip
-desktop/release/latest-mac.yml
 ```
 
-To build a new release, update the version first:
+### Version numbers
+
+One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix). Do not run `npm version`.
+
+| Place | Form | Example |
+| --- | --- | --- |
+| `VERSION` | `X.Y.Z` | `0.0.1` |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied by `npm run build`) | `0.0.1` |
+| git tag | `v` + that number | `v0.0.1` |
+| dmg name | `Stella-<X.Y.Z>-<arch>.dmg` | `Stella-0.0.1-arm64.dmg` |
+
+The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release tags (`vX.Y.Z`). Drafts, GitHub prereleases, and tags that are not exactly `vX.Y.Z` are ignored.
+
+### Publish a GitHub Release
+
+1. Write `X.Y.Z` into the repo-root `VERSION` file.
+2. Build the backend and the macOS dmg as above (`dmg` only; no zip, no auto-installer).
+3. Commit the version bump, tag `vX.Y.Z`, and push:
 
 ```bash
-cd desktop
-npm version 0.0.2 --no-git-tag-version
-cd ..
+echo 0.0.2 > VERSION
 bash desktop/build/build-backend.sh
-cd desktop
-npm run dist:mac
+cd desktop && npm run dist:mac && cd ..
+git add VERSION desktop/package.json desktop/package-lock.json
+git commit -m "release: v0.0.2"
+git tag v0.0.2
+git push && git push --tags
 ```
+
+4. On GitHub, create a **published** (not draft, not pre-release) Release for that tag, upload `desktop/release/Stella-0.0.2-arm64.dmg` (and the Intel dmg if you built it), and write the notes.
+
+The running app checks GitHub Releases and **prompts** you to open the download; it does not install or restart in the background. These builds are unsigned: first launch on macOS needs a right-click → Open.
 
 If GitHub downloads require the macOS system proxy, expose it to the build
 process explicitly:
@@ -101,9 +121,6 @@ NO_PROXY=127.0.0.1,localhost \
 npm run dist:mac
 ```
 
-An unsigned local build can be opened for testing. Public distribution should
-use an Apple Developer ID certificate and notarization.
-
 ## Architecture
 
 ```
@@ -112,6 +129,7 @@ desktop/
 │   ├── main/              # Electron main process
 │   │   ├── index.ts       # Window management, IPC
 │   │   ├── python-manager.ts  # Python backend lifecycle
+│   │   ├── updater.ts     # GitHub Releases check; opens download, no in-app install
 │   │   └── preload.ts     # Context bridge for renderer
 │   └── renderer/          # React UI (Vite)
 │       └── src/

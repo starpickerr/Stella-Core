@@ -90,11 +90,11 @@ Skill が必要とするシークレットキーは環境変数ファイルに�
 
 Skill システムは Agent に無限の拡張性を提供します。各 Skill は説明ファイル、実行スクリプト（任意）、リソース（任意）で構成され、特定のタイプのタスクを完了する方法を記述します。Skill により Agent は複雑なワークフローの指示に従い、ツールを呼び出し、サードパーティシステムと連携できます。
 
-- [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)：オープンな Skill マーケットプレイス。公式推奨、コミュニティ、サードパーティの Skill を収録。ワンコマンドでインストール可能。
+- [skill広場](https://www.skill-marketplace.com/)：オープンな Skill マーケットプレイス。公式推奨、コミュニティ、サードパーティの Skill を収録。ワンコマンドでインストール可能。
 - **組み込み Skill：** プロジェクトの `skills/` ディレクトリにあり、Skill クリエイター、画像認識、LinkAI Agent、Web フェッチなどが含まれます。組み込み Skill は依存条件（API キー、システムコマンドなど）に基づいて自動的に有効化されます。
 - **カスタム Skill：** ユーザーが会話を通じて作成し、ワークスペース（`~/stella/skills/`）に保存されます。あらゆる複雑なビジネスプロセスやサードパーティ連携を実装できます。
 
-Skill のインストール：`/skill install <名前>` または `stella skill install <名前>`。Skill Hub、GitHub、ClawHub、URL などからインストール可能。
+Skill のインストール：`/skill install <名前>` または `stella skill install <名前>`。skill広場、GitHub、ClawHub、URL などからインストール可能。
 
 ### 4.1 Skill の作成
 
@@ -113,12 +113,12 @@ Skill のインストール：`/skill install <名前>` または `stella skill 
   <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
-### 4.3 Skill Hub
+### 4.3 skill広場
 
-[Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) で利用可能なすべての Skill を閲覧するか、会話内でコマンドを実行できます：
+[skill広場](https://www.skill-marketplace.com/) で利用可能なすべての Skill を閲覧するか、会話内でコマンドを実行できます：
 
 ```text
-/skill list --remote          # Skill Hub を閲覧
+/skill list --remote          # skill広場を閲覧
 /skill search <キーワード>     # Skill を検索
 /skill install <名前>          # ワンコマンドでインストール
 ```

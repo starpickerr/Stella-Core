@@ -90,11 +90,11 @@ Secrets required by skills are stored in an environment variable file, managed b
 
 The Skills system provides infinite extensibility for the Agent. Each Skill consists of a description file, execution scripts (optional), and resources (optional), describing how to complete specific types of tasks. Skills allow the Agent to follow instructions for complex workflows, invoke tools, or integrate third-party systems.
 
-- [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills): An open skill marketplace featuring official, community, and third-party skills. Install with one command.
+- [skill广场](https://www.skill-marketplace.com/): An open skill marketplace featuring official, community, and third-party skills. Install with one command.
 - **Built-in skills:** Located in the project's `skills/` directory, including skill creator, image recognition, LinkAI agent, web fetch, and more. Built-in skills are automatically enabled based on dependency conditions (API keys, system commands, etc.).
 - **Custom skills:** Created by users through conversation, stored in the workspace (`~/stella/skills/`), capable of implementing any complex business process or third-party integration.
 
-Install skills: `/skill install <name>` or `stella skill install <name>`, supporting Skill Hub, GitHub, ClawHub, URL, and more.
+Install skills: `/skill install <name>` or `stella skill install <name>`, supporting skill广场, GitHub, ClawHub, URL, and more.
 
 ### 4.1 Creating Skills
 
@@ -113,12 +113,12 @@ The `skill-creator` skill enables rapid skill creation through conversation. You
   <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
-### 4.3 Skill Hub
+### 4.3 skill广场
 
-Visit [Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) to browse all available skills, or use commands in conversation:
+Visit [skill广场](https://www.skill-marketplace.com/) to browse all available skills, or use commands in conversation:
 
 ```text
-/skill list --remote          # Browse Skill Hub
+/skill list --remote          # Browse skill广场
 /skill search <keyword>       # Search skills
 /skill install <name>          # Install with one command
 ```

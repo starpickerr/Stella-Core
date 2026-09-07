@@ -90,11 +90,11 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 技能系统为 Agent 提供无限的扩展性，每个 Skill 由说明文件、运行脚本（可选）、资源（可选）组成，描述如何完成特定类型的任务。通过 Skill 可以让 Agent 遵循说明完成复杂流程、调用各类工具或对接第三方系统。
 
-- [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)：开放的技能广场，汇集官方推荐、社区贡献和第三方技能，支持一键安装。
+- [skill广场](https://www.skill-marketplace.com/)：开放的技能市场，汇集官方推荐、社区贡献和第三方技能，支持一键安装。
 - **内置技能：** 在项目的 `skills/` 目录下，包含技能创造器、图像识别、LinkAI 智能体、网页抓取等。内置 Skill 根据依赖条件（API Key、系统命令等）自动判断是否启用。
 - **自定义技能：** 由用户通过对话创建，存放在工作空间中（`~/stella/skills/`），可实现任何复杂的业务流程和第三方系统对接。
 
-安装技能：`/skill install <名称>` 或 `stella skill install <名称>`，支持从 Skill Hub、GitHub、ClawHub、URL 等来源安装。
+安装技能：`/skill install <名称>` 或 `stella skill install <名称>`，支持从 skill广场、GitHub、ClawHub、URL 等来源安装。
 
 ### 4.1 创建技能
 
@@ -113,12 +113,12 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
   <img src="/images/placeholder-image.svg" width="800" />
 </Frame>
 
-### 4.3 技能广场
+### 4.3 skill广场
 
-访问 [Stella Skills](https://github.com/starpickerr/Stella/tree/main/skills) 浏览所有可用技能，或在对话中执行：
+访问 [skill广场](https://www.skill-marketplace.com/) 浏览所有可用技能，或在对话中执行：
 
 ```text
-/skill list --remote          # 浏览技能广场
+/skill list --remote          # 浏览 skill广场
 /skill search <关键词>         # 搜索技能
 /skill install <名称>          # 一键安装
 ```

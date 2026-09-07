@@ -1,6 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
 import path from 'path'
+
+const version = fs.readFileSync(path.resolve(__dirname, '../VERSION'), 'utf8').trim()
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  throw new Error(`VERSION must be X.Y.Z (no v prefix), got ${JSON.stringify(version)}`)
+}
 
 // '@product' resolves to the built-in default (empty). An alternate build
 // can set STELLA_PRODUCT_DIR to point at another module instead.
@@ -25,6 +31,11 @@ export default defineConfig({
   plugins: [react()],
   root: path.resolve(__dirname, 'src/renderer'),
   base: './',
+  // Stamped from the repo-root VERSION file at build time. sync-version.mjs
+  // copies the same value into package.json so app.getVersion() matches.
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   publicDir: path.resolve(__dirname, '../channel/web/static'),
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),

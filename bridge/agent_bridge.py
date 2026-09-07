@@ -379,7 +379,7 @@ class AgentBridge:
         # Eager-start the scheduler so cron tasks fire without waiting
         # for the first user message. init_scheduler is idempotent.
         try:
-            from agent.tools.scheduler.integration import init_scheduler
+            from agent.scheduler import init_scheduler
             for profile in self.agent_registry.list(include_disabled=False):
                 if init_scheduler(self, profile.workspace, profile.id):
                     self.scheduler_agent_ids.add(profile.id)
@@ -722,7 +722,7 @@ class AgentBridge:
                     for tool in agent.tools:
                         if tool.name == "scheduler":
                             try:
-                                from agent.tools.scheduler.integration import attach_scheduler_to_tool
+                                from agent.scheduler import attach_scheduler_to_tool
                                 attach_scheduler_to_tool(tool, context)
                             except Exception as e:
                                 logger.warning(f"[AgentBridge] Failed to attach context to scheduler: {e}")

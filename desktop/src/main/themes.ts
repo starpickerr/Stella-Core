@@ -6,8 +6,7 @@ import os from 'os'
 // Themes come from two sources and are merged at load time:
 //
 //   1. Bundled themes — resources/themes/ shipped inside the app package
-//      (read-only). Present only in builds produced from a flavor; absent
-//      in the standard build.
+//      (read-only). Optional; absent in the standard build.
 //   2. User themes — ~/.stella/themes/, the shared data dir users can add to
 //      (via a future in-app store/import). Each theme is its own folder:
 //
@@ -61,9 +60,6 @@ export interface AppConfig {
   appName?: string
   // Optional runtime-origin tag forwarded to the backend for stats.
   clientSource?: string
-  // Optional override for the auto-update feed base URL. When set, the updater
-  // uses it as-is instead of the default build's feed.
-  updateFeedUrl?: string
 }
 
 function appConfigPath(): string {
