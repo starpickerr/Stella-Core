@@ -61,9 +61,6 @@ export interface AppConfig {
   appName?: string
   // Optional runtime-origin tag forwarded to the backend for stats.
   clientSource?: string
-  // Optional override for the auto-update feed base URL. When set, the updater
-  // uses it as-is instead of the default build's feed.
-  updateFeedUrl?: string
 }
 
 function appConfigPath(): string {

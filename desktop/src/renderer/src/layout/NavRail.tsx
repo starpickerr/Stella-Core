@@ -41,11 +41,6 @@ import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/u
 import UpdateBanner from '../components/UpdateBanner'
 import { product } from '@product'
 
-// Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
-// in sync with desktop/package.json "version"; the packaged app overrides this
-// with the real value via IPC, so it only matters outside a packaged build.
-const FALLBACK_VERSION = '0.0.1'
-
 // External links opened in the user's default browser. The window-open handler
 // in the main process routes window.open() through shell.openExternal.
 // English is the default (no suffix); Chinese gets a /zh suffix. Skill hub is
@@ -155,10 +150,10 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(GROUP_OPEN_DEFAULT)
-  // Local fallback so a version always shows even if the main-process IPC is
-  // unavailable (e.g. dev/web preview). The real value comes from
-  // app.getVersion() (packaged package.json), never from a remote service.
-  const [version, setVersion] = useState(FALLBACK_VERSION)
+  // First paint uses the version Vite stamped from package.json. IPC then
+  // confirms app.getVersion() so a rebuilt renderer still matches the running
+  // binary if the two ever diverge.
+  const [version, setVersion] = useState(__APP_VERSION__)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -204,7 +199,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
       return () => clearTimeout(id)
     }
     // A pending update opens its own panel; no need for the inline hint.
-    if (updateStatusState === 'available' || updateStatusState === 'downloaded') {
+    if (updateStatusState === 'available') {
       setCheckedManually(false)
     }
     return

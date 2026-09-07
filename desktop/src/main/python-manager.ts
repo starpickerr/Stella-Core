@@ -941,15 +941,9 @@ export class PythonBackend extends EventEmitter {
 
   /**
    * Synchronously, forcefully tear the backend down and BLOCK until its files
-   * are no longer held. Used only on the update-install path: the NSIS silent
-   * updater starts deleting the old install almost immediately, and on Windows a
-   * still-running stella-backend.exe (plus the hundreds of DLLs it maps from
-   * _internal) keeps those files locked, so the installer aborts with "卸载旧
-   * 应用程序文件失败:2". The normal stop() only sends SIGTERM and returns before
-   * the process is actually gone — which on Windows is a no-op for a native exe.
-   *
-   * Best-effort throughout: any failure here must never block the update, so we
-   * still fall through to quitAndInstall even if the kill didn't fully succeed.
+   * are no longer held. Kept for callers that need the process tree gone before
+   * they continue (Windows file locks on stella-backend.exe / _internal DLLs).
+   * Best-effort throughout: any failure here must never block the caller.
    */
   stopSync(): void {
     this.shuttingDown = true

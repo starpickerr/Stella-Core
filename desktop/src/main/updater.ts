@@ -1,12 +1,6 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, net, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
-// electron-updater is CommonJS: its members live on module.exports, with no
-// meaningful default export. Under module=commonjs + esModuleInterop, a named
-// import compiles to `electron_updater_1.autoUpdater` and resolves correctly,
-// whereas `import pkg from 'electron-updater'` yields undefined.
-import { autoUpdater } from 'electron-updater'
-import { loadAppConfig } from './themes'
 
 // Status payloads pushed to the renderer over the 'update-status' channel.
 // The renderer drives the NavRail badge + update panel from these.
@@ -16,49 +10,85 @@ export type UpdateStatus =
   // (not the startup/interval poll). The renderer uses this to decide whether
   // to auto-open the panel: automatic checks stay silent (dot only) once a
   // version was dismissed; a manual check always re-opens.
-  | { state: 'available'; version: string; notes?: string; userInitiated?: boolean }
+  | {
+      state: 'available'
+      version: string
+      notes?: string
+      pageUrl: string
+      assetUrl?: string
+      userInitiated?: boolean
+    }
   | { state: 'not-available' }
-  | { state: 'downloading'; percent: number }
-  | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string }
+  | { state: 'error'; message: string; pageUrl: string; userInitiated?: boolean }
+
+const OWNER = 'starpickerr'
+const REPO = 'Stella'
+const RELEASES_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=5`
+const RELEASES_PAGE = `https://github.com/${OWNER}/${REPO}/releases`
 
 let getWindow: () => BrowserWindow | null = () => null
 
-// A bundled app-config may point the updater at a different feed origin.
-// Absent -> GitHub Releases for starpickerr/Stella.
-const CONFIGURED_FEED = (loadAppConfig()?.updateFeedUrl || '').trim()
-
-// Which origin the current session prefers, derived from the app UI language
-// (zh -> China mirror). Downloads that fail on the preferred origin retry once
-// on the other one before surfacing an error.
-let preferChina = false
-// Guard so a single download only ever falls back once (avoids ping-pong).
-let downloadFellBack = false
-
-function applyFeedUrl(): void {
-  try {
-    if (CONFIGURED_FEED) {
-      autoUpdater.setFeedURL({ provider: 'generic', url: CONFIGURED_FEED })
-      log(`feed url set: ${CONFIGURED_FEED}`)
-      return
-    }
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: 'starpickerr',
-      repo: 'Stella',
-    })
-    log('feed url set: github.com/starpickerr/Stella')
-  } catch (err) {
-    log(`feed url set failed: ${(err as Error)?.message || String(err)}`)
-  }
+interface GithubAsset {
+  name: string
+  browser_download_url: string
 }
 
-// Called from the check/download IPC with the renderer's current UI language.
-export function setUpdateLanguage(lang: string | undefined): void {
-  const china = (lang || '').toLowerCase().startsWith('zh')
-  if (china !== preferChina) {
-    preferChina = china
-    if (app.isPackaged) applyFeedUrl()
+interface GithubRelease {
+  tag_name: string
+  draft: boolean
+  html_url: string
+  body: string | null
+  assets: GithubAsset[]
+}
+
+function parseVersion(raw: string): { core: [number, number, number]; pre: string } | null {
+  const v = raw.trim().replace(/^v/i, '')
+  const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/)
+  if (!m) return null
+  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] || '' }
+}
+
+// True when `remote` is strictly newer than `current`. Pre-release tags sort
+// below the same core version (0.0.2-test < 0.0.2), matching semver.
+function isNewer(remote: string, current: string): boolean {
+  const a = parseVersion(remote)
+  const b = parseVersion(current)
+  if (!a || !b) return false
+  for (let i = 0; i < 3; i++) {
+    if (a.core[i] !== b.core[i]) return a.core[i] > b.core[i]
+  }
+  if (!a.pre && b.pre) return true
+  if (a.pre && !b.pre) return false
+  return a.pre > b.pre
+}
+
+function pickAsset(assets: GithubAsset[], version: string): string | undefined {
+  const names: string[] = []
+  if (process.platform === 'darwin') {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    names.push(`Stella-${version}-${arch}.dmg`)
+  } else if (process.platform === 'win32') {
+    names.push(`Stella-Setup-${version}-x64.exe`, `Stella-Setup-${version}.exe`)
+  }
+  for (const name of names) {
+    const hit = assets.find((a) => a.name === name)
+    if (hit) return hit.browser_download_url
+  }
+  const fallbackExt = process.platform === 'darwin' ? '.dmg' : process.platform === 'win32' ? '.exe' : ''
+  if (!fallbackExt) return undefined
+  return assets.find((a) => a.name.toLowerCase().endsWith(fallbackExt))?.browser_download_url
+}
+
+function isAllowedDownloadUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'https:') return false
+    if (u.hostname === 'github.com' && u.pathname.startsWith(`/${OWNER}/${REPO}`)) return true
+    if (u.hostname === 'objects.githubusercontent.com') return true
+    if (u.hostname.endsWith('.githubusercontent.com')) return true
+    return false
+  } catch {
+    return false
   }
 }
 
@@ -82,7 +112,6 @@ function log(...parts: unknown[]) {
   const line = `[${new Date().toISOString()}] [updater] ${parts
     .map((p) => (typeof p === 'string' ? p : safeStringify(p)))
     .join(' ')}`
-  // Console: shows up in the terminal (dev) and the packaged app's stdout.
   console.log(line)
   if (logFile) {
     try {
@@ -108,69 +137,7 @@ function send(status: UpdateStatus) {
 export function initUpdater(windowGetter: () => BrowserWindow | null): void {
   getWindow = windowGetter
   initLogFile()
-
   log(`init: appVersion=${app.getVersion()} packaged=${app.isPackaged} logFile=${logFile ?? '<none>'}`)
-
-  // In dev (not packaged) there's no update feed; skip wiring entirely so
-  // electron-updater doesn't throw on the missing app-update.yml.
-  if (!app.isPackaged) {
-    log('not packaged — updater wiring skipped')
-    return
-  }
-
-  // User-driven flow: we surface "available" and let the user opt in to the
-  // download, rather than pulling bytes silently in the background.
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
-  // The desktop channel ships pre-release-tagged builds (e.g. 0.0.8-test), so a
-  // current version like 0.0.7-test must be allowed to compare against, and be
-  // offered, other pre-release versions. Without this electron-updater's semver
-  // compare can silently skip pre-releases and neither "available" nor
-  // "not-available" fires — the UI just spins forever.
-  autoUpdater.allowPrerelease = true
-  autoUpdater.allowDowngrade = false
-  // Point at the preferred origin up front (defaults to R2; switched to the CN
-  // mirror once the renderer reports a zh UI language via setUpdateLanguage).
-  applyFeedUrl()
-  // Route electron-updater's own internal logging to our file too, so we
-  // capture the feed URL, parsed versions and any stack traces it logs.
-  autoUpdater.logger = {
-    info: (m: unknown) => log('eu-info:', m),
-    warn: (m: unknown) => log('eu-warn:', m),
-    error: (m: unknown) => log('eu-error:', m),
-    debug: (m: unknown) => log('eu-debug:', m),
-  } as unknown as typeof autoUpdater.logger
-
-  autoUpdater.on('checking-for-update', () => {
-    log(`checking-for-update: current=${app.getVersion()}`)
-    send({ state: 'checking' })
-  })
-  autoUpdater.on('update-available', (info) => {
-    log(`update-available: current=${app.getVersion()} remote=${info.version} userInitiated=${userInitiatedCheck} -> update needed`)
-    send({
-      state: 'available',
-      version: info.version,
-      notes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
-      userInitiated: userInitiatedCheck,
-    })
-  })
-  autoUpdater.on('update-not-available', (info) => {
-    log(`update-not-available: current=${app.getVersion()} remote=${info?.version ?? '<unknown>'} -> up to date`)
-    send({ state: 'not-available' })
-  })
-  autoUpdater.on('download-progress', (p) => {
-    log(`download-progress: ${Math.round(p.percent)}% (${p.transferred}/${p.total} bytes, ${Math.round(p.bytesPerSecond / 1024)} KB/s)`)
-    send({ state: 'downloading', percent: Math.round(p.percent) })
-  })
-  autoUpdater.on('update-downloaded', (info) => {
-    log(`update-downloaded: version=${info.version} -> ready to install`)
-    send({ state: 'downloaded', version: info.version })
-  })
-  autoUpdater.on('error', (err) => {
-    const message = err == null ? 'unknown' : err.message || String(err)
-    log(`error: ${message}`, err instanceof Error && err.stack ? err.stack : '')
-    send({ state: 'error', message })
-  })
 }
 
 // Tracks whether the in-flight check was triggered by an explicit user click.
@@ -193,72 +160,86 @@ export function checkForUpdates(userInitiated = false): void {
     if (process.env.STELLA_MOCK_UPDATE) {
       const version = process.env.STELLA_MOCK_UPDATE_VERSION || '9.9.9'
       log(`checkForUpdates: not packaged, MOCK available version=${version}`)
-      send({ state: 'available', version, userInitiated: userInitiatedCheck })
+      send({
+        state: 'available',
+        version,
+        notes: 'Mock update (STELLA_MOCK_UPDATE)',
+        pageUrl: RELEASES_PAGE,
+        userInitiated: userInitiatedCheck,
+      })
       return
     }
     log('checkForUpdates: not packaged, replying not-available')
     send({ state: 'not-available' })
     return
   }
-  log(`checkForUpdates: requesting feed, current=${app.getVersion()}`)
-  autoUpdater.checkForUpdates().catch((err) => {
-    const message = err?.message || String(err)
-    log(`checkForUpdates: request failed: ${message}`, err instanceof Error && err.stack ? err.stack : '')
-    send({ state: 'error', message })
-  })
+  void fetchLatestRelease()
 }
 
-export function startDownload(): void {
-  if (!app.isPackaged) return
-  downloadFellBack = false
-  log(`startDownload: user requested download (preferChina=${preferChina})`)
-  attemptDownload()
-}
+async function fetchLatestRelease(): Promise<void> {
+  const current = app.getVersion()
+  log(`checkForUpdates: requesting GitHub releases, current=${current}`)
+  send({ state: 'checking' })
 
-// Download from the current origin; on failure, switch to the OTHER origin once
-// and retry. This is the client-side "mirrors back each other" fallback: R2 and
-// the China CDN hold identical bytes, so a slow/blocked origin can be swapped
-// transparently without the user noticing.
-function attemptDownload(): void {
-  autoUpdater.downloadUpdate().catch((err) => {
-    const message = err?.message || String(err)
-    log(`startDownload: failed on ${preferChina ? 'CN' : 'R2'}: ${message}`, err instanceof Error && err.stack ? err.stack : '')
-    if (!downloadFellBack) {
-      downloadFellBack = true
-      preferChina = !preferChina
-      applyFeedUrl()
-      log(`startDownload: retrying on ${preferChina ? 'CN' : 'R2'} mirror`)
-      // Re-check first so electron-updater re-reads the feed from the new origin
-      // before downloading (its cached updateInfo is origin-agnostic here, but a
-      // fresh check keeps the internal state consistent).
-      autoUpdater
-        .checkForUpdates()
-        .then(() => autoUpdater.downloadUpdate())
-        .catch((err2) => {
-          const m2 = err2?.message || String(err2)
-          log(`startDownload: fallback also failed: ${m2}`, err2 instanceof Error && err2.stack ? err2.stack : '')
-          send({ state: 'error', message: m2 })
-        })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const res = await net.fetch(RELEASES_API, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': `Stella/${current}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    if (!res.ok) {
+      throw new Error(`GitHub releases ${res.status}`)
+    }
+    const payload = (await res.json()) as GithubRelease[]
+    if (!Array.isArray(payload)) {
+      throw new Error('GitHub releases: unexpected payload')
+    }
+    for (const release of payload) {
+      if (release.draft) continue
+      const remote = parseVersion(release.tag_name)
+      if (!remote) {
+        log(`checkForUpdates: skip unparseable tag=${release.tag_name}`)
+        continue
+      }
+      const version = `${remote.core.join('.')}${remote.pre ? `-${remote.pre}` : ''}`
+      if (!isNewer(version, current)) {
+        log(`checkForUpdates: latest=${version} current=${current} -> up to date`)
+        send({ state: 'not-available' })
+        return
+      }
+      const assetUrl = pickAsset(release.assets || [], version)
+      log(
+        `checkForUpdates: update-available current=${current} remote=${version} asset=${assetUrl ?? '<none>'} userInitiated=${userInitiatedCheck}`
+      )
+      const notes = typeof release.body === 'string' && release.body.trim() ? release.body.trim() : undefined
+      send({
+        state: 'available',
+        version,
+        notes: notes && notes.length > 4000 ? `${notes.slice(0, 4000)}…` : notes,
+        pageUrl: release.html_url || `${RELEASES_PAGE}/tag/v${version}`,
+        assetUrl,
+        userInitiated: userInitiatedCheck,
+      })
       return
     }
-    send({ state: 'error', message })
-  })
+    log('checkForUpdates: no published releases -> not-available')
+    send({ state: 'not-available' })
+  } catch (err) {
+    const message = err == null ? 'unknown' : (err as Error).message || String(err)
+    log(`checkForUpdates: request failed: ${message}`, err instanceof Error && err.stack ? err.stack : '')
+    send({ state: 'error', message, pageUrl: RELEASES_PAGE, userInitiated: userInitiatedCheck })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
-export function quitAndInstall(): void {
-  if (!app.isPackaged) return
-  log('quitAndInstall: relaunching to install update')
-  // Drop window-all-closed handlers first: a lingering handler can keep the
-  // process alive and stop the installer from replacing files / relaunching
-  // (a documented electron-updater gotcha, esp. on Windows NSIS).
-  app.removeAllListeners('window-all-closed')
-  // isSilent=TRUE on Windows. Our installer is now ASSISTED (nsis.oneClick=false
-  // + allowToChangeInstallationDirectory) so the FIRST install shows the
-  // directory/mode wizard. But an UPDATE must NOT re-show that wizard — isSilent
-  // skips it and updates in place. isForceRunAfter=true relaunches after the
-  // silent update. (The old assisted+silent force-run bug, #2179, was fixed
-  // upstream in PR #2278; we're on electron-updater 6.8.9, well past it.)
-  // setImmediate + removeAllListeners are the documented prerequisites for the
-  // relaunch to fire reliably. macOS ignores isSilent entirely.
-  setImmediate(() => autoUpdater.quitAndInstall(true, true))
+export function openDownload(url?: string): void {
+  const target = url && isAllowedDownloadUrl(url) ? url : RELEASES_PAGE
+  log(`openDownload: ${target}`)
+  void shell.openExternal(target)
 }
