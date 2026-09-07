@@ -4,6 +4,5 @@ release/
 *.log
 .DS_Store
 Thumbs.db
-flavors/
 resources/app-config.json
 resources/themes/

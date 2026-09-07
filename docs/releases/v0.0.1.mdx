@@ -17,7 +17,14 @@ This is the first Stella-branded test build. It is not a continuation of the ups
 
 ## Versioning and publish
 
-The single version source is the repo-root `VERSION` file (CLI, Python package, and desktop `package.json` stay in sync at build time). Git tags use a `v` prefix (`v0.0.1`).
+The single version source is the repo-root `VERSION` file: `X.Y.Z` with no `v`. Build copies that into `desktop/package.json`. Git tags **must** be `vX.Y.Z`.
+
+| Place | Form | Example |
+| --- | --- | --- |
+| `VERSION` | `X.Y.Z` | `0.0.1` |
+| `package.json` | `X.Y.Z` | `0.0.1` |
+| git tag | `vX.Y.Z` | `v0.0.1` |
+| dmg | `Stella-X.Y.Z-arm64.dmg` | `Stella-0.0.1-arm64.dmg` |
 
 ```bash
 echo 0.0.1 > VERSION

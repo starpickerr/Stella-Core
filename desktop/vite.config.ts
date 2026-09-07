@@ -4,6 +4,9 @@ import fs from 'fs'
 import path from 'path'
 
 const version = fs.readFileSync(path.resolve(__dirname, '../VERSION'), 'utf8').trim()
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  throw new Error(`VERSION must be X.Y.Z (no v prefix), got ${JSON.stringify(version)}`)
+}
 
 // '@product' resolves to the built-in default (empty). An alternate build
 // can set STELLA_PRODUCT_DIR to point at another module instead.

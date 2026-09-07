@@ -26,6 +26,10 @@ const REPO = 'Stella'
 const RELEASES_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=5`
 const RELEASES_PAGE = `https://github.com/${OWNER}/${REPO}/releases`
 
+// Git tags are always `vX.Y.Z`. package.json / VERSION / dmg names use `X.Y.Z`.
+const RELEASE_TAG = /^v(\d+\.\d+\.\d+)$/
+const CORE_VERSION = /^(\d+)\.(\d+)\.(\d+)$/
+
 let getWindow: () => BrowserWindow | null = () => null
 
 interface GithubAsset {
@@ -36,30 +40,34 @@ interface GithubAsset {
 interface GithubRelease {
   tag_name: string
   draft: boolean
+  prerelease: boolean
   html_url: string
   body: string | null
   assets: GithubAsset[]
 }
 
-function parseVersion(raw: string): { core: [number, number, number]; pre: string } | null {
+function parseCore(raw: string): [number, number, number] | null {
   const v = raw.trim().replace(/^v/i, '')
-  const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/)
+  const m = v.match(CORE_VERSION)
   if (!m) return null
-  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] || '' }
+  return [Number(m[1]), Number(m[2]), Number(m[3])]
 }
 
-// True when `remote` is strictly newer than `current`. Pre-release tags sort
-// below the same core version (0.0.2-test < 0.0.2), matching semver.
+// Eligible GitHub tags only: `vX.Y.Z` (the `v` is required). Returns `X.Y.Z`.
+function parseReleaseTag(tag: string): string | null {
+  const m = tag.trim().match(RELEASE_TAG)
+  return m ? m[1] : null
+}
+
 function isNewer(remote: string, current: string): boolean {
-  const a = parseVersion(remote)
-  const b = parseVersion(current)
-  if (!a || !b) return false
+  const a = parseCore(remote)
+  const b = parseCore(current)
+  if (!a) return false
+  if (!b) return true
   for (let i = 0; i < 3; i++) {
-    if (a.core[i] !== b.core[i]) return a.core[i] > b.core[i]
+    if (a[i] !== b[i]) return a[i] > b[i]
   }
-  if (!a.pre && b.pre) return true
-  if (a.pre && !b.pre) return false
-  return a.pre > b.pre
+  return false
 }
 
 function pickAsset(assets: GithubAsset[], version: string): string | undefined {
@@ -200,13 +208,19 @@ async function fetchLatestRelease(): Promise<void> {
       throw new Error('GitHub releases: unexpected payload')
     }
     for (const release of payload) {
-      if (release.draft) continue
-      const remote = parseVersion(release.tag_name)
-      if (!remote) {
-        log(`checkForUpdates: skip unparseable tag=${release.tag_name}`)
+      if (release.draft) {
+        log(`checkForUpdates: skip draft tag=${release.tag_name}`)
         continue
       }
-      const version = `${remote.core.join('.')}${remote.pre ? `-${remote.pre}` : ''}`
+      if (release.prerelease) {
+        log(`checkForUpdates: skip prerelease tag=${release.tag_name}`)
+        continue
+      }
+      const version = parseReleaseTag(release.tag_name)
+      if (!version) {
+        log(`checkForUpdates: skip tag=${release.tag_name} (need vX.Y.Z)`)
+        continue
+      }
       if (!isNewer(version, current)) {
         log(`checkForUpdates: latest=${version} current=${current} -> up to date`)
         send({ state: 'not-available' })

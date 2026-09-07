@@ -140,7 +140,7 @@ const App: React.FC = () => {
     return off
   }, [navigate])
 
-  // Subscribe to auto-update status from the main process (no-op in dev).
+  // Subscribe to GitHub update-check status from the main process.
   useEffect(() => initUpdateListener(), [])
 
   // Handle app-menu / shortcut actions forwarded from the main process.
