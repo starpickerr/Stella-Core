@@ -5,7 +5,7 @@ import http from 'http'
 import { PythonBackend, BackendError } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray, getTray } from './tray'
-import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
+import { initUpdater, checkForUpdates, openDownload } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
 import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
@@ -391,38 +391,16 @@ function setupIPC() {
     return { ok: effective === !!enabled, enabled: effective, error: '' }
   })
 
-  // Auto-update controls (renderer-driven: check, then opt-in download/install).
-  // The renderer passes its current UI language so downloads can be routed to
-  // the China CDN mirror (zh) or R2 (others).
-  ipcMain.handle('update-check', (_event, lang?: string) => {
-    setUpdateLanguage(lang)
+  // Update checks: renderer-driven "check for update" plus the silent poll
+  // below. Finding a newer GitHub Release only opens the panel; the download
+  // button hands the URL to the system browser (no in-app installer).
+  ipcMain.handle('update-check', () => {
     // This channel is only hit by an explicit "check for update" click, so the
     // panel should re-open even if the version was previously dismissed.
     checkForUpdates(true)
   })
-  ipcMain.handle('update-download', (_event, lang?: string) => {
-    setUpdateLanguage(lang)
-    startDownload()
-  })
-  ipcMain.handle('update-install', () => {
-    // Let the window actually close so the app can fully quit — otherwise the
-    // close-to-tray handler preventDefault()s it, the process stays alive, and
-    // Squirrel.Mac can't swap the app bundle (the update silently no-ops and
-    // relaunching still shows the old version).
-    isQuitting = true
-    // Kill the backend SYNCHRONOUSLY before handing off to the installer. On
-    // Windows the NSIS silent updater deletes the old install right away, and a
-    // still-running stella-backend.exe locks those files, aborting the update
-    // with "卸载旧应用程序文件失败:2". before-quit's async stop() sends SIGTERM
-    // and returns immediately (a no-op for a native Windows exe), so it loses
-    // the race. stopSync() blocks until the process tree is gone. Best-effort:
-    // never let a teardown hiccup block the update.
-    try {
-      pythonBackend?.stopSync()
-    } catch {
-      // ignore — proceed with the install regardless
-    }
-    quitAndInstall()
+  ipcMain.handle('update-download', (_event, url?: string) => {
+    openDownload(url)
   })
 
   // Synchronous OS locale lookup (e.g. "zh-CN", "en-US"). Used by the renderer
@@ -539,12 +517,12 @@ app.whenReady().then(async () => {
   applyCachedAppIcon()
   await startBackend()
 
-  // Wire auto-update: a first silent check a few seconds after launch (so it
+  // Wire update checks: a first silent check a few seconds after launch (so it
   // doesn't compete with backend startup), then poll every 4 hours so a
   // long-running window still surfaces new releases. Both are automatic checks
   // (userInitiated=false): the panel auto-opens once per new version, and once
   // the user dismisses it these polls only keep the footer/menu dot lit rather
-  // than re-popping the panel. autoDownload is off, so any update is opt-in.
+  // than re-popping the panel. Download is always a browser hand-off.
   initUpdater(() => mainWindow)
   setTimeout(() => checkForUpdates(), 5000)
   const UPDATE_POLL_MS = 4 * 60 * 60 * 1000

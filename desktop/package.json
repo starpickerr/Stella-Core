@@ -21,7 +21,6 @@
     "dist:flavor": "node scripts/apply-flavor.mjs $FLAVOR && npm run build && electron-builder && node scripts/apply-flavor.mjs --clear"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.21.0",
     "markdown-it": "^14.2.0",
@@ -105,11 +104,6 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "starpickerr",
-      "repo": "Stella"
     }
   },
   "overrides": {
