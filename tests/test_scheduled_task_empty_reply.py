@@ -15,7 +15,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from agent.protocol.agent_stream import AgentStreamExecutor
-from agent.tools.scheduler.integration import _execute_agent_task
+from agent.scheduler.integration import _execute_agent_task
 
 
 def _make_executor(allow_empty_response):

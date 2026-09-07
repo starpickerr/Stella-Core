@@ -542,6 +542,19 @@ class ApiClient {
     return data.tasks
   }
 
+  async createTask(payload: {
+    name: string
+    enabled?: boolean
+    schedule: TaskSchedule
+    action: Pick<TaskAction, 'type' | 'content' | 'task_description'>
+    session_id: string
+  }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
+    return this.request('/api/scheduler', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async runTask(taskId: string): Promise<ApiResult> {
     return this.request('/api/scheduler/run', {
       method: 'POST',

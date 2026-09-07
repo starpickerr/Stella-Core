@@ -1,13 +1,11 @@
-"""
-Background scheduler service for executing scheduled tasks
-"""
+"""Background scheduler service for executing scheduled tasks."""
 
 import time
 import threading
 from datetime import datetime, timedelta
 from typing import Callable, Optional
-from croniter import croniter
 from common.log import logger
+from agent.scheduler.cron import iter_cron
 
 
 def _parse_naive_local(iso_str: str) -> datetime:
@@ -251,7 +249,7 @@ class SchedulerService:
                 return None
             
             try:
-                cron = croniter(expression, from_time)
+                cron = iter_cron(expression, from_time)
                 return cron.get_next(datetime)
             except Exception as e:
                 logger.error(f"[Scheduler] Invalid cron expression '{expression}': {e}")

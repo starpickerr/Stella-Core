@@ -6,9 +6,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from agent.tools.scheduler.scheduler_service import SchedulerService
+from agent.scheduler import SchedulerService, TaskStore
 from agent.tools.scheduler.scheduler_tool import SchedulerTool
-from agent.tools.scheduler.task_store import TaskStore
 
 
 def _task(task_id="task-1", enabled=False):

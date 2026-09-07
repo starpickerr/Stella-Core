@@ -65,13 +65,15 @@ Agent: [调用 scheduler 工具]
 ### 2. 支持的调度类型
 
 #### Cron 表达式 (`cron`)
-使用标准 cron 表达式：
+5 位 Linux crontab，或 6 位 Quartz（秒在最前）：
 
 ```
-0 9 * * *      # 每天 9:00
-0 */2 * * *    # 每 2 小时
-30 8 * * 1-5   # 工作日 8:30
-0 0 1 * *      # 每月 1 号
+0 9 * * *        # 每天 9:00（分 时 日 月 周）
+0 0 9 * * *      # 每天 9:00:00（秒 分 时 日 月 周）
+0 */2 * * *      # 每 2 小时
+30 8 * * 1-5     # 工作日 8:30
+0 0 1 * *        # 每月 1 号 0:00
+0 9 L * *        # 每月最后一天 9:00
 ```
 
 #### 固定间隔 (`interval`)
@@ -277,10 +279,10 @@ Agent: [创建 once: 2024-12-25T09:00:00]
 
 ## 技术实现
 
-- **TaskStore**: 任务持久化存储
-- **SchedulerService**: 后台调度服务
-- **SchedulerTool**: Agent 工具接口
-- **Integration**: 与 AgentBridge 集成
+- **TaskStore** (`agent/scheduler/store.py`): 任务持久化存储
+- **SchedulerService** (`agent/scheduler/service.py`): 后台调度服务
+- **Integration** (`agent/scheduler/integration.py`): 与 AgentBridge 集成
+- **SchedulerTool** (`agent/tools/scheduler/`): Agent 工具接口（薄适配器）
 
 ## 依赖
 

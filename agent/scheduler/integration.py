@@ -1,6 +1,4 @@
-"""
-Integration module for scheduler with AgentBridge
-"""
+"""Wire the scheduler domain into AgentBridge: init, execute, attach."""
 
 import os
 import threading
@@ -67,8 +65,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
             return True
 
         try:
-            from agent.tools.scheduler.task_store import TaskStore
-            from agent.tools.scheduler.scheduler_service import SchedulerService
+            from agent.scheduler.store import TaskStore
+            from agent.scheduler.service import SchedulerService
 
             from common.state_dir import scheduler_file
 

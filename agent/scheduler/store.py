@@ -1,6 +1,4 @@
-"""
-Task storage management for scheduler
-"""
+"""Task storage management for the scheduler domain."""
 
 import json
 import os
