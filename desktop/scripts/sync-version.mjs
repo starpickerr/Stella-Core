@@ -12,8 +12,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const versionPath = path.join(root, 'VERSION')
 const version = fs.readFileSync(versionPath, 'utf8').trim()
 
-if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-  console.error(`[sync-version] invalid VERSION at ${versionPath}: ${JSON.stringify(version)}`)
+// Canonical product version is X.Y.Z (no `v` prefix). Git tags are `v` + this.
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  console.error(
+    `[sync-version] VERSION must be X.Y.Z (no v prefix) at ${versionPath}: ${JSON.stringify(version)}`
+  )
   process.exit(1)
 }
 
