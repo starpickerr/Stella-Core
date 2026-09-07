@@ -1,0 +1,33 @@
+---
+title: v0.0.1
+description: First Stella test release
+---
+
+🌐 [English](/releases/v0.0.1) | [中文](/zh/releases/v0.0.1)
+
+**Release date**: 2026.09.07 | [GitHub Release](https://github.com/starpickerr/Stella/releases/tag/v0.0.1)
+
+This is the first Stella-branded test build. It is not a continuation of the upstream 2.1.x numbering.
+
+## Desktop
+
+- macOS ships a `.dmg` only (`Stella-<version>-arm64.dmg` / `x64`).
+- When a newer GitHub Release exists, the app **prompts** and opens the download page. It does not install in the background.
+- Unsigned builds: first launch may need a right-click → Open.
+
+## Versioning and publish
+
+The single version source is the repo-root `VERSION` file (CLI, Python package, and desktop `package.json` stay in sync at build time). Git tags use a `v` prefix (`v0.0.1`).
+
+```bash
+echo 0.0.1 > VERSION
+bash desktop/build/build-backend.sh
+cd desktop && npm run dist:mac
+git tag v0.0.1 && git push --tags
+```
+
+Then create a GitHub Release for that tag and upload the dmg. Full commands: [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md).
+
+## Skills
+
+Browse and install skills from [skill广场](https://www.skill-marketplace.com/).

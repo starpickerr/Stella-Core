@@ -38,7 +38,7 @@
 | [长期记忆](memory/index.mdx) | 三层记忆架构（上下文 → 天级 → 核心），梦境蒸馏自动整理，支持关键词与向量混合检索 |
 | [知识库](knowledge/index.mdx) | 自动整理结构化知识为 Markdown Wiki，构建持续增长的知识图谱，可视化浏览 |
 | [自主进化](memory/self-evolution.mdx) | 自动复盘对话，优化技能、处理未完成事项、沉淀记忆与知识，在使用中持续成长 |
-| [技能](skills/index.mdx) | 从 [Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
+| [技能](skills/index.mdx) | 从 [skill广场](https://www.skill-marketplace.com/)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
 | [工具](tools/index.mdx) | 内置文件读写、终端、浏览器、定时任务、记忆检索、联网搜索等 10+ 工具，支持 MCP 协议 |
 | [通道](channels/index.mdx) | 一个 Agent 同时接入 Web、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
 | 多模态 | 文本、图片、语音、文件全消息类型支持，覆盖识别、生成、收发 |
@@ -180,13 +180,13 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 ### 技能系统
 
-- **[Skill Hub](https://github.com/starpickerr/Stella/tree/main/skills)** — 开源的技能广场，浏览、搜索、一键安装
+- **[skill广场](https://www.skill-marketplace.com/)** — 浏览、搜索、一键安装
 - **GitHub / ClawHub / URL 等** — 任意来源一键安装
 - **对话创造** — 通过 `skill-creator` 用对话快速生成自定义技能，可将工作流程或第三方接口直接固化为技能
 
 ```bash
 /skill list                   # 查看当前技能
-/skill search <关键词>         # 在技能广场搜索
+/skill search <关键词>         # 在 skill广场搜索
 /skill install <名称>          # 一键安装
 ```
 
@@ -196,23 +196,9 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 ## 🏷 更新日志
 
-> **2026.08.20：** [v2.1.7](https://github.com/starpickerr/Stella/releases/tag/2.1.7) — 多工作空间与会话隔离、会话级权限模式、任务通知、桌面端优化、新模型接入
+> **2026.09.07：** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — Stella 首个测试版。桌面端发现新版本后提示并打开 GitHub Release 手动下载（macOS 只提供 `.dmg`）。产品版本号以仓库根目录 `VERSION` 为准。
 
-> **2026.08.12：** [v2.1.6](https://github.com/starpickerr/Stella/releases/tag/2.1.6) — 子 Agent 并行任务分配、推理强度配置、记忆向量库可插拔、体验和安全优化
-
-> **2026.07.29：** [v2.1.5](https://github.com/starpickerr/Stella/releases/tag/2.1.5) — 工作空间与文件预览、基础工具优化（文件搜索、写入校验、命令后台运行）、上下文压缩（`/compact`）、提示词一键优化、安全加固
-
-> **2026.07.20：** [v2.1.4](https://github.com/starpickerr/Stella/releases/tag/2.1.4) — 桌面客户端体验优化、MCP 支持 OAuth 授权、飞书通道能力增强、定时任务优化与数据备份、新模型接入
-
-> **2026.07.08：** [v2.1.3](https://github.com/starpickerr/Stella/releases/tag/2.1.3) — [桌面客户端](https://github.com/starpickerr/Stella/releases)正式发布（macOS / Windows）、知识库文档管理增强、MCP 工具智能检索、繁体中文支持、新模型接入
-
-> **2026.06.18：** [v2.1.2](https://github.com/starpickerr/Stella/releases/tag/2.1.2) — Web 控制台升级（定时任务管理、知识库分类、多模型自定义厂商）、自主进化优化、新模型接入（kimi-k2.7-code、glm-5.2）、安全加固和体验优化
-
-> **2026.06.09：** [v2.1.1](https://github.com/starpickerr/Stella/releases/tag/2.1.1) — 自进化能力、Web 控制台升级（消息管理、多会话并行）、新模型接入（MiniMax-M3、qwen3.7-plus）、Python 3.13 支持
-
-> **2026.06.01：** [v2.1.0](https://github.com/starpickerr/Stella/releases/tag/2.1.0) — 国际化支持、新增通道（Telegram、Discord、Slack、微信客服）、命令行交互升级、一键安装脚本优化、MCP Streamable HTTP 支持、新模型接入（claude-opus-4-8、MiMo）
-
-完整更新历史：[Release Notes](https://github.com/starpickerr/Stella/tree/main/docs)
+发版步骤见 [desktop/README.md](../../desktop/README.md)。完整说明：[Release Notes](releases/overview.mdx)
 
 <br/>
 

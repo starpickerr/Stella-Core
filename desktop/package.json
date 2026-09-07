@@ -82,8 +82,7 @@
         "NSMicrophoneUsageDescription": "Used for voice input in chat: record a short clip and transcribe it via the configured speech recognition provider."
       },
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ]
     },
     "win": {

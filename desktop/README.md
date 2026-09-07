@@ -66,7 +66,7 @@ cd ..
 # 2. Freeze the Python backend and Web assets
 bash desktop/build/build-backend.sh
 
-# 3. Build Stella.app, DMG, ZIP, and updater metadata
+# 3. Build Stella.app and the .dmg installer
 cd desktop
 npm run dist:mac
 ```
@@ -76,19 +76,27 @@ The outputs are:
 ```text
 desktop/release/mac-arm64/Stella.app
 desktop/release/Stella-<version>-arm64.dmg
-desktop/release/Stella-<version>-arm64.zip
-desktop/release/latest-mac.yml
 ```
 
-To build a new release, bump the repo-root `VERSION` file first (that is
-the single source for the CLI, the Python package, and the desktop app):
+### Publish a GitHub Release (v0.0.1 and later)
+
+1. Set the product version in the repo-root `VERSION` file (single source for CLI, Python, and desktop).
+2. Build the backend and the macOS dmg as above.
+3. Commit, tag with a `v` prefix matching `VERSION`, and push:
 
 ```bash
-echo 0.0.2 > VERSION
+echo 0.0.1 > VERSION
 bash desktop/build/build-backend.sh
-cd desktop
-npm run dist:mac
+cd desktop && npm run dist:mac && cd ..
+git add VERSION desktop/package.json desktop/package-lock.json
+git commit -m "release: v0.0.1"
+git tag v0.0.1
+git push && git push --tags
 ```
+
+4. On GitHub, create a Release for tag `v0.0.1`, upload `desktop/release/Stella-0.0.1-arm64.dmg` (and the Intel dmg if you built it), and write the notes.
+
+The running app checks GitHub Releases and prompts you to download; it does not install in the background. Unsigned builds need a right-click → Open the first time.
 
 If GitHub downloads require the macOS system proxy, expose it to the build
 process explicitly:
