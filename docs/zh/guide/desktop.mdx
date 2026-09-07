@@ -34,7 +34,20 @@ Stella 提供开箱即用的桌面客户端，内置 Agent 运行环境，**无�
 
 GitHub 上有新 Release 时，桌面端会**提示**并打开下载页，不会在后台自动安装。macOS 只提供 `.dmg`；未签名应用首次打开可能需要右键 → 打开。
 
-发版：仓库根目录 `VERSION` 写 `X.Y.Z`（同步到 `package.json`；git tag 为 `vX.Y.Z`），执行 `bash desktop/build/build-backend.sh` 再 `cd desktop && npm run dist:mac`，把 dmg 上传到 GitHub Release。完整命令见仓库里的 desktop README。
+发版只改仓库根目录的 `VERSION`（`X.Y.Z`，不要写 `v`，也不要跑 `npm version`）。`npm run dist:mac` 会把该数字同步进 `package.json`。git tag 为 `vX.Y.Z`。
+
+```bash
+echo 0.0.2 > VERSION
+cd desktop && npm install && cd ..
+bash desktop/build/build-backend.sh
+cd desktop && npm run dist:mac && cd ..
+git add VERSION desktop/package.json desktop/package-lock.json
+git commit -m "release: v0.0.2"
+git tag v0.0.2
+git push && git push --tags
+```
+
+然后在 GitHub 为该 tag 建正式 Release（不要 draft / pre-release），上传 `desktop/release/Stella-0.0.2-arm64.dmg`。完整说明见仓库里的 [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md)。
 
 ## 与命令行部署的区别
 
