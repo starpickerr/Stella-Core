@@ -34,7 +34,20 @@ Stella は、Agent の実行環境を内蔵したすぐに使えるデスクト�
 
 新しい GitHub Release があると、デスクトップは**案内**してダウンロードページを開きます。バックグラウンドインストールはしません。macOS は `.dmg` のみです。未署名アプリは初回、右クリック → 開くが必要な場合があります。
 
-公開手順: リポジトリ直下の `VERSION` に `X.Y.Z` を書く（`package.json` も同じ番号、git タグは `vX.Y.Z`）。`bash desktop/build/build-backend.sh` のあと `cd desktop && npm run dist:mac`。dmg を GitHub Release にアップロードします。詳細はリポジトリの desktop README。
+公開時はリポジトリ直下の `VERSION` だけを `X.Y.Z` にします（`v` なし。`npm version` は使わない）。`npm run dist:mac` がその番号を `package.json` にコピーします。git タグは `vX.Y.Z` です。
+
+```bash
+echo 0.0.2 > VERSION
+cd desktop && npm install && cd ..
+bash desktop/build/build-backend.sh
+cd desktop && npm run dist:mac && cd ..
+git add VERSION desktop/package.json desktop/package-lock.json
+git commit -m "release: v0.0.2"
+git tag v0.0.2
+git push && git push --tags
+```
+
+そのタグで正式な GitHub Release を作り（draft / pre-release ではない）、`desktop/release/Stella-0.0.2-arm64.dmg` をアップロードします。詳細は [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md)。
 
 ## デスクトップとコマンドラインの違い
 

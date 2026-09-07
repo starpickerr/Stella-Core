@@ -34,7 +34,20 @@ Stella ships a ready-to-use desktop client with the Agent runtime bundled in —
 
 When a newer GitHub Release is published, the desktop client **prompts** you and opens the download page. It does not install in the background. macOS builds are `.dmg` only; unsigned apps may need a right-click → Open the first time.
 
-To ship a new version: write `X.Y.Z` in the repo-root `VERSION` file (this is also `package.json`'s version; the git tag is `vX.Y.Z`), run `bash desktop/build/build-backend.sh` then `cd desktop && npm run dist:mac`, and upload the dmg to a GitHub Release. Details: the desktop README in this repository.
+To ship a new version, edit only the repo-root `VERSION` file (`X.Y.Z`, no `v`; do not run `npm version`). `npm run dist:mac` copies that number into `package.json`. The git tag is `vX.Y.Z`.
+
+```bash
+echo 0.0.2 > VERSION
+cd desktop && npm install && cd ..
+bash desktop/build/build-backend.sh
+cd desktop && npm run dist:mac && cd ..
+git add VERSION desktop/package.json desktop/package-lock.json
+git commit -m "release: v0.0.2"
+git tag v0.0.2
+git push && git push --tags
+```
+
+Then create a published GitHub Release for that tag (not draft / pre-release) and upload `desktop/release/Stella-0.0.2-arm64.dmg`. Full notes: [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md).
 
 ## Desktop vs. Command-line Deployment
 

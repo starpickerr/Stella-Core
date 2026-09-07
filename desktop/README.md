@@ -78,14 +78,18 @@ desktop/release/mac-arm64/Stella.app
 desktop/release/Stella-<version>-arm64.dmg
 ```
 
+That `<version>` comes from the repo-root `VERSION` file. The steps above rebuild the current number; they do not bump a release.
+
 ### Version numbers
 
-One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix). Do not run `npm version`.
+One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix).
+
+**Do not run `npm version`.** `npm run build` / `npm run dist:mac` run `scripts/sync-version.mjs`, which overwrites `desktop/package.json` (and the lockfile version fields) from `VERSION`. Bumping only `package.json` is discarded.
 
 | Place | Form | Example |
 | --- | --- | --- |
 | `VERSION` | `X.Y.Z` | `0.0.1` |
-| `desktop/package.json` `version` | same `X.Y.Z` (copied by `npm run build`) | `0.0.1` |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.1` |
 | git tag | `v` + that number | `v0.0.1` |
 | dmg name | `Stella-<X.Y.Z>-<arch>.dmg` | `Stella-0.0.1-arm64.dmg` |
 
@@ -93,21 +97,25 @@ The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release ta
 
 ### Publish a GitHub Release
 
-1. Write `X.Y.Z` into the repo-root `VERSION` file.
-2. Build the backend and the macOS dmg as above (`dmg` only; no zip, no auto-installer).
-3. Commit the version bump, tag `vX.Y.Z`, and push:
-
 ```bash
+# 1. Bump VERSION only (X.Y.Z, no v prefix)
 echo 0.0.2 > VERSION
+
+# 2. First build, or after desktop dependency changes
+cd desktop && npm install && cd ..
+
+# 3. Freeze the Python backend, then package the macOS dmg (dmg only; no zip)
 bash desktop/build/build-backend.sh
 cd desktop && npm run dist:mac && cd ..
+
+# 4. Commit the synced version files, tag, push
 git add VERSION desktop/package.json desktop/package-lock.json
 git commit -m "release: v0.0.2"
 git tag v0.0.2
 git push && git push --tags
 ```
 
-4. On GitHub, create a **published** (not draft, not pre-release) Release for that tag, upload `desktop/release/Stella-0.0.2-arm64.dmg` (and the Intel dmg if you built it), and write the notes.
+Then on GitHub, create a **published** (not draft, not pre-release) Release for tag `v0.0.2`, upload `desktop/release/Stella-0.0.2-arm64.dmg` (and the Intel dmg if you built it), and write the notes.
 
 The running app checks GitHub Releases and **prompts** you to open the download; it does not install or restart in the background. These builds are unsigned: first launch on macOS needs a right-click → Open.
 
