@@ -419,11 +419,11 @@ class StellaCliPlugin(Plugin):
     # ------------------------------------------------------------------
 
     def _cmd_tasks(self, args: str, e_context, session_id: str = "", **_) -> str:
-        from agent.tools.scheduler.integration import get_task_store
+        from agent.scheduler import get_task_store
 
         task_store = get_task_store()
         if task_store is None:
-            from agent.tools.scheduler.task_store import TaskStore
+            from agent.scheduler import TaskStore
             from common.state_dir import scheduler_file
 
             task_store = TaskStore(str(scheduler_file()))

@@ -414,7 +414,7 @@ class ChatService:
                 return
             for tool in agent.tools:
                 if tool.name == "scheduler":
-                    from agent.tools.scheduler.integration import attach_scheduler_to_tool
+                    from agent.scheduler import attach_scheduler_to_tool
                     attach_scheduler_to_tool(tool, context)
                     break
         except Exception as e:

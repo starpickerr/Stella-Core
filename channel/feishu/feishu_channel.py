@@ -532,13 +532,11 @@ class FeiShuChanel(ChatChannel):
 
     def _get_scheduler_task_store(self):
         """Reuse the live scheduler store, with a path-compatible fallback."""
-        from agent.tools.scheduler.integration import get_task_store
+        from agent.scheduler import TaskStore, get_task_store
 
         task_store = get_task_store()
         if task_store is not None:
             return task_store
-
-        from agent.tools.scheduler.task_store import TaskStore
 
         return TaskStore(str(state_dir.scheduler_file()))
 

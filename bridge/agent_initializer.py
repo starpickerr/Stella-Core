@@ -506,7 +506,7 @@ class AgentInitializer:
             with _scheduler_init_lock:
                 if agent_id not in self.agent_bridge.scheduler_agent_ids:
                     try:
-                        from agent.tools.scheduler.integration import init_scheduler
+                        from agent.scheduler import init_scheduler
                         if init_scheduler(
                             self.agent_bridge,
                             workspace_root=workspace_root,
@@ -525,7 +525,7 @@ class AgentInitializer:
         # Inject scheduler dependencies
         if agent_id in self.agent_bridge.scheduler_agent_ids:
             try:
-                from agent.tools.scheduler.integration import get_task_store, get_scheduler_service
+                from agent.scheduler import get_task_store, get_scheduler_service
                 from agent.tools import SchedulerTool
                 from config import conf
                 

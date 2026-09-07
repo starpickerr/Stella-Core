@@ -220,6 +220,7 @@ const I18N = {
         task_add_btn: '新增任务',
         task_edit_title: '编辑定时任务',
         task_add_title: '新增定时任务',
+        task_create_hint: '任务将发送到当前 Web 对话',
         task_name: '任务名称',
         task_enabled: '启用任务',
         task_schedule_type: '调度类型',
@@ -227,7 +228,14 @@ const I18N = {
         task_schedule_interval: '固定间隔',
         task_schedule_once: '一次性任务',
         task_cron_expression: 'Cron 表达式',
-        task_cron_hint: '格式: 分 时 日 月 周，例如 "0 9 * * *" 表示每天 9:00',
+        task_cron_hint: '5 位：分 时 日 月 周；6 位：秒 分 时 日 月 周。例 0 9 * * * 每天 9:00',
+        task_cron_help_summary: 'Cron 表达式怎么写',
+        task_cron_help_5: '5 位（常用，Linux crontab）：分(0-59)  时(0-23)  日(1-31)  月(1-12)  周(0-7)',
+        task_cron_help_6: '6 位（Quartz，含秒）：秒(0-59)  分(0-59)  时(0-23)  日(1-31)  月(1-12)  周(0-7)',
+        task_cron_help_note: '周字段中 0 和 7 都表示星期日。日和周可以写 ? 表示不指定。秒级触发精度约 30 秒。',
+        task_cron_help_symbols: '* 任意值    , 列举    - 范围    / 步长\n? 日或周不指定    L 最后    W 最近工作日    # 第几个周几',
+        task_cron_help_examples: '0 9 * * *        每天 9:00\n30 8 * * 1-5     工作日 8:30\n*/15 * * * *     每 15 分钟\n0 0 9 * * *      每天 9:00:00\n0 9 L * *        每月最后一天 9:00\n0 9 * * 1#1      每月第一个周一 9:00',
+        task_cron_invalid: 'Cron 表达式应为 5 位（分 时 日 月 周）或 6 位（秒 分 时 日 月 周）',
         task_interval_seconds: '间隔秒数',
         task_interval_hint: '最小 60 秒，例如 3600 表示每小时执行一次',
         task_once_time: '执行时间',
@@ -546,6 +554,7 @@ const I18N = {
         task_add_btn: '新增任務',
         task_edit_title: '編輯定時任務',
         task_add_title: '新增定時任務',
+        task_create_hint: '任務將傳送到目前 Web 對話',
         task_name: '任務名稱',
         task_enabled: '啟用任務',
         task_schedule_type: '排程型別',
@@ -553,7 +562,14 @@ const I18N = {
         task_schedule_interval: '固定間隔',
         task_schedule_once: '一次性任務',
         task_cron_expression: 'Cron 表示式',
-        task_cron_hint: '格式: 分 時 日 月 周，例如 "0 9 * * *" 表示每天 9:00',
+        task_cron_hint: '5 位：分 時 日 月 週；6 位：秒 分 時 日 月 週。例 0 9 * * * 每天 9:00',
+        task_cron_help_summary: 'Cron 表示式怎麼寫',
+        task_cron_help_5: '5 位（常用，Linux crontab）：分(0-59)  時(0-23)  日(1-31)  月(1-12)  週(0-7)',
+        task_cron_help_6: '6 位（Quartz，含秒）：秒(0-59)  分(0-59)  時(0-23)  日(1-31)  月(1-12)  週(0-7)',
+        task_cron_help_note: '週欄位中 0 和 7 都表示星期日。日和週可以寫 ? 表示不指定。秒級觸發精度約 30 秒。',
+        task_cron_help_symbols: '* 任意值    , 列舉    - 範圍    / 步長\n? 日或週不指定    L 最後    W 最近工作日    # 第幾個週幾',
+        task_cron_help_examples: '0 9 * * *        每天 9:00\n30 8 * * 1-5     工作日 8:30\n*/15 * * * *     每 15 分鐘\n0 0 9 * * *      每天 9:00:00\n0 9 L * *        每月最後一天 9:00\n0 9 * * 1#1      每月第一個週一 9:00',
+        task_cron_invalid: 'Cron 表示式應為 5 位（分 時 日 月 週）或 6 位（秒 分 時 日 月 週）',
         task_interval_seconds: '間隔秒數',
         task_interval_hint: '最小 60 秒，例如 3600 表示每小時執行一次',
         task_once_time: '執行時間',
@@ -867,6 +883,7 @@ const I18N = {
         task_add_btn: 'Add Task',
         task_edit_title: 'Edit Task',
         task_add_title: 'Add Task',
+        task_create_hint: 'The task will be delivered to the current Web chat',
         task_name: 'Task Name',
         task_enabled: 'Enable Task',
         task_schedule_type: 'Schedule Type',
@@ -874,7 +891,14 @@ const I18N = {
         task_schedule_interval: 'Fixed Interval',
         task_schedule_once: 'One-time Task',
         task_cron_expression: 'Cron Expression',
-        task_cron_hint: 'Format: minute hour day month weekday, e.g. "0 9 * * *" means daily at 9:00',
+        task_cron_hint: '5 fields: min hour day month weekday; 6 fields: sec min hour day month weekday. e.g. 0 9 * * * daily at 9:00',
+        task_cron_help_summary: 'How to write a cron expression',
+        task_cron_help_5: '5 fields (Linux crontab): min(0-59)  hour(0-23)  day(1-31)  month(1-12)  weekday(0-7)',
+        task_cron_help_6: '6 fields (Quartz, with seconds): sec(0-59)  min(0-59)  hour(0-23)  day(1-31)  month(1-12)  weekday(0-7)',
+        task_cron_help_note: 'Weekday 0 and 7 are both Sunday. Use ? on day or weekday to leave that field unspecified. Second-level triggers still fire within ~30s.',
+        task_cron_help_symbols: '* any    , list    - range    / step\n? omit day or weekday    L last    W nearest weekday    # nth weekday',
+        task_cron_help_examples: '0 9 * * *        every day at 9:00\n30 8 * * 1-5     weekdays at 8:30\n*/15 * * * *     every 15 minutes\n0 0 9 * * *      every day at 9:00:00\n0 9 L * *        last day of month at 9:00\n0 9 * * 1#1      first Monday of month at 9:00',
+        task_cron_invalid: 'Cron expression must have 5 fields (min hour day month weekday) or 6 fields (sec min hour day month weekday)',
         task_interval_seconds: 'Interval (seconds)',
         task_interval_hint: 'Minimum 60 seconds, e.g. 3600 means once per hour',
         task_once_time: 'Execution Time',
@@ -10217,7 +10241,7 @@ function loadTasksView() {
         const allTasks = data.tasks || [];
         // Backend already sorted by enabled and next_run_at, no need to re-sort on frontend
         if (allTasks.length === 0) {
-            emptyEl.querySelector('p').textContent = currentLang === 'zh' ? '暂无定时任务' : 'No scheduled tasks';
+            emptyEl.querySelector('p').textContent = currentLang === 'zh' ? '暂无定时任务' : (currentLang === 'zh-Hant' ? '暫無定時任務' : 'No scheduled tasks');
             emptyEl.classList.remove('hidden');
             listEl.classList.add('hidden');
             tasksLoaded = true;
@@ -11574,6 +11598,43 @@ function loadTaskChannelOptions(selectedChannelType) {
     });
 }
 
+function openTaskCreateModal() {
+    currentEditingTask = null;
+    const overlay = document.getElementById('task-edit-modal-overlay');
+    const titleEl = document.querySelector('#task-edit-modal-overlay h3');
+    const subtitle = document.getElementById('task-edit-modal-subtitle');
+    const deleteBtn = document.getElementById('task-edit-modal-delete');
+    const nameInput = document.getElementById('task-edit-name');
+    const enabledInput = document.getElementById('task-edit-enabled');
+    const scheduleTypeSelect = document.getElementById('task-edit-schedule-type');
+    const cronInput = document.getElementById('task-edit-cron-expression');
+    const intervalInput = document.getElementById('task-edit-interval-seconds');
+    const onceInput = document.getElementById('task-edit-once-time');
+    const actionTypeSelect = document.getElementById('task-edit-action-type');
+    const receiverInput = document.getElementById('task-edit-receiver');
+    const contentInput = document.getElementById('task-edit-content');
+
+    titleEl.textContent = t('task_add_title');
+    subtitle.textContent = t('task_create_hint');
+    deleteBtn.classList.add('hidden');
+
+    nameInput.value = '';
+    enabledInput.checked = true;
+    scheduleTypeSelect.value = 'cron';
+    cronInput.value = '0 9 * * *';
+    intervalInput.value = '';
+    onceInput.value = '';
+    actionTypeSelect.value = 'send_message';
+    receiverInput.value = sessionId || '';
+    contentInput.value = '';
+
+    loadTaskChannelOptions('web');
+    document.getElementById('task-edit-channel-type').disabled = true;
+    updateTaskScheduleFields();
+    updateTaskActionLabel();
+    overlay.classList.remove('hidden');
+}
+
 function openTaskEditModal(task) {
     currentEditingTask = task;
     const overlay = document.getElementById('task-edit-modal-overlay');
@@ -11725,7 +11786,7 @@ function saveTaskEdit() {
         // Basic cron expression format validation: 5 or 6 fields
         const fields = expr.split(/\s+/);
         if (fields.length < 5 || fields.length > 6) {
-            statusEl.textContent = currentLang === 'zh' ? 'Cron 表达式格式错误，应为 5 或 6 个字段（分 时 日 月 周）' : 'Invalid cron expression, expected 5 or 6 fields (min hour day month weekday)';
+            statusEl.textContent = t('task_cron_invalid');
             statusEl.style.opacity = '1';
             setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
             return;
@@ -11779,6 +11840,12 @@ function saveTaskEdit() {
         setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
         return;
     }
+    if (!currentEditingTask && !sessionId) {
+        statusEl.textContent = currentLang === 'zh' ? '没有可用的对话会话' : 'No chat session available';
+        statusEl.style.opacity = '1';
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
+        return;
+    }
     
     // Build action with only necessary fields to avoid stale data
     const action = {
@@ -11810,16 +11877,30 @@ function saveTaskEdit() {
     }
     
     saveBtn.disabled = true;
-    
-    const payload = {
-        task_id: currentEditingTask.id,
-        name: name,
-        enabled: enabledInput.checked,
-        schedule: schedule,
-        action: action
-    };
-    
-    fetch('/api/scheduler/update', {
+
+    const isCreate = !currentEditingTask;
+    const payload = isCreate
+        ? {
+            name: name,
+            enabled: enabledInput.checked,
+            schedule: schedule,
+            action: {
+                type: actionType,
+                content: actionType === 'send_message' ? content : undefined,
+                task_description: actionType === 'agent_task' ? content : undefined,
+            },
+            session_id: sessionId || '',
+        }
+        : {
+            task_id: currentEditingTask.id,
+            name: name,
+            enabled: enabledInput.checked,
+            schedule: schedule,
+            action: action
+        };
+
+    const url = isCreate ? '/api/scheduler' : '/api/scheduler/update';
+    fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

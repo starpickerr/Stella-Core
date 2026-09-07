@@ -14,7 +14,7 @@ from agent.memory import (
 )
 from common.runtime_identity import identity_scope
 from agent.registry import AgentProfile, AgentRegistry, get_agent_registry, set_agent_registry
-from agent.tools.scheduler.integration import (
+from agent.scheduler import (
     get_scheduler_service,
     get_task_store,
     init_scheduler,
@@ -24,7 +24,7 @@ from agent.tools.scheduler.integration import (
 
 @pytest.fixture
 def isolated_registry(tmp_path, monkeypatch):
-    from agent.tools.scheduler.scheduler_service import SchedulerService
+    from agent.scheduler import SchedulerService
 
     monkeypatch.setattr(
         SchedulerService, "start", lambda service: setattr(service, "running", True)

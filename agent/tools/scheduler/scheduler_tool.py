@@ -1,13 +1,17 @@
 """
-Scheduler tool for creating and managing scheduled tasks
+Scheduler tool — let the agent create and manage timed tasks.
+
+Thin adapter over ``agent.scheduler``: the same TaskStore / SchedulerService
+the Web console, desktop, Feishu, and CLI talk to. This module only maps
+model arguments onto that layer and formats replies for the conversation.
 """
 
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
-from croniter import croniter
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from agent.scheduler.cron import iter_cron
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
@@ -29,7 +33,7 @@ class SchedulerTool(BaseTool):
         "调度类型：\n"
         "- once: 一次性任务，支持相对时间(+5s,+10m,+1h,+1d)或ISO时间\n"
         "- interval: 固定间隔(秒)，如3600表示每小时\n"
-        "- cron: cron表达式，如'0 8 * * *'表示每天8点\n\n"
+        "- cron: cron表达式，5 位「分 时 日 月 周」（如 '0 8 * * *' 每天8点）或 6 位「秒 分 时 日 月 周」\n\n"
         "注意：'X秒后'用once+相对时间，'每X秒'用interval"
     )
     params: dict = {
@@ -338,7 +342,7 @@ class SchedulerTool(BaseTool):
         try:
             if schedule_type == "cron":
                 # Validate cron expression
-                croniter(schedule_value)
+                iter_cron(schedule_value)
                 return {"type": "cron", "expression": schedule_value}
             
             elif schedule_type == "interval":
@@ -399,7 +403,7 @@ class SchedulerTool(BaseTool):
         
         if schedule_type == "cron":
             expression = schedule.get("expression")
-            cron = croniter(expression, now)
+            cron = iter_cron(expression, now)
             return cron.get_next(datetime)
         
         elif schedule_type == "interval":

@@ -5605,19 +5605,121 @@ class MemoryContentHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _scheduler_store():
+    from agent.scheduler import TaskStore
+    workspace_root = _get_workspace_root()
+    store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+    return TaskStore(store_path)
+
+
 class SchedulerHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
-            tasks = store.list_tasks()
+            tasks = _scheduler_store().list_tasks()
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        """Create a scheduled task from the console / desktop page."""
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            name = (body.get("name") or "").strip()
+            if not name:
+                return json.dumps({"status": "error", "message": "name is required"})
+
+            schedule = body.get("schedule")
+            if not isinstance(schedule, dict):
+                return json.dumps({"status": "error", "message": "schedule is required"})
+            schedule_type = schedule.get("type")
+            if schedule_type not in ("cron", "interval", "once"):
+                return json.dumps({"status": "error", "message": "invalid schedule type"})
+
+            cleaned_schedule = {"type": schedule_type}
+            if schedule_type == "cron":
+                expression = (schedule.get("expression") or "").strip()
+                if not expression:
+                    return json.dumps({"status": "error", "message": "cron expression is required"})
+                cleaned_schedule["expression"] = expression
+            elif schedule_type == "interval":
+                try:
+                    seconds = int(schedule.get("seconds"))
+                except (TypeError, ValueError):
+                    seconds = 0
+                if seconds < 60:
+                    return json.dumps({
+                        "status": "error",
+                        "message": "interval must be at least 60 seconds",
+                    })
+                cleaned_schedule["seconds"] = seconds
+            else:
+                run_at = (schedule.get("run_at") or "").strip()
+                if not run_at:
+                    return json.dumps({"status": "error", "message": "run_at is required"})
+                cleaned_schedule["run_at"] = run_at
+
+            action_in = body.get("action") if isinstance(body.get("action"), dict) else {}
+            action_type = action_in.get("type") or "send_message"
+            if action_type not in ("send_message", "agent_task"):
+                return json.dumps({"status": "error", "message": "invalid action type"})
+            content = (
+                action_in.get("content") or action_in.get("task_description") or ""
+            ).strip()
+            if not content:
+                return json.dumps({"status": "error", "message": "content is required"})
+
+            session_id = (body.get("session_id") or action_in.get("receiver") or "").strip()
+            if not session_id:
+                return json.dumps({
+                    "status": "error",
+                    "message": "session_id is required so the task can be delivered",
+                })
+
+            from datetime import datetime
+            from agent.scheduler import SchedulerService
+
+            now = datetime.now()
+            action = {
+                "type": action_type,
+                "channel_type": "web",
+                "receiver": session_id,
+                "receiver_name": (action_in.get("receiver_name") or "").strip() or "Web",
+                "is_group": False,
+                "notify_session_id": session_id,
+            }
+            if action_type == "send_message":
+                action["content"] = content
+            else:
+                action["task_description"] = content
+
+            task = {
+                "id": uuid.uuid4().hex[:8],
+                "name": name,
+                "enabled": bool(body.get("enabled", True)),
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "schedule": cleaned_schedule,
+                "action": action,
+            }
+            store = _scheduler_store()
+            next_run = SchedulerService(store, lambda _t: None)._calculate_next_run(task, now)
+            if not next_run:
+                return json.dumps({
+                    "status": "error",
+                    "message": "Cannot calculate next run time. Please check the schedule config.",
+                }, ensure_ascii=False)
+            task["next_run_at"] = next_run.isoformat()
+            store.add_task(task)
+            return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Scheduler create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5631,7 +5733,7 @@ class SchedulerRunHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
 
-            from agent.tools.scheduler.integration import get_scheduler_service
+            from agent.scheduler import get_scheduler_service
             service = get_scheduler_service()
             if service is None:
                 return json.dumps({
@@ -5659,10 +5761,7 @@ class SchedulerToggleHandler:
             enabled = body.get("enabled", True)
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
-            from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
+            store = _scheduler_store()
             store.enable_task(task_id, enabled)
             task = store.get_task(task_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
@@ -5681,12 +5780,9 @@ class SchedulerUpdateHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
             
-            from agent.tools.scheduler.task_store import TaskStore
-            from agent.tools.scheduler.scheduler_service import SchedulerService
+            from agent.scheduler import SchedulerService
             from datetime import datetime
-            workspace_root = _get_workspace_root()
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
+            store = _scheduler_store()
             
             # Get original task (single query to avoid repeated I/O)
             original_task = store.get_task(task_id)
@@ -5795,10 +5891,7 @@ class SchedulerDeleteHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
             
-            from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
+            store = _scheduler_store()
             store.delete_task(task_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
