@@ -150,9 +150,8 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(GROUP_OPEN_DEFAULT)
-  // First paint uses the version Vite stamped from package.json. IPC then
-  // confirms app.getVersion() so a rebuilt renderer still matches the running
-  // binary if the two ever diverge.
+  // First paint uses the version Vite stamped from the repo-root VERSION file.
+  // IPC then confirms app.getVersion() (synced into package.json at build).
   const [version, setVersion] = useState(__APP_VERSION__)
   const menuRef = useRef<HTMLDivElement>(null)
 
