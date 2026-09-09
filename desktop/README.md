@@ -86,16 +86,16 @@ One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix).
 
 **Do not run `npm version`.** `npm run build` / `npm run dist:mac` run `scripts/sync-version.mjs`, which overwrites `desktop/package.json` (and the lockfile version fields) from `VERSION`. Bumping only `package.json` is discarded.
 
-| Place | Form | Example |
-| --- | --- | --- |
-| `VERSION` | `X.Y.Z` | `0.0.1` |
-| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.1` |
-| git tag | `v` + that number | `v0.0.1` |
-| dmg name | `Stella-<X.Y.Z>-<arch>.dmg` | `Stella-0.0.1-arm64.dmg` |
+
+| Place                            | Form                           | Example                  |
+| -------------------------------- | ------------------------------ | ------------------------ |
+| `VERSION`                        | `X.Y.Z`                        | `0.0.1`                  |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.1`                  |
+| git tag                          | `v` + that number              | `v0.0.1`                 |
+| dmg name                         | `Stella-<X.Y.Z>-<arch>.dmg`    | `Stella-0.0.1-arm64.dmg` |
+
 
 The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release tags (`vX.Y.Z`). Drafts, GitHub prereleases, and tags that are not exactly `vX.Y.Z` are ignored.
-
-### Publish a GitHub Release
 
 ```bash
 # 1. Bump VERSION only (X.Y.Z, no v prefix)
@@ -157,3 +157,4 @@ desktop/
 2. It spawns the Python backend (`app.py`) as a child process
 3. The React UI communicates with the Python backend via HTTP APIs
 4. SSE (Server-Sent Events) is used for streaming chat responses and live logs
+
