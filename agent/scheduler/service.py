@@ -38,6 +38,7 @@ class SchedulerService:
         self.execute_callback = execute_callback
         self.running = False
         self.thread = None
+        self.stop_event = threading.Event()
         self._lock = threading.Lock()
         self._execution_lock = threading.Lock()
         self._active_task_ids = set()
@@ -49,6 +50,7 @@ class SchedulerService:
                 logger.warning("[Scheduler] Service already running")
                 return
             
+            self.stop_event.clear()
             self.running = True
             self.thread = threading.Thread(target=self._run_loop, daemon=True)
             self.thread.start()
@@ -60,6 +62,7 @@ class SchedulerService:
                 return
             
             self.running = False
+            self.stop_event.set()
             if self.thread:
                 self.thread.join(timeout=5)
             logger.info("[Scheduler] Service stopped")
@@ -95,6 +98,11 @@ class SchedulerService:
                     finally:
                         self._release_task(task['id'])
                     if not ok:
+                        retry_seconds = task.get("retry_interval_seconds", 0)
+                        if retry_seconds:
+                            self.task_store.update_task(task['id'], {
+                                "retry_at": (datetime.now() + timedelta(seconds=retry_seconds)).isoformat(),
+                            })
                         # Leave next_run_at as-is so the next loop retries.
                         # Cron tasks within the catch-up window will keep
                         # firing; beyond it _is_task_due will reschedule.
@@ -107,7 +115,8 @@ class SchedulerService:
                     if next_run:
                         self.task_store.update_task(task['id'], {
                             "next_run_at": next_run.isoformat(),
-                            "last_run_at": now.isoformat()
+                            "last_run_at": now.isoformat(),
+                            "retry_at": None,
                         })
                     else:
                         self.task_store.delete_task(task['id'])
@@ -190,6 +199,20 @@ class SchedulerService:
         
         try:
             next_run = _parse_naive_local(next_run_str)
+            if task.get("retry_at") and now < _parse_naive_local(task["retry_at"]):
+                return False
+
+            schedule = task.get("schedule", {})
+            if next_run <= now and task.get("catch_up") == "same_day" and schedule.get("type") == "cron":
+                # Opt-in catch-up executes the latest occurrence today, never
+                # replays all the days the app was closed. Other tasks retain
+                # their existing ten-minute grace period.
+                latest = iter_cron(schedule["expression"], now + timedelta(microseconds=1)).get_prev(datetime)
+                if latest.date() != now.date():
+                    next_run = self._calculate_next_run(task, now)
+                    self.task_store.update_task(task['id'], {"next_run_at": next_run.isoformat()})
+                    return False
+                return True
 
             if next_run < now:
                 time_diff = (now - next_run).total_seconds()

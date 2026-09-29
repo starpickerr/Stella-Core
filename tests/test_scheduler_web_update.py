@@ -57,6 +57,29 @@ def _post_update(tmp_path, payload):
         return json.loads(SchedulerUpdateHandler().POST())
 
 
+def test_desktop_can_edit_silent_briefing_task_without_receiver(tmp_path):
+    from agent.briefing.scheduler import DAILY_BRIEFING_TASK_ID, ensure_daily_briefing_task
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    ensure_daily_briefing_task(store)
+    action = store.get_task(DAILY_BRIEFING_TASK_ID)["action"]
+    result = _post_update(tmp_path, {
+        "task_id": DAILY_BRIEFING_TASK_ID,
+        "name": "课程简报", "enabled": False,
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": action,
+    })
+    assert result["status"] == "success"
+    task = store.get_task(DAILY_BRIEFING_TASK_ID)
+    assert task["enabled"] is False
+    assert task["schedule"]["expression"] == "0 9 * * *"
+    assert task["action"]["call_params"] == {"action": "run", "operation": "create"}
+    assert task["action"]["silent"] is True
+    assert task["catch_up"] == "same_day"
+    assert task["retry_interval_seconds"] == 300
+    store.delete_task(DAILY_BRIEFING_TASK_ID)
+    assert not ensure_daily_briefing_task(store)
+
+
 def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 
@@ -229,4 +252,3 @@ def test_create_is_exposed_by_web_and_desktop_controls():
     assert "const url = isCreate ? '/api/scheduler'" in web_console
     assert "async createTask" in desktop_client
     assert "setEditing('new')" in desktop_page
-
