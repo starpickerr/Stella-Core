@@ -2073,22 +2073,14 @@ class WebChannel(ChatChannel):
         except OSError as e:
             _log_bind_failure(host, port, e)
             raise
-        from agent.briefing.scheduler import BriefingScheduler
-        self._briefing_scheduler = BriefingScheduler()
-        self._briefing_scheduler.start()
         SERVING.set()
         _log_startup_banner()
         try:
             server.serve()
         except (KeyboardInterrupt, SystemExit):
             server.stop()
-        finally:
-            self._briefing_scheduler.stop()
 
     def stop(self):
-        scheduler = getattr(self, "_briefing_scheduler", None)
-        if scheduler:
-            scheduler.stop()
         if self._http_server:
             try:
                 self._http_server.stop()
@@ -5875,7 +5867,7 @@ class SchedulerUpdateHandler:
                         "status": "error",
                         "message": f"Cannot change channel type from '{old_channel}' to '{channel_type}'. Please create a new task on the target channel instead."
                     }, ensure_ascii=False)
-                if not action.get("receiver"):
+                if not action.get("receiver") and not (action_type == "tool_call" and action.get("silent")):
                     return json.dumps({
                         "status": "error",
                         "message": "Receiver is required. Please create a new task through the chat interface."

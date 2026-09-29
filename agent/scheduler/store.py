@@ -27,7 +27,7 @@ class TaskStore:
             store_path = os.path.join(home, "stella", "scheduler", "tasks.json")
         
         self.store_path = store_path
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self._ensure_store_dir()
     
     def _ensure_store_dir(self):
@@ -54,7 +54,7 @@ class TaskStore:
                 print(f"Error loading tasks: {e}")
                 return {}
     
-    def save_tasks(self, tasks: Dict[str, dict]):
+    def save_tasks(self, tasks: Dict[str, dict], initialized_defaults=None):
         """
         Save all tasks to storage
         
@@ -73,18 +73,41 @@ class TaskStore:
                     except Exception:
                         pass
                 
-                # Save tasks
-                data = {
+                # Preserve provision markers across edits and deletions.
+                data = {}
+                if os.path.exists(self.store_path):
+                    with open(self.store_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                data.update({
                     "version": 1,
                     "updated_at": datetime.now().isoformat(),
                     "tasks": tasks
-                }
+                })
+                if initialized_defaults is not None:
+                    data["initialized_defaults"] = initialized_defaults
                 
                 with open(self.store_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
             except Exception as e:
                 print(f"Error saving tasks: {e}")
                 raise
+
+    def ensure_default_task(self, task: dict) -> bool:
+        """Add a default once. A deleted default stays deleted on restart."""
+        with self.lock:
+            defaults = []
+            if os.path.exists(self.store_path):
+                with open(self.store_path, 'r', encoding='utf-8') as f:
+                    defaults = json.load(f).get("initialized_defaults", [])
+            task_id = task["id"]
+            if task_id in defaults:
+                return False
+            tasks = self.load_tasks()
+            added = task_id not in tasks
+            if added:
+                tasks[task_id] = task
+            self.save_tasks(tasks, initialized_defaults=[*defaults, task_id])
+            return added
     
     def add_task(self, task: dict) -> bool:
         """

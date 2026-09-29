@@ -79,6 +79,10 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                 _task_stores[workspace_root] = task_store
                 logger.debug(f"[Scheduler] Task store initialized: {store_path}")
 
+            if os.environ.get("STELLA_DESKTOP") == "1":
+                from agent.briefing.scheduler import ensure_daily_briefing_task
+                ensure_daily_briefing_task(task_store)
+
             # Create execute callback. Returns True on success, False to ask
             # the scheduler to retry on the next tick (e.g. channel not yet
             # ready right after process start).
@@ -96,7 +100,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         channel_type = action.get("channel_type", "unknown")
                         receiver = action.get("receiver", "")
 
-                        if not _is_channel_ready(channel_type, receiver, agent_id):
+                        silent = action_type in ("agent_task", "tool_call") and action.get("silent", False)
+                        if not silent and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "
@@ -109,7 +114,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         elif action_type == "send_message":
                             return _execute_send_message(task, agent_bridge, agent_id)
                         elif action_type == "tool_call":
-                            return _execute_tool_call(task, agent_bridge, agent_id)
+                            return _execute_tool_call(task, agent_bridge, agent_id, cancel_event=service.stop_event)
                         elif action_type == "skill_call":
                             return _execute_skill_call(task, agent_bridge, agent_id)
                         else:
@@ -464,7 +469,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         return False
 
 
-def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
+def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_event=None) -> bool:
     """Execute a tool_call action. Returns True/False for delivery."""
     try:
         action = task.get("action", {})
@@ -474,11 +479,12 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         receiver = action.get("receiver")
         is_group = action.get("is_group", False)
         channel_type = action.get("channel_type", "unknown")
+        silent = bool(action.get("silent", False))
 
         if not tool_name:
             logger.error(f"[Scheduler] Task {task['id']}: No tool_name specified")
             return True
-        if not receiver:
+        if not receiver and not silent:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
             return True
 
@@ -489,8 +495,15 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             return True
 
         logger.info(f"[Scheduler] Task {task['id']}: Executing tool '{tool_name}' with params {tool_params}")
+        tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True, "agent_id": agent_id})
+        tool.cancel_event = cancel_event
         result = tool.execute(tool_params)
         content = result.result if hasattr(result, 'result') else str(result)
+        if getattr(result, "status", None) == "error":
+            logger.error(f"[Scheduler] Task {task['id']}: Tool failed: {content}")
+            return False
+        if silent:
+            return True
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
 

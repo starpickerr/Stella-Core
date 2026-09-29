@@ -137,11 +137,23 @@ class BriefingTool(BaseTool):
             return ToolResult.fail(f"操作失败: {e}")
 
     def _run(self, service, params: dict) -> ToolResult:
+        scheduled = bool(getattr(self, "current_context", None) and self.current_context.get("is_scheduled_task"))
         pipeline = self._get_pipeline(service)
+        if scheduled:
+            from agent.briefing.service import briefing_id_for
+            if params.get("operation", "upsert") == "create":
+                day = params.get("briefing_date") or pipeline.clock().date().isoformat()
+                existing = service.get_briefing(briefing_id_for(day, params.get("kind") or "morning"))
+                if existing and existing["briefing"].generated_at:
+                    return ToolResult.success("当日简报已生成，跳过定时生成。\n" + self._format_detail(existing, existing["briefing"]))
+            from agent.briefing.settings import public_mailboxes
+            if not public_mailboxes()["configured"]:
+                return ToolResult.fail("请先配置 IMAP 邮箱，定时任务稍后重试")
         detail = pipeline.run(
             kind=params.get("kind") or "morning",
             briefing_date=params.get("briefing_date"),
             operation=params.get("operation", "upsert"),
+            trigger="scheduled" if scheduled else "manual",
         )
         briefing = detail["briefing"]
         output = self._format_detail(detail, briefing)

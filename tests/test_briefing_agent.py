@@ -180,16 +180,12 @@ def test_fixed_agent_tools_are_not_replaced_by_mcp():
     assert agent.tools == []
 
 
-def test_manual_tool_and_scheduler_factories_use_agent_generator(service, monkeypatch):
-    from agent.briefing.scheduler import BriefingScheduler
+def test_manual_and_tool_factories_use_agent_generator(service, monkeypatch):
     from channel.web.web_channel import _briefing_pipeline
     monkeypatch.setattr("agent.briefing.settings.email_sources", lambda path=None: [])
-    monkeypatch.setattr("agent.briefing.scheduler.email_sources", lambda path=None: [])
     tool = BriefingTool(service=service)
     tool.model = ScriptedModel()
-    scheduled = BriefingScheduler(service).pipeline_factory()
     assert isinstance(_briefing_pipeline(service).generator, AgentBriefingGenerator)
-    assert isinstance(scheduled.generator, AgentBriefingGenerator)
     assert tool._get_pipeline(service).generator.model is tool.model
 
 

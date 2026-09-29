@@ -72,5 +72,4 @@ def deterministic_briefing_generator(monkeypatch):
             return {**compose(kept, briefing_date=briefing_date, kind=kind), "mail": mail}
 
     monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", FakeGenerator)
-    monkeypatch.setattr("agent.briefing.scheduler.AgentBriefingGenerator", FakeGenerator)
     return FakeGenerator

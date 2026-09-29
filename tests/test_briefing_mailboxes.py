@@ -8,7 +8,6 @@ pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 from agent.briefing import settings
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.scheduler import BriefingScheduler
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem, FetchResult
 from agent.briefing.sources.email import EmailSource
@@ -23,7 +22,6 @@ def path(tmp_path, monkeypatch):
         monkeypatch.delenv(key, raising=False)
     target = tmp_path / "mailbox.json"
     monkeypatch.setattr(settings, "mailbox_path", lambda: target)
-    monkeypatch.setattr("agent.briefing.scheduler.mailbox_path", lambda: target)
     return target
 
 
@@ -109,12 +107,12 @@ def test_all_entry_points_use_all_accounts_and_re_read_edits(path, tmp_path):
     add("ada@example.com", "ada-secret")
     second = add("bob@example.com", "bob-secret")
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
-    scheduler = BriefingScheduler(service)
-    pipelines = [_briefing_pipeline(service), BriefingTool()._get_pipeline(service), scheduler.pipeline_factory()]
+    tool = BriefingTool()
+    pipelines = [_briefing_pipeline(service), tool._get_pipeline(service)]
     for pipeline in pipelines:
         assert [source._settings()["user"] for source in pipeline.sources] == ["ada@example.com", "bob@example.com"]
     settings.save_mailbox({"id": second["id"], "password": "replacement"})
-    assert scheduler.pipeline_factory().sources[1]._settings()["password"] == "replacement"
+    assert tool._get_pipeline(service).sources[1]._settings()["password"] == "replacement"
 
 
 def test_shared_message_ids_and_uids_remain_separate_and_failed_account_is_named(path, tmp_path, monkeypatch):

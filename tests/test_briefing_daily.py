@@ -11,7 +11,6 @@ from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from agent.briefing.sources.static import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
-from agent.briefing.scheduler import BriefingScheduler
 
 
 def dt(value):
@@ -154,39 +153,3 @@ def test_migration_preserves_previous_snapshot(tmp_path):
     assert old.mail_snapshot_available is False
     assert store.get_revision(old.id, 1)["briefing"]["body"] == "saved content"
     assert len(BriefingStore(path).list_revisions(old.id)) == 1
-
-
-def test_scheduler_at_eight_catches_up_and_skips_existing(service):
-    current = [dt("2026-09-09T07:59:59+08:00")]
-    scheduler = BriefingScheduler(service, clock=lambda: current[0], configured=lambda: True,
-        pipeline_factory=lambda: BriefingPipeline(service, [StaticSource([])], clock=lambda: current[0]))
-    scheduler.tick()
-    assert not service.list_briefings()
-    current[0] = dt("2026-09-09T08:00:00+08:00")
-    scheduler.tick(); scheduler.tick()
-    assert len(service.list_briefings()) == 1
-    assert service.get_briefing("brf-2026-09-09-morning")["revisions"][0]["trigger"] == "scheduled"
-    current[0] = dt("2026-09-10T10:00:00+08:00")
-    scheduler.tick()
-    assert len(service.list_briefings()) == 2
-
-
-def test_scheduler_retries_failure_and_waits_for_mailbox(service):
-    current = [dt("2026-09-09T08:00:00+08:00")]
-    configured = [False]
-    sources = [StaticSource(error=RuntimeError("offline"))]
-    scheduler = BriefingScheduler(service, clock=lambda: current[0], configured=lambda: configured[0],
-        pipeline_factory=lambda: BriefingPipeline(service, sources, clock=lambda: current[0]))
-    scheduler.tick()
-    assert not service.list_briefings()
-    configured[0] = True
-    scheduler.tick()
-    first = service.get_briefing("brf-2026-09-09-morning")
-    assert first["briefing"].generated_at is None
-    sources[0] = StaticSource([])
-    current[0] = dt("2026-09-09T08:01:00+08:00")
-    scheduler.tick()
-    assert service.get_briefing(first["briefing"].id) == first
-    current[0] = dt("2026-09-09T08:05:00+08:00")
-    scheduler.tick()
-    assert service.get_briefing(first["briefing"].id)["briefing"].status == "completed"
