@@ -703,13 +703,18 @@ export interface TaskSchedule {
 }
 
 export interface TaskAction {
-  type: 'send_message' | 'agent_task'
+  type: 'send_message' | 'agent_task' | 'tool_call'
   content?: string
   task_description?: string
   receiver?: string
   receiver_name?: string
   is_group?: boolean
   channel_type?: string
+  silent?: boolean
+  call_name?: string
+  call_params?: Record<string, unknown>
+  tool_name?: string
+  tool_params?: Record<string, unknown>
 }
 
 export interface SchedulerTask {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Loader2, CalendarClock, Filter } from 'lucide-react'
 import apiClient from '../../api/client'
 import { t } from '../../i18n'
@@ -48,6 +49,7 @@ export const SettingsPanel: React.FC = () => {
     <section className="rounded-card border border-default bg-surface p-5 space-y-3">
       <h3 className="flex items-center gap-2 font-semibold text-sm text-content"><CalendarClock size={16} />{t('briefing_schedule')}</h3>
       <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_schedule_help')}</p>
+      <Link to="/tasks" className="inline-flex items-center text-sm text-accent hover:underline">{t('briefing_schedule_open')}</Link>
     </section>
     <section className="rounded-card border border-default bg-surface p-5 space-y-4">
       <div><h3 className="flex items-center gap-2 font-semibold text-sm text-content"><Filter size={16} />{t('briefing_rules')}</h3><p className="text-xs text-content-tertiary mt-2">{t('briefing_rules_help')}</p></div>
