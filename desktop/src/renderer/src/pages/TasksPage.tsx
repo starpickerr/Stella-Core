@@ -33,6 +33,14 @@ const formatNextRun = (iso?: string): string => {
   return isNaN(d.getTime()) ? '--' : d.toLocaleString()
 }
 
+const taskContent = (action: TaskAction): string => {
+  if (action.type === 'tool_call') {
+    const name = action.call_name || action.tool_name || ''
+    return name === 'briefing' ? t('task_briefing_description') : name
+  }
+  return action.content || action.task_description || ''
+}
+
 const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
   const activeSessionId = useSessionStore((s) => s.activeId)
   const [tasks, setTasks] = useState<SchedulerTask[]>([])
@@ -99,7 +107,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
           ) : (
             <div className="grid gap-3">
               {tasks.map((task) => {
-                const content = task.action?.content || task.action?.task_description || ''
+                const content = taskContent(task.action)
                 return (
                   <div
                     key={task.id}
@@ -162,6 +170,7 @@ const TaskEditModal: React.FC<{
   onDeleted: () => void
 }> = ({ task, sessionId, onClose, onSaved, onDeleted }) => {
   const isCreate = task == null
+  const isToolCall = task?.action.type === 'tool_call'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
@@ -183,6 +192,7 @@ const TaskEditModal: React.FC<{
 
   const buildAction = (): TaskAction => {
     const a: TaskAction = { ...(task?.action || {}), type: actionType }
+    if (actionType === 'tool_call') return a
     if (actionType === 'send_message') a.content = content
     else a.task_description = content
     return a
@@ -193,7 +203,7 @@ const TaskEditModal: React.FC<{
       setError(t('task_save_error'))
       return
     }
-    if (!content.trim()) {
+    if (!isToolCall && !content.trim()) {
       setError(t('task_save_error'))
       return
     }
@@ -324,27 +334,27 @@ const TaskEditModal: React.FC<{
       )}
 
       <Field label={t('task_action_type')}>
-        <Dropdown
+        {isToolCall ? <TextInput value={t('task_action_tool')} disabled /> : <Dropdown
           value={actionType}
           onChange={(v) => setActionType(v as TaskAction['type'])}
           options={[
             { value: 'send_message', label: t('task_action_send') },
             { value: 'agent_task', label: t('task_action_agent') },
           ]}
-        />
+        />}
       </Field>
 
       <Field label={actionType === 'send_message' ? t('task_message_content') : t('task_task_description')}>
-        <textarea
+        {isToolCall && task ? <p className="text-sm text-content-secondary">{taskContent(task.action)}</p> : <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={3}
           className="w-full px-3 py-2 rounded-btn border border-strong bg-inset text-sm text-content placeholder:text-content-tertiary focus:outline-none focus:border-accent transition-colors resize-none"
-        />
+        />}
       </Field>
 
       {/* Channel and receiver are channel-bound and read-only after creation. */}
-      {!isCreate && (task?.action.channel_type || task?.action.receiver) && (
+      {!isCreate && !task?.action.silent && (task?.action.channel_type || task?.action.receiver) && (
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('task_channel')}>
             <TextInput value={task?.action.channel_type || 'web'} disabled />
@@ -354,7 +364,7 @@ const TaskEditModal: React.FC<{
           </Field>
         </div>
       )}
-      <p className="text-xs text-content-tertiary">{isCreate ? t('task_create_hint') : t('task_channel_locked')}</p>
+      {!isToolCall && <p className="text-xs text-content-tertiary">{isCreate ? t('task_create_hint') : t('task_channel_locked')}</p>}
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
