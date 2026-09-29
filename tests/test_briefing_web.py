@@ -50,6 +50,9 @@ def test_run_list_detail_and_mark(api):
     assert ran["status"] == "success"
     assert ran["briefing"]["status"] == "completed"
     assert ran["items"][0]["title"] == "请确认合同"
+    assert ran["briefing"]["mail_snapshot_available"] is True
+    assert ran["mail"][0]["title"] == "请确认合同"
+    assert ran["mail"][0]["category"] == "selected"
     listed = call(web_channel.BriefingsHandler, "GET", params={"kind": "morning", "status": ""})
     assert len(listed["briefings"]) == 1
     detail = call(web_channel.BriefingDetailHandler, "GET", args=(ran["briefing"]["id"],))
@@ -134,6 +137,7 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
     second = call(web_channel.BriefingRunHandler, body={"briefing_date": "2026-09-09", "operation": "update"})
     snapshot = call(web_channel.BriefingRevisionHandler, "GET", args=(first["briefing"]["id"], "1"))
     assert snapshot["items"][0]["status"] == "undo"
+    assert snapshot["mail"] == first["mail"]
     assert second["items"][0]["status"] == "done"
     assert len(snapshot["revisions"]) == 2
     assert call(web_channel.BriefingRevisionHandler, "GET", args=(first["briefing"]["id"], "99"))["status"] == "error"

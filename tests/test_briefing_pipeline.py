@@ -64,6 +64,29 @@ def test_pipeline_filters_composes_and_advances_cursor(tmp_path):
     assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "42"
 
 
+def test_classification_lists_every_mail_and_cards_have_no_limit(tmp_path):
+    svc = _svc(tmp_path)
+    source = StaticSource([
+        *[_item(f"<keep-{i}@x>", f"邮件 {i}", payload={"body": f"完整内容 {i}"}) for i in range(15)],
+        _item("<reply@x>", "线程回复", thread_id="<keep-0@x>"),
+        _item("<drop@x>", "通知", email="noreply@example.com"),
+        _item("<list@x>", "广告", payload={"list_unsubscribe": True}),
+    ])
+    detail = BriefingPipeline(svc, [source]).run()
+    briefing = detail["briefing"]
+    assert briefing.mail_snapshot_available is True
+    assert briefing.fetched_count == 18
+    assert briefing.kept_count == 16
+    assert briefing.filtered_count == 2
+    assert len(detail["items"]) == 15
+    assert len(detail["mail"]) == briefing.kept_count + briefing.filtered_count
+    assert {row["source_id"] for row in detail["mail"]} == {row.source_id for row in source._items}
+    mails = {row["source_id"]: row for row in detail["mail"]}
+    assert mails["<keep-14@x>"]["body"] == "完整内容 14"
+    assert mails["<drop@x>"]["filter_reason"] == "noreply"
+    assert mails["<list@x>"]["filter_reason"] == "list_unsubscribe"
+
+
 def test_pipeline_partial_advances_only_successful_source(tmp_path):
     svc = _svc(tmp_path)
     ok = StaticSource(
@@ -113,10 +136,14 @@ def test_rerun_reapplies_rules_to_previously_filtered_mail(tmp_path):
     rule = svc.create_rule({"action": "exclude", "match_field": "sender", "match_value": "Ada"})
     first = BriefingPipeline(svc, [StaticSource([_item("<a@x>", "请确认合同")])]).run(briefing_date="2026-09-09")
     assert first["items"] == []
+    assert first["mail"][0]["category"] == "filtered"
+    assert first["mail"][0]["filter_reason"] == "exclude"
     svc.delete_rule(rule.id)
     again = BriefingPipeline(svc, [StaticSource([])]).run(briefing_date="2026-09-09")
     assert len(again["items"]) == 1
     assert again["briefing"].filtered_count == 0
+    assert again["mail"][0]["category"] == "selected"
+    assert svc.get_revision(first["briefing"].id, 1)["mail"] == first["mail"]
 
 
 def test_failed_retry_keeps_previous_document_and_cards(tmp_path):
@@ -126,6 +153,22 @@ def test_failed_retry_keeps_previous_document_and_cards(tmp_path):
     assert again["briefing"].status == "failed"
     assert again["briefing"].body == first["briefing"].body
     assert again["items"] == first["items"]
+    assert again["mail"] == first["mail"]
+    assert again["briefing"].mail_snapshot_available is True
+    assert svc.get_revision(first["briefing"].id, 2)["mail"] == first["mail"]
+
+
+def test_mail_snapshots_do_not_follow_catalog_changes(tmp_path):
+    svc = _svc(tmp_path)
+    first = BriefingPipeline(svc, [StaticSource([
+        _item("<a@x>", "旧标题", payload={"body": "旧正文"}),
+    ])]).run()
+    second = BriefingPipeline(svc, [StaticSource([
+        _item("<a@x>", "新标题", payload={"body": "新正文"}),
+    ])]).run(operation="update")
+    assert second["mail"][0]["title"] == "新标题"
+    assert second["mail"][0]["body"] == "新正文"
+    assert svc.get_revision(first["briefing"].id, 1)["mail"] == first["mail"]
 
 
 def test_thread_merge_includes_original_message_and_uses_latest(tmp_path):

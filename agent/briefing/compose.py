@@ -8,8 +8,6 @@ from typing import List, Sequence
 
 from agent.briefing.rules import ScoredCandidate
 
-MAX_ITEMS = 10
-
 
 def _sort_key(candidate: ScoredCandidate) -> tuple:
     section_rank = 0 if candidate.section == "action" else 1
@@ -60,7 +58,7 @@ def compose(
 ) -> dict:
     ranked = merge_threads(candidates)
     ranked.sort(key=_sort_key)
-    selected = ranked[:MAX_ITEMS]
+    selected = ranked
     action = [row for row in selected if row.section == "action"]
     fyi = [row for row in selected if row.section == "fyi"]
 

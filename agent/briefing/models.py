@@ -69,6 +69,7 @@ class Briefing:
     updated_at: str
     window_start: Optional[str] = None
     window_end: Optional[str] = None
+    mail_snapshot_available: bool = False
 
 
 @dataclass

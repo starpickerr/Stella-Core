@@ -6,14 +6,14 @@ injected so tests can use StaticSource; IMAP lives in sources.email.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from common.log import logger
 
 from agent.briefing.compose import compose
 from agent.briefing.models import EmailMessage, SourceItem
-from agent.briefing.rules import filter_candidates, fetched_to_payload
+from agent.briefing.rules import classify_candidates, fetched_to_payload
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
 
@@ -46,9 +46,9 @@ class BriefingPipeline:
             raise ValueError("operation must be create or update")
         if trigger not in {"manual", "scheduled"}:
             raise ValueError("invalid briefing trigger")
-        day = briefing_date or self.clock().date().isoformat()
         # Serialize shared-store runs so two requests cannot race the same cursor.
         with self.service.store.run_lock:
+            day = briefing_date or self.clock().date().isoformat()
             existing = self.service.store.get_briefing(briefing_id_for(day, kind))
             if operation == "create" and existing and existing.generated_at:
                 return self.service.get_briefing(existing.id)
@@ -57,16 +57,30 @@ class BriefingPipeline:
             return self._run(kind, day, trigger)
 
     def _run(self, kind: str, day: str, trigger: str) -> dict:
-        end = self.clock().astimezone(timezone.utc).replace(microsecond=0)
+        local_now = self.clock()
+        end = local_now.astimezone(timezone.utc).replace(microsecond=0)
         existing = self.service.store.get_briefing(briefing_id_for(day, kind))
-        if existing and existing.window_start:
-            start = existing.window_start
-        else:
-            previous = [row for row in self.service.list_briefings(kind=kind)
-                        if row.id[4:14] < day and row.generated_at]
-            boundary = max((row.window_end or row.generated_at for row in previous),
-                           key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00")), default=None)
-            start = boundary or (end - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+        previous = [row for row in self.service.list_briefings(kind=kind)
+                    if row.id[4:14] < day and row.generated_at]
+        boundary = max((row.window_end or row.generated_at for row in previous),
+                       key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00")), default=None)
+        # A first briefing begins at 20:00 on the previous local calendar day.
+        initial = datetime.combine(
+            date.fromisoformat(day) - timedelta(days=1), datetime.min.time()
+        ).replace(hour=20, tzinfo=local_now.tzinfo)
+        default_start = initial.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        start = existing.window_start if existing and existing.window_start else boundary or default_start
+        if existing and existing.window_start and not previous:
+            # Correct the earlier 48-hour bootstrap on the next successful
+            # update. Archived windows and classification history stay intact.
+            for revision in reversed(self.service.store.list_revisions(existing.id)):
+                old = self.service.store.get_revision(existing.id, revision["number"])["briefing"]
+                if old.get("window_end") and old.get("window_start"):
+                    old_start = datetime.fromisoformat(old["window_start"].replace("Z", "+00:00"))
+                    old_end = datetime.fromisoformat(old["window_end"].replace("Z", "+00:00"))
+                    if old_end - old_start == timedelta(days=2) and old["window_start"] == existing.window_start:
+                        start = default_start
+                    break
         finish = end.isoformat().replace("+00:00", "Z")
         if datetime.fromisoformat(start.replace("Z", "+00:00")) > end:
             raise ValueError("briefing end precedes the previous successful update")
@@ -87,12 +101,13 @@ class BriefingPipeline:
                 pending_cursors.append((source, result.cursors))
                 self._upsert_fetched(result.items)
 
+            finish = self.clock().astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             catalog_rows = self.service.store.window_candidates(
                 start, finish, [(source.name, source.account_id) for source in self.sources])
-            self.service.store.add_candidates(briefing.id, [row[0].id for row in catalog_rows])
             fetched_count = len(catalog_rows)
             rules = self.service.list_rules(enabled_only=True)
-            kept, filtered_count = filter_candidates(catalog_rows, rules)
+            kept, mail = classify_candidates(catalog_rows, rules)
+            filtered_count = sum(row["category"] == "filtered" for row in mail)
             drafted = compose(kept, briefing_date=day, kind=kind)
 
             if errors and not pending_cursors:
@@ -113,10 +128,10 @@ class BriefingPipeline:
                     "title": briefing.title or drafted["title"] if status == "failed" else drafted["title"],
                     "body": drafted["body"] if status != "failed" else briefing.body,
                     "fetched_count": fetched_count if status != "failed" else briefing.fetched_count,
-                    "kept_count": drafted["kept_count"] if status != "failed" else briefing.kept_count,
+                    "kept_count": len(kept) if status != "failed" else briefing.kept_count,
                     "filtered_count": filtered_count if status != "failed" else briefing.filtered_count,
                     "error_message": "; ".join(errors),
-                    **({"items": drafted["items"]} if status != "failed" else {}),
+                    **({"items": drafted["items"], "mail": mail} if status != "failed" else {}),
                 },
             )
             if status != "failed":
@@ -143,6 +158,10 @@ class BriefingPipeline:
             if row is not None:
                 cursors[key] = row.cursor_value
         cursors.update({"since": start, "until": end})
+        if source.name == "email":
+            old_rows = self.service.store.window_candidates(start, end, [(source.name, source.account_id)])
+            if any("body" not in row[0].payload for row in old_rows):
+                cursors["refresh_existing_content"] = "1"
         return source.fetch(cursors)
 
     def _upsert_fetched(

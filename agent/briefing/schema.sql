@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS email_messages (
 CREATE TABLE IF NOT EXISTS briefings (
     window_start     TEXT,
     window_end       TEXT,
+    mail_snapshot_available INTEGER NOT NULL DEFAULT 0,
     id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
     kind             TEXT    NOT NULL DEFAULT 'morning'
                              CHECK (kind IN (
@@ -81,9 +82,9 @@ CREATE TABLE IF NOT EXISTS briefings (
     title            TEXT    NOT NULL DEFAULT '',               -- list title
     body             TEXT    NOT NULL DEFAULT '',               -- composed Markdown, not source text
     fetched_count    INTEGER NOT NULL DEFAULT 0
-                             CHECK (fetched_count >= 0),        -- items fetched this run
+                             CHECK (fetched_count >= 0),        -- all window candidates before filtering
     kept_count       INTEGER NOT NULL DEFAULT 0
-                             CHECK (kept_count >= 0),           -- items kept in the briefing
+                             CHECK (kept_count >= 0),           -- selected source messages before thread merging
     filtered_count   INTEGER NOT NULL DEFAULT 0
                              CHECK (filtered_count >= 0),       -- items dropped by rules
     error_message    TEXT    NOT NULL DEFAULT '',               -- error detail when failed/partial
@@ -235,4 +236,12 @@ CREATE TABLE IF NOT EXISTS briefing_revisions (
     created_at TEXT NOT NULL,
     snapshot TEXT NOT NULL,
     PRIMARY KEY (briefing_id, number)
+);
+
+-- Frozen candidate mail classifications; revisions retain their own copies.
+CREATE TABLE IF NOT EXISTS briefing_mail (
+    briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
+    source_item_id TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    PRIMARY KEY (briefing_id, source_item_id)
 );
