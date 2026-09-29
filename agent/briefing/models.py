@@ -70,6 +70,7 @@ class Briefing:
     window_start: Optional[str] = None
     window_end: Optional[str] = None
     mail_snapshot_available: bool = False
+    rule_text: str = ""
 
 
 @dataclass
@@ -109,6 +110,7 @@ class FilterRule:
     note: str
     created_at: str
     updated_at: str
+    text: str = ""
 
 
 @dataclass

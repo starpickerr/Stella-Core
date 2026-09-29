@@ -4,6 +4,8 @@ from dataclasses import asdict
 import sqlite3
 import pytest
 
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
+
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem

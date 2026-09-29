@@ -11,9 +11,10 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from common.log import logger
 
-from agent.briefing.compose import compose
+from agent.briefing.compose import _date_title
+from agent.briefing.generator import AgentBriefingGenerator
 from agent.briefing.models import EmailMessage, SourceItem
-from agent.briefing.rules import classify_candidates, fetched_to_payload
+from agent.briefing.rules import fetched_to_payload
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
 
@@ -28,10 +29,12 @@ class BriefingPipeline:
         service: Optional[BriefingService] = None,
         sources: Optional[Sequence[Source]] = None,
         clock=None,
+        generator=None,
     ):
         self.service = service if service is not None else BriefingService()
         self.sources = list(sources or [])
         self.clock = clock or _now
+        self.generator = generator if generator is not None else AgentBriefingGenerator()
 
     def run(
         self,
@@ -106,17 +109,19 @@ class BriefingPipeline:
             catalog_rows = self.service.store.window_candidates(
                 start, finish, [(source.name, source.account_id) for source in self.sources])
             fetched_count = len(catalog_rows)
-            rules = self.service.list_rules(enabled_only=True)
-            kept, mail = classify_candidates(catalog_rows, rules)
-            filtered_count = sum(row["category"] == "filtered" for row in mail)
-            drafted = compose(kept, briefing_date=day, kind=kind)
-
             if errors and not pending_cursors:
                 status = "failed"
             elif errors:
                 status = "partial"
             else:
                 status = "completed"
+
+            drafted, mail = {}, []
+            if status != "failed":
+                drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
+                    briefing_date=day, kind=kind, window_start=start, window_end=finish)
+                mail = drafted["mail"]
+            filtered_count = sum(row["category"] == "filtered" for row in mail)
 
             detail = self.service.complete_briefing(
                 briefing.id,
@@ -126,13 +131,13 @@ class BriefingPipeline:
                     "window_start": start,
                     "window_end": finish,
                     "trigger": trigger,
-                    "title": briefing.title or drafted["title"] if status == "failed" else drafted["title"],
+                    "title": (briefing.title or _date_title(day, kind)) if status == "failed" else drafted["title"],
                     "body": drafted["body"] if status != "failed" else briefing.body,
                     "fetched_count": fetched_count if status != "failed" else briefing.fetched_count,
-                    "kept_count": len(kept) if status != "failed" else briefing.kept_count,
+                    "kept_count": len(mail) - filtered_count if status != "failed" else briefing.kept_count,
                     "filtered_count": filtered_count if status != "failed" else briefing.filtered_count,
                     "error_message": "; ".join(errors),
-                    **({"items": drafted["items"], "mail": mail} if status != "failed" else {}),
+                    **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", "")} if status != "failed" else {}),
                 },
             )
             if status != "failed":
