@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Markdown from '../../components/Markdown'
+import { MailList } from './MailList'
 import { ItemList } from './ItemList'
 import { RevisionGraph } from './RevisionGraph'
 import { t, getLang } from '../../i18n'
@@ -16,6 +17,15 @@ export const BriefingDetail: React.FC<{
   onStatus: (id: string, status: BriefingItemStatus) => void
 }> = ({ detail, loading, version, onVersion, busy, onBack, onStatus }) => {
   const briefing = detail.briefing
+  const [category, setCategory] = useState<'candidate' | 'selected' | 'filtered' | null>(null)
+  useEffect(() => { setCategory(null) }, [briefing.id])
+  const mail = detail.mail ?? []
+  const visibleMail = category === 'candidate' ? mail : mail.filter((row) => row.category === category)
+  const categories = [
+    { key: 'candidate' as const, count: briefing.fetched_count },
+    { key: 'selected' as const, count: briefing.kept_count },
+    { key: 'filtered' as const, count: briefing.filtered_count },
+  ]
   return <div className="flex flex-col-reverse md:flex-row items-start gap-6">
     <section aria-busy={loading} className="min-w-0 w-full flex-1 space-y-5">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs text-content-secondary hover:text-accent lg:hidden"><ArrowLeft size={14} />{t('briefing_back')}</button>
@@ -27,20 +37,31 @@ export const BriefingDetail: React.FC<{
           </div>
           {briefing.generated_at && <p className="text-xs text-content-tertiary mt-1">{new Date(briefing.generated_at).toLocaleString()}</p>}
         </div>
-        {briefing.window_start && briefing.window_end && <p className="text-xs text-content-secondary leading-relaxed">{t('briefing_window')}：{new Date(briefing.window_start).toLocaleString()} → {new Date(briefing.window_end).toLocaleString()}</p>}
+        {briefing.window_start && briefing.window_end && <p className="text-xs text-content-secondary leading-relaxed">{t('briefing_window')}：{new Date(briefing.window_start).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })} → {new Date(briefing.window_end).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })}</p>}
         {version !== null && <div className="rounded-card border border-default bg-surface-2 p-3">
           <p className="text-xs font-medium text-content-secondary">{t('briefing_version_snapshot')} #{version}</p>
           <p className="text-xs text-content-tertiary mt-1 leading-relaxed">{t('briefing_readonly')}</p>
         </div>}
         {briefing.error_message && <div role="alert" className="rounded-card border border-danger-border bg-danger-soft text-danger text-sm p-3 break-words">{briefing.error_message}</div>}
-        <div className="grid grid-cols-3 gap-3">
-          {(['fetched', 'kept', 'filtered'] as const).map((key) => <div key={key} className="rounded-card bg-surface-2 p-3">
-            <div className="text-xl font-semibold text-content">{briefing[`${key}_count`]}</div>
-            <div className="text-xs text-content-tertiary mt-1">{t(`briefing_${key}`)}</div>
-          </div>)}
+        <div className="grid grid-cols-3 gap-3" role="group" aria-label={t('briefing_mail_categories')}>
+          {categories.map((row) => <button key={row.key} type="button" aria-pressed={category === row.key} onClick={() => setCategory(category === row.key ? null : row.key)}
+            className={`rounded-card border p-3 text-left transition-colors ${category === row.key ? 'border-accent bg-accent-soft' : 'border-transparent bg-surface-2 hover:border-default'}`}>
+            <span className="block text-xl font-semibold text-content tabular-nums">{row.count}</span>
+            <span className="block text-xs text-content-secondary mt-1">{t(`briefing_mail_${row.key}`)}</span>
+            <span className="block text-[10px] text-content-tertiary mt-0.5 capitalize">{row.key}</span>
+          </button>)}
         </div>
-        {briefing.body && <div className="border-b border-default pb-5"><Markdown content={briefing.body} /></div>}
-        <ItemList items={detail.items} busy={busy || version !== null} onStatus={onStatus} />
+        {category ? <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-content">{t(`briefing_mail_${category}`)}</h3>
+            <button type="button" onClick={() => setCategory(null)} className="text-xs text-accent hover:underline">{t('briefing_overview')}</button>
+          </div>
+          {briefing.mail_snapshot_available ? <MailList key={`${briefing.id}:${version ?? 'current'}:${briefing.updated_at}`} mail={visibleMail} />
+            : <p className="text-sm text-content-tertiary rounded-card bg-surface-2 p-4">{t('briefing_mail_legacy')}</p>}
+        </div> : <>
+          {briefing.body && <div className="border-b border-default pb-5"><Markdown content={briefing.body} /></div>}
+          <ItemList items={detail.items} busy={busy || version !== null} onStatus={onStatus} />
+        </>}
       </>}
     </section>
     <RevisionGraph revisions={detail.revisions} version={version} busy={busy} onVersion={onVersion} />
