@@ -142,6 +142,7 @@ datas = [
     (rp('channel', 'web', 'static'), 'channel/web/static'),
     # BillStore reads this non-Python file at runtime to initialize SQLite.
     (rp('agent', 'bills', 'schema.sql'), 'agent/bills'),
+    (rp('agent', 'briefing', 'schema.sql'), 'agent/briefing'),
 ]
 
 # Some libraries (tiktoken encodings, etc.) ship data files.

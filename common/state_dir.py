@@ -223,6 +223,13 @@ def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
     return bills_dir / "bills.db"
 
 
+def briefing_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Morning briefing history and filter rules. User-scoped: inbox
+    preferences are a fact about the person, not about one Agent."""
+    briefing_dir = _ensure(_user_base(identity, base) / "briefing", ensure)
+    return briefing_dir / "briefing.db"
+
+
 def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     """Task execution records. User-scoped because a trace holds full tool
     output: one user's runs must not be readable by another."""
