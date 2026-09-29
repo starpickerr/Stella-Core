@@ -41,20 +41,20 @@ def load_mailboxes(path: Optional[Path] = None) -> list:
     with _settings_lock:
         if not target.exists():
             cfg = _environment_mailbox()
-            return [{"id": "environment", **cfg}] if any(cfg[key] for key in ("host", "user", "password")) else []
+            return [{"id": "environment", "enabled": True, **cfg}] if any(cfg[key] for key in ("host", "user", "password")) else []
         saved = json.loads(target.read_text(encoding="utf-8"))
         if not isinstance(saved, dict):
             raise ValueError("invalid mailbox settings")
         if "mailboxes" not in saved:
             cfg = _environment_mailbox()
             cfg.update({key: saved[key] for key in _MAILBOX_FIELDS if key in saved})
-            return [{"id": "legacy", **cfg}]
+            return [{"id": "legacy", "enabled": saved.get("enabled", True), **cfg}]
         rows = saved["mailboxes"]
         if not isinstance(rows, list) or any(
             not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"] for row in rows
         ) or len({row["id"] for row in rows}) != len(rows):
             raise ValueError("invalid mailbox settings")
-        return [{"id": row["id"], **_empty_mailbox(), **{
+        return [{"id": row["id"], "enabled": row.get("enabled", True), **_empty_mailbox(), **{
             key: row[key] for key in _MAILBOX_FIELDS if key in row
         }} for row in rows]
 
@@ -78,6 +78,7 @@ def public_mailbox(settings: Optional[dict] = None) -> dict:
         "password_set": bool(cfg["password"]),
         "password_masked": PASSWORD_MASK if cfg["password"] else "",
         "id": cfg.get("id", ""),
+        "enabled": cfg.get("enabled", True),
     }
 
 
@@ -92,7 +93,7 @@ def email_sources(path: Optional[Path] = None) -> list:
     """Use the same account factory for manual, scheduled and tool generation."""
     from agent.briefing.sources.email import EmailSource
     return [EmailSource(**{key: row[key] for key in _MAILBOX_FIELDS})
-            for row in load_mailboxes(path) if public_mailbox(row)["configured"]]
+            for row in load_mailboxes(path) if row["enabled"] and public_mailbox(row)["configured"]]
 
 
 def normalize_imap_host(value: str) -> str:
@@ -123,6 +124,9 @@ def resolve_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
     rows = load_mailboxes(path)
     existing = _selected_mailbox(payload, rows)
     settings = {key: existing[key] for key in _MAILBOX_FIELDS} if existing else _empty_mailbox()
+    settings["enabled"] = payload.get("enabled", existing.get("enabled", True) if existing else True)
+    if not isinstance(settings["enabled"], bool):
+        raise ValueError("enabled 必须是布尔值")
     settings["host"] = normalize_imap_host(payload.get("host", settings["host"]))
     for key, label in (("user", "邮箱账号"), ("folder", "邮件文件夹")):
         value = payload.get(key, settings[key])
@@ -167,7 +171,7 @@ def check_mailbox_connection(payload: dict, path: Optional[Path] = None) -> None
     """Read-only login/folder check. Testing a draft does not save it."""
     from agent.briefing.sources.email import EmailSource
     settings = resolve_mailbox(payload, path)
-    EmailSource(**settings).check_connection()
+    EmailSource(**{key: settings[key] for key in _MAILBOX_FIELDS}).check_connection()
 
 
 def save_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
