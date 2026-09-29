@@ -607,8 +607,12 @@ class ApiClient {
     return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}`)
   }
 
-  async runBriefing(briefingDate?: string): Promise<BriefingDetail> {
-    return this.briefingRequest('/api/briefings/run', { kind: 'morning', briefing_date: briefingDate })
+  async getBriefingRevision(id: string, number: number): Promise<BriefingDetail> {
+    return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}/revisions/${number}`)
+  }
+
+  async runBriefing(operation: 'create' | 'update', briefingDate?: string): Promise<BriefingDetail> {
+    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate })
   }
 
   async updateBriefingItem(id: string, status: BriefingItemStatus): Promise<BriefingItem> {
