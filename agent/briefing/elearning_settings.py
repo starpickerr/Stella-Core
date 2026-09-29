@@ -1,4 +1,4 @@
-"""User-scoped eLearning connection and migration from elearning_crawler."""
+"""User-scoped configuration for the built-in eLearning tool and source."""
 from __future__ import annotations
 
 import hashlib
@@ -64,7 +64,7 @@ def public_settings(config=None):
     auth = bool(cfg["password"] or cfg["token"] or session_path(cfg).is_file())
     return {"enabled": cfg["enabled"], "base_url": cfg["base_url"], "username": cfg["username"],
             "courses": cfg["courses"], "password_set": bool(cfg["password"]),
-            "password_masked": PASSWORD_MASK if cfg["password"] else "", "token_set": bool(cfg["token"]),
+            "password_masked": PASSWORD_MASK if cfg["password"] else "",
             "configured": bool(cfg["username"] and cfg["courses"] and auth), "account_id": account_id(cfg)}
 
 
@@ -97,7 +97,7 @@ def resolve_settings(payload):
     elif password == PASSWORD_MASK and not cfg["password"]:
         raise ValueError("请填写新账号的 eLearning 密码")
     if not cfg["password"] and not cfg["token"] and not session_path(cfg).is_file():
-        raise ValueError("请填写 eLearning 密码或导入已有登录状态")
+        raise ValueError("请填写 eLearning 密码")
     return cfg
 
 
@@ -113,38 +113,6 @@ def delete_settings():
         cfg = load_settings()
         session_path(cfg).unlink(missing_ok=True)
         _write(settings_path(), DEFAULTS)
-
-
-def import_crawler(project_path=None):
-    """Read only config, .env and Canvas cookies; never execute sibling code."""
-    root = Path(project_path).expanduser() if project_path else Path(__file__).resolve().parents[3] / "elearning_crawler"
-    import yaml
-    from dotenv import dotenv_values
-    try:
-        saved = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
-        secrets = dotenv_values(root / ".env", interpolate=False)
-        if not isinstance(saved, dict):
-            raise ValueError
-        cfg = {**DEFAULTS, "enabled": True, "base_url": saved.get("base_url", DEFAULTS["base_url"]),
-               "username": secrets.get("ELEARNING_USERNAME") or "", "password": secrets.get("ELEARNING_PASSWORD") or "",
-               "token": secrets.get("CANVAS_TOKEN") or "", "courses": [str(value) for value in saved.get("courses", [])]}
-        # Validate using the same rules without exposing imported secrets.
-        url = urlparse(cfg["base_url"])
-        if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
-            raise ValueError
-        if not cfg["username"] or not all(cfg["courses"]):
-            raise ValueError
-        cookie_file = root / ".private" / "session.json"
-        cookies = json.loads(cookie_file.read_text(encoding="utf-8")) if cookie_file.is_file() else None
-        if not cfg["password"] and not cfg["token"] and not cookies:
-            raise ValueError
-    except (OSError, ValueError, TypeError, yaml.YAMLError):
-        raise ValueError("无法导入爬虫配置，请确认项目目录、课程选择和登录配置") from None
-    with _lock:
-        if cookies:
-            save_session(cfg, cookies)
-        _write(settings_path(), cfg)
-    return public_settings(cfg)
 
 
 def check_connection(payload):

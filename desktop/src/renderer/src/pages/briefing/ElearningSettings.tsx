@@ -6,14 +6,13 @@ import type { ElearningSettings as Config, ElearningSettingsInput } from '../../
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const initial: Config = { enabled: true, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], account_id: '', password_set: false, password_masked: '', token_set: false }
+const initial: Config = { enabled: true, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], account_id: '', password_set: false, password_masked: '' }
 
 export const ElearningSettings: React.FC = () => {
   const [config, setConfig] = useState(initial)
   const [password, setPassword] = useState('')
   const [chosen, setChosen] = useState<string[]>([])
   const [courses, setCourses] = useState<{ id: string; name: string }[]>([])
-  const [projectPath, setProjectPath] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -57,11 +56,6 @@ export const ElearningSettings: React.FC = () => {
     <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_elearning_help')}</p>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
-    <div className="flex flex-wrap gap-2">
-      <input aria-label={t('briefing_crawler_path')} value={projectPath} disabled={busy || loading}
-        placeholder={t('briefing_crawler_path')} className={`${fieldClass} flex-1 min-w-48`} onChange={(e) => setProjectPath(e.target.value)} />
-      <button type="button" disabled={busy || loading} className={buttonClass} onClick={() => void run(async () => { open(await apiClient.importElearningCrawler(projectPath.trim() || undefined)); setSaved(true) })}>{t('briefing_import_crawler')}</button>
-    </div>
     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload()), courses); setSaved(true) }) }}>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_url')}<input required type="url" disabled={busy || loading} value={config.base_url} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ base_url: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_user')}<input required autoComplete="username" disabled={busy || loading} value={config.username} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ username: e.target.value })} /></label>

@@ -929,7 +929,6 @@ export interface ElearningSettings {
   account_id: string
   password_set: boolean
   password_masked: string
-  token_set: boolean
 }
 
 export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }

@@ -6023,9 +6023,7 @@ class BriefingElearningHandler:
             from agent.briefing import elearning_settings
             body = _briefing_body()
             action = body.get("action", "save")
-            if action == "import":
-                settings = elearning_settings.import_crawler(body.get("project_path"))
-            elif action == "delete":
+            if action == "delete":
                 elearning_settings.delete_settings()
                 settings = elearning_settings.public_settings()
             elif action == "save":
