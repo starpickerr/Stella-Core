@@ -142,6 +142,10 @@ Agent: [调用 scheduler 工具]
 
 任务数据结构：
 
+桌面版首次启动会在同一存储中注册「每日简报」工具任务（`daily-briefing`），默认 `0 8 * * *`；它静默调用 `briefing` 工具生成当天缺失的简报。修改、暂停和删除均使用现有任务入口，存储的 `initialized_defaults` 标记确保已删除的默认任务不会在重启后重建。
+
+任务可选 `catch_up: "same_day"` 以补执行当天最近一次 Cron，避免重放离线期间的每日任务；未设置时仍使用原十分钟宽限。`retry_interval_seconds` 指定失败重试间隔（简报为 300 秒），`retry_at` 保存重试时间。静默 `tool_call` 设置 `action.silent: true`，无需接收人或就绪的消息通道；工具报错不会被当作成功，保留计划并重试。
+
 **静态消息任务：**
 ```json
 {
