@@ -61,7 +61,7 @@ class FakeIMAP:
                 uids = [uid for uid in uids if int(uid) >= start]
             return "OK", [" ".join(uids).encode()]
         if cmd == "FETCH":
-            assert args[1] == "(BODY.PEEK[]<0.65536>)"
+            assert args[1] == "(BODY.PEEK[])"
             uid = str(args[0])
             raw = self.messages[uid]
             return "OK", [(b"%s (UID %s RFC822.HEADER {%d}" % (uid.encode(), uid.encode(), len(raw)), raw), b")"]
@@ -169,6 +169,7 @@ def test_parser_reads_body_and_ignores_attachment():
     msg.add_attachment(b"private attachment", maintype="text", subtype="plain", filename="secret.txt")
     parsed = parse_rfc822(msg.as_bytes(), uid="5", uidvalidity="7")
     assert parsed.snippet == "Please approve the budget today."
+    assert parsed.payload["body"] == "Please approve the budget today."
     assert parsed.source_id == "imap-uid-7-5"
     assert parsed.url == ""
 
@@ -178,8 +179,38 @@ def test_parser_html_fallback_and_length_limit():
     msg.set_content("<style>secret</style><p>Please confirm &amp; reply</p><script>bad()</script>", subtype="html")
     parsed = parse_rfc822(msg.as_bytes(), uid="1")
     assert parsed.snippet == "Please confirm & reply"
+    assert "secret" not in parsed.payload["body"]
+    assert "bad()" not in parsed.payload["body"]
     msg.set_content("x" * 1000)
-    assert len(parse_rfc822(msg.as_bytes(), uid="1").snippet) == 500
+    parsed = parse_rfc822(msg.as_bytes(), uid="1")
+    assert len(parsed.snippet) == 500
+    assert parsed.payload["body"] == "x" * 1000
+
+
+def test_refresh_reads_existing_bodies_without_rewinding_uid():
+    fake = FakeIMAP([(1, _raw(msgid="<old@x>")), (5, _raw(msgid="<new@x>"))])
+    result = EmailSource(opener=lambda: fake).fetch({
+        "imap_uid": "9", "imap_uidvalidity": "9", "since": "2026-09-08T12:00:00Z",
+        "refresh_existing_content": "1",
+    })
+    assert {row.source_id for row in result.items} == {"<old@x>", "<new@x>"}
+    assert all(row.payload["body"] == "unused" for row in result.items)
+    assert result.cursors["imap_uid"] == "9"
+
+
+def test_pipeline_hydrates_cached_summary_only_messages(tmp_path):
+    from agent.briefing.rules import fetched_to_payload
+    from agent.briefing.sources.base import FetchedItem
+    svc = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    svc.upsert_source_item(fetched_to_payload(FetchedItem(
+        source="email", source_id="<m1@example.com>", title="旧摘要", occurred_at="2026-09-08T22:00:00Z",
+    )))
+    svc.set_cursor("email", "imap_uid", "1")
+    svc.set_cursor("email", "imap_uidvalidity", "9")
+    detail = BriefingPipeline(svc, [EmailSource(opener=lambda: FakeIMAP([(1, _raw())]))]).run()
+    assert len(detail["mail"]) == 1
+    assert detail["mail"][0]["body_available"] is True
+    assert detail["mail"][0]["body"] == "unused"
 
 
 def test_fetch_failure_never_skips_uid_or_commits_cursor(tmp_path):

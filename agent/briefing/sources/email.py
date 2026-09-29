@@ -72,7 +72,7 @@ def _list_id(msg) -> str:
     return raw
 
 
-def _snippet(msg) -> str:
+def _body(msg) -> str:
     plain, html = [], []
     for part in msg.walk():
         if part.get_content_maintype() != "text" or part.get_content_disposition() == "attachment":
@@ -89,7 +89,7 @@ def _snippet(msg) -> str:
         elif part.get_content_type() == "text/html":
             text = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", "", text, flags=re.I | re.S)
             html.append(unescape(re.sub(r"<[^>]*>", " ", text)))
-    return " ".join(" ".join(plain or html).split())[:500]
+    return "\n\n".join(plain or html).strip()
 
 
 def parse_rfc822(
@@ -102,6 +102,7 @@ def parse_rfc822(
     source_id = message_id or f"imap-uid-{uidvalidity}-{uid}"
     list_unsub = bool(_header(msg, "List-Unsubscribe").strip())
     title = _header(msg, "Subject")
+    body = _body(msg)
     return FetchedItem(
         source="email",
         source_id=source_id,
@@ -109,10 +110,10 @@ def parse_rfc822(
         thread_id=_thread_id(msg),
         sender=sender_name or sender_email,
         title=title,
-        snippet=_snippet(msg) or title,
+        snippet=" ".join(body.split())[:500] or title,
         occurred_at=_occurred_at(_header(msg, "Date")),
         url=f"mid:{message_id.strip('<>')}" if message_id else "",
-        payload={"list_unsubscribe": True} if list_unsub else {},
+        payload={"body": body, **({"list_unsubscribe": True} if list_unsub else {})},
         sender_email=sender_email,
         list_id=_list_id(msg),
     )
@@ -263,12 +264,13 @@ class EmailSource:
             if last_validity and last_validity != uidvalidity:
                 last_uid = 0
 
-            uids = self._search_uids(client, last_uid, cursors.get("since"))
+            refresh = cursors.get("refresh_existing_content") == "1"
+            uids = self._search_uids(client, 0 if refresh else last_uid, cursors.get("since"))
             items: List[FetchedItem] = []
             max_uid = last_uid
             for uid in sorted(set(uids), key=int):
                 number = int(uid)
-                if number <= last_uid:
+                if number <= last_uid and not refresh:
                     continue
                 raw = self._fetch_message(client, uid)
                 if not raw:
@@ -305,7 +307,7 @@ class EmailSource:
         return _uids_from_search(payload)
 
     def _fetch_message(self, client, uid: str) -> bytes:
-        status, payload = client.uid("FETCH", uid, "(BODY.PEEK[]<0.65536>)")
+        status, payload = client.uid("FETCH", uid, "(BODY.PEEK[])")
         if status != "OK":
             raise RuntimeError(f"IMAP FETCH UID {uid} failed: {status}")
         return _header_bytes_from_fetch(payload)

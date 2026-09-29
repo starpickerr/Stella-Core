@@ -131,12 +131,15 @@ class BriefingService:
             "briefing": briefing,
             "items": self.store.list_briefing_items(briefing_id),
             "revisions": self.store.list_revisions(briefing_id),
+            "mail": self.store.list_mail(briefing_id),
         }
 
     def get_revision(self, briefing_id: str, number: int) -> dict:
         snapshot = self.store.get_revision(briefing_id, number)
         if snapshot is None:
             raise KeyError("briefing revision not found")
+        snapshot.setdefault("mail", [])
+        snapshot["briefing"].setdefault("mail_snapshot_available", False)
         snapshot["revisions"] = self.store.list_revisions(briefing_id)
         return snapshot
 
@@ -185,6 +188,7 @@ class BriefingService:
                 updated_at=now,
                 window_start=existing.window_start,
                 window_end=existing.window_end,
+                mail_snapshot_available=existing.mail_snapshot_available,
             )
         )
 
@@ -225,6 +229,7 @@ class BriefingService:
             updated_at=now,
             window_start=payload.get("window_start", existing.window_start) if status != "failed" else existing.window_start,
             window_end=payload.get("window_end", existing.window_end) if status != "failed" else existing.window_end,
+            mail_snapshot_available=True if "mail" in payload else existing.mail_snapshot_available,
         )
         snapshots = None
         if "items" in payload:
@@ -246,7 +251,14 @@ class BriefingService:
                     item.created_at = old.created_at
                     if "status" not in raw_items[index]:
                         item.status = old.status
-        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"))
+        mail = payload.get("mail")
+        if "mail" in payload:
+            if not isinstance(mail, list) or any(
+                not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
+                or row.get("category") not in {"selected", "filtered"} for row in mail
+            ):
+                raise ValueError("mail must be a list of classified candidate snapshots")
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
         return detail

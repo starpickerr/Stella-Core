@@ -138,17 +138,25 @@ def assign_section_and_score(item: SourceItem, included: bool) -> Tuple[str, int
     return section, score
 
 
-def filter_candidates(
+def classify_candidates(
     rows: Iterable[Tuple[SourceItem, Optional[EmailMessage]]],
     rules: Sequence[FilterRule],
-) -> Tuple[List[ScoredCandidate], int]:
-    """Split upserted catalog rows into kept candidates vs filtered count."""
+) -> Tuple[List[ScoredCandidate], List[dict]]:
+    """Classify each actual candidate before any thread merging."""
     kept: List[ScoredCandidate] = []
-    filtered = 0
+    mail = []
     for item, email in rows:
-        keep, included, _reason = decide(item, email, rules)
+        keep, included, reason = decide(item, email, rules)
+        mail.append({
+            "id": item.id, "source": item.source, "account_id": item.account_id,
+            "source_id": item.source_id, "thread_id": item.thread_id,
+            "sender": item.sender, "sender_email": email.sender_email if email else "",
+            "title": item.title, "snippet": item.snippet, "occurred_at": item.occurred_at,
+            "url": item.url, "body": str(item.payload.get("body") or item.snippet),
+            "body_available": "body" in item.payload,
+            "category": "selected" if keep else "filtered", "filter_reason": reason,
+        })
         if not keep:
-            filtered += 1
             continue
         section, score = assign_section_and_score(item, included)
         kept.append(
@@ -156,7 +164,12 @@ def filter_candidates(
                 item=item, email=email, section=section, score=score, included=included
             )
         )
-    return kept, filtered
+    return kept, mail
+
+
+def filter_candidates(rows, rules) -> Tuple[List[ScoredCandidate], int]:
+    kept, mail = classify_candidates(rows, rules)
+    return kept, sum(row["category"] == "filtered" for row in mail)
 
 
 def fetched_to_payload(fetched: FetchedItem) -> dict:
