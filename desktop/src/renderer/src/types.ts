@@ -793,3 +793,76 @@ declare global {
     electronAPI?: ElectronAPI
   }
 }
+
+// Briefings share the backend snapshot and rule shapes.
+export type BriefingKind = 'morning' | 'followup' | 'meeting'
+export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
+export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
+
+export interface Briefing {
+  id: string
+  kind: BriefingKind
+  status: BriefingStatus
+  title: string
+  body: string
+  fetched_count: number
+  kept_count: number
+  filtered_count: number
+  error_message: string
+  generated_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BriefingItem {
+  id: string
+  briefing_id: string
+  source_item_id: string | null
+  source: string
+  account_id: string
+  source_id: string
+  thread_id: string
+  section: 'action' | 'fyi'
+  status: BriefingItemStatus
+  score: number
+  sender: string
+  title: string
+  snippet: string
+  occurred_at: string
+  url: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+  payload: Record<string, unknown>
+}
+
+export interface BriefingDetail {
+  briefing: Briefing
+  items: BriefingItem[]
+}
+
+export interface BriefingRule {
+  id: string
+  enabled: boolean
+  source: string
+  action: 'include' | 'exclude'
+  match_field: 'sender' | 'sender_email' | 'sender_domain' | 'title' | 'list_id'
+  match_op: 'eq' | 'contains'
+  match_value: string
+  note: string
+  created_at: string
+  updated_at: string
+}
+
+export type BriefingRuleInput = Pick<BriefingRule, 'action' | 'match_field' | 'match_op' | 'match_value'>
+  & Partial<Pick<BriefingRule, 'enabled' | 'source' | 'note'>>
+
+export interface BriefingSettings {
+  host: string
+  user: string
+  port: number | string
+  password_set: boolean
+  configured: boolean
+  missing: string[]
+  folder: string
+}
