@@ -7,11 +7,11 @@ from common.log import logger
 
 
 class BriefingTool(BaseTool):
-    """Generate and inspect morning briefings (same store as the Briefing page)."""
+    """Generate, update and inspect daily briefings (same store as the Briefing page)."""
 
     name: str = "briefing"
     description: str = (
-        "晨间简报工具：拉取邮件候选、生成今日简报、查看历史、标记条目、管理过滤规则。\n\n"
+        "每日简报工具：拉取邮件候选、生成今日简报、查看历史、标记条目、管理过滤规则。\n\n"
         "当用户提到晨报、今日简报、邮件摘要、标记已处理、不看某发件人时使用。\n"
         "使用方法：\n"
         "- 生成今日简报：action='run'（可选 briefing_date='2026-09-09'）\n"
@@ -42,6 +42,11 @@ class BriefingTool(BaseTool):
             "briefing_date": {
                 "type": "string",
                 "description": "YYYY-MM-DD，run 时不填则为今天",
+            },
+            "operation": {
+                "type": "string",
+                "enum": ["create", "update", "upsert"],
+                "description": "create 首次生成（已有则直接返回）；update 更新当天主简报；默认 upsert 自动选择",
             },
             "kind": {
                 "type": "string",
@@ -145,6 +150,7 @@ class BriefingTool(BaseTool):
         detail = pipeline.run(
             kind=params.get("kind") or "morning",
             briefing_date=params.get("briefing_date"),
+            operation=params.get("operation", "upsert"),
         )
         briefing = detail["briefing"]
         output = self._format_detail(detail, briefing)

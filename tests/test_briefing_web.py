@@ -1,4 +1,5 @@
 """Authenticated briefing handlers with a real isolated SQLite service."""
+from datetime import datetime, timezone
 import json
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -11,6 +12,14 @@ from agent.briefing.sources.base import FetchedItem
 from agent.briefing.sources.static import StaticSource
 from agent.briefing.store import BriefingStore
 from channel.web import web_channel
+
+
+@pytest.fixture(autouse=True)
+def fixed_briefing_clock(monkeypatch):
+    monkeypatch.setattr(
+        "agent.briefing.pipeline._now",
+        lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc),
+    )
 
 
 @pytest.fixture
@@ -116,3 +125,16 @@ def test_settings_save_preserves_password_on_blank_update(api):
     updated = call(web_channel.BriefingSettingsHandler, body={"password": "", "folder": "Work"})
     assert updated["settings"]["folder"] == "Work"
     assert updated["settings"]["password_set"] is True
+
+
+def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
+    _, auth = api
+    first = call(web_channel.BriefingRunHandler, body={"briefing_date": "2026-09-09", "operation": "create"})
+    call(web_channel.BriefingItemStatusHandler, body={"id": first["items"][0]["id"], "status": "done"})
+    second = call(web_channel.BriefingRunHandler, body={"briefing_date": "2026-09-09", "operation": "update"})
+    snapshot = call(web_channel.BriefingRevisionHandler, "GET", args=(first["briefing"]["id"], "1"))
+    assert snapshot["items"][0]["status"] == "undo"
+    assert second["items"][0]["status"] == "done"
+    assert len(snapshot["revisions"]) == 2
+    assert call(web_channel.BriefingRevisionHandler, "GET", args=(first["briefing"]["id"], "99"))["status"] == "error"
+    assert auth.call_count == 5

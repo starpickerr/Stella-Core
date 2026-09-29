@@ -2009,6 +2009,7 @@ class WebChannel(ChatChannel):
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
             '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
             '/api/briefings/settings', 'BriefingSettingsHandler',
+            '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
             '/api/briefings/(.*)', 'BriefingDetailHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
@@ -2071,14 +2072,22 @@ class WebChannel(ChatChannel):
         except OSError as e:
             _log_bind_failure(host, port, e)
             raise
+        from agent.briefing.scheduler import BriefingScheduler
+        self._briefing_scheduler = BriefingScheduler()
+        self._briefing_scheduler.start()
         SERVING.set()
         _log_startup_banner()
         try:
             server.serve()
         except (KeyboardInterrupt, SystemExit):
             server.stop()
+        finally:
+            self._briefing_scheduler.stop()
 
     def stop(self):
+        scheduler = getattr(self, "_briefing_scheduler", None)
+        if scheduler:
+            scheduler.stop()
         if self._http_server:
             try:
                 self._http_server.stop()
@@ -5961,6 +5970,12 @@ class BriefingsHandler:
         return _briefing_response(operation)
 
 
+class BriefingRevisionHandler:
+    def GET(self, briefing_id, number):
+        from urllib.parse import unquote
+        return _briefing_response(lambda: _briefing_service().get_revision(unquote(briefing_id), int(number)))
+
+
 class BriefingDetailHandler:
     def GET(self, briefing_id):
         def operation():
@@ -5980,6 +5995,7 @@ class BriefingRunHandler:
             return _briefing_pipeline(service).run(
                 kind=body.get("kind") or "morning",
                 briefing_date=body.get("briefing_date"),
+                operation=body.get("operation", "upsert"),
             )
         return _briefing_response(operation)
 

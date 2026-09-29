@@ -62,10 +62,12 @@ CREATE TABLE IF NOT EXISTS email_messages (
 -- brf-2026-09-09-morning). Sources are not stored on this row.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS briefings (
+    window_start     TEXT,
+    window_end       TEXT,
     id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
     kind             TEXT    NOT NULL DEFAULT 'morning'
                              CHECK (kind IN (
-                                 'morning',                     -- morning briefing
+                                 'morning',                     -- daily main briefing (legacy key)
                                  'followup',                    -- follow-up (reserved)
                                  'meeting'                      -- pre-meeting (reserved)
                              )),
@@ -223,4 +225,14 @@ CREATE TABLE IF NOT EXISTS briefing_candidates (
     briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
     source_item_id TEXT NOT NULL REFERENCES source_items(id) ON DELETE CASCADE,
     PRIMARY KEY (briefing_id, source_item_id)
+);
+
+-- Immutable generation/update snapshots, including copied cards.
+CREATE TABLE IF NOT EXISTS briefing_revisions (
+    briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL CHECK (number > 0),
+    trigger TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    PRIMARY KEY (briefing_id, number)
 );

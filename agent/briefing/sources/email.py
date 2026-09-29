@@ -17,7 +17,6 @@ from typing import Callable, Dict, List, Optional
 
 from agent.briefing.sources.base import FetchResult, FetchedItem
 
-_MAX_FETCH = 200
 _DEFAULT_LOOKBACK_DAYS = 2
 
 
@@ -233,7 +232,7 @@ class EmailSource:
             if last_validity and last_validity != uidvalidity:
                 last_uid = 0
 
-            uids = self._search_uids(client, last_uid)
+            uids = self._search_uids(client, last_uid, cursors.get("since"))
             items: List[FetchedItem] = []
             max_uid = last_uid
             for uid in sorted(set(uids), key=int):
@@ -246,8 +245,6 @@ class EmailSource:
                 items.append(parse_rfc822(raw, uid=uid, account_id=self.account_id, uidvalidity=uidvalidity))
                 if number > max_uid:
                     max_uid = number
-                if len(items) >= _MAX_FETCH:
-                    break
             return FetchResult(
                 items=items,
                 cursors={
@@ -261,11 +258,16 @@ class EmailSource:
             except Exception:
                 pass
 
-    def _search_uids(self, client, last_uid: int) -> List[str]:
+    def _search_uids(self, client, last_uid: int, window_start: Optional[str] = None) -> List[str]:
         if last_uid > 0:
             status, payload = client.uid("SEARCH", None, "UID", f"{last_uid + 1}:*")
         else:
-            since = (date.today() - timedelta(days=self.lookback_days)).strftime("%d-%b-%Y")
+            if window_start:
+                # IMAP SINCE uses the server's internal date, with day precision.
+                since_day = datetime.fromisoformat(window_start.replace("Z", "+00:00")).date() - timedelta(days=1)
+            else:
+                since_day = date.today() - timedelta(days=self.lookback_days)
+            since = since_day.strftime("%d-%b-%Y")
             status, payload = client.uid("SEARCH", None, "SINCE", since)
         if status != "OK":
             raise RuntimeError(f"IMAP SEARCH failed: {status}")

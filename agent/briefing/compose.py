@@ -39,7 +39,7 @@ def merge_threads(candidates: Sequence[ScoredCandidate]) -> List[ScoredCandidate
 def _date_title(briefing_date: str, kind: str) -> str:
     day = date.fromisoformat(briefing_date)
     if kind == "morning":
-        return f"{day.month} 月 {day.day} 日晨报"
+        return f"{day.year}年{day.month}月{day.day}日·简报"
     if kind == "followup":
         return f"{day.month} 月 {day.day} 日跟进"
     if kind == "meeting":

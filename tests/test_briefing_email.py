@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from email.message import EmailMessage as RfcMessage
 
 from agent.briefing.pipeline import BriefingPipeline
@@ -5,6 +6,14 @@ from agent.briefing.service import BriefingService
 from agent.briefing.sources.email import parse_rfc822, EmailSource
 from agent.briefing.store import BriefingStore
 from agent.tools.briefing.briefing_tool import BriefingTool
+
+
+@pytest.fixture(autouse=True)
+def fixed_briefing_clock(monkeypatch):
+    monkeypatch.setattr(
+        "agent.briefing.pipeline._now",
+        lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc),
+    )
 
 
 def _raw(
@@ -213,3 +222,16 @@ def test_connection_verifies_ssl_and_logs_out_on_failed_login():
         if sys.version_info >= (3, 9):
             assert connect.call_args.kwargs["timeout"] == 30
         client.logout.assert_called_once_with()
+
+
+def test_window_start_searches_offline_gap_and_fetches_over_200_messages():
+    class RecordingIMAP(FakeIMAP):
+        def uid(self, command, *args):
+            if command == "SEARCH":
+                self.search_args = args
+            return super().uid(command, *args)
+    fake = RecordingIMAP([(i, _raw(msgid=f"<mail-{i}@x>")) for i in range(1, 202)])
+    result = EmailSource(opener=lambda: fake).fetch({"since": "2026-08-01T05:00:00Z"})
+    assert fake.search_args == (None, "SINCE", "31-Jul-2026")
+    assert len(result.items) == 201
+    assert result.cursors["imap_uid"] == "201"
