@@ -8,6 +8,8 @@ import type {
   MemoryCategory,
   MemoryPage,
   SchedulerTask,
+  TaskSchedule,
+  TaskAction,
   Attachment,
   SessionsPage,
   SessionSettingsState,
