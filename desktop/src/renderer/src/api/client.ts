@@ -29,6 +29,7 @@ import type {
   PeriodType,
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox,
+  BriefingSource, ElearningSettings, ElearningSettingsInput,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -611,8 +612,32 @@ class ApiClient {
     return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}/revisions/${number}`)
   }
 
-  async runBriefing(operation: 'create' | 'update', briefingDate?: string): Promise<BriefingDetail> {
-    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate })
+  async runBriefing(operation: 'create' | 'update', briefingDate?: string, sources?: string[]): Promise<BriefingDetail> {
+    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate, sources })
+  }
+
+  async getBriefingSources(): Promise<BriefingSource[]> {
+    return (await this.briefingRequest<{ sources: BriefingSource[] }>('/api/briefings/sources')).sources
+  }
+
+  async getElearningSettings(): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning')).settings
+  }
+
+  async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
+  }
+
+  async importElearningCrawler(projectPath?: string): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', { action: 'import', project_path: projectPath })).settings
+  }
+
+  async deleteElearningSource(): Promise<void> {
+    await this.briefingRequest('/api/briefings/elearning', { action: 'delete' })
+  }
+
+  async testElearningSettings(payload: ElearningSettingsInput): Promise<{ id: string; name: string }[]> {
+    return (await this.briefingRequest<{ courses: { id: string; name: string }[] }>('/api/briefings/elearning/test', payload)).courses
   }
 
   async updateBriefingItem(id: string, status: BriefingItemStatus): Promise<BriefingItem> {

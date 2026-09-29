@@ -805,6 +805,8 @@ export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
 export interface Briefing {
+  source_windows: Record<string, { source: string; account_id: string; name: string; start: string; end: string }>
+  updated_sources: string[]
   rule_text: string
   mail_snapshot_available: boolean
   window_start: string | null
@@ -908,3 +910,24 @@ export interface BriefingMailboxInput {
   folder: string
   password?: string
 }
+
+export interface BriefingSource {
+  id: string
+  source: string
+  account_id: string
+  name: string
+}
+
+export interface ElearningSettings {
+  enabled: boolean
+  configured: boolean
+  base_url: string
+  username: string
+  courses: string[]
+  account_id: string
+  password_set: boolean
+  password_masked: string
+  token_set: boolean
+}
+
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
