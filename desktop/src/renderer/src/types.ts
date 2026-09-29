@@ -800,6 +800,7 @@ export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
 export interface Briefing {
+  mail_snapshot_available: boolean
   window_start: string | null
   window_end: string | null
   id: string
@@ -838,9 +839,28 @@ export interface BriefingItem {
   payload: Record<string, unknown>
 }
 
+export interface BriefingMail {
+  id: string
+  source: string
+  account_id: string
+  source_id: string
+  thread_id: string
+  sender: string
+  sender_email: string
+  title: string
+  snippet: string
+  occurred_at: string
+  url: string
+  body: string
+  body_available: boolean
+  category: 'selected' | 'filtered'
+  filter_reason: string
+}
+
 export interface BriefingDetail {
   briefing: Briefing
   items: BriefingItem[]
+  mail: BriefingMail[]
   revisions: { number: number; trigger: string; created_at: string; status: BriefingStatus }[]
 }
 
