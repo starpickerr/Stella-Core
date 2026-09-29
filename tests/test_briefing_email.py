@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import pytest
 from email.message import EmailMessage as RfcMessage
 
 from agent.briefing.pipeline import BriefingPipeline
@@ -235,3 +236,33 @@ def test_window_start_searches_offline_gap_and_fetches_over_200_messages():
     assert fake.search_args == (None, "SINCE", "31-Jul-2026")
     assert len(result.items) == 201
     assert result.cursors["imap_uid"] == "201"
+
+
+def test_dns_error_is_reported_before_authorization_code_validation():
+    import socket
+    from unittest.mock import patch
+    source = EmailSource(host="imap.gmail.com", user="ada@gmail.com", password="private-code")
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", side_effect=socket.gaierror(8, "nodename nor servname provided")):
+        with pytest.raises(ValueError, match="尚未验证授权码") as error:
+            source._connect()
+    assert "imap.gmail.com" in str(error.value)
+    assert "private-code" not in str(error.value)
+
+
+def test_login_error_cleans_up_and_does_not_expose_code():
+    import imaplib
+    from unittest.mock import patch
+    source = EmailSource(host="imap.gmail.com", user="ada@gmail.com", password="private-code")
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL") as connect:
+        connect.return_value.login.side_effect = imaplib.IMAP4.error("AUTHENTICATIONFAILED private-code")
+        with pytest.raises(ValueError, match="登录失败") as error:
+            source._connect()
+        connect.return_value.logout.assert_called_once_with()
+    assert "private-code" not in str(error.value)
+
+
+def test_connection_check_opens_folder_readonly_and_logs_out():
+    fake = FakeIMAP([])
+    source = EmailSource(opener=lambda: fake)
+    source.check_connection()
+    assert fake.logged_out

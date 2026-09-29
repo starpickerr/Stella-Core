@@ -2009,6 +2009,7 @@ class WebChannel(ChatChannel):
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
             '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
             '/api/briefings/settings', 'BriefingSettingsHandler',
+            '/api/briefings/settings/test', 'BriefingSettingsTestHandler',
             '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
             '/api/briefings/(.*)', 'BriefingDetailHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
@@ -6045,6 +6046,15 @@ class BriefingSettingsHandler:
         def operation():
             from agent.briefing.settings import save_mailbox
             return {"settings": save_mailbox(_briefing_body())}
+        return _briefing_response(operation)
+
+
+class BriefingSettingsTestHandler:
+    def POST(self):
+        def operation():
+            from agent.briefing.settings import check_mailbox_connection
+            check_mailbox_connection(_briefing_body())
+            return {"connected": True}
         return _briefing_response(operation)
 
 

@@ -138,3 +138,15 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
     assert len(snapshot["revisions"]) == 2
     assert call(web_channel.BriefingRevisionHandler, "GET", args=(first["briefing"]["id"], "99"))["status"] == "error"
     assert auth.call_count == 5
+
+
+def test_connection_endpoint_reports_success_and_configuration_errors(api):
+    _, auth = api
+    with patch("agent.briefing.settings.check_mailbox_connection") as check:
+        result = call(web_channel.BriefingSettingsTestHandler, body={"host": "imap.gmail.com", "password": ""})
+        assert result == {"status": "success", "connected": True}
+        check.assert_called_once_with({"host": "imap.gmail.com", "password": ""})
+        check.side_effect = ValueError("无法解析 IMAP 服务器")
+        result = call(web_channel.BriefingSettingsTestHandler)
+        assert result == {"status": "error", "message": "无法解析 IMAP 服务器"}
+    assert auth.call_count == 2

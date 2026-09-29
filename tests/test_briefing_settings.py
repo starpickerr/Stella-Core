@@ -49,3 +49,25 @@ def test_saved_settings_are_used_by_email_source(tmp_path):
     assert settings["host"] == "imap.example.com"
     assert settings["password"] == "secret"
     assert settings["ssl"] is True
+
+
+@pytest.mark.parametrize("host", ["https://imap.gmail.com", "imap.gmail.com:993", "ada@gmail.com", "imap.gmail.com/path", "imap. gmail.com"])
+def test_host_format_error_does_not_overwrite_saved_password(tmp_path, host):
+    path = tmp_path / "mailbox.json"
+    save_mailbox({"host": "imap.gmail.com", "user": "ada@gmail.com", "password": "old-secret"}, path)
+    original = path.read_bytes()
+    with pytest.raises(ValueError, match="只填写主机名"):
+        save_mailbox({"host": host, "password": "replacement"}, path)
+    assert path.read_bytes() == original
+
+
+def test_connection_check_uses_saved_password_without_saving_draft(tmp_path):
+    from agent.briefing.settings import check_mailbox_connection
+    path = tmp_path / "mailbox.json"
+    save_mailbox({"host": "imap.gmail.com", "user": "ada@gmail.com", "password": "saved-secret"}, path)
+    original = path.read_bytes()
+    with patch("agent.briefing.sources.email.EmailSource") as source:
+        check_mailbox_connection({"host": "imap.other.example", "password": "", "folder": "Work"}, path)
+    source.assert_called_once_with(host="imap.other.example", user="ada@gmail.com", password="saved-secret", port=993, folder="Work")
+    source.return_value.check_connection.assert_called_once_with()
+    assert path.read_bytes() == original
