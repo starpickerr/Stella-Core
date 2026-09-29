@@ -19,12 +19,12 @@ export const BriefingDetail: React.FC<{
   const briefing = detail.briefing
   const [category, setCategory] = useState<'candidate' | 'selected' | 'filtered' | null>(null)
   useEffect(() => { setCategory(null) }, [briefing.id])
-  const mail = detail.mail ?? []
+  const mail = (detail.mail ?? []).filter((row) => row.source === 'email')
   const visibleMail = category === 'candidate' ? mail : mail.filter((row) => row.category === category)
   const categories = [
-    { key: 'candidate' as const, count: briefing.fetched_count },
-    { key: 'selected' as const, count: briefing.kept_count },
-    { key: 'filtered' as const, count: briefing.filtered_count },
+    { key: 'candidate' as const, count: briefing.mail_snapshot_available ? mail.length : briefing.fetched_count },
+    { key: 'selected' as const, count: briefing.mail_snapshot_available ? mail.filter((row) => row.category === 'selected').length : briefing.kept_count },
+    { key: 'filtered' as const, count: briefing.mail_snapshot_available ? mail.filter((row) => row.category === 'filtered').length : briefing.filtered_count },
   ]
   return <div className="flex flex-col-reverse md:flex-row items-start gap-6">
     <section aria-busy={loading} className="min-w-0 w-full flex-1 space-y-5">
@@ -35,6 +35,7 @@ export const BriefingDetail: React.FC<{
             <h2 className="text-lg font-semibold text-content">{getLang() === 'en' ? `${briefing.id.slice(4, 14)} · ${t('menu_briefing')}` : briefing.title || briefing.id}</h2>
             <span className={`text-xs shrink-0 ${briefing.status === 'failed' ? 'text-danger' : 'text-content-secondary'}`}>{t(`briefing_${briefing.status}`)}</span>
           </div>
+          <p className="text-sm text-content-secondary mt-2">{t('briefing_item_count')}：<span className="font-semibold text-content tabular-nums">{detail.items.length}</span></p>
           {briefing.generated_at && <p className="text-xs text-content-tertiary mt-1">{new Date(briefing.generated_at).toLocaleString()}</p>}
         </div>
         {briefing.window_start && briefing.window_end && <p className="text-xs text-content-secondary leading-relaxed">{t('briefing_window')}：{new Date(briefing.window_start).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })} → {new Date(briefing.window_end).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })}</p>}
@@ -43,14 +44,17 @@ export const BriefingDetail: React.FC<{
           <p className="text-xs text-content-tertiary mt-1 leading-relaxed">{t('briefing_readonly')}</p>
         </div>}
         {briefing.error_message && <div role="alert" className="rounded-card border border-danger-border bg-danger-soft text-danger text-sm p-3 break-words">{briefing.error_message}</div>}
-        <div className="grid grid-cols-3 gap-3" role="group" aria-label={t('briefing_mail_categories')}>
-          {categories.map((row) => <button key={row.key} type="button" aria-pressed={category === row.key} onClick={() => setCategory(category === row.key ? null : row.key)}
-            className={`rounded-card border p-3 text-left transition-colors ${category === row.key ? 'border-accent bg-accent-soft' : 'border-transparent bg-surface-2 hover:border-default'}`}>
-            <span className="block text-xl font-semibold text-content tabular-nums">{row.count}</span>
-            <span className="block text-xs text-content-secondary mt-1">{t(`briefing_mail_${row.key}`)}</span>
-            <span className="block text-[10px] text-content-tertiary mt-0.5 capitalize">{row.key}</span>
-          </button>)}
-        </div>
+        <section className="space-y-3" aria-label={t('briefing_email_section')}>
+          <h3 className="text-sm font-semibold text-content">{t('briefing_email_section')}</h3>
+          <div className="grid grid-cols-3 gap-3" role="group" aria-label={t('briefing_mail_categories')}>
+            {categories.map((row) => <button key={row.key} type="button" aria-pressed={category === row.key} onClick={() => setCategory(category === row.key ? null : row.key)}
+              className={`rounded-card border p-3 text-left transition-colors ${category === row.key ? 'border-accent bg-accent-soft' : 'border-transparent bg-surface-2 hover:border-default'}`}>
+              <span className="block text-xl font-semibold text-content tabular-nums">{row.count}</span>
+              <span className="block text-xs text-content-secondary mt-1">{t(`briefing_mail_${row.key}`)}</span>
+              <span className="block text-[10px] text-content-tertiary mt-0.5 capitalize">{row.key}</span>
+            </button>)}
+          </div>
+        </section>
         {category ? <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-content">{t(`briefing_mail_${category}`)}</h3>

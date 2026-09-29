@@ -880,12 +880,30 @@ export interface BriefingRule {
 export type BriefingRuleInput = Pick<BriefingRule, 'action' | 'match_field' | 'match_op' | 'match_value'>
   & Partial<Pick<BriefingRule, 'enabled' | 'source' | 'note'>>
 
-export interface BriefingSettings {
+export interface BriefingMailbox {
+  id: string
   host: string
   user: string
   port: number | string
   password_set: boolean
+  password_masked: string
   configured: boolean
   missing: string[]
   folder: string
+}
+
+export interface BriefingSettings {
+  mailboxes: BriefingMailbox[]
+  configured: boolean
+  missing: string[]
+}
+
+export interface BriefingMailboxInput {
+  id?: string
+  action?: 'add' | 'save'
+  host: string
+  user: string
+  port: number
+  folder: string
+  password?: string
 }
