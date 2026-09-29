@@ -8,6 +8,8 @@ import type {
   MemoryCategory,
   MemoryPage,
   SchedulerTask,
+  TaskSchedule,
+  TaskAction,
   Attachment,
   SessionsPage,
   SessionSettingsState,
@@ -25,6 +27,8 @@ import type {
   PeriodStatement,
   PeriodStatementItem,
   PeriodType,
+  Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
+  BriefingRule, BriefingRuleInput, BriefingSettings,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -581,6 +585,58 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId }),
     })
+  }
+
+  // ---------------------------------------------------------
+  // Briefings
+  // ---------------------------------------------------------
+
+  private async briefingRequest<T>(path: string, body?: unknown): Promise<T> {
+    const data = await this.request<T & ApiResult>(path, body === undefined ? undefined : {
+      method: 'POST', body: JSON.stringify(body),
+    })
+    if (data.status !== 'success') throw new Error(data.message || 'Briefing request failed')
+    return data
+  }
+
+  async getBriefings(): Promise<Briefing[]> {
+    return (await this.briefingRequest<{ briefings: Briefing[] }>('/api/briefings?kind=morning')).briefings
+  }
+
+  async getBriefing(id: string): Promise<BriefingDetail> {
+    return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}`)
+  }
+
+  async runBriefing(briefingDate?: string): Promise<BriefingDetail> {
+    return this.briefingRequest('/api/briefings/run', { kind: 'morning', briefing_date: briefingDate })
+  }
+
+  async updateBriefingItem(id: string, status: BriefingItemStatus): Promise<BriefingItem> {
+    return (await this.briefingRequest<{ item: BriefingItem }>('/api/briefings/items/status', { id, status })).item
+  }
+
+  async getBriefingRules(): Promise<BriefingRule[]> {
+    return (await this.briefingRequest<{ rules: BriefingRule[] }>('/api/briefings/rules')).rules
+  }
+
+  async createBriefingRule(payload: BriefingRuleInput): Promise<BriefingRule> {
+    return (await this.briefingRequest<{ rule: BriefingRule }>('/api/briefings/rules', payload)).rule
+  }
+
+  async updateBriefingRule(id: string, payload: Partial<BriefingRuleInput>): Promise<BriefingRule> {
+    return (await this.briefingRequest<{ rule: BriefingRule }>('/api/briefings/rules/update', { ...payload, id })).rule
+  }
+
+  async deleteBriefingRule(id: string): Promise<void> {
+    await this.briefingRequest('/api/briefings/rules/delete', { id })
+  }
+
+  async saveBriefingSettings(payload: { host: string; user: string; port: number; folder: string; password: string }): Promise<BriefingSettings> {
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', payload)).settings
+  }
+
+  async getBriefingSettings(): Promise<BriefingSettings> {
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
   }
 
   // ---------------------------------------------------------

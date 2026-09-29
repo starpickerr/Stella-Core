@@ -24,6 +24,9 @@ from agent.tools.subagent.subagent import SubagentTool
 # Import bills tool (personal ledger; SQLite only, no extra dependencies)
 from agent.tools.bills.bills_tool import BillsTool
 
+# Import briefing tool (SQLite + stdlib imaplib)
+from agent.tools.briefing.briefing_tool import BriefingTool
+
 # Import tools with optional dependencies
 def _import_optional_tools():
     """Import tools that have optional dependencies"""
@@ -143,6 +146,7 @@ __all__ = [
     'EvolutionUndoTool',
     'SubagentTool',
     'BillsTool',
+    'BriefingTool',
     'EnvConfig',
     'SchedulerTool',
     'WebSearch',
