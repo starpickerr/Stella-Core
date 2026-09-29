@@ -2,6 +2,10 @@
 
 Cross-platform desktop client for Stella, built with Electron + React + TypeScript.
 
+New feature development targets the desktop client. The Python HTTP service remains the desktop backend; the Web console is no longer maintained.
+
+The **Briefing** page supports IMAP mailbox setup, daily email briefings, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
+
 ## Development
 
 ### Prerequisites
@@ -36,6 +40,14 @@ npm run dev:main
 ```
 
 The app will automatically start the Python backend from the parent directory.
+
+### Checks
+
+```bash
+npm run typecheck
+```
+
+`npm run build` checks both renderer and main-process types before compiling.
 
 ### Build
 
