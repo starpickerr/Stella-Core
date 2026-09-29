@@ -11,7 +11,7 @@
 5. 在设置的「规则文稿」中写普通文字或 Markdown，无需选择固定字段、条件或动作。默认模板按目标、筛选原则、简报写作要求组织，类似 Skill 正文；可直接修改模板并保存。可以要求后缀匹配、保留例外、语义判断、排序和写作风格，例如「排除发件地址以 @promo.example 结尾的邮件；保留作业截止日期通知；按紧急程度排序」。规则中的「删除」解释为排除出简报，不删除邮箱里的原邮件。旧字段规则会转换成可编辑的文字。
 6. 修改规则后更新今日简报。已经同步过的候选邮件仍会重新过滤，已有条目的处理状态不会被重置。旧版本的邮件分类、内容和过滤原因保持原样。
 
-「来源管理」中的 eLearning 沿用 `elearning_crawler` 的 Canvas 读取和复旦统一身份认证流程。填写学工号、密码，点击「测试连接并读取课程」，从返回的课程列表中勾选，也可点击「选择全部课程」或「取消全选」，然后保存。课程没有手动输入框；重新打开设置后测试连接可刷新可选列表，原来的课程选择仍被保留。已有爬虫配置可通过「导入已有配置」迁移，源码运行时默认寻找同级 `elearning_crawler` 目录，也可填写项目路径。导入只读取配置、环境文件和登录状态，不执行或改动原项目。密码显示固定掩码，留空保留，输入新值保存后替换；账号或地址变化时不会沿用其他账号的凭据。
+「来源管理」中的 eLearning 使用项目内 Canvas 读取和复旦统一身份认证流程。填写学工号、密码，点击「测试连接并读取课程」，从返回的课程列表中勾选，也可点击「选择全部课程」或「取消全选」，然后保存。课程没有手动输入框；重新打开设置后测试连接可刷新可选列表，原来的课程选择仍被保留。密码显示固定掩码，留空保留，输入新值保存后替换；账号或地址变化时不会沿用其他账号的凭据。
 
 在每个邮箱及 eLearning 设置中勾选「启用此来源」并保存，控制该来源是否参与生成、更新和定时任务。旧邮箱默认启用，停用保留凭据、同步身份和历史，重新启用继续原同步边界。主页只保留生成/更新按钮，使用全部已启用来源。Agent 仍可在已启用来源中指定部分更新；停用或未选来源的候选、筛选结论、条目内容和处理状态沿用当天当前版本，Agent 重新组织合并后的正文。详情按「邮件」「eLearning」分别展示候选、精选和过滤信息。
 
@@ -65,7 +65,7 @@ Agent 为每个候选给出精选或过滤的理由，并为精选信息提供�
 
 每日主简报沿用 `morning` 类型和既有 ID 以兼容旧数据，同日更新复用 ID。正文、条目、分类邮件、本次使用的规则文稿 `rule_text` 及不可变的版本快照在同一事务中保存，失败重试保留此前成功内容；同进程共享存储的运行串行执行，游标在成功保存后推进。
 
-eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登录状态存放在 `briefing/elearning-sessions/`，均以 `0600` 权限原子写入。密码、Token 和 Cookie 不返回客户端或写入候选目录。导入得到的 Token 只用于该来源，不读取进程中的 `CANVAS_TOKEN`。新增来源实现 `Source.fetch` / `FetchedItem` 并加入 `sources/registry.py`，上层筛选、正文、历史和条目状态共用同一流程。
+eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登录状态存放在 `briefing/elearning-sessions/`，均以 `0600` 权限原子写入。密码、Token 和 Cookie 不返回客户端或写入候选目录，不读取外部项目的配置、环境文件或登录状态。新增来源实现 `Source.fetch` / `FetchedItem` 并加入 `sources/registry.py`，上层筛选、正文、历史和条目状态共用同一流程。
 
 ## 时间窗口与定时生成
 
@@ -88,7 +88,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 - `scheduler.py`：向项目统一定时任务注册每日简报，调度、补生成和重试由 `agent/scheduler` 执行。
 - `settings.py`：用户级邮箱配置，不依赖 Agent 模型。
 - `sources/email.py`：IMAP 增量拉取与 MIME 解析。
-- `elearning_settings.py` / `elearning/`：eLearning 配置迁移、账号登录和 Canvas 资源读取。
+- `elearning_settings.py` / `elearning/`：eLearning 来源设置、账号登录和 Canvas 资源读取。
 - `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择。
 - `instructions.py`：默认 Markdown 文稿和旧规则转文字。
 - `generator.py`：Agent 工具调用、逐项校验、摘要、线程合并和正文撰写。
@@ -113,7 +113,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 | POST | `/api/briefings/rules/delete` | 删除规则 |
 | GET / POST | `/api/briefings/settings` | 查询 `settings.mailboxes`；`action=add` 新增，`action=save` 按 `id` 编辑，`action=delete` 按 `id` 删除；保存返回脱敏的 `mailbox` 和完整设置 |
 | POST | `/api/briefings/settings/test` | 按 `id` 测试编辑草稿，或 `action=add` 测试新账号；已有账号授权码留空使用该账号保存值，不修改配置 |
-| GET / POST | `/api/briefings/elearning` | 查询脱敏配置；保存、`action=import` 按 `project_path` 导入、`action=delete` 删除 |
+| GET / POST | `/api/briefings/elearning` | 查询脱敏配置；保存、`action=delete` 删除 |
 | POST | `/api/briefings/elearning/test` | 测试草稿并返回课程列表；不保存设置，可刷新登录状态 |
 
 HTTP `status=success` 表示请求完成；生成结果还需检查 `briefing.status`（`completed`、`partial`、`failed`）。失败原因显示在详情中。工具端生成失败会返回失败结果。

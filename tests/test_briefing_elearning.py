@@ -1,7 +1,6 @@
 """Crawler integration tests use fake Canvas responses and private temp files."""
 import io
 import json
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -101,34 +100,6 @@ def test_elearning_tool_is_registered_and_read_only():
     assert manager.tool_classes["elearning"] is ElearningTool
     for action in ("courses", "fetch"):
         assert check_tool_call("read-only", "elearning", {"action": action})
-
-
-def test_import_crawler_copies_only_configuration_and_session_to_private_state(config_path, tmp_path):
-    root = tmp_path / "crawler"
-    (root / "config").mkdir(parents=True)
-    (root / ".private").mkdir()
-    (root / "config/config.yaml").write_text("base_url: https://elearning.fudan.edu.cn\ncourses: [42]\noutput_dir: data/output\n")
-    (root / ".env").write_text("ELEARNING_USERNAME='student'\nELEARNING_PASSWORD='p$${literal}#ass'\nCANVAS_TOKEN='token-secret'\n")
-    cookie = {"cookies": [{"domain": "elearning.fudan.edu.cn", "name": "session", "value": "cookie-secret"}]}
-    (root / ".private/session.json").write_text(json.dumps(cookie))
-    before = (root / ".env").read_bytes()
-    public = settings.import_crawler(str(root))
-    assert public["courses"] == ["42"] and public["enabled"]
-    assert "secret" not in json.dumps(public) and "${literal}" not in json.dumps(public)
-    saved = settings.load_settings()
-    assert saved["password"] == "p$${literal}#ass"
-    assert json.loads(settings.session_path(saved).read_text()) == cookie
-    assert settings.session_path(saved).stat().st_mode & 0o777 == 0o600
-    assert (root / ".env").read_bytes() == before
-    assert not (config_path.parent / "output_dir").exists()
-
-
-def test_invalid_import_leaves_existing_settings(config_path, tmp_path):
-    settings.save_settings(config())
-    before = config_path.read_bytes()
-    with pytest.raises(ValueError, match="无法导入"):
-        settings.import_crawler(str(tmp_path / "missing"))
-    assert config_path.read_bytes() == before
 
 
 class FakeCanvas:

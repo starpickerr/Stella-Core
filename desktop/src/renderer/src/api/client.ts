@@ -628,10 +628,6 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
   }
 
-  async importElearningCrawler(projectPath?: string): Promise<ElearningSettings> {
-    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', { action: 'import', project_path: projectPath })).settings
-  }
-
   async deleteElearningSource(): Promise<void> {
     await this.briefingRequest('/api/briefings/elearning', { action: 'delete' })
   }
