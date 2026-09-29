@@ -14,16 +14,17 @@ class BriefingTool(BaseTool):
     name: str = "briefing"
     description: str = (
         "每日简报工具：拉取多来源候选，由 Agent 按规则文稿筛选、撰写简报，查看历史、邮件详情和管理规则。\n\n"
-        "当用户提到晨报、今日简报、邮件摘要、标记已处理、不看某发件人时使用。\n"
+        "当用户提到晨报、今日简报、邮件摘要、eLearning 课程事项、标记已处理、不看某发件人时使用。\n"
         "使用方法：\n"
         "- 生成今日简报：action='run'（可选 briefing_date='2026-09-09'）\n"
+        "- 更新来源：action='sources' 查询可用 ID；run 的 sources 不填或 ['all'] 更新全部，也可 ['email']、['elearning'] 或指定来源 ID\n"
         "- 列表：action='list'（可选 kind='morning', status='completed'）\n"
         "- 详情：action='get', briefing_id='brf-2026-09-09-morning'\n"
         "- 改条目状态：action='item_status', item_id='…', status='done'/'undo'/'ignored'/'follow_up'\n"
-        "- 邮件：action='mail', briefing_id='…'，可选 category='candidate'/'selected'/'filtered'；source_item_id 查看正文\n"
+        "- 候选信息：action='mail', briefing_id='…'，source='email'/'elearning'/'*'，可选 category='candidate'/'selected'/'filtered'；source_item_id 查看正文\n"
         "- 规则文稿（普通文本或 Markdown）：text='排除地址以 @promo.example 结尾的邮件，保留作业通知'\n"
         "- 规则：action='add_rule' / 'list_rules' / 'update_rule' / 'delete_rule'\n\n"
-        "生成简报需要在简报设置中配置一个或多个 IMAP 邮箱；也可用 IMAP_HOST、IMAP_USER、IMAP_PASSWORD 提供初始账号。"
+        "在简报设置的来源管理中配置 IMAP 邮箱或 eLearning；也可用 IMAP_HOST、IMAP_USER、IMAP_PASSWORD 提供初始邮箱。"
     )
     params: dict = {
         "type": "object",
@@ -32,6 +33,7 @@ class BriefingTool(BaseTool):
                 "type": "string",
                 "enum": [
                     "run",
+                    "sources",
                     "list",
                     "get",
                     "mail",
@@ -53,6 +55,8 @@ class BriefingTool(BaseTool):
                 "enum": ["create", "update", "upsert"],
                 "description": "create 首次生成（已有则直接返回）；update 更新当天主简报；默认 upsert 自动选择",
             },
+            "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1,
+                        "description": "run：来源 ID 或类型；省略/['all'] 为全部。未选来源保留原内容；sources 操作查询可选 ID"},
             "kind": {
                 "type": "string",
                 "enum": ["morning", "followup", "meeting"],
@@ -70,7 +74,7 @@ class BriefingTool(BaseTool):
             "offset": {"type": "integer", "minimum": 0, "description": "mail：列表起点，每页 50 封"},
             "source": {
                 "type": "string",
-                "description": "规则来源，默认 *；'*' 表示全部",
+                "description": "规则来源默认 *；mail 可用 email/elearning/* 选择候选信息来源，默认 email",
             },
             "enabled": {"type": "boolean", "description": "update_rule：启用 / 停用规则"},
         },
@@ -94,10 +98,10 @@ class BriefingTool(BaseTool):
         if self._pipeline is not None:
             return self._pipeline
         from agent.briefing.pipeline import BriefingPipeline
-        from agent.briefing.settings import email_sources
+        from agent.briefing.sources.registry import configured_sources
         from agent.briefing.generator import AgentBriefingGenerator
 
-        return BriefingPipeline(service, email_sources(), generator=AgentBriefingGenerator(
+        return BriefingPipeline(service, configured_sources(), generator=AgentBriefingGenerator(
             model=self.model, cancel_event=self.cancel_event, progress=self.report_progress))
 
     def execute(self, params: dict) -> ToolResult:
@@ -108,6 +112,7 @@ class BriefingTool(BaseTool):
             return ToolResult.fail("缺少参数: action")
         handlers = {
             "run": self._run,
+            "sources": self._sources,
             "list": self._list,
             "get": self._get,
             "mail": self._mail,
@@ -146,20 +151,24 @@ class BriefingTool(BaseTool):
                 existing = service.get_briefing(briefing_id_for(day, params.get("kind") or "morning"))
                 if existing and existing["briefing"].generated_at:
                     return ToolResult.success("当日简报已生成，跳过定时生成。\n" + self._format_detail(existing, existing["briefing"]))
-            from agent.briefing.settings import public_mailboxes
-            if not public_mailboxes()["configured"]:
-                return ToolResult.fail("请先配置 IMAP 邮箱，定时任务稍后重试")
+            if not pipeline.sources:
+                return ToolResult.fail("请先在简报设置中配置来源，定时任务稍后重试")
         detail = pipeline.run(
             kind=params.get("kind") or "morning",
             briefing_date=params.get("briefing_date"),
             operation=params.get("operation", "upsert"),
             trigger="scheduled" if scheduled else "manual",
+            sources=params.get("sources"),
         )
         briefing = detail["briefing"]
         output = self._format_detail(detail, briefing)
         if briefing.status == "failed":
             return ToolResult.fail(output)
         return ToolResult.success(output)
+
+    def _sources(self, service, params):
+        from agent.briefing.sources.registry import public_sources
+        return ToolResult.success(json.dumps({"sources": public_sources()}, ensure_ascii=False))
 
     def _list(self, service, params: dict) -> ToolResult:
         rows = service.list_briefings(
@@ -207,7 +216,8 @@ class BriefingTool(BaseTool):
         category = params.get("category", "candidate")
         if category not in ("candidate", "selected", "filtered"):
             raise ValueError("邮件分类无效")
-        rows = [row for row in rows if row["source"] == "email" and (category == "candidate" or row["category"] == category)]
+        source = params.get("source", "email")
+        rows = [row for row in rows if (source == "*" or row["source"] == source) and (category == "candidate" or row["category"] == category)]
         offset = params.get("offset", 0)
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
             raise ValueError("offset 必须是非负整数")

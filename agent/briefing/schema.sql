@@ -59,13 +59,15 @@ CREATE TABLE IF NOT EXISTS email_messages (
 
 -- -----------------------------------------------------------------------------
 -- Briefing document: one row per user/day/kind (id convention, e.g.
--- brf-2026-09-09-morning). Sources are not stored on this row.
+-- brf-2026-09-09-morning). Source windows track successful refresh boundaries.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS briefings (
     window_start     TEXT,
     window_end       TEXT,
     mail_snapshot_available INTEGER NOT NULL DEFAULT 0,
     rule_text        TEXT    NOT NULL DEFAULT '',
+    source_windows   TEXT    NOT NULL DEFAULT '{}',
+    updated_sources  TEXT    NOT NULL DEFAULT '[]',
     id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
     kind             TEXT    NOT NULL DEFAULT 'morning'
                              CHECK (kind IN (

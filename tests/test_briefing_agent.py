@@ -180,6 +180,42 @@ def test_fixed_agent_tools_are_not_replaced_by_mcp():
     assert agent.tools == []
 
 
+def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_content(service):
+    from agent.briefing.rules import fetched_to_payload
+    email = StaticSource([item("邮件")])
+    original = FetchedItem(source="elearning", source_id="announcement:1", title="原课程公告",
+        occurred_at="2026-09-08T23:00:00Z", payload={"body": "原课程公告正文"})
+    canvas = StaticSource([original], name="elearning")
+    first_model = ScriptedModel()
+    at = lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")
+    first = BriefingPipeline(service, [email, canvas], clock=at,
+        generator=AgentBriefingGenerator(model=first_model)).run()
+    old_snapshot = next(row for row in first["mail"] if row["source"] == "elearning")
+    old_card = next(row for row in first["items"] if row.source == "elearning")
+    service.update_item_status(old_card.id, "done")
+    # Catalog changes from another/failed run must not leak into an unselected
+    # source's frozen candidate or card metadata.
+    service.upsert_source_item(fetched_to_payload(FetchedItem(source="elearning", source_id="announcement:1",
+        title="尚未同步的标题", occurred_at="2026-09-09T03:00:00Z", payload={"body": "尚未同步的正文"})))
+    canvas.fetch = lambda cursors: pytest.fail("unselected source must not fetch")
+    model = ScriptedModel()
+    result = BriefingPipeline(service, [email, canvas],
+        clock=lambda: datetime.fromisoformat("2026-09-09T15:00:00+08:00"),
+        generator=AgentBriefingGenerator(model=model)).run(operation="update", sources=["email"])
+    new_snapshot = next(row for row in result["mail"] if row["source"] == "elearning")
+    assert new_snapshot["decision"] == old_snapshot["decision"]
+    assert new_snapshot["title"] == "原课程公告" and new_snapshot["body"] == "原课程公告正文"
+    card = next(row for row in result["items"] if row.source == "elearning")
+    assert card.title == old_card.title and card.payload["body"] == old_card.payload["body"]
+    assert card.status == "done" and card.id == old_card.id
+    assert result["briefing"].status == "completed"
+    for request in model.requests:
+        text = next((part.get("text", "") for part in request.messages[-1]["content"] if part.get("type") == "text"), "")
+        if "\"candidates\"" in text:
+            data = json.loads(text[text.index("{"):])
+            assert {row["source"] for row in data["candidates"]} == {"email"}
+
+
 def test_manual_and_tool_factories_use_agent_generator(service, monkeypatch):
     from channel.web.web_channel import _briefing_pipeline
     monkeypatch.setattr("agent.briefing.settings.email_sources", lambda path=None: [])

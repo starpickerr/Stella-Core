@@ -150,7 +150,7 @@ class AgentBriefingGenerator:
             raise ValueError("简报 Agent 未提交完整结果，请检查模型配置或重试")
         return tool.submission
 
-    def generate(self, rows, rules, *, briefing_date, kind, window_start, window_end):
+    def generate(self, rows, rules, *, briefing_date, kind, window_start, window_end, preserved_decisions=None):
         self._check_cancelled()
         documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]
         rule_text = DEFAULT_RULE_TEXT + ("\n\n## 用户规则文稿（优先于默认原则）\n\n" + "\n\n---\n\n".join(documents) if documents else "")
@@ -164,9 +164,10 @@ class AgentBriefingGenerator:
                 "title": item.title, "snippet": item.snippet,
                 "occurred_at": item.occurred_at, "url": item.url,
                 "body": str(item.payload.get("body") or item.snippet),
+                "metadata": {key: value for key, value in item.payload.items() if key != "body"},
                 "body_available": "body" in item.payload})
-        previews = [{**row, "body": row["body"][:2000], "body_length": len(row["body"])} for row in entries]
-        decisions = {}
+        decisions = dict(preserved_decisions or {})
+        previews = [{**row, "body": row["body"][:2000], "body_length": len(row["body"])} for row in entries if row["id"] not in decisions]
         for number, batch in enumerate(_batches(previews), 1):
             if self.progress:
                 self.progress(f"Agent 正在筛选第 {number} 批候选信息")
@@ -189,7 +190,7 @@ class AgentBriefingGenerator:
         for entry in entries:
             decision = decisions[entry["id"]]
             mail.append({**entry, "category": "selected" if decision["selected"] else "filtered",
-                         "filter_reason": decision["reason"]})
+                         "filter_reason": decision["reason"], "decision": decision})
             if decision["selected"]:
                 item, email = by_id[entry["id"]]
                 kept.append(ScoredCandidate(replace(item, snippet=decision["summary"]), email,
@@ -207,7 +208,9 @@ class AgentBriefingGenerator:
             combined.append(replace(row, item=replace(row.item, snippet=summary)))
         ranked = combined
         cards = [{"source_item_id": row.item.id, "section": row.section, "score": row.score,
-                  "snippet": row.item.snippet, "sort_order": index} for index, row in enumerate(ranked)]
+                  "snippet": row.item.snippet, "sort_order": index,
+                  **{key: getattr(row.item, key) for key in ("source", "account_id", "source_id", "thread_id", "sender", "title", "occurred_at", "url", "payload")}}
+                 for index, row in enumerate(ranked)]
         summaries = [{"id": row.item.id, "source": row.item.source, "sender": row.item.sender,
                       "title": row.item.title, "summary": row.item.snippet, "section": row.section,
                       "occurred_at": row.item.occurred_at} for row in ranked]

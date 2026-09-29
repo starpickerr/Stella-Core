@@ -101,7 +101,7 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
     sources = [StaticSource(error=RuntimeError("offline"))]
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     tool = BriefingTool(service=service)
-    monkeypatch.setattr(tool, "_get_pipeline", lambda svc: BriefingPipeline(svc, sources,
+    monkeypatch.setattr(tool, "_get_pipeline", lambda svc: BriefingPipeline(svc, sources if configured[0] else [],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": configured[0]})
@@ -124,6 +124,22 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
     task = store.get_task(DAILY_BRIEFING_TASK_ID)
     assert task["retry_at"] is None
     assert task["last_run_at"] == "2026-09-09T08:10:00"
+
+
+def test_scheduled_briefing_works_with_only_elearning(tmp_path, monkeypatch,
+        deterministic_briefing_generator):
+    source = StaticSource([], name="elearning", account_id="school")
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    monkeypatch.setattr("agent.briefing.sources.registry.configured_sources", lambda: [source])
+    monkeypatch.setattr("agent.briefing.generator.AgentBriefingGenerator", deterministic_briefing_generator)
+    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": False})
+    tool = BriefingTool(service=service)
+    tool.current_context = {"is_scheduled_task": True}
+    result = tool.execute({"action": "run", "operation": "create", "briefing_date": "2026-09-09"})
+    assert result.status == "success", result.result
+    detail = service.get_briefing("brf-2026-09-09-morning")
+    assert detail["briefing"].updated_sources == ["elearning:school"]
+    assert detail["revisions"][0]["trigger"] == "scheduled"
 
 
 def test_overdue_before_eight_waits_until_today_and_ordinary_tasks_keep_grace_period(store):
