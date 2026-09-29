@@ -2004,6 +2004,9 @@ class WebChannel(ChatChannel):
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/briefings', 'BriefingsHandler',
             '/api/briefings/run', 'BriefingRunHandler',
+            '/api/briefings/sources', 'BriefingSourcesHandler',
+            '/api/briefings/elearning', 'BriefingElearningHandler',
+            '/api/briefings/elearning/test', 'BriefingElearningTestHandler',
             '/api/briefings/items/status', 'BriefingItemStatusHandler',
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
@@ -5916,8 +5919,8 @@ def _briefing_service():
 
 def _briefing_pipeline(service):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.settings import email_sources
-    return BriefingPipeline(service, email_sources())
+    from agent.briefing.sources.registry import configured_sources
+    return BriefingPipeline(service, configured_sources())
 
 
 def _briefing_body():
@@ -5989,6 +5992,7 @@ class BriefingRunHandler:
                 kind=body.get("kind") or "morning",
                 briefing_date=body.get("briefing_date"),
                 operation=body.get("operation", "upsert"),
+                sources=body.get("sources"),
             )
         return _briefing_response(operation)
 
@@ -6001,6 +6005,41 @@ class BriefingItemStatusHandler:
                 _briefing_id(body), body.get("status"),
             )}
         return _briefing_response(operation)
+
+
+class BriefingSourcesHandler:
+    def GET(self):
+        from agent.briefing.sources.registry import public_sources
+        return _briefing_response(lambda: {"sources": public_sources()})
+
+
+class BriefingElearningHandler:
+    def GET(self):
+        from agent.briefing.elearning_settings import public_settings
+        return _briefing_response(lambda: {"settings": public_settings()})
+
+    def POST(self):
+        def operation():
+            from agent.briefing import elearning_settings
+            body = _briefing_body()
+            action = body.get("action", "save")
+            if action == "import":
+                settings = elearning_settings.import_crawler(body.get("project_path"))
+            elif action == "delete":
+                elearning_settings.delete_settings()
+                settings = elearning_settings.public_settings()
+            elif action == "save":
+                settings = elearning_settings.save_settings(body)
+            else:
+                raise ValueError("未知的来源操作")
+            return {"settings": settings}
+        return _briefing_response(operation)
+
+
+class BriefingElearningTestHandler:
+    def POST(self):
+        from agent.briefing.elearning_settings import check_connection
+        return _briefing_response(lambda: {"connected": True, "courses": check_connection(_briefing_body())})
 
 
 class BriefingRulesHandler:

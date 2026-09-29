@@ -1,0 +1,161 @@
+"""User-scoped eLearning connection and migration from elearning_crawler."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+import threading
+from pathlib import Path
+from urllib.parse import urlparse
+
+from agent.briefing.settings import PASSWORD_MASK
+
+_lock = threading.RLock()
+DEFAULTS = {"enabled": False, "base_url": "https://elearning.fudan.edu.cn", "username": "",
+            "password": "", "token": "", "courses": [], "request_interval": 0.4}
+
+
+def settings_path():
+    from common.state_dir import briefing_db
+    return briefing_db(ensure=False).with_name("elearning.json")
+
+
+def account_id(config):
+    key = config["base_url"].rstrip("/") + "|" + config["username"]
+    return "canvas-" + hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def session_path(config):
+    return settings_path().parent / "elearning-sessions" / (account_id(config) + ".json")
+
+
+def _write(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".elearning-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def save_session(config, data):
+    with _lock:
+        _write(session_path(config), data)
+
+
+def load_settings():
+    path = settings_path()
+    with _lock:
+        saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        if not isinstance(saved, dict):
+            raise ValueError("eLearning 设置格式无效")
+        return {**DEFAULTS, **saved}
+
+
+def public_settings(config=None):
+    cfg = config if config is not None else load_settings()
+    auth = bool(cfg["password"] or cfg["token"] or session_path(cfg).is_file())
+    return {"enabled": cfg["enabled"], "base_url": cfg["base_url"], "username": cfg["username"],
+            "courses": cfg["courses"], "password_set": bool(cfg["password"]),
+            "password_masked": PASSWORD_MASK if cfg["password"] else "", "token_set": bool(cfg["token"]),
+            "configured": bool(cfg["username"] and cfg["courses"] and auth), "account_id": account_id(cfg)}
+
+
+def resolve_settings(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("eLearning 设置必须是对象")
+    old = load_settings()
+    cfg = {**old, **{key: payload[key] for key in ("enabled", "base_url", "username", "courses") if key in payload}}
+    if not isinstance(cfg["enabled"], bool):
+        raise ValueError("enabled 必须是布尔值")
+    if not isinstance(cfg["base_url"], str):
+        raise ValueError("请填写 eLearning HTTPS 地址")
+    cfg["base_url"] = cfg["base_url"].strip().rstrip("/")
+    url = urlparse(cfg["base_url"])
+    if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
+        raise ValueError("eLearning 地址必须是不含账号密码的 HTTPS 地址")
+    if not isinstance(cfg["username"], str) or not cfg["username"].strip():
+        raise ValueError("请填写 eLearning 学工号")
+    cfg["username"] = cfg["username"].strip()
+    if not isinstance(cfg["courses"], list) or any(not isinstance(value, str) or not value.strip() for value in cfg["courses"]):
+        raise ValueError("课程必须是非空课程 ID 或课程名称的列表")
+    cfg["courses"] = list(dict.fromkeys(value.strip() for value in cfg["courses"]))
+    if account_id(cfg) != account_id(old):
+        cfg["password"] = cfg["token"] = ""
+    password = payload.get("password", "")
+    if not isinstance(password, str):
+        raise ValueError("eLearning 密码格式无效")
+    if password and password != PASSWORD_MASK:
+        cfg["password"] = password
+    elif password == PASSWORD_MASK and not cfg["password"]:
+        raise ValueError("请填写新账号的 eLearning 密码")
+    if not cfg["password"] and not cfg["token"] and not session_path(cfg).is_file():
+        raise ValueError("请填写 eLearning 密码或导入已有登录状态")
+    return cfg
+
+
+def save_settings(payload):
+    with _lock:
+        cfg = resolve_settings(payload)
+        _write(settings_path(), cfg)
+        return public_settings(cfg)
+
+
+def delete_settings():
+    with _lock:
+        cfg = load_settings()
+        session_path(cfg).unlink(missing_ok=True)
+        _write(settings_path(), DEFAULTS)
+
+
+def import_crawler(project_path=None):
+    """Read only config, .env and Canvas cookies; never execute sibling code."""
+    root = Path(project_path).expanduser() if project_path else Path(__file__).resolve().parents[3] / "elearning_crawler"
+    import yaml
+    from dotenv import dotenv_values
+    try:
+        saved = yaml.safe_load((root / "config" / "config.yaml").read_text(encoding="utf-8"))
+        secrets = dotenv_values(root / ".env", interpolate=False)
+        if not isinstance(saved, dict):
+            raise ValueError
+        cfg = {**DEFAULTS, "enabled": True, "base_url": saved.get("base_url", DEFAULTS["base_url"]),
+               "username": secrets.get("ELEARNING_USERNAME") or "", "password": secrets.get("ELEARNING_PASSWORD") or "",
+               "token": secrets.get("CANVAS_TOKEN") or "", "courses": [str(value) for value in saved.get("courses", [])]}
+        # Validate using the same rules without exposing imported secrets.
+        url = urlparse(cfg["base_url"])
+        if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
+            raise ValueError
+        if not cfg["username"] or not all(cfg["courses"]):
+            raise ValueError
+        cookie_file = root / ".private" / "session.json"
+        cookies = json.loads(cookie_file.read_text(encoding="utf-8")) if cookie_file.is_file() else None
+        if not cfg["password"] and not cfg["token"] and not cookies:
+            raise ValueError
+    except (OSError, ValueError, TypeError, yaml.YAMLError):
+        raise ValueError("无法导入爬虫配置，请确认项目目录、课程选择和登录配置") from None
+    with _lock:
+        if cookies:
+            save_session(cfg, cookies)
+        _write(settings_path(), cfg)
+    return public_settings(cfg)
+
+
+def check_connection(payload):
+    from agent.briefing.elearning.client import ensure_login
+    from agent.briefing.elearning.courses import course_list
+    cfg = resolve_settings(payload)
+    client = ensure_login(cfg)
+    return [{"id": str(row["id"]), "name": row.get("name", str(row["id"]))} for row in course_list(client)]
+
+
+def elearning_sources():
+    from agent.briefing.sources.elearning import ElearningSource
+    cfg = load_settings()
+    return [ElearningSource(cfg)] if cfg["enabled"] and public_settings(cfg)["configured"] else []

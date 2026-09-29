@@ -141,6 +141,8 @@ class BriefingService:
         snapshot.setdefault("mail", [])
         snapshot["briefing"].setdefault("mail_snapshot_available", False)
         snapshot["briefing"].setdefault("rule_text", "")
+        snapshot["briefing"].setdefault("source_windows", {})
+        snapshot["briefing"].setdefault("updated_sources", [])
         snapshot["revisions"] = self.store.list_revisions(briefing_id)
         return snapshot
 
@@ -191,6 +193,8 @@ class BriefingService:
                 window_end=existing.window_end,
                 mail_snapshot_available=existing.mail_snapshot_available,
                 rule_text=existing.rule_text,
+                source_windows=existing.source_windows,
+                updated_sources=existing.updated_sources,
             )
         )
 
@@ -233,6 +237,8 @@ class BriefingService:
             window_end=payload.get("window_end", existing.window_end) if status != "failed" else existing.window_end,
             mail_snapshot_available=True if "mail" in payload else existing.mail_snapshot_available,
             rule_text=_as_str(payload.get("rule_text", existing.rule_text)) if status != "failed" else existing.rule_text,
+            source_windows=payload.get("source_windows", existing.source_windows) if status != "failed" else existing.source_windows,
+            updated_sources=payload.get("updated_sources", existing.updated_sources) if status != "failed" else existing.updated_sources,
         )
         snapshots = None
         if "items" in payload:

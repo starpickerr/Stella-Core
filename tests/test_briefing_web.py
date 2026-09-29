@@ -91,6 +91,38 @@ def test_markdown_rule_api_and_default_template(api):
     assert call(web_channel.BriefingRulesHandler, body={"text": " "})["status"] == "error"
 
 
+def test_source_selection_is_passed_to_pipeline_and_source_discovery_is_authenticated(api):
+    _, auth = api
+    source = SimpleNamespace(name="elearning", account_id="school", display_name="eLearning")
+    with patch("agent.briefing.sources.registry.configured_sources", return_value=[source]):
+        result = call(web_channel.BriefingSourcesHandler, "GET")
+    assert result["sources"] == [{"id": "elearning:school", "source": "elearning", "account_id": "school", "name": "eLearning"}]
+    with patch.object(web_channel, "_briefing_pipeline") as factory:
+        factory.return_value.run.return_value = {"briefing": {"id": "briefing"}}
+        result = call(web_channel.BriefingRunHandler, body={"operation": "update", "sources": ["elearning:school"]})
+        assert result["status"] == "success"
+        assert factory.return_value.run.call_args.kwargs["sources"] == ["elearning:school"]
+    assert auth.call_count == 2
+
+
+def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test(api, tmp_path):
+    from agent.briefing import elearning_settings
+    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
+        created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
+            "username": "student", "password": "campus-secret", "courses": ["42"]})
+        assert created["status"] == "success" and created["settings"]["configured"]
+        assert "campus-secret" not in json.dumps(created)
+        updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
+        assert updated["settings"]["enabled"] is False
+        with patch.object(elearning_settings, "check_connection", return_value=[{"id": "42", "name": "课程"}]) as check:
+            tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
+            assert tested["connected"] and tested["courses"][0]["id"] == "42"
+            check.assert_called_once_with({"username": "student"})
+        removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
+        assert not removed["settings"]["configured"]
+        assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
+
+
 @pytest.mark.parametrize("handler,body", [
     (web_channel.BriefingRunHandler, {"briefing_date": "invalid"}),
     (web_channel.BriefingRulesHandler, {"match_value": ""}),

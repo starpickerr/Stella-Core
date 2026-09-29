@@ -32,6 +32,7 @@ class FetchedItem:
 class FetchResult:
     items: List[FetchedItem]
     cursors: Dict[str, str] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
 
 
 @runtime_checkable

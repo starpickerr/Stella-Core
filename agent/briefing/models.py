@@ -71,6 +71,8 @@ class Briefing:
     window_end: Optional[str] = None
     mail_snapshot_available: bool = False
     rule_text: str = ""
+    source_windows: dict = field(default_factory=dict)
+    updated_sources: list = field(default_factory=list)
 
 
 @dataclass

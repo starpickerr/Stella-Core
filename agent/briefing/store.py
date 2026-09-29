@@ -101,6 +101,8 @@ def _briefing_from_row(row: sqlite3.Row) -> Briefing:
         window_end=row["window_end"],
         mail_snapshot_available=bool(row["mail_snapshot_available"]),
         rule_text=row["rule_text"],
+        source_windows=_parse_payload(row["source_windows"]),
+        updated_sources=json.loads(row["updated_sources"]),
     )
 
 
@@ -181,6 +183,10 @@ class BriefingStore:
                 conn.execute("ALTER TABLE briefings ADD COLUMN mail_snapshot_available INTEGER NOT NULL DEFAULT 0")
             if "rule_text" not in columns:
                 conn.execute("ALTER TABLE briefings ADD COLUMN rule_text TEXT NOT NULL DEFAULT ''")
+            if "source_windows" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN source_windows TEXT NOT NULL DEFAULT '{}'")
+            if "updated_sources" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN updated_sources TEXT NOT NULL DEFAULT '[]'")
             rule_columns = {row[1] for row in conn.execute("PRAGMA table_info(filter_rules)")}
             if "text" not in rule_columns:
                 conn.execute("ALTER TABLE filter_rules ADD COLUMN text TEXT NOT NULL DEFAULT ''")
@@ -358,8 +364,8 @@ class BriefingStore:
             INSERT INTO briefings (
                 id, kind, status, title, body,
                 fetched_count, kept_count, filtered_count, error_message,
-                generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available, rule_text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available, rule_text, source_windows, updated_sources
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 kind = excluded.kind,
                 status = excluded.status,
@@ -374,7 +380,9 @@ class BriefingStore:
                 window_start = excluded.window_start,
                 window_end = excluded.window_end,
                 mail_snapshot_available = excluded.mail_snapshot_available,
-                rule_text = excluded.rule_text
+                rule_text = excluded.rule_text,
+                source_windows = excluded.source_windows,
+                updated_sources = excluded.updated_sources
             """,
             (
                 briefing.id,
@@ -393,6 +401,8 @@ class BriefingStore:
                 briefing.window_end,
                 int(briefing.mail_snapshot_available),
                 briefing.rule_text,
+                _dump_payload(briefing.source_windows),
+                json.dumps(briefing.updated_sources),
             ),
         )
 

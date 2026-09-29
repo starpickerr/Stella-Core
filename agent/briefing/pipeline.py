@@ -17,6 +17,7 @@ from agent.briefing.models import EmailMessage, SourceItem
 from agent.briefing.rules import fetched_to_payload
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
+from agent.briefing.sources.registry import select_sources, source_key
 
 
 def _now():
@@ -42,8 +43,10 @@ class BriefingPipeline:
         briefing_date: Optional[str] = None,
         operation: str = "upsert",
         trigger: str = "manual",
+        sources=None,
     ) -> dict:
-        if not self.sources:
+        selected = select_sources(self.sources, sources)
+        if not selected:
             raise ValueError("no briefing sources configured")
         if operation not in {"create", "update", "upsert"}:
             raise ValueError("operation must be create or update")
@@ -57,9 +60,9 @@ class BriefingPipeline:
                 return self.service.get_briefing(existing.id)
             if operation == "update" and (not existing or not existing.generated_at):
                 raise ValueError("generate this day's briefing before updating it")
-            return self._run(kind, day, trigger)
+            return self._run(kind, day, trigger, selected)
 
-    def _run(self, kind: str, day: str, trigger: str) -> dict:
+    def _run(self, kind: str, day: str, trigger: str, selected) -> dict:
         local_now = self.clock()
         end = local_now.astimezone(timezone.utc).replace(microsecond=0)
         existing = self.service.store.get_briefing(briefing_id_for(day, kind))
@@ -88,13 +91,25 @@ class BriefingPipeline:
         if datetime.fromisoformat(start.replace("Z", "+00:00")) > end:
             raise ValueError("briefing end precedes the previous successful update")
         briefing = self.service.start_briefing(kind=kind, briefing_date=day)
+        prior_detail = self.service.get_briefing(briefing.id)
+        source_windows = {key: dict(value) for key, value in briefing.source_windows.items()}
+        starts = {}
+        for source in selected:
+            key = source_key(source)
+            prior = [row.source_windows[key]["end"] for row in previous
+                     if row.source_windows.get(key, {}).get("end")]
+            legacy = boundary if source.name == "email" and any(not row.source_windows for row in previous) else None
+            current_legacy_start = start if briefing.window_start and source.name == "email" and not briefing.source_windows else None
+            starts[key] = source_windows.get(key, {}).get("start") or current_legacy_start or max(prior, default=None) or legacy or default_start
         pending_cursors: List[Tuple[Source, Dict[str, str]]] = []
         errors: List[str] = []
+        refreshed = []
+        fully_refreshed = set()
 
         try:
-            for source in self.sources:
+            for source in selected:
                 try:
-                    result = self._fetch_source(source, start, finish)
+                    result = self._fetch_source(source, starts[source_key(source)], finish)
                 except Exception as exc:
                     label = getattr(source, "display_name", source.name)
                     logger.warning(
@@ -104,10 +119,33 @@ class BriefingPipeline:
                     continue
                 pending_cursors.append((source, result.cursors))
                 self._upsert_fetched(result.items)
+                refreshed.append(source)
+                errors.extend(result.errors)
+                if not result.errors:
+                    fully_refreshed.add(source_key(source))
+                    source_windows[source_key(source)] = {"source": source.name, "account_id": source.account_id,
+                        "name": getattr(source, "display_name", source.name), "start": starts[source_key(source)], "end": finish}
 
             finish = self.clock().astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            catalog_rows = self.service.store.window_candidates(
-                start, finish, [(source.name, source.account_id) for source in self.sources])
+            catalog_rows = []
+            for source in refreshed:
+                key = source_key(source)
+                catalog_rows.extend(self.service.store.window_candidates(starts[key], finish, [(source.name, source.account_id)]))
+                if key in fully_refreshed:
+                    source_windows[key]["end"] = finish
+            refreshed_keys = {source_key(source) for source in refreshed}
+            preserved_decisions = {}
+            for snapshot in prior_detail.get("mail", []):
+                key = snapshot["source"] + ":" + snapshot["account_id"]
+                if key in refreshed_keys:
+                    continue
+                item, email = self._restore_candidate(snapshot)
+                catalog_rows.append((item, email))
+                decision = snapshot.get("decision") or self._legacy_decision(snapshot, prior_detail["items"])
+                preserved_decisions[item.id] = decision
+            windows = [window for window in source_windows.values() if window.get("end")]
+            if windows:
+                start = min(window["start"] for window in windows)
             fetched_count = len(catalog_rows)
             if errors and not pending_cursors:
                 status = "failed"
@@ -119,7 +157,8 @@ class BriefingPipeline:
             drafted, mail = {}, []
             if status != "failed":
                 drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
-                    briefing_date=day, kind=kind, window_start=start, window_end=finish)
+                    briefing_date=day, kind=kind, window_start=start, window_end=finish,
+                    preserved_decisions=preserved_decisions)
                 mail = drafted["mail"]
             filtered_count = sum(row["category"] == "filtered" for row in mail)
 
@@ -137,7 +176,8 @@ class BriefingPipeline:
                     "kept_count": len(mail) - filtered_count if status != "failed" else briefing.kept_count,
                     "filtered_count": filtered_count if status != "failed" else briefing.filtered_count,
                     "error_message": "; ".join(errors),
-                    **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", "")} if status != "failed" else {}),
+                    **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", ""),
+                        "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed]} if status != "failed" else {}),
                 },
             )
             if status != "failed":
@@ -156,10 +196,29 @@ class BriefingPipeline:
             )
             raise
 
+    @staticmethod
+    def _restore_candidate(snapshot):
+        payload = dict(snapshot.get("metadata", {}))
+        if snapshot.get("body_available"):
+            payload["body"] = snapshot.get("body", "")
+        item = SourceItem(**{key: snapshot.get(key, "") for key in (
+            "id", "source", "account_id", "source_id", "thread_id", "sender", "title", "snippet", "occurred_at", "url")},
+            payload=payload)
+        email = EmailMessage(item.id, snapshot.get("sender_email", ""), snapshot.get("list_id", "")) if item.source == "email" else None
+        return item, email
+
+    @staticmethod
+    def _legacy_decision(snapshot, cards):
+        card = next((card for card in cards if card.source_item_id == snapshot["id"]), None)
+        return {"id": snapshot["id"], "selected": snapshot["category"] == "selected",
+                "reason": snapshot.get("filter_reason") or "保留上次筛选结果",
+                "section": card.section if card else "fyi", "score": card.score if card else 50,
+                "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
+
     def _fetch_source(self, source: Source, start: str, end: str) -> FetchResult:
         cursors: Dict[str, str] = {}
         # Adapters may use several keys; we pass known values and ignore misses.
-        for key in ("imap_uid", "imap_uidvalidity", "sync_token", "since"):
+        for key in ("imap_uid", "imap_uidvalidity", "sync_token", "since", "elearning_state"):
             row = self.service.get_cursor(source.name, source.account_id, key)
             if row is not None:
                 cursors[key] = row.cursor_value
