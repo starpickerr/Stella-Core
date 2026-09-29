@@ -3,19 +3,19 @@ import { ChevronDown, ExternalLink } from 'lucide-react'
 import { t, getLang } from '../../i18n'
 import type { BriefingMail } from '../../types'
 
-export const MailList: React.FC<{ mail: BriefingMail[] }> = ({ mail }) => {
+export const MailList: React.FC<{ mail: BriefingMail[]; source?: string }> = ({ mail, source = 'email' }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const rows = [...mail].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime() || a.id.localeCompare(b.id))
   const locale = getLang() === 'zh' ? 'zh-CN' : 'en-US'
   return <div className="space-y-2">
-    {!rows.length && <p className="text-sm text-content-tertiary py-6 text-center">{t('briefing_mail_empty')}</p>}
+    {!rows.length && <p className="text-sm text-content-tertiary py-6 text-center">{t(source === 'email' ? 'briefing_mail_empty' : 'briefing_source_empty')}</p>}
     {rows.map((row) => {
       const expanded = expandedId === row.id
       return <article key={row.id} className={`rounded-card border bg-surface overflow-hidden ${expanded ? 'border-accent' : 'border-default'}`}>
         <button type="button" aria-expanded={expanded} aria-controls={`briefing-mail-${row.id}`} onClick={() => setExpandedId(expanded ? null : row.id)} className="w-full text-left px-4 py-3 hover:bg-surface-2 transition-colors">
           <div className="flex items-center gap-3">
             <span className="flex-1 min-w-0 text-sm font-medium text-content truncate">{row.title || t('briefing_mail_untitled')}</span>
-            <span className={`shrink-0 text-[10px] ${row.category === 'selected' ? 'text-success' : 'text-content-tertiary'}`}>{t(`briefing_mail_${row.category}`)}</span>
+            <span className={`shrink-0 text-[10px] ${row.category === 'selected' ? 'text-success' : 'text-content-tertiary'}`}>{t(`${source === 'email' ? 'briefing_mail' : 'briefing_source'}_${row.category}`)}</span>
             <ChevronDown size={14} className={`shrink-0 text-content-tertiary transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-1.5 text-xs text-content-tertiary">

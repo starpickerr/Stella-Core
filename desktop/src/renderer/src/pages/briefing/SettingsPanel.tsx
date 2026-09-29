@@ -4,6 +4,7 @@ import apiClient from '../../api/client'
 import { t } from '../../i18n'
 import type { BriefingRule, BriefingRuleInput } from '../../types'
 import { MailboxSettings } from './MailboxSettings'
+import { ElearningSettings } from './ElearningSettings'
 
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
 const emptyRule: BriefingRuleInput = { text: '', source: '*' }
@@ -49,7 +50,11 @@ export const SettingsPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     </div>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
-    <MailboxSettings />
+    <section className="space-y-4" aria-label={t('briefing_source_management')}>
+      <div><h3 className="text-base font-semibold text-content">{t('briefing_source_management')}</h3><p className="text-xs text-content-tertiary mt-1">{t('briefing_source_management_help')}</p></div>
+      <MailboxSettings />
+      <ElearningSettings />
+    </section>
     <section className="rounded-card border border-default bg-surface p-5 space-y-4">
       <div><h3 className="flex items-center gap-2 font-semibold text-sm text-content"><Filter size={16} />{t('briefing_rules')}</h3><p className="text-xs text-content-tertiary mt-2">{t('briefing_rules_help')}</p></div>
       <form className="space-y-3" onSubmit={(e) => {
