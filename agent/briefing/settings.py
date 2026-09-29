@@ -7,10 +7,13 @@ import ipaddress
 import re
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Optional
 
 _settings_lock = threading.RLock()
+PASSWORD_MASK = "********"
+_MAILBOX_FIELDS = ("host", "user", "password", "port", "folder")
 
 
 def mailbox_path() -> Path:
@@ -18,22 +21,48 @@ def mailbox_path() -> Path:
     return briefing_db(ensure=False).with_name("mailbox.json")
 
 
-def load_mailbox(path: Optional[Path] = None) -> dict:
-    target = path if path is not None else mailbox_path()
-    settings = {
+def _environment_mailbox() -> dict:
+    return {
         "host": os.environ.get("IMAP_HOST", "").strip(),
         "user": os.environ.get("IMAP_USER", "").strip(),
         "password": os.environ.get("IMAP_PASSWORD", ""),
         "port": os.environ.get("IMAP_PORT", "") or 993,
         "folder": os.environ.get("IMAP_FOLDER", "").strip() or "INBOX",
     }
+
+
+def _empty_mailbox() -> dict:
+    return {"host": "", "user": "", "password": "", "port": 993, "folder": "INBOX"}
+
+
+def load_mailboxes(path: Optional[Path] = None) -> list:
+    """Read all accounts; legacy single-account files migrate on the next save."""
+    target = path if path is not None else mailbox_path()
     with _settings_lock:
-        if target.exists():
-            saved = json.loads(target.read_text(encoding="utf-8"))
-            if not isinstance(saved, dict):
-                raise ValueError("invalid mailbox settings")
-            settings.update({key: saved[key] for key in settings if key in saved})
-    return settings
+        if not target.exists():
+            cfg = _environment_mailbox()
+            return [{"id": "environment", **cfg}] if any(cfg[key] for key in ("host", "user", "password")) else []
+        saved = json.loads(target.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict):
+            raise ValueError("invalid mailbox settings")
+        if "mailboxes" not in saved:
+            cfg = _environment_mailbox()
+            cfg.update({key: saved[key] for key in _MAILBOX_FIELDS if key in saved})
+            return [{"id": "legacy", **cfg}]
+        rows = saved["mailboxes"]
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"] for row in rows
+        ) or len({row["id"] for row in rows}) != len(rows):
+            raise ValueError("invalid mailbox settings")
+        return [{"id": row["id"], **_empty_mailbox(), **{
+            key: row[key] for key in _MAILBOX_FIELDS if key in row
+        }} for row in rows]
+
+
+def load_mailbox(path: Optional[Path] = None) -> dict:
+    """Compatibility for a directly constructed EmailSource: use the first account."""
+    rows = load_mailboxes(path)
+    return {key: rows[0][key] for key in _MAILBOX_FIELDS} if rows else _empty_mailbox()
 
 
 def public_mailbox(settings: Optional[dict] = None) -> dict:
@@ -47,7 +76,23 @@ def public_mailbox(settings: Optional[dict] = None) -> dict:
         "port": cfg["port"],
         "folder": cfg["folder"],
         "password_set": bool(cfg["password"]),
+        "password_masked": PASSWORD_MASK if cfg["password"] else "",
+        "id": cfg.get("id", ""),
     }
+
+
+def public_mailboxes(path: Optional[Path] = None) -> dict:
+    rows = [public_mailbox(row) for row in load_mailboxes(path)]
+    configured = any(row["configured"] for row in rows)
+    return {"mailboxes": rows, "configured": configured,
+            "missing": [] if configured else ["IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD"]}
+
+
+def email_sources(path: Optional[Path] = None) -> list:
+    """Use the same account factory for manual, scheduled and tool generation."""
+    from agent.briefing.sources.email import EmailSource
+    return [EmailSource(**{key: row[key] for key in _MAILBOX_FIELDS})
+            for row in load_mailboxes(path) if public_mailbox(row)["configured"]]
 
 
 def normalize_imap_host(value: str) -> str:
@@ -75,7 +120,9 @@ def resolve_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
     """Validate a draft over saved settings; a blank password keeps the saved one."""
     if not isinstance(payload, dict):
         raise ValueError("request body must be an object")
-    settings = load_mailbox(path)
+    rows = load_mailboxes(path)
+    existing = _selected_mailbox(payload, rows)
+    settings = {key: existing[key] for key in _MAILBOX_FIELDS} if existing else _empty_mailbox()
     settings["host"] = normalize_imap_host(payload.get("host", settings["host"]))
     for key, label in (("user", "邮箱账号"), ("folder", "邮件文件夹")):
         value = payload.get(key, settings[key])
@@ -85,7 +132,10 @@ def resolve_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
     value = payload.get("password", "")
     if not isinstance(value, str) or any(c in value for c in "\r\n\0"):
         raise ValueError("授权码格式不正确，请检查是否包含换行")
-    if value:
+    if value == PASSWORD_MASK:
+        if not settings["password"]:
+            raise ValueError("请填写邮箱授权码")
+    elif value:
         settings["password"] = value
     if not settings["password"] or not settings["password"].strip():
         raise ValueError("请填写邮箱授权码")
@@ -94,6 +144,23 @@ def resolve_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
         raise ValueError("SSL 端口必须是 1 至 65535 的整数")
     settings["port"] = int(port)
     return settings
+
+
+def _selected_mailbox(payload: dict, rows: list) -> Optional[dict]:
+    action = payload.get("action", "save")
+    if action not in ("save", "add"):
+        raise ValueError("invalid mailbox action")
+    if action == "add":
+        return None
+    account_id = payload.get("id")
+    if account_id is not None:
+        if not isinstance(account_id, str) or not account_id:
+            raise ValueError("邮箱 ID 无效")
+        for row in rows:
+            if row["id"] == account_id:
+                return row
+        raise ValueError("邮箱不存在，请重新打开设置")
+    return rows[0] if rows else None
 
 
 def check_mailbox_connection(payload: dict, path: Optional[Path] = None) -> None:
@@ -107,15 +174,44 @@ def save_mailbox(payload: dict, path: Optional[Path] = None) -> dict:
     target = path if path is not None else mailbox_path()
     with _settings_lock:
         settings = resolve_mailbox(payload, target)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=".mailbox-", dir=str(target.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as file:
-                json.dump(settings, file, ensure_ascii=False)
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temporary, target)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-        return public_mailbox(load_mailbox(target))
+        rows = load_mailboxes(target)
+        existing = _selected_mailbox(payload, rows)
+        account_id = existing["id"] if existing else str(uuid.uuid4())
+        key = _mailbox_key(settings)
+        if any(row["id"] != account_id and _mailbox_key(row) == key for row in rows):
+            raise ValueError("此邮箱和文件夹已经添加")
+        saved = {"id": account_id, **settings}
+        if existing:
+            rows = [saved if row["id"] == account_id else row for row in rows]
+        else:
+            rows.append(saved)
+        _write_mailboxes(target, rows)
+        return public_mailbox(saved)
+
+
+def _mailbox_key(cfg: dict) -> tuple:
+    return (cfg["host"].casefold(), cfg["user"].casefold(), str(cfg["port"]), cfg["folder"])
+
+
+def delete_mailbox(account_id: str, path: Optional[Path] = None) -> None:
+    if not isinstance(account_id, str) or not account_id:
+        raise ValueError("邮箱 ID 无效")
+    target = path if path is not None else mailbox_path()
+    with _settings_lock:
+        rows = load_mailboxes(target)
+        existing = _selected_mailbox({"id": account_id}, rows)
+        _write_mailboxes(target, [row for row in rows if row["id"] != existing["id"]])
+
+
+def _write_mailboxes(target: Path, rows: list) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".mailbox-", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump({"version": 2, "mailboxes": rows}, file, ensure_ascii=False)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)

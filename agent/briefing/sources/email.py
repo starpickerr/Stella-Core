@@ -169,6 +169,10 @@ class EmailSource:
         self._resolved_settings = None
 
     @property
+    def display_name(self) -> str:
+        return f"email ({self._user})" if self._user else "email"
+
+    @property
     def account_id(self) -> str:
         if self._account_id is not None:
             return self._account_id
@@ -184,7 +188,9 @@ class EmailSource:
         if self._resolved_settings is not None:
             return self._resolved_settings
         from agent.briefing.settings import load_mailbox
-        cfg = load_mailbox()
+        explicit = {"host": self._host, "port": self._port, "user": self._user,
+                    "password": self._password, "folder": self._folder}
+        cfg = dict(explicit) if all(value is not None for value in explicit.values()) else load_mailbox()
         for key, value in (("host", self._host), ("port", self._port),
                            ("user", self._user), ("password", self._password),
                            ("folder", self._folder)):
