@@ -100,6 +100,7 @@ def _briefing_from_row(row: sqlite3.Row) -> Briefing:
         window_start=row["window_start"],
         window_end=row["window_end"],
         mail_snapshot_available=bool(row["mail_snapshot_available"]),
+        rule_text=row["rule_text"],
     )
 
 
@@ -128,7 +129,7 @@ def _item_from_row(row: sqlite3.Row) -> BriefingItem:
 
 
 def _rule_from_row(row: sqlite3.Row) -> FilterRule:
-    return FilterRule(
+    rule = FilterRule(
         id=row["id"],
         enabled=bool(row["enabled"]),
         source=row["source"],
@@ -137,9 +138,13 @@ def _rule_from_row(row: sqlite3.Row) -> FilterRule:
         match_op=row["match_op"],
         match_value=row["match_value"],
         note=row["note"],
+        text=row["text"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+    from agent.briefing.instructions import rule_document
+    rule.text = rule_document(rule)
+    return rule
 
 
 def _cursor_from_row(row: sqlite3.Row) -> SyncCursor:
@@ -174,6 +179,11 @@ class BriefingStore:
                     conn.execute(f"ALTER TABLE briefings ADD COLUMN {column} TEXT")
             if "mail_snapshot_available" not in columns:
                 conn.execute("ALTER TABLE briefings ADD COLUMN mail_snapshot_available INTEGER NOT NULL DEFAULT 0")
+            if "rule_text" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN rule_text TEXT NOT NULL DEFAULT ''")
+            rule_columns = {row[1] for row in conn.execute("PRAGMA table_info(filter_rules)")}
+            if "text" not in rule_columns:
+                conn.execute("ALTER TABLE filter_rules ADD COLUMN text TEXT NOT NULL DEFAULT ''")
             # Preserve the surviving pre-upgrade snapshot; older overwritten runs
             # cannot be reconstructed. Normalize titles without changing ids.
             for row in conn.execute("SELECT * FROM briefings ORDER BY generated_at").fetchall():
@@ -348,8 +358,8 @@ class BriefingStore:
             INSERT INTO briefings (
                 id, kind, status, title, body,
                 fetched_count, kept_count, filtered_count, error_message,
-                generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available, rule_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 kind = excluded.kind,
                 status = excluded.status,
@@ -363,7 +373,8 @@ class BriefingStore:
                 updated_at = excluded.updated_at,
                 window_start = excluded.window_start,
                 window_end = excluded.window_end,
-                mail_snapshot_available = excluded.mail_snapshot_available
+                mail_snapshot_available = excluded.mail_snapshot_available,
+                rule_text = excluded.rule_text
             """,
             (
                 briefing.id,
@@ -381,6 +392,7 @@ class BriefingStore:
                 briefing.window_start,
                 briefing.window_end,
                 int(briefing.mail_snapshot_available),
+                briefing.rule_text,
             ),
         )
 
@@ -561,8 +573,8 @@ class BriefingStore:
                 """
                 INSERT INTO filter_rules (
                     id, enabled, source, action, match_field, match_op, match_value,
-                    note, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    note, created_at, updated_at, text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule.id,
@@ -575,6 +587,7 @@ class BriefingStore:
                     rule.note,
                     rule.created_at,
                     rule.updated_at,
+                    rule.text,
                 ),
             )
         found = self.get_rule(rule.id)
@@ -615,7 +628,7 @@ class BriefingStore:
                 """
                 UPDATE filter_rules SET
                     enabled = ?, source = ?, action = ?, match_field = ?,
-                    match_op = ?, match_value = ?, note = ?, updated_at = ?
+                    match_op = ?, match_value = ?, note = ?, updated_at = ?, text = ?
                 WHERE id = ?
                 """,
                 (
@@ -627,6 +640,7 @@ class BriefingStore:
                     rule.match_value,
                     rule.note,
                     rule.updated_at,
+                    rule.text,
                     rule.id,
                 ),
             )

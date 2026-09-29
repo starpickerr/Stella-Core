@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS briefings (
     window_start     TEXT,
     window_end       TEXT,
     mail_snapshot_available INTEGER NOT NULL DEFAULT 0,
+    rule_text        TEXT    NOT NULL DEFAULT '',
     id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
     kind             TEXT    NOT NULL DEFAULT 'morning'
                              CHECK (kind IN (
@@ -166,13 +167,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_briefing_items_briefing_source_item
     WHERE source_item_id IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
--- User filter rules: only field-based conditions live here.
--- Built-in policies (noreply, List-Unsubscribe, …) stay in rules.py.
--- Semantic judgments (looks like promo) use a capped LLM and are not stored.
+-- User rule documents: Markdown/plain text consumed by the briefing Agent.
+-- Legacy field columns remain for compatible upgrades and old API callers.
 -- source = '*' means all sources; otherwise scoped (e.g. email).
 -- Envelope fields match source_items; sender_email / list_id match email_messages.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS filter_rules (
+    text             TEXT    NOT NULL DEFAULT '',              -- free-form filtering and writing instructions
     id               TEXT    PRIMARY KEY,
     enabled          INTEGER NOT NULL DEFAULT 1
                              CHECK (enabled IN (0, 1)),

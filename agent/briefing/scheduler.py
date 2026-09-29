@@ -5,6 +5,7 @@ import threading
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.settings import email_sources, mailbox_path, public_mailboxes
+from agent.briefing.generator import AgentBriefingGenerator
 from common.log import logger
 
 
@@ -16,7 +17,8 @@ class BriefingScheduler:
         settings_path = mailbox_path()
         self.configured = configured or (lambda: public_mailboxes(settings_path)["configured"])
         self.pipeline_factory = pipeline_factory or (lambda: BriefingPipeline(
-            self.service, email_sources(settings_path), clock=self.clock))
+            self.service, email_sources(settings_path), clock=self.clock,
+            generator=AgentBriefingGenerator(cancel_event=self._stop)))
         self._stop = threading.Event()
         self._thread = None
         self._retry_at = None

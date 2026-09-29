@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 import pytest
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from email.message import EmailMessage as RfcMessage
 
 from agent.briefing.pipeline import BriefingPipeline

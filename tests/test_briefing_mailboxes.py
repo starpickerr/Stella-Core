@@ -4,6 +4,8 @@ from datetime import datetime
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
+
 from agent.briefing import settings
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.scheduler import BriefingScheduler

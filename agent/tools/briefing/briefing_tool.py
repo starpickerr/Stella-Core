@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
 
@@ -11,13 +13,15 @@ class BriefingTool(BaseTool):
 
     name: str = "briefing"
     description: str = (
-        "每日简报工具：拉取邮件候选、生成今日简报、查看历史、标记条目、管理过滤规则。\n\n"
+        "每日简报工具：拉取多来源候选，由 Agent 按规则文稿筛选、撰写简报，查看历史、邮件详情和管理规则。\n\n"
         "当用户提到晨报、今日简报、邮件摘要、标记已处理、不看某发件人时使用。\n"
         "使用方法：\n"
         "- 生成今日简报：action='run'（可选 briefing_date='2026-09-09'）\n"
         "- 列表：action='list'（可选 kind='morning', status='completed'）\n"
         "- 详情：action='get', briefing_id='brf-2026-09-09-morning'\n"
         "- 改条目状态：action='item_status', item_id='…', status='done'/'undo'/'ignored'/'follow_up'\n"
+        "- 邮件：action='mail', briefing_id='…'，可选 category='candidate'/'selected'/'filtered'；source_item_id 查看正文\n"
+        "- 规则文稿（普通文本或 Markdown）：text='排除地址以 @promo.example 结尾的邮件，保留作业通知'\n"
         "- 规则：action='add_rule' / 'list_rules' / 'update_rule' / 'delete_rule'\n\n"
         "生成简报需要在简报设置中配置一个或多个 IMAP 邮箱；也可用 IMAP_HOST、IMAP_USER、IMAP_PASSWORD 提供初始账号。"
     )
@@ -30,6 +34,7 @@ class BriefingTool(BaseTool):
                     "run",
                     "list",
                     "get",
+                    "mail",
                     "item_status",
                     "add_rule",
                     "list_rules",
@@ -59,31 +64,14 @@ class BriefingTool(BaseTool):
             },
             "item_id": {"type": "string", "description": "条目 ID（item_status）"},
             "rule_id": {"type": "string", "description": "规则 ID（update_rule / delete_rule）"},
-            "rule_action": {
-                "type": "string",
-                "enum": ["include", "exclude"],
-                "description": "add_rule：include 白名单 / exclude 黑名单",
-            },
-            "match_field": {
-                "type": "string",
-                "enum": [
-                    "sender",
-                    "sender_email",
-                    "sender_domain",
-                    "title",
-                    "list_id",
-                ],
-            },
-            "match_op": {
-                "type": "string",
-                "enum": ["eq", "contains"],
-            },
-            "match_value": {"type": "string"},
+            "text": {"type": "string", "description": "筛选和简报写作的规则文稿，支持自由文本或 Markdown（add_rule/update_rule）"},
+            "category": {"type": "string", "enum": ["candidate", "selected", "filtered"]},
+            "source_item_id": {"type": "string", "description": "mail：查看某个候选的完整内容"},
+            "offset": {"type": "integer", "minimum": 0, "description": "mail：列表起点，每页 50 封"},
             "source": {
                 "type": "string",
-                "description": "规则来源，默认 email；'*' 表示全部",
+                "description": "规则来源，默认 *；'*' 表示全部",
             },
-            "note": {"type": "string"},
             "enabled": {"type": "boolean", "description": "update_rule：启用 / 停用规则"},
         },
         "required": ["action"],
@@ -107,8 +95,10 @@ class BriefingTool(BaseTool):
             return self._pipeline
         from agent.briefing.pipeline import BriefingPipeline
         from agent.briefing.settings import email_sources
+        from agent.briefing.generator import AgentBriefingGenerator
 
-        return BriefingPipeline(service, email_sources())
+        return BriefingPipeline(service, email_sources(), generator=AgentBriefingGenerator(
+            model=self.model, cancel_event=self.cancel_event, progress=self.report_progress))
 
     def execute(self, params: dict) -> ToolResult:
         if not isinstance(params, dict):
@@ -120,6 +110,7 @@ class BriefingTool(BaseTool):
             "run": self._run,
             "list": self._list,
             "get": self._get,
+            "mail": self._mail,
             "item_status": self._item_status,
             "add_rule": self._add_rule,
             "list_rules": self._list_rules,
@@ -189,45 +180,48 @@ class BriefingTool(BaseTool):
             f"已更新 {item.id} → {item.status}  {item.title}"
         )
 
+    def _mail(self, service, params: dict) -> ToolResult:
+        detail = service.get_briefing(params.get("briefing_id"))
+        if detail is None:
+            raise ValueError("简报不存在，请提供 briefing_id")
+        if not detail["briefing"].mail_snapshot_available:
+            raise ValueError("此版本没有候选详情，请先更新简报")
+        rows = detail["mail"]
+        if params.get("source_item_id"):
+            row = next((row for row in rows if row["id"] == params["source_item_id"]), None)
+            if row is None:
+                raise ValueError("候选信息不存在")
+            return ToolResult.success(json.dumps(row, ensure_ascii=False))
+        category = params.get("category", "candidate")
+        if category not in ("candidate", "selected", "filtered"):
+            raise ValueError("邮件分类无效")
+        rows = [row for row in rows if row["source"] == "email" and (category == "candidate" or row["category"] == category)]
+        offset = params.get("offset", 0)
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset 必须是非负整数")
+        return ToolResult.success(json.dumps({"total": len(rows), "next_offset": offset + 50 if offset + 50 < len(rows) else None,
+            "mail": [{key: row[key] for key in ("id", "title", "sender", "sender_email", "occurred_at", "category", "filter_reason")}
+                     for row in rows[offset:offset + 50]]}, ensure_ascii=False))
+
     def _add_rule(self, service, params: dict) -> ToolResult:
-        missing = [k for k in ("rule_action", "match_field", "match_value") if not params.get(k)]
-        if missing:
-            return ToolResult.fail(f"缺少参数: {', '.join(missing)}")
-        rule = service.create_rule(
-            {
-                "action": params["rule_action"],
-                "match_field": params["match_field"],
-                "match_op": params.get("match_op") or "eq",
-                "match_value": params["match_value"],
-                "source": params.get("source") or "email",
-                "note": params.get("note") or "",
-            }
-        )
-        return ToolResult.success(
-            f"已添加规则 {rule.id}: {rule.action} {rule.match_field} "
-            f"{rule.match_op} {rule.match_value}"
-        )
+        rule = service.create_rule({"text": params.get("text"), "source": params.get("source") or "*"})
+        return ToolResult.success(f"已添加规则文稿 {rule.id}:\n{rule.text}")
 
     def _list_rules(self, service, params: dict) -> ToolResult:
         rows = service.list_rules()
         if not rows:
-            return ToolResult.success("暂无过滤规则")
-        lines = [
-            f"- {row.id}  {'on' if row.enabled else 'off'}  {row.action} "
-            f"{row.match_field} {row.match_op} {row.match_value}"
-            for row in rows
-        ]
-        return ToolResult.success("过滤规则:\n" + "\n".join(lines))
+            from agent.briefing.instructions import DEFAULT_RULE_TEXT
+            return ToolResult.success("未保存规则文稿，当前使用默认规则：\n" + DEFAULT_RULE_TEXT)
+        lines = [f"- {row.id}  {'on' if row.enabled else 'off'}  source={row.source}\n{row.text}" for row in rows]
+        return ToolResult.success("规则文稿:\n" + "\n\n".join(lines))
 
     def _update_rule(self, service, params: dict) -> ToolResult:
         rule_id = params.get("rule_id")
         if not rule_id:
             return ToolResult.fail("缺少参数: rule_id")
         payload = {key: params[key] for key in (
-            "enabled", "source", "match_field", "match_op", "match_value", "note"
+            "enabled", "source", "text"
         ) if key in params}
-        if "rule_action" in params:
-            payload["action"] = params["rule_action"]
         rule = service.update_rule(rule_id, payload)
         return ToolResult.success(f"已更新规则 {rule.id}: {'on' if rule.enabled else 'off'}")
 
@@ -241,6 +235,7 @@ class BriefingTool(BaseTool):
     def _format_detail(self, detail: dict, briefing) -> str:
         lines = [
             f"{briefing.title or briefing.id}  [{briefing.status}]",
+            f"简报条目：{len(detail.get('items') or [])}；候选 {briefing.fetched_count}，精选 {briefing.kept_count}，过滤 {briefing.filtered_count}",
             briefing.body or "(无正文)",
         ]
         if briefing.error_message:

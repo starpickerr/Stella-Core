@@ -6013,7 +6013,8 @@ class BriefingItemStatusHandler:
 
 class BriefingRulesHandler:
     def GET(self):
-        return _briefing_response(lambda: {"rules": _briefing_service().list_rules()})
+        from agent.briefing.instructions import DEFAULT_RULE_TEXT
+        return _briefing_response(lambda: {"rules": _briefing_service().list_rules(), "default_text": DEFAULT_RULE_TEXT})
 
     def POST(self):
         return _briefing_response(lambda: {"rule": _briefing_service().create_rule(_briefing_body())})

@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
@@ -74,6 +76,19 @@ def test_rule_crud(api):
     assert call(web_channel.BriefingRuleDeleteHandler, body={"id": rule["id"]}) == {"status": "success"}
     assert call(web_channel.BriefingRulesHandler, "GET")["rules"] == []
     assert auth.call_count == 5
+
+
+def test_markdown_rule_api_and_default_template(api):
+    text = "# 排除\n排除发件地址以 @promo.example 结尾的邮件。\n# 输出\n只写有价值的行动建议。"
+    created = call(web_channel.BriefingRulesHandler, body={"text": text})
+    assert created["status"] == "success"
+    assert created["rule"]["text"] == text
+    listed = call(web_channel.BriefingRulesHandler, "GET")
+    assert "## 筛选原则" in listed["default_text"]
+    assert listed["rules"][0]["text"] == text
+    edited = call(web_channel.BriefingRuleUpdateHandler, body={"id": created["rule"]["id"], "text": "保留课程通知。", "enabled": False})
+    assert edited["rule"]["text"] == "保留课程通知。" and not edited["rule"]["enabled"]
+    assert call(web_channel.BriefingRulesHandler, body={"text": " "})["status"] == "error"
 
 
 @pytest.mark.parametrize("handler,body", [
