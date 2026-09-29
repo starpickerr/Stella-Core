@@ -113,7 +113,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       </div>
     </header>
     {error && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error}</span><button type="button" onClick={() => { void load(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
-    {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} /></div> : <div className="flex-1 flex min-h-0">
+    {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId ? 'hidden lg:block' : ''}`}>
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
         {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setSelectedId(id) }} />}
