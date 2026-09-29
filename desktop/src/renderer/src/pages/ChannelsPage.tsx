@@ -43,7 +43,7 @@ const pendingState = (ch: ChannelInfo): Pending => {
 }
 
 // An icon component that takes a `size` prop (lucide icons and our PaperPlaneIcon).
-type IconComponent = React.FC<{ size?: number }>
+type IconComponent = React.JSXElementConstructor<{ size?: number }>
 
 // Per-channel icon + accent color, mirroring the web console's FontAwesome
 // icon + Tailwind color palette (we use lucide here, with hex colors so the
