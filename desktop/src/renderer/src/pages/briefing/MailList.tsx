@@ -26,7 +26,7 @@ export const MailList: React.FC<{ mail: BriefingMail[] }> = ({ mail }) => {
         {expanded && <div id={`briefing-mail-${row.id}`} className="border-t border-default px-4 py-4 space-y-3">
           <h4 className="text-sm font-semibold text-content break-words">{row.title || t('briefing_mail_untitled')}</h4>
           {row.sender_email && <p className="text-xs text-content-secondary break-all">{row.sender_email}</p>}
-          {row.category === 'filtered' && <p className="text-xs text-content-tertiary">{t('briefing_filter_reason')}：{t(`briefing_filter_${row.filter_reason || 'exclude'}`)}</p>}
+          {row.category === 'filtered' && <p className="text-xs text-content-tertiary">{t('briefing_filter_reason')}：{['exclude', 'noreply', 'list_unsubscribe'].includes(row.filter_reason) ? t(`briefing_filter_${row.filter_reason}`) : row.filter_reason}</p>}
           {!row.body_available && <p className="text-xs text-content-tertiary">{t('briefing_mail_summary_only')}</p>}
           <div className="text-sm text-content-secondary whitespace-pre-wrap break-words leading-relaxed">{row.body || row.snippet || t('briefing_mail_no_body')}</div>
           {/^(https?:\/\/|mid:)/i.test(row.url) && <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline"><ExternalLink size={12} />{t('briefing_open')}</a>}

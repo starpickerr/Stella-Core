@@ -620,7 +620,11 @@ class ApiClient {
   }
 
   async getBriefingRules(): Promise<BriefingRule[]> {
-    return (await this.briefingRequest<{ rules: BriefingRule[] }>('/api/briefings/rules')).rules
+    return (await this.getBriefingRuleDocuments()).rules
+  }
+
+  async getBriefingRuleDocuments(): Promise<{ rules: BriefingRule[]; default_text: string }> {
+    return this.briefingRequest('/api/briefings/rules')
   }
 
   async createBriefingRule(payload: BriefingRuleInput): Promise<BriefingRule> {

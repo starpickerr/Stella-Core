@@ -800,6 +800,7 @@ export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
 export interface Briefing {
+  rule_text: string
   mail_snapshot_available: boolean
   window_start: string | null
   window_end: string | null
@@ -868,17 +869,12 @@ export interface BriefingRule {
   id: string
   enabled: boolean
   source: string
-  action: 'include' | 'exclude'
-  match_field: 'sender' | 'sender_email' | 'sender_domain' | 'title' | 'list_id'
-  match_op: 'eq' | 'contains'
-  match_value: string
-  note: string
+  text: string
   created_at: string
   updated_at: string
 }
 
-export type BriefingRuleInput = Pick<BriefingRule, 'action' | 'match_field' | 'match_op' | 'match_value'>
-  & Partial<Pick<BriefingRule, 'enabled' | 'source' | 'note'>>
+export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<BriefingRule, 'enabled' | 'source'>>
 
 export interface BriefingMailbox {
   id: string
