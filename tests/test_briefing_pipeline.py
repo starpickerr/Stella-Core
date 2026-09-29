@@ -1,8 +1,18 @@
+from datetime import datetime, timezone
+import pytest
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from agent.briefing.sources.static import StaticSource
 from agent.briefing.store import BriefingStore
+
+
+@pytest.fixture(autouse=True)
+def fixed_briefing_clock(monkeypatch):
+    monkeypatch.setattr(
+        "agent.briefing.pipeline._now",
+        lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc),
+    )
 
 
 def _svc(tmp_path) -> BriefingService:
@@ -143,4 +153,4 @@ def test_failed_today_sorts_before_older_completed_briefing(tmp_path):
     BriefingPipeline(svc, [StaticSource([_item("<a@x>", "请确认合同")])]).run(briefing_date="2026-09-08")
     today = BriefingPipeline(svc, [StaticSource(error=RuntimeError("offline"))]).run(briefing_date="2026-09-09")
     assert svc.list_briefings()[0].id == today["briefing"].id
-    assert today["briefing"].title == "9 月 9 日晨报"
+    assert today["briefing"].title == "2026年9月9日·简报"

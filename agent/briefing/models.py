@@ -67,6 +67,8 @@ class Briefing:
     generated_at: Optional[str]
     created_at: str
     updated_at: str
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
 
 
 @dataclass

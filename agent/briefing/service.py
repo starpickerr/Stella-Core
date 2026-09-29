@@ -130,7 +130,15 @@ class BriefingService:
         return {
             "briefing": briefing,
             "items": self.store.list_briefing_items(briefing_id),
+            "revisions": self.store.list_revisions(briefing_id),
         }
+
+    def get_revision(self, briefing_id: str, number: int) -> dict:
+        snapshot = self.store.get_revision(briefing_id, number)
+        if snapshot is None:
+            raise KeyError("briefing revision not found")
+        snapshot["revisions"] = self.store.list_revisions(briefing_id)
+        return snapshot
 
     def start_briefing(
         self,
@@ -175,6 +183,8 @@ class BriefingService:
                 generated_at=existing.generated_at,
                 created_at=existing.created_at,
                 updated_at=now,
+                window_start=existing.window_start,
+                window_end=existing.window_end,
             )
         )
 
@@ -189,7 +199,7 @@ class BriefingService:
         if status not in _FINISH_STATUSES:
             raise ValueError("status must be completed, failed, or partial")
 
-        now = _now_iso()
+        now = payload.get("run_at") or _now_iso()
         finished = Briefing(
             id=existing.id,
             kind=existing.kind,
@@ -213,6 +223,8 @@ class BriefingService:
             generated_at=now if status != "failed" else existing.generated_at,
             created_at=existing.created_at,
             updated_at=now,
+            window_start=payload.get("window_start", existing.window_start) if status != "failed" else existing.window_start,
+            window_end=payload.get("window_end", existing.window_end) if status != "failed" else existing.window_end,
         )
         snapshots = None
         if "items" in payload:
@@ -234,7 +246,7 @@ class BriefingService:
                     item.created_at = old.created_at
                     if "status" not in raw_items[index]:
                         item.status = old.status
-        self.store.save_snapshot(finished, snapshots)
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"))
         detail = self.get_briefing(briefing_id)
         assert detail is not None
         return detail
