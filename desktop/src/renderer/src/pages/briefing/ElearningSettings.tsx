@@ -11,7 +11,7 @@ const initial: Config = { enabled: true, configured: false, base_url: 'https://e
 export const ElearningSettings: React.FC = () => {
   const [config, setConfig] = useState(initial)
   const [password, setPassword] = useState('')
-  const [courseText, setCourseText] = useState('')
+  const [chosen, setChosen] = useState<string[]>([])
   const [courses, setCourses] = useState<{ id: string; name: string }[]>([])
   const [projectPath, setProjectPath] = useState('')
   const [loading, setLoading] = useState(true)
@@ -20,11 +20,11 @@ export const ElearningSettings: React.FC = () => {
   const [saved, setSaved] = useState(false)
   const [connected, setConnected] = useState(false)
 
-  const open = (cfg: Config) => {
+  const open = (cfg: Config, options: { id: string; name: string }[] = []) => {
     setConfig({ ...cfg, enabled: cfg.username ? cfg.enabled : true })
     setPassword(cfg.password_masked)
-    setCourseText(cfg.courses.join('\n'))
-    setSaved(false); setConnected(false); setCourses([])
+    setChosen(cfg.courses)
+    setSaved(false); setConnected(false); setCourses(options)
   }
 
   useEffect(() => {
@@ -35,7 +35,6 @@ export const ElearningSettings: React.FC = () => {
     return () => { cancelled = true }
   }, [])
 
-  const chosen = courseText.split(/[\n,，]+/).map((value) => value.trim()).filter(Boolean)
   const payload = (): ElearningSettingsInput => ({ enabled: config.enabled, base_url: config.base_url,
     username: config.username, courses: chosen, ...(password && password !== '********' ? { password } : {}) })
   const run = async (operation: () => Promise<void>) => {
@@ -44,7 +43,10 @@ export const ElearningSettings: React.FC = () => {
     catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy(false) }
   }
-  const edit = (changes: Partial<Config>) => { setConfig((value) => ({ ...value, ...changes })); setSaved(false); setConnected(false) }
+  const edit = (changes: Partial<Config>) => {
+    if (changes.username !== undefined || changes.base_url !== undefined) { setCourses([]); setChosen([]) }
+    setConfig((value) => ({ ...value, ...changes })); setSaved(false); setConnected(false)
+  }
 
   return <section className="rounded-card border border-default bg-surface p-5 space-y-4">
     <div className="flex items-center justify-between gap-3">
@@ -60,24 +62,39 @@ export const ElearningSettings: React.FC = () => {
         placeholder={t('briefing_crawler_path')} className={`${fieldClass} flex-1 min-w-48`} onChange={(e) => setProjectPath(e.target.value)} />
       <button type="button" disabled={busy || loading} className={buttonClass} onClick={() => void run(async () => { open(await apiClient.importElearningCrawler(projectPath.trim() || undefined)); setSaved(true) })}>{t('briefing_import_crawler')}</button>
     </div>
-    <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload())); setSaved(true) }) }}>
+    <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload()), courses); setSaved(true) }) }}>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_url')}<input required type="url" disabled={busy || loading} value={config.base_url} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ base_url: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_user')}<input required autoComplete="username" disabled={busy || loading} value={config.username} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ username: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_password')}<input type="password" autoComplete="new-password" disabled={busy || loading} value={password} className={`${fieldClass} block w-full mt-1`}
         onFocus={() => { if (password === '********') setPassword('') }} onBlur={() => { if (!password && config.password_set) setPassword('********') }}
         onChange={(e) => { setPassword(e.target.value); setSaved(false); setConnected(false) }} /></label>
       <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={config.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_source_enabled')}</label>
-      <label className="text-xs text-content-secondary sm:col-span-2">{t('briefing_elearning_courses')}<textarea rows={3} disabled={busy || loading} value={courseText}
-        placeholder={t('briefing_elearning_courses_help')} className="block w-full mt-1 p-2 rounded-btn border border-default bg-surface text-sm text-content resize-y"
-        onChange={(e) => { setCourseText(e.target.value); setSaved(false) }} /></label>
-      {!!courses.length && <div className="sm:col-span-2 space-y-2">
-        <button type="button" disabled={busy} className="text-xs text-accent hover:underline" onClick={() => setCourseText(courses.map((row) => row.id).join('\n'))}>{t('briefing_all_courses')}</button>
-        {courses.map((row) => <label key={row.id} className="flex items-center gap-2 text-sm text-content-secondary"><input type="checkbox" disabled={busy} checked={chosen.includes(row.id)}
-          onChange={(event) => { setCourseText((event.target.checked ? [...chosen, row.id] : chosen.filter((id) => id !== row.id)).join('\n')); setSaved(false) }} />{row.name}</label>)}
-      </div>}
+      <fieldset className="sm:col-span-2 rounded-card border border-default p-3 space-y-3">
+        <legend className="px-1 text-xs text-content-secondary">{t('briefing_elearning_courses')} · {chosen.length}</legend>
+        <p className="text-xs text-content-tertiary">{t('briefing_elearning_courses_help')}</p>
+        {courses.length > 0 ? <>
+          <div className="flex gap-3">
+            <button type="button" disabled={busy} className="text-xs text-accent hover:underline disabled:opacity-50" onClick={() => { setChosen(courses.map((row) => row.id)); setSaved(false) }}>{t('briefing_all_courses')}</button>
+            <button type="button" disabled={busy} className="text-xs text-content-secondary hover:underline disabled:opacity-50" onClick={() => { setChosen([]); setSaved(false) }}>{t('briefing_clear_courses')}</button>
+          </div>
+          <div className="max-h-64 overflow-y-auto space-y-2">{courses.map((row) => <label key={row.id} className="flex items-start gap-2 text-sm text-content-secondary"><input type="checkbox" className="mt-1" disabled={busy} checked={chosen.includes(row.id)}
+            onChange={(event) => { setChosen(event.target.checked ? [...chosen, row.id] : chosen.filter((id) => id !== row.id)); setSaved(false) }} /><span>{row.name}</span></label>)}</div>
+        </> : <>
+          {chosen.length > 0 && <div className="flex flex-wrap gap-2">{chosen.map((id) => <span key={id} className="px-2 py-1 rounded-btn bg-surface-2 text-xs text-content-secondary">{id}</span>)}</div>}
+          {connected && <p className="text-xs text-content-tertiary">{t('briefing_elearning_no_courses')}</p>}
+        </>}
+      </fieldset>
       <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-        <button type="submit" disabled={busy || loading} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
-        <button type="button" disabled={busy || loading} className={`${buttonClass} inline-flex items-center gap-1.5`} onClick={() => void run(async () => { setCourses(await apiClient.testElearningSettings(payload())); setConnected(true) })}>
+        <button type="submit" disabled={busy || loading || (config.enabled && !chosen.length)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
+        <button type="button" disabled={busy || loading} className={`${buttonClass} inline-flex items-center gap-1.5`} onClick={() => void run(async () => {
+          const options = await apiClient.testElearningSettings(payload())
+          setCourses(options)
+          setChosen([...new Set(chosen.flatMap((selector) => {
+            const matches = options.filter((row) => row.id === selector || (!/^\d+$/.test(selector) && row.name.toLowerCase().includes(selector.toLowerCase())))
+            return matches.length === 1 ? [matches[0].id] : []
+          }))])
+          setConnected(true)
+        })}>
           {busy && <Loader2 size={13} className="animate-spin" />}{t('briefing_elearning_test')}</button>
         {connected && <span role="status" className="inline-flex items-center gap-1 text-xs text-success"><Check size={13} />{t('briefing_mail_connected')}</span>}
         {saved && <span role="status" className="text-xs text-success">{t('briefing_source_saved')}</span>}

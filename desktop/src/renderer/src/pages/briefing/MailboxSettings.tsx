@@ -6,7 +6,7 @@ import type { BriefingMailbox, BriefingMailboxInput } from '../../types'
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const emptyMailbox = { host: '', user: '', port: 993, folder: 'INBOX', password: '' }
+const emptyMailbox = { host: '', user: '', port: 993, folder: 'INBOX', password: '', enabled: true }
 const passwordMask = '********'
 
 export const MailboxSettings: React.FC = () => {
@@ -24,7 +24,7 @@ export const MailboxSettings: React.FC = () => {
 
   const openMailbox = (row?: BriefingMailbox) => {
     setSelectedId(row?.id ?? null)
-    setDraft(row ? { host: row.host, user: row.user, port: Number(row.port) || 993, folder: row.folder, password: row.password_masked } : { ...emptyMailbox })
+    setDraft(row ? { host: row.host, user: row.user, port: Number(row.port) || 993, folder: row.folder, password: row.password_masked, enabled: row.enabled } : { ...emptyMailbox })
     setPasswordDirty(false); setPasswordVisible(false)
     setSaved(false); setConnection('idle'); setError('')
   }
@@ -44,7 +44,7 @@ export const MailboxSettings: React.FC = () => {
   }
 
   const payload = (): BriefingMailboxInput => ({
-    host: draft.host, user: draft.user, port: draft.port, folder: draft.folder,
+    host: draft.host, user: draft.user, port: draft.port, folder: draft.folder, enabled: draft.enabled,
     ...(selectedId ? { id: selectedId, action: 'save' as const } : { action: 'add' as const }),
     ...(passwordDirty && draft.password !== passwordMask ? { password: draft.password } : {}),
   })
@@ -89,6 +89,7 @@ export const MailboxSettings: React.FC = () => {
       <div className="min-w-0">
         <p className="text-sm font-medium text-content break-all">{row.user}</p>
         <p className="text-xs text-content-tertiary mt-1 break-all">{row.host}:{row.port} · {row.folder}</p>
+        <p className="text-xs text-content-tertiary mt-1">{t(row.enabled ? 'briefing_source_active' : 'briefing_source_inactive')}</p>
         {!row.configured && <p className="text-xs text-warning mt-1">{t('briefing_mail_missing')}</p>}
       </div>
       <div className="flex gap-2">
@@ -109,6 +110,7 @@ export const MailboxSettings: React.FC = () => {
       </div></label>
       <label className="text-xs text-content-secondary">{t('briefing_folder')}<input required value={draft.folder} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ folder: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_port')}<input type="number" required min={1} max={65535} value={draft.port || ''} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ port: Number(e.target.value) })} /></label>
+      <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={draft.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_source_enabled')}</label>
       <div className="flex flex-wrap items-end gap-2 sm:col-span-2">
         <button type="submit" disabled={busy || loading} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
         <button type="button" disabled={busy || loading} onClick={() => void testConnection()} className={`${buttonClass} inline-flex items-center gap-1.5`}>{connection === 'testing' && <Loader2 size={13} className="animate-spin" />}{t(connection === 'testing' ? 'briefing_mail_testing' : 'briefing_mail_test')}</button>
