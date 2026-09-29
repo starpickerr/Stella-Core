@@ -885,6 +885,7 @@ export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<Briefi
 
 export interface BriefingMailbox {
   id: string
+  enabled: boolean
   host: string
   user: string
   port: number | string
@@ -903,6 +904,7 @@ export interface BriefingSettings {
 
 export interface BriefingMailboxInput {
   id?: string
+  enabled?: boolean
   action?: 'add' | 'save'
   host: string
   user: string
