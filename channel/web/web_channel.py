@@ -5924,8 +5924,8 @@ def _briefing_service():
 
 def _briefing_pipeline(service):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.sources.email import EmailSource
-    return BriefingPipeline(service, [EmailSource()])
+    from agent.briefing.settings import email_sources
+    return BriefingPipeline(service, email_sources())
 
 
 def _briefing_body():
@@ -6038,14 +6038,19 @@ class BriefingRuleDeleteHandler:
 class BriefingSettingsHandler:
     def GET(self):
         def operation():
-            from agent.briefing.settings import public_mailbox
-            return {"settings": public_mailbox()}
+            from agent.briefing.settings import public_mailboxes
+            return {"settings": public_mailboxes()}
         return _briefing_response(operation)
 
     def POST(self):
         def operation():
-            from agent.briefing.settings import save_mailbox
-            return {"settings": save_mailbox(_briefing_body())}
+            from agent.briefing.settings import delete_mailbox, public_mailboxes, save_mailbox
+            body = _briefing_body()
+            if body.get("action") == "delete":
+                delete_mailbox(_briefing_id(body))
+                return {"settings": public_mailboxes()}
+            saved = save_mailbox(body)
+            return {"settings": public_mailboxes(), "mailbox": saved}
         return _briefing_response(operation)
 
 

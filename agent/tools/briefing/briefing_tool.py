@@ -19,7 +19,7 @@ class BriefingTool(BaseTool):
         "- 详情：action='get', briefing_id='brf-2026-09-09-morning'\n"
         "- 改条目状态：action='item_status', item_id='…', status='done'/'undo'/'ignored'/'follow_up'\n"
         "- 规则：action='add_rule' / 'list_rules' / 'update_rule' / 'delete_rule'\n\n"
-        "生成简报需要已配置 IMAP_HOST、IMAP_USER、IMAP_PASSWORD。"
+        "生成简报需要在简报设置中配置一个或多个 IMAP 邮箱；也可用 IMAP_HOST、IMAP_USER、IMAP_PASSWORD 提供初始账号。"
     )
     params: dict = {
         "type": "object",
@@ -106,9 +106,9 @@ class BriefingTool(BaseTool):
         if self._pipeline is not None:
             return self._pipeline
         from agent.briefing.pipeline import BriefingPipeline
-        from agent.briefing.sources.email import EmailSource
+        from agent.briefing.settings import email_sources
 
-        return BriefingPipeline(service, [EmailSource()])
+        return BriefingPipeline(service, email_sources())
 
     def execute(self, params: dict) -> ToolResult:
         if not isinstance(params, dict):

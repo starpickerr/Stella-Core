@@ -4,8 +4,7 @@ import threading
 
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService, briefing_id_for
-from agent.briefing.settings import load_mailbox, mailbox_path, public_mailbox
-from agent.briefing.sources.email import EmailSource
+from agent.briefing.settings import email_sources, mailbox_path, public_mailboxes
 from common.log import logger
 
 
@@ -15,9 +14,9 @@ class BriefingScheduler:
         self.clock = clock or (lambda: datetime.now().astimezone())
         # Resolve the user scope before launching the worker.
         settings_path = mailbox_path()
-        self.configured = configured or (lambda: public_mailbox(load_mailbox(settings_path))["configured"])
+        self.configured = configured or (lambda: public_mailboxes(settings_path)["configured"])
         self.pipeline_factory = pipeline_factory or (lambda: BriefingPipeline(
-            self.service, [EmailSource(**load_mailbox(settings_path))], clock=self.clock))
+            self.service, email_sources(settings_path), clock=self.clock))
         self._stop = threading.Event()
         self._thread = None
         self._retry_at = None

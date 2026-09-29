@@ -93,10 +93,11 @@ class BriefingPipeline:
                 try:
                     result = self._fetch_source(source, start, finish)
                 except Exception as exc:
+                    label = getattr(source, "display_name", source.name)
                     logger.warning(
-                        f"[BriefingPipeline] source {source.name} failed: {exc}"
+                        f"[BriefingPipeline] source {label} failed: {exc}"
                     )
-                    errors.append(f"{source.name}: {exc}")
+                    errors.append(f"{label}: {exc}")
                     continue
                 pending_cursors.append((source, result.cursors))
                 self._upsert_fetched(result.items)

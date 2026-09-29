@@ -115,9 +115,10 @@ def test_settings_do_not_expose_credentials(api, monkeypatch):
     result = call(web_channel.BriefingSettingsHandler, "GET")
     assert result["settings"]["configured"] is True
     assert "secret-password" not in json.dumps(result)
-    assert result["settings"]["password_set"] is True
+    assert result["settings"]["mailboxes"][0]["password_set"] is True
+    assert result["settings"]["mailboxes"][0]["password_masked"] == "********"
     monkeypatch.delenv("IMAP_PASSWORD")
-    assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["missing"] == ["IMAP_PASSWORD"]
+    assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]["missing"] == ["IMAP_PASSWORD"]
 
 
 def test_settings_save_preserves_password_on_blank_update(api):
@@ -126,8 +127,23 @@ def test_settings_save_preserves_password_on_blank_update(api):
     assert created["settings"]["configured"] is True
     assert "secret" not in json.dumps(created)
     updated = call(web_channel.BriefingSettingsHandler, body={"password": "", "folder": "Work"})
-    assert updated["settings"]["folder"] == "Work"
-    assert updated["settings"]["password_set"] is True
+    assert updated["settings"]["mailboxes"][0]["folder"] == "Work"
+    assert updated["settings"]["mailboxes"][0]["password_set"] is True
+
+
+def test_mailbox_crud_and_masked_passwords(api):
+    first = call(web_channel.BriefingSettingsHandler, body={"action": "add", "host": "imap.example.com", "user": "ada@example.com", "password": "first-secret"})
+    second = call(web_channel.BriefingSettingsHandler, body={"action": "add", "host": "imap.example.com", "user": "bob@example.com", "password": "second-secret"})
+    assert len(second["settings"]["mailboxes"]) == 2
+    mailbox_id = first["mailbox"]["id"]
+    updated = call(web_channel.BriefingSettingsHandler, body={"id": mailbox_id, "password": "********", "folder": "Work"})
+    assert updated["mailbox"]["folder"] == "Work"
+    assert updated["mailbox"]["password_masked"] == "********"
+    assert "first-secret" not in json.dumps(updated)
+    assert "second-secret" not in json.dumps(updated)
+    deleted = call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})
+    assert deleted["settings"]["mailboxes"] == [second["mailbox"]]
+    assert call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})["status"] == "error"
 
 
 def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
