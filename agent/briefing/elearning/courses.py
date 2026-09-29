@@ -8,7 +8,7 @@ def course_list(client):
 
 def select_courses(courses, selectors):
     if not selectors:
-        raise SyncError("尚未指定课程，请编辑 config/config.yaml 的 courses。")
+        raise SyncError("尚未选择课程，请在简报设置中测试连接并勾选课程。")
     selected = {}
     for selector in selectors:
         query = str(selector).strip()
@@ -19,7 +19,7 @@ def select_courses(courses, selectors):
             c for c in courses if query.casefold() in c.get("name", "").casefold()]
         if len(matches) != 1:
             details = "；".join("{}（ID {}）".format(c.get("name"), c.get("id")) for c in matches)
-            raise SyncError("课程“{}”{}。{} 请运行 courses 查看列表，并在配置里填写课程 ID。".format(
+            raise SyncError("课程“{}”{}。{} 请在简报设置中测试连接并重新选择课程。".format(
                 query, "未找到" if not matches else "匹配多个结果", details))
         selected[str(matches[0]["id"])] = matches[0]
     return list(selected.values())

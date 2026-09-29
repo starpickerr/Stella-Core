@@ -125,7 +125,7 @@ _KNOWN_TOOLS = frozenset({
     "read", "ls", "search_files", "memory_search", "memory_get", "web_search",
     "web_fetch", "vision", "send", "subagent", "bash", "write", "edit",
     "browser", "scheduler", "env_config", "evolution_undo",
-    "briefing",
+    "briefing", "elearning",
 })
 
 # MCP tools arrive with names we have never seen. Rather than guess "safe", read

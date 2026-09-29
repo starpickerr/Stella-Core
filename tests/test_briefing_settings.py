@@ -23,7 +23,7 @@ def test_settings_round_trip_keeps_password_out_of_response(tmp_path):
         assert path.stat().st_mode & 0o777 == 0o600
 
 
-@pytest.mark.parametrize("patch_values", [{"host": ""}, {"user": "a\nb"}, {"password": "x\ny"}, {"port": 0}, {"port": 65536}, {"port": 993.5}, {"port": True}])
+@pytest.mark.parametrize("patch_values", [{"host": ""}, {"user": "a\nb"}, {"password": "x\ny"}, {"port": 0}, {"port": 65536}, {"port": 993.5}, {"port": True}, {"enabled": "false"}, {"enabled": 0}])
 def test_invalid_save_leaves_existing_settings_intact(tmp_path, patch_values):
     path = tmp_path / "mailbox.json"
     save_mailbox({"host": "imap.example.com", "user": "ada@example.com", "password": "secret"}, path)
@@ -71,3 +71,33 @@ def test_connection_check_uses_saved_password_without_saving_draft(tmp_path):
     source.assert_called_once_with(host="imap.other.example", user="ada@gmail.com", password="saved-secret", port=993, folder="Work")
     source.return_value.check_connection.assert_called_once_with()
     assert path.read_bytes() == original
+
+
+def test_disabling_mailbox_preserves_credentials_and_source_identity(tmp_path):
+    from agent.briefing.settings import email_sources, public_mailboxes
+    path = tmp_path / "mailbox.json"
+    first = save_mailbox({"action": "add", "host": "imap.example.com", "user": "ada@example.com", "password": "secret"}, path)
+    second = save_mailbox({"action": "add", "host": "imap.example.com", "user": "bob@example.com", "password": "other"}, path)
+    identity = email_sources(path)[0].account_id
+    disabled = save_mailbox({"id": first["id"], "enabled": False}, path)
+    assert disabled["configured"] and not disabled["enabled"]
+    assert len(public_mailboxes(path)["mailboxes"]) == 2
+    assert [source._settings()["user"] for source in email_sources(path)] == [second["user"]]
+    save_mailbox({"id": first["id"], "folder": "INBOX"}, path)
+    assert not public_mailboxes(path)["mailboxes"][0]["enabled"]
+    enabled = save_mailbox({"id": first["id"], "enabled": True}, path)
+    assert enabled["password_masked"] == "********"
+    assert email_sources(path)[0].account_id == identity
+    assert load_mailbox(path)["password"] == "secret"
+
+
+@pytest.mark.parametrize("saved", [
+    {"host": "imap.example.com", "user": "ada@example.com", "password": "secret"},
+    {"version": 2, "mailboxes": [{"id": "old", "host": "imap.example.com", "user": "ada@example.com", "password": "secret"}]},
+])
+def test_existing_mailboxes_default_to_enabled(tmp_path, saved):
+    from agent.briefing.settings import email_sources, public_mailboxes
+    path = tmp_path / "mailbox.json"
+    path.write_text(json.dumps(saved))
+    assert public_mailboxes(path)["mailboxes"][0]["enabled"] is True
+    assert len(email_sources(path)) == 1

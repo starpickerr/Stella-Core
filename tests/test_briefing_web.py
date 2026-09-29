@@ -188,6 +188,11 @@ def test_mailbox_crud_and_masked_passwords(api):
     assert updated["mailbox"]["password_masked"] == "********"
     assert "first-secret" not in json.dumps(updated)
     assert "second-secret" not in json.dumps(updated)
+    disabled = call(web_channel.BriefingSettingsHandler, body={"id": mailbox_id, "enabled": False})
+    assert not disabled["mailbox"]["enabled"] and disabled["mailbox"]["password_set"]
+    with patch("agent.briefing.elearning_settings.elearning_sources", return_value=[]):
+        enabled_sources = call(web_channel.BriefingSourcesHandler, "GET")["sources"]
+    assert len(enabled_sources) == 1 and "bob@example.com" in enabled_sources[0]["name"]
     deleted = call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})
     assert deleted["settings"]["mailboxes"] == [second["mailbox"]]
     assert call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})["status"] == "error"

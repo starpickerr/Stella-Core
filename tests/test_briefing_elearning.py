@@ -10,6 +10,7 @@ from agent.briefing import elearning_settings as settings
 from agent.briefing.elearning.client import Canvas, SafeRedirect
 from agent.briefing.elearning.errors import LoginRequired, SyncError
 from agent.briefing.sources.elearning import ElearningSource
+from agent.tools.elearning.elearning_tool import ElearningTool
 
 BASE = "https://elearning.fudan.edu.cn"
 
@@ -48,6 +49,58 @@ def test_disabled_source_is_not_available(config_path):
     settings.save_settings(config(enabled=False))
     assert settings.public_settings()["configured"]
     assert settings.elearning_sources() == []
+
+
+def test_elearning_tool_discovers_courses_before_selection_and_obeys_enabled(config_path):
+    settings.save_settings(config(courses=[]))
+    canvas = FakeCanvas()
+    tool = ElearningTool(client_factory=lambda cfg: canvas)
+    result = tool.execute({"action": "courses"})
+    assert result.status == "success"
+    assert json.loads(result.result) == {"courses": [{"id": "42", "name": "课程"}]}
+    assert tool.execute({"action": "fetch"}).status == "error"
+    settings.save_settings({"enabled": False})
+    canvas.calls.clear()
+    assert tool.execute({"action": "courses"}).status == "error"
+    assert canvas.calls == []
+
+
+def test_elearning_tool_fetch_uses_shared_crawler_and_never_commits_cursor(config_path, tmp_path):
+    from agent.briefing.store import BriefingStore
+    settings.save_settings(config())
+    canvas = FakeCanvas()
+    store = BriefingStore(tmp_path / "briefing.db")
+    tool = ElearningTool(client_factory=lambda cfg: canvas, store=store)
+    params = {"action": "fetch", "since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z", "limit": 2}
+    result = tool.execute(params)
+    assert result.status == "success", result.result
+    first = json.loads(result.result)
+    assert first["total"] == 6 and first["next_offset"] == 2
+    assert len(first["source_items"]) == 2
+    assert all(item["source"] == "elearning" and item["payload"]["body"] for item in first["source_items"])
+    second = json.loads(tool.execute({**params, "offset": 2}).result)
+    assert {item["source_id"] for item in first["source_items"]}.isdisjoint(item["source_id"] for item in second["source_items"])
+    assert store.get_cursor("elearning", settings.account_id(settings.load_settings()), "elearning_state") is None
+    assert store.list_briefings() == []
+    assert "campus-secret" not in result.result
+    calls = list(canvas.calls)
+    assert tool.execute({**params, "limit": 0}).status == "error"
+    assert tool.execute({**params, "since": "not a date"}).status == "error"
+    assert tool.execute({**params, "until": params["since"]}).status == "error"
+    assert canvas.calls == calls
+
+
+def test_elearning_tool_is_registered_and_read_only():
+    import agent.tools as exports
+    from agent.permission.policy import check_tool_call
+    from agent.tools.tool_manager import ToolManager
+    assert "ElearningTool" in exports.__all__
+    assert exports.ElearningTool is ElearningTool
+    manager = ToolManager()
+    manager._load_tools_from_init()
+    assert manager.tool_classes["elearning"] is ElearningTool
+    for action in ("courses", "fetch"):
+        assert check_tool_call("read-only", "elearning", {"action": action})
 
 
 def test_import_crawler_copies_only_configuration_and_session_to_private_state(config_path, tmp_path):
