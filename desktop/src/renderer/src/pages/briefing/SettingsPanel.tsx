@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Mail, CalendarClock, Filter } from 'lucide-react'
+import { Loader2, Mail, CalendarClock, Filter, Check } from 'lucide-react'
 import apiClient from '../../api/client'
 import { t } from '../../i18n'
 import type { BriefingRule, BriefingRuleInput, BriefingSettings } from '../../types'
@@ -13,6 +13,7 @@ export const SettingsPanel: React.FC = () => {
   const [settings, setSettings] = useState<BriefingSettings | null>(null)
   const [mailbox, setMailbox] = useState({ host: '', user: '', port: 993, folder: 'INBOX', password: '' })
   const [mailSaved, setMailSaved] = useState(false)
+  const [connection, setConnection] = useState<'idle' | 'testing' | 'connected'>('idle')
   const [rules, setRules] = useState<BriefingRule[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -49,10 +50,28 @@ export const SettingsPanel: React.FC = () => {
     setBusy(true); setError(''); setMailSaved(false)
     try {
       const cfg = await apiClient.saveBriefingSettings(mailbox)
+      if (!cfg.password_set) throw new Error(t('briefing_mail_save_failed'))
       setSettings(cfg)
-      setMailbox((value) => ({ ...value, password: '' }))
+      setMailbox((value) => ({ ...value, host: cfg.host, user: cfg.user, port: Number(cfg.port), folder: cfg.folder }))
       setMailSaved(true)
     } catch (err) {
+      setError(String(err instanceof Error ? err.message : err))
+    } finally { setBusy(false) }
+  }
+
+  const editMailbox = (changes: Partial<typeof mailbox>) => {
+    setMailSaved(false)
+    setConnection('idle')
+    setMailbox((value) => ({ ...value, ...changes }))
+  }
+
+  const testConnection = async () => {
+    setBusy(true); setError(''); setConnection('testing')
+    try {
+      await apiClient.testBriefingSettings(mailbox)
+      setConnection('connected')
+    } catch (err) {
+      setConnection('idle')
       setError(String(err instanceof Error ? err.message : err))
     } finally { setBusy(false) }
   }
@@ -69,18 +88,23 @@ export const SettingsPanel: React.FC = () => {
       </div>}
       <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_mail_help')}</p>
       <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(e) => void saveMailbox(e)}>
-        <label className="text-xs text-content-secondary">{t('briefing_host')}<input required value={mailbox.host} disabled={busy || loading} autoComplete="off" placeholder="imap.example.com" className={`${fieldClass} block w-full mt-1`}
-          onChange={(e) => { setMailSaved(false); setMailbox({ ...mailbox, host: e.target.value }) }} /></label>
+        <label className="text-xs text-content-secondary">{t('briefing_host')}<input required value={mailbox.host} disabled={busy || loading} autoComplete="off" placeholder="imap.gmail.com" className={`${fieldClass} block w-full mt-1`}
+          onChange={(e) => { editMailbox({ host: e.target.value }) }} /></label>
         <label className="text-xs text-content-secondary">{t('briefing_user')}<input required value={mailbox.user} disabled={busy || loading} autoComplete="username" className={`${fieldClass} block w-full mt-1`}
-          onChange={(e) => { setMailSaved(false); setMailbox({ ...mailbox, user: e.target.value }) }} /></label>
+          onChange={(e) => { editMailbox({ user: e.target.value }) }} /></label>
         <label className="text-xs text-content-secondary">{t('briefing_password')}<input type="password" required={!settings?.password_set} value={mailbox.password} disabled={busy || loading} autoComplete="off"
           placeholder={settings?.password_set ? t('briefing_password_keep') : ''} className={`${fieldClass} block w-full mt-1`}
-          onChange={(e) => { setMailSaved(false); setMailbox({ ...mailbox, password: e.target.value }) }} /></label>
+          onChange={(e) => { editMailbox({ password: e.target.value }) }} />
+          {settings?.password_set && <span className="mt-1.5 inline-flex items-center gap-1 text-content-tertiary"><Check size={12} />{t('briefing_password_saved')}</span>}</label>
         <label className="text-xs text-content-secondary">{t('briefing_folder')}<input required value={mailbox.folder} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`}
-          onChange={(e) => { setMailSaved(false); setMailbox({ ...mailbox, folder: e.target.value }) }} /></label>
+          onChange={(e) => { editMailbox({ folder: e.target.value }) }} /></label>
         <label className="text-xs text-content-secondary">{t('briefing_port')}<input type="number" required min={1} max={65535} value={mailbox.port || ''} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`}
-          onChange={(e) => { setMailSaved(false); setMailbox({ ...mailbox, port: Number(e.target.value) }) }} /></label>
-        <div className="flex items-end gap-3"><button type="submit" disabled={busy || loading} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
+          onChange={(e) => { editMailbox({ port: Number(e.target.value) }) }} /></label>
+        <div className="flex flex-wrap items-end gap-2 sm:col-span-2"><button type="submit" disabled={busy || loading} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
+          <button type="button" disabled={busy || loading} onClick={() => void testConnection()} className={`${buttonClass} inline-flex items-center gap-1.5`}>
+            {connection === 'testing' && <Loader2 size={13} className="animate-spin" />}{t(connection === 'testing' ? 'briefing_mail_testing' : 'briefing_mail_test')}
+          </button>
+          {connection === 'connected' && <span role="status" className="inline-flex items-center gap-1 text-xs text-success"><Check size={13} />{t('briefing_mail_connected')}</span>}
           {mailSaved && <span role="status" className="text-xs text-success">{t('briefing_mail_saved')}</span>}</div>
       </form>
     </section>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import imaplib
 import hashlib
 import sys
+import socket
 import json
 import re
 import ssl as ssl_module
@@ -188,6 +189,9 @@ class EmailSource:
                            ("folder", self._folder)):
             if value is not None:
                 cfg[key] = value
+        from agent.briefing.settings import normalize_imap_host
+        if cfg["host"]:
+            cfg["host"] = normalize_imap_host(cfg["host"])
         cfg["port"] = int(cfg["port"])
         if not 1 <= cfg["port"] <= 65535:
             raise ValueError("IMAP_PORT must be between 1 and 65535")
@@ -204,20 +208,47 @@ class EmailSource:
                 "IMAP is not configured; set IMAP_HOST, IMAP_USER, and IMAP_PASSWORD"
             )
         timeout = {"timeout": 30} if sys.version_info >= (3, 9) else {}
-        if cfg["ssl"]:
-            client = imaplib.IMAP4_SSL(cfg["host"], cfg["port"], ssl_context=ssl_module.create_default_context(), **timeout)
-        else:
-            client = imaplib.IMAP4(cfg["host"], cfg["port"], **timeout)
+        client = None
         try:
+            if cfg["ssl"]:
+                client = imaplib.IMAP4_SSL(cfg["host"], cfg["port"], ssl_context=ssl_module.create_default_context(), **timeout)
+            else:
+                client = imaplib.IMAP4(cfg["host"], cfg["port"], **timeout)
             client.socket().settimeout(30)
             client.login(cfg["user"], cfg["password"])
             return client
-        except Exception:
+        except Exception as exc:
+            if client is not None:
+                try:
+                    client.logout()
+                except Exception:
+                    pass
+            if isinstance(exc, socket.gaierror):
+                raise ValueError(f"无法解析 IMAP 服务器 {cfg['host']}，尚未验证授权码。请检查服务器地址、网络、DNS 或代理的 DNS 设置。") from None
+            if isinstance(exc, ssl_module.SSLError):
+                raise ValueError("IMAP SSL 连接失败，请检查 SSL 端口和网络连接。") from None
+            if isinstance(exc, (TimeoutError, socket.timeout)):
+                raise ValueError("IMAP 连接超时，请确认当前网络可以访问邮箱服务器及 SSL 端口。") from None
+            if isinstance(exc, ConnectionRefusedError):
+                raise ValueError("IMAP 服务器拒绝连接，请检查服务器地址、SSL 端口及网络连接。") from None
+            if isinstance(exc, imaplib.IMAP4.error):
+                raise ValueError("IMAP 登录失败，请确认邮箱账号和授权码，并检查邮箱服务是否允许 IMAP 访问。") from None
+            if isinstance(exc, OSError):
+                raise ValueError("IMAP 网络连接失败，请检查网络、DNS、代理设置及 SSL 端口。") from None
+            raise
+
+    def check_connection(self) -> None:
+        cfg = self._settings()
+        client = self._connect()
+        try:
+            status, _ = client.select(cfg["folder"], readonly=True)
+            if status != "OK":
+                raise ValueError("已登录，但无法打开邮件文件夹，请检查文件夹名称。")
+        finally:
             try:
                 client.logout()
             except Exception:
                 pass
-            raise
 
     def fetch(self, cursors: Dict[str, str]) -> FetchResult:
         cfg = self._settings()

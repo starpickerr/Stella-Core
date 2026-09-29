@@ -639,6 +639,10 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', payload)).settings
   }
 
+  async testBriefingSettings(payload: { host: string; user: string; port: number; folder: string; password: string }): Promise<void> {
+    await this.briefingRequest('/api/briefings/settings/test', payload)
+  }
+
   async getBriefingSettings(): Promise<BriefingSettings> {
     return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
   }
