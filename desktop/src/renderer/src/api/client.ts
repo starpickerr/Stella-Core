@@ -28,7 +28,7 @@ import type {
   PeriodStatementItem,
   PeriodType,
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
-  BriefingRule, BriefingRuleInput, BriefingSettings,
+  BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -635,16 +635,20 @@ class ApiClient {
     await this.briefingRequest('/api/briefings/rules/delete', { id })
   }
 
-  async saveBriefingSettings(payload: { host: string; user: string; port: number; folder: string; password: string }): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', payload)).settings
+  async saveBriefingSettings(payload: BriefingMailboxInput): Promise<{ settings: BriefingSettings; mailbox: BriefingMailbox }> {
+    return this.briefingRequest('/api/briefings/settings', payload)
   }
 
-  async testBriefingSettings(payload: { host: string; user: string; port: number; folder: string; password: string }): Promise<void> {
+  async testBriefingSettings(payload: BriefingMailboxInput): Promise<void> {
     await this.briefingRequest('/api/briefings/settings/test', payload)
   }
 
   async getBriefingSettings(): Promise<BriefingSettings> {
     return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
+  }
+
+  async deleteBriefingMailbox(id: string): Promise<BriefingSettings> {
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', { action: 'delete', id })).settings
   }
 
   // ---------------------------------------------------------
