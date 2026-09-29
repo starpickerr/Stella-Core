@@ -63,6 +63,9 @@ export interface ProductModels {
   // Controlled: receives the current model id and reports changes. When set,
   // the core renders this instead of its built-in model dropdown.
   ModelPicker?: React.FC<{ value: string; onChange: (model: string) => void }>
+  // Optional actions next to the model and API key field labels.
+  ModelFieldLink?: React.FC
+  ApiKeyFieldLink?: React.FC
   // Set true to show a masked+editable API key field for the current provider
   // inside basic settings, useful when the standalone models tab is hidden.
   showManagedApiKey?: boolean

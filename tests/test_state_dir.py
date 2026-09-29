@@ -55,6 +55,9 @@ def test_user_scoped_paths_collapse_onto_the_root_without_a_user(registry, tmp_p
         assert state_dir.memory_dir() == tmp_path / "alpha" / "memory"
         assert state_dir.runs_dir() == tmp_path / "alpha" / "runs"
         assert state_dir.bills_db(ensure=False) == tmp_path / "alpha" / "bills" / "bills.db"
+        assert state_dir.briefing_db(ensure=False) == (
+            tmp_path / "alpha" / "briefing" / "briefing.db"
+        )
 
 
 def test_user_scoped_paths_split_once_a_user_is_present(registry, tmp_path):
@@ -63,6 +66,9 @@ def test_user_scoped_paths_split_once_a_user_is_present(registry, tmp_path):
         assert state_dir.runs_dir() == tmp_path / "alpha" / "users" / "u1" / "runs"
         assert state_dir.bills_db(ensure=False) == (
             tmp_path / "alpha" / "users" / "u1" / "bills" / "bills.db"
+        )
+        assert state_dir.briefing_db(ensure=False) == (
+            tmp_path / "alpha" / "users" / "u1" / "briefing" / "briefing.db"
         )
         # agent assets stay shared across users
         assert state_dir.skills_dir() == tmp_path / "alpha" / "skills"
@@ -243,6 +249,7 @@ _SINGLE_AGENT_LAYOUT = {
     "output_dir": ("output",),
     "runs_dir": ("runs",),
     "bills_db": ("bills", "bills.db"),
+    "briefing_db": ("briefing", "briefing.db"),
 }
 
 
