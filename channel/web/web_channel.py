@@ -2002,6 +2002,14 @@ class WebChannel(ChatChannel):
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
+            '/api/briefings', 'BriefingsHandler',
+            '/api/briefings/run', 'BriefingRunHandler',
+            '/api/briefings/items/status', 'BriefingItemStatusHandler',
+            '/api/briefings/rules', 'BriefingRulesHandler',
+            '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
+            '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
+            '/api/briefings/settings', 'BriefingSettingsHandler',
+            '/api/briefings/(.*)', 'BriefingDetailHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
             '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
@@ -5897,6 +5905,131 @@ class SchedulerDeleteHandler:
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+def _briefing_service():
+    from agent.briefing.service import BriefingService
+    return BriefingService()
+
+
+def _briefing_pipeline(service):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.sources.email import EmailSource
+    return BriefingPipeline(service, [EmailSource()])
+
+
+def _briefing_body():
+    body = json.loads(web.data() or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be an object")
+    return body
+
+
+def _briefing_id(body):
+    value = body.get("id")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("id is required")
+    return value.strip()
+
+
+def _briefing_response(operation):
+    """Use the same authenticated JSON envelope as bills and scheduler."""
+    _require_auth()
+    web.header('Content-Type', 'application/json; charset=utf-8')
+    web.header('Cache-Control', 'no-store')
+    from dataclasses import asdict, is_dataclass
+    try:
+        payload = operation()
+        return json.dumps(
+            {"status": "success", **payload}, ensure_ascii=False,
+            default=lambda value: asdict(value) if is_dataclass(value) else str(value),
+        )
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+    except Exception:
+        logger.exception("[WebChannel] Briefing request failed")
+        return json.dumps({"status": "error", "message": "Briefing request failed"})
+
+
+class BriefingsHandler:
+    def GET(self):
+        def operation():
+            params = web.input(kind='', status='')
+            return {"briefings": _briefing_service().list_briefings(
+                params.kind or None, params.status or None,
+            )}
+        return _briefing_response(operation)
+
+
+class BriefingDetailHandler:
+    def GET(self, briefing_id):
+        def operation():
+            from urllib.parse import unquote
+            detail = _briefing_service().get_briefing(unquote(briefing_id))
+            if detail is None:
+                raise KeyError("briefing not found")
+            return detail
+        return _briefing_response(operation)
+
+
+class BriefingRunHandler:
+    def POST(self):
+        def operation():
+            body = _briefing_body()
+            service = _briefing_service()
+            return _briefing_pipeline(service).run(
+                kind=body.get("kind") or "morning",
+                briefing_date=body.get("briefing_date"),
+            )
+        return _briefing_response(operation)
+
+
+class BriefingItemStatusHandler:
+    def POST(self):
+        def operation():
+            body = _briefing_body()
+            return {"item": _briefing_service().update_item_status(
+                _briefing_id(body), body.get("status"),
+            )}
+        return _briefing_response(operation)
+
+
+class BriefingRulesHandler:
+    def GET(self):
+        return _briefing_response(lambda: {"rules": _briefing_service().list_rules()})
+
+    def POST(self):
+        return _briefing_response(lambda: {"rule": _briefing_service().create_rule(_briefing_body())})
+
+
+class BriefingRuleUpdateHandler:
+    def POST(self):
+        def operation():
+            body = _briefing_body()
+            return {"rule": _briefing_service().update_rule(_briefing_id(body), body)}
+        return _briefing_response(operation)
+
+
+class BriefingRuleDeleteHandler:
+    def POST(self):
+        def operation():
+            _briefing_service().delete_rule(_briefing_id(_briefing_body()))
+            return {}
+        return _briefing_response(operation)
+
+
+class BriefingSettingsHandler:
+    def GET(self):
+        def operation():
+            from agent.briefing.settings import public_mailbox
+            return {"settings": public_mailbox()}
+        return _briefing_response(operation)
+
+    def POST(self):
+        def operation():
+            from agent.briefing.settings import save_mailbox
+            return {"settings": save_mailbox(_briefing_body())}
+        return _briefing_response(operation)
 
 
 def _bills_service():
