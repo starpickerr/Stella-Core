@@ -2,6 +2,7 @@
 import io
 import json
 from unittest.mock import Mock
+from unittest.mock import patch
 
 import pytest
 
@@ -42,6 +43,22 @@ def test_settings_mask_save_replacement_scope_and_deletion(config_path):
     settings.delete_settings()
     assert settings.elearning_sources() == []
     assert settings.public_settings()["username"] == ""
+
+
+def test_course_names_are_cached_per_account_for_settings(config_path):
+    settings.save_settings(config())
+    canvas = FakeCanvas()
+    with patch("agent.briefing.elearning.client.ensure_login", return_value=canvas):
+        assert settings.check_connection({}) == [{"id": "42", "name": "课程"}]
+    public = settings.public_settings()
+    assert public["courses"] == ["42"]
+    assert public["course_options"] == [{"id": "42", "name": "课程"}]
+    assert "campus-secret" not in json.dumps(public)
+    assert settings.course_options_path(settings.load_settings()).stat().st_mode & 0o777 == 0o600
+    previous_path = settings.course_options_path(settings.load_settings())
+    changed = settings.save_settings({"username": "another", "password": "new-password"})
+    assert changed["course_options"] == []
+    assert not previous_path.exists()
 
 
 def test_disabled_source_is_not_available(config_path):
@@ -168,6 +185,18 @@ def test_partial_canvas_read_reports_failure_without_advancing_state(config_path
     canvas.rows["quizzes"] = LoginRequired("expired")
     with pytest.raises(LoginRequired):
         ElearningSource(config(), client_factory=lambda cfg: canvas).fetch({})
+
+
+def test_quiz_404_keeps_other_candidates_and_reports_partial_result(config_path):
+    canvas = FakeCanvas()
+    canvas.rows["courses"] = [{"id": i, "name": "课程" + str(i)} for i in range(1, 10)]
+    canvas.rows["quizzes"] = SyncError("网站返回 HTTP 404。")
+    source = ElearningSource(config(courses=[str(i) for i in range(1, 10)]), client_factory=lambda cfg: canvas)
+    result = source.fetch({"since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z"})
+    assert len(result.errors) == 1 and "9 门课程" in result.errors[0]
+    assert "测验未读取" in result.errors[0] and result.cursors == {}
+    assert result.items and all(item.payload["resource_type"] != "quiz" for item in result.items)
+    assert {item.payload["resource_type"] for item in result.items} >= {"announcement", "assignment", "file"}
 
 
 def test_canvas_token_pagination_is_scoped_to_config_and_origin(config_path, monkeypatch):
