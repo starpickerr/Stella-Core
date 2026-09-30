@@ -301,6 +301,88 @@ def test_connection_check_opens_folder_readonly_and_logs_out():
     assert fake.logged_out
 
 
+def test_imap_id_is_sent_after_login_before_opening_folder():
+    from unittest.mock import patch
+
+    events = []
+
+    class IdRequiredIMAP(FakeIMAP):
+        def __init__(self):
+            super().__init__([])
+            self.identified = False
+
+        def socket(self):
+            return self
+
+        def settimeout(self, seconds):
+            assert seconds == 30
+
+        def login(self, user, password):
+            events.append("login")
+            return "OK", []
+
+        def capability(self):
+            events.append("capability")
+            return "OK", [b"IMAP4rev1 ID UIDPLUS"]
+
+        def xatom(self, command, payload):
+            events.append("id")
+            assert command == "ID"
+            assert '"name" "Stella"' in payload
+            self.identified = True
+            return "OK", []
+
+        def list(self):
+            events.append("list")
+            return "OK", [b'() "/" "INBOX"']
+
+        def select(self, folder, readonly=True):
+            events.append("select")
+            if not self.identified:
+                return "NO", [b"EXAMINE Unsafe Login. Please contact kefu@188.com for help"]
+            return super().select(folder, readonly)
+
+    client = IdRequiredIMAP()
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", return_value=client):
+        result = EmailSource(host="imap.163.com", user="ada@163.com", password="auth-code").check_connection()
+
+    assert result["folder_accessible"] is True
+    assert events == ["login", "capability", "id", "list", "select"]
+    assert client.logged_out
+
+
+def test_imap_id_is_not_sent_without_server_capability():
+    from unittest.mock import patch
+
+    class PlainIMAP(FakeIMAP):
+        def __init__(self):
+            super().__init__([])
+            self.id_calls = 0
+
+        def socket(self):
+            return self
+
+        def settimeout(self, seconds):
+            pass
+
+        def login(self, user, password):
+            return "OK", []
+
+        def capability(self):
+            return "OK", [b"IMAP4rev1 IDLE UIDPLUS"]
+
+        def xatom(self, command, payload):
+            self.id_calls += 1
+            raise AssertionError("ID is not advertised")
+
+    client = PlainIMAP()
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", return_value=client):
+        result = EmailSource(host="imap.example.com", user="ada@example.com", password="auth-code").check_connection()
+
+    assert result["folder_accessible"] is True
+    assert client.id_calls == 0
+
+
 def test_connection_lists_provider_folders_and_reports_select_failure_without_secret():
     import base64
 
@@ -343,3 +425,17 @@ def test_fetch_reports_select_reason_and_keeps_password_private():
         source.fetch({})
     assert "private-code" not in str(error.value)
     assert fake.logged_out
+
+
+def test_unsafe_login_is_reported_as_server_security_rejection():
+    class DeniedIMAP(FakeIMAP):
+        def select(self, folder, readonly=True):
+            return "NO", [b"EXAMINE Unsafe Login. Please contact kefu@188.com for help"]
+
+    result = EmailSource(password="private-code", opener=lambda: DeniedIMAP([])).check_connection()
+
+    assert result["connected"] is True
+    assert result["folder_accessible"] is False
+    assert "邮箱服务器" in result["message"]
+    assert "文件夹名称错误" in result["message"]
+    assert "请在简报设置中测试连接" not in result["message"]
