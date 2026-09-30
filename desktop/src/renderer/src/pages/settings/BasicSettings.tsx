@@ -349,8 +349,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     )
   }
 
-  // A provider counts as configured when its key field holds a value.
-  // Custom providers (no key field) carry their own credential, so treat as configured.
   const isConfigured = (id: string): boolean => {
     const meta = providerMeta(id)
     const f = meta?.api_key_field
@@ -358,9 +356,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     return !!config?.api_keys?.[f]
   }
 
-  // Only list configured providers (built-in or custom). Unconfigured vendors
-  // have no usable credentials, so showing them — flagged "unconfigured" — is
-  // just noise. Keep the current selection so a saved value never disappears.
+  // Keep the selected provider visible when its credentials are missing.
   const providerIds = config?.providers ? Object.keys(config.providers) : []
   const providerOptions = providerIds
     .filter((id) => isConfigured(id) || id === provider)

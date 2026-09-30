@@ -6,8 +6,8 @@
 --   email_messages    Email-private columns (1:1 with source_items)
 --   briefings         One briefing document per day/kind
 --   briefing_items    Snapshot cards on a briefing (copy envelope; optional link)
---   briefing_candidates All run candidates, retained for re-filtering
---   filter_rules      User-defined field rules (built-ins stay in rules.py)
+--   briefing_candidates Historical candidate links; classified snapshots live in briefing_mail
+--   filter_rules      User-authored rules (legacy field columns retained)
 --   sync_state        Per-source incremental cursors
 --
 -- Add a new source later with another 1:1 table (e.g. sms_messages) whose
@@ -59,13 +59,19 @@ CREATE TABLE IF NOT EXISTS email_messages (
 
 -- -----------------------------------------------------------------------------
 -- Briefing document: one row per user/day/kind (id convention, e.g.
--- brf-2026-09-09-morning). Sources are not stored on this row.
+-- brf-2026-09-09-morning). Source windows track successful refresh boundaries.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS briefings (
+    window_start     TEXT,
+    window_end       TEXT,
+    mail_snapshot_available INTEGER NOT NULL DEFAULT 0,
+    rule_text        TEXT    NOT NULL DEFAULT '',
+    source_windows   TEXT    NOT NULL DEFAULT '{}',
+    updated_sources  TEXT    NOT NULL DEFAULT '[]',
     id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
     kind             TEXT    NOT NULL DEFAULT 'morning'
                              CHECK (kind IN (
-                                 'morning',                     -- morning briefing
+                                 'morning',                     -- daily main briefing (legacy key)
                                  'followup',                    -- follow-up (reserved)
                                  'meeting'                      -- pre-meeting (reserved)
                              )),
@@ -79,11 +85,11 @@ CREATE TABLE IF NOT EXISTS briefings (
     title            TEXT    NOT NULL DEFAULT '',               -- list title
     body             TEXT    NOT NULL DEFAULT '',               -- composed Markdown, not source text
     fetched_count    INTEGER NOT NULL DEFAULT 0
-                             CHECK (fetched_count >= 0),        -- items fetched this run
+                             CHECK (fetched_count >= 0),        -- all window candidates before filtering
     kept_count       INTEGER NOT NULL DEFAULT 0
-                             CHECK (kept_count >= 0),           -- items kept in the briefing
+                             CHECK (kept_count >= 0),           -- selected source messages before thread merging
     filtered_count   INTEGER NOT NULL DEFAULT 0
-                             CHECK (filtered_count >= 0),       -- items dropped by rules
+                             CHECK (filtered_count >= 0),       -- candidates rejected by the Agent
     error_message    TEXT    NOT NULL DEFAULT '',               -- error detail when failed/partial
     generated_at     TEXT,                                      -- last compose time; null if unfinished
     created_at       TEXT    NOT NULL,
@@ -163,13 +169,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_briefing_items_briefing_source_item
     WHERE source_item_id IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
--- User filter rules: only field-based conditions live here.
--- Built-in policies (noreply, List-Unsubscribe, …) stay in rules.py.
--- Semantic judgments (looks like promo) use a capped LLM and are not stored.
+-- User rule documents: Markdown/plain text consumed by the briefing Agent.
+-- Legacy field columns remain for compatible upgrades and old API callers.
 -- source = '*' means all sources; otherwise scoped (e.g. email).
 -- Envelope fields match source_items; sender_email / list_id match email_messages.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS filter_rules (
+    text             TEXT    NOT NULL DEFAULT '',              -- free-form filtering and writing instructions
     id               TEXT    PRIMARY KEY,
     enabled          INTEGER NOT NULL DEFAULT 1
                              CHECK (enabled IN (0, 1)),
@@ -222,5 +228,23 @@ CREATE TABLE IF NOT EXISTS sync_state (
 CREATE TABLE IF NOT EXISTS briefing_candidates (
     briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
     source_item_id TEXT NOT NULL REFERENCES source_items(id) ON DELETE CASCADE,
+    PRIMARY KEY (briefing_id, source_item_id)
+);
+
+-- Immutable generation/update snapshots, including copied cards.
+CREATE TABLE IF NOT EXISTS briefing_revisions (
+    briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL CHECK (number > 0),
+    trigger TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    PRIMARY KEY (briefing_id, number)
+);
+
+-- Frozen candidate mail classifications; revisions retain their own copies.
+CREATE TABLE IF NOT EXISTS briefing_mail (
+    briefing_id TEXT NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
+    source_item_id TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
     PRIMARY KEY (briefing_id, source_item_id)
 );

@@ -703,13 +703,18 @@ export interface TaskSchedule {
 }
 
 export interface TaskAction {
-  type: 'send_message' | 'agent_task'
+  type: 'send_message' | 'agent_task' | 'tool_call'
   content?: string
   task_description?: string
   receiver?: string
   receiver_name?: string
   is_group?: boolean
   channel_type?: string
+  silent?: boolean
+  call_name?: string
+  call_params?: Record<string, unknown>
+  tool_name?: string
+  tool_params?: Record<string, unknown>
 }
 
 export interface SchedulerTask {
@@ -800,6 +805,12 @@ export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
 export interface Briefing {
+  source_windows: Record<string, { source: string; account_id: string; name: string; start: string; end: string }>
+  updated_sources: string[]
+  rule_text: string
+  mail_snapshot_available: boolean
+  window_start: string | null
+  window_end: string | null
   id: string
   kind: BriefingKind
   status: BriefingStatus
@@ -836,33 +847,96 @@ export interface BriefingItem {
   payload: Record<string, unknown>
 }
 
+export interface BriefingMail {
+  id: string
+  source: string
+  account_id: string
+  source_id: string
+  thread_id: string
+  sender: string
+  sender_email: string
+  title: string
+  snippet: string
+  occurred_at: string
+  url: string
+  body: string
+  body_available: boolean
+  category: 'selected' | 'filtered'
+  filter_reason: string
+}
+
 export interface BriefingDetail {
   briefing: Briefing
   items: BriefingItem[]
+  mail: BriefingMail[]
+  revisions: { number: number; trigger: string; created_at: string; status: BriefingStatus }[]
 }
 
 export interface BriefingRule {
   id: string
   enabled: boolean
   source: string
-  action: 'include' | 'exclude'
-  match_field: 'sender' | 'sender_email' | 'sender_domain' | 'title' | 'list_id'
-  match_op: 'eq' | 'contains'
-  match_value: string
-  note: string
+  text: string
   created_at: string
   updated_at: string
 }
 
-export type BriefingRuleInput = Pick<BriefingRule, 'action' | 'match_field' | 'match_op' | 'match_value'>
-  & Partial<Pick<BriefingRule, 'enabled' | 'source' | 'note'>>
+export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<BriefingRule, 'enabled' | 'source'>>
 
-export interface BriefingSettings {
+export interface BriefingMailbox {
+  id: string
+  enabled: boolean
   host: string
   user: string
   port: number | string
   password_set: boolean
+  password_masked: string
   configured: boolean
   missing: string[]
   folder: string
 }
+
+export interface BriefingSettings {
+  mailboxes: BriefingMailbox[]
+  configured: boolean
+  missing: string[]
+}
+
+export interface BriefingMailboxInput {
+  id?: string
+  enabled?: boolean
+  action?: 'add' | 'save'
+  host: string
+  user: string
+  port: number
+  folder: string
+  password?: string
+}
+
+export interface BriefingMailboxCheck {
+  connected: boolean
+  folder_accessible: boolean
+  folders: { name: string; label: string }[]
+  message?: string
+}
+
+export interface BriefingSource {
+  id: string
+  source: string
+  account_id: string
+  name: string
+}
+
+export interface ElearningSettings {
+  enabled: boolean
+  configured: boolean
+  base_url: string
+  username: string
+  courses: string[]
+  course_options: { id: string; name: string }[]
+  account_id: string
+  password_set: boolean
+  password_masked: string
+}
+
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }

@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from dataclasses import asdict
+from datetime import datetime, timedelta
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -95,6 +97,12 @@ def _briefing_from_row(row: sqlite3.Row) -> Briefing:
         generated_at=row["generated_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        window_start=row["window_start"],
+        window_end=row["window_end"],
+        mail_snapshot_available=bool(row["mail_snapshot_available"]),
+        rule_text=row["rule_text"],
+        source_windows=_parse_payload(row["source_windows"]),
+        updated_sources=json.loads(row["updated_sources"]),
     )
 
 
@@ -123,7 +131,7 @@ def _item_from_row(row: sqlite3.Row) -> BriefingItem:
 
 
 def _rule_from_row(row: sqlite3.Row) -> FilterRule:
-    return FilterRule(
+    rule = FilterRule(
         id=row["id"],
         enabled=bool(row["enabled"]),
         source=row["source"],
@@ -132,9 +140,13 @@ def _rule_from_row(row: sqlite3.Row) -> FilterRule:
         match_op=row["match_op"],
         match_value=row["match_value"],
         note=row["note"],
+        text=row["text"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+    from agent.briefing.instructions import rule_document
+    rule.text = rule_document(rule)
+    return rule
 
 
 def _cursor_from_row(row: sqlite3.Row) -> SyncCursor:
@@ -163,6 +175,38 @@ class BriefingStore:
         conn = self._raw_connect()
         try:
             conn.executescript(load_schema_sql())
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(briefings)")}
+            for column in ("window_start", "window_end"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE briefings ADD COLUMN {column} TEXT")
+            if "mail_snapshot_available" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN mail_snapshot_available INTEGER NOT NULL DEFAULT 0")
+            if "rule_text" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN rule_text TEXT NOT NULL DEFAULT ''")
+            if "source_windows" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN source_windows TEXT NOT NULL DEFAULT '{}'")
+            if "updated_sources" not in columns:
+                conn.execute("ALTER TABLE briefings ADD COLUMN updated_sources TEXT NOT NULL DEFAULT '[]'")
+            rule_columns = {row[1] for row in conn.execute("PRAGMA table_info(filter_rules)")}
+            if "text" not in rule_columns:
+                conn.execute("ALTER TABLE filter_rules ADD COLUMN text TEXT NOT NULL DEFAULT ''")
+            # Preserve the surviving pre-upgrade snapshot; older overwritten runs
+            # cannot be reconstructed. Normalize titles without changing ids.
+            for row in conn.execute("SELECT * FROM briefings ORDER BY generated_at").fetchall():
+                if row["kind"] == "morning":
+                    day = datetime.strptime(row["id"][4:14], "%Y-%m-%d")
+                    conn.execute("UPDATE briefings SET title=? WHERE id=?",
+                                 (f"{day.year}年{day.month}月{day.day}日·简报", row["id"]))
+                if not row["generated_at"]:
+                    continue
+                if not row["window_end"]:
+                    prior = conn.execute("SELECT window_end FROM briefings WHERE kind=? AND substr(id,5,10) < ? AND window_end IS NOT NULL ORDER BY julianday(window_end) DESC LIMIT 1",
+                                         (row["kind"], row["id"][4:14])).fetchone()
+                    start = prior[0] if prior else (datetime.fromisoformat(row["generated_at"].replace("Z", "+00:00")) - timedelta(days=2)).isoformat()
+                    conn.execute("UPDATE briefings SET window_start=?,window_end=? WHERE id=?", (start,row["generated_at"],row["id"]))
+                if not conn.execute("SELECT 1 FROM briefing_revisions WHERE briefing_id=?", (row["id"],)).fetchone():
+                    current = _briefing_from_row(conn.execute("SELECT * FROM briefings WHERE id=?", (row["id"],)).fetchone())
+                    self._archive(conn, current, "legacy")
             conn.commit()
         finally:
             conn.close()
@@ -320,8 +364,8 @@ class BriefingStore:
             INSERT INTO briefings (
                 id, kind, status, title, body,
                 fetched_count, kept_count, filtered_count, error_message,
-                generated_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available, rule_text, source_windows, updated_sources
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 kind = excluded.kind,
                 status = excluded.status,
@@ -332,7 +376,13 @@ class BriefingStore:
                 filtered_count = excluded.filtered_count,
                 error_message = excluded.error_message,
                 generated_at = excluded.generated_at,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                window_start = excluded.window_start,
+                window_end = excluded.window_end,
+                mail_snapshot_available = excluded.mail_snapshot_available,
+                rule_text = excluded.rule_text,
+                source_windows = excluded.source_windows,
+                updated_sources = excluded.updated_sources
             """,
             (
                 briefing.id,
@@ -347,6 +397,12 @@ class BriefingStore:
                 briefing.generated_at,
                 briefing.created_at,
                 briefing.updated_at,
+                briefing.window_start,
+                briefing.window_end,
+                int(briefing.mail_snapshot_available),
+                briefing.rule_text,
+                _dump_payload(briefing.source_windows),
+                json.dumps(briefing.updated_sources),
             ),
         )
 
@@ -379,16 +435,53 @@ class BriefingStore:
             ).fetchall()
             return [_briefing_from_row(row) for row in rows]
 
-    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]]) -> None:
-        """Commit the document and cards together, or leave both intact."""
+    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None) -> None:
+        """Commit the document, cards, classified mail and history atomically."""
         with self._conn() as conn:
             self._write_briefing(conn, briefing)
             if items is not None:
                 self._replace_items(conn, briefing.id, items)
+            if mail is not None:
+                conn.execute("DELETE FROM briefing_mail WHERE briefing_id=?", (briefing.id,))
+                conn.executemany("INSERT INTO briefing_mail VALUES (?,?,?)", [
+                    (briefing.id, row["id"], _dump_payload(row)) for row in mail])
+                conn.execute("DELETE FROM briefing_candidates WHERE briefing_id=?", (briefing.id,))
+                conn.executemany("INSERT INTO briefing_candidates VALUES (?,?)", [
+                    (briefing.id, row["id"]) for row in mail])
+            self._archive(conn, briefing, trigger)
 
-    def replace_briefing_items(self, briefing_id: str, items: List[BriefingItem]) -> None:
+    def _archive(self, conn, briefing, trigger):
+        cards = [_item_from_row(row) for row in conn.execute(
+            "SELECT * FROM briefing_items WHERE briefing_id=? ORDER BY sort_order", (briefing.id,))]
+        number = conn.execute("SELECT COALESCE(MAX(number),0)+1 FROM briefing_revisions WHERE briefing_id=?", (briefing.id,)).fetchone()[0]
+        mail = [json.loads(row[0]) for row in conn.execute("SELECT snapshot FROM briefing_mail WHERE briefing_id=? ORDER BY source_item_id", (briefing.id,))]
+        snapshot = {"briefing": asdict(briefing), "items": [asdict(item) for item in cards], "mail": mail}
+        conn.execute("INSERT INTO briefing_revisions VALUES (?,?,?,?,?)", (briefing.id, number, trigger, briefing.updated_at, _dump_payload(snapshot)))
+
+    def list_mail(self, briefing_id):
         with self._conn() as conn:
-            self._replace_items(conn, briefing_id, items)
+            rows = conn.execute("SELECT snapshot FROM briefing_mail WHERE briefing_id=? ORDER BY source_item_id", (briefing_id,)).fetchall()
+            return [json.loads(row[0]) for row in rows]
+
+    def list_revisions(self, briefing_id):
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM briefing_revisions WHERE briefing_id=? ORDER BY number DESC", (briefing_id,)).fetchall()
+            return [{"number": row["number"], "trigger": row["trigger"], "created_at": row["created_at"],
+                     "status": json.loads(row["snapshot"])["briefing"]["status"]} for row in rows]
+
+    def get_revision(self, briefing_id, number):
+        with self._conn() as conn:
+            row = conn.execute("SELECT snapshot FROM briefing_revisions WHERE briefing_id=? AND number=?", (briefing_id, number)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def window_candidates(self, start, end, accounts):
+        if not accounts:
+            return []
+        with self._conn() as conn:
+            clauses = " OR ".join("(s.source=? AND s.account_id=?)" for _ in accounts)
+            args = [value for pair in accounts for value in pair]
+            rows = conn.execute(_SOURCE_ITEM_SELECT + " WHERE (" + clauses + ") AND julianday(s.occurred_at)>julianday(?) AND julianday(s.occurred_at)<=julianday(?) ORDER BY s.occurred_at,s.id", (*args,start,end)).fetchall()
+            return [_source_from_row(row) for row in rows]
 
     def _replace_items(self, conn: sqlite3.Connection, briefing_id: str,
                        items: List[BriefingItem]) -> None:
@@ -428,22 +521,6 @@ class BriefingStore:
                 for item in items
             ],
         )
-
-    def add_candidates(self, briefing_id: str, item_ids: List[str]) -> None:
-        with self._conn() as conn:
-            conn.executemany(
-                "INSERT OR IGNORE INTO briefing_candidates (briefing_id, source_item_id) VALUES (?, ?)",
-                [(briefing_id, item_id) for item_id in item_ids],
-            )
-
-    def list_candidates(self, briefing_id: str) -> List[Tuple[SourceItem, Optional[EmailMessage]]]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                _SOURCE_ITEM_SELECT + " JOIN briefing_candidates c ON c.source_item_id = s.id"
-                " WHERE c.briefing_id = ? ORDER BY s.occurred_at, s.id",
-                (briefing_id,),
-            ).fetchall()
-            return [_source_from_row(row) for row in rows]
 
     def list_briefing_items(self, briefing_id: str) -> List[BriefingItem]:
         with self._conn() as conn:
@@ -486,8 +563,8 @@ class BriefingStore:
                 """
                 INSERT INTO filter_rules (
                     id, enabled, source, action, match_field, match_op, match_value,
-                    note, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    note, created_at, updated_at, text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule.id,
@@ -500,6 +577,7 @@ class BriefingStore:
                     rule.note,
                     rule.created_at,
                     rule.updated_at,
+                    rule.text,
                 ),
             )
         found = self.get_rule(rule.id)
@@ -540,7 +618,7 @@ class BriefingStore:
                 """
                 UPDATE filter_rules SET
                     enabled = ?, source = ?, action = ?, match_field = ?,
-                    match_op = ?, match_value = ?, note = ?, updated_at = ?
+                    match_op = ?, match_value = ?, note = ?, updated_at = ?, text = ?
                 WHERE id = ?
                 """,
                 (
@@ -552,6 +630,7 @@ class BriefingStore:
                     rule.match_value,
                     rule.note,
                     rule.updated_at,
+                    rule.text,
                     rule.id,
                 ),
             )

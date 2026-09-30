@@ -5,7 +5,7 @@ timestamps, and exposes the operations the UI / agent tool / pipeline call:
 look up a briefing, change item status, manage rules, upsert the source
 catalog, and persist a finished run.
 
-Fetching mail and composing Markdown live in pipeline.py / compose.py.
+Fetching sources and generating Markdown live in pipeline.py / generator.py.
 """
 
 from __future__ import annotations
@@ -130,7 +130,21 @@ class BriefingService:
         return {
             "briefing": briefing,
             "items": self.store.list_briefing_items(briefing_id),
+            "revisions": self.store.list_revisions(briefing_id),
+            "mail": self.store.list_mail(briefing_id),
         }
+
+    def get_revision(self, briefing_id: str, number: int) -> dict:
+        snapshot = self.store.get_revision(briefing_id, number)
+        if snapshot is None:
+            raise KeyError("briefing revision not found")
+        snapshot.setdefault("mail", [])
+        snapshot["briefing"].setdefault("mail_snapshot_available", False)
+        snapshot["briefing"].setdefault("rule_text", "")
+        snapshot["briefing"].setdefault("source_windows", {})
+        snapshot["briefing"].setdefault("updated_sources", [])
+        snapshot["revisions"] = self.store.list_revisions(briefing_id)
+        return snapshot
 
     def start_briefing(
         self,
@@ -175,6 +189,12 @@ class BriefingService:
                 generated_at=existing.generated_at,
                 created_at=existing.created_at,
                 updated_at=now,
+                window_start=existing.window_start,
+                window_end=existing.window_end,
+                mail_snapshot_available=existing.mail_snapshot_available,
+                rule_text=existing.rule_text,
+                source_windows=existing.source_windows,
+                updated_sources=existing.updated_sources,
             )
         )
 
@@ -189,7 +209,7 @@ class BriefingService:
         if status not in _FINISH_STATUSES:
             raise ValueError("status must be completed, failed, or partial")
 
-        now = _now_iso()
+        now = payload.get("run_at") or _now_iso()
         finished = Briefing(
             id=existing.id,
             kind=existing.kind,
@@ -213,6 +233,12 @@ class BriefingService:
             generated_at=now if status != "failed" else existing.generated_at,
             created_at=existing.created_at,
             updated_at=now,
+            window_start=payload.get("window_start", existing.window_start) if status != "failed" else existing.window_start,
+            window_end=payload.get("window_end", existing.window_end) if status != "failed" else existing.window_end,
+            mail_snapshot_available=True if "mail" in payload else existing.mail_snapshot_available,
+            rule_text=_as_str(payload.get("rule_text", existing.rule_text)) if status != "failed" else existing.rule_text,
+            source_windows=payload.get("source_windows", existing.source_windows) if status != "failed" else existing.source_windows,
+            updated_sources=payload.get("updated_sources", existing.updated_sources) if status != "failed" else existing.updated_sources,
         )
         snapshots = None
         if "items" in payload:
@@ -234,7 +260,14 @@ class BriefingService:
                     item.created_at = old.created_at
                     if "status" not in raw_items[index]:
                         item.status = old.status
-        self.store.save_snapshot(finished, snapshots)
+        mail = payload.get("mail")
+        if "mail" in payload:
+            if not isinstance(mail, list) or any(
+                not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
+                or row.get("category") not in {"selected", "filtered"} for row in mail
+            ):
+                raise ValueError("mail must be a list of classified candidate snapshots")
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
         return detail
@@ -250,20 +283,6 @@ class BriefingService:
     # ------------------------------------------------------------------
     # Source catalog
     # ------------------------------------------------------------------
-
-    def get_source_item(
-        self, item_id: str
-    ) -> Optional[Tuple[SourceItem, Optional[EmailMessage]]]:
-        return self.store.get_source_item(item_id)
-
-    def get_source_item_by_key(
-        self, source: str, account_id: str, source_id: str
-    ) -> Optional[Tuple[SourceItem, Optional[EmailMessage]]]:
-        if not source or not source_id:
-            raise ValueError("source and source_id are required")
-        return self.store.get_source_item_by_key(
-            source, account_id or "default", source_id
-        )
 
     def upsert_source_item(
         self, payload: dict
@@ -454,6 +473,25 @@ class BriefingService:
     def _build_rule(self, payload: dict, existing: Optional[FilterRule]) -> FilterRule:
         if not isinstance(payload, dict):
             raise ValueError("rule payload must be an object")
+        legacy_fields = {"action", "match_field", "match_op", "match_value", "note"}
+        if "text" in payload or (existing and existing.text and not legacy_fields.intersection(payload)):
+            text = payload.get("text", existing.text if existing else "")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("请填写规则文稿")
+            now = _now_iso()
+            rule_id = existing.id if existing else f"rul-{uuid.uuid4()}"
+            return FilterRule(
+                id=rule_id, text=text.strip(),
+                enabled=_as_bool(payload.get("enabled"), existing.enabled if existing else True),
+                source=_as_str(payload.get("source", existing.source if existing else "*")).strip() or "*",
+                # Keep legacy schema columns for compatible database upgrades.
+                action=existing.action if existing else "exclude",
+                match_field=existing.match_field if existing else "title",
+                match_op=existing.match_op if existing else "contains",
+                match_value=existing.match_value if existing else rule_id,
+                note=existing.note if existing else "",
+                created_at=existing.created_at if existing else now, updated_at=now,
+            )
         action = payload.get("action", existing.action if existing else None)
         if action not in _RULE_ACTIONS:
             raise ValueError("action must be include or exclude")

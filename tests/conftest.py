@@ -55,3 +55,16 @@ def _forget_resolved_paths():
     set_agent_registry(None)
     reset_memory_configs()
     clear_conversation_store_cache()
+
+
+@pytest.fixture
+def deterministic_briefing_generator(monkeypatch):
+    """Run the production generator with scripted tool calls, never a provider."""
+    from agent.briefing.generator import AgentBriefingGenerator
+    from briefing_fakes import DeterministicBriefingModel
+
+    def generator(**kwargs):
+        return AgentBriefingGenerator(**{**kwargs, "model": DeterministicBriefingModel()})
+
+    monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", generator)
+    return generator

@@ -582,14 +582,14 @@ class ToolManager:
         if agent is None or not hasattr(agent, "tools"):
             return ([], [])
 
-        # Never re-inject MCP tools into a restricted Self-Evolution review agent.
+        # Never re-inject MCP tools into a restricted review or briefing agent.
         # The review agent is created with a deliberately reduced, workspace-guarded
         # toolset; silently re-adding configured MCP tools here would bypass that
         # policy boundary (see agent/evolution/executor.py). The flag may live on
         # the agent itself (Agent) or on the wrapping stream executor's .agent.
         if getattr(agent, "_evolution_restricted", False) or getattr(
             getattr(agent, "agent", None), "_evolution_restricted", False
-        ):
+        ) or getattr(agent, "fixed_toolset", False) or getattr(getattr(agent, "agent", None), "fixed_toolset", False):
             return ([], [])
 
         from agent.tools.mcp.mcp_tool import McpTool

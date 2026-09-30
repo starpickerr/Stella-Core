@@ -23,12 +23,8 @@ import CapabilityCard from './CapabilityCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
-// Whether the "add custom provider" entry is available. Defaults to true.
 const allowCustomProviders = product.models?.allowCustomProviders !== false
 
-// LinkAI is an aggregation platform, so when the LinkAI provider is selected we
-// point users to its console to create/manage the aggregated key. Only shown
-// for that provider — other vendors manage keys on their own sites.
 const ManageLinkAIKeyLink: React.FC = () => (
   <button
     type="button"
@@ -79,7 +75,6 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     setTimeout(() => setStatusMap((m) => ({ ...m, [key]: '' })), 2000)
   }
 
-  // Run a models action, then refresh and flash a status for the given key.
   const run = async (key: string, action: Parameters<typeof apiClient.modelsAction>[0]) => {
     setBusy(key)
     try {
@@ -315,11 +310,7 @@ const VendorModal: React.FC<{
 }> = ({ provider, addMode, data, onClose, onPickCustom, onSaved }) => {
   const open = !!provider || addMode
 
-  // In add-mode the user first picks a built-in provider; that selection
-  // becomes the effective provider whose key/base fields we edit. Exclude ALL
-  // custom providers (named or empty placeholder): custom vendors are added via
-  // the single "custom vendor" option below, so an empty custom placeholder must
-  // not show up here as a second, duplicate custom entry.
+  // Custom providers use a separate entry in the picker.
   const builtins = useMemo(() => data.providers.filter((p) => !p.is_custom), [data.providers])
   const firstUnconfigured = builtins.find((p) => !p.configured) || builtins[0]
   const [pickId, setPickId] = useState('')
@@ -331,6 +322,7 @@ const VendorModal: React.FC<{
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   // Load fields whenever the effective provider changes.
   useEffect(() => {
@@ -341,6 +333,7 @@ const VendorModal: React.FC<{
     setApiBase(init?.api_base || '')
     setKeyDirty(false)
     setKeyVisible(false)
+    setSaveError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, addMode, open])
 
@@ -374,6 +367,7 @@ const VendorModal: React.FC<{
   const save = async () => {
     if (!effective) return
     setSaving(true)
+    setSaveError('')
     try {
       const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string } = {
         action: 'set_provider',
@@ -381,9 +375,12 @@ const VendorModal: React.FC<{
       }
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
-      await apiClient.modelsAction(payload)
+      const result = await apiClient.modelsAction(payload)
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -392,10 +389,14 @@ const VendorModal: React.FC<{
   const clear = async () => {
     if (!effective || !confirm(t('models_clear_confirm'))) return
     setSaving(true)
+    setSaveError('')
     try {
-      await apiClient.modelsAction({ action: 'delete_provider', provider_id: effective.id })
+      const result = await apiClient.modelsAction({ action: 'delete_provider', provider_id: effective.id })
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -467,6 +468,7 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
+      {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
 }
@@ -482,6 +484,7 @@ const CustomProviderModal: React.FC<{
   const [apiKey, setApiKey] = useState('')
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     if (!target) return
@@ -495,6 +498,7 @@ const CustomProviderModal: React.FC<{
       setApiKey('')
     }
     setKeyDirty(false)
+    setSaveError('')
   }, [target, editing])
 
   if (!target) return null
@@ -502,6 +506,7 @@ const CustomProviderModal: React.FC<{
   const save = async () => {
     if (!name.trim()) return
     setSaving(true)
+    setSaveError('')
     try {
       const payload: {
         action: 'set_custom_provider'
@@ -516,9 +521,12 @@ const CustomProviderModal: React.FC<{
       }
       if (editing) payload.id = editing.custom_id
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
-      await apiClient.modelsAction(payload)
+      const result = await apiClient.modelsAction(payload)
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -527,10 +535,14 @@ const CustomProviderModal: React.FC<{
   const remove = async () => {
     if (!editing || !confirm(t('models_delete_confirm'))) return
     setSaving(true)
+    setSaveError('')
     try {
-      await apiClient.modelsAction({ action: 'delete_custom_provider', id: editing.custom_id || '' })
+      const result = await apiClient.modelsAction({ action: 'delete_custom_provider', id: editing.custom_id || '' })
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -583,6 +595,7 @@ const CustomProviderModal: React.FC<{
           }}
         />
       </Field>
+      {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
 }

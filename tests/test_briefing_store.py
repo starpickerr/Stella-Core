@@ -396,17 +396,13 @@ def test_upsert_source_item_round_trip_and_natural_key(tmp_path):
 def test_briefing_snapshot_replace_and_status(tmp_path):
     store = BriefingStore(tmp_path / "briefing.db")
     store.upsert_source_item(_source(), _email())
-    store.upsert_briefing(_briefing())
-    store.replace_briefing_items("brf-2026-09-09-morning", [_card()])
+    store.save_snapshot(_briefing(), [_card()])
 
     items = store.list_briefing_items("brf-2026-09-09-morning")
     assert len(items) == 1
     assert items[0].payload == {"k": 1}
 
-    store.replace_briefing_items(
-        "brf-2026-09-09-morning",
-        [_card(item_id="item-2", section="fyi", sort_order=1)],
-    )
+    store.save_snapshot(_briefing(), [_card(item_id="item-2", section="fyi", sort_order=1)])
     items = store.list_briefing_items("brf-2026-09-09-morning")
     assert [row.id for row in items] == ["item-2"]
 

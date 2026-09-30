@@ -27,11 +27,29 @@ class FetchedItem:
     sender_email: str = ""
     list_id: str = ""
 
+    def to_catalog_payload(self) -> dict:
+        """Normalize a source result for the shared source_items catalog."""
+        return {
+            "source": self.source,
+            "account_id": self.account_id or "default",
+            "source_id": self.source_id,
+            "thread_id": self.thread_id,
+            "sender": self.sender,
+            "title": self.title,
+            "snippet": self.snippet,
+            "occurred_at": self.occurred_at,
+            "url": self.url,
+            "payload": dict(self.payload),
+            "sender_email": self.sender_email,
+            "list_id": self.list_id,
+        }
+
 
 @dataclass
 class FetchResult:
     items: List[FetchedItem]
     cursors: Dict[str, str] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
 
 
 @runtime_checkable
