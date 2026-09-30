@@ -11,9 +11,9 @@ Thanks for your contribution! Please write this PR in English.
 
 <!-- List the main changes. Be specific. -->
 
-*
-
 ## Type
+
+
 
 * [ ] Bug fix
 * [ ] New feature
