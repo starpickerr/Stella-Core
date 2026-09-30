@@ -1,6 +1,7 @@
 """Crawler integration tests use fake Canvas responses and private temp files."""
 import io
 import json
+from datetime import datetime, timezone
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -50,6 +51,7 @@ def test_course_names_are_cached_per_account_for_settings(config_path):
     canvas = FakeCanvas()
     with patch("agent.briefing.elearning.client.ensure_login", return_value=canvas):
         assert settings.check_connection({}) == [{"id": "42", "name": "课程"}]
+    assert [path for path, _ in canvas.calls] == ["/api/v1/courses"]
     public = settings.public_settings()
     assert public["courses"] == ["42"]
     assert public["course_options"] == [{"id": "42", "name": "课程"}]
@@ -187,16 +189,96 @@ def test_partial_canvas_read_reports_failure_without_advancing_state(config_path
         ElearningSource(config(), client_factory=lambda cfg: canvas).fetch({})
 
 
-def test_quiz_404_keeps_other_candidates_and_reports_partial_result(config_path):
+def test_quiz_404_keeps_other_candidates_without_marking_source_partial(config_path):
     canvas = FakeCanvas()
     canvas.rows["courses"] = [{"id": i, "name": "课程" + str(i)} for i in range(1, 10)]
     canvas.rows["quizzes"] = SyncError("网站返回 HTTP 404。")
     source = ElearningSource(config(courses=[str(i) for i in range(1, 10)]), client_factory=lambda cfg: canvas)
     result = source.fetch({"since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z"})
-    assert len(result.errors) == 1 and "9 门课程" in result.errors[0]
-    assert "测验未读取" in result.errors[0] and result.cursors == {}
+    assert result.errors == []
+    assert "elearning_state" in result.cursors
     assert result.items and all(item.payload["resource_type"] != "quiz" for item in result.items)
     assert {item.payload["resource_type"] for item in result.items} >= {"announcement", "assignment", "file"}
+
+
+def test_quiz_404_does_not_leave_error_on_successful_briefing(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+
+    canvas = FakeCanvas()
+    canvas.rows["quizzes"] = SyncError("网站返回 HTTP 404。")
+    source = ElearningSource(config(), client_factory=lambda cfg: canvas)
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    pipeline = BriefingPipeline(service, [source], clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    detail = pipeline.run()
+
+    assert detail["briefing"].status == "completed"
+    assert detail["briefing"].error_message == ""
+    assert detail["mail"]
+
+
+def test_successful_update_clears_previous_fetch_error(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+
+    canvas = FakeCanvas()
+    canvas.rows["quizzes"] = SyncError("网站返回 HTTP 403。")
+    source = ElearningSource(config(), client_factory=lambda cfg: canvas)
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    pipeline = BriefingPipeline(service, [source], clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    first = pipeline.run()
+    assert first["briefing"].status == "partial"
+    assert "HTTP 403" in first["briefing"].error_message
+
+    canvas.rows["quizzes"] = SyncError("网站返回 HTTP 404。")
+    updated = pipeline.run(operation="update")
+    assert updated["briefing"].status == "completed"
+    assert updated["briefing"].error_message == ""
+
+
+def test_invalid_saved_course_is_reported_by_actual_generation(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+
+    source = ElearningSource(config(courses=["missing-course"]), client_factory=lambda cfg: FakeCanvas())
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    pipeline = BriefingPipeline(service, [source], clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    detail = pipeline.run()
+
+    assert detail["briefing"].status == "failed"
+    assert "missing-course" in detail["briefing"].error_message
+    assert "重新选择课程" in detail["briefing"].error_message
+
+
+def test_enabled_source_without_tested_course_is_not_silently_skipped(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+
+    settings.save_settings(config(courses=[]))
+    source = settings.elearning_sources()[0]
+    source.client_factory = lambda cfg: pytest.fail("missing courses must be rejected before login")
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    pipeline = BriefingPipeline(service, [source], clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    detail = pipeline.run()
+
+    assert detail["briefing"].status == "failed"
+    assert "尚未选择课程" in detail["briefing"].error_message
 
 
 def test_canvas_token_pagination_is_scoped_to_config_and_origin(config_path, monkeypatch):

@@ -149,4 +149,6 @@ def check_connection(payload):
 def elearning_sources():
     from agent.briefing.sources.elearning import ElearningSource
     cfg = load_settings()
-    return [ElearningSource(cfg)] if cfg["enabled"] and public_settings(cfg)["configured"] else []
+    # An enabled but incomplete source must fail in the actual run with a
+    # useful diagnosis, rather than silently disappearing from the briefing.
+    return [ElearningSource(cfg)] if cfg["enabled"] else []
