@@ -274,7 +274,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
                       key={item.path}
                       onClick={() => navigate(item.path)}
                       title={collapsed ? t(item.labelKey) : undefined}
-                      className={`group w-full flex items-center gap-3 rounded-btn cursor-pointer transition-colors h-9 ${
+                      className={`group w-full flex items-center gap-3 rounded-[10px] cursor-pointer transition-colors h-9 ${
                         collapsed ? 'justify-center px-0' : 'px-3'
                       } ${
                         isActive
@@ -338,7 +338,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
               <button
                 onClick={() => setMenuOpen((o) => !o)}
                 title={t('menu_more')}
-                className={`relative inline-flex items-center rounded-btn cursor-pointer transition-colors ${
+                className={`relative inline-flex items-center rounded-[10px] cursor-pointer transition-colors ${
                   menuOpen ? 'bg-surface-2 text-content' : 'text-content-tertiary hover:text-content hover:bg-surface-2'
                 } ${collapsed ? 'w-full h-9 justify-center' : 'h-8 px-2 gap-1.5'}`}
               >
@@ -389,7 +389,7 @@ const FooterBtn: React.FC<{
   <button
     onClick={onClick}
     title={title}
-    className={`inline-flex items-center gap-1.5 rounded-btn cursor-pointer transition-colors ${
+    className={`inline-flex items-center gap-1.5 rounded-[10px] cursor-pointer transition-colors ${
       active
         ? 'bg-accent-soft text-accent'
         : 'text-content-tertiary hover:text-content hover:bg-surface-2'
