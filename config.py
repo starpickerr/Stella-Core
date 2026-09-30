@@ -12,6 +12,57 @@ import time
 from common.log import logger
 from common import i18n
 
+# Environment names used by model clients and subprocesses. The desktop app
+# edits these values in config.json, so its saved file must win on restart.
+MODEL_CONFIG_TO_ENV = {
+    "open_ai_api_key": "OPENAI_API_KEY",
+    "open_ai_api_base": "OPENAI_API_BASE",
+    "linkai_api_key": "LINKAI_API_KEY",
+    "linkai_api_base": "LINKAI_API_BASE",
+    "claude_api_key": "CLAUDE_API_KEY",
+    "claude_api_base": "CLAUDE_API_BASE",
+    "gemini_api_key": "GEMINI_API_KEY",
+    "gemini_api_base": "GEMINI_API_BASE",
+    "minimax_api_key": "MINIMAX_API_KEY",
+    "minimax_api_base": "MINIMAX_API_BASE",
+    "deepseek_api_key": "DEEPSEEK_API_KEY",
+    "deepseek_api_base": "DEEPSEEK_API_BASE",
+    "mimo_api_key": "MIMO_API_KEY",
+    "mimo_api_base": "MIMO_API_BASE",
+    "qianfan_api_key": "QIANFAN_API_KEY",
+    "qianfan_api_base": "QIANFAN_API_BASE",
+    "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
+    "zhipu_ai_api_base": "ZHIPU_AI_API_BASE",
+    "moonshot_api_key": "MOONSHOT_API_KEY",
+    "moonshot_base_url": "MOONSHOT_API_BASE",
+    "ark_api_key": "ARK_API_KEY",
+    "ark_base_url": "ARK_API_BASE",
+    "dashscope_api_key": "DASHSCOPE_API_KEY",
+    "dashscope_api_base": "DASHSCOPE_API_BASE",
+}
+MODEL_CONFIG_FIELDS = set(MODEL_CONFIG_TO_ENV) | {
+    "custom_api_key", "custom_api_base", "custom_providers",
+}
+
+
+def sync_model_config_to_env(settings, *, overwrite=False):
+    """Expose model settings to subprocesses; desktop saves replace stale values."""
+    synced = 0
+    for config_key, env_key in MODEL_CONFIG_TO_ENV.items():
+        if not overwrite and env_key in os.environ:
+            continue
+        value = settings.get(config_key, "")
+        if value:
+            value = str(value)
+            if os.environ.get(env_key) != value:
+                os.environ[env_key] = value
+                synced += 1
+        elif overwrite:
+            if env_key in os.environ:
+                os.environ.pop(env_key)
+                synced += 1
+    return synced
+
 # All available config keys are listed in this dict (use lowercase keys).
 # The values here are placeholders only; the program does NOT read them.
 # They merely document the expected format — put real values in config.json.
@@ -521,7 +572,12 @@ def load_config():
         if name.startswith("_"):
             continue
         if name in available_setting:
-            logger.info("[INIT] override config by environ args: {}={}".format(name, value))
+            # A configured desktop install owns its model credentials. An
+            # inherited environment variable (or one exported by an earlier
+            # load_config call) must not restore a key the user replaced.
+            if desktop_mode and config_path == user_config_path and name in MODEL_CONFIG_FIELDS:
+                continue
+            logger.info("[INIT] override config by environ args: {}".format(name))
             try:
                 # SECURITY: Use ast.literal_eval instead of eval().
                 # ast.literal_eval only parses Python literals (strings, numbers,
@@ -587,32 +643,9 @@ def load_config():
 
     # Sync selected config values to environment variables so that
     # subprocesses (e.g. shell skill scripts) can access them directly.
-    # Existing env vars are NOT overwritten (env takes precedence).
+    # Desktop model settings replace inherited values; source deployments
+    # continue to let explicit environment variables take precedence.
     _CONFIG_TO_ENV = {
-        "open_ai_api_key": "OPENAI_API_KEY",
-        "open_ai_api_base": "OPENAI_API_BASE",
-        "linkai_api_key": "LINKAI_API_KEY",
-        "linkai_api_base": "LINKAI_API_BASE",
-        "claude_api_key": "CLAUDE_API_KEY",
-        "claude_api_base": "CLAUDE_API_BASE",
-        "gemini_api_key": "GEMINI_API_KEY",
-        "gemini_api_base": "GEMINI_API_BASE",
-        "minimax_api_key": "MINIMAX_API_KEY",
-        "minimax_api_base": "MINIMAX_API_BASE",
-        "deepseek_api_key": "DEEPSEEK_API_KEY",
-        "deepseek_api_base": "DEEPSEEK_API_BASE",
-        "mimo_api_key": "MIMO_API_KEY",
-        "mimo_api_base": "MIMO_API_BASE",
-        "qianfan_api_key": "QIANFAN_API_KEY",
-        "qianfan_api_base": "QIANFAN_API_BASE",
-        "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
-        "zhipu_ai_api_base": "ZHIPU_AI_API_BASE",
-        "moonshot_api_key": "MOONSHOT_API_KEY",
-        "moonshot_api_base": "MOONSHOT_API_BASE",
-        "ark_api_key": "ARK_API_KEY",
-        "ark_api_base": "ARK_API_BASE",
-        "dashscope_api_key": "DASHSCOPE_API_KEY",
-        "dashscope_api_base": "DASHSCOPE_API_BASE",
         # Channel credentials (used by skills that check env vars)
         "feishu_app_id": "FEISHU_APP_ID",
         "feishu_app_secret": "FEISHU_APP_SECRET",
@@ -631,7 +664,9 @@ def load_config():
         "qq_app_secret": "QQ_APP_SECRET",
         "weixin_token": "WEIXIN_TOKEN",
     }
-    injected = 0
+    injected = sync_model_config_to_env(
+        config, overwrite=desktop_mode and config_path == user_config_path
+    )
     for conf_key, env_key in _CONFIG_TO_ENV.items():
         if env_key not in os.environ:
             val = config.get(conf_key, "")

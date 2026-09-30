@@ -35,6 +35,7 @@ from config import (
     get_weixin_credentials_path,
     read_config_template,
     sync_image_generation_custom_provider_env,
+    sync_model_config_to_env,
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
 from agent.permission import (
@@ -2851,6 +2852,11 @@ class ConfigHandler:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
+            if any(key.endswith(("_api_key", "_api_base")) for key in applied):
+                sync_model_config_to_env(
+                    local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+                )
+
             logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
 
             # Apply a language change immediately so backend logs, agent
@@ -4085,6 +4091,9 @@ class ModelsHandler:
             return json.dumps({"status": "success", "provider": provider_id, "noop": True})
 
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(
+            local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+        )
         logger.info(f"[ModelsHandler] provider {provider_id} updated: {sorted(applied.keys())}")
 
         # Vendor credentials affect bot routing for any capability that uses
@@ -4114,6 +4123,9 @@ class ModelsHandler:
             cleared.append(field_name)
 
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(
+            local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+        )
         logger.info(f"[ModelsHandler] provider {provider_id} cleared: {cleared}")
         self._reset_bridge()
         return json.dumps({"status": "success", "provider": provider_id, "cleared": cleared})
