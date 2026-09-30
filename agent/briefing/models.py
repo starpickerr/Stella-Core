@@ -67,6 +67,12 @@ class Briefing:
     generated_at: Optional[str]
     created_at: str
     updated_at: str
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    mail_snapshot_available: bool = False
+    rule_text: str = ""
+    source_windows: dict = field(default_factory=dict)
+    updated_sources: list = field(default_factory=list)
 
 
 @dataclass
@@ -106,6 +112,7 @@ class FilterRule:
     note: str
     created_at: str
     updated_at: str
+    text: str = ""
 
 
 @dataclass

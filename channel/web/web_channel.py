@@ -35,6 +35,7 @@ from config import (
     get_weixin_credentials_path,
     read_config_template,
     sync_image_generation_custom_provider_env,
+    sync_model_config_to_env,
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
 from agent.permission import (
@@ -2004,11 +2005,16 @@ class WebChannel(ChatChannel):
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/briefings', 'BriefingsHandler',
             '/api/briefings/run', 'BriefingRunHandler',
+            '/api/briefings/sources', 'BriefingSourcesHandler',
+            '/api/briefings/elearning', 'BriefingElearningHandler',
+            '/api/briefings/elearning/test', 'BriefingElearningTestHandler',
             '/api/briefings/items/status', 'BriefingItemStatusHandler',
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
             '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
             '/api/briefings/settings', 'BriefingSettingsHandler',
+            '/api/briefings/settings/test', 'BriefingSettingsTestHandler',
+            '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
             '/api/briefings/(.*)', 'BriefingDetailHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
@@ -2845,6 +2851,11 @@ class ConfigHandler:
                 applied[section] = merged
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
+
+            if any(key.endswith(("_api_key", "_api_base")) for key in applied):
+                sync_model_config_to_env(
+                    local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+                )
 
             logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
 
@@ -4080,6 +4091,9 @@ class ModelsHandler:
             return json.dumps({"status": "success", "provider": provider_id, "noop": True})
 
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(
+            local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+        )
         logger.info(f"[ModelsHandler] provider {provider_id} updated: {sorted(applied.keys())}")
 
         # Vendor credentials affect bot routing for any capability that uses
@@ -4109,6 +4123,9 @@ class ModelsHandler:
             cleared.append(field_name)
 
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(
+            local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
+        )
         logger.info(f"[ModelsHandler] provider {provider_id} cleared: {cleared}")
         self._reset_bridge()
         return json.dumps({"status": "success", "provider": provider_id, "cleared": cleared})
@@ -5865,7 +5882,7 @@ class SchedulerUpdateHandler:
                         "status": "error",
                         "message": f"Cannot change channel type from '{old_channel}' to '{channel_type}'. Please create a new task on the target channel instead."
                     }, ensure_ascii=False)
-                if not action.get("receiver"):
+                if not action.get("receiver") and not (action_type == "tool_call" and action.get("silent")):
                     return json.dumps({
                         "status": "error",
                         "message": "Receiver is required. Please create a new task through the chat interface."
@@ -5914,8 +5931,8 @@ def _briefing_service():
 
 def _briefing_pipeline(service):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.sources.email import EmailSource
-    return BriefingPipeline(service, [EmailSource()])
+    from agent.briefing.sources.registry import configured_sources
+    return BriefingPipeline(service, configured_sources())
 
 
 def _briefing_body():
@@ -5961,6 +5978,12 @@ class BriefingsHandler:
         return _briefing_response(operation)
 
 
+class BriefingRevisionHandler:
+    def GET(self, briefing_id, number):
+        from urllib.parse import unquote
+        return _briefing_response(lambda: _briefing_service().get_revision(unquote(briefing_id), int(number)))
+
+
 class BriefingDetailHandler:
     def GET(self, briefing_id):
         def operation():
@@ -5980,6 +6003,8 @@ class BriefingRunHandler:
             return _briefing_pipeline(service).run(
                 kind=body.get("kind") or "morning",
                 briefing_date=body.get("briefing_date"),
+                operation=body.get("operation", "upsert"),
+                sources=body.get("sources"),
             )
         return _briefing_response(operation)
 
@@ -5994,9 +6019,43 @@ class BriefingItemStatusHandler:
         return _briefing_response(operation)
 
 
+class BriefingSourcesHandler:
+    def GET(self):
+        from agent.briefing.sources.registry import public_sources
+        return _briefing_response(lambda: {"sources": public_sources()})
+
+
+class BriefingElearningHandler:
+    def GET(self):
+        from agent.briefing.elearning_settings import public_settings
+        return _briefing_response(lambda: {"settings": public_settings()})
+
+    def POST(self):
+        def operation():
+            from agent.briefing import elearning_settings
+            body = _briefing_body()
+            action = body.get("action", "save")
+            if action == "delete":
+                elearning_settings.delete_settings()
+                settings = elearning_settings.public_settings()
+            elif action == "save":
+                settings = elearning_settings.save_settings(body)
+            else:
+                raise ValueError("未知的来源操作")
+            return {"settings": settings}
+        return _briefing_response(operation)
+
+
+class BriefingElearningTestHandler:
+    def POST(self):
+        from agent.briefing.elearning_settings import check_connection
+        return _briefing_response(lambda: {"connected": True, "courses": check_connection(_briefing_body())})
+
+
 class BriefingRulesHandler:
     def GET(self):
-        return _briefing_response(lambda: {"rules": _briefing_service().list_rules()})
+        from agent.briefing.instructions import DEFAULT_RULE_TEXT
+        return _briefing_response(lambda: {"rules": _briefing_service().list_rules(), "default_text": DEFAULT_RULE_TEXT})
 
     def POST(self):
         return _briefing_response(lambda: {"rule": _briefing_service().create_rule(_briefing_body())})
@@ -6021,14 +6080,28 @@ class BriefingRuleDeleteHandler:
 class BriefingSettingsHandler:
     def GET(self):
         def operation():
-            from agent.briefing.settings import public_mailbox
-            return {"settings": public_mailbox()}
+            from agent.briefing.settings import public_mailboxes
+            return {"settings": public_mailboxes()}
         return _briefing_response(operation)
 
     def POST(self):
         def operation():
-            from agent.briefing.settings import save_mailbox
-            return {"settings": save_mailbox(_briefing_body())}
+            from agent.briefing.settings import delete_mailbox, public_mailboxes, save_mailbox
+            body = _briefing_body()
+            if body.get("action") == "delete":
+                delete_mailbox(_briefing_id(body))
+                return {"settings": public_mailboxes()}
+            saved = save_mailbox(body)
+            return {"settings": public_mailboxes(), "mailbox": saved}
+        return _briefing_response(operation)
+
+
+class BriefingSettingsTestHandler:
+    def POST(self):
+        def operation():
+            from agent.briefing.settings import check_mailbox_connection
+            result = check_mailbox_connection(_briefing_body())
+            return result if isinstance(result, dict) else {"connected": True}
         return _briefing_response(operation)
 
 

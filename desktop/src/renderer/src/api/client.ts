@@ -28,7 +28,8 @@ import type {
   PeriodStatementItem,
   PeriodType,
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
-  BriefingRule, BriefingRuleInput, BriefingSettings,
+  BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
+  BriefingSource, ElearningSettings, ElearningSettingsInput,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -607,8 +608,32 @@ class ApiClient {
     return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}`)
   }
 
-  async runBriefing(briefingDate?: string): Promise<BriefingDetail> {
-    return this.briefingRequest('/api/briefings/run', { kind: 'morning', briefing_date: briefingDate })
+  async getBriefingRevision(id: string, number: number): Promise<BriefingDetail> {
+    return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}/revisions/${number}`)
+  }
+
+  async runBriefing(operation: 'create' | 'update', briefingDate?: string, sources?: string[]): Promise<BriefingDetail> {
+    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate, sources })
+  }
+
+  async getBriefingSources(): Promise<BriefingSource[]> {
+    return (await this.briefingRequest<{ sources: BriefingSource[] }>('/api/briefings/sources')).sources
+  }
+
+  async getElearningSettings(): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning')).settings
+  }
+
+  async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
+  }
+
+  async deleteElearningSource(): Promise<void> {
+    await this.briefingRequest('/api/briefings/elearning', { action: 'delete' })
+  }
+
+  async testElearningSettings(payload: ElearningSettingsInput): Promise<{ id: string; name: string }[]> {
+    return (await this.briefingRequest<{ courses: { id: string; name: string }[] }>('/api/briefings/elearning/test', payload)).courses
   }
 
   async updateBriefingItem(id: string, status: BriefingItemStatus): Promise<BriefingItem> {
@@ -616,7 +641,11 @@ class ApiClient {
   }
 
   async getBriefingRules(): Promise<BriefingRule[]> {
-    return (await this.briefingRequest<{ rules: BriefingRule[] }>('/api/briefings/rules')).rules
+    return (await this.getBriefingRuleDocuments()).rules
+  }
+
+  async getBriefingRuleDocuments(): Promise<{ rules: BriefingRule[]; default_text: string }> {
+    return this.briefingRequest('/api/briefings/rules')
   }
 
   async createBriefingRule(payload: BriefingRuleInput): Promise<BriefingRule> {
@@ -631,12 +660,20 @@ class ApiClient {
     await this.briefingRequest('/api/briefings/rules/delete', { id })
   }
 
-  async saveBriefingSettings(payload: { host: string; user: string; port: number; folder: string; password: string }): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', payload)).settings
+  async saveBriefingSettings(payload: BriefingMailboxInput): Promise<{ settings: BriefingSettings; mailbox: BriefingMailbox }> {
+    return this.briefingRequest('/api/briefings/settings', payload)
+  }
+
+  async testBriefingSettings(payload: BriefingMailboxInput): Promise<BriefingMailboxCheck> {
+    return this.briefingRequest('/api/briefings/settings/test', payload)
   }
 
   async getBriefingSettings(): Promise<BriefingSettings> {
     return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
+  }
+
+  async deleteBriefingMailbox(id: string): Promise<BriefingSettings> {
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', { action: 'delete', id })).settings
   }
 
   // ---------------------------------------------------------

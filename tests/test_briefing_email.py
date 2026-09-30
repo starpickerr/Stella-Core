@@ -1,3 +1,7 @@
+from datetime import datetime, timezone
+import pytest
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from email.message import EmailMessage as RfcMessage
 
 from agent.briefing.pipeline import BriefingPipeline
@@ -5,6 +9,14 @@ from agent.briefing.service import BriefingService
 from agent.briefing.sources.email import parse_rfc822, EmailSource
 from agent.briefing.store import BriefingStore
 from agent.tools.briefing.briefing_tool import BriefingTool
+
+
+@pytest.fixture(autouse=True)
+def fixed_briefing_clock(monkeypatch):
+    monkeypatch.setattr(
+        "agent.briefing.pipeline._now",
+        lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc),
+    )
 
 
 def _raw(
@@ -51,7 +63,7 @@ class FakeIMAP:
                 uids = [uid for uid in uids if int(uid) >= start]
             return "OK", [" ".join(uids).encode()]
         if cmd == "FETCH":
-            assert args[1] == "(BODY.PEEK[]<0.65536>)"
+            assert args[1] == "(BODY.PEEK[])"
             uid = str(args[0])
             raw = self.messages[uid]
             return "OK", [(b"%s (UID %s RFC822.HEADER {%d}" % (uid.encode(), uid.encode(), len(raw)), raw), b")"]
@@ -130,7 +142,7 @@ def test_email_source_through_pipeline(tmp_path):
     )
     assert detail["briefing"].status == "completed"
     assert detail["briefing"].fetched_count == 2
-    assert detail["briefing"].kept_count == 1
+    assert detail["briefing"].kept_count == 2
     assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "2"
 
 
@@ -159,6 +171,7 @@ def test_parser_reads_body_and_ignores_attachment():
     msg.add_attachment(b"private attachment", maintype="text", subtype="plain", filename="secret.txt")
     parsed = parse_rfc822(msg.as_bytes(), uid="5", uidvalidity="7")
     assert parsed.snippet == "Please approve the budget today."
+    assert parsed.payload["body"] == "Please approve the budget today."
     assert parsed.source_id == "imap-uid-7-5"
     assert parsed.url == ""
 
@@ -168,8 +181,37 @@ def test_parser_html_fallback_and_length_limit():
     msg.set_content("<style>secret</style><p>Please confirm &amp; reply</p><script>bad()</script>", subtype="html")
     parsed = parse_rfc822(msg.as_bytes(), uid="1")
     assert parsed.snippet == "Please confirm & reply"
+    assert "secret" not in parsed.payload["body"]
+    assert "bad()" not in parsed.payload["body"]
     msg.set_content("x" * 1000)
-    assert len(parse_rfc822(msg.as_bytes(), uid="1").snippet) == 500
+    parsed = parse_rfc822(msg.as_bytes(), uid="1")
+    assert len(parsed.snippet) == 500
+    assert parsed.payload["body"] == "x" * 1000
+
+
+def test_refresh_reads_existing_bodies_without_rewinding_uid():
+    fake = FakeIMAP([(1, _raw(msgid="<old@x>")), (5, _raw(msgid="<new@x>"))])
+    result = EmailSource(opener=lambda: fake).fetch({
+        "imap_uid": "9", "imap_uidvalidity": "9", "since": "2026-09-08T12:00:00Z",
+        "refresh_existing_content": "1",
+    })
+    assert {row.source_id for row in result.items} == {"<old@x>", "<new@x>"}
+    assert all(row.payload["body"] == "unused" for row in result.items)
+    assert result.cursors["imap_uid"] == "9"
+
+
+def test_pipeline_hydrates_cached_summary_only_messages(tmp_path):
+    from agent.briefing.sources.base import FetchedItem
+    svc = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    svc.upsert_source_item(FetchedItem(
+        source="email", source_id="<m1@example.com>", title="旧摘要", occurred_at="2026-09-08T22:00:00Z",
+    ).to_catalog_payload())
+    svc.set_cursor("email", "imap_uid", "1")
+    svc.set_cursor("email", "imap_uidvalidity", "9")
+    detail = BriefingPipeline(svc, [EmailSource(opener=lambda: FakeIMAP([(1, _raw())]))]).run()
+    assert len(detail["mail"]) == 1
+    assert detail["mail"][0]["body_available"] is True
+    assert detail["mail"][0]["body"] == "unused"
 
 
 def test_fetch_failure_never_skips_uid_or_commits_cursor(tmp_path):
@@ -188,7 +230,7 @@ def test_fetch_failure_never_skips_uid_or_commits_cursor(tmp_path):
 
 def test_tool_reports_failed_generation_and_can_disable_rule(tmp_path):
     svc = BriefingService(BriefingStore(tmp_path / "briefing.db"))
-    from agent.briefing.sources.static import StaticSource
+    from briefing_fakes import StaticSource
     tool = BriefingTool(service=svc, pipeline=BriefingPipeline(svc, [StaticSource(error=RuntimeError("offline"))]))
     assert tool.execute({"action": "run"}).status != "success"
     rule = svc.create_rule({"action": "exclude", "match_field": "sender", "match_value": "Ada"})
@@ -213,3 +255,187 @@ def test_connection_verifies_ssl_and_logs_out_on_failed_login():
         if sys.version_info >= (3, 9):
             assert connect.call_args.kwargs["timeout"] == 30
         client.logout.assert_called_once_with()
+
+
+def test_window_start_searches_offline_gap_and_fetches_over_200_messages():
+    class RecordingIMAP(FakeIMAP):
+        def uid(self, command, *args):
+            if command == "SEARCH":
+                self.search_args = args
+            return super().uid(command, *args)
+    fake = RecordingIMAP([(i, _raw(msgid=f"<mail-{i}@x>")) for i in range(1, 202)])
+    result = EmailSource(opener=lambda: fake).fetch({"since": "2026-08-01T05:00:00Z"})
+    assert fake.search_args == (None, "SINCE", "31-Jul-2026")
+    assert len(result.items) == 201
+    assert result.cursors["imap_uid"] == "201"
+
+
+def test_dns_error_is_reported_before_authorization_code_validation():
+    import socket
+    from unittest.mock import patch
+    source = EmailSource(host="imap.gmail.com", user="ada@gmail.com", password="private-code")
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", side_effect=socket.gaierror(8, "nodename nor servname provided")):
+        with pytest.raises(ValueError, match="尚未验证授权码") as error:
+            source._connect()
+    assert "imap.gmail.com" in str(error.value)
+    assert "private-code" not in str(error.value)
+
+
+def test_login_error_cleans_up_and_does_not_expose_code():
+    import imaplib
+    from unittest.mock import patch
+    source = EmailSource(host="imap.gmail.com", user="ada@gmail.com", password="private-code")
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL") as connect:
+        connect.return_value.login.side_effect = imaplib.IMAP4.error("AUTHENTICATIONFAILED private-code")
+        with pytest.raises(ValueError, match="登录失败") as error:
+            source._connect()
+        connect.return_value.logout.assert_called_once_with()
+    assert "private-code" not in str(error.value)
+
+
+def test_connection_check_opens_folder_readonly_and_logs_out():
+    fake = FakeIMAP([])
+    source = EmailSource(opener=lambda: fake)
+    result = source.check_connection()
+    assert result["connected"] and result["folder_accessible"]
+    assert fake.logged_out
+
+
+def test_imap_id_is_sent_after_login_before_opening_folder():
+    from unittest.mock import patch
+
+    events = []
+
+    class IdRequiredIMAP(FakeIMAP):
+        def __init__(self):
+            super().__init__([])
+            self.identified = False
+
+        def socket(self):
+            return self
+
+        def settimeout(self, seconds):
+            assert seconds == 30
+
+        def login(self, user, password):
+            events.append("login")
+            return "OK", []
+
+        def capability(self):
+            events.append("capability")
+            return "OK", [b"IMAP4rev1 ID UIDPLUS"]
+
+        def xatom(self, command, payload):
+            events.append("id")
+            assert command == "ID"
+            assert '"name" "Stella"' in payload
+            self.identified = True
+            return "OK", []
+
+        def list(self):
+            events.append("list")
+            return "OK", [b'() "/" "INBOX"']
+
+        def select(self, folder, readonly=True):
+            events.append("select")
+            if not self.identified:
+                return "NO", [b"EXAMINE Unsafe Login. Please contact kefu@188.com for help"]
+            return super().select(folder, readonly)
+
+    client = IdRequiredIMAP()
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", return_value=client):
+        result = EmailSource(host="imap.163.com", user="ada@163.com", password="auth-code").check_connection()
+
+    assert result["folder_accessible"] is True
+    assert events == ["login", "capability", "id", "list", "select"]
+    assert client.logged_out
+
+
+def test_imap_id_is_not_sent_without_server_capability():
+    from unittest.mock import patch
+
+    class PlainIMAP(FakeIMAP):
+        def __init__(self):
+            super().__init__([])
+            self.id_calls = 0
+
+        def socket(self):
+            return self
+
+        def settimeout(self, seconds):
+            pass
+
+        def login(self, user, password):
+            return "OK", []
+
+        def capability(self):
+            return "OK", [b"IMAP4rev1 IDLE UIDPLUS"]
+
+        def xatom(self, command, payload):
+            self.id_calls += 1
+            raise AssertionError("ID is not advertised")
+
+    client = PlainIMAP()
+    with patch("agent.briefing.sources.email.imaplib.IMAP4_SSL", return_value=client):
+        result = EmailSource(host="imap.example.com", user="ada@example.com", password="auth-code").check_connection()
+
+    assert result["folder_accessible"] is True
+    assert client.id_calls == 0
+
+
+def test_connection_lists_provider_folders_and_reports_select_failure_without_secret():
+    import base64
+
+    encoded = base64.b64encode("收件箱".encode("utf-16-be")).decode().rstrip("=").replace("/", ",")
+    wire_name = f"&{encoded}-"
+
+    class FolderIMAP(FakeIMAP):
+        def list(self):
+            return "OK", [b'(\\Noselect) "/" "Root"', b'() "/" "INBOX"',
+                          f'() "/" "{wire_name}"'.encode()]
+
+        def select(self, folder, readonly=True):
+            assert readonly is True
+            return ("NO", [b"Access denied private-code for this mailbox"]) if folder == "INBOX" else ("OK", [b"1"])
+
+    fake = FolderIMAP([])
+    settings = dict(host="imap.163.com", port=993, user="ada@163.com", password="private-code")
+    result = EmailSource(**settings, folder="INBOX", opener=lambda: fake).check_connection()
+    assert result["connected"] and not result["folder_accessible"]
+    assert result["folders"] == [{"name": "INBOX", "label": "INBOX"},
+                                 {"name": wire_name, "label": "收件箱"}]
+    assert "Access denied" in result["message"]
+    assert "private-code" not in result["message"]
+    assert fake.logged_out
+
+    other = FolderIMAP([])
+    selected = EmailSource(**settings, folder=wire_name, opener=lambda: other).check_connection()
+    assert selected["folder_accessible"] and other.logged_out
+
+
+def test_fetch_reports_select_reason_and_keeps_password_private():
+    class DeniedIMAP(FakeIMAP):
+        def select(self, folder, readonly=True):
+            return "NO", [b"IMAP access denied private-code"]
+
+    fake = DeniedIMAP([])
+    source = EmailSource(host="imap.163.com", port=993, user="ada@163.com",
+                         password="private-code", folder="INBOX", opener=lambda: fake)
+    with pytest.raises(ValueError, match="IMAP access denied") as error:
+        source.fetch({})
+    assert "private-code" not in str(error.value)
+    assert fake.logged_out
+
+
+def test_unsafe_login_is_reported_as_server_security_rejection():
+    class DeniedIMAP(FakeIMAP):
+        def select(self, folder, readonly=True):
+            return "NO", [b"EXAMINE Unsafe Login. Please contact kefu@188.com for help"]
+
+    result = EmailSource(password="private-code", opener=lambda: DeniedIMAP([])).check_connection()
+
+    assert result["connected"] is True
+    assert result["folder_accessible"] is False
+    assert "邮箱服务器" in result["message"]
+    assert "文件夹名称错误" in result["message"]
+    assert "请在简报设置中测试连接" not in result["message"]

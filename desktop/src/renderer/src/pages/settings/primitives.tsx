@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { t } from '../../i18n'
 
-// Shared presentational building blocks for the settings tabs.
 
 export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }> = ({
   icon,
@@ -26,8 +25,6 @@ export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: s
 export const Field: React.FC<{
   label: string
   hint?: string
-  // Optional trailing element on the label row (right-aligned), e.g. a helper
-  // link. Kept generic so any build can attach an action next to a field.
   labelAction?: React.ReactNode
   children: React.ReactNode
 }> = ({ label, hint, labelAction, children }) => (
@@ -58,9 +55,7 @@ export const Dropdown: React.FC<{
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  // The menu is rendered in a portal with fixed positioning so it's never
-  // clipped by an ancestor's `overflow` (e.g. a modal's scroll container).
-  // `top` is used when opening downward, `bottom` when the menu flips upward.
+  // Fixed positioning keeps the menu outside scrolling containers.
   const [rect, setRect] = useState<{
     left: number
     width: number
@@ -74,11 +69,9 @@ export const Dropdown: React.FC<{
     if (!el) return
     const r = el.getBoundingClientRect()
     const gap = 4
-    const margin = 8 // keep the menu off the very edge of the viewport
+    const margin = 8
     const below = window.innerHeight - r.bottom - gap - margin
     const above = r.top - gap - margin
-    // Flip upward when there isn't enough room below AND there's more above,
-    // so a trigger near the bottom edge doesn't drop its options off-screen.
     const flipUp = below < 240 && above > below
     const maxHeight = Math.max(120, Math.floor(flipUp ? above : below))
     setRect({
@@ -102,9 +95,7 @@ export const Dropdown: React.FC<{
       if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
       setOpen(false)
     }
-    // Keep the fixed menu anchored to the trigger on scroll/resize by
-    // re-measuring — NOT closing. Closing on scroll makes the dropdown vanish
-    // the moment the user scrolls the settings page.
+    // Reposition the open menu on scroll and resize.
     document.addEventListener('mousedown', onDown)
     window.addEventListener('resize', place, true)
     window.addEventListener('scroll', place, true)
@@ -151,12 +142,7 @@ export const Dropdown: React.FC<{
             {options.map((o) => (
               <div
                 key={o.value}
-                // Select on mousedown, not click: the document-level mousedown
-                // listener that closes the menu can otherwise fire first (e.g.
-                // on the very first open, before menuRef is populated) and swallow
-                // the click, which made the first option look unselectable.
-                // preventDefault keeps focus stable; stopPropagation stops the
-                // outside-close handler from also running for this same event.
+                // Select before the document mousedown listener closes the menu.
                 onMouseDown={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
