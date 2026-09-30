@@ -6,8 +6,6 @@ import type { CapabilityState, ModelsData } from '../../types'
 import { Card, Field, Dropdown, TextInput, type DropdownOption } from './primitives'
 import { resolveModels, providerLabel, CUSTOM_OPTION } from './modelsHelpers'
 
-// Generic provider+model capability card used by chat/vision/asr/embedding/image.
-// tts (voice) and search have bespoke cards.
 
 export interface CapabilityCardProps {
   icon: LucideIcon
@@ -16,10 +14,8 @@ export interface CapabilityCardProps {
   capKey: string
   state: CapabilityState
   data: ModelsData | null
-  // whether picking "no provider" (auto / disabled) is allowed
   allowAuto?: boolean
   autoLabel?: string
-  // whether to allow a free-form custom model entry
   allowCustomModel?: boolean
   busy?: boolean
   status?: string
@@ -43,29 +39,20 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
 }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
-  // Custom providers render the model as a free-form input; seed it with the
-  // saved model so it isn't blank (placeholder-only) on load.
   const [customModel, setCustomModel] = useState(
     (state.current_provider || '').startsWith('custom:') ? state.current_model || '' : ''
   )
   const [showCustom, setShowCustom] = useState(false)
 
-  // Custom providers expose no preset model catalog, so the model must always
-  // be typed in freely instead of picked from an (empty) dropdown.
   const isCustomProvider = provider.startsWith('custom:')
 
-  // A provider is configured when it has credentials (a custom provider counts
-  // only once it actually carries a name/key, not as an empty placeholder).
   const isConfigured = (id: string): boolean => {
     const p = data?.providers?.find((x) => x.id === id)
     if (!p) return true
     return p.configured || (p.is_custom && !!p.custom_name)
   }
 
-  // Only surface providers that are actually configured (built-in or custom).
-  // An unconfigured vendor has no usable credentials, so listing it — and
-  // flagging it "unconfigured" — only adds noise. The currently-selected
-  // provider is always kept so a saved value never silently disappears.
+  // Keep a saved provider visible even if its credentials are missing.
   const providerOptions: DropdownOption[] = useMemo(() => {
     const opts = (state.providers || [])
       .filter((id) => isConfigured(id) || id === provider)
@@ -83,7 +70,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
       label: o.value,
       hint: o.hint,
     }))
-    // Keep the currently-saved model selectable even if it's not in the preset list.
+    // Preserve models entered outside the preset catalog.
     if (model && !showCustom && !list.some((o) => o.value === model)) {
       list.unshift({ value: model, label: model, hint: undefined })
     }
@@ -95,7 +82,6 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     setProvider(id)
     setShowCustom(false)
     if (id.startsWith('custom:')) {
-      // Prefill with the saved model when re-selecting the same provider.
       const saved = id === state.current_provider ? state.current_model || '' : ''
       setCustomModel(saved)
       setModel('')
@@ -130,8 +116,6 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
             placeholder={t('models_select_provider')}
             onChange={handleProvider}
           />
-          {/* The provider's API key is configured in the vendor cards above on
-              this same tab, so warn instead of linking elsewhere. */}
           {currentUnconfigured && (
             <p className="text-xs text-danger mt-1.5">{t('config_provider_unconfigured_hint')}</p>
           )}
@@ -139,7 +123,6 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
         {!isAuto && (
           <Field label={t('models_model')}>
             {isCustomProvider ? (
-              // Custom providers have no preset catalog: type the model directly.
               <TextInput
                 className="font-mono"
                 value={customModel}
