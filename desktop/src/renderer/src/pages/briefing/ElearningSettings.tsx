@@ -6,7 +6,11 @@ import type { ElearningSettings as Config, ElearningSettingsInput } from '../../
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const initial: Config = { enabled: true, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], account_id: '', password_set: false, password_masked: '' }
+const initial: Config = { enabled: true, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '' }
+const courseName = (value: string): string | null => {
+  const name = value.trim().replace(/^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+/, '')
+  return name && !/^\d+$/.test(name) ? name : null
+}
 
 export const ElearningSettings: React.FC = () => {
   const [config, setConfig] = useState(initial)
@@ -19,11 +23,11 @@ export const ElearningSettings: React.FC = () => {
   const [saved, setSaved] = useState(false)
   const [connected, setConnected] = useState(false)
 
-  const open = (cfg: Config, options: { id: string; name: string }[] = []) => {
+  const open = (cfg: Config) => {
     setConfig({ ...cfg, enabled: cfg.username ? cfg.enabled : true })
     setPassword(cfg.password_masked)
     setChosen(cfg.courses)
-    setSaved(false); setConnected(false); setCourses(options)
+    setSaved(false); setConnected(false); setCourses(cfg.course_options ?? [])
   }
 
   useEffect(() => {
@@ -46,6 +50,7 @@ export const ElearningSettings: React.FC = () => {
     if (changes.username !== undefined || changes.base_url !== undefined) { setCourses([]); setChosen([]) }
     setConfig((value) => ({ ...value, ...changes })); setSaved(false); setConnected(false)
   }
+  const missingNames = chosen.filter((id) => !courses.some((row) => row.id === id && courseName(row.name))).length
 
   return <section className="rounded-card border border-default bg-surface p-5 space-y-4">
     <div className="flex items-center justify-between gap-3">
@@ -56,7 +61,7 @@ export const ElearningSettings: React.FC = () => {
     <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_elearning_help')}</p>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
-    <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload()), courses); setSaved(true) }) }}>
+    <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload())); setSaved(true) }) }}>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_url')}<input required type="url" disabled={busy || loading} value={config.base_url} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ base_url: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_user')}<input required autoComplete="username" disabled={busy || loading} value={config.username} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ username: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_password')}<input type="password" autoComplete="new-password" disabled={busy || loading} value={password} className={`${fieldClass} block w-full mt-1`}
@@ -72,11 +77,11 @@ export const ElearningSettings: React.FC = () => {
             <button type="button" disabled={busy} className="text-xs text-content-secondary hover:underline disabled:opacity-50" onClick={() => { setChosen([]); setSaved(false) }}>{t('briefing_clear_courses')}</button>
           </div>
           <div className="max-h-64 overflow-y-auto space-y-2">{courses.map((row) => <label key={row.id} className="flex items-start gap-2 text-sm text-content-secondary"><input type="checkbox" className="mt-1" disabled={busy} checked={chosen.includes(row.id)}
-            onChange={(event) => { setChosen(event.target.checked ? [...chosen, row.id] : chosen.filter((id) => id !== row.id)); setSaved(false) }} /><span>{row.name}</span></label>)}</div>
+            onChange={(event) => { setChosen(event.target.checked ? [...chosen, row.id] : chosen.filter((id) => id !== row.id)); setSaved(false) }} /><span>{courseName(row.name) ?? t('briefing_elearning_unnamed_course')}</span></label>)}</div>
         </> : <>
-          {chosen.length > 0 && <div className="flex flex-wrap gap-2">{chosen.map((id) => <span key={id} className="px-2 py-1 rounded-btn bg-surface-2 text-xs text-content-secondary">{id}</span>)}</div>}
           {connected && <p className="text-xs text-content-tertiary">{t('briefing_elearning_no_courses')}</p>}
         </>}
+        {missingNames > 0 && <p className="text-xs text-content-tertiary">{t('briefing_elearning_names_pending').replace('{count}', String(missingNames))}</p>}
       </fieldset>
       <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
         <button type="submit" disabled={busy || loading || (config.enabled && !chosen.length)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>

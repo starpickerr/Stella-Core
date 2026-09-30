@@ -926,6 +926,7 @@ export interface ElearningSettings {
   base_url: string
   username: string
   courses: string[]
+  course_options: { id: string; name: string }[]
   account_id: string
   password_set: boolean
   password_masked: string
