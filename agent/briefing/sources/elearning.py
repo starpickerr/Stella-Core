@@ -31,7 +31,7 @@ class ElearningSource:
         state = dict(old)
         start, end = parse_date(cursors.get("since")), parse_date(cursors.get("until"))
         observed = end or datetime.now(timezone.utc)
-        items, errors = [], []
+        items, errors, quiz_not_found = [], [], []
         reads = 0
 
         def add(course, kind, raw, title, body, url, sender="", actionable=False):
@@ -70,6 +70,9 @@ class ElearningSource:
             except LoginRequired:
                 raise
             except SyncError as exc:
+                if resource == "quizzes" and str(exc) == "网站返回 HTTP 404。":
+                    quiz_not_found.append(course["name"])
+                    return []
                 errors.append("{} / {}：{}".format(course["name"], resource, exc))
                 return []
 
@@ -120,6 +123,8 @@ class ElearningSource:
             for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
                 document = course_grade(client, course, raw)
                 add(course, "course_grade", raw, document.title, document.text, document.url)
+        if quiz_not_found:
+            errors.append("{} 门课程的测验接口返回 HTTP 404；这些测验未读取，其他可用内容仍可成为候选信息。".format(len(quiz_not_found)))
         if not reads and errors:
             raise SyncError("；".join(errors))
         # Partial reads do not advance source state, so inaccessible resources

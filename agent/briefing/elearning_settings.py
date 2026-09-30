@@ -30,6 +30,21 @@ def session_path(config):
     return settings_path().parent / "elearning-sessions" / (account_id(config) + ".json")
 
 
+def course_options_path(config):
+    return settings_path().parent / "elearning-courses" / (account_id(config) + ".json")
+
+
+def load_course_options(config):
+    try:
+        rows = json.loads(course_options_path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)
+            and isinstance(row.get("id"), str) and isinstance(row.get("name"), str)]
+
+
 def _write(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,7 +78,7 @@ def public_settings(config=None):
     cfg = config if config is not None else load_settings()
     auth = bool(cfg["password"] or cfg["token"] or session_path(cfg).is_file())
     return {"enabled": cfg["enabled"], "base_url": cfg["base_url"], "username": cfg["username"],
-            "courses": cfg["courses"], "password_set": bool(cfg["password"]),
+            "courses": cfg["courses"], "course_options": load_course_options(cfg), "password_set": bool(cfg["password"]),
             "password_masked": PASSWORD_MASK if cfg["password"] else "",
             "configured": bool(cfg["username"] and cfg["courses"] and auth), "account_id": account_id(cfg)}
 
@@ -103,8 +118,11 @@ def resolve_settings(payload):
 
 def save_settings(payload):
     with _lock:
+        previous = load_settings()
         cfg = resolve_settings(payload)
         _write(settings_path(), cfg)
+        if account_id(previous) != account_id(cfg):
+            course_options_path(previous).unlink(missing_ok=True)
         return public_settings(cfg)
 
 
@@ -112,6 +130,7 @@ def delete_settings():
     with _lock:
         cfg = load_settings()
         session_path(cfg).unlink(missing_ok=True)
+        course_options_path(cfg).unlink(missing_ok=True)
         _write(settings_path(), DEFAULTS)
 
 
@@ -120,7 +139,11 @@ def check_connection(payload):
     from agent.briefing.elearning.courses import course_list
     cfg = resolve_settings(payload)
     client = ensure_login(cfg)
-    return [{"id": str(row["id"]), "name": row.get("name", str(row["id"]))} for row in course_list(client)]
+    options = [{"id": str(row["id"]), "name": row.get("name") if isinstance(row.get("name"), str) else ""}
+               for row in course_list(client)]
+    with _lock:
+        _write(course_options_path(cfg), options)
+    return options
 
 
 def elearning_sources():
