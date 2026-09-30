@@ -322,6 +322,7 @@ const VendorModal: React.FC<{
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   // Load fields whenever the effective provider changes.
   useEffect(() => {
@@ -332,6 +333,7 @@ const VendorModal: React.FC<{
     setApiBase(init?.api_base || '')
     setKeyDirty(false)
     setKeyVisible(false)
+    setSaveError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, addMode, open])
 
@@ -365,6 +367,7 @@ const VendorModal: React.FC<{
   const save = async () => {
     if (!effective) return
     setSaving(true)
+    setSaveError('')
     try {
       const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string } = {
         action: 'set_provider',
@@ -372,9 +375,12 @@ const VendorModal: React.FC<{
       }
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
-      await apiClient.modelsAction(payload)
+      const result = await apiClient.modelsAction(payload)
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -383,10 +389,14 @@ const VendorModal: React.FC<{
   const clear = async () => {
     if (!effective || !confirm(t('models_clear_confirm'))) return
     setSaving(true)
+    setSaveError('')
     try {
-      await apiClient.modelsAction({ action: 'delete_provider', provider_id: effective.id })
+      const result = await apiClient.modelsAction({ action: 'delete_provider', provider_id: effective.id })
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -458,6 +468,7 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
+      {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
 }
@@ -473,6 +484,7 @@ const CustomProviderModal: React.FC<{
   const [apiKey, setApiKey] = useState('')
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     if (!target) return
@@ -486,6 +498,7 @@ const CustomProviderModal: React.FC<{
       setApiKey('')
     }
     setKeyDirty(false)
+    setSaveError('')
   }, [target, editing])
 
   if (!target) return null
@@ -493,6 +506,7 @@ const CustomProviderModal: React.FC<{
   const save = async () => {
     if (!name.trim()) return
     setSaving(true)
+    setSaveError('')
     try {
       const payload: {
         action: 'set_custom_provider'
@@ -507,9 +521,12 @@ const CustomProviderModal: React.FC<{
       }
       if (editing) payload.id = editing.custom_id
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
-      await apiClient.modelsAction(payload)
+      const result = await apiClient.modelsAction(payload)
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -518,10 +535,14 @@ const CustomProviderModal: React.FC<{
   const remove = async () => {
     if (!editing || !confirm(t('models_delete_confirm'))) return
     setSaving(true)
+    setSaveError('')
     try {
-      await apiClient.modelsAction({ action: 'delete_custom_provider', id: editing.custom_id || '' })
+      const result = await apiClient.modelsAction({ action: 'delete_custom_provider', id: editing.custom_id || '' })
+      if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
       onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('config_save_error'))
     } finally {
       setSaving(false)
     }
@@ -574,6 +595,7 @@ const CustomProviderModal: React.FC<{
           }}
         />
       </Field>
+      {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
 }
