@@ -1,7 +1,7 @@
-"""Daily run: fetch → catalog upsert → filter → compose → persist.
+"""Daily run: fetch → catalog upsert → Agent decisions and draft → persist.
 
-Cursors advance only after a non-failed briefing is saved. Adapters are
-injected so tests can use StaticSource; IMAP lives in sources.email.
+Cursors advance only after a non-failed briefing is saved. Source adapters
+are injected; IMAP lives in sources.email.
 """
 
 from __future__ import annotations
@@ -11,10 +11,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from common.log import logger
 
-from agent.briefing.compose import _date_title
-from agent.briefing.generator import AgentBriefingGenerator
+from agent.briefing.generator import AgentBriefingGenerator, briefing_title
 from agent.briefing.models import EmailMessage, SourceItem
-from agent.briefing.rules import fetched_to_payload
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
 from agent.briefing.sources.registry import select_sources, source_key
@@ -170,7 +168,7 @@ class BriefingPipeline:
                     "window_start": start,
                     "window_end": finish,
                     "trigger": trigger,
-                    "title": (briefing.title or _date_title(day, kind)) if status == "failed" else drafted["title"],
+                    "title": (briefing.title or briefing_title(day, kind)) if status == "failed" else drafted["title"],
                     "body": drafted["body"] if status != "failed" else briefing.body,
                     "fetched_count": fetched_count if status != "failed" else briefing.fetched_count,
                     "kept_count": len(mail) - filtered_count if status != "failed" else briefing.kept_count,
@@ -234,7 +232,7 @@ class BriefingPipeline:
     ) -> List[Tuple[SourceItem, Optional[EmailMessage]]]:
         rows = []
         for fetched in items:
-            rows.append(self.service.upsert_source_item(fetched_to_payload(fetched)))
+            rows.append(self.service.upsert_source_item(fetched.to_catalog_payload()))
         return rows
 
     def _commit_cursors(self, pending: Sequence[Tuple[Source, Dict[str, str]]]) -> None:

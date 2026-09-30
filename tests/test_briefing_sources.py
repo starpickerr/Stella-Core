@@ -8,7 +8,7 @@ from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem, FetchResult
 from agent.briefing.sources.registry import select_sources, public_sources
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
 from agent.tools.briefing.briefing_tool import BriefingTool
 

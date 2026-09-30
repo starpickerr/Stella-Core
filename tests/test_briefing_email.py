@@ -142,7 +142,7 @@ def test_email_source_through_pipeline(tmp_path):
     )
     assert detail["briefing"].status == "completed"
     assert detail["briefing"].fetched_count == 2
-    assert detail["briefing"].kept_count == 1
+    assert detail["briefing"].kept_count == 2
     assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "2"
 
 
@@ -201,12 +201,11 @@ def test_refresh_reads_existing_bodies_without_rewinding_uid():
 
 
 def test_pipeline_hydrates_cached_summary_only_messages(tmp_path):
-    from agent.briefing.rules import fetched_to_payload
     from agent.briefing.sources.base import FetchedItem
     svc = BriefingService(BriefingStore(tmp_path / "briefing.db"))
-    svc.upsert_source_item(fetched_to_payload(FetchedItem(
+    svc.upsert_source_item(FetchedItem(
         source="email", source_id="<m1@example.com>", title="旧摘要", occurred_at="2026-09-08T22:00:00Z",
-    )))
+    ).to_catalog_payload())
     svc.set_cursor("email", "imap_uid", "1")
     svc.set_cursor("email", "imap_uidvalidity", "9")
     detail = BriefingPipeline(svc, [EmailSource(opener=lambda: FakeIMAP([(1, _raw())]))]).run()
@@ -231,7 +230,7 @@ def test_fetch_failure_never_skips_uid_or_commits_cursor(tmp_path):
 
 def test_tool_reports_failed_generation_and_can_disable_rule(tmp_path):
     svc = BriefingService(BriefingStore(tmp_path / "briefing.db"))
-    from agent.briefing.sources.static import StaticSource
+    from briefing_fakes import StaticSource
     tool = BriefingTool(service=svc, pipeline=BriefingPipeline(svc, [StaticSource(error=RuntimeError("offline"))]))
     assert tool.execute({"action": "run"}).status != "success"
     rule = svc.create_rule({"action": "exclude", "match_field": "sender", "match_value": "Ada"})
@@ -297,5 +296,50 @@ def test_login_error_cleans_up_and_does_not_expose_code():
 def test_connection_check_opens_folder_readonly_and_logs_out():
     fake = FakeIMAP([])
     source = EmailSource(opener=lambda: fake)
-    source.check_connection()
+    result = source.check_connection()
+    assert result["connected"] and result["folder_accessible"]
+    assert fake.logged_out
+
+
+def test_connection_lists_provider_folders_and_reports_select_failure_without_secret():
+    import base64
+
+    encoded = base64.b64encode("收件箱".encode("utf-16-be")).decode().rstrip("=").replace("/", ",")
+    wire_name = f"&{encoded}-"
+
+    class FolderIMAP(FakeIMAP):
+        def list(self):
+            return "OK", [b'(\\Noselect) "/" "Root"', b'() "/" "INBOX"',
+                          f'() "/" "{wire_name}"'.encode()]
+
+        def select(self, folder, readonly=True):
+            assert readonly is True
+            return ("NO", [b"Access denied private-code for this mailbox"]) if folder == "INBOX" else ("OK", [b"1"])
+
+    fake = FolderIMAP([])
+    settings = dict(host="imap.163.com", port=993, user="ada@163.com", password="private-code")
+    result = EmailSource(**settings, folder="INBOX", opener=lambda: fake).check_connection()
+    assert result["connected"] and not result["folder_accessible"]
+    assert result["folders"] == [{"name": "INBOX", "label": "INBOX"},
+                                 {"name": wire_name, "label": "收件箱"}]
+    assert "Access denied" in result["message"]
+    assert "private-code" not in result["message"]
+    assert fake.logged_out
+
+    other = FolderIMAP([])
+    selected = EmailSource(**settings, folder=wire_name, opener=lambda: other).check_connection()
+    assert selected["folder_accessible"] and other.logged_out
+
+
+def test_fetch_reports_select_reason_and_keeps_password_private():
+    class DeniedIMAP(FakeIMAP):
+        def select(self, folder, readonly=True):
+            return "NO", [b"IMAP access denied private-code"]
+
+    fake = DeniedIMAP([])
+    source = EmailSource(host="imap.163.com", port=993, user="ada@163.com",
+                         password="private-code", folder="INBOX", opener=lambda: fake)
+    with pytest.raises(ValueError, match="IMAP access denied") as error:
+        source.fetch({})
+    assert "private-code" not in str(error.value)
     assert fake.logged_out

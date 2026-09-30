@@ -9,7 +9,7 @@ import pytest
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.scheduler import DAILY_BRIEFING_TASK_ID, ensure_daily_briefing_task
 from agent.briefing.service import BriefingService
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
 from agent.scheduler import SchedulerService, TaskStore
 from agent.scheduler import integration

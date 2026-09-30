@@ -913,6 +913,13 @@ export interface BriefingMailboxInput {
   password?: string
 }
 
+export interface BriefingMailboxCheck {
+  connected: boolean
+  folder_accessible: boolean
+  folders: { name: string; label: string }[]
+  message?: string
+}
+
 export interface BriefingSource {
   id: string
   source: string

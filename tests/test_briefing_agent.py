@@ -12,7 +12,7 @@ from agent.briefing.instructions import DEFAULT_RULE_TEXT
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
 from agent.permission.policy import check_tool_call
 from agent.protocol.cancel import AgentCancelledError
@@ -181,7 +181,6 @@ def test_fixed_agent_tools_are_not_replaced_by_mcp():
 
 
 def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_content(service):
-    from agent.briefing.rules import fetched_to_payload
     email = StaticSource([item("邮件")])
     original = FetchedItem(source="elearning", source_id="announcement:1", title="原课程公告",
         occurred_at="2026-09-08T23:00:00Z", payload={"body": "原课程公告正文"})
@@ -195,8 +194,8 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
     service.update_item_status(old_card.id, "done")
     # Catalog changes from another/failed run must not leak into an unselected
     # source's frozen candidate or card metadata.
-    service.upsert_source_item(fetched_to_payload(FetchedItem(source="elearning", source_id="announcement:1",
-        title="尚未同步的标题", occurred_at="2026-09-09T03:00:00Z", payload={"body": "尚未同步的正文"})))
+    service.upsert_source_item(FetchedItem(source="elearning", source_id="announcement:1",
+        title="尚未同步的标题", occurred_at="2026-09-09T03:00:00Z", payload={"body": "尚未同步的正文"}).to_catalog_payload())
     canvas.fetch = lambda cursors: pytest.fail("unselected source must not fetch")
     model = ScriptedModel()
     result = BriefingPipeline(service, [email, canvas],

@@ -28,7 +28,7 @@ import type {
   PeriodStatementItem,
   PeriodType,
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
-  BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox,
+  BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
 } from '../types'
 import { getLang } from '../i18n'
@@ -664,8 +664,8 @@ class ApiClient {
     return this.briefingRequest('/api/briefings/settings', payload)
   }
 
-  async testBriefingSettings(payload: BriefingMailboxInput): Promise<void> {
-    await this.briefingRequest('/api/briefings/settings/test', payload)
+  async testBriefingSettings(payload: BriefingMailboxInput): Promise<BriefingMailboxCheck> {
+    return this.briefingRequest('/api/briefings/settings/test', payload)
   }
 
   async getBriefingSettings(): Promise<BriefingSettings> {

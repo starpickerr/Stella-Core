@@ -167,11 +167,11 @@ def _selected_mailbox(payload: dict, rows: list) -> Optional[dict]:
     return rows[0] if rows else None
 
 
-def check_mailbox_connection(payload: dict, path: Optional[Path] = None) -> None:
+def check_mailbox_connection(payload: dict, path: Optional[Path] = None) -> dict:
     """Read-only login/folder check. Testing a draft does not save it."""
     from agent.briefing.sources.email import EmailSource
     settings = resolve_mailbox(payload, path)
-    EmailSource(**{key: settings[key] for key in _MAILBOX_FIELDS}).check_connection()
+    return EmailSource(**{key: settings[key] for key in _MAILBOX_FIELDS}).check_connection()
 
 
 def save_mailbox(payload: dict, path: Optional[Path] = None) -> dict:

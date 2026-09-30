@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Check, Eye, EyeOff, Loader2, Mail, Plus } from 'lucide-react'
 import apiClient from '../../api/client'
 import { t } from '../../i18n'
-import type { BriefingMailbox, BriefingMailboxInput } from '../../types'
+import type { BriefingMailbox, BriefingMailboxCheck, BriefingMailboxInput } from '../../types'
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
@@ -19,6 +19,7 @@ export const MailboxSettings: React.FC = () => {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [connection, setConnection] = useState<'idle' | 'testing' | 'connected'>('idle')
+  const [folders, setFolders] = useState<BriefingMailboxCheck['folders']>([])
   const [error, setError] = useState('')
   const selected = mailboxes.find((row) => row.id === selectedId)
 
@@ -26,7 +27,7 @@ export const MailboxSettings: React.FC = () => {
     setSelectedId(row?.id ?? null)
     setDraft(row ? { host: row.host, user: row.user, port: Number(row.port) || 993, folder: row.folder, password: row.password_masked, enabled: row.enabled } : { ...emptyMailbox })
     setPasswordDirty(false); setPasswordVisible(false)
-    setSaved(false); setConnection('idle'); setError('')
+    setSaved(false); setConnection('idle'); setFolders([]); setError('')
   }
 
   useEffect(() => {
@@ -40,7 +41,8 @@ export const MailboxSettings: React.FC = () => {
 
   const edit = (changes: Partial<typeof draft>) => {
     setDraft((value) => ({ ...value, ...changes }))
-    setSaved(false); setConnection('idle')
+    setSaved(false); setConnection('idle'); setError('')
+    if (Object.keys(changes).some((key) => key !== 'folder' && key !== 'enabled')) setFolders([])
   }
 
   const payload = (): BriefingMailboxInput => ({
@@ -72,7 +74,12 @@ export const MailboxSettings: React.FC = () => {
 
   const testConnection = async () => {
     setBusy(true); setError(''); setConnection('testing')
-    try { await apiClient.testBriefingSettings(payload()); setConnection('connected') }
+    try {
+      const result = await apiClient.testBriefingSettings(payload())
+      setFolders(result.folders)
+      if (result.folder_accessible) setConnection('connected')
+      else { setConnection('idle'); setError(result.message || t('briefing_folder_unavailable')) }
+    }
     catch (err) { setConnection('idle'); setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy(false) }
   }
@@ -99,7 +106,7 @@ export const MailboxSettings: React.FC = () => {
     </div>)}</div>
     <h4 className="text-sm font-medium text-content">{t(selectedId ? 'briefing_edit_mailbox' : 'briefing_add_mailbox')}</h4>
     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(e) => void save(e)}>
-      <label className="text-xs text-content-secondary">{t('briefing_host')}<input required value={draft.host} disabled={busy || loading} autoComplete="off" placeholder="imap.gmail.com" className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ host: e.target.value })} /></label>
+      <label className="text-xs text-content-secondary">{t('briefing_host')}<input required value={draft.host} disabled={busy || loading} autoComplete="off" placeholder="imap.163.com" className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ host: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_user')}<input required value={draft.user} disabled={busy || loading} autoComplete="username" className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ user: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_password')}<div className="relative mt-1">
         <input type={passwordVisible ? 'text' : 'password'} required={!selected?.password_set} value={draft.password} disabled={busy || loading} autoComplete="new-password" className={`${fieldClass} block w-full pr-9 font-mono`}
@@ -109,6 +116,13 @@ export const MailboxSettings: React.FC = () => {
         <button type="button" disabled={busy || loading} aria-label={t(passwordVisible ? 'briefing_hide_password' : 'briefing_show_password')} onClick={() => setPasswordVisible(!passwordVisible)} className="absolute right-2 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary">{passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div></label>
       <label className="text-xs text-content-secondary">{t('briefing_folder')}<input required value={draft.folder} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ folder: e.target.value })} /></label>
+      {folders.length > 0 && <label className="text-xs text-content-secondary sm:col-span-2">{t('briefing_folder_options')}
+        <select value={folders.some((row) => row.name === draft.folder) ? draft.folder : ''} disabled={busy || loading}
+          onChange={(e) => edit({ folder: e.target.value })} className={`${fieldClass} block w-full mt-1`}>
+          <option value="" disabled>{t('briefing_folder_choose')}</option>
+          {folders.map((row) => <option key={row.name} value={row.name}>{row.label}</option>)}
+        </select>
+      </label>}
       <label className="text-xs text-content-secondary">{t('briefing_port')}<input type="number" required min={1} max={65535} value={draft.port || ''} disabled={busy || loading} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ port: Number(e.target.value) })} /></label>
       <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={draft.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_source_enabled')}</label>
       <div className="flex flex-wrap items-end gap-2 sm:col-span-2">

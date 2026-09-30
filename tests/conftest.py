@@ -59,17 +59,12 @@ def _forget_resolved_paths():
 
 @pytest.fixture
 def deterministic_briefing_generator(monkeypatch):
-    """Legacy pipeline regressions use a local fake, never a real model."""
-    from agent.briefing.compose import compose
-    from agent.briefing.rules import classify_candidates
+    """Run the production generator with scripted tool calls, never a provider."""
+    from agent.briefing.generator import AgentBriefingGenerator
+    from briefing_fakes import DeterministicBriefingModel
 
-    class FakeGenerator:
-        def __init__(self, **kwargs):
-            pass
+    def generator(**kwargs):
+        return AgentBriefingGenerator(**{**kwargs, "model": DeterministicBriefingModel()})
 
-        def generate(self, rows, rules, *, briefing_date, kind, **kwargs):
-            kept, mail = classify_candidates(rows, rules)
-            return {**compose(kept, briefing_date=briefing_date, kind=kind), "mail": mail}
-
-    monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", FakeGenerator)
-    return FakeGenerator
+    monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", generator)
+    return generator

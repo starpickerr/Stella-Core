@@ -5,7 +5,7 @@ timestamps, and exposes the operations the UI / agent tool / pipeline call:
 look up a briefing, change item status, manage rules, upsert the source
 catalog, and persist a finished run.
 
-Fetching mail and composing Markdown live in pipeline.py / compose.py.
+Fetching sources and generating Markdown live in pipeline.py / generator.py.
 """
 
 from __future__ import annotations
@@ -283,20 +283,6 @@ class BriefingService:
     # ------------------------------------------------------------------
     # Source catalog
     # ------------------------------------------------------------------
-
-    def get_source_item(
-        self, item_id: str
-    ) -> Optional[Tuple[SourceItem, Optional[EmailMessage]]]:
-        return self.store.get_source_item(item_id)
-
-    def get_source_item_by_key(
-        self, source: str, account_id: str, source_id: str
-    ) -> Optional[Tuple[SourceItem, Optional[EmailMessage]]]:
-        if not source or not source_id:
-            raise ValueError("source and source_id are required")
-        return self.store.get_source_item_by_key(
-            source, account_id or "default", source_id
-        )
 
     def upsert_source_item(
         self, payload: dict
