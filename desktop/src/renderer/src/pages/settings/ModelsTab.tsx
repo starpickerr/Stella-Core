@@ -23,12 +23,8 @@ import CapabilityCard from './CapabilityCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
-// Whether the "add custom provider" entry is available. Defaults to true.
 const allowCustomProviders = product.models?.allowCustomProviders !== false
 
-// LinkAI is an aggregation platform, so when the LinkAI provider is selected we
-// point users to its console to create/manage the aggregated key. Only shown
-// for that provider — other vendors manage keys on their own sites.
 const ManageLinkAIKeyLink: React.FC = () => (
   <button
     type="button"
@@ -79,7 +75,6 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     setTimeout(() => setStatusMap((m) => ({ ...m, [key]: '' })), 2000)
   }
 
-  // Run a models action, then refresh and flash a status for the given key.
   const run = async (key: string, action: Parameters<typeof apiClient.modelsAction>[0]) => {
     setBusy(key)
     try {
@@ -315,11 +310,7 @@ const VendorModal: React.FC<{
 }> = ({ provider, addMode, data, onClose, onPickCustom, onSaved }) => {
   const open = !!provider || addMode
 
-  // In add-mode the user first picks a built-in provider; that selection
-  // becomes the effective provider whose key/base fields we edit. Exclude ALL
-  // custom providers (named or empty placeholder): custom vendors are added via
-  // the single "custom vendor" option below, so an empty custom placeholder must
-  // not show up here as a second, duplicate custom entry.
+  // Custom providers use a separate entry in the picker.
   const builtins = useMemo(() => data.providers.filter((p) => !p.is_custom), [data.providers])
   const firstUnconfigured = builtins.find((p) => !p.configured) || builtins[0]
   const [pickId, setPickId] = useState('')

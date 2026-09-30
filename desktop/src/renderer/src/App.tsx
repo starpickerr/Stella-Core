@@ -43,13 +43,10 @@ const App: React.FC = () => {
   const onboardingOpen = useOnboardingStore((s) => s.open)
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
-  // Auth gate for web_password-protected backends. 'checking' until we know
-  // whether login is needed; 'need_login' shows the password screen; 'ok' lets
-  // the main UI render.
+  // Backend authentication must settle before the main UI renders.
   const [authState, setAuthState] = useState<'checking' | 'need_login' | 'ok'>('checking')
   const [productAuthed, setProductAuthed] = useState(false)
-  // Optional gate provided by '@product'. `product.auth` is constant for the
-  // whole build, so calling its hook conditionally is stable across renders.
+  // product.auth is fixed for the lifetime of the build.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const productRequiresAuth = product.auth ? product.auth.useRequiresAuth() : false
 
@@ -57,9 +54,7 @@ const App: React.FC = () => {
     if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
   }, [backend.status, backend.baseUrl])
 
-  // A file dropped where no drop zone handles it makes Chromium navigate to
-  // that file, replacing the app. Swallow those at the document level; pages
-  // that accept files (chat input, knowledge import) still get the event first.
+  // Prevent unhandled file drops from navigating away from the app.
   useEffect(() => {
     const swallow = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
@@ -72,8 +67,6 @@ const App: React.FC = () => {
     }
   }, [])
 
-  // Once the backend is ready, check whether a web_password is set. If so and
-  // this session isn't authenticated, show the login gate before the app.
   useEffect(() => {
     if (backend.status !== 'ready') {
       setAuthState('checking')
@@ -88,8 +81,7 @@ const App: React.FC = () => {
         setAuthState(needLogin ? 'need_login' : 'ok')
       })
       .catch(() => {
-        // If the check itself fails, don't hard-block the user — assume no auth
-        // is required (backends without web_password never return errors here).
+        // Older backends may not expose the authentication check.
         if (!cancelled) setAuthState('ok')
       })
     return () => {
@@ -97,9 +89,7 @@ const App: React.FC = () => {
     }
   }, [backend.status, backend.baseUrl])
 
-  // First-run check: once the backend is ready, decide whether to show the
-  // onboarding wizard. It's config-driven — shown whenever the chat model isn't
-  // configured (and not dismissed earlier this session); no persisted flag.
+  // Prompt for model setup when no usable chat provider is configured.
   useEffect(() => {
     if (backend.status !== 'ready' || authState !== 'ok') return
     // An extension may opt out of the built-in setup wizard.
@@ -110,10 +100,6 @@ const App: React.FC = () => {
       .then((data) => {
         if (cancelled) return
         const chat = data.capabilities?.chat
-        // "Configured" needs a chat provider+model AND that provider's API key
-        // set. A default config can ship a model name with no key, which
-        // shouldn't count as ready — otherwise we'd skip onboarding for users
-        // who still need to enter a key.
         const providerId = chat?.current_provider
         const provider = data.providers?.find((p) => p.id === providerId)
         const keyReady = !!provider && (provider.configured || (provider.is_custom && !!provider.custom_name))
@@ -121,7 +107,7 @@ const App: React.FC = () => {
         maybeOpenOnboarding(configured)
       })
       .catch(() => {
-        // If models can't be loaded, fall back to the flag-only decision.
+        // A failed model lookup leaves setup available.
         if (!cancelled) maybeOpenOnboarding(false)
       })
     return () => {

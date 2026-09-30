@@ -10,7 +10,6 @@ interface TasksPageProps {
   baseUrl: string
 }
 
-// Human-readable schedule summary, mirroring the web console.
 const scheduleSummary = (s: TaskSchedule): string => {
   if (s.type === 'cron') return s.expression || 'cron'
   if (s.type === 'interval') {
@@ -67,7 +66,6 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
   }, [baseUrl])
 
   const toggle = async (task: SchedulerTask, enabled: boolean) => {
-    // Optimistic flip; revert on failure.
     setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, enabled } : x)))
     try {
       await apiClient.toggleTask(task.id, enabled)
