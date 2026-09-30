@@ -30,6 +30,7 @@ import type {
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
+  CalendarCategory, CalendarEvent, CalendarEventInput,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -598,6 +599,42 @@ class ApiClient {
     })
     if (data.status !== 'success') throw new Error(data.message || 'Briefing request failed')
     return data
+  }
+
+  async getCalendarEvents(start?: string, end?: string, categoryId?: string): Promise<CalendarEvent[]> {
+    const query = new URLSearchParams()
+    if (start) query.set('start', start)
+    if (end) query.set('end', end)
+    if (categoryId) query.set('category_id', categoryId)
+    return (await this.briefingRequest<{ events: CalendarEvent[] }>(`/api/calendar/events?${query}`)).events
+  }
+
+  async createCalendarEvent(payload: CalendarEventInput): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/events', payload)).event
+  }
+
+  async updateCalendarEvent(id: string, payload: CalendarEventInput): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/events/update', { id, ...payload })).event
+  }
+
+  async deleteCalendarEvent(id: string): Promise<void> {
+    await this.briefingRequest('/api/calendar/events/delete', { id })
+  }
+
+  async getCalendarCategories(): Promise<CalendarCategory[]> {
+    return (await this.briefingRequest<{ categories: CalendarCategory[] }>('/api/calendar/categories')).categories
+  }
+
+  async createCalendarCategory(name: string, color: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/calendar/categories', { name, color })).category
+  }
+
+  async updateCalendarCategory(id: string, name: string, color: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/calendar/categories/update', { id, name, color })).category
+  }
+
+  async deleteCalendarCategory(id: string): Promise<void> {
+    await this.briefingRequest('/api/calendar/categories/delete', { id })
   }
 
   async getBriefings(): Promise<Briefing[]> {

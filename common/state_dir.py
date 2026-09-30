@@ -230,6 +230,12 @@ def briefing_db(identity=None, ensure: bool = True, base=None) -> Path:
     return briefing_dir / "briefing.db"
 
 
+def calendar_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """User-scoped schedule and briefing handoff records."""
+    calendar_dir = _ensure(_user_base(identity, base) / "calendar", ensure)
+    return calendar_dir / "calendar.db"
+
+
 def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     """Task execution records. User-scoped because a trace holds full tool
     output: one user's runs must not be readable by another."""
