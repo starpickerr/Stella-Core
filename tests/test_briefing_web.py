@@ -11,7 +11,7 @@ pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
 from channel.web import web_channel
 
@@ -215,8 +215,12 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
 def test_connection_endpoint_reports_success_and_configuration_errors(api):
     _, auth = api
     with patch("agent.briefing.settings.check_mailbox_connection") as check:
+        check.return_value = {"connected": True, "folder_accessible": False,
+                              "folders": [{"name": "INBOX", "label": "INBOX"}], "message": "select denied"}
         result = call(web_channel.BriefingSettingsTestHandler, body={"host": "imap.gmail.com", "password": ""})
-        assert result == {"status": "success", "connected": True}
+        assert result["status"] == "success" and result["connected"] is True
+        assert result["folders"] == [{"name": "INBOX", "label": "INBOX"}]
+        assert result["message"] == "select denied"
         check.assert_called_once_with({"host": "imap.gmail.com", "password": ""})
         check.side_effect = ValueError("无法解析 IMAP 服务器")
         result = call(web_channel.BriefingSettingsTestHandler)

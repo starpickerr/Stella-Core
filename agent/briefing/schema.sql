@@ -6,8 +6,8 @@
 --   email_messages    Email-private columns (1:1 with source_items)
 --   briefings         One briefing document per day/kind
 --   briefing_items    Snapshot cards on a briefing (copy envelope; optional link)
---   briefing_candidates All run candidates, retained for re-filtering
---   filter_rules      User-defined field rules (built-ins stay in rules.py)
+--   briefing_candidates Historical candidate links; classified snapshots live in briefing_mail
+--   filter_rules      User-authored rules (legacy field columns retained)
 --   sync_state        Per-source incremental cursors
 --
 -- Add a new source later with another 1:1 table (e.g. sms_messages) whose
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS briefings (
     kept_count       INTEGER NOT NULL DEFAULT 0
                              CHECK (kept_count >= 0),           -- selected source messages before thread merging
     filtered_count   INTEGER NOT NULL DEFAULT 0
-                             CHECK (filtered_count >= 0),       -- items dropped by rules
+                             CHECK (filtered_count >= 0),       -- candidates rejected by the Agent
     error_message    TEXT    NOT NULL DEFAULT '',               -- error detail when failed/partial
     generated_at     TEXT,                                      -- last compose time; null if unfinished
     created_at       TEXT    NOT NULL,

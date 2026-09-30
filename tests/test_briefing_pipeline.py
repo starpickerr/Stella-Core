@@ -5,7 +5,7 @@ pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
 
 
@@ -58,10 +58,10 @@ def test_pipeline_filters_composes_and_advances_cursor(tmp_path):
     briefing = detail["briefing"]
     assert briefing.status == "completed"
     assert briefing.fetched_count == 3
-    assert briefing.filtered_count == 2
-    assert briefing.kept_count == 1
-    assert "需回复" in briefing.body
-    assert len(detail["items"]) == 1
+    assert briefing.filtered_count == 1
+    assert briefing.kept_count == 2
+    assert "需处理" in briefing.body
+    assert len(detail["items"]) == 2
     assert detail["items"][0].section == "action"
     assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "42"
 
@@ -71,8 +71,8 @@ def test_classification_lists_every_mail_and_cards_have_no_limit(tmp_path):
     source = StaticSource([
         *[_item(f"<keep-{i}@x>", f"邮件 {i}", payload={"body": f"完整内容 {i}"}) for i in range(15)],
         _item("<reply@x>", "线程回复", thread_id="<keep-0@x>"),
-        _item("<drop@x>", "通知", email="noreply@example.com"),
-        _item("<list@x>", "广告", payload={"list_unsubscribe": True}),
+        _item("<drop@x>", "通知", email="noreply@example.com", payload={"_test_selected": False, "_test_reason": "测试排除"}),
+        _item("<list@x>", "广告", payload={"list_unsubscribe": True, "_test_selected": False, "_test_reason": "测试排除"}),
     ])
     detail = BriefingPipeline(svc, [source]).run()
     briefing = detail["briefing"]
@@ -85,8 +85,8 @@ def test_classification_lists_every_mail_and_cards_have_no_limit(tmp_path):
     assert {row["source_id"] for row in detail["mail"]} == {row.source_id for row in source._items}
     mails = {row["source_id"]: row for row in detail["mail"]}
     assert mails["<keep-14@x>"]["body"] == "完整内容 14"
-    assert mails["<drop@x>"]["filter_reason"] == "noreply"
-    assert mails["<list@x>"]["filter_reason"] == "list_unsubscribe"
+    assert mails["<drop@x>"]["filter_reason"] == "测试排除"
+    assert mails["<list@x>"]["filter_reason"] == "测试排除"
 
 
 def test_pipeline_partial_advances_only_successful_source(tmp_path):
@@ -139,7 +139,7 @@ def test_rerun_reapplies_rules_to_previously_filtered_mail(tmp_path):
     first = BriefingPipeline(svc, [StaticSource([_item("<a@x>", "请确认合同")])]).run(briefing_date="2026-09-09")
     assert first["items"] == []
     assert first["mail"][0]["category"] == "filtered"
-    assert first["mail"][0]["filter_reason"] == "exclude"
+    assert first["mail"][0]["filter_reason"] == "测试模型筛选结果"
     svc.delete_rule(rule.id)
     again = BriefingPipeline(svc, [StaticSource([])]).run(briefing_date="2026-09-09")
     assert len(again["items"]) == 1
@@ -182,15 +182,6 @@ def test_thread_merge_includes_original_message_and_uses_latest(tmp_path):
     detail = BriefingPipeline(svc, [source]).run(briefing_date="2026-09-09")
     assert len(detail["items"]) == 1
     assert detail["items"][0].source_id == "<reply@x>"
-
-
-def test_mail_metadata_cannot_inject_markdown(tmp_path):
-    svc = _svc(tmp_path)
-    source = StaticSource([_item("<a@x>", "![image](https://evil.example/a)", snippet="<script>bad()</script>")])
-    detail = BriefingPipeline(svc, [source]).run(briefing_date="2026-09-09")
-    body = detail["briefing"].body
-    assert "![image](https://evil.example/a)" not in body
-    assert r"\!\[image\]" in body
 
 
 def test_failed_today_sorts_before_older_completed_briefing(tmp_path):

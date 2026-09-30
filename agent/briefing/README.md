@@ -93,12 +93,14 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 - `elearning_settings.py` / `elearning/`：eLearning 来源设置、账号登录和 Canvas 资源读取。
 - `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择。
 - `instructions.py`：默认 Markdown 文稿和旧规则转文字。
-- `generator.py`：Agent 工具调用、逐项校验、摘要、线程合并和正文撰写。
-- `rules.py` / `compose.py`：旧规则兼容和共享的线程/排序辅助函数。
+- `generator.py`：唯一的筛选、评分、Action/FYI 分类、线程排序与正文生成实现。
+- `sources/base.py`：来源归一化模型与候选目录写入格式。
 - `pipeline.py`：候选同步、调用生成器、落库和游标提交。
 - `agent/tools/briefing/briefing_tool.py`：聊天与调度使用的薄适配器。
 - `agent/tools/elearning/elearning_tool.py`：Agent 直接查询课程和读取课程变动的内置工具。
 - `desktop/src/renderer/src/pages/briefing/`：桌面历史、详情、条目和设置组件。
+
+桌面手动操作经 HTTP handler、聊天经 `briefing` 工具、每日任务经统一调度调用工具，最终都进入 `BriefingPipeline.run`。来源注册表选出已启用的 IMAP/eLearning 适配器；`Source.fetch` 返回 `FetchedItem`，统一写入 `source_items`（邮件扩展字段写入 `email_messages`）。Pipeline 按来源时间窗口读取候选，`AgentBriefingGenerator` 依据规则文稿逐项筛选、给出 Action/FYI 与评分、合并线程并撰写正文。`BriefingService.complete_briefing` 在一次事务中保存 `briefings`、`briefing_items`、分类快照 `briefing_mail` 和版本历史；成功后再推进来源游标。`briefing_candidates` 是既有数据库中的候选关联表，当前筛选不读取它；因已有数据库仍包含该表，本次不改 schema。
 
 桌面客户端通过既有 Python HTTP 服务调用以下接口，均使用现有认证机制。Web 页面不在维护范围。
 
@@ -114,7 +116,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 | POST | `/api/briefings/rules/update` | 编辑或启停规则 |
 | POST | `/api/briefings/rules/delete` | 删除规则 |
 | GET / POST | `/api/briefings/settings` | 查询 `settings.mailboxes`；`action=add` 新增，`action=save` 按 `id` 编辑，`action=delete` 按 `id` 删除；保存返回脱敏的 `mailbox` 和完整设置 |
-| POST | `/api/briefings/settings/test` | 按 `id` 测试编辑草稿，或 `action=add` 测试新账号；已有账号授权码留空使用该账号保存值，不修改配置 |
+| POST | `/api/briefings/settings/test` | 按 `id` 测试编辑草稿，或 `action=add` 测试新账号；登录后通过 IMAP `LIST` 返回可选文件夹，再检查当前文件夹是否可读；已有账号授权码留空使用该账号保存值，不修改配置 |
 | GET / POST | `/api/briefings/elearning` | 查询脱敏配置；保存、`action=delete` 删除 |
 | POST | `/api/briefings/elearning/test` | 测试草稿并返回课程列表；不保存设置，可刷新登录状态 |
 
@@ -134,6 +136,8 @@ npm run build
 ## 邮箱连接排错
 
 「邮箱配置已保存」和「邮箱连接成功」分别表示本地配置写入和连接验证完成。授权码输入框的星号是固定掩码，不会从服务器返回授权码原文；输入新授权码后需要点击保存。每个账号的连接测试和授权码保存独立处理。
+
+邮箱适配器不按 Gmail、163 等提供商分支处理文件夹。默认 `INBOX` 是 IMAP 标准收件箱名；用户可填写其他名称。测试连接先登录，再用服务器的 `LIST` 返回可选文件夹；桌面端可选择服务器返回的原始名称后保存。登录成功但 `SELECT` 拒绝当前文件夹时，页面同时显示服务器响应与可选列表，不把权限错误直接断定为拼写错误。不同邮箱共用这一流程，并各自保存主机、端口、账号、授权码和文件夹。163 个人邮箱可填写 `imap.163.com:993`；网易企业邮箱使用其单独的服务器地址。
 
 `nodename nor servname provided, or not known` 是 DNS 地址解析失败，发生在登录前，与授权码是否正确无关。IMAP 服务器只填写主机名（如 `imap.gmail.com`），端口单独填写 `993`。地址正确但仍无法解析时，需要检查当前网络、系统 DNS 或代理的 DNS 设置。浏览器可以访问邮箱，并不保证运行后端的网络能连接 IMAP 服务器。
 

@@ -6,11 +6,12 @@ to keyword filtering, and batches cover every candidate without a daily cap.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from datetime import date, datetime, timezone
+from typing import Sequence
 
-from agent.briefing.compose import _date_title, _sort_key, merge_threads
 from agent.briefing.instructions import DEFAULT_RULE_TEXT, rule_document
-from agent.briefing.rules import ScoredCandidate
+from agent.briefing.models import SourceItem
 from agent.protocol.agent import Agent
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.base_tool import BaseTool, ToolResult
@@ -28,6 +29,47 @@ SYSTEM_PROMPT = """你是每日简报 Agent。按照用户提供的规则文稿�
 必须调用提供的结果工具提交完整结果；工具拒绝后根据错误修正并重新提交。
 结果工具成功后结束，不要重复提交。简报条目没有数量上限。
 """
+
+
+@dataclass
+class SelectedCandidate:
+    item: SourceItem
+    section: str
+    score: int
+
+
+def briefing_title(briefing_date: str, kind: str) -> str:
+    day = date.fromisoformat(briefing_date)
+    if kind == "morning":
+        return f"{day.year}年{day.month}月{day.day}日·简报"
+    if kind == "followup":
+        return f"{day.month} 月 {day.day} 日跟进"
+    if kind == "meeting":
+        return f"{day.month} 月 {day.day} 日会前准备"
+    return f"{day.isoformat()} {kind}"
+
+
+def _sort_key(candidate: SelectedCandidate) -> tuple:
+    occurred = datetime.fromisoformat(candidate.item.occurred_at.replace("Z", "+00:00"))
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=timezone.utc)
+    return (0 if candidate.section == "action" else 1, -candidate.score,
+            -occurred.timestamp(), candidate.item.source_id)
+
+
+def _merge_threads(candidates: Sequence[SelectedCandidate]) -> list[SelectedCandidate]:
+    """Keep the best card and every selected summary from each thread."""
+    threads: dict[tuple, list[SelectedCandidate]] = {}
+    for candidate in candidates:
+        item = candidate.item
+        key = (item.source, item.account_id, item.thread_id or item.source_id)
+        threads.setdefault(key, []).append(candidate)
+    merged = []
+    for members in threads.values():
+        best = min(members, key=_sort_key)
+        summary = "\n".join(row.item.snippet for row in sorted(members, key=lambda row: row.item.occurred_at))
+        merged.append(replace(best, item=replace(best.item, snippet=summary)))
+    return merged
 
 
 class BriefingAgent(Agent):
@@ -156,7 +198,7 @@ class AgentBriefingGenerator:
         rule_text = DEFAULT_RULE_TEXT + ("\n\n## 用户规则文稿（优先于默认原则）\n\n" + "\n\n---\n\n".join(documents) if documents else "")
         entries, by_id = [], {}
         for item, email in rows:
-            by_id[item.id] = (item, email)
+            by_id[item.id] = item
             entries.append({"id": item.id, "source": item.source, "account_id": item.account_id,
                 "source_id": item.source_id, "thread_id": item.thread_id,
                 "sender": item.sender, "sender_email": email.sender_email if email else "",
@@ -192,21 +234,10 @@ class AgentBriefingGenerator:
             mail.append({**entry, "category": "selected" if decision["selected"] else "filtered",
                          "filter_reason": decision["reason"], "decision": decision})
             if decision["selected"]:
-                item, email = by_id[entry["id"]]
-                kept.append(ScoredCandidate(replace(item, snippet=decision["summary"]), email,
-                                           decision["section"], decision["score"], False))
-        ranked = sorted(merge_threads(kept), key=_sort_key)
-        threads = {}
-        for row in kept:
-            key = (row.item.source, row.item.account_id, row.item.thread_id or row.item.source_id)
-            threads.setdefault(key, []).append(row)
-        combined = []
-        for row in ranked:
-            key = (row.item.source, row.item.account_id, row.item.thread_id or row.item.source_id)
-            members = sorted(threads[key], key=lambda member: member.item.occurred_at)
-            summary = "\n".join(member.item.snippet for member in members)
-            combined.append(replace(row, item=replace(row.item, snippet=summary)))
-        ranked = combined
+                item = by_id[entry["id"]]
+                kept.append(SelectedCandidate(replace(item, snippet=decision["summary"]),
+                                              decision["section"], decision["score"]))
+        ranked = sorted(_merge_threads(kept), key=_sort_key)
         cards = [{"source_item_id": row.item.id, "section": row.section, "score": row.score,
                   "snippet": row.item.snippet, "sort_order": index,
                   **{key: getattr(row.item, key) for key in ("source", "account_id", "source_id", "thread_id", "sender", "title", "occurred_at", "url", "payload")}}
@@ -230,6 +261,6 @@ class AgentBriefingGenerator:
                 }, ensure_ascii=False), rule_text, tool)
             parts.append(result["body"].strip())
         self._check_cancelled()
-        return {"title": _date_title(briefing_date, kind),
+        return {"title": briefing_title(briefing_date, kind),
                 "body": "\n\n".join(parts),
                 "items": cards, "mail": mail, "rule_text": rule_text}

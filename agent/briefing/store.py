@@ -483,10 +483,6 @@ class BriefingStore:
             rows = conn.execute(_SOURCE_ITEM_SELECT + " WHERE (" + clauses + ") AND julianday(s.occurred_at)>julianday(?) AND julianday(s.occurred_at)<=julianday(?) ORDER BY s.occurred_at,s.id", (*args,start,end)).fetchall()
             return [_source_from_row(row) for row in rows]
 
-    def replace_briefing_items(self, briefing_id: str, items: List[BriefingItem]) -> None:
-        with self._conn() as conn:
-            self._replace_items(conn, briefing_id, items)
-
     def _replace_items(self, conn: sqlite3.Connection, briefing_id: str,
                        items: List[BriefingItem]) -> None:
         conn.execute(
@@ -525,22 +521,6 @@ class BriefingStore:
                 for item in items
             ],
         )
-
-    def add_candidates(self, briefing_id: str, item_ids: List[str]) -> None:
-        with self._conn() as conn:
-            conn.executemany(
-                "INSERT OR IGNORE INTO briefing_candidates (briefing_id, source_item_id) VALUES (?, ?)",
-                [(briefing_id, item_id) for item_id in item_ids],
-            )
-
-    def list_candidates(self, briefing_id: str) -> List[Tuple[SourceItem, Optional[EmailMessage]]]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                _SOURCE_ITEM_SELECT + " JOIN briefing_candidates c ON c.source_item_id = s.id"
-                " WHERE c.briefing_id = ? ORDER BY s.occurred_at, s.id",
-                (briefing_id,),
-            ).fetchall()
-            return [_source_from_row(row) for row in rows]
 
     def list_briefing_items(self, briefing_id: str) -> List[BriefingItem]:
         with self._conn() as conn:

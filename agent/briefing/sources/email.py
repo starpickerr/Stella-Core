@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import imaplib
 import hashlib
+import base64
 import sys
 import socket
 import json
@@ -19,6 +20,72 @@ from typing import Callable, Dict, List, Optional
 from agent.briefing.sources.base import FetchResult, FetchedItem
 
 _DEFAULT_LOOKBACK_DAYS = 2
+_LIST_ENTRY = re.compile(rb'^\(([^)]*)\)\s+(?:NIL|"(?:\\.|[^"])*")\s+(.+)$', re.IGNORECASE)
+
+
+def _folder_label(name: str) -> str:
+    """Decode IMAP4rev1 modified UTF-7 for display, keeping the wire name."""
+    def decode_segment(match):
+        segment = match.group(1)
+        if not segment:
+            return "&"
+        try:
+            encoded = segment.replace(",", "/")
+            encoded += "=" * (-len(encoded) % 4)
+            return base64.b64decode(encoded).decode("utf-16-be")
+        except (ValueError, UnicodeError):
+            return match.group(0)
+
+    return re.sub(r"&([A-Za-z0-9+,]*)-", decode_segment, name)
+
+
+def _selectable_folders(client) -> list:
+    """Discover folders using IMAP LIST without assuming provider names."""
+    try:
+        status, entries = client.list()
+    except (AttributeError, imaplib.IMAP4.error):
+        return []
+    if status != "OK" or not entries:
+        return []
+    folders = []
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, bytes):
+            continue
+        match = _LIST_ENTRY.match(entry)
+        if not match or b"\\NOSELECT" in match.group(1).upper():
+            continue
+        raw = match.group(2).strip()
+        if raw.startswith(b'"') and raw.endswith(b'"'):
+            raw = re.sub(rb'\\(.)', rb'\1', raw[1:-1])
+        name = raw.decode("ascii", "replace")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        folders.append({"name": name, "label": _folder_label(name)})
+    return folders
+
+
+def _select_error(folder: str, response, password: str) -> str:
+    if isinstance(response, (list, tuple)):
+        response = response[0] if response else ""
+    if isinstance(response, bytes):
+        response = response.decode("utf-8", "replace")
+    detail = re.sub(r"[\x00-\x1f\x7f]+", " ", str(response or "")).strip()[:240]
+    if password:
+        detail = detail.replace(password, "[已隐藏]")
+    message = f"已登录，但服务器拒绝打开文件夹 {folder}。"
+    if detail:
+        message += f"服务器响应：{detail}。"
+    return message + "请在简报设置中测试连接并选择服务器返回的文件夹；若 INBOX 也不可用，请检查该账号的 IMAP 访问权限。"
+
+
+def _select_folder(client, folder: str, password: str) -> tuple:
+    try:
+        status, response = client.select(folder, readonly=True)
+    except imaplib.IMAP4.error as exc:
+        status, response = "NO", str(exc)
+    return (True, "") if status == "OK" else (False, _select_error(folder, response, password))
 
 
 def _decode_header(value: Optional[str]) -> str:
@@ -244,13 +311,16 @@ class EmailSource:
                 raise ValueError("IMAP 网络连接失败，请检查网络、DNS、代理设置及 SSL 端口。") from None
             raise
 
-    def check_connection(self) -> None:
+    def check_connection(self) -> dict:
         cfg = self._settings()
         client = self._connect()
         try:
-            status, _ = client.select(cfg["folder"], readonly=True)
-            if status != "OK":
-                raise ValueError("已登录，但无法打开邮件文件夹，请检查文件夹名称。")
+            folders = _selectable_folders(client)
+            accessible, message = _select_folder(client, cfg["folder"], cfg["password"])
+            if not accessible:
+                return {"connected": True, "folder_accessible": False, "folders": folders,
+                        "message": message}
+            return {"connected": True, "folder_accessible": True, "folders": folders}
         finally:
             try:
                 client.logout()
@@ -261,9 +331,9 @@ class EmailSource:
         cfg = self._settings()
         client = self._connect()
         try:
-            status, _ = client.select(cfg["folder"], readonly=True)
-            if status != "OK":
-                raise RuntimeError(f"IMAP SELECT {cfg['folder']} failed: {status}")
+            accessible, message = _select_folder(client, cfg["folder"], cfg["password"])
+            if not accessible:
+                raise ValueError(message)
             uidvalidity = _uidvalidity(client)
             last_uid = int(cursors.get("imap_uid") or 0)
             last_validity = cursors.get("imap_uidvalidity") or ""

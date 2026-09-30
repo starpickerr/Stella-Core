@@ -9,7 +9,7 @@ pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
-from agent.briefing.sources.static import StaticSource
+from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
 
 
@@ -87,10 +87,10 @@ def test_window_end_records_fetch_completion(service):
 
 
 def test_legacy_two_day_bootstrap_is_corrected_without_rewriting_history(service):
-    from agent.briefing.rules import fetched_to_payload
     old = service.start_briefing(briefing_date="2026-09-07")
-    catalog, _ = service.upsert_source_item(fetched_to_payload(item("too-old", "2026-09-05T09:00:00+08:00")))
-    service.store.add_candidates(old.id, [catalog.id])
+    catalog, _ = service.upsert_source_item(item("too-old", "2026-09-05T09:00:00+08:00").to_catalog_payload())
+    with service.store._conn() as conn:
+        conn.execute("INSERT INTO briefing_candidates VALUES (?, ?)", (old.id, catalog.id))
     service.complete_briefing(old.id, {
         "run_at": "2026-09-07T00:00:00Z", "window_start": "2026-09-05T00:00:00Z",
         "window_end": "2026-09-07T00:00:00Z", "body": "old content",
@@ -98,7 +98,8 @@ def test_legacy_two_day_bootstrap_is_corrected_without_rewriting_history(service
     detail = run(service, "2026-09-07T15:00:00+08:00", operation="update")
     assert detail["briefing"].window_start == "2026-09-06T12:00:00Z"
     assert detail["mail"] == []
-    assert service.store.list_candidates(old.id) == []
+    with service.store._conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM briefing_candidates WHERE briefing_id=?", (old.id,)).fetchone()[0] == 0
     historical = service.get_revision(old.id, 1)
     assert historical["briefing"]["window_start"] == "2026-09-05T00:00:00Z"
     assert historical["briefing"]["body"] == "old content"

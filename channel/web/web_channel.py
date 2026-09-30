@@ -6088,8 +6088,8 @@ class BriefingSettingsTestHandler:
     def POST(self):
         def operation():
             from agent.briefing.settings import check_mailbox_connection
-            check_mailbox_connection(_briefing_body())
-            return {"connected": True}
+            result = check_mailbox_connection(_briefing_body())
+            return result if isinstance(result, dict) else {"connected": True}
         return _briefing_response(operation)
 
 
