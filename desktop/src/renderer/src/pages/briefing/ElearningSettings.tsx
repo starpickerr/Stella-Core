@@ -86,6 +86,7 @@ export const ElearningSettings: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
         <button type="submit" disabled={busy || loading || (config.enabled && !chosen.length)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
         <button type="button" disabled={busy || loading} className={`${buttonClass} inline-flex items-center gap-1.5`} onClick={() => void run(async () => {
+          setConnected(false)
           const options = await apiClient.testElearningSettings(payload())
           setCourses(options)
           setChosen([...new Set(chosen.flatMap((selector) => {

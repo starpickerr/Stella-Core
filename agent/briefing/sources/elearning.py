@@ -5,6 +5,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from common.log import logger
+
 from agent.briefing.elearning.client import ensure_login
 from agent.briefing.elearning.courses import course_list, select_courses, list_files
 from agent.briefing.elearning.documents import announcement, assignment_document, quiz, grade, course_grade
@@ -24,6 +26,8 @@ class ElearningSource:
         self.client_factory = client_factory or ensure_login
 
     def fetch(self, cursors):
+        if not self.config["courses"]:
+            raise SyncError("尚未选择课程，请在简报设置中测试连接并勾选课程。")
         client = self.client_factory(self.config)
         courses = select_courses(course_list(client), self.config["courses"])
         profile, _ = client.get("/api/v1/users/self/profile")
@@ -124,7 +128,10 @@ class ElearningSource:
                 document = course_grade(client, course, raw)
                 add(course, "course_grade", raw, document.title, document.text, document.url)
         if quiz_not_found:
-            errors.append("{} 门课程的测验接口返回 HTTP 404；这些测验未读取，其他可用内容仍可成为候选信息。".format(len(quiz_not_found)))
+            # Some courses do not expose a standalone quizzes endpoint. The
+            # assignments endpoint can still contain quiz assignments, and
+            # all other successful reads are usable for this briefing.
+            logger.info("[Briefing] quizzes endpoint unavailable for %s courses", len(quiz_not_found))
         if not reads and errors:
             raise SyncError("；".join(errors))
         # Partial reads do not advance source state, so inaccessible resources
