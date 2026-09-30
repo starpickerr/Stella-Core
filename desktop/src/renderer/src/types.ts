@@ -800,6 +800,16 @@ declare global {
 }
 
 // Briefings share the backend snapshot and rule shapes.
+export interface CalendarCategory { id: string; name: string; color: string; created_at: string }
+export interface CalendarEvent {
+  id: string; title: string; description: string; start_at: string; end_at: string
+  all_day: number; location: string; category_id: string | null
+  source_type: string | null; source_key: string | null; source_url: string
+  user_modified: number; created_at: string; updated_at: string
+}
+export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
+  { all_day: boolean; category_id: string | null }
+
 export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'

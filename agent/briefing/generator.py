@@ -220,10 +220,14 @@ class AgentBriefingGenerator:
                         "id": {"type": "string"}, "selected": {"type": "boolean"},
                         "reason": {"type": "string"}, "section": {"type": "string", "enum": ["action", "fyi"]},
                         "score": {"type": "integer", "minimum": 0, "maximum": 100}, "summary": {"type": "string"},
+                        "calendar": {"type": "object", "description": "仅在原文明确给出日程时间时填写；截止时间可作为日程起点，不能猜测日期。时间须带时区。", "properties": {
+                            "start_at": {"type": "string", "description": "ISO 8601 含时区"},
+                            "end_at": {"type": "string", "description": "可选，ISO 8601 含时区"},
+                            "all_day": {"type": "boolean"}}},
                     }, "required": ["id", "selected", "reason"],
                 }}}, "required": ["decisions"],
             }, lambda payload, expected=ids: validate_decisions(payload, expected))
-            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。\n" + json.dumps({
+            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。有明确会议、活动或截止时间时在 calendar 填写时间；没有明确时间则省略。\n" + json.dumps({
                 "window_start": window_start, "window_end": window_end, "candidates": batch,
             }, ensure_ascii=False), rule_text, tool, [row for row in entries if row["id"] in ids])
             decisions.update({row["id"]: row for row in result["decisions"]})
