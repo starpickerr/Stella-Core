@@ -74,6 +74,13 @@ def _select_error(folder: str, response, password: str) -> str:
     detail = re.sub(r"[\x00-\x1f\x7f]+", " ", str(response or "")).strip()[:240]
     if password:
         detail = detail.replace(password, "[已隐藏]")
+    if "unsafe login" in detail.casefold():
+        return (
+            "已登录，但邮箱服务器因客户端安全策略拒绝读取邮件。"
+            f"服务器响应：{detail}。"
+            "这不是文件夹名称错误；请确认邮箱已开启 IMAP 并使用客户端授权码。"
+            "如果仍被拒绝，请联系邮箱服务商处理该账号的客户端访问权限。"
+        )
     message = f"已登录，但服务器拒绝打开文件夹 {folder}。"
     if detail:
         message += f"服务器响应：{detail}。"
@@ -86,6 +93,27 @@ def _select_folder(client, folder: str, password: str) -> tuple:
     except imaplib.IMAP4.error as exc:
         status, response = "NO", str(exc)
     return (True, "") if status == "OK" else (False, _select_error(folder, response, password))
+
+
+def _identify_imap_client(client) -> None:
+    """Send the standard IMAP ID when the server advertises support for it."""
+    try:
+        status, response = client.capability()
+        if status != "OK" or not response:
+            return
+        capabilities = b" ".join(
+            part if isinstance(part, bytes) else str(part).encode("ascii", "replace")
+            for part in response if part is not None
+        ).upper().split()
+        if b"ID" not in capabilities:
+            return
+        # NetEase requires this after LOGIN and before EXAMINE/SELECT. Keep
+        # the declaration small and truthful; no account or device data.
+        client.xatom("ID", '("name" "Stella" "vendor" "Stella")')
+    except imaplib.IMAP4.error:
+        # An optional extension must not break a server that otherwise allows
+        # ordinary IMAP access. A later folder failure retains its response.
+        return
 
 
 def _decode_header(value: Optional[str]) -> str:
@@ -290,6 +318,7 @@ class EmailSource:
                 client = imaplib.IMAP4(cfg["host"], cfg["port"], **timeout)
             client.socket().settimeout(30)
             client.login(cfg["user"], cfg["password"])
+            _identify_imap_client(client)
             return client
         except Exception as exc:
             if client is not None:
