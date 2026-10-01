@@ -2025,6 +2025,11 @@ class WebChannel(ChatChannel):
             '/api/calendar/categories', 'CalendarCategoriesHandler',
             '/api/calendar/categories/update', 'CalendarCategoryUpdateHandler',
             '/api/calendar/categories/delete', 'CalendarCategoryDeleteHandler',
+            '/api/todos', 'TodosHandler',
+            '/api/todos/update', 'TodoUpdateHandler',
+            '/api/todos/delete', 'TodoDeleteHandler',
+            '/api/todos/complete', 'TodoCompleteHandler',
+            '/api/todos/notifications', 'TodoNotificationsHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
             '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
@@ -6025,6 +6030,72 @@ class CalendarCategoryDeleteHandler:
             _calendar_service().delete_category(_calendar_body().get("id"))
             return {}
         return _calendar_response(operation)
+
+
+def _todo_service():
+    from agent.todos import TodoService
+    return TodoService()
+
+
+def _todo_body():
+    body = json.loads(web.data() or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be an object")
+    return body
+
+
+def _todo_response(operation):
+    _require_auth()
+    web.header('Content-Type', 'application/json; charset=utf-8')
+    web.header('Cache-Control', 'no-store')
+    try:
+        return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+    except Exception:
+        logger.exception("[WebChannel] Todo request failed")
+        return json.dumps({"status": "error", "message": "Todo request failed"})
+
+
+class TodosHandler:
+    def GET(self):
+        def operation():
+            params = web.input(start='', end='', include_completed='true')
+            return {"todos": _todo_service().list_todos(
+                params.start or None, params.end or None, params.include_completed != 'false')}
+        return _todo_response(operation)
+
+    def POST(self):
+        return _todo_response(lambda: {"todo": _todo_service().create_todo(_todo_body())})
+
+
+class TodoUpdateHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().update_todo(body.get("id"), body)}
+        return _todo_response(operation)
+
+
+class TodoDeleteHandler:
+    def POST(self):
+        def operation():
+            _todo_service().delete_todo(_todo_body().get("id"))
+            return {}
+        return _todo_response(operation)
+
+
+class TodoCompleteHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().complete_todo(body.get("id"), body.get("completed"))}
+        return _todo_response(operation)
+
+
+class TodoNotificationsHandler:
+    def POST(self):
+        return _todo_response(lambda: {"todos": _todo_service().claim_due_todo_notifications()})
 
 
 def _briefing_service():

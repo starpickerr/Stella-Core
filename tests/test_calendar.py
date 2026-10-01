@@ -164,14 +164,15 @@ def test_briefing_handoff_is_idempotent_and_preserves_user_edits(service):
         source_item_id="src-1", section="action", title="课程测验", snippet="周五截止",
         payload={"due_at": "2026-10-02T20:00:00+08:00"}, url="https://example.test/quiz",
         id="item-1")
-    detail = {"briefing": SimpleNamespace(id="briefing-1"), "items": [item], "mail": []}
+    detail = {"briefing": SimpleNamespace(id="briefing-1"), "items": [item], "mail": [
+        {"id": "src-1", "decision": {"calendar": {"start_at": "2026-10-02T09:00:00+08:00"}}}]}
     assert service.ingest_briefing(detail) == 1
     assert service.ingest_briefing(detail) == 1
     assert len(service.list_events()) == 1
     event = service.list_events()[0]
     assert event["category_id"] == "study"
     with sqlite3.connect(service.db_path) as db:
-        assert db.execute("SELECT destination FROM agenda_handoffs ORDER BY destination").fetchall() == [("calendar",), ("task",)]
+        assert db.execute("SELECT destination FROM agenda_handoffs ORDER BY destination").fetchall() == [("calendar",)]
     service.update_event(event["id"], {"title": "我修改的标题"})
     item.title = "来源的新标题"
     service.ingest_briefing(detail)
@@ -184,7 +185,7 @@ def test_briefing_reclassification_removes_unmodified_handoffs(service):
         payload={"due_at": "2026-10-02T20:00:00+08:00"}, url="", id="item-2")
     detail = {"briefing": SimpleNamespace(id="briefing-2"), "items": [item], "mail": []}
     service.ingest_briefing(detail)
-    assert len(service.list_events()) == 1
+    assert service.list_events() == []
     item.section = "fyi"
     item.payload = {}
     service.ingest_briefing(detail)
@@ -199,7 +200,8 @@ def test_deleted_default_category_does_not_block_briefing_import(service):
     item = SimpleNamespace(source="elearning", account_id="student", source_id="quiz-3",
         source_item_id="src-3", thread_id="", section="action", title="新截止", snippet="截止",
         payload={"due_at": "2026-10-02T20:00:00+08:00"}, url="", id="item-3")
-    service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-4"), "items": [item], "mail": []})
+    service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-4"), "items": [item], "mail": [
+        {"id": "src-3", "decision": {"calendar": {"start_at": "2026-10-02T09:00:00+08:00"}}}]})
     assert service.list_events()[0]["category_id"] is None
 
 
@@ -218,7 +220,7 @@ def test_merged_briefing_thread_routes_each_selected_source(service):
     assert service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-3"), "items": [card], "mail": mail}) == 1
     assert service.list_events()[0]["title"] == "会议改期"
     with sqlite3.connect(service.db_path) as db:
-        assert db.execute("SELECT count(*) FROM agenda_handoffs WHERE destination='task'").fetchone()[0] == 2
+        assert db.execute("SELECT count(*) FROM agenda_handoffs WHERE destination='task'").fetchone()[0] == 0
 
 
 def test_agent_tool_discovery_and_permissions(service):
@@ -237,16 +239,19 @@ def test_agent_tool_discovery_and_permissions(service):
     assert check_tool_call("workspace-write", "calendar", {"action": "create"})
 
 @pytest.mark.usefixtures("deterministic_briefing_generator")
-def test_briefing_pipeline_routes_due_item_to_calendar(tmp_path, monkeypatch):
+def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch):
     from datetime import datetime
     from agent.briefing.pipeline import BriefingPipeline
     from agent.briefing.service import BriefingService
     from agent.briefing.sources.base import FetchedItem
     from agent.briefing.store import BriefingStore
     from briefing_fakes import StaticSource
+    from agent.todos import TodoService
 
     calendar_path = tmp_path / "calendar.db"
-    monkeypatch.setattr("common.state_dir.calendar_db", lambda: calendar_path)
+    todos_path = tmp_path / "todos.db"
+    monkeypatch.setattr("common.state_dir.calendar_db", lambda **_kwargs: calendar_path)
+    monkeypatch.setattr("common.state_dir.todos_db", lambda: todos_path)
     briefing = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     source = StaticSource([FetchedItem(
         source="elearning", account_id="student", source_id="quiz-1", title="测验",
@@ -255,9 +260,9 @@ def test_briefing_pipeline_routes_due_item_to_calendar(tmp_path, monkeypatch):
     detail = BriefingPipeline(briefing, [source], clock=lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")).run()
     assert detail["briefing"].status == "completed"
     events = CalendarService(calendar_path).list_events()
-    assert len(events) == 1 and events[0]["title"] == "测验"
-    with sqlite3.connect(calendar_path) as db:
-        assert {row[0] for row in db.execute("SELECT destination FROM agenda_handoffs")} == {"task", "calendar"}
+    assert events == []
+    todos = TodoService(todos_path, calendar_path).list_todos()
+    assert len(todos) == 1 and todos[0]["title"] == "测验"
 
 
 def test_web_calendar_handlers_share_service_and_require_auth(service, monkeypatch):

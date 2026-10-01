@@ -31,6 +31,7 @@ import type {
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
   CalendarCategory, CalendarEvent, CalendarEventInput,
+  Todo, TodoInput,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -619,6 +620,34 @@ class ApiClient {
 
   async deleteCalendarEvent(id: string): Promise<void> {
     await this.briefingRequest('/api/calendar/events/delete', { id })
+  }
+
+  async getTodos(start?: string, end?: string, includeCompleted = true): Promise<Todo[]> {
+    const query = new URLSearchParams()
+    if (start) query.set('start', start)
+    if (end) query.set('end', end)
+    if (!includeCompleted) query.set('include_completed', 'false')
+    return (await this.briefingRequest<{ todos: Todo[] }>(`/api/todos?${query}`)).todos
+  }
+
+  async createTodo(payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos', payload)).todo
+  }
+
+  async updateTodo(id: string, payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/update', { id, ...payload })).todo
+  }
+
+  async completeTodo(id: string, completed: boolean): Promise<void> {
+    await this.briefingRequest('/api/todos/complete', { id, completed })
+  }
+
+  async deleteTodo(id: string): Promise<void> {
+    await this.briefingRequest('/api/todos/delete', { id })
+  }
+
+  async claimTodoNotifications(): Promise<Todo[]> {
+    return (await this.briefingRequest<{ todos: Todo[] }>('/api/todos/notifications', {})).todos
   }
 
   async importChinaHolidays(year: number): Promise<{ year: number; added: number; total: number }> {

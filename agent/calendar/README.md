@@ -6,6 +6,6 @@
 
 「导入日期」直接把全天日期放入同一 `calendar_events` 表。内置 2025、2026 年国务院发布的放假与调休上班安排，按年份一次导入，同年重试不会产生重复记录；官方来源分别是 [2025 年通知](https://www.gov.cn/zhengce/zhengceku/202411/content_6986383.htm) 和 [2026 年通知](https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm)。官方节假日带紫色星标、来源链接，不能编辑但可移除。用户还可手动添加特殊日期并选择每年重复，或导入不超过 1 MB、最多 500 条的 `.ics` 全天事件与含 `title,date,annual,description` 列的 `.csv`。文件导入对已有 UID 或相同名称、日期去重；不支持的 iCalendar 定时与复杂重复规则会给出错误，避免丢失时间信息。
 
-简报生成后，`BriefingPipeline` 将精选的来源条目交给 `CalendarService.ingest_briefing`。有明确 `due_at` 或 Agent 从原文提取的 `calendar.start_at` 时创建日程；无明确时间不推测。需处理的条目写入 `agenda_handoffs` 的 `task` 目的地，供后续独立事务应用迁移；本分支不实现事务功能。一个邮件线程合并为一张简报卡时，每条被精选的来源仍单独参与联动。
+简报生成后，`BriefingPipeline` 将精选的来源条目交给 `CalendarService.ingest_briefing`。明确的 `calendar.start_at` 会创建日程；非行动条目的明确 `due_at` 仍可创建日程。行动条目的截止时间交给独立的事务服务。一个邮件线程合并为一张简报卡时，每条被精选的来源仍单独参与联动。
 
 来源标识用于去重。再次生成同一简报会更新未被用户编辑的来源日程，保留用户已编辑的日程，并清理本次简报不再精选的未编辑日程及交接记录。简报写入不依赖日程服务成功；联动故障写入日志，不回滚已生成的简报。

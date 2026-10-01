@@ -412,11 +412,11 @@ function setupIPC() {
   // Show a native OS notification (e.g. a scheduler reminder or a finished
   // task). Clicking it brings the window forward and asks the renderer to open
   // the given session.
-  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) => {
+  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean; showWhenFocused?: boolean }) => {
     if (!Notification.isSupported() || !payload?.body) return false
     // Skip when the window is focused: the user is already watching, so a
     // notification (and sound) would just be noise, especially for short tasks.
-    if (mainWindow?.isFocused()) return false
+    if (mainWindow?.isFocused() && !payload.showWhenFocused) return false
     // Use the runtime app icon if one was set (via set-app-icon), so the
     // notification matches the current window/Dock icon. Falls back to the
     // packaged icon.
