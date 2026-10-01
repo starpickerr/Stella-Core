@@ -199,7 +199,10 @@ def login(config, manual=False):
     try:
         from playwright.sync_api import Error as PlaywrightError, sync_playwright
     except ImportError:
-        raise SyncError("缺少 Playwright 登录组件，请安装桌面运行依赖。") from None
+        from agent.tools.browser.browser_env import is_frozen
+        if is_frozen():
+            raise SyncError("桌面后端缺少 Playwright 登录组件，请更新或重新构建桌面应用。") from None
+        raise SyncError("缺少 Playwright 登录组件，请在当前运行后端的 Python 环境执行 python -m pip install -r requirements.txt 后重启。") from None
     base = config["base_url"].rstrip("/")
     host = urllib.parse.urlparse(base).hostname
     print("即将打开浏览器，请在窗口中登录。" if manual else

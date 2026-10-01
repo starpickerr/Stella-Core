@@ -621,6 +621,18 @@ class ApiClient {
     await this.briefingRequest('/api/calendar/events/delete', { id })
   }
 
+  async importChinaHolidays(year: number): Promise<{ year: number; added: number; total: number }> {
+    return this.briefingRequest('/api/calendar/import/holidays', { year })
+  }
+
+  async createSpecialDate(payload: { title: string; date: string; annual: boolean; description: string; timezone: string }): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/special-dates', payload)).event
+  }
+
+  async importSpecialDates(content: string, format: 'ics' | 'csv', timezone: string): Promise<{ added: number; total: number }> {
+    return this.briefingRequest('/api/calendar/import/special-dates', { content, format, timezone })
+  }
+
   async getCalendarCategories(): Promise<CalendarCategory[]> {
     return (await this.briefingRequest<{ categories: CalendarCategory[] }>('/api/calendar/categories')).categories
   }
