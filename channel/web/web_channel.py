@@ -2016,6 +2016,20 @@ class WebChannel(ChatChannel):
             '/api/briefings/settings/test', 'BriefingSettingsTestHandler',
             '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
             '/api/briefings/(.*)', 'BriefingDetailHandler',
+            '/api/calendar/events', 'CalendarEventsHandler',
+            '/api/calendar/events/update', 'CalendarEventUpdateHandler',
+            '/api/calendar/events/delete', 'CalendarEventDeleteHandler',
+            '/api/calendar/import/holidays', 'CalendarHolidayImportHandler',
+            '/api/calendar/import/special-dates', 'CalendarSpecialDateImportHandler',
+            '/api/calendar/special-dates', 'CalendarSpecialDateHandler',
+            '/api/calendar/categories', 'CalendarCategoriesHandler',
+            '/api/calendar/categories/update', 'CalendarCategoryUpdateHandler',
+            '/api/calendar/categories/delete', 'CalendarCategoryDeleteHandler',
+            '/api/todos', 'TodosHandler',
+            '/api/todos/update', 'TodoUpdateHandler',
+            '/api/todos/delete', 'TodoDeleteHandler',
+            '/api/todos/complete', 'TodoCompleteHandler',
+            '/api/todos/notifications', 'TodoNotificationsHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
             '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
@@ -5922,6 +5936,168 @@ class SchedulerDeleteHandler:
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+def _calendar_response(operation):
+    _require_auth()
+    web.header('Content-Type', 'application/json; charset=utf-8')
+    web.header('Cache-Control', 'no-store')
+    try:
+        return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
+    except (ValueError, KeyError) as exc:
+        logger.warning(f"[WebChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
+        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+    except Exception:
+        logger.exception("[WebChannel] Calendar request failed")
+        return json.dumps({"status": "error", "message": "Calendar request failed"})
+
+
+def _calendar_service():
+    from agent.calendar import CalendarService
+    return CalendarService()
+
+
+def _calendar_body():
+    body = json.loads(web.data() or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be an object")
+    return body
+
+
+class CalendarEventsHandler:
+    def GET(self):
+        def operation():
+            params = web.input(start='', end='', category_id='')
+            return {"events": _calendar_service().list_events(params.start or None, params.end or None, params.category_id or None)}
+        return _calendar_response(operation)
+
+    def POST(self):
+        return _calendar_response(lambda: {"event": _calendar_service().create_event(_calendar_body())})
+
+
+class CalendarEventUpdateHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"event": _calendar_service().update_event(body.get("id"), body)}
+        return _calendar_response(operation)
+
+
+class CalendarEventDeleteHandler:
+    def POST(self):
+        def operation():
+            _calendar_service().delete_event(_calendar_body().get("id"))
+            return {}
+        return _calendar_response(operation)
+
+
+class CalendarHolidayImportHandler:
+    def POST(self):
+        return _calendar_response(lambda: _calendar_service().import_china_holidays(_calendar_body().get("year")))
+
+
+class CalendarSpecialDateHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"event": _calendar_service().create_special_date(_calendar_body())})
+
+
+class CalendarSpecialDateImportHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return _calendar_service().import_special_dates(body.get("content"), body.get("format"), body.get("timezone") or "UTC")
+        return _calendar_response(operation)
+
+
+class CalendarCategoriesHandler:
+    def GET(self):
+        return _calendar_response(lambda: {"categories": _calendar_service().categories()})
+
+    def POST(self):
+        return _calendar_response(lambda: {"category": _calendar_service().create_category(_calendar_body())})
+
+
+class CalendarCategoryUpdateHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"category": _calendar_service().update_category(body.get("id"), body)}
+        return _calendar_response(operation)
+
+
+class CalendarCategoryDeleteHandler:
+    def POST(self):
+        def operation():
+            _calendar_service().delete_category(_calendar_body().get("id"))
+            return {}
+        return _calendar_response(operation)
+
+
+def _todo_service():
+    from agent.todos import TodoService
+    return TodoService()
+
+
+def _todo_body():
+    body = json.loads(web.data() or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be an object")
+    return body
+
+
+def _todo_response(operation):
+    _require_auth()
+    web.header('Content-Type', 'application/json; charset=utf-8')
+    web.header('Cache-Control', 'no-store')
+    try:
+        return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
+    except (ValueError, KeyError) as exc:
+        logger.warning(f"[WebChannel] Todo request rejected ({type(exc).__name__}): {exc}")
+        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+    except Exception:
+        logger.exception("[WebChannel] Todo request failed")
+        return json.dumps({"status": "error", "message": "Todo request failed"})
+
+
+class TodosHandler:
+    def GET(self):
+        def operation():
+            params = web.input(start='', end='', include_completed='true')
+            return {"todos": _todo_service().list_todos(
+                params.start or None, params.end or None, params.include_completed != 'false')}
+        return _todo_response(operation)
+
+    def POST(self):
+        return _todo_response(lambda: {"todo": _todo_service().create_todo(_todo_body())})
+
+
+class TodoUpdateHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().update_todo(body.get("id"), body)}
+        return _todo_response(operation)
+
+
+class TodoDeleteHandler:
+    def POST(self):
+        def operation():
+            _todo_service().delete_todo(_todo_body().get("id"))
+            return {}
+        return _todo_response(operation)
+
+
+class TodoCompleteHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().complete_todo(body.get("id"), body.get("completed"))}
+        return _todo_response(operation)
+
+
+class TodoNotificationsHandler:
+    def POST(self):
+        return _todo_response(lambda: {"todos": _todo_service().claim_due_todo_notifications()})
 
 
 def _briefing_service():

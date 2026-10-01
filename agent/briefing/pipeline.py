@@ -180,6 +180,16 @@ class BriefingPipeline:
             )
             if status != "failed":
                 self._commit_cursors(pending_cursors)
+                try:
+                    from agent.calendar import CalendarService
+                    CalendarService().ingest_briefing(detail)
+                except Exception:
+                    logger.exception("[BriefingPipeline] calendar handoff failed")
+                try:
+                    from agent.todos import TodoService
+                    TodoService().ingest_briefing(detail)
+                except Exception:
+                    logger.exception("[BriefingPipeline] todo handoff failed")
             return detail
         except Exception as exc:
             logger.error(f"[BriefingPipeline] run failed: {exc}")
