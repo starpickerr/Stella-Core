@@ -1,4 +1,4 @@
-ToDoList.md
+重构方案.md
 .DS_Store
 .idea
 .vscode
@@ -37,7 +37,7 @@ plugins/banwords/lib/__pycache__
 client_config.json
 # HMAC key for signing /preview URLs; generated per install.
 .preview_secret
-ref/
+/references/
 **/.dev.vars
 .cursor/
 local/
