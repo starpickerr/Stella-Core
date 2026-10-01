@@ -9,6 +9,7 @@ import LoginGate from './components/LoginGate'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { usePushPoll } from './hooks/usePushPoll'
+import { useTodoNotifications } from './hooks/useTodoNotifications'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
 import { useWorkspaceStore } from './store/workspaceStore'
@@ -30,6 +31,8 @@ import LogsPage from './pages/LogsPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import BillsPage from './pages/BillsPage'
 import BriefingPage from './pages/BriefingPage'
+import CalendarPage from './pages/CalendarPage'
+import TodosPage from './pages/TodosPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -117,6 +120,7 @@ const App: React.FC = () => {
 
   // Poll for scheduler/push messages once the backend and auth are settled.
   usePushPoll(backend.status === 'ready' && authState === 'ok')
+  useTodoNotifications(backend.status === 'ready' && authState === 'ok')
 
   // A clicked OS notification asks us to open its session.
   useEffect(() => {
@@ -232,8 +236,8 @@ const App: React.FC = () => {
           ) : (
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
-            <Route path="/todos" element={<PlaceholderPage title={t('menu_todos')} hint={t('placeholder_coming')} />} />
-            <Route path="/calendar" element={<PlaceholderPage title={t('menu_calendar')} hint={t('placeholder_coming')} />} />
+            <Route path="/todos" element={<TodosPage baseUrl={backend.baseUrl} />} />
+            <Route path="/calendar" element={<CalendarPage baseUrl={backend.baseUrl} />} />
             <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
             <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />

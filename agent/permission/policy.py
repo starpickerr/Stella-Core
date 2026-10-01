@@ -117,6 +117,8 @@ _ACTION_TOOLS: Dict[str, Tuple[str, frozenset]] = {
     "scheduler": ("action", frozenset({"create", "delete", "enable", "disable"})),
     "env_config": ("action", frozenset({"set", "delete"})),
     "briefing": ("action", frozenset({"run", "item_status", "add_rule", "update_rule", "delete_rule"})),
+    "calendar": ("action", frozenset({"create", "update", "delete", "create_category", "update_category", "delete_category"})),
+    "todos": ("action", frozenset({"create", "update", "complete", "delete"})),
 }
 
 # Built-in tools that only read. Listed so the MCP name heuristic below never
@@ -125,7 +127,7 @@ _KNOWN_TOOLS = frozenset({
     "read", "ls", "search_files", "memory_search", "memory_get", "web_search",
     "web_fetch", "vision", "send", "subagent", "bash", "write", "edit",
     "browser", "scheduler", "env_config", "evolution_undo",
-    "briefing", "elearning",
+    "briefing", "elearning", "calendar", "todos",
 })
 
 # MCP tools arrive with names we have never seen. Rather than guess "safe", read

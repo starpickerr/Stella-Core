@@ -52,6 +52,7 @@ hiddenimports = [
 # Agent tools and model providers are imported lazily in places; collect their
 # submodules so nothing is missed at runtime.
 hiddenimports += collect_submodules('agent.tools')
+hiddenimports += collect_submodules('agent.calendar')
 hiddenimports += collect_submodules('agent.briefing')
 hiddenimports += collect_submodules('models')
 hiddenimports += collect_submodules('voice')

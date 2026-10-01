@@ -30,6 +30,8 @@ import type {
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
+  CalendarCategory, CalendarEvent, CalendarEventInput,
+  Todo, TodoInput,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -598,6 +600,82 @@ class ApiClient {
     })
     if (data.status !== 'success') throw new Error(data.message || 'Briefing request failed')
     return data
+  }
+
+  async getCalendarEvents(start?: string, end?: string, categoryId?: string): Promise<CalendarEvent[]> {
+    const query = new URLSearchParams()
+    if (start) query.set('start', start)
+    if (end) query.set('end', end)
+    if (categoryId) query.set('category_id', categoryId)
+    return (await this.briefingRequest<{ events: CalendarEvent[] }>(`/api/calendar/events?${query}`)).events
+  }
+
+  async createCalendarEvent(payload: CalendarEventInput): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/events', payload)).event
+  }
+
+  async updateCalendarEvent(id: string, payload: CalendarEventInput): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/events/update', { id, ...payload })).event
+  }
+
+  async deleteCalendarEvent(id: string): Promise<void> {
+    await this.briefingRequest('/api/calendar/events/delete', { id })
+  }
+
+  async getTodos(start?: string, end?: string, includeCompleted = true): Promise<Todo[]> {
+    const query = new URLSearchParams()
+    if (start) query.set('start', start)
+    if (end) query.set('end', end)
+    if (!includeCompleted) query.set('include_completed', 'false')
+    return (await this.briefingRequest<{ todos: Todo[] }>(`/api/todos?${query}`)).todos
+  }
+
+  async createTodo(payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos', payload)).todo
+  }
+
+  async updateTodo(id: string, payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/update', { id, ...payload })).todo
+  }
+
+  async completeTodo(id: string, completed: boolean): Promise<void> {
+    await this.briefingRequest('/api/todos/complete', { id, completed })
+  }
+
+  async deleteTodo(id: string): Promise<void> {
+    await this.briefingRequest('/api/todos/delete', { id })
+  }
+
+  async claimTodoNotifications(): Promise<Todo[]> {
+    return (await this.briefingRequest<{ todos: Todo[] }>('/api/todos/notifications', {})).todos
+  }
+
+  async importChinaHolidays(year: number): Promise<{ year: number; added: number; total: number }> {
+    return this.briefingRequest('/api/calendar/import/holidays', { year })
+  }
+
+  async createSpecialDate(payload: { title: string; date: string; annual: boolean; description: string; timezone: string }): Promise<CalendarEvent> {
+    return (await this.briefingRequest<{ event: CalendarEvent }>('/api/calendar/special-dates', payload)).event
+  }
+
+  async importSpecialDates(content: string, format: 'ics' | 'csv', timezone: string): Promise<{ added: number; total: number }> {
+    return this.briefingRequest('/api/calendar/import/special-dates', { content, format, timezone })
+  }
+
+  async getCalendarCategories(): Promise<CalendarCategory[]> {
+    return (await this.briefingRequest<{ categories: CalendarCategory[] }>('/api/calendar/categories')).categories
+  }
+
+  async createCalendarCategory(name: string, color: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/calendar/categories', { name, color })).category
+  }
+
+  async updateCalendarCategory(id: string, name: string, color: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/calendar/categories/update', { id, name, color })).category
+  }
+
+  async deleteCalendarCategory(id: string): Promise<void> {
+    await this.briefingRequest('/api/calendar/categories/delete', { id })
   }
 
   async getBriefings(): Promise<Briefing[]> {
