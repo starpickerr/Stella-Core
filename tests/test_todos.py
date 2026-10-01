@@ -136,3 +136,18 @@ def test_tool_and_web_api_are_independent(service, monkeypatch):
     with patch.object(web_channel.web, "data", return_value='{"title":"来自页面"}'.encode()):
         result = json.loads(web_channel.TodosHandler().POST())
     assert result["status"] == "success" and result["todo"]["title"] == "来自页面"
+
+
+def test_todo_api_validation_errors_are_written_to_logs(service, monkeypatch):
+    from channel.web import web_channel
+
+    monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
+    monkeypatch.setattr(web_channel, "_require_auth", lambda: None)
+    monkeypatch.setattr(web_channel.web, "header", lambda *_args: None)
+    params = SimpleNamespace(start="2026-09-01", end="2027-10-01", include_completed="true")
+    with patch.object(web_channel.web, "input", return_value=params), \
+         patch.object(web_channel.logger, "warning") as log_warning:
+        response = json.loads(web_channel.TodosHandler().GET())
+    assert response == {"status": "error", "message": "invalid todo range"}
+    log_warning.assert_called_once()
+    assert "invalid todo range" in log_warning.call_args.args[0]

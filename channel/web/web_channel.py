@@ -5945,6 +5945,7 @@ def _calendar_response(operation):
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
     except (ValueError, KeyError) as exc:
+        logger.warning(f"[WebChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
         logger.exception("[WebChannel] Calendar request failed")
@@ -6051,6 +6052,7 @@ def _todo_response(operation):
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
     except (ValueError, KeyError) as exc:
+        logger.warning(f"[WebChannel] Todo request rejected ({type(exc).__name__}): {exc}")
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
         logger.exception("[WebChannel] Todo request failed")

@@ -50,9 +50,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     try {
       const start = addDays(new Date(), -30)
       const end = addDays(new Date(), 360)
-      const [series, occurrences] = await Promise.all([
-        apiClient.getTodos(), apiClient.getTodos(dateKey(start), dateKey(end)),
-      ])
+      const occurrenceRequests: Promise<Todo[]>[] = []
+      for (let cursor = start; cursor < end; cursor = addDays(cursor, 360)) {
+        const next = addDays(cursor, 360)
+        occurrenceRequests.push(apiClient.getTodos(dateKey(cursor), dateKey(next < end ? next : end)))
+      }
+      const [series, parts] = await Promise.all([apiClient.getTodos(), Promise.all(occurrenceRequests)])
+      const occurrences = parts.flat()
       setTemplates(series)
       setInstances(occurrences)
       setError('')
