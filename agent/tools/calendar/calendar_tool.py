@@ -11,7 +11,8 @@ from agent.calendar import CalendarService
 class CalendarTool(BaseTool):
     name = "calendar"
     description = ("查看、创建、编辑和删除个人日程及分类。时间使用带时区的 ISO 8601 格式；"
-                   "list 可按时间范围和分类筛选，get 查看详情。简报中有明确时间的事项会自动进入日程。")
+                   "可用 repeat_frequency、repeat_days、repeat_until 创建重复日程。"
+                   "list 可按时间范围和分类筛选，传入 start/end 时返回重复日程实例；get 查看系列详情。")
     params = {
         "type": "object",
         "properties": {
@@ -22,6 +23,11 @@ class CalendarTool(BaseTool):
             "start_at": {"type": "string", "description": "ISO 8601，须含时区"},
             "end_at": {"type": "string", "description": "ISO 8601，须含时区"},
             "all_day": {"type": "boolean"}, "location": {"type": "string"},
+            "repeat_frequency": {"type": "string", "enum": ["none", "daily", "weekly", "monthly", "yearly"]},
+            "repeat_days": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 6},
+                            "description": "每周重复日，0=周一，6=周日"},
+            "repeat_until": {"type": "string", "description": "结束日期 YYYY-MM-DD，留空表示持续重复"},
+            "repeat_timezone": {"type": "string", "description": "IANA 时区，如 Asia/Shanghai"},
             "category_id": {"type": "string"}, "name": {"type": "string"},
             "color": {"type": "string", "description": "#RRGGBB"},
             "start": {"type": "string"}, "end": {"type": "string"},
@@ -38,7 +44,8 @@ class CalendarTool(BaseTool):
                 raise ValueError("parameters must be an object")
             action = params.get("action")
             service = self.service or CalendarService()
-            event_fields = ("title", "description", "start_at", "end_at", "all_day", "location", "category_id")
+            event_fields = ("title", "description", "start_at", "end_at", "all_day", "location", "category_id",
+                            "repeat_frequency", "repeat_days", "repeat_until", "repeat_timezone")
             category_fields = ("name", "color")
             data = {key: params[key] for key in event_fields if key in params}
             category = {key: params[key] for key in category_fields if key in params}

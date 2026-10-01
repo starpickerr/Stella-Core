@@ -804,11 +804,13 @@ export interface CalendarCategory { id: string; name: string; color: string; cre
 export interface CalendarEvent {
   id: string; title: string; description: string; start_at: string; end_at: string
   all_day: number; location: string; category_id: string | null
+  series_id?: string; repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+  repeat_days: string; repeat_until: string | null; repeat_timezone: string | null
   source_type: string | null; source_key: string | null; source_url: string
   user_modified: number; created_at: string; updated_at: string
 }
 export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
-  { all_day: boolean; category_id: string | null }
+  { all_day: boolean; category_id: string | null; repeat_frequency: CalendarEvent['repeat_frequency']; repeat_days: number[]; repeat_until: string | null; repeat_timezone: string }
 
 export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'

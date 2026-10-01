@@ -2019,6 +2019,9 @@ class WebChannel(ChatChannel):
             '/api/calendar/events', 'CalendarEventsHandler',
             '/api/calendar/events/update', 'CalendarEventUpdateHandler',
             '/api/calendar/events/delete', 'CalendarEventDeleteHandler',
+            '/api/calendar/import/holidays', 'CalendarHolidayImportHandler',
+            '/api/calendar/import/special-dates', 'CalendarSpecialDateImportHandler',
+            '/api/calendar/special-dates', 'CalendarSpecialDateHandler',
             '/api/calendar/categories', 'CalendarCategoriesHandler',
             '/api/calendar/categories/update', 'CalendarCategoryUpdateHandler',
             '/api/calendar/categories/delete', 'CalendarCategoryDeleteHandler',
@@ -5979,6 +5982,24 @@ class CalendarEventDeleteHandler:
         def operation():
             _calendar_service().delete_event(_calendar_body().get("id"))
             return {}
+        return _calendar_response(operation)
+
+
+class CalendarHolidayImportHandler:
+    def POST(self):
+        return _calendar_response(lambda: _calendar_service().import_china_holidays(_calendar_body().get("year")))
+
+
+class CalendarSpecialDateHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"event": _calendar_service().create_special_date(_calendar_body())})
+
+
+class CalendarSpecialDateImportHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return _calendar_service().import_special_dates(body.get("content"), body.get("format"), body.get("timezone") or "UTC")
         return _calendar_response(operation)
 
 
