@@ -55,7 +55,7 @@ export interface ElectronAPI {
   setAppTitle?: (title: string) => Promise<boolean>
   // Show a native OS notification; clicking it focuses the window and fires
   // onOpenSession with the session id.
-  notify?: (payload: { title?: string; body?: string; sessionId?: string; silent?: boolean }) => Promise<boolean>
+  notify?: (payload: { title?: string; body?: string; sessionId?: string; silent?: boolean; showWhenFocused?: boolean }) => Promise<boolean>
   onOpenSession?: (callback: (sessionId: string) => void) => () => void
   platform: string
   // OS UI language (e.g. "zh-CN"); used to default the language on first run.
@@ -811,6 +811,17 @@ export interface CalendarEvent {
 }
 export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
   { all_day: boolean; category_id: string | null; repeat_frequency: CalendarEvent['repeat_frequency']; repeat_days: number[]; repeat_until: string | null; repeat_timezone: string }
+
+export interface Todo {
+  id: string; series_id?: string; title: string; notes: string
+  due_on: string | null; due_time: string | null; timezone: string; priority: number
+  completed_at: string | null; repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+  repeat_days: string; repeat_until: string | null
+  source_type: string | null; source_key: string | null; source_url: string
+  user_modified: number; briefing_id: string | null; created_at: string; updated_at: string
+}
+export type TodoInput = Pick<Todo, 'title' | 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until'> &
+  { repeat_days: number[] }
 
 export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'

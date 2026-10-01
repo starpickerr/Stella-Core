@@ -236,6 +236,12 @@ def calendar_db(identity=None, ensure: bool = True, base=None) -> Path:
     return calendar_dir / "calendar.db"
 
 
+def todos_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """User-scoped to-dos and reminder delivery state."""
+    todos_dir = _ensure(_user_base(identity, base) / "todos", ensure)
+    return todos_dir / "todos.db"
+
+
 def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     """Task execution records. User-scoped because a trace holds full tool
     output: one user's runs must not be readable by another."""

@@ -433,7 +433,8 @@ class CalendarService:
             current_keys.add(source_key)
             decision = decisions.get(item.source_item_id, {})
             calendar = decision.get("calendar") if isinstance(decision.get("calendar"), dict) else {}
-            start = calendar.get("start_at") or (item.payload.get("due_at") if isinstance(item.payload, dict) else None)
+            due_at = item.payload.get("due_at") if isinstance(item.payload, dict) else None
+            start = calendar.get("start_at") or (due_at if item.section != "action" else None)
             event_id = None
             if start:
                 try:
@@ -449,15 +450,6 @@ class CalendarService:
                 except (ValueError, TypeError):
                     pass
             with self._connect() as db:
-                if item.section == "action":
-                    db.execute("""INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)
-                        ON CONFLICT(source_type,source_key,destination) DO UPDATE SET
-                        title=excluded.title,summary=excluded.summary,briefing_id=excluded.briefing_id,
-                        briefing_item_id=excluded.briefing_item_id,updated_at=excluded.updated_at""",
-                        ("briefing", source_key, "task", item.title, item.snippet, briefing.id, item.id, None, _now()))
-                else:
-                    db.execute("DELETE FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='task'",
-                               (source_key,))
                 if event_id:
                     db.execute("""INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(source_type,source_key,destination) DO UPDATE SET
