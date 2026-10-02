@@ -14,7 +14,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -175,6 +175,16 @@ class BriefingStore:
         conn = self._raw_connect()
         try:
             conn.executescript(load_schema_sql())
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS briefing_outbox (
+                    briefing_id TEXT NOT NULL, revision INTEGER NOT NULL,
+                    snapshot TEXT NOT NULL, calendar_ack_at TEXT, todo_ack_at TEXT,
+                    calendar_error TEXT, todo_error TEXT,
+                    PRIMARY KEY(briefing_id,revision)
+                );
+                CREATE INDEX IF NOT EXISTS briefing_outbox_pending
+                    ON briefing_outbox(calendar_ack_at,todo_ack_at);
+            """)
             columns = {row[1] for row in conn.execute("PRAGMA table_info(briefings)")}
             for column in ("window_start", "window_end"):
                 if column not in columns:
@@ -435,7 +445,7 @@ class BriefingStore:
             ).fetchall()
             return [_briefing_from_row(row) for row in rows]
 
-    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None) -> None:
+    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None, cursor_updates=None) -> None:
         """Commit the document, cards, classified mail and history atomically."""
         with self._conn() as conn:
             self._write_briefing(conn, briefing)
@@ -448,6 +458,12 @@ class BriefingStore:
                 conn.execute("DELETE FROM briefing_candidates WHERE briefing_id=?", (briefing.id,))
                 conn.executemany("INSERT INTO briefing_candidates VALUES (?,?)", [
                     (briefing.id, row["id"]) for row in mail])
+            for source, account_id, key, value in cursor_updates or []:
+                conn.execute("""INSERT INTO sync_state
+                    (source,account_id,cursor_key,cursor_value,updated_at) VALUES (?,?,?,?,?)
+                    ON CONFLICT(source,account_id,cursor_key) DO UPDATE SET
+                    cursor_value=excluded.cursor_value,updated_at=excluded.updated_at""",
+                    (source, account_id, key, value, briefing.updated_at))
             self._archive(conn, briefing, trigger)
 
     def _archive(self, conn, briefing, trigger):
@@ -456,7 +472,30 @@ class BriefingStore:
         number = conn.execute("SELECT COALESCE(MAX(number),0)+1 FROM briefing_revisions WHERE briefing_id=?", (briefing.id,)).fetchone()[0]
         mail = [json.loads(row[0]) for row in conn.execute("SELECT snapshot FROM briefing_mail WHERE briefing_id=? ORDER BY source_item_id", (briefing.id,))]
         snapshot = {"briefing": asdict(briefing), "items": [asdict(item) for item in cards], "mail": mail}
-        conn.execute("INSERT INTO briefing_revisions VALUES (?,?,?,?,?)", (briefing.id, number, trigger, briefing.updated_at, _dump_payload(snapshot)))
+        payload = _dump_payload(snapshot)
+        conn.execute("INSERT INTO briefing_revisions VALUES (?,?,?,?,?)", (briefing.id, number, trigger, briefing.updated_at, payload))
+        if trigger != "legacy" and briefing.status in ("completed", "partial"):
+            conn.execute("""INSERT INTO briefing_outbox(briefing_id,revision,snapshot)
+                VALUES (?,?,?)""", (briefing.id, number, payload))
+
+    def pending_projection_events(self, limit=20):
+        with self._conn() as conn:
+            rows = conn.execute("""SELECT * FROM briefing_outbox
+                WHERE calendar_ack_at IS NULL OR todo_ack_at IS NULL
+                ORDER BY briefing_id,revision LIMIT ?""", (limit,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def ack_projection(self, briefing_id, revision, consumer, error=None):
+        if consumer not in ("calendar", "todo"):
+            raise ValueError("unknown briefing projection consumer")
+        with self._conn() as conn:
+            if error:
+                conn.execute(f"""UPDATE briefing_outbox SET {consumer}_error=?
+                    WHERE briefing_id=? AND revision=?""", (str(error), briefing_id, revision))
+            else:
+                conn.execute(f"""UPDATE briefing_outbox SET {consumer}_ack_at=?,{consumer}_error=NULL
+                    WHERE briefing_id=? AND revision=?""",
+                    (datetime.now(timezone.utc).isoformat(), briefing_id, revision))
 
     def list_mail(self, briefing_id):
         with self._conn() as conn:

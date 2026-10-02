@@ -646,9 +646,6 @@ class ApiClient {
     await this.briefingRequest('/api/todos/delete', { id })
   }
 
-  async claimTodoNotifications(): Promise<Todo[]> {
-    return (await this.briefingRequest<{ todos: Todo[] }>('/api/todos/notifications', {})).todos
-  }
 
   async importChinaHolidays(year: number): Promise<{ year: number; added: number; total: number }> {
     return this.briefingRequest('/api/calendar/import/holidays', { year })

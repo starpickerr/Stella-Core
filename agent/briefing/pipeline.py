@@ -174,22 +174,19 @@ class BriefingPipeline:
                     "kept_count": len(mail) - filtered_count if status != "failed" else briefing.kept_count,
                     "filtered_count": filtered_count if status != "failed" else briefing.filtered_count,
                     "error_message": "; ".join(errors),
+                    "cursor_updates": [
+                        (source.name, source.account_id, key, value)
+                        for source, cursors in pending_cursors
+                        if source_key(source) in fully_refreshed
+                        for key, value in cursors.items()
+                    ],
                     **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", ""),
                         "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed]} if status != "failed" else {}),
                 },
             )
             if status != "failed":
-                self._commit_cursors(pending_cursors)
-                try:
-                    from agent.calendar import CalendarService
-                    CalendarService().ingest_briefing(detail)
-                except Exception:
-                    logger.exception("[BriefingPipeline] calendar handoff failed")
-                try:
-                    from agent.todos import TodoService
-                    TodoService().ingest_briefing(detail)
-                except Exception:
-                    logger.exception("[BriefingPipeline] todo handoff failed")
+                from agent.briefing.outbox import dispatch_pending
+                dispatch_pending(self.service.store)
             return detail
         except Exception as exc:
             logger.error(f"[BriefingPipeline] run failed: {exc}")
@@ -244,8 +241,3 @@ class BriefingPipeline:
         for fetched in items:
             rows.append(self.service.upsert_source_item(fetched.to_catalog_payload()))
         return rows
-
-    def _commit_cursors(self, pending: Sequence[Tuple[Source, Dict[str, str]]]) -> None:
-        for source, cursors in pending:
-            for key, value in cursors.items():
-                self.service.set_cursor(source.name, key, value, source.account_id)

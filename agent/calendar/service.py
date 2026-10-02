@@ -74,6 +74,12 @@ class CalendarService:
                     calendar_event_id TEXT, updated_at TEXT NOT NULL,
                     PRIMARY KEY(source_type, source_key, destination)
                 );
+                CREATE TABLE IF NOT EXISTS briefing_applied (
+                    briefing_id TEXT PRIMARY KEY, last_revision INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS source_tombstones (
+                    source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
+                );
             """)
             # Serialize the schema check and ALTERs across simultaneous HTTP requests.
             # executescript commits any earlier transaction, so acquire the write lock here.
@@ -318,8 +324,11 @@ class CalendarService:
         return self.get_event(event_id)
 
     def delete_event(self, event_id):
-        self.get_event(event_id)
+        old = self.get_event(event_id)
         with self._connect() as db:
+            if old["source_type"] == "briefing" and old["source_key"]:
+                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
+                           (old["source_key"], _now()))
             db.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
 
     @staticmethod
@@ -407,8 +416,25 @@ class CalendarService:
                         for row, key in prepared)
         return {"added": added, "total": len(prepared)}
 
-    def ingest_briefing(self, detail):
+    def ingest_briefing_revision(self, detail, revision):
+        briefing_id = detail["briefing"].id
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT last_revision FROM briefing_applied WHERE briefing_id=?",
+                             (briefing_id,)).fetchone()
+            if row and row[0] >= revision:
+                return 0
+            count = self.ingest_briefing(detail, db=db)
+            db.execute("""INSERT INTO briefing_applied VALUES (?,?)
+                ON CONFLICT(briefing_id) DO UPDATE SET last_revision=excluded.last_revision""",
+                (briefing_id, revision))
+            return count
+
+    def ingest_briefing(self, detail, db=None):
         """Record routing decisions and sync explicit dates, keyed by source identity."""
+        if db is None:
+            with self._connect() as connection:
+                return self.ingest_briefing(detail, db=connection)
         briefing = detail["briefing"]
         decisions = {row["id"]: row.get("decision") or {} for row in detail.get("mail", [])}
         count = 0
@@ -444,52 +470,54 @@ class CalendarService:
                         from datetime import timedelta
                         end = (datetime.fromisoformat(start) + timedelta(hours=1)).isoformat()
                     event = self._upsert_sourced_event(source_key, item, start, end,
-                                                        bool(calendar.get("all_day", False)))
-                    event_id = event["id"]
-                    count += 1
+                                                        bool(calendar.get("all_day", False)), db=db)
+                    if event:
+                        event_id = event["id"]
+                        count += 1
                 except (ValueError, TypeError):
                     pass
-            with self._connect() as db:
-                if event_id:
-                    db.execute("""INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)
-                        ON CONFLICT(source_type,source_key,destination) DO UPDATE SET
-                        title=excluded.title,summary=excluded.summary,briefing_id=excluded.briefing_id,
-                        briefing_item_id=excluded.briefing_item_id,calendar_event_id=excluded.calendar_event_id,updated_at=excluded.updated_at""",
-                        ("briefing", source_key, "calendar", item.title, item.snippet, briefing.id, item.id, event_id, _now()))
-                else:
-                    old = db.execute("SELECT calendar_event_id FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
-                                     (source_key,)).fetchone()
-                    if old and old["calendar_event_id"]:
-                        db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0", (old["calendar_event_id"],))
-                    db.execute("DELETE FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
-                               (source_key,))
-        with self._connect() as db:
-            stale = db.execute("SELECT source_key, calendar_event_id FROM agenda_handoffs WHERE briefing_id=?",
-                               (briefing.id,)).fetchall()
-            for row in stale:
-                if row["source_key"] in current_keys:
-                    continue
-                if row["calendar_event_id"]:
-                    db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0",
-                               (row["calendar_event_id"],))
-                db.execute("DELETE FROM agenda_handoffs WHERE briefing_id=? AND source_key=?",
-                           (briefing.id, row["source_key"]))
+            if event_id:
+                db.execute("""INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(source_type,source_key,destination) DO UPDATE SET
+                    title=excluded.title,summary=excluded.summary,briefing_id=excluded.briefing_id,
+                    briefing_item_id=excluded.briefing_item_id,calendar_event_id=excluded.calendar_event_id,updated_at=excluded.updated_at""",
+                    ("briefing", source_key, "calendar", item.title, item.snippet, briefing.id, item.id, event_id, _now()))
+            else:
+                old = db.execute("SELECT calendar_event_id FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
+                                 (source_key,)).fetchone()
+                if old and old["calendar_event_id"]:
+                    db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0", (old["calendar_event_id"],))
+                db.execute("DELETE FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
+                           (source_key,))
+        stale = db.execute("SELECT source_key, calendar_event_id FROM agenda_handoffs WHERE briefing_id=?",
+                           (briefing.id,)).fetchall()
+        for row in stale:
+            if row["source_key"] in current_keys:
+                continue
+            if row["calendar_event_id"]:
+                db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0",
+                           (row["calendar_event_id"],))
+            db.execute("DELETE FROM agenda_handoffs WHERE briefing_id=? AND source_key=?",
+                       (briefing.id, row["source_key"]))
         return count
 
-    def _upsert_sourced_event(self, source_key, item, start, end, all_day):
+    def _upsert_sourced_event(self, source_key, item, start, end, all_day, db=None):
+        if db is None:
+            with self._connect() as connection:
+                return self._upsert_sourced_event(source_key, item, start, end, all_day, connection)
         preferred = "study" if item.source == "elearning" else "work"
-        with self._connect() as db:
-            category_id = preferred if db.execute("SELECT 1 FROM calendar_categories WHERE id=?", (preferred,)).fetchone() else None
+        category_id = preferred if db.execute("SELECT 1 FROM calendar_categories WHERE id=?", (preferred,)).fetchone() else None
         row = self._validate_event({"title": item.title, "description": item.snippet,
                                     "start_at": start, "end_at": end, "all_day": all_day,
                                     "location": "", "category_id": category_id})
-        with self._connect() as db:
-            old = db.execute("SELECT * FROM calendar_events WHERE source_type='briefing' AND source_key=?", (source_key,)).fetchone()
-            if old and old["user_modified"]:
-                return dict(old)
-            event_id = old["id"] if old else str(uuid.uuid4())
-            now = _now()
-            db.execute("""INSERT INTO calendar_events
+        if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
+            return None
+        old = db.execute("SELECT * FROM calendar_events WHERE source_type='briefing' AND source_key=?", (source_key,)).fetchone()
+        if old and old["user_modified"]:
+            return dict(old)
+        event_id = old["id"] if old else str(uuid.uuid4())
+        now = _now()
+        db.execute("""INSERT INTO calendar_events
                 (id,title,description,start_at,end_at,all_day,location,category_id,source_type,source_key,source_url,user_modified,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(source_type,source_key) DO UPDATE SET title=excluded.title,description=excluded.description,
@@ -497,4 +525,4 @@ class CalendarService:
                 updated_at=excluded.updated_at""",
                 (event_id, row["title"], row["description"], row["start_at"], row["end_at"], row["all_day"],
                  row["location"], row["category_id"], "briefing", source_key, item.url, 0, now, now))
-        return self.get_event(event_id)
+        return dict(db.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone())

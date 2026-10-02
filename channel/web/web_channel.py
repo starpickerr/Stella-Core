@@ -1866,15 +1866,6 @@ class WebChannel(ChatChannel):
             logger.error(f"Error polling response: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
-    def chat_page(self):
-        """Serve the chat HTML page."""
-        file_path = os.path.join(os.path.dirname(__file__), 'chat.html')  # 使用绝对路径
-        with open(file_path, 'r', encoding='utf-8') as f:
-            html = f.read()
-        # Inject the backend-resolved default language so the console can use
-        # it on first load (when the user has no saved stella_lang preference).
-        return html.replace("{{STELLA_DEFAULT_LANG}}", i18n.get_language())
-
     def startup(self):
         configured_host = conf().get("web_host", "")
         host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
@@ -1937,26 +1928,6 @@ class WebChannel(ChatChannel):
             else:
                 logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
 
-            # In desktop mode the Electron shell renders the UI, so don't pop a
-            # browser window (also avoids issues when running detached/headless).
-            if os.environ.get("STELLA_DESKTOP") != "1":
-                try:
-                    import webbrowser
-                    webbrowser.open(f"http://localhost:{port}")
-                    logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
-                except Exception as e:
-                    logger.debug(f"[WebChannel] Could not open browser: {e}")
-
-        # Ensure the static dir exists. In a packaged build it ships read-only
-        # inside the bundle, so swallow errors instead of failing startup.
-        static_dir = os.path.join(os.path.dirname(__file__), 'static')
-        if not os.path.exists(static_dir):
-            try:
-                os.makedirs(static_dir)
-                logger.debug(f"[WebChannel] Created static directory: {static_dir}")
-            except OSError as e:
-                logger.debug(f"[WebChannel] Skipped creating static dir (read-only bundle?): {e}")
-
         urls = (
             '/', 'RootHandler',
             '/api/health', 'HealthHandler',
@@ -1983,7 +1954,6 @@ class WebChannel(ChatChannel):
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
             '/cancel', 'CancelHandler',
-            '/chat', 'ChatHandler',
             '/config', 'ConfigHandler',
             '/api/models', 'ModelsHandler',
             '/api/channels', 'ChannelsHandler',
@@ -2030,6 +2000,8 @@ class WebChannel(ChatChannel):
             '/api/todos/delete', 'TodoDeleteHandler',
             '/api/todos/complete', 'TodoCompleteHandler',
             '/api/todos/notifications', 'TodoNotificationsHandler',
+            '/api/desktop/notifications/claim', 'DesktopNotificationClaimHandler',
+            '/api/desktop/notifications/ack', 'DesktopNotificationAckHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
             '/api/bills/ledger/export', 'BillsLedgerExportHandler',
             '/api/bills/ledger/update', 'BillsLedgerUpdateHandler',
@@ -2048,7 +2020,6 @@ class WebChannel(ChatChannel):
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
             '/mcp/oauth/callback', 'McpOAuthCallbackHandler',
-            '/assets/(.*)', 'AssetsHandler',
         )
         app = web.application(urls, globals(), autoreload=False)
 
@@ -2110,7 +2081,8 @@ class WebChannel(ChatChannel):
 
 class RootHandler:
     def GET(self):
-        raise web.seeother('/chat')
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({"status": "ok", "surface": "desktop-local-api"})
 
 
 class HealthHandler:
@@ -2512,21 +2484,6 @@ class StreamHandler:
         web.header('Access-Control-Allow-Origin', '*')
 
         return WebChannel().stream_response(request_id, after_seq)
-
-
-class ChatHandler:
-    def GET(self):
-        web.header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        web.header('Pragma', 'no-cache')
-        file_path = os.path.join(os.path.dirname(__file__), 'chat.html')
-        with open(file_path, 'r', encoding='utf-8') as f:
-            html = f.read()
-        cache_bust = str(int(time.time()))
-        html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
-        html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
-        # Inject the backend-resolved default language for first-load fallback.
-        html = html.replace("{{STELLA_DEFAULT_LANG}}", i18n.get_language())
-        return html
 
 
 class ConfigHandler:
@@ -5953,8 +5910,8 @@ def _calendar_response(operation):
 
 
 def _calendar_service():
-    from agent.calendar import CalendarService
-    return CalendarService()
+    from application import Application
+    return Application.port("calendar")
 
 
 def _calendar_body():
@@ -6034,8 +5991,8 @@ class CalendarCategoryDeleteHandler:
 
 
 def _todo_service():
-    from agent.todos import TodoService
-    return TodoService()
+    from application import Application
+    return Application.port("todos")
 
 
 def _todo_body():
@@ -6097,12 +6054,40 @@ class TodoCompleteHandler:
 
 class TodoNotificationsHandler:
     def POST(self):
+        if os.environ.get("STELLA_DESKTOP") == "1":
+            return _todo_response(lambda: {"todos": []})
         return _todo_response(lambda: {"todos": _todo_service().claim_due_todo_notifications()})
 
 
+def _require_desktop_internal():
+    """Only the Electron main process may claim or acknowledge OS reminders."""
+    expected = os.environ.get("STELLA_DESKTOP_INTERNAL_TOKEN", "")
+    offered = _get_bearer_token()
+    if os.environ.get("STELLA_DESKTOP") != "1" or not expected or not hmac.compare_digest(offered, expected):
+        raise web.unauthorized()
+
+
+class DesktopNotificationClaimHandler:
+    def POST(self):
+        _require_desktop_internal()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({"status": "success", "deliveries": _todo_service().claim_desktop_reminders()},
+                          ensure_ascii=False)
+
+
+class DesktopNotificationAckHandler:
+    def POST(self):
+        _require_desktop_internal()
+        body = _todo_body()
+        acknowledged = _todo_service().acknowledge_desktop_reminder(
+            body.get("delivery_id"), body.get("claim_id"), body.get("shown"), body.get("error"))
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({"status": "success", "acknowledged": acknowledged})
+
+
 def _briefing_service():
-    from agent.briefing.service import BriefingService
-    return BriefingService()
+    from application import Application
+    return Application.port("briefing")
 
 
 def _briefing_pipeline(service):
@@ -6282,8 +6267,8 @@ class BriefingSettingsTestHandler:
 
 
 def _bills_service():
-    from agent.bills.service import BillsService
-    return BillsService()
+    from application import Application
+    return Application.port("bills")
 
 
 class BillsLedgerHandler:
@@ -6993,55 +6978,6 @@ class LogsDownloadHandler:
         web.header('Content-Length', str(len(data)))
         web.header('Cache-Control', 'no-store')
         return data
-
-
-class AssetsHandler:
-    def GET(self, file_path):  # 修改默认参数
-        try:
-            # 如果请求是/static/，需要处理
-            if file_path == '':
-                # 返回目录列表...
-                pass
-
-            # 获取当前文件的绝对路径
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            static_dir = os.path.join(current_dir, 'static')
-
-            full_path = os.path.normpath(os.path.join(static_dir, file_path))
-
-            # 安全检查：确保请求的文件在static目录内
-            if not os.path.abspath(full_path).startswith(os.path.abspath(static_dir)):
-                logger.error(f"Security check failed for path: {full_path}")
-                raise web.notfound()
-
-            if not os.path.exists(full_path) or not os.path.isfile(full_path):
-                # Browsers routinely probe optional asset variants (e.g. a
-                # .ttf fallback declared alongside .woff2 in @font-face);
-                # logging these as errors floods the console with harmless
-                # noise. Keep it at debug level — real misconfigurations
-                # will still surface via the network panel.
-                logger.debug(f"Static file not found: {full_path}")
-                raise web.notfound()
-
-            # 设置正确的Content-Type
-            content_type = mimetypes.guess_type(full_path)[0]
-            if content_type:
-                web.header('Content-Type', content_type)
-            else:
-                # 默认为二进制流
-                web.header('Content-Type', 'application/octet-stream')
-
-            # 读取并返回文件内容
-            with open(full_path, 'rb') as f:
-                return f.read()
-
-        except web.HTTPError:
-            # The 404 path above already logged at debug; re-raise as-is so
-            # web.py returns the original status to the client.
-            raise
-        except Exception as e:
-            logger.error(f"Error serving static file: {e}", exc_info=True)
-            raise web.notfound()
 
 
 def _workspace_service(session_id: str = None, agent_id: str = None):

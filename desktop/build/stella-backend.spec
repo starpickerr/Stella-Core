@@ -6,7 +6,7 @@ Produces a self-contained `stella-backend` folder that the Electron app
 spawns directly, so end users don't need Python installed.
 
 onedir is chosen over onefile because the backend reads data files via paths
-relative to the source tree (e.g. config-template.json, skills/, chat.html);
+relative to the source tree (e.g. config-template.json, skills/);
 onedir preserves that layout, while onefile's temp-extraction would break it.
 
 Build from the repo root:
@@ -137,11 +137,6 @@ datas = [
     # sys.path, so `import cli.commands.*` resolves even if PyInstaller's
     # submodule collection misses the lazily-imported command modules.
     (rp('cli'), 'cli'),
-    # Web console served on the backend port: ship chat.html plus its static
-    # assets (~1.9MB) so the browser-based console works as a debug/fallback
-    # entry alongside the Electron UI.
-    (rp('channel', 'web', 'chat.html'), 'channel/web'),
-    (rp('channel', 'web', 'static'), 'channel/web/static'),
     # BillStore reads this non-Python file at runtime to initialize SQLite.
     (rp('agent', 'bills', 'schema.sql'), 'agent/bills'),
     (rp('agent', 'briefing', 'schema.sql'), 'agent/briefing'),

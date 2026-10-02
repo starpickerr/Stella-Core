@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -52,9 +53,31 @@ class TodoService:
                     PRIMARY KEY(todo_id, occurrence_on),
                     FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS reminder_occurrences (
+                    occurrence_id TEXT PRIMARY KEY, todo_id TEXT NOT NULL,
+                    occurrence_on TEXT NOT NULL, reminder_kind TEXT NOT NULL,
+                    due_at TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+                    UNIQUE(todo_id,occurrence_on,reminder_kind),
+                    FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS reminder_deliveries (
+                    delivery_id TEXT PRIMARY KEY, occurrence_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending', claim_id TEXT,
+                    lease_until TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+                    shown_at TEXT, error TEXT,
+                    FOREIGN KEY(occurrence_id) REFERENCES reminder_occurrences(occurrence_id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS todo_migrations (name TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS briefing_applied (
+                    briefing_id TEXT PRIMARY KEY, last_revision INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS source_tombstones (
+                    source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
+                );
             """)
         self._migrate_calendar_records()
+        if os.environ.get("STELLA_DESKTOP") == "1":
+            self._record_legacy_claims()
 
     @contextmanager
     def _connect(self):
@@ -122,6 +145,25 @@ class TodoService:
                              0, None, "none", "[]", None, "briefing", row["source_key"], "", 0,
                              row["briefing_id"], now, now))
             db.execute("INSERT INTO todo_migrations VALUES ('calendar_affairs_v1')")
+
+    def _record_legacy_claims(self):
+        """Keep old destructive claims visible without assuming they were shown."""
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM todo_migrations WHERE name='desktop_reminders_v1'").fetchone():
+                return
+            for row in db.execute("SELECT todo_id,occurrence_on,notified_at FROM todo_notifications"):
+                occurrence_id = str(uuid.uuid4())
+                inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                    (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at,state)
+                    VALUES (?,?,?,'due',?,'legacy_claimed_unknown')""",
+                    (occurrence_id, row["todo_id"], row["occurrence_on"], row["notified_at"]))
+                if inserted.rowcount:
+                    db.execute("""INSERT INTO reminder_deliveries
+                        (delivery_id,occurrence_id,status,error) VALUES (?,?,'legacy_claimed_unknown',?)""",
+                        (str(uuid.uuid4()), occurrence_id,
+                         "Claimed by the former renderer; OS delivery is unknown"))
+            db.execute("INSERT INTO todo_migrations VALUES ('desktop_reminders_v1')")
 
     @staticmethod
     def _validate_todo(payload, existing=None):
@@ -214,6 +256,7 @@ class TodoService:
         old = self.get_todo(todo_id)
         row = self._validate_todo(payload, old)
         with self._connect() as db:
+            self._cancel_pending_reminders(db, old["id"])
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
                 WHERE id=?""", (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
@@ -223,6 +266,10 @@ class TodoService:
     def delete_todo(self, todo_id):
         old = self.get_todo(todo_id)
         with self._connect() as db:
+            if old["source_type"] == "briefing" and old["source_key"]:
+                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
+                           (old["source_key"], _now()))
+            self._cancel_pending_reminders(db, old["id"])
             db.execute("DELETE FROM todos WHERE id=?", (old["id"],))
 
     def complete_todo(self, todo_id, completed):
@@ -243,6 +290,8 @@ class TodoService:
             raise ValueError("nonrecurring todo has no occurrence id")
         now = _now()
         with self._connect() as db:
+            if completed:
+                self._cancel_pending_reminders(db, old["id"], occurrence)
             if occurrence:
                 if completed:
                     db.execute("INSERT OR IGNORE INTO todo_completions VALUES (?,?,?)",
@@ -254,6 +303,105 @@ class TodoService:
                 db.execute("UPDATE todos SET completed_at=? WHERE id=?", (now if completed else None, old["id"]))
             db.execute("UPDATE todos SET user_modified=1, updated_at=? WHERE id=?", (now, old["id"]))
         return self.get_todo(old["id"])
+
+    @staticmethod
+    def _cancel_pending_reminders(db, todo_id, occurrence_on=None):
+        condition = "AND occurrence_on=?" if occurrence_on else ""
+        params = (todo_id, occurrence_on) if occurrence_on else (todo_id,)
+        ids = [row[0] for row in db.execute(
+            "SELECT occurrence_id FROM reminder_occurrences WHERE todo_id=? " + condition +
+            " AND state='pending'", params)]
+        for occurrence_id in ids:
+            db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?", (occurrence_id,))
+            db.execute("""UPDATE reminder_deliveries SET status='cancelled',claim_id=NULL,lease_until=NULL
+                WHERE occurrence_id=? AND status!='shown'""", (occurrence_id,))
+
+    def claim_desktop_reminders(self, now=None, limit=20):
+        """Lease due reminders; repeated claims after a crash may show twice."""
+        instant = now or datetime.now(timezone.utc)
+        if instant.tzinfo is None:
+            raise ValueError("now must include a timezone")
+        instant = instant.astimezone(timezone.utc)
+        oldest = instant - timedelta(days=1)
+        leased = []
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL").fetchall()
+            for stored in rows:
+                row = dict(stored)
+                zone = ZoneInfo(row["timezone"])
+                candidate = oldest.astimezone(zone).date()
+                last = instant.astimezone(zone).date()
+                while candidate <= last:
+                    day = candidate.isoformat()
+                    matches = (day == row["due_on"] and not row["completed_at"]
+                               if row["repeat_frequency"] == "none" else
+                               self._todo_matches(row, candidate) and not db.execute(
+                                   "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
+                                   (row["id"], day)).fetchone())
+                    if matches:
+                        due_at = datetime.combine(candidate, time.fromisoformat(row["due_time"]), zone).astimezone(timezone.utc)
+                        if oldest <= due_at <= instant:
+                            # Legacy destructive claims have unknown delivery state.
+                            legacy = db.execute("SELECT 1 FROM todo_notifications WHERE todo_id=? AND occurrence_on=?",
+                                                (row["id"], day)).fetchone()
+                            if not legacy:
+                                occurrence_id = str(uuid.uuid4())
+                                inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                                    (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at)
+                                    VALUES (?,?,?,'due',?)""",
+                                    (occurrence_id, row["id"], day, due_at.isoformat()))
+                                if inserted.rowcount:
+                                    db.execute("INSERT INTO reminder_deliveries(delivery_id,occurrence_id) VALUES (?,?)",
+                                               (str(uuid.uuid4()), occurrence_id))
+                                else:
+                                    cancelled = db.execute("""SELECT occurrence_id FROM reminder_occurrences
+                                        WHERE todo_id=? AND occurrence_on=? AND reminder_kind='due'
+                                        AND state='cancelled'""", (row["id"], day)).fetchone()
+                                    if cancelled:
+                                        db.execute("""UPDATE reminder_occurrences SET state='pending',due_at=?
+                                            WHERE occurrence_id=?""", (due_at.isoformat(), cancelled[0]))
+                                        db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                                            lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
+                    candidate += timedelta(days=1)
+            candidates = db.execute("""SELECT d.delivery_id,o.occurrence_id,o.todo_id,o.occurrence_on,
+                t.title FROM reminder_deliveries d JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id
+                WHERE o.state='pending' AND (d.status IN ('pending','retry') OR
+                    (d.status='leased' AND d.lease_until<=?))
+                ORDER BY o.due_at LIMIT ?""", (instant.isoformat(), limit)).fetchall()
+            lease_until = (instant + timedelta(minutes=2)).isoformat()
+            for row in candidates:
+                claim_id = str(uuid.uuid4())
+                db.execute("""UPDATE reminder_deliveries SET status='leased',claim_id=?,lease_until=?,
+                    attempts=attempts+1 WHERE delivery_id=?""",
+                    (claim_id, lease_until, row["delivery_id"]))
+                leased.append({"delivery_id": row["delivery_id"], "claim_id": claim_id,
+                               "todo_id": row["todo_id"], "occurrence_on": row["occurrence_on"],
+                               "title": row["title"], "lease_until": lease_until})
+        return leased
+
+    def acknowledge_desktop_reminder(self, delivery_id, claim_id, shown, error=None):
+        if not delivery_id or not claim_id or type(shown) is not bool:
+            raise ValueError("delivery_id, claim_id and shown are required")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM reminder_deliveries WHERE delivery_id=?",
+                             (delivery_id,)).fetchone()
+            if not row or row["claim_id"] != claim_id:
+                return False
+            if row["status"] == "shown":
+                return True
+            if row["status"] != "leased":
+                return False
+            status = "shown" if shown else "retry"
+            db.execute("""UPDATE reminder_deliveries SET status=?,lease_until=NULL,
+                shown_at=?,error=? WHERE delivery_id=?""",
+                (status, _now() if shown else None, None if shown else str(error or "notification failed"), delivery_id))
+            if shown:
+                db.execute("UPDATE reminder_occurrences SET state='shown' WHERE occurrence_id=?",
+                           (row["occurrence_id"],))
+            return True
 
     @staticmethod
     def _todo_matches(row, candidate):
@@ -340,7 +488,10 @@ class TodoService:
                     candidate += timedelta(days=1)
         return claimed
 
-    def _upsert_sourced_todo(self, source_key, item, due_value, briefing_id):
+    def _upsert_sourced_todo(self, source_key, item, due_value, briefing_id, db=None):
+        if db is None:
+            with self._connect() as connection:
+                return self._upsert_sourced_todo(source_key, item, due_value, briefing_id, connection)
         try:
             due = datetime.fromisoformat(due_value.replace("Z", "+00:00")) if due_value else None
             if due and due.tzinfo is None:
@@ -350,12 +501,13 @@ class TodoService:
         zone = ZoneInfo("Asia/Shanghai")
         local_due = due.astimezone(zone) if due else None
         now = _now()
-        with self._connect() as db:
-            old = db.execute("SELECT * FROM todos WHERE source_type='briefing' AND source_key=?",
+        if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
+            return
+        old = db.execute("SELECT * FROM todos WHERE source_type='briefing' AND source_key=?",
                              (source_key,)).fetchone()
-            if old and old["user_modified"]:
-                return
-            db.execute("""INSERT INTO todos
+        if old and old["user_modified"]:
+            return
+        db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                  repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -368,8 +520,24 @@ class TodoService:
                  "none", "[]", None, "briefing", source_key, getattr(item, "url", "") or "", 0,
                  briefing_id, now, now))
 
-    def ingest_briefing(self, detail):
+    def ingest_briefing_revision(self, detail, revision):
+        briefing_id = detail["briefing"].id
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT last_revision FROM briefing_applied WHERE briefing_id=?",
+                             (briefing_id,)).fetchone()
+            if row and row[0] >= revision:
+                return
+            self.ingest_briefing(detail, db=db)
+            db.execute("""INSERT INTO briefing_applied VALUES (?,?)
+                ON CONFLICT(briefing_id) DO UPDATE SET last_revision=excluded.last_revision""",
+                (briefing_id, revision))
+
+    def ingest_briefing(self, detail, db=None):
         """Sync action items from a briefing without creating calendar events."""
+        if db is None:
+            with self._connect() as connection:
+                return self.ingest_briefing(detail, db=connection)
         briefing = detail["briefing"]
         decisions = {row["id"]: row.get("decision") or {} for row in detail.get("mail", [])}
         items = list(detail.get("items", []))
@@ -394,13 +562,11 @@ class TodoService:
             calendar = decision.get("calendar") if isinstance(decision.get("calendar"), dict) else {}
             due_at = item.payload.get("due_at") if isinstance(item.payload, dict) else None
             if item.section == "action":
-                self._upsert_sourced_todo(source_key, item, due_at or calendar.get("start_at"), briefing.id)
+                self._upsert_sourced_todo(source_key, item, due_at or calendar.get("start_at"), briefing.id, db=db)
             else:
-                with self._connect() as db:
-                    db.execute("DELETE FROM todos WHERE source_type='briefing' AND source_key=? AND user_modified=0",
-                               (source_key,))
-        with self._connect() as db:
-            for row in db.execute("SELECT id,source_key FROM todos WHERE source_type='briefing' AND briefing_id=?",
+                db.execute("DELETE FROM todos WHERE source_type='briefing' AND source_key=? AND user_modified=0",
+                           (source_key,))
+        for row in db.execute("SELECT id,source_key FROM todos WHERE source_type='briefing' AND briefing_id=?",
                                   (briefing.id,)).fetchall():
-                if row["source_key"] not in current_keys:
-                    db.execute("DELETE FROM todos WHERE id=? AND user_modified=0", (row["id"],))
+            if row["source_key"] not in current_keys:
+                db.execute("DELETE FROM todos WHERE id=? AND user_modified=0", (row["id"],))

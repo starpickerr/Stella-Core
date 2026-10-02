@@ -4,6 +4,7 @@ Agent Bridge - Integrates Agent system with existing STELLA bridge
 
 import os
 import threading
+import uuid
 from typing import Dict, Iterator, Optional, List, Tuple
 
 from agent.protocol import (
@@ -365,6 +366,8 @@ class AgentBridge:
         self._agent_instances: Dict[Tuple[str, str], Agent] = {}
         self._default_agents: Dict[str, Agent] = {}
         self._agents_lock = threading.RLock()
+        from agent.runtime.session_run import SessionRun
+        self._session_run = SessionRun()
         # Backward-compatible view for integrations that inspect sessions of
         # the configured default agent directly.
         self.agents: Dict[str, Agent] = {}
@@ -644,7 +647,57 @@ class AgentBridge:
         )
         return count
 
-    def agent_reply(self, query: str, context: Context = None, 
+    def agent_reply(self, query: str, context: Context = None,
+                    on_event=None, clear_history: bool = False) -> Reply:
+        """Admit and serialize a run before touching a live Agent instance."""
+        from agent.runtime.run_record import RunRecord
+        from agent.runtime.session_run import SessionRun
+        from common.runtime_identity import current_identity, identity_scope
+
+        session_id = context.get("session_id") if context else None
+        request_id = context.get("request_id") if context else None
+        agent_id = self.route_context(context) if context else self.agent_registry.default_agent_id
+        user_id = current_identity().user_id
+        run_id = uuid.uuid4().hex
+        manager = getattr(self, "_session_run", None)
+        if manager is None:
+            manager = self._session_run = SessionRun()
+        with identity_scope(agent_id=agent_id, user_id=user_id,
+                            session_id=session_id, run_id=run_id):
+            store = RunRecord()
+            store.create(run_id, request_id=request_id, user_id=user_id,
+                         agent_id=agent_id, session_id=session_id,
+                         job_run_id=context.get("job_run_id") if context else None,
+                         source="scheduler" if context and context.get("is_scheduled_task") else "chat")
+            with manager.enter(user_id, agent_id, session_id):
+                store.transition(run_id, "running")
+                try:
+                    def record_event(event):
+                        kind = event.get("type")
+                        if kind in ("turn_start", "tool_execution_start", "tool_execution_end", "agent_end"):
+                            data = event.get("data") or {}
+                            try:
+                                store.event(run_id, kind, step_id=str(data.get("turn")) if data.get("turn") is not None else None,
+                                            tool_call_id=data.get("tool_call_id"))
+                            except Exception as exc:
+                                logger.warning(f"[RunRecord] Failed to record {kind}: {exc}")
+                        if on_event:
+                            on_event(event)
+
+                    reply = self._agent_reply_impl(query, context, record_event, clear_history)
+                except BaseException as exc:
+                    store.transition(run_id, "outcome_unknown", str(exc))
+                    raise
+                status = "failed" if reply.type == ReplyType.ERROR else "completed"
+                store.transition(run_id, status, str(reply.content) if status == "failed" else None)
+                if session_id and not (context and context.get("is_scheduled_task")):
+                    try:
+                        self.get_conversation_store(agent_id).transition_run_admission(run_id, status)
+                    except Exception as exc:
+                        logger.warning(f"[RunRecord] Could not finish admission {run_id}: {exc}")
+                return reply
+
+    def _agent_reply_impl(self, query: str, context: Context = None,
                    on_event=None, clear_history: bool = False) -> Reply:
         """
         Use super agent to reply to a query
@@ -1087,13 +1140,17 @@ class AgentBridge:
                 "role": "user",
                 "content": [{"type": "text", "text": query}],
             }
-            store.append_messages(session_id, [user_msg], channel_type=channel_type)
+            from common.runtime_identity import current_identity
+            run_id = current_identity().run_id
+            store.append_messages(
+                session_id, [user_msg], channel_type=channel_type,
+                run_id=run_id,
+                request_id=context.get("request_id") if context else None,
+            )
             return True
         except Exception as e:
-            logger.warning(
-                f"[AgentBridge] Failed to pre-persist user message for session={session_id}: {e}"
-            )
-            return False
+            logger.error(f"[AgentBridge] Failed to admit user message for session={session_id}: {e}")
+            raise RuntimeError("Could not save the message; the agent did not run") from e
 
     def _persist_messages(
         self,

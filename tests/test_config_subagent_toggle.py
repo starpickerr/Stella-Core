@@ -140,16 +140,11 @@ def test_a_broken_availability_check_does_not_cost_the_agent_the_tool():
     assert is_tool_available(_Broken()) is True
 
 
-def test_the_switch_is_exposed_by_both_consoles():
+def test_the_switch_is_exposed_by_desktop():
     web_source = (ROOT / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_markup = (ROOT / "channel/web/chat.html").read_text(encoding="utf-8")
-    web_console = (ROOT / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/BasicSettings.tsx").read_text(encoding="utf-8")
 
     assert '"subagent_enabled": ("subagent", "enabled")' in web_source
-    assert 'id="cfg-subagent"' in web_markup
-    assert "subagent_enabled: document.getElementById('cfg-subagent').checked" in web_console
     assert "subagent_enabled: subagent" in desktop_page
-    # Absent means on, so neither console may read it as a bare truthy check.
-    assert "data.subagent_enabled !== false" in web_console
+    # Absent means on, so the desktop must not read it as a bare truthy check.
     assert "data.subagent_enabled !== false" in desktop_page

@@ -9,7 +9,6 @@ import LoginGate from './components/LoginGate'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { usePushPoll } from './hooks/usePushPoll'
-import { useTodoNotifications } from './hooks/useTodoNotifications'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
 import { useWorkspaceStore } from './store/workspaceStore'
@@ -120,7 +119,6 @@ const App: React.FC = () => {
 
   // Poll for scheduler/push messages once the backend and auth are settled.
   usePushPoll(backend.status === 'ready' && authState === 'ok')
-  useTodoNotifications(backend.status === 'ready' && authState === 'ok')
 
   // A clicked OS notification asks us to open its session.
   useEffect(() => {
