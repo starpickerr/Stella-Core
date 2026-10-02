@@ -61,7 +61,10 @@ CREATE TABLE IF NOT EXISTS run_admissions (
     run_id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     request_id TEXT,
-    user_seq INTEGER NOT NULL,
+    user_seq INTEGER NOT NULL DEFAULT -1,
+    user_content TEXT NOT NULL DEFAULT '',
+    channel_type TEXT NOT NULL DEFAULT '',
+    clear_history INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at INTEGER NOT NULL
 );
@@ -591,6 +594,136 @@ class ConversationStore:
             finally:
                 conn.close()
 
+    def queue_user_message(
+        self,
+        session_id: str,
+        message: Dict[str, Any],
+        *,
+        run_id: str,
+        request_id: Optional[str] = None,
+        channel_type: str = "",
+        clear_history: bool = False,
+    ) -> None:
+        """Durably admit an input before its session execution lock is free.
+
+        Pending inputs live in the admission journal, not ``messages``. A
+        running turn may still be writing its reply; appending the next user
+        bubble now would put that reply after the next question in history.
+        The admission and full input are committed in one SQLite transaction.
+        """
+        if not session_id or not run_id or message.get("role") != "user":
+            raise ValueError("a session, run id and user message are required")
+        content = json.dumps(message.get("content", ""), ensure_ascii=False)
+        if not _is_visible_user_message(message.get("content")):
+            raise ValueError("an admitted user message must contain text")
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    conn.execute(
+                        """INSERT INTO run_admissions
+                           (run_id,session_id,request_id,user_seq,user_content,
+                            channel_type,clear_history,status,created_at)
+                           VALUES (?,?,?,-1,?,?,?,'queued',?)""",
+                        (run_id, session_id, request_id, content, channel_type,
+                         int(clear_history), int(time.time())),
+                    )
+            finally:
+                conn.close()
+
+    def start_run_admission(self, run_id: str) -> None:
+        """Append the admitted user turn when it reaches the session lock.
+
+        The optional context clear and materialization share one transaction.
+        Future queued admissions remain intact and outside model context.
+        A second start is rejected rather than duplicating the user message.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    row = conn.execute(
+                        """SELECT session_id,user_content,channel_type,clear_history,status
+                           FROM run_admissions WHERE run_id=?""", (run_id,)
+                    ).fetchone()
+                    if row is None or row[4] != "queued" or not row[1]:
+                        raise ValueError("run has no queued user admission")
+                    session_id, content, channel_type, clear_history, _ = row
+                    now = int(time.time())
+                    if clear_history:
+                        conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+                        conn.execute(
+                            """UPDATE sessions SET context_start_seq=0,msg_count=0,title=''
+                               WHERE session_id=?""", (session_id,)
+                        )
+                    conn.execute(
+                        """INSERT OR IGNORE INTO sessions
+                           (session_id,channel_type,created_at,last_active,msg_count)
+                           VALUES (?,?,?,?,0)""",
+                        (session_id, channel_type, now, now),
+                    )
+                    conn.execute(
+                        "UPDATE sessions SET last_active=? WHERE session_id=?",
+                        (now, session_id),
+                    )
+                    next_seq = conn.execute(
+                        "SELECT COALESCE(MAX(seq),-1)+1 FROM messages WHERE session_id=?",
+                        (session_id,),
+                    ).fetchone()[0]
+                    conn.execute(
+                        """INSERT INTO messages
+                           (session_id,seq,role,content,created_at,extras)
+                           VALUES (?,?,'user',?,?,'')""",
+                        (session_id, next_seq, content, now),
+                    )
+                    conn.execute(
+                        """UPDATE run_admissions SET user_seq=?,status='running'
+                           WHERE run_id=?""", (next_seq, run_id),
+                    )
+                    conn.execute(
+                        """UPDATE sessions SET msg_count=(
+                           SELECT COUNT(*) FROM messages WHERE session_id=?)
+                           WHERE session_id=?""", (session_id, session_id),
+                    )
+                    # Match append_messages' provisional title behavior.
+                    title = _extract_display_text(json.loads(content))[:50].split("\n")[0]
+                    if title:
+                        conn.execute(
+                            """UPDATE sessions SET title=?
+                               WHERE session_id=? AND title=''""",
+                            (title, session_id),
+                        )
+            finally:
+                conn.close()
+
+    def list_run_admissions(
+        self, session_id: Optional[str] = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Read queued and settled inputs for diagnosis; never replay them."""
+        limit = max(1, min(int(limit), 1000))
+        with self._lock:
+            conn = self._connect()
+            try:
+                sql = ("SELECT run_id,session_id,request_id,user_seq,user_content,"
+                       "clear_history,status,created_at FROM run_admissions")
+                if session_id is None:
+                    rows = conn.execute(
+                        sql + " ORDER BY created_at DESC,rowid DESC LIMIT ?", (limit,)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        sql + " WHERE session_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?",
+                        (session_id, limit),
+                    ).fetchall()
+            finally:
+                conn.close()
+        return [
+            {"run_id": row[0], "session_id": row[1], "request_id": row[2],
+             "user_seq": row[3], "user_content": json.loads(row[4]) if row[4] else None,
+             "clear_history": bool(row[5]), "status": row[6], "created_at": row[7]}
+            for row in rows
+        ]
+
     def transition_run_admission(self, run_id: str, status: str) -> None:
         if status not in ("running", "completed", "failed", "cancelled", "outcome_unknown"):
             raise ValueError("invalid run admission state")
@@ -700,11 +833,14 @@ class ConversationStore:
         return result
 
     def clear_session(self, session_id: str) -> None:
-        """Delete all messages and the session record for a given session_id."""
+        """Delete a session, including inputs queued but not yet materialized."""
         with self._lock:
             conn = self._connect()
             try:
                 with conn:
+                    conn.execute(
+                        "DELETE FROM run_admissions WHERE session_id = ?", (session_id,)
+                    )
                     conn.execute(
                         "DELETE FROM messages WHERE session_id = ?", (session_id,)
                     )
@@ -946,10 +1082,16 @@ class ConversationStore:
                 with conn:
                     stale = conn.execute(
                         "SELECT session_id FROM sessions "
-                        "WHERE last_active < ? AND channel_type != 'web'",
-                        (cutoff,),
+                        "WHERE last_active < ? AND channel_type != 'web' "
+                        "AND NOT EXISTS (SELECT 1 FROM run_admissions a "
+                        "WHERE a.session_id=sessions.session_id AND a.status IN ('queued','running') "
+                        "AND a.created_at >= ?)",
+                        (cutoff, cutoff),
                     ).fetchall()
                     for (sid,) in stale:
+                        conn.execute(
+                            "DELETE FROM run_admissions WHERE session_id = ?", (sid,)
+                        )
                         conn.execute(
                             "DELETE FROM messages WHERE session_id = ?", (sid,)
                         )
@@ -1349,6 +1491,18 @@ class ConversationStore:
                 logger.info("[ConversationStore] Migrated: added messages.extras column")
             except Exception as e:
                 logger.warning(f"[ConversationStore] Migration (extras) failed: {e}")
+
+        admission_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(run_admissions)").fetchall()
+        }
+        for column, definition in (
+            ("user_content", "TEXT NOT NULL DEFAULT ''"),
+            ("channel_type", "TEXT NOT NULL DEFAULT ''"),
+            ("clear_history", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if column not in admission_cols:
+                conn.execute(f"ALTER TABLE run_admissions ADD COLUMN {column} {definition}")
+        conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
         with self._lock:

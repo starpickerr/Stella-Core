@@ -694,12 +694,48 @@ class AgentBridge:
             manager = self._session_run = SessionRun()
         with identity_scope(agent_id=agent_id, user_id=user_id,
                             session_id=session_id, run_id=run_id):
-            store = RunRecord()
-            store.create(run_id, request_id=request_id, user_id=user_id,
-                         agent_id=agent_id, session_id=session_id,
-                         job_run_id=context.get("job_run_id") if context else None,
-                         source="scheduler" if context and context.get("is_scheduled_task") else "chat")
+            admission_store = None
+            if session_id and query and not session_id.startswith("scheduler_") and not (
+                context and context.get("is_scheduled_task")
+            ):
+                from config import conf
+                if conf().get("conversation_persistence", True):
+                    try:
+                        admission_store = self.get_conversation_store(agent_id)
+                        admission_store.queue_user_message(
+                            session_id,
+                            {"role": "user", "content": [{"type": "text", "text": query}]},
+                            run_id=run_id, request_id=request_id,
+                            channel_type=(context.get("channel_type") or "") if context else "",
+                            clear_history=clear_history,
+                        )
+                    except Exception as exc:
+                        logger.error(f"[AgentBridge] Failed to admit user message for session={session_id}: {exc}")
+                        return Reply(ReplyType.ERROR, "Could not save the message; the agent did not run")
+            try:
+                store = RunRecord()
+                store.create(run_id, request_id=request_id, user_id=user_id,
+                             agent_id=agent_id, session_id=session_id,
+                             job_run_id=context.get("job_run_id") if context else None,
+                             source="scheduler" if context and context.get("is_scheduled_task") else "chat")
+            except Exception:
+                if admission_store is not None:
+                    admission_store.transition_run_admission(run_id, "failed")
+                raise
             with manager.enter(user_id, agent_id, session_id):
+                if admission_store is not None:
+                    try:
+                        # A newly initialized Agent restores stored history.
+                        # Prime it before adding this turn to messages, or the
+                        # current user input is loaded and then appended again
+                        # by run_stream.
+                        self.get_agent(session_id=session_id, agent_id=agent_id)
+                        admission_store.start_run_admission(run_id)
+                    except Exception as exc:
+                        store.transition(run_id, "failed", str(exc))
+                        admission_store.transition_run_admission(run_id, "failed")
+                        logger.error(f"[AgentBridge] Failed to start admitted run {run_id}: {exc}")
+                        return Reply(ReplyType.ERROR, "Could not save the message; the agent did not run")
                 store.transition(run_id, "running")
                 try:
                     def record_event(event):
@@ -709,14 +745,21 @@ class AgentBridge:
                             try:
                                 store.event(run_id, kind, step_id=str(data.get("turn")) if data.get("turn") is not None else None,
                                             tool_call_id=data.get("tool_call_id"))
+                                if kind == "tool_execution_end" and data.get("permission_denied"):
+                                    store.event(run_id, "permission_denied", tool_call_id=data.get("tool_call_id"))
                             except Exception as exc:
                                 logger.warning(f"[RunRecord] Failed to record {kind}: {exc}")
                         if on_event:
                             on_event(event)
 
-                    reply = self._agent_reply_impl(query, context, record_event, clear_history)
+                    reply = self._agent_reply_impl(
+                        query, context, record_event, clear_history,
+                        pre_persisted_user=admission_store is not None,
+                    )
                 except BaseException as exc:
                     store.transition(run_id, "outcome_unknown", str(exc))
+                    if admission_store is not None:
+                        admission_store.transition_run_admission(run_id, "outcome_unknown")
                     raise
                 status = "failed" if reply.type == ReplyType.ERROR else "completed"
                 store.transition(run_id, status, str(reply.content) if status == "failed" else None)
@@ -728,7 +771,8 @@ class AgentBridge:
                 return reply
 
     def _agent_reply_impl(self, query: str, context: Context = None,
-                   on_event=None, clear_history: bool = False) -> Reply:
+                   on_event=None, clear_history: bool = False,
+                   pre_persisted_user: bool = False) -> Reply:
         """
         Use super agent to reply to a query
         
@@ -786,6 +830,14 @@ class AgentBridge:
             )
             if not agent:
                 return Reply(ReplyType.ERROR, "Failed to initialize super agent")
+            # A scheduled run keeps its own Agent instance and transcript,
+            # while executing with the source conversation's project, model
+            # and permission settings. Delivery target is unrelated to these
+            # execution settings.
+            execution_session_id = context.get("execution_session_id") if context else None
+            if execution_session_id and context.get("is_scheduled_task"):
+                self._apply_session_project(agent, execution_session_id, resolved_agent_id)
+                self.apply_session_prefs(agent, execution_session_id, resolved_agent_id)
             
             # Create event handler for logging and channel communication
             event_handler = AgentEventHandler(context=context, original_callback=on_event)
@@ -833,12 +885,11 @@ class AgentBridge:
                 )
                 self._trim_in_memory_to_turns(agent, scheduler_keep_turns)
 
-            # Eagerly persist the user message BEFORE running the agent so the
-            # session and the user's bubble are immediately visible — even if
-            # the user switches away or refreshes before the reply finishes.
-            # The reply (assistant/tool messages) is appended once the run
-            # completes; the final persist skips this already-stored user turn.
-            pre_persisted = self._pre_persist_user_message(
+            # The wrapper normally materializes the admitted user turn before
+            # entering this implementation. Keep the direct-call fallback for
+            # callers that bypass the wrapper; either way, post-run persistence
+            # must skip a user turn that is already in the database.
+            pre_persisted = pre_persisted_user or self._pre_persist_user_message(
                 session_id, query, context, clear_history, resolved_agent_id
             )
 
@@ -1147,7 +1198,8 @@ class AgentBridge:
         loses the in-flight session. Returns True when the user turn was
         stored, so the caller can skip it in the post-run persist.
 
-        Best-effort: any failure is swallowed and reported as not-persisted.
+        A storage failure raises so the caller does not run the model on an
+        input that cannot be recovered.
         """
         if not session_id or not query:
             return False
