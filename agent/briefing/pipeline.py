@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+import uuid
 
 from common.log import logger
 
@@ -100,6 +101,7 @@ class BriefingPipeline:
             current_legacy_start = start if briefing.window_start and source.name == "email" and not briefing.source_windows else None
             starts[key] = source_windows.get(key, {}).get("start") or current_legacy_start or max(prior, default=None) or legacy or default_start
         pending_cursors: List[Tuple[Source, Dict[str, str]]] = []
+        staged_run_id = uuid.uuid4().hex
         errors: List[str] = []
         refreshed = []
         fully_refreshed = set()
@@ -114,11 +116,16 @@ class BriefingPipeline:
                         f"[BriefingPipeline] source {label} failed: {exc}"
                     )
                     errors.append(f"{label}: {exc}")
+                    self.service.store.stage_source_errors(
+                        staged_run_id, source.name, source.account_id, [str(exc)])
                     continue
                 pending_cursors.append((source, result.cursors))
-                self._upsert_fetched(result.items)
+                self._stage_fetched(staged_run_id, result.items)
                 refreshed.append(source)
                 errors.extend(result.errors)
+                if result.errors:
+                    self.service.store.stage_source_errors(
+                        staged_run_id, source.name, source.account_id, result.errors)
                 if not result.errors:
                     fully_refreshed.add(source_key(source))
                     source_windows[source_key(source)] = {"source": source.name, "account_id": source.account_id,
@@ -128,17 +135,25 @@ class BriefingPipeline:
             catalog_rows = []
             for source in refreshed:
                 key = source_key(source)
-                catalog_rows.extend(self.service.store.window_candidates(starts[key], finish, [(source.name, source.account_id)]))
+                catalog_rows.extend(self.service.store.staged_window_candidates(
+                    staged_run_id, starts[key], finish, [(source.name, source.account_id)]))
                 if key in fully_refreshed:
                     source_windows[key]["end"] = finish
-            refreshed_keys = {source_key(source) for source in refreshed}
+            # A source that returned errors may have an incomplete snapshot.
+            # Keep its prior decisions and do not authorize projection removal.
+            refreshed_keys = fully_refreshed
             preserved_decisions = {}
+            catalog_keys = {(item.source, item.account_id, item.source_id)
+                            for item, _email in catalog_rows}
             for snapshot in prior_detail.get("mail", []):
                 key = snapshot["source"] + ":" + snapshot["account_id"]
                 if key in refreshed_keys:
                     continue
                 item, email = self._restore_candidate(snapshot)
-                catalog_rows.append((item, email))
+                item_key = (item.source, item.account_id, item.source_id)
+                if item_key not in catalog_keys:
+                    catalog_rows.append((item, email))
+                    catalog_keys.add(item_key)
                 decision = snapshot.get("decision") or self._legacy_decision(snapshot, prior_detail["items"])
                 preserved_decisions[item.id] = decision
             windows = [window for window in source_windows.values() if window.get("end")]
@@ -180,8 +195,10 @@ class BriefingPipeline:
                         if source_key(source) in fully_refreshed
                         for key, value in cursors.items()
                     ],
+                    "staged_run_id": staged_run_id,
                     **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", ""),
-                        "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed]} if status != "failed" else {}),
+                        "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed
+                            if source_key(source) in fully_refreshed]} if status != "failed" else {}),
                 },
             )
             if status != "failed":
@@ -234,10 +251,7 @@ class BriefingPipeline:
                 cursors["refresh_existing_content"] = "1"
         return source.fetch(cursors)
 
-    def _upsert_fetched(
-        self, items: Iterable[FetchedItem]
-    ) -> List[Tuple[SourceItem, Optional[EmailMessage]]]:
-        rows = []
-        for fetched in items:
-            rows.append(self.service.upsert_source_item(fetched.to_catalog_payload()))
-        return rows
+    def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem]) -> None:
+        rows = [self.service._build_source_item(fetched.to_catalog_payload())
+                for fetched in items]
+        self.service.store.stage_source_items(run_id, rows)
