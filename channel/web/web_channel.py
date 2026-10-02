@@ -1999,6 +1999,7 @@ class WebChannel(ChatChannel):
             '/api/todos/update', 'TodoUpdateHandler',
             '/api/todos/delete', 'TodoDeleteHandler',
             '/api/todos/complete', 'TodoCompleteHandler',
+            '/api/todos/checklist/complete', 'TodoChecklistCompleteHandler',
             '/api/todos/notifications', 'TodoNotificationsHandler',
             '/api/todos/reminders/uncertain', 'TodoUncertainRemindersHandler',
             '/api/todos/reminders/retry', 'TodoRetryReminderHandler',
@@ -6094,7 +6095,9 @@ def _todo_response(operation):
 class TodosHandler:
     def GET(self):
         def operation():
-            params = web.input(start='', end='', include_completed='true')
+            params = web.input(start='', end='', include_completed='true', mode='', today='')
+            if getattr(params, 'mode', '') == 'focus':
+                return {"todos": _todo_service().list_todos_focus(getattr(params, 'today', '') or None)}
             return {"todos": _todo_service().list_todos(
                 params.start or None, params.end or None, params.include_completed != 'false')}
         return _todo_response(operation)
@@ -6124,6 +6127,15 @@ class TodoCompleteHandler:
         def operation():
             body = _todo_body()
             return {"todo": _todo_service().complete_todo(body.get("id"), body.get("completed"))}
+        return _todo_response(operation)
+
+
+class TodoChecklistCompleteHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().complete_checklist_item(
+                body.get("id"), body.get("item_id"), body.get("completed"))}
         return _todo_response(operation)
 
 

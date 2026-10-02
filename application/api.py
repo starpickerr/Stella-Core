@@ -35,8 +35,8 @@ _METHODS = {
         "ingest_briefing_revision",
     }),
     "todos": frozenset({
-        "create_todo", "get_todo", "update_todo", "delete_todo", "complete_todo",
-        "list_todos", "claim_due_todo_notifications", "claim_desktop_reminders",
+        "create_todo", "get_todo", "update_todo", "delete_todo", "complete_todo", "complete_checklist_item",
+        "list_todos", "list_todos_focus", "claim_due_todo_notifications", "claim_desktop_reminders",
         "acknowledge_desktop_reminder", "list_uncertain_reminders",
         "retry_uncertain_reminder", "ingest_briefing_revision",
     }),
