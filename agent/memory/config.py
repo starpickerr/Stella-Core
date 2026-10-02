@@ -61,6 +61,10 @@ class MemoryConfig:
     def get_memory_dir(self) -> Path:
         """Get memory files directory"""
         from common import state_dir
+        # A registered config names the Agent workspace, while memory files
+        # belong to the routed user after the canonical-path migration.
+        if state_dir.state_root() == Path(self.workspace_root):
+            return state_dir.memory_dir()
         return state_dir.memory_dir(base=self.workspace_root)
 
     def get_db_path(self) -> Path:

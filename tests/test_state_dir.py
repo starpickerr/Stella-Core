@@ -131,6 +131,8 @@ def test_offline_migration_copies_business_data_and_switches_local_user_path(reg
         assert state_dir.user_root() == canonical
     with identity_scope(agent_id="beta"):
         assert state_dir.user_root() == canonical
+        from agent.memory.config import MemoryConfig
+        assert MemoryConfig(workspace_root=str(tmp_path / "beta")).get_memory_dir() == canonical / "memory"
 
 
 def test_user_id_cannot_escape_canonical_user_root(registry):
