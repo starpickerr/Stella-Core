@@ -560,6 +560,25 @@ class ApiClient {
   // Scheduler
   // ---------------------------------------------------------
 
+  async getTaskDestinations(): Promise<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]> {
+    const result = await this.request<{destinations: {channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]}>('/api/scheduler/destinations')
+    return result.destinations
+  }
+
+  async getHealthData(): Promise<HealthSnapshot> {
+    return this.request('/api/health/data')
+  }
+
+  async importHealth(file: File): Promise<{status: string; message?: string; added: number; duplicates: number}> {
+    const data = new FormData()
+    data.append('file', file)
+    return this.postFormData('/api/health/import', data)
+  }
+
+  async deleteHealthImport(import_id: string): Promise<void> {
+    await this.request('/api/health/delete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({import_id})})
+  }
+
   async getSchedulerTasks(): Promise<SchedulerTask[]> {
     const data = await this.request<{ status: string; tasks: SchedulerTask[] }>('/api/scheduler')
     return data.tasks
@@ -569,7 +588,7 @@ class ApiClient {
     name: string
     enabled?: boolean
     schedule: TaskSchedule
-    action: Pick<TaskAction, 'type' | 'content' | 'task_description'>
+    action: TaskAction
     session_id: string
   }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler', {
@@ -939,3 +958,10 @@ class ApiClient {
 
 export const apiClient = new ApiClient()
 export default apiClient
+
+export interface HealthSnapshot {
+  imports: {id: string; filename: string; imported_at: string; records: number}[]
+  summary: {day: string; type: string; source: string; device: string; unit: string; count: number; total?: number; average?: number; sleep_hours?: number}[]
+  samples: {type: string; source: string; device: string; unit: string; value: string; start: string; end: string}[]
+  sample_count: number
+}

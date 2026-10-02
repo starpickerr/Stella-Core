@@ -1,3 +1,4 @@
+from common.runtime_identity import current_identity
 import base64
 import datetime
 import hashlib
@@ -1969,6 +1970,11 @@ class WebChannel(ChatChannel):
             '/api/knowledge/action', 'KnowledgeActionHandler',
             '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
+            '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
+            '/api/runs/pending', 'PendingRunsHandler',
+            '/api/health/data', 'HealthDataHandler',
+            '/api/health/import', 'HealthImportHandler',
+            '/api/health/delete', 'HealthDeleteHandler',
             '/api/security/activity', 'SecurityActivityHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
@@ -5682,6 +5688,13 @@ def _scheduler_store():
     from agent.scheduler import TaskStore
     workspace_root = _get_workspace_root()
     store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+    if os.environ.get("STELLA_DESKTOP") == "1":
+        from agent.scheduler.automation_store import AutomationStore
+        from agent.registry import get_agent_registry
+        from agent.scheduler.integration import get_task_store
+        agent_id = get_agent_registry().get(current_identity().agent_id).id
+        active = get_task_store(workspace_root, agent_id)
+        return active or AutomationStore(store_path, agent_id)
     return TaskStore(store_path)
 
 
@@ -5768,14 +5781,11 @@ class SchedulerHandler:
             from agent.scheduler import SchedulerService
 
             now = datetime.now()
-            action = {
-                "type": action_type,
-                "channel_type": "web",
-                "receiver": session_id,
-                "receiver_name": (action_in.get("receiver_name") or "").strip() or "Web",
-                "is_group": False,
-                "notify_session_id": session_id,
-            }
+            from agent.scheduler.delivery import normalize_destination
+            action = normalize_destination({**action_in,
+                "channel_type": action_in.get("channel_type") or "web",
+                "receiver": action_in.get("receiver") or session_id}, current_identity().agent_id)
+            action.update(type=action_type, execution_session_id=session_id)
             if action_type == "send_message":
                 action["content"] = content
             else:
@@ -5917,35 +5927,14 @@ class SchedulerUpdateHandler:
                 # that patch into the stored action so scheduler metadata such
                 # as notify_session_id, silent, and channel-specific delivery
                 # fields survive unrelated edits.
-                action = dict(original_action)
-                action.update(action_patch)
+                from agent.scheduler.delivery import patch_destination
+                action = patch_destination(original_action, action_patch, current_identity().agent_id)
                 action_type = action.get("type")
                 if action_type == "send_message":
                     action.pop("task_description", None)
                     action.pop("silent", None)
                 elif action_type == "agent_task":
                     action.pop("content", None)
-
-                old_channel = original_action.get("channel_type", "web")
-                channel_type = action.get("channel_type") or old_channel
-                action["channel_type"] = channel_type
-                
-                # If channel type changed or no receiver, reject the update.
-                # Note: the web UI disables the channel selector, so this branch
-                # is only reachable via direct API calls. Changing a task's channel
-                # after creation is not supported because the receiver identity is
-                # channel-bound and cannot be trivially re-populated (e.g. weixin
-                # requires a valid context_token tied to the original user-session).
-                if old_channel and old_channel != channel_type:
-                    return json.dumps({
-                        "status": "error",
-                        "message": f"Cannot change channel type from '{old_channel}' to '{channel_type}'. Please create a new task on the target channel instead."
-                    }, ensure_ascii=False)
-                if not action.get("receiver") and not (action_type == "tool_call" and action.get("silent")):
-                    return json.dumps({
-                        "status": "error",
-                        "message": "Receiver is required. Please create a new task through the chat interface."
-                    }, ensure_ascii=False)
                 updates["action"] = action
                 
                 # If schedule was not updated but action was, ensure next_run_at exists
@@ -6974,6 +6963,8 @@ class HistoryHandler:
                 artifacts = _artifacts_from_steps(msg.get("steps"), session_id)
                 if artifacts:
                     msg["artifacts"] = artifacts
+            result["pending_admissions"] = [row for row in store.list_run_admissions(session_id)
+                if row['user_seq'] < 0 or row['status'] in ('queued', 'running', 'outcome_unknown')]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] History API error: {e}")
@@ -7618,3 +7609,57 @@ class VersionHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         from cli import __version__
         return json.dumps({"version": __version__})
+
+
+class SchedulerDestinationsHandler:
+    def GET(self):
+        _require_auth()
+        from agent.scheduler.delivery import destination_catalog
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({"status": "success", "destinations": destination_catalog(current_identity().agent_id)})
+
+
+class PendingRunsHandler:
+    def GET(self):
+        _require_auth()
+        from agent.memory import get_conversation_store
+        store = get_conversation_store()
+        rows = store.list_run_admissions(web.input(session_id=None).session_id)
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({"status": "success", "admissions": [r for r in rows if r['user_seq'] < 0 or r['status'] in ('queued', 'running', 'outcome_unknown')]}, ensure_ascii=False)
+
+
+class HealthDataHandler:
+    def GET(self):
+        _require_auth()
+        from agent.health import HealthService
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        return json.dumps({'status': 'success', **HealthService().snapshot()}, ensure_ascii=False)
+
+
+class HealthImportHandler:
+    def POST(self):
+        _require_auth()
+        from agent.health import HealthService
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            if int(getattr(web.ctx, 'env', {}).get('CONTENT_LENGTH') or 0) > HealthService.MAX_UPLOAD + 65536:
+                raise ValueError('Health upload exceeds 32 MiB')
+            params = _raw_web_input()
+            upload = params.get('file')
+            if upload is None:
+                raise ValueError('Select a health export file')
+            data = _read_uploaded_file_bytes_limited(upload, HealthService.MAX_UPLOAD)
+            result = HealthService().import_file(getattr(upload, 'filename', ''), data)
+            return json.dumps({'status': 'success', **result}, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+class HealthDeleteHandler:
+    def POST(self):
+        _require_auth()
+        from agent.health import HealthService
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        body = json.loads(web.data() or b'{}')
+        return json.dumps({'status': 'success', 'deleted': HealthService().delete_import(body.get('import_id'))})

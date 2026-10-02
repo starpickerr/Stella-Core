@@ -404,7 +404,15 @@ export interface HistoryMessage {
   _seq?: number
 }
 
+export interface PendingAdmission {
+  run_id: string
+  user_content: {type: string; text?: string}[]
+  status: string
+  clear_history: boolean
+}
+
 export interface HistoryPage {
+  pending_admissions?: PendingAdmission[]
   messages: HistoryMessage[]
   total: number
   page: number
@@ -705,7 +713,7 @@ export interface TaskSchedule {
 }
 
 export interface TaskAction {
-  type: 'send_message' | 'agent_task' | 'tool_call'
+  type: 'send_message' | 'agent_task' | 'tool_call' | 'skill_call' | 'application_command'
   content?: string
   task_description?: string
   receiver?: string
@@ -717,6 +725,14 @@ export interface TaskAction {
   call_params?: Record<string, unknown>
   tool_name?: string
   tool_params?: Record<string, unknown>
+  skill_name?: string
+  skill_params?: Record<string, unknown>
+  domain?: string
+  command?: string
+  params?: Record<string, unknown>
+  execution_session_id?: string
+  notify_session_id?: string
+  receive_id_type?: string
 }
 
 export interface SchedulerTask {
