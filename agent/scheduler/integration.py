@@ -106,7 +106,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         channel_type = action.get("channel_type", "unknown")
                         receiver = action.get("receiver", "")
 
-                        silent = action_type in ("agent_task", "tool_call") and action.get("silent", False)
+                        silent = (action_type == "application_command" or
+                                  action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
                         if not silent and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
@@ -296,7 +297,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Task {task['id']}: No task_description specified")
             return True  # malformed task, don't loop forever
         
-        if not receiver:
+        if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
             return True
         
@@ -320,7 +321,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
 
         # Create a unique session_id for this scheduled task to avoid polluting user's conversation
         # Format: scheduler_<receiver>_<task_id> to ensure isolation
-        scheduler_session_id = f"scheduler_{receiver}_{task['id']}"
+        scheduler_session_id = f"scheduler_{receiver or 'silent'}_{task['id']}"
         
         # Create context for Agent
         context = Context(ContextType.TEXT, execution_prompt)
@@ -410,13 +411,13 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Failed to execute task via Agent: {e}")
             import traceback
             logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-            return False
+            return bool(task.get("job_run_id"))
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in _execute_agent_task: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return False
+        return bool(task.get("job_run_id"))
 
 
 def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> bool:
@@ -618,19 +619,19 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         skill_params = action.get("call_params") or action.get("skill_params", {})
         result_prefix = action.get("result_prefix", "")
         receiver = action.get("receiver")
-        is_group = action.get("isgroup", False)
+        is_group = action.get("is_group", False)
         channel_type = action.get("channel_type", "unknown")
 
         if not skill_name:
             logger.error(f"[Scheduler] Task {task['id']}: No skill_name specified")
             return True
-        if not receiver:
+        if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
             return True
 
         logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}' with params {skill_params}")
 
-        scheduler_session_id = f"scheduler_{receiver}_{task['id']}"
+        scheduler_session_id = f"scheduler_{receiver or 'silent'}_{task['id']}"
         param_str = ", ".join([f"{k}={v}" for k, v in skill_params.items()])
         query = f"Use {skill_name} skill"
         if param_str:
@@ -675,6 +676,9 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Task {task['id']}: No result from skill execution")
             return True
 
+        if action.get("silent", False):
+            return True
+
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
 
@@ -705,7 +709,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         logger.error(f"[Scheduler] Error in _execute_skill_call: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return False
+        return bool(task.get("job_run_id"))
 
 
 def attach_scheduler_to_tool(tool, context: Context = None):
