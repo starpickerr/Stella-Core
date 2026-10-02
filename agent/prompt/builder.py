@@ -315,7 +315,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             # belong in the description, which it reads once it looks.
             lines.insert(
                 -1,
-                "- Hand a self-contained task that needs research, search or information gathering to `subagent`: one task, or several at once via tasks running in parallel; it brings back the conclusion",
+                "- Independent work: hand a self-contained task to `subagent`; one task or several can run in parallel and bring back conclusions",
             )
     else:
         lines = [
@@ -335,7 +335,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         if has_subagent:
             lines.insert(
                 -1,
-                "- 需要深入调研、搜索或信息采集的独立任务，交给 `subagent`：可以单个任务，也可以用 tasks 同时执行多个任务，`subagent` 负责把结论带回来",
+                "- 能整块交出去的独立工作可交给 `subagent`：单个任务或多个并行任务都能带回结论",
             )
 
     return lines

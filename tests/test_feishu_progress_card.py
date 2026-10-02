@@ -1,9 +1,19 @@
+import pytest
+
 from channel.feishu.feishu_progress_card import FeishuProgressState
 from common import i18n
 
-# Card text is localized via i18n.t; lock English so assertions are stable
-# regardless of the host machine locale.
-i18n.set_language("en")
+
+@pytest.fixture(autouse=True)
+def english_card_text():
+    # Tests elsewhere reload config and change the process-wide locale after
+    # collection, so set it at execution time for each card assertion.
+    previous = i18n.get_language()
+    i18n.set_language("en")
+    try:
+        yield
+    finally:
+        i18n.set_language(previous)
 
 
 def _panels(card):
