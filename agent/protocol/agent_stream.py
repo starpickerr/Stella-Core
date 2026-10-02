@@ -1735,7 +1735,9 @@ class AgentStreamExecutor:
             # Execute tool
             start_time = time.time()
             try:
-                result: ToolResult = tool.execute_tool(arguments)
+                from agent.runtime.tool_invocation import invocation_scope
+                with invocation_scope(tool_id):
+                    result: ToolResult = tool.execute_tool(arguments)
             finally:
                 tool.progress_callback = None
                 tool.cancel_event = None

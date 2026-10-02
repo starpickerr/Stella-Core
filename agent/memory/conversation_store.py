@@ -373,6 +373,10 @@ def _group_into_display_turns(
     return turns
 
 
+_admission_recovery_lock = threading.Lock()
+_admission_recovered_paths = set()
+
+
 class ConversationStore:
     """
     SQLite-backed store for per-session conversation history.
@@ -388,6 +392,14 @@ class ConversationStore:
         self._lock = threading.RLock()  # Use RLock to allow reentrant locking
         self._schema_identity: tuple = ()
         self._init_db()
+        # Only the first open in this process recovers previous-process runs.
+        # Re-opening a store during a live run must not relabel that run.
+        key = str(Path(db_path).resolve())
+        with _admission_recovery_lock:
+            if key not in _admission_recovered_paths:
+                with self._connect() as conn:
+                    conn.execute("UPDATE run_admissions SET status='outcome_unknown' WHERE status='running'")
+                _admission_recovered_paths.add(key)
 
     # ------------------------------------------------------------------
     # Public API
@@ -620,6 +632,12 @@ class ConversationStore:
             conn = self._connect()
             try:
                 with conn:
+                    now = int(time.time())
+                    conn.execute("INSERT OR IGNORE INTO sessions (session_id,channel_type,created_at,last_active,msg_count) VALUES (?,?,?,?,0)",
+                                 (session_id, channel_type, now, now))
+                    title = _extract_display_text(message.get("content"))[:50].split("\n")[0]
+                    conn.execute("UPDATE sessions SET last_active=?,title=CASE WHEN title='' THEN ? ELSE title END WHERE session_id=?",
+                                 (now, title, session_id))
                     conn.execute(
                         """INSERT INTO run_admissions
                            (run_id,session_id,request_id,user_seq,user_content,

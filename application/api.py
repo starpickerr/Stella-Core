@@ -90,7 +90,27 @@ class _Port:
 
         def call(*args, **kwargs):
             with use_identity(self.identity):
-                return getattr(self._service, name)(*args, **kwargs)
+                mutates = name.startswith(('create_', 'update_', 'delete_', 'complete_', 'import_', 'ingest_', 'upsert_', 'withdraw_', 'start_', 'set_'))
+                run_id = current_identity().run_id
+                if not mutates or not run_id:
+                    return getattr(self._service, name)(*args, **kwargs)
+                from agent.runtime.tool_invocation import current_tool_call_id
+                from agent.runtime.run_record import RunRecord
+                from application.operations import OperationStore
+                operation_id = uuid.uuid4().hex
+                operations = OperationStore()
+                operations.admit(operation_id, operations.payload_hash(self.domain, name, [args, kwargs]))
+                record = RunRecord()
+                record.event(run_id, "business_operation_started", tool_call_id=current_tool_call_id(), operation_id=operation_id)
+                try:
+                    result = getattr(self._service, name)(*args, **kwargs)
+                except Exception as exc:
+                    operations.unknown(operation_id, str(exc))
+                    record.event(run_id, "business_operation_unknown", tool_call_id=current_tool_call_id(), operation_id=operation_id)
+                    raise
+                operations.finish(operation_id, result)
+                record.event(run_id, "business_operation_completed", tool_call_id=current_tool_call_id(), operation_id=operation_id)
+                return result
         return call
 
 

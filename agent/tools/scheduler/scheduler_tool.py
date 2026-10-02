@@ -185,6 +185,7 @@ class SchedulerTool(BaseTool):
                 "is_group": context.get("isgroup", False),
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
+                "execution_session_id": notify_session_id,
             }
         else:  # ai_task
             action = {
@@ -195,6 +196,7 @@ class SchedulerTool(BaseTool):
                 "is_group": context.get("isgroup", False),
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
+                "execution_session_id": notify_session_id,
             }
             # silent only applies to ai_task; fixed messages always deliver
             if kwargs.get("silent", False):

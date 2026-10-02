@@ -145,7 +145,9 @@ class WeixinApi:
                 return resp.json()
             except requests.exceptions.Timeout:
                 logger.debug(f"[Weixin] API timeout: {endpoint}")
-                return {"ret": 0, "msgs": []}
+                if endpoint == "ilink/bot/getupdates":
+                    return {"ret": 0, "msgs": []}
+                raise
             except (requests.exceptions.SSLError,
                     requests.exceptions.ConnectionError,
                     requests.exceptions.ChunkedEncodingError) as e:
