@@ -25,6 +25,7 @@ SUMMARIZE_SYSTEM_PROMPT_ZH = """你是一个对话记录助手。请将对话内
 - 合并同一件事的多轮对话
 - 只记录有意义的事件，忽略闲聊和问候
 - 保留关键的决策、结论和待办事项
+- 单次任务的限制条件仅在理解或继续该事件需要时记录，并注明只适用于该任务；不要把它改写成用户的长期偏好
 
 当对话没有任何记录价值（仅含问候或无意义内容），直接回复"无"。"""
 
@@ -37,6 +38,7 @@ Summarize by "event", not turn by turn:
 - Merge multiple turns about the same thing
 - Only record meaningful events; ignore small talk and greetings
 - Keep key decisions, conclusions and to-dos
+- Record a one-task restriction only when needed to understand or continue that event, and preserve its task scope; do not rewrite it as an enduring user preference
 
 If the conversation has no record value (only greetings or meaningless content), reply with exactly "None"."""
 
@@ -69,6 +71,7 @@ MEMORY.md 会注入每次对话的系统提示词中，因此必须保持精炼�
 在现有记忆基础上进行整理和提炼，输出完整的更新后内容：
 - **合并提炼**：将含义相近的多条合并为一条高密度表述，而非简单罗列
 - **新增萃取**：从今日日记中提取值得永久记住的新信息（偏好、决策、人物、规则、经验）
+- 只有用户明确表示长期适用，或上下文充分表明是稳定偏好时，才把限制条件写入长期记忆；单次任务的排除条件只用于该任务
 - **冲突更新**：当新信息与旧条目矛盾时，以新信息为准，替换旧条目
 - **清理无效**：删除临时性记录、空白条目、格式残留、无意义、重复内容等
 - **删除冗余**：已被更精炼表述涵盖的旧条目应删除，避免信息重复
@@ -113,6 +116,7 @@ MEMORY.md is injected into the system prompt of every conversation, so it must s
 Organize and distill on top of the existing memory, and output the complete updated content:
 - **Merge & distill**: combine semantically similar items into one dense statement rather than listing them
 - **Extract new**: pull memory-worthy new info from today's diary (preferences, decisions, people, rules, lessons)
+- Store a restriction as long-term memory only when the user says it is enduring or the context clearly establishes a stable preference; an exclusion for one task applies only to that task
 - **Resolve conflicts**: when new info contradicts an old item, prefer the new and replace the old
 - **Clean invalid**: remove temporary notes, blank items, formatting residue, meaningless or duplicate content
 - **Drop redundancy**: delete old items already covered by a more concise statement
