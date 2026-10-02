@@ -14,7 +14,7 @@ from typing import Optional
 from common.state_dir import shared_root
 
 
-_USER_PATHS = ("MEMORY.md", "memory", "output", "bills", "briefing", "calendar", "todos", "runs")
+_USER_PATHS = ("USER.md", "MEMORY.md", "memory", "output", "bills", "briefing", "calendar", "todos", "runs")
 _MARKER = ".migration.json"
 
 

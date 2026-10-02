@@ -107,6 +107,28 @@ def user_root(identity: Optional[RuntimeIdentity] = None) -> Path:
     return state_root(ident)
 
 
+def user_root_for_workspace(workspace: Path, user_id: Optional[str] = None) -> Path:
+    """Resolve user files for a component holding an Agent workspace path.
+
+    Older memory and prompt components carry a workspace instead of an Agent
+    identity. Match registered workspaces here so they cannot bypass the
+    local-default migration guard or read another Agent's user files. An
+    unregistered path is kept for standalone callers and tests.
+    """
+    from agent.registry import get_agent_registry
+
+    root = Path(workspace)
+    current_user = current_identity().user_id
+    resolved_user = user_id or current_user
+    if resolved_user and (resolved_user in (".", "..") or "/" in resolved_user
+                          or "\\" in resolved_user or "\x00" in resolved_user):
+        raise StateDirError("invalid user id")
+    for profile in get_agent_registry().list():
+        if root.resolve() == Path(profile.workspace).resolve():
+            return user_root(RuntimeIdentity(agent_id=profile.id, user_id=resolved_user))
+    return root / "users" / resolved_user if resolved_user else root
+
+
 def state_path(*parts: str, identity: Optional[RuntimeIdentity] = None) -> Path:
     """Escape hatch for paths with no named helper. Prefer adding a helper."""
     return state_root(identity).joinpath(*parts)
