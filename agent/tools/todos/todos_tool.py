@@ -36,7 +36,11 @@ class TodosTool(BaseTool):
         try:
             if not isinstance(params, dict):
                 raise ValueError("parameters must be an object")
-            service = self.service or TodoService()
+            if self.service is None:
+                from application import Application, RequestContext
+                service = Application.port("todos", RequestContext.ambient("agent"))
+            else:
+                service = self.service
             action = params.get("action")
             fields = ("title", "notes", "due_on", "due_time", "timezone", "priority",
                       "repeat_frequency", "repeat_days", "repeat_until")

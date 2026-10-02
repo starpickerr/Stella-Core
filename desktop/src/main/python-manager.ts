@@ -6,6 +6,7 @@ import os from 'os'
 import fs from 'fs'
 import http from 'http'
 import net from 'net'
+import { randomBytes } from 'crypto'
 
 // Writable data dir for the packaged app (config.json, run.log, user data).
 // Lives in the user's home so it survives app updates and avoids writing into
@@ -77,6 +78,7 @@ export interface BackendError {
 }
 
 export class PythonBackend extends EventEmitter {
+  private readonly internalToken = randomBytes(32).toString('hex')
   private process: ChildProcess | null = null
   private backendPath: string
   // Whether we're running inside an installed app (as opposed to a source
@@ -134,6 +136,10 @@ export class PythonBackend extends EventEmitter {
 
   getPort(): number {
     return this.port
+  }
+
+  getInternalToken(): string {
+    return this.internalToken
   }
 
   /** The failure that put the backend in 'error', or null if none. */
@@ -782,6 +788,7 @@ export class PythonBackend extends EventEmitter {
         PATH: this.resolveEnvPath(),
         PYTHONUNBUFFERED: '1',
         STELLA_DESKTOP: '1',
+        STELLA_DESKTOP_INTERNAL_TOKEN: this.internalToken,
         // The shell owns the port: tell the backend to bind exactly here so the
         // two sides can never disagree (and we avoid the 9899 web-console clash).
         STELLA_WEB_PORT: String(this.port),

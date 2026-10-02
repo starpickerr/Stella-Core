@@ -267,7 +267,8 @@ class BriefingService:
                 or row.get("category") not in {"selected", "filtered"} for row in mail
             ):
                 raise ValueError("mail must be a list of classified candidate snapshots")
-        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail)
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail,
+                                 payload.get("cursor_updates"))
         detail = self.get_briefing(briefing_id)
         assert detail is not None
         return detail

@@ -74,6 +74,25 @@ def test_rerun_keeps_created_at(tmp_path):
     assert second.body == "v1"
 
 
+def test_outbox_keeps_each_revision_and_independent_acks(tmp_path):
+    svc = _service(tmp_path)
+    first = svc.start_briefing(briefing_date="2026-09-09")
+    svc.complete_briefing(first.id, {"status": "completed", "body": "v1", "items": [],
+                                     "cursor_updates": [("email", "default", "uid", "1")]})
+    svc.start_briefing(briefing_date="2026-09-09")
+    svc.complete_briefing(first.id, {"status": "completed", "body": "v2", "items": [],
+                                     "cursor_updates": [("email", "default", "uid", "2")]})
+    events = svc.store.pending_projection_events()
+    assert [row["revision"] for row in events] == [1, 2]
+    assert '"body":"v1"' in events[0]["snapshot"]
+    assert '"body":"v2"' in events[1]["snapshot"]
+    assert svc.get_cursor("email", "default", "uid").cursor_value == "2"
+    svc.store.ack_projection(first.id, 1, "calendar")
+    pending = svc.store.pending_projection_events()
+    assert pending[0]["calendar_ack_at"] is not None
+    assert pending[0]["todo_ack_at"] is None
+
+
 def test_update_item_status_and_list(tmp_path):
     svc = _service(tmp_path)
     started = svc.start_briefing(briefing_date="2026-09-09")

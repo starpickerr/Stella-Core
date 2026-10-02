@@ -56,6 +56,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_session
 
 CREATE INDEX IF NOT EXISTS idx_sessions_last_active
     ON sessions (last_active);
+
+CREATE TABLE IF NOT EXISTS run_admissions (
+    run_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    request_id TEXT,
+    user_seq INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at INTEGER NOT NULL
+);
 """
 
 # Migration: add channel_type column to existing databases that predate it.
@@ -464,6 +473,8 @@ class ConversationStore:
         messages: List[Dict[str, Any]],
         channel_type: str = "",
         create_if_missing: bool = True,
+        run_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> bool:
         """
         Append new messages to a session's history.
@@ -523,6 +534,7 @@ class ConversationStore:
                         (session_id,),
                     ).fetchone()
                     next_seq = row[0] + 1
+                    first_seq = next_seq
 
                     for msg in messages:
                         role = msg.get("role", "")
@@ -540,6 +552,12 @@ class ConversationStore:
                             (session_id, next_seq, role, content, now, extras),
                         )
                         next_seq += 1
+
+                    if run_id:
+                        conn.execute("""INSERT INTO run_admissions
+                            (run_id,session_id,request_id,user_seq,created_at)
+                            VALUES (?,?,?,?,?)""",
+                            (run_id, session_id, request_id, first_seq, now))
 
                     conn.execute(
                         """
@@ -570,6 +588,18 @@ class ConversationStore:
                                     )
                                     break
                     return True
+            finally:
+                conn.close()
+
+    def transition_run_admission(self, run_id: str, status: str) -> None:
+        if status not in ("running", "completed", "failed", "cancelled", "outcome_unknown"):
+            raise ValueError("invalid run admission state")
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    conn.execute("UPDATE run_admissions SET status=? WHERE run_id=?",
+                                 (status, run_id))
             finally:
                 conn.close()
 

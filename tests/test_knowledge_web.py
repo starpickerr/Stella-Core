@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -41,40 +42,15 @@ def test_knowledge_action_handler_preserves_dispatch_error(tmp_path):
     assert response["message"] == "protected knowledge file: index.md"
 
 
-def test_knowledge_frontend_management_contract():
+def test_desktop_knowledge_management_contract():
     root = Path(__file__).parents[1]
-    html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
-    js = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
-
-    assert 'id="knowledge-dialog-overlay"' in html
-    assert 'id="knowledge-dialog-textarea"' in html
-    assert 'id="knowledge-document-form"' in html
-    assert 'id="knowledge-document-path-preview"' in html
-    assert "function openKnowledgeDialog(" in js
-    assert "function _knowledgeCategoryPaths(" in js
-    assert "dispatchKnowledgeAction('create_category'" in js
-    assert "dispatchKnowledgeAction('create_document'" in js
-    assert "dispatchKnowledgeAction('rename_category'" in js
-    assert "dispatchKnowledgeAction('delete_category'" in js
-    assert "dispatchKnowledgeAction('delete_documents'" in js
-    assert "dispatchKnowledgeAction('move_documents'" in js
-    assert 'id="knowledge-import-input"' in html
-    assert "function createKnowledgeDocument(" in js
-    assert "function openKnowledgeDocumentEditor(" in js
-    assert "documentPathPreview.textContent = options.category" in js
-    assert "options.type === 'document'" in js
-    assert "input.classList.toggle('hidden', options.type === 'select' || options.type === 'textarea' || options.type === 'document')" in js
-    assert "function selectKnowledgeImportFiles(" in js
-    assert "function importKnowledgeDocuments(" in js
-    assert "function validateKnowledgeImportFiles(" in js
-    assert "KNOWLEDGE_IMPORT_MAX_FILE_SIZE" in js
-    assert "fetch('/api/knowledge/import'" in js
-    assert "initKnowledgeImportDropZone()" in js
-
-    knowledge_section = js[js.index("// Knowledge View"):js.index("function _hasFilterMatch")]
-    assert "prompt(" not in knowledge_section
-    assert "alert(" not in knowledge_section
-    assert "if (path === 'index.md' || path === 'log.md') return '';" in knowledge_section
+    page = (root / "desktop/src/renderer/src/pages/KnowledgePage.tsx").read_text(encoding="utf-8")
+    client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
+    assert "action: 'create_category'" in page
+    assert "action: 'create_document'" in page
+    assert "apiClient.importKnowledge" in page
+    assert "KNOWLEDGE_IMPORT_MAX_FILE_SIZE" in page
+    assert "async importKnowledge(" in client
 
 
 class UploadedFile:
@@ -96,6 +72,7 @@ def test_knowledge_import_handler_delegates_to_dispatch(tmp_path):
 
     with patch("channel.web.web_channel._require_auth"), \
          patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.ctx", SimpleNamespace(env={}), create=True), \
          patch("channel.web.web_channel._raw_web_input", return_value=params), \
          patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)), \
          patch("agent.knowledge.service.KnowledgeService.dispatch", return_value=dispatched) as dispatch:
@@ -118,7 +95,7 @@ def test_knowledge_import_handler_rejects_large_content_length(tmp_path):
 
     with patch("channel.web.web_channel._require_auth"), \
          patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.ctx") as ctx:
+         patch("channel.web.web_channel.web.ctx", create=True) as ctx:
         ctx.env = {"CONTENT_LENGTH": str(KnowledgeService.MAX_IMPORT_TOTAL_SIZE + 1)}
         response = json.loads(KnowledgeImportHandler().POST())
 

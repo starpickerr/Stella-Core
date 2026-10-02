@@ -120,6 +120,53 @@ def test_due_notifications_claim_once_and_skip_completed_occurrences(service):
     assert f"{recurring['id']}@2026-10-02" in [row["id"] for row in service.claim_due_todo_notifications(tomorrow)]
 
 
+def test_desktop_reminder_lease_ack_and_retry(service):
+    from datetime import datetime, timezone
+
+    todo = service.create_todo({"title": "Pay bill", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    due = datetime(2026, 10, 2, 1, 0, tzinfo=timezone.utc)
+    claimed = service.claim_desktop_reminders(due)
+    assert len(claimed) == 1
+    assert claimed[0]["todo_id"] == todo["id"]
+    assert service.claim_desktop_reminders(due) == []
+    delivery = claimed[0]
+    assert not service.acknowledge_desktop_reminder(delivery["delivery_id"], "wrong", True)
+    assert service.acknowledge_desktop_reminder(delivery["delivery_id"], delivery["claim_id"], False)
+    retried = service.claim_desktop_reminders(due)
+    assert retried[0]["delivery_id"] == delivery["delivery_id"]
+    assert retried[0]["claim_id"] != delivery["claim_id"]
+    assert service.acknowledge_desktop_reminder(retried[0]["delivery_id"], retried[0]["claim_id"], True)
+    assert service.claim_desktop_reminders(due) == []
+
+
+def test_desktop_reminder_cancels_on_completion(service):
+    from datetime import datetime, timezone
+
+    todo = service.create_todo({"title": "Review", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    due = datetime(2026, 10, 2, 1, 0, tzinfo=timezone.utc)
+    delivery = service.claim_desktop_reminders(due)[0]
+    service.complete_todo(todo["id"], True)
+    assert not service.acknowledge_desktop_reminder(delivery["delivery_id"], delivery["claim_id"], True)
+    assert service.claim_desktop_reminders(due) == []
+
+
+def test_desktop_migration_records_old_claim_as_unknown(service, monkeypatch):
+    todo = service.create_todo({"title": "Legacy", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("INSERT INTO todo_notifications VALUES (?,?,?)",
+                   (todo["id"], "2026-10-02", "2026-10-02T00:30:00+00:00"))
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    with sqlite3.connect(service.db_path) as db:
+        assert db.execute("SELECT state FROM reminder_occurrences WHERE todo_id=?",
+                          (todo["id"],)).fetchone()[0] == "legacy_claimed_unknown"
+        assert db.execute("SELECT status FROM reminder_deliveries").fetchone()[0] == "legacy_claimed_unknown"
+    assert reopened.claim_desktop_reminders(datetime(2026, 10, 2, 1, tzinfo=timezone.utc)) == []
+
+
 def test_tool_and_web_api_are_independent(service, monkeypatch):
     manager = ToolManager()
     manager._load_tools_from_init()

@@ -23,6 +23,8 @@ if (process.platform === 'win32') {
 
 let mainWindow: BrowserWindow | null = null
 let pythonBackend: PythonBackend | null = null
+let reminderPollTimer: ReturnType<typeof setInterval> | null = null
+let reminderPollActive = false
 // True once the user explicitly quits (menu/tray), so close-to-tray is bypassed.
 let isQuitting = false
 
@@ -244,6 +246,7 @@ async function startBackend() {
   pythonBackend.on('ready', (port: number) => {
     console.log(`[backend] ready on port ${port}`)
     mainWindow?.webContents.send('backend-status', { status: 'ready', port })
+    startReminderPolling()
   })
 
   // The port isn't a constant: pickPort() may land on a fallback when the
@@ -277,6 +280,77 @@ async function startBackend() {
   })
 
   await pythonBackend.start()
+}
+
+interface ReminderDelivery {
+  delivery_id: string
+  claim_id: string
+  title: string
+}
+
+function desktopPost<T>(port: number, token: string, route: string, body: object): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body)
+    const req = http.request({
+      hostname: '127.0.0.1', port, path: route, method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: 10_000,
+    }, (res) => {
+      let raw = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => { raw += chunk })
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error(`Reminder API returned ${res.statusCode}`))
+        try { resolve(JSON.parse(raw) as T) } catch (error) { reject(error) }
+      })
+    })
+    req.on('timeout', () => req.destroy(new Error('Reminder API timed out')))
+    req.on('error', reject)
+    req.end(payload)
+  })
+}
+
+async function pollDesktopReminders() {
+  if (reminderPollActive || !pythonBackend || pythonBackend.getStatus() !== 'ready') return
+  reminderPollActive = true
+  try {
+    const port = pythonBackend.getPort()
+    const token = pythonBackend.getInternalToken()
+    const claimed = await desktopPost<{ deliveries: ReminderDelivery[] }>(
+      port, token, '/api/desktop/notifications/claim', {})
+    for (const delivery of claimed.deliveries || []) {
+      let shown = false
+      let error = ''
+      try {
+        if (!Notification.isSupported()) throw new Error('System notifications are unavailable')
+        const icon = getRuntimeAppIcon() || getIconPath('png')
+        const notification = new Notification({
+          title: '事务到期', body: delivery.title,
+          ...(icon ? { icon } : {}),
+        })
+        notification.show()
+        shown = true
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause)
+      }
+      await desktopPost(port, token, '/api/desktop/notifications/ack', {
+        delivery_id: delivery.delivery_id, claim_id: delivery.claim_id, shown, error,
+      })
+    }
+  } catch (error) {
+    console.warn('[reminders] claim or delivery failed:', error)
+  } finally {
+    reminderPollActive = false
+  }
+}
+
+function startReminderPolling() {
+  if (!reminderPollTimer) reminderPollTimer = setInterval(pollDesktopReminders, 30_000)
+  void pollDesktopReminders()
 }
 
 function setupIPC() {

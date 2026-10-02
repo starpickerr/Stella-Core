@@ -119,6 +119,7 @@ _ACTION_TOOLS: Dict[str, Tuple[str, frozenset]] = {
     "briefing": ("action", frozenset({"run", "item_status", "add_rule", "update_rule", "delete_rule"})),
     "calendar": ("action", frozenset({"create", "update", "delete", "create_category", "update_category", "delete_category"})),
     "todos": ("action", frozenset({"create", "update", "complete", "delete"})),
+    "bills": ("action", frozenset({"add", "update", "delete"})),
 }
 
 # Built-in tools that only read. Listed so the MCP name heuristic below never
@@ -127,7 +128,7 @@ _KNOWN_TOOLS = frozenset({
     "read", "ls", "search_files", "memory_search", "memory_get", "web_search",
     "web_fetch", "vision", "send", "subagent", "bash", "write", "edit",
     "browser", "scheduler", "env_config", "evolution_undo",
-    "briefing", "elearning", "calendar", "todos",
+    "briefing", "elearning", "calendar", "todos", "bills",
 })
 
 # MCP tools arrive with names we have never seen. Rather than guess "safe", read
@@ -463,10 +464,10 @@ def _check_read_only(tool_name: str, args: Dict[str, Any]) -> Decision:
     if tool_name == "bash":
         return _check_bash_read_only(args)
 
-    if tool_name not in _KNOWN_TOOLS and _MUTATING_NAME_RE.search(tool_name):
+    if tool_name not in _KNOWN_TOOLS:
         return _deny(
-            f"'{tool_name}' looks like it changes state (judged from its name) and "
-            f"this session is read-only.",
+            f"'{tool_name}' has no declared read-only capability, so this "
+            f"session cannot run it.",
             READ_ONLY,
         )
 

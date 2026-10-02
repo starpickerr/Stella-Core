@@ -113,18 +113,13 @@ def test_web_manual_run_rejects_unavailable_scheduler():
     }
 
 
-def test_manual_run_is_exposed_by_explicit_web_and_desktop_controls():
+def test_manual_run_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
     web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 
     assert "'/api/scheduler/run', 'SchedulerRunHandler'" in web_source
-    assert "function runTaskNow(task, button)" in web_console
-    assert "fetch('/api/scheduler/run'" in web_console
-    web_run = web_console[web_console.index("function runTaskNow(task, button)"):]
-    assert "showConfirmDialog({" in web_run[:2500]
     assert "async runTask(taskId: string)" in desktop_client
     assert "'/api/scheduler/run'" in desktop_client
     assert "const runNow = async ()" in desktop_page
@@ -237,18 +232,13 @@ def test_web_create_rejects_missing_session(tmp_path):
     assert "session_id" in result["message"]
 
 
-def test_create_is_exposed_by_web_and_desktop_controls():
+def test_create_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
     web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
-    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 
     handler = web_source[web_source.index("class SchedulerHandler"):]
     assert "def POST(self):" in handler
-    assert 'onclick="openTaskCreateModal()"' in web_html
-    assert "function openTaskCreateModal()" in web_console
-    assert "const url = isCreate ? '/api/scheduler'" in web_console
     assert "async createTask" in desktop_client
     assert "setEditing('new')" in desktop_page

@@ -214,6 +214,10 @@ class SchedulerTool(BaseTool):
             "schedule": schedule,
             "action": action
         }
+        from common.runtime_identity import current_identity
+        identity = current_identity()
+        task_data["owner_agent_id"] = identity.agent_id
+        task_data["owner_user_id"] = identity.user_id
         
         # Calculate initial next_run_at
         next_run = self._calculate_next_run(task_data)

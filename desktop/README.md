@@ -67,7 +67,7 @@ Build outputs are placed in the `release/` directory.
 ### Build Stella.app from source (macOS)
 
 Run the complete build from the repository root so the packaged application
-contains the latest Python backend, Web console, and Electron UI:
+contains the latest Python backend and Electron UI:
 
 ```bash
 # 1. Install Electron dependencies (first build, or after package changes)
@@ -75,7 +75,7 @@ cd desktop
 npm install
 cd ..
 
-# 2. Freeze the Python backend and Web assets
+# 2. Freeze the Python backend
 bash desktop/build/build-backend.sh
 
 # 3. Build Stella.app and the .dmg installer
@@ -169,4 +169,3 @@ desktop/
 2. It spawns the Python backend (`app.py`) as a child process
 3. The React UI communicates with the Python backend via HTTP APIs
 4. SSE (Server-Sent Events) is used for streaming chat responses and live logs
-

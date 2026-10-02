@@ -1800,30 +1800,11 @@ class AgentStreamExecutor:
     def _permission_denial(self, tool_name: str, arguments: Dict) -> Optional[str]:
         """Reason this call is not allowed, or None when it may run.
 
-        Never raises: a broken permission check must not take the conversation
-        down with it, so an error here falls through to the historical
-        unrestricted behavior.
+        Never raises; policy failures refuse execution.
         """
-        agent = self.agent
-        if agent is None:
-            return None
-        try:
-            from agent.permission import FULL_ACCESS, check_tool_call
+        from agent.runtime.tool_invocation import permission_denial
 
-            mode = agent.effective_permission_mode()
-            if mode == FULL_ACCESS:
-                return None
-            decision = check_tool_call(
-                mode,
-                tool_name,
-                arguments,
-                cwd=agent.effective_cwd(),
-                write_roots=agent.write_roots(),
-            )
-            return None if decision.allowed else decision.reason
-        except Exception as e:
-            logger.warning(f"[Permission] Check skipped for {tool_name}: {e}")
-            return None
+        return permission_denial(tool_name, arguments, agent=self.agent)
 
     def _build_tool_not_found_message(self, tool_name: str) -> str:
         """Build a helpful error message when a tool is not found.
