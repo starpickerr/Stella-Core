@@ -252,6 +252,6 @@ class BriefingPipeline:
         return source.fetch(cursors)
 
     def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem]) -> None:
-        rows = [self.service._build_source_item(fetched.to_catalog_payload())
+        rows = [self.service.build_source_item(fetched.to_catalog_payload())
                 for fetched in items]
         self.service.store.stage_source_items(run_id, rows)

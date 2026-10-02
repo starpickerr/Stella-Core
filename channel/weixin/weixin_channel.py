@@ -28,6 +28,7 @@ from config import conf, get_weixin_credentials_path
 
 MAX_CONSECUTIVE_FAILURES = 3
 BACKOFF_DELAY = 30
+MAX_BACKOFF_DELAY = 300
 RETRY_DELAY = 2
 SESSION_EXPIRED_ERRCODE = -14
 TEXT_CHUNK_LIMIT = 4000
@@ -37,6 +38,13 @@ PENDING_MEDIA_WAIT_S = 3.0
 PENDING_MEDIA_POLL_S = 0.1
 QR_LOGIN_TIMEOUT_S = 480
 QR_MAX_REFRESHES = 10
+
+
+def _poll_failure_delay(failures: int) -> int:
+    if failures < MAX_CONSECUTIVE_FAILURES:
+        return RETRY_DELAY
+    cycles = min(4, (failures - MAX_CONSECUTIVE_FAILURES) // MAX_CONSECUTIVE_FAILURES)
+    return min(MAX_BACKOFF_DELAY, BACKOFF_DELAY * (2 ** cycles))
 
 
 def _load_credentials(cred_path: str) -> dict:
@@ -416,13 +424,10 @@ class WeixinChannel(ChatChannel):
 
                     consecutive_failures += 1
                     errmsg = resp.get("errmsg", "")
+                    delay = _poll_failure_delay(consecutive_failures)
                     logger.error(f"[Weixin] getUpdates error: ret={ret} errcode={errcode} "
-                                 f"errmsg={errmsg} ({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES})")
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        consecutive_failures = 0
-                        self._stop_event.wait(BACKOFF_DELAY)
-                    else:
-                        self._stop_event.wait(RETRY_DELAY)
+                                 f"errmsg={errmsg} ({consecutive_failures} failures; retry in {delay}s)")
+                    self._stop_event.wait(delay)
                     continue
 
                 consecutive_failures = 0
@@ -448,13 +453,10 @@ class WeixinChannel(ChatChannel):
                 if self._stop_event.is_set():
                     break
                 consecutive_failures += 1
+                delay = _poll_failure_delay(consecutive_failures)
                 logger.error(f"[Weixin] getUpdates exception: {e} "
-                             f"({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES})")
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    consecutive_failures = 0
-                    self._stop_event.wait(BACKOFF_DELAY)
-                else:
-                    self._stop_event.wait(RETRY_DELAY)
+                             f"({consecutive_failures} failures; retry in {delay}s)")
+                self._stop_event.wait(delay)
 
         logger.info("[Weixin] Long-poll loop ended")
 

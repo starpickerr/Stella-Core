@@ -293,6 +293,9 @@ class BriefingService:
         item, email = self._build_source_item(payload)
         return self.store.upsert_source_item(item, email)
 
+    def build_source_item(self, payload: dict) -> Tuple[SourceItem, Optional[EmailMessage]]:
+        return self._build_source_item(payload)
+
     # ------------------------------------------------------------------
     # Filter rules
     # ------------------------------------------------------------------

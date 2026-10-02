@@ -18,6 +18,7 @@ from agent.permission.policy import check_tool_call
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.tool_manager import ToolManager
+from application import Application
 
 
 class ScriptedModel:
@@ -68,6 +69,14 @@ def item(key, address="noreply@school.example", **changes):
 def pipeline(service, model, items=(), at="2026-09-09T08:00:00+08:00", cursor="9"):
     return BriefingPipeline(service, [StaticSource(list(items), cursors={"imap_uid": cursor})],
         clock=lambda: datetime.fromisoformat(at), generator=AgentBriefingGenerator(model=model))
+
+
+def test_pipeline_accepts_application_briefing_port(service, monkeypatch):
+    monkeypatch.setattr("agent.briefing.service.BriefingService", lambda: service)
+    port = Application.port("briefing")
+    detail = pipeline(port, ScriptedModel(), [item("课程")]).run()
+    assert detail["briefing"].status == "completed"
+    assert detail["items"][0].title == "课程"
 
 
 def test_agent_reads_markdown_rules_and_writes_all_batches(service):
@@ -216,7 +225,7 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
 
 
 def test_manual_and_tool_factories_use_agent_generator(service, monkeypatch):
-    from channel.web.web_channel import _briefing_pipeline
+    from channel.desktop.desktop_channel import _briefing_pipeline
     monkeypatch.setattr("agent.briefing.settings.email_sources", lambda path=None: [])
     tool = BriefingTool(service=service)
     tool.model = ScriptedModel()
