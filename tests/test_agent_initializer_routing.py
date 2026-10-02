@@ -12,6 +12,7 @@ import pytest
 
 from agent.registry import AgentProfile, AgentRegistry, set_agent_registry
 from common.runtime_identity import identity_scope
+from common.user_data_migration import migrate_local_default
 
 
 @pytest.fixture
@@ -24,6 +25,7 @@ def two_agents(tmp_path):
         default_agent_id="sales",
     )
     set_agent_registry(registry)
+    migrate_local_default(tmp_path / "sales")
     yield registry
     set_agent_registry(None)
 

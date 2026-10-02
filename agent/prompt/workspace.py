@@ -42,6 +42,15 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     Returns:
         A WorkspaceFiles object with all file paths.
     """
+    from common import state_dir
+
+    user_root = state_dir.user_root_for_workspace(workspace_dir)
+    # Resolve user ownership before creating anything in a second Agent's
+    # workspace; this raises until legacy local data has been migrated.
+    memory_path = str(user_root / DEFAULT_MEMORY_FILENAME)
+    memory_dir = str(user_root / "memory")
+    user_path = str(user_root / DEFAULT_USER_FILENAME)
+
     # Check if this is a brand new workspace (AGENT.md not yet created).
     # Cannot rely on directory existence because other modules (e.g. ConversationStore)
     # may create the workspace directory before ensure_workspace is called.
@@ -52,10 +61,7 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     os.makedirs(workspace_dir, exist_ok=True)
     
     # Define file paths
-    user_path = os.path.join(workspace_dir, DEFAULT_USER_FILENAME)
     rule_path = os.path.join(workspace_dir, DEFAULT_RULE_FILENAME)
-    memory_path = os.path.join(workspace_dir, DEFAULT_MEMORY_FILENAME)  # MEMORY.md at the root
-    memory_dir = os.path.join(workspace_dir, "memory")  # daily memory subdirectory
     
     # Create the memory subdirectory
     os.makedirs(memory_dir, exist_ok=True)
@@ -64,8 +70,6 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     # scaffolded through state_dir rather than under this workspace: an Agent
     # opts out of the shared copy by having its own directory, and creating one
     # here would opt every new Agent out on its first boot.
-    from common import state_dir
-
     state_dir.skills_dir(base=workspace_dir, ensure=True)
     state_dir.websites_dir(base=workspace_dir, ensure=True)
 
@@ -129,10 +133,15 @@ def load_context_files(workspace_dir: str, files_to_load: Optional[List[str]] = 
             DEFAULT_BOOTSTRAP_FILENAME,  # Only exists when onboarding is incomplete
         ]
     
+    from common import state_dir
+
+    user_root = state_dir.user_root_for_workspace(workspace_dir)
     context_files = []
     
     for filename in files_to_load:
-        filepath = os.path.join(workspace_dir, filename)
+        filepath = str(user_root / filename) if filename in (
+            DEFAULT_USER_FILENAME, DEFAULT_MEMORY_FILENAME
+        ) else os.path.join(workspace_dir, filename)
         
         if not os.path.exists(filepath):
             continue
@@ -740,4 +749,3 @@ def _get_knowledge_index_template() -> str:
 def _get_knowledge_log_template() -> str:
     """Knowledge wiki operation log template — empty file, agent fills it."""
     return ""
-
