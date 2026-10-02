@@ -47,3 +47,11 @@ sleep,Watch,Watch,,asleep,2026-10-02T00:00:00+08:00,2026-10-02T07:00:00+08:00,
 删除某次导入后，没有其他导入引用的样本同时删除；重复导入引用的样本保留到最后一个引用删除。健康库位于 `user_root/health/health.db`，其他用户不能读取或删除该用户的导入。
 
 参考：[Apple 健康数据导出](https://support.apple.com/guide/iphone/share-your-health-data-iph5ede58c3d/ios)、[飞书发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[腾讯 OpenClaw 微信协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md)、[Apple 提醒事项标签](https://support.apple.com/en-ie/guide/iphone/iph474a6685c/ios)。
+
+## 模型路由与运行事实
+
+供应商、真实模型标识与上游协议分别绑定；会话覆盖在运行开始时解析并固定，不凭模型名猜测厂商。OpenAI Chat Completions、Anthropic Messages、Gemini Native 与 Responses 走对应协议适配器。技能和计划执行使用独立 Agent 实例，来源会话只提供模型、项目与权限设置。
+
+输入按 FIFO 预约排队，持久录入不改变当前活动运行的模型历史。RunRecord 关联 session_id、run_id、tool_call_id、operation_id；定时执行另关联 job_run_id。Application 业务写动作记录 operation admission 和完成/未知状态，审计不复制完整工具参数。运行记录用于核查与恢复判断，不承诺完整模型请求重放。
+
+任务中的负向约束只排除与当前交付相关的内容；排除条件静默生效，不把“已忽略什么”反复写进结果。

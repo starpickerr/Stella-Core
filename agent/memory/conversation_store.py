@@ -397,8 +397,12 @@ class ConversationStore:
         key = str(Path(db_path).resolve())
         with _admission_recovery_lock:
             if key not in _admission_recovered_paths:
-                with self._connect() as conn:
-                    conn.execute("UPDATE run_admissions SET status='outcome_unknown' WHERE status='running'")
+                conn = self._connect()
+                try:
+                    with conn:
+                        conn.execute("UPDATE run_admissions SET status='outcome_unknown' WHERE status='running'")
+                finally:
+                    conn.close()
                 _admission_recovered_paths.add(key)
 
     # ------------------------------------------------------------------
