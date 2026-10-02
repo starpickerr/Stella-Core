@@ -167,6 +167,62 @@ def test_desktop_migration_records_old_claim_as_unknown(service, monkeypatch):
     assert reopened.claim_desktop_reminders(datetime(2026, 10, 2, 1, tzinfo=timezone.utc)) == []
 
 
+def test_legacy_unknown_reminder_needs_explicit_retry(service, monkeypatch):
+    todo = service.create_todo({"title": "Review", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("INSERT INTO todo_notifications VALUES (?,?,?)",
+                   (todo["id"], "2026-10-02", datetime.now(timezone.utc).isoformat()))
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    uncertain = reopened.list_uncertain_reminders()
+    assert len(uncertain) == 1 and uncertain[0]["title"] == "Review"
+    assert reopened.retry_uncertain_reminder(uncertain[0]["delivery_id"])
+    assert reopened.list_uncertain_reminders() == []
+    due = datetime(2026, 10, 2, 1, tzinfo=timezone.utc)
+    assert reopened.claim_desktop_reminders(due)[0]["delivery_id"] == uncertain[0]["delivery_id"]
+
+
+def test_legacy_unknown_reminder_is_cancelled_if_todo_completed(service, monkeypatch):
+    todo = service.create_todo({"title": "Review", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("INSERT INTO todo_notifications VALUES (?,?,?)",
+                   (todo["id"], "2026-10-02", "2026-10-02T00:30:00+00:00"))
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    reminder = reopened.list_uncertain_reminders()[0]
+    reopened.complete_todo(todo["id"], True)
+    assert not reopened.retry_uncertain_reminder(reminder["delivery_id"])
+    assert reopened.list_uncertain_reminders() == []
+
+
+def test_legacy_unknown_reminder_is_cancelled_if_todo_was_edited(service, monkeypatch):
+    todo = service.create_todo({"title": "Review", "due_on": "2026-10-02",
+                                "due_time": "08:00", "timezone": "Asia/Shanghai"})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("INSERT INTO todo_notifications VALUES (?,?,?)",
+                   (todo["id"], "2026-10-02", "2026-10-02T00:30:00+00:00"))
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    reminder = reopened.list_uncertain_reminders()[0]
+    reopened.update_todo(todo["id"], {"due_time": "09:00"})
+    assert not reopened.retry_uncertain_reminder(reminder["delivery_id"])
+    assert reopened.list_uncertain_reminders() == []
+
+
+def test_uncertain_reminder_desktop_api_uses_todo_service(service, monkeypatch):
+    from channel.web import web_channel
+    monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
+    monkeypatch.setattr(web_channel, "_require_auth", lambda: None)
+    monkeypatch.setattr(web_channel.web, "header", lambda *_args: None)
+    result = json.loads(web_channel.TodoUncertainRemindersHandler().GET())
+    assert result == {"status": "success", "reminders": []}
+    with patch.object(web_channel.web, "data", return_value=b'{"delivery_id":"missing"}'):
+        result = json.loads(web_channel.TodoRetryReminderHandler().POST())
+    assert result["status"] == "error"
+
+
 def test_tool_and_web_api_are_independent(service, monkeypatch):
     manager = ToolManager()
     manager._load_tools_from_init()

@@ -2000,6 +2000,8 @@ class WebChannel(ChatChannel):
             '/api/todos/delete', 'TodoDeleteHandler',
             '/api/todos/complete', 'TodoCompleteHandler',
             '/api/todos/notifications', 'TodoNotificationsHandler',
+            '/api/todos/reminders/uncertain', 'TodoUncertainRemindersHandler',
+            '/api/todos/reminders/retry', 'TodoRetryReminderHandler',
             '/api/desktop/notifications/claim', 'DesktopNotificationClaimHandler',
             '/api/desktop/notifications/ack', 'DesktopNotificationAckHandler',
             '/api/bills/ledger', 'BillsLedgerHandler',
@@ -6124,6 +6126,17 @@ class TodoNotificationsHandler:
         if os.environ.get("STELLA_DESKTOP") == "1":
             return _todo_response(lambda: {"todos": []})
         return _todo_response(lambda: {"todos": _todo_service().claim_due_todo_notifications()})
+
+
+class TodoUncertainRemindersHandler:
+    def GET(self):
+        return _todo_response(lambda: {"reminders": _todo_service().list_uncertain_reminders()})
+
+
+class TodoRetryReminderHandler:
+    def POST(self):
+        return _todo_response(lambda: {"queued": _todo_service().retry_uncertain_reminder(
+            _todo_body().get("delivery_id"))})
 
 
 def _require_desktop_internal():

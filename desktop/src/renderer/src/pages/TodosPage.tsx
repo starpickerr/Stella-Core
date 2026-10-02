@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Check, CheckCircle2, ChevronRight, Circle, Clock3, ListChecks, Plus, Repeat2, Search, Trash2, X } from 'lucide-react'
+import { BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, Circle, Clock3, ListChecks, Plus, Repeat2, Search, Trash2, X } from 'lucide-react'
 import apiClient from '../api/client'
 import { getLang } from '../i18n'
-import type { Todo, TodoInput } from '../types'
+import type { Todo, TodoInput, UncertainReminder } from '../types'
 
 const pad = (value: number) => String(value).padStart(2, '0')
 const dateKey = (value: Date) => `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
@@ -26,6 +26,9 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     save: 'Save', cancel: 'Cancel', delete: 'Delete', edit: 'Edit to-do',
     deleteConfirm: 'Delete this to-do or the entire recurring series?',
     series: 'Changes to a repeating to-do apply to the entire series.',
+    uncertain: 'These reminders may not have appeared on your device.',
+    retryReminder: 'Send reminder again',
+    reminderInvalid: 'This to-do changed or was completed, so its reminder was cancelled.',
   } : {
     title: '事务', subtitle: '集中处理待办、截止时间与提醒。', add: '新建事务',
     inbox: '待办', planned: '计划', completed: '已完成', all: '全部', search: '搜索事务',
@@ -36,11 +39,15 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     save: '保存', cancel: '取消', delete: '删除', edit: '编辑事务',
     deleteConfirm: '确定删除这条事务或整个重复系列？',
     series: '修改重复事务会应用于整个系列。',
+    uncertain: '以下提醒可能未在设备上显示。',
+    retryReminder: '重新发送提醒',
+    reminderInvalid: '事务已修改或完成，原提醒已取消。',
   }
   const [view, setView] = useState<View>('inbox')
   const [query, setQuery] = useState('')
   const [templates, setTemplates] = useState<Todo[]>([])
   const [instances, setInstances] = useState<Todo[]>([])
+  const [uncertainReminders, setUncertainReminders] = useState<UncertainReminder[]>([])
   const [editing, setEditing] = useState<Todo | 'new' | null>(null)
   const [form, setForm] = useState<TodoInput>(emptyTodo)
   const [busy, setBusy] = useState(false)
@@ -55,10 +62,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         const next = addDays(cursor, 360)
         occurrenceRequests.push(apiClient.getTodos(dateKey(cursor), dateKey(next < end ? next : end)))
       }
-      const [series, parts] = await Promise.all([apiClient.getTodos(), Promise.all(occurrenceRequests)])
+      const [series, parts, uncertain] = await Promise.all([
+        apiClient.getTodos(), Promise.all(occurrenceRequests), apiClient.getUncertainReminders(),
+      ])
       const occurrences = parts.flat()
       setTemplates(series)
       setInstances(occurrences)
+      setUncertainReminders(uncertain)
       setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }, [])
@@ -133,6 +143,15 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
+  const retryReminder = async (deliveryId: string) => {
+    setBusy(true); setError('')
+    try {
+      const queued = await apiClient.retryUncertainReminder(deliveryId)
+      await refresh()
+      if (!queued) setError(copy.reminderInvalid)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
   const weekdays = en ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['一', '二', '三', '四', '五', '六', '日']
   const tabs: View[] = ['inbox', 'planned', 'completed', 'all']
   const icons = { inbox: ListChecks, planned: CalendarDays, completed: CheckCircle2, all: Circle }
@@ -141,6 +160,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     <div className="max-w-5xl mx-auto space-y-6">
       <header className="flex flex-wrap gap-4 justify-between items-center"><div><h1 className="text-2xl font-bold">{copy.title}</h1><p className="text-sm text-content-tertiary mt-1">{copy.subtitle}</p></div><button type="button" onClick={openNew} className="inline-flex items-center gap-2 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium"><Plus size={17} />{copy.add}</button></header>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{tabs.map(tab => { const Icon = icons[tab]; return <button type="button" key={tab} onClick={() => setView(tab)} className={`rounded-card border px-4 py-3 flex items-center gap-3 text-left transition-colors ${view === tab ? 'border-accent bg-accent/10 text-accent' : 'border-default bg-surface hover:bg-surface-2'}`}><Icon size={20} /><span className="flex-1 text-sm font-medium">{copy[tab]}</span><span className="text-lg font-semibold">{counts[tab]}</span></button> })}</div>
+      {uncertainReminders.length > 0 && <section className="rounded-card border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium"><BellRing size={16} />{copy.uncertain}</div>
+        {uncertainReminders.map(reminder => <div key={reminder.delivery_id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>{reminder.title} · {reminder.occurrence_on}</span>
+          <button type="button" disabled={busy} onClick={() => void retryReminder(reminder.delivery_id)} className="rounded-btn border border-amber-500/50 px-3 py-1.5 disabled:opacity-50">{copy.retryReminder}</button>
+        </div>)}
+      </section>}
       <div className="relative"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={copy.search} aria-label={copy.search} className="w-full rounded-btn border border-default bg-surface pl-10 pr-3 py-2.5 text-sm" /></div>
       {error && !editing && <p role="alert" className="text-sm text-danger">{error}</p>}
       {visible.length === 0 ? <div className="rounded-card border border-default bg-surface text-center py-20 text-content-tertiary"><Check size={32} className="mx-auto mb-3 text-accent" /><p>{copy.empty}</p><button type="button" onClick={openNew} className="text-accent text-sm mt-3">{copy.add}</button></div> :

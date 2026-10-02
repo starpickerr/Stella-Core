@@ -165,6 +165,52 @@ class TodoService:
                          "Claimed by the former renderer; OS delivery is unknown"))
             db.execute("INSERT INTO todo_migrations VALUES ('desktop_reminders_v1')")
 
+    def list_uncertain_reminders(self):
+        """Expose former renderer claims whose OS delivery cannot be confirmed."""
+        with self._connect() as db:
+            rows = db.execute("""SELECT d.delivery_id,o.todo_id,o.occurrence_on,t.title
+                FROM reminder_deliveries d
+                JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id
+                WHERE d.status='legacy_claimed_unknown'
+                ORDER BY o.occurrence_on,t.title""").fetchall()
+            return [dict(row) for row in rows]
+
+    def retry_uncertain_reminder(self, delivery_id):
+        """Queue an explicit retry only while the original occurrence is valid."""
+        if not isinstance(delivery_id, str) or not delivery_id:
+            raise ValueError("delivery_id is required")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("""SELECT d.status,o.occurrence_id,o.occurrence_on,o.due_at,t.*
+                FROM reminder_deliveries d
+                JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id WHERE d.delivery_id=?""",
+                (delivery_id,)).fetchone()
+            if not row or row["status"] != "legacy_claimed_unknown":
+                raise ValueError("uncertain reminder not found")
+            day = date.fromisoformat(row["occurrence_on"])
+            # A legacy row stores the old claim time in due_at. Any edit after
+            # that claim makes the old reminder payload or timing uncertain.
+            changed_since_claim = datetime.fromisoformat(row["updated_at"]) > datetime.fromisoformat(row["due_at"])
+            valid = bool(row["due_time"]) and (
+                day.isoformat() == row["due_on"] and not row["completed_at"]
+                if row["repeat_frequency"] == "none" else
+                self._todo_matches(row, day) and not db.execute(
+                    "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
+                    (row["todo_id"], row["occurrence_on"])).fetchone())
+            if not valid or changed_since_claim:
+                db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?",
+                           (row["occurrence_id"],))
+                db.execute("""UPDATE reminder_deliveries SET status='cancelled',error='todo changed or completed'
+                    WHERE delivery_id=?""", (delivery_id,))
+                return False
+            db.execute("UPDATE reminder_occurrences SET state='pending' WHERE occurrence_id=?",
+                       (row["occurrence_id"],))
+            db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                lease_until=NULL,error=NULL WHERE delivery_id=?""", (delivery_id,))
+        return True
+
     @staticmethod
     def _validate_todo(payload, existing=None):
         if not isinstance(payload, dict):
