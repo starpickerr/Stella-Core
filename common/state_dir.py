@@ -294,3 +294,7 @@ def state_root_str(identity: Optional[RuntimeIdentity] = None) -> str:
 def real_state_root(identity: Optional[RuntimeIdentity] = None) -> str:
     """Symlink-resolved root, for containment checks that compare prefixes."""
     return os.path.realpath(str(state_root(identity)))
+
+
+def health_db(identity=None, ensure: bool = True, base=None) -> Path:
+    return _ensure(_user_base(identity, base) / 'health', ensure) / 'health.db'

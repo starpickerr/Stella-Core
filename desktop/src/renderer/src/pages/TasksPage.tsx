@@ -33,6 +33,8 @@ const formatNextRun = (iso?: string): string => {
 }
 
 const taskContent = (action: TaskAction): string => {
+  if (action.type === 'skill_call') return action.call_name || action.skill_name || 'skill_call'
+  if (action.type === 'application_command') return `${action.domain}.${action.command}`
   if (action.type === 'tool_call') {
     const name = action.call_name || action.tool_name || ''
     return name === 'briefing' ? t('task_briefing_description') : name
@@ -168,7 +170,7 @@ const TaskEditModal: React.FC<{
   onDeleted: () => void
 }> = ({ task, sessionId, onClose, onSaved, onDeleted }) => {
   const isCreate = task == null
-  const isToolCall = task?.action.type === 'tool_call'
+  const isToolCall = !!task && ['tool_call', 'skill_call', 'application_command'].includes(task.action.type)
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
@@ -177,6 +179,11 @@ const TaskEditModal: React.FC<{
   const [runAt, setRunAt] = useState(task?.schedule.run_at ? task.schedule.run_at.slice(0, 16) : '')
   const [actionType, setActionType] = useState<TaskAction['type']>(task?.action.type || 'send_message')
   const [content, setContent] = useState(task?.action.content || task?.action.task_description || '')
+  const [channel, setChannel] = useState(task?.action.channel_type || 'web')
+  const [receiver, setReceiver] = useState(task?.action.receiver || sessionId)
+  const [receiveIdType, setReceiveIdType] = useState(task?.action.receive_id_type || (task?.action.is_group ? 'chat_id' : 'open_id'))
+  const [destinations, setDestinations] = useState<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]>([])
+  useEffect(() => { apiClient.getTaskDestinations().then(setDestinations).catch(() => {}) }, [])
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -190,7 +197,17 @@ const TaskEditModal: React.FC<{
 
   const buildAction = (): TaskAction => {
     const a: TaskAction = { ...(task?.action || {}), type: actionType }
-    if (actionType === 'tool_call') return a
+    if (channel !== task?.action.channel_type) {
+      delete a.notify_session_id
+      delete a.receive_id_type
+    }
+    a.channel_type = channel
+    a.receiver = receiver
+    a.receiver_name = receiver
+    a.is_group = channel === 'feishu' && receiveIdType === 'chat_id'
+    if (channel === 'feishu') a.receive_id_type = receiveIdType
+    a.execution_session_id = task?.action.execution_session_id || task?.action.notify_session_id || sessionId
+    if (isToolCall) return a
     if (actionType === 'send_message') a.content = content
     else a.task_description = content
     return a
@@ -213,11 +230,7 @@ const TaskEditModal: React.FC<{
           name: name.trim(),
           enabled,
           schedule: buildSchedule(),
-          action: {
-            type: actionType,
-            content: actionType === 'send_message' ? content : undefined,
-            task_description: actionType === 'agent_task' ? content : undefined,
-          },
+          action: buildAction(),
           session_id: sessionId,
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -351,18 +364,20 @@ const TaskEditModal: React.FC<{
         />}
       </Field>
 
-      {/* Channel and receiver are channel-bound and read-only after creation. */}
-      {!isCreate && !task?.action.silent && (task?.action.channel_type || task?.action.receiver) && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('task_channel')}>
-            <TextInput value={task?.action.channel_type || 'web'} disabled />
-          </Field>
-          <Field label={t('task_receiver')}>
-            <TextInput value={task?.action.receiver_name || task?.action.receiver || '--'} disabled />
-          </Field>
-        </div>
-      )}
-      {!isToolCall && <p className="text-xs text-content-tertiary">{isCreate ? t('task_create_hint') : t('task_channel_locked')}</p>}
+      {!task?.action.silent && task?.action.type !== 'application_command' && <>
+        <Field label={t('task_channel')}>
+          <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }} options={destinations.filter(d => d.ready || d.channel_type === channel).map(d => ({value:d.channel_type,label:t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0])}))} />
+        </Field>
+        {channel === 'feishu' && <Field label={t('task_receive_type')}>
+          <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
+        </Field>}
+        <Field label={t('task_receiver')}>
+          <TextInput value={receiver} onChange={event => setReceiver(event.target.value)} list="task-recipients" />
+          <datalist id="task-recipients">{destinations.find(d => d.channel_type === channel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
+        </Field>
+        {channel === 'weixin' && <p className="text-xs text-content-tertiary">{t('task_weixin_condition')}</p>}
+        <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>
+      </>}
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
