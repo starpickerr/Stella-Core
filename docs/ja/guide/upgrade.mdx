@@ -1,67 +1,20 @@
 ---
 title: アップデート
-description: Stella のアップグレード方法
+description: Electron デスクトップクライアントの更新
 ---
 
-## コマンドによるアップグレード（推奨）
+## インストール済みアプリ
 
-`stella update` でコードの更新とサービスの再起動をワンクリックで実行できます：
+デスクトップクライアントは GitHub Releases を確認し、新版がある場合はダウンロードを案内します。新版をインストールしても `~/.stella` のデータは保持されます。バックグラウンドでの自動インストールは行いません。
 
-```bash
-stella update
-```
-
-このコマンドは以下のフローを自動的に実行します：
-
-1. 最新コードをプル（`git pull`）
-2. 現在のサービスを停止
-3. Python 依存パッケージを更新
-4. CLI を再インストール
-5. サービスを起動
-
-<Note>
-  Stella CLI がインストールされていない場合は、`./run.sh update` でも同様の操作が可能です。
-</Note>
-
-## 手動アップグレード
-
-プロジェクトのルートディレクトリで以下を実行します：
+## ソースから実行
 
 ```bash
 git pull
-pip3 install -r requirements.txt
-pip3 install -e .
+pip install -r requirements.txt
+cd desktop
+npm install
+npm run dev
 ```
 
-更新完了後、サービスを再起動します：
-
-```bash
-# Stella CLI を使用
-stella restart
-
-# または run.sh を使用
-./run.sh restart
-
-# または nohup で直接実行
-kill $(ps -ef | grep app.py | grep -v grep | awk '{print $2}')
-nohup python3 app.py & tail -f nohup.out
-```
-
-## Docker アップグレード
-
-`docker-compose.yml` があるディレクトリで以下を実行します：
-
-```bash
-sudo docker compose pull
-sudo docker compose up -d
-```
-
-<Tip>
-  アップグレード前に `config.json` 設定ファイルのバックアップを推奨します。Docker 環境でデータを保持する場合は、volume マウントでワークスペースディレクトリを永続化できます。
-</Tip>
-
-## デスクトップクライアントのアップグレード
-
-[デスクトップクライアント](/ja/guide/desktop)は GitHub Releases を確認し、新しい `vX.Y.Z` タグがあると**案内**してダウンロードページ（または `.dmg` / `.exe`）を開きます。バックグラウンドでのインストールや再起動はしません。
-
-最新バージョンは [ダウンロードページ](https://github.com/starpickerr/Stella/releases) からいつでも手動で入手することもできます。
+`npm run dev` は現在の Electron 画面を再ビルドし、バックエンドを起動します。ソース版とインストール版は `~/.stella` のデータを共有し、新しく起動したクライアントが実行中のインスタンスを引き継ぎます。

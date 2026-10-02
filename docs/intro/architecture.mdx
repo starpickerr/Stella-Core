@@ -20,7 +20,7 @@ Stella's architecture consists of the following core modules:
 | **Tools** | Core capability for Agent to access OS resources. 10+ built-in tools including file read/write, terminal, browser, scheduler, memory search, web search, and more |
 | **Skills** | Loads and manages Skills. Supports one-click installation from [skill广场](https://www.skill-marketplace.com/), GitHub, and more, or custom skill creation through conversation |
 | **Models** | Model layer with unified access to OpenAI, Claude, Gemini, DeepSeek, MiniMax, GLM, Qwen, and other mainstream LLMs |
-| **Channels** | Message channel layer for receiving and sending messages. Supports Web console, WeChat, Feishu, DingTalk, WeCom, WeChat Official Account, and more with a unified protocol |
+| **Channels** | Message channel layer for receiving and sending messages. Supports desktop client, WeChat, Feishu, DingTalk, WeCom, WeChat Official Account, and more with a unified protocol |
 | **CLI** | Command-line system providing terminal commands (`stella`) and chat commands (`/`) for process management, skill installation, configuration, knowledge base management, and more |
 
 ## Agent Mode Workflow
@@ -64,7 +64,7 @@ Secret keys are stored separately in `~/.stella` directory for security:
 
 ### Project Workspace {#project-workspace}
 
-Besides the default workspace, each session can be bound to its own **project directory**. The Agent's file reads/writes and command execution happen inside that directory, giving you multi-project isolation; memory, skills, and the like still live in the default workspace. When more than one project is in use, the Web/desktop history list automatically groups sessions by project.
+Besides the default workspace, each session can be bound to its own **project directory**. The Agent's file reads/writes and command execution happen inside that directory, giving you multi-project isolation; memory, skills, and the like still live in the default workspace. When more than one project is in use, the desktop history list automatically groups sessions by project.
 
 ### Per-Session Model & Permission {#session-settings}
 

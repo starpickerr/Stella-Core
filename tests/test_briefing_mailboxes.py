@@ -13,7 +13,7 @@ from agent.briefing.sources.base import FetchedItem, FetchResult
 from agent.briefing.sources.email import EmailSource
 from agent.briefing.store import BriefingStore
 from agent.tools.briefing.briefing_tool import BriefingTool
-from channel.web.web_channel import _briefing_pipeline
+from channel.desktop.desktop_channel import _briefing_pipeline
 
 
 @pytest.fixture

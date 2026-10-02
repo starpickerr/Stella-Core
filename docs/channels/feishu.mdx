@@ -13,7 +13,7 @@ description: Integrate Stella into Feishu via a custom enterprise app
 
 ### Option 1: One-click Scan to Create (Recommended)
 
-No need to manually create an app on the Feishu Developer Platform. Start the Stella project, open the web console (default `http://127.0.0.1:9899/`), go to **Channels**, click **Add Channel**, choose **Feishu**, then under the **Scan QR** tab click **One-click Create Feishu App** and scan with the **Feishu App** to complete app creation and connection automatically.
+No need to manually create an app on the Feishu Developer Platform. Start the Stella project, open the desktop client, go to **Channels**, click **Add Channel**, choose **Feishu**, then under the **Scan QR** tab click **One-click Create Feishu App** and scan with the **Feishu App** to complete app creation and connection automatically.
 
 <img src="/images/placeholder-image.svg" width="800"/>
 
@@ -26,7 +26,7 @@ When starting from CLI without `feishu_app_id` configured, the QR code is also p
 
 ### Option 2: Manual Setup
 
-Manually create a custom app on the Feishu Developer Platform, then connect via Web Console or config file.
+Manually create a custom app on the Feishu Developer Platform, then connect via Desktop Client or config file.
 
 **Step 1: Create the App**
 
@@ -53,8 +53,8 @@ im:message,im:message.group_at_msg,im:message.group_at_msg:readonly,im:message.p
 **Step 2: Connect to Stella**
 
 <Tabs>
-  <Tab title="Web Console">
-    Open the web console, go to **Channels**, click **Add Channel**, choose **Feishu**, switch to the **Manual** tab, enter App ID and App Secret, then click connect.
+  <Tab title="Desktop Client">
+    Open the desktop client, go to **Channels**, click **Add Channel**, choose **Feishu**, switch to the **Manual** tab, enter App ID and App Secret, then click connect.
   </Tab>
   <Tab title="Config File">
     Add the following to `config.json` and start the program:

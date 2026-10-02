@@ -20,6 +20,8 @@ promoted to the front of the queue):
 Dependencies: requests (stdlib: json, sys, os, base64, io, abc, uuid, pathlib, urllib)
 """
 
+from __future__ import annotations
+
 import json
 import sys
 import os

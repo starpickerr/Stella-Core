@@ -7,12 +7,12 @@ from types import SimpleNamespace
 from bridge.context import Context
 from bridge.reply import Reply, ReplyType
 from agent.memory.conversation_store import ConversationStore
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 
-WebChannel = dict(zip(
-    web_channel.WebChannel.__code__.co_freevars,
-    (cell.cell_contents for cell in web_channel.WebChannel.__closure__),
+DesktopChannel = dict(zip(
+    web_channel.DesktopChannel.__code__.co_freevars,
+    (cell.cell_contents for cell in web_channel.DesktopChannel.__closure__),
 ))["cls"]
 
 
@@ -28,10 +28,10 @@ def _channel(max_events=5000, max_bytes=4 * 1024 * 1024):
         SSE_COMPLETED_TTL_SECONDS=60,
         SSE_IDLE_TIMEOUT_SECONDS=1800,
     )
-    channel._publish_sse_event = lambda rid, event: WebChannel._publish_sse_event(
+    channel._publish_sse_event = lambda rid, event: DesktopChannel._publish_sse_event(
         channel, rid, event
     )
-    channel._drop_sse_request = lambda rid: WebChannel._drop_sse_request(
+    channel._drop_sse_request = lambda rid: DesktopChannel._drop_sse_request(
         channel, rid
     )
     return channel
@@ -89,7 +89,7 @@ def test_reconnect_replays_only_events_after_cursor():
     channel._publish_sse_event("req", {"type": "done", "content": "abc"})
     channel._publish_sse_event("req", {"type": "stream_end"})
 
-    ids, events = _events(WebChannel.stream_response(channel, "req", after_seq=2))
+    ids, events = _events(DesktopChannel.stream_response(channel, "req", after_seq=2))
 
     assert ids == [3, 4, 5]
     assert [event["seq"] for event in events] == [3, 4, 5]
@@ -102,14 +102,14 @@ def test_delivery_interruption_does_not_remove_event_from_log():
     channel._publish_sse_event("req", {"type": "delta", "content": "first"})
     channel._publish_sse_event("req", {"type": "delta", "content": "second"})
 
-    first_connection = WebChannel.stream_response(channel, "req")
+    first_connection = DesktopChannel.stream_response(channel, "req")
     ids, _ = _events([next(first_connection)])
     assert ids == [1]
     first_connection.close()
 
     channel._publish_sse_event("req", {"type": "done", "content": "firstsecond"})
     channel._publish_sse_event("req", {"type": "stream_end"})
-    ids, events = _events(WebChannel.stream_response(channel, "req", after_seq=0))
+    ids, events = _events(DesktopChannel.stream_response(channel, "req", after_seq=0))
 
     assert ids == [1, 2, 3, 4]
     assert [event["seq"] for event in events] == [1, 2, 3, 4]
@@ -122,7 +122,7 @@ def test_done_and_voice_attachment_are_replayable_until_stream_end():
     channel._publish_sse_event("req", {"type": "voice_attach", "url": "/audio.mp3"})
     channel._publish_sse_event("req", {"type": "stream_end"})
 
-    _, events = _events(WebChannel.stream_response(channel, "req", after_seq=1))
+    _, events = _events(DesktopChannel.stream_response(channel, "req", after_seq=1))
 
     assert [event["type"] for event in events] == ["voice_attach", "stream_end"]
 
@@ -136,8 +136,8 @@ def test_requests_have_independent_sequences_and_logs():
     channel._publish_sse_event("a", {"type": "stream_end"})
     channel._publish_sse_event("b", {"type": "stream_end"})
 
-    _, a_events = _events(WebChannel.stream_response(channel, "a"))
-    _, b_events = _events(WebChannel.stream_response(channel, "b"))
+    _, a_events = _events(DesktopChannel.stream_response(channel, "a"))
+    _, b_events = _events(DesktopChannel.stream_response(channel, "b"))
 
     assert [event.get("content") for event in a_events if "content" in event] == ["A"]
     assert [event.get("content") for event in b_events if "content" in event] == ["B"]
@@ -154,7 +154,7 @@ def test_concurrent_readers_each_receive_the_complete_log():
 
     def read_stream(index):
         chunks = []
-        stream = WebChannel.stream_response(channel, "req")
+        stream = DesktopChannel.stream_response(channel, "req")
         chunks.append(next(stream))
         readers_ready.wait()
         chunks.extend(stream)
@@ -191,7 +191,7 @@ def test_expired_cursor_requires_resync_when_count_limit_evicts_events():
     for content in ("a", "b", "c"):
         channel._publish_sse_event("req", {"type": "delta", "content": content})
 
-    ids, events = _events(WebChannel.stream_response(channel, "req", after_seq=0))
+    ids, events = _events(DesktopChannel.stream_response(channel, "req", after_seq=0))
 
     assert ids == []
     assert events == [{
@@ -214,17 +214,18 @@ def test_byte_limit_also_evicts_old_events():
 
 
 def test_late_event_drop_is_visible_in_logs(caplog):
+    from unittest.mock import patch
     channel = _channel()
     _add_stream(channel, "req")
     channel._publish_sse_event("req", {"type": "stream_end"})
 
-    with caplog.at_level(logging.WARNING):
+    with patch.object(web_channel.logger, "warning") as logged:
         published = channel._publish_sse_event(
             "req", {"type": "voice_attach", "url": "/audio.mp3"}
         )
 
     assert not published
-    assert "dropped SSE event for complete stream req" in caplog.text
+    assert "dropped SSE event for complete stream req" in str(logged.call_args)
 
 
 def test_overdue_done_is_bounded_by_stream_end():
@@ -234,7 +235,7 @@ def test_overdue_done_is_bounded_by_stream_end():
     state = channel.sse_streams["req"]
     state.main_done_at = time.time() - 61
 
-    _, events = _events(WebChannel.stream_response(channel, "req"))
+    _, events = _events(DesktopChannel.stream_response(channel, "req"))
 
     assert [item["type"] for item in events] == ["done", "stream_end"]
     assert state.stream_complete
@@ -248,11 +249,11 @@ def test_janitor_finalizes_done_then_reclaims_completed_log():
     now = time.time()
     state.main_done_at = now - 61
 
-    assert WebChannel._sweep_sse_streams(channel, now) == 0
+    assert DesktopChannel._sweep_sse_streams(channel, now) == 0
     assert state.stream_complete
 
     state.completed_at = now - 61
-    assert WebChannel._sweep_sse_streams(channel, now) == 1
+    assert DesktopChannel._sweep_sse_streams(channel, now) == 1
     assert "req" not in channel.sse_streams
 
 
@@ -276,12 +277,12 @@ def _send_channel(tts_pending=False):
 
 def test_duplicate_file_does_not_close_text_stream_waiting_for_tts():
     channel, context = _send_channel(tts_pending=True)
-    WebChannel.send(channel, Reply(ReplyType.TEXT, "answer"), context)
+    DesktopChannel.send(channel, Reply(ReplyType.TEXT, "answer"), context)
     state = channel.sse_streams["req"]
     assert state.main_done
     assert not state.stream_complete
 
-    WebChannel.send(channel, Reply(ReplyType.FILE, "file://result.txt"), context)
+    DesktopChannel.send(channel, Reply(ReplyType.FILE, "file://result.txt"), context)
 
     assert not state.stream_complete
     assert [item[0]["type"] for item in state.events] == ["done"]
@@ -290,7 +291,7 @@ def test_duplicate_file_does_not_close_text_stream_waiting_for_tts():
 def test_duplicate_file_without_text_does_not_end_an_unfinished_stream():
     channel, context = _send_channel()
 
-    WebChannel.send(channel, Reply(ReplyType.FILE, "file://result.txt"), context)
+    DesktopChannel.send(channel, Reply(ReplyType.FILE, "file://result.txt"), context)
 
     state = channel.sse_streams["req"]
     assert not state.main_done
@@ -303,7 +304,7 @@ def test_file_with_own_text_publishes_done_before_stream_end():
     reply = Reply(ReplyType.FILE, "file://result.txt")
     reply.text_content = "answer with file"
 
-    WebChannel.send(channel, reply, context)
+    DesktopChannel.send(channel, reply, context)
 
     state = channel.sse_streams["req"]
     assert [item[0]["type"] for item in state.events] == ["done", "stream_end"]

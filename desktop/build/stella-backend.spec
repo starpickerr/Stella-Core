@@ -34,7 +34,7 @@ def rp(*parts):
 # starpickerr/Stella#2987: "客户端没有飞书通道").
 hiddenimports = [
     # channels (dynamic import in channel/channel_factory.py)
-    'channel.web.web_channel',
+    'channel.desktop.desktop_channel',
     'channel.terminal.terminal_channel',
     'channel.weixin.weixin_channel',
     'channel.wechatmp.wechatmp_channel',
@@ -58,7 +58,7 @@ hiddenimports += collect_submodules('models')
 hiddenimports += collect_submodules('voice')
 hiddenimports += collect_submodules('bridge')
 
-# Plugin framework + plugins. WebChannel -> ChatChannel imports
+# Plugin framework + plugins. DesktopChannel -> ChatChannel imports
 # `from plugins import *`, and desktop mode loads plugins (in a background
 # thread) so command plugins like stella_cli/godcmd (/status, #help) work. Plugin
 # modules are imported dynamically by name in scan_plugins(), so list them

@@ -272,7 +272,7 @@ def _clear_singleton_cache(channel_name: str):
     a new instance can be created with updated config.
     """
     cls_map = {
-        "web": "channel.web.web_channel.WebChannel",
+        "web": "channel.desktop.desktop_channel.DesktopChannel",
         "wechatmp": "channel.wechatmp.wechatmp_channel.WechatMPChannel",
         "wechatmp_service": "channel.wechatmp.wechatmp_channel.WechatMPChannel",
         "wechatcom_app": "channel.wechatcom.wechatcomapp_channel.WechatComAppChannel",
@@ -359,7 +359,7 @@ def _preload_heavy_imports():
     Python locks imports per module, so two threads walking overlapping graphs
     in opposite order deadlock outright: the scheduler warmup pulls
     agent.tools -> requests -> urllib3 while channel creation pulls
-    web_channel -> web -> http.client -> email, and the graphs meet. Desktop
+    desktop_channel -> web.py -> http.client -> email, and the graphs meet. Desktop
     mode warms up on a background thread, so its modules must already be in
     sys.modules before that thread exists - afterwards it only builds objects.
     """
@@ -384,13 +384,13 @@ def _start_web_watchdog(timeout: int = WEB_STARTUP_TIMEOUT):
     # Resolved here, on the main thread: a background thread must not be the
     # one to import these (see _preload_heavy_imports).
     import faulthandler
-    from channel.web.web_channel import SERVING
+    from channel.desktop.desktop_channel import SERVING
 
     def _watch():
         if SERVING.wait(timeout):
             return
         logger.error(
-            f"[App] Web console did not start within {timeout}s, exiting. "
+            f"[App] Desktop API did not start within {timeout}s, exiting. "
             "Thread stacks follow:"
         )
         try:
@@ -547,6 +547,8 @@ def _scaffold_subagent_assets():
 
 def run():
     global _channel_mgr
+    if not DESKTOP_MODE and "--cmd" not in sys.argv:
+        raise SystemExit("Stella backend is desktop-only; start it with the Electron client")
     try:
         # Before any TLS connection: a packaged build has no OpenSSL CA store.
         bundle = ensure_ca_bundle()
@@ -570,9 +572,9 @@ def run():
             if not channel_names:
                 channel_names = ["web"]
 
-        # Auto-start web console unless explicitly disabled
-        web_console_enabled = conf().get("web_console", True)
-        if web_console_enabled and "web" not in channel_names:
+        # The desktop API is mandatory for Electron. Keep the historical
+        # channel key so existing sessions and scheduled destinations resolve.
+        if DESKTOP_MODE and "web" not in channel_names:
             channel_names.append("web")
 
         # Sync builtin skills to workspace before channels start

@@ -487,11 +487,6 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
         )}
       </div>
 
-      {/* QR-login channels with no desktop support fall back to the web console. */}
-      {isQrLogin && !channel.active && !qrProvider && (
-        <p className="text-xs text-content-tertiary mt-3 pl-12">{t('channels_qr_hint')}</p>
-      )}
-
       {/* WeChat: the QR is the whole flow, so show it right away. The amber
           "waiting for scan" badge is what tells a live card why it reappeared. */}
       {weixinQr && (

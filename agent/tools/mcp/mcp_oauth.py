@@ -445,7 +445,7 @@ class OAuthHandler:
         try:
             resp = _http_post_form(self.metadata["token_endpoint"], fields)
         except Exception as e:
-            logger.warning(f"[MCP-OAuth:{self.server_name}] token exchange failed: {e}")
+            logger.warning(f"[MCP-OAuth:{self.server_name}] token exchange failed")
             return False
         ok = self._absorb_token_response(resp)
         self._verifier = None
@@ -454,7 +454,7 @@ class OAuthHandler:
     def _absorb_token_response(self, resp: dict) -> bool:
         access = resp.get("access_token")
         if not access:
-            logger.warning(f"[MCP-OAuth:{self.server_name}] token response missing access_token: {resp}")
+            logger.warning(f"[MCP-OAuth:{self.server_name}] token response missing access_token")
             return False
         self.access_token = access
         if resp.get("refresh_token"):

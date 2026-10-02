@@ -6,7 +6,7 @@ description: Xiaomi MiMo model configuration (Text Chat + Image Understanding + 
 Xiaomi MiMo is a native omni-modal large model. A single `mimo_api_key` enables text chat, image understanding, and text-to-speech all at once.
 
 <Tip>
-  All capabilities below can be configured in one place via the "Model Management" page in the Web Console — no need to manually edit the configuration file.
+  All capabilities below can be configured in one place via the "Model Management" page in the Desktop Client — no need to manually edit the configuration file.
 </Tip>
 
 ## Text Chat
@@ -36,7 +36,7 @@ Xiaomi MiMo is a native omni-modal large model. A single `mimo_api_key` enables 
 
 The MiMo V2.5 series enables "thinking mode" by default: the model emits `reasoning_content` (chain-of-thought) before the final answer, improving performance on complex tasks.
 
-Use the global `enable_thinking` flag to toggle visibility (also switchable from the Web Console settings):
+Use the global `enable_thinking` flag to toggle visibility (also switchable from the Desktop Client settings):
 
 ```json
 {
@@ -93,7 +93,7 @@ To force a specific Vision model, set it explicitly in the configuration:
 | `白桦` | Chinese · Male |
 
 
-You can also pick a voice visually from the Web Console under "Model Management → Text-to-Speech".
+You can also pick a voice visually from the Desktop Client under "Model Management → Text-to-Speech".
 
 ### Style Control
 

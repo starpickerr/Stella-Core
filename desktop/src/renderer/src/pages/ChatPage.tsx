@@ -20,6 +20,7 @@ import { useChatStore } from '../store/chatStore'
 import { useSessionStore } from '../store/sessionStore'
 import { useUIStore } from '../store/uiStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import brandLogo from '../assets/logo.png'
 
 interface ChatPageProps {
   baseUrl: string
@@ -261,7 +262,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                 <product.slots.HomeLogo />
               </div>
             ) : (
-              <img src="./logo.jpg" alt="Stella" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
+              <img src={brandLogo} alt="Stella" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
             )}
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8 leading-relaxed whitespace-pre-line">

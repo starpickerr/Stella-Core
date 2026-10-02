@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { t } from '../i18n'
 import { product } from '@product'
 import type { BackendErrorCode } from '../types'
+import brandLogo from '../assets/logo.png'
 
 interface StatusScreenProps {
   status: 'connecting' | 'error'
@@ -53,7 +54,7 @@ const StatusScreen: React.FC<StatusScreenProps> = ({ status, error, code, path, 
             <product.slots.StatusLogo />
           </div>
         ) : (
-          <img src="./logo.jpg" alt="Agent" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
+          <img src={brandLogo} alt="Stella" className="w-16 h-16 rounded-2xl mx-auto shadow-lg shadow-primary-500/20" />
         )}
 
         {status === 'connecting' && (

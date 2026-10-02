@@ -9,6 +9,7 @@ import MessageSteps, { ThinkingStep } from './MessageSteps'
 import FileCard from './FileCard'
 import { useLightboxStore } from './Lightbox'
 import { product } from '@product'
+import brandLogo from '../assets/logo.png'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -140,7 +141,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
           <product.slots.AssistantAvatar />
         </div>
       ) : (
-        <img src="./logo.jpg" alt="Agent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
+        <img src={brandLogo} alt="Stella" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
       )}
       <div className="flex-1 min-w-0 max-w-[calc(100%-2.5rem)]">
         <div className="inline-block w-full rounded-2xl border border-default bg-surface px-4 py-3">

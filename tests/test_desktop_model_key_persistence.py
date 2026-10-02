@@ -85,11 +85,11 @@ def test_source_deployment_keeps_environment_override(tmp_path, monkeypatch):
 
 
 def test_models_save_updates_runtime_and_persisted_key(tmp_path, monkeypatch):
-    from channel.web.web_channel import ModelsHandler
+    from channel.desktop.desktop_channel import ModelsHandler
 
     monkeypatch.setenv("STELLA_DESKTOP", "1")
     monkeypatch.setenv("LINKAI_API_KEY", "expired-linkai-key")
-    monkeypatch.setattr("channel.web.web_channel.get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr("channel.desktop.desktop_channel.get_data_root", lambda: str(tmp_path))
     monkeypatch.setattr(ModelsHandler, "_reset_bridge", staticmethod(lambda: None))
     monkeypatch.setattr(
         config_module, "config", config_module.Config({"linkai_api_key": "expired-linkai-key"})
@@ -119,11 +119,11 @@ def test_models_save_updates_runtime_and_persisted_key(tmp_path, monkeypatch):
 
 
 def test_models_delete_removes_runtime_key(tmp_path, monkeypatch):
-    from channel.web.web_channel import ModelsHandler
+    from channel.desktop.desktop_channel import ModelsHandler
 
     monkeypatch.setenv("STELLA_DESKTOP", "1")
     monkeypatch.setenv("LINKAI_API_KEY", "expired-linkai-key")
-    monkeypatch.setattr("channel.web.web_channel.get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr("channel.desktop.desktop_channel.get_data_root", lambda: str(tmp_path))
     monkeypatch.setattr(ModelsHandler, "_reset_bridge", staticmethod(lambda: None))
     monkeypatch.setattr(
         config_module, "config", config_module.Config({"linkai_api_key": "expired-linkai-key"})
