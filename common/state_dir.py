@@ -90,7 +90,20 @@ def user_root(identity: Optional[RuntimeIdentity] = None) -> Path:
     """
     ident = _resolve(identity)
     if ident.user_id:
+        if ident.user_id in (".", "..") or "/" in ident.user_id or "\\" in ident.user_id or "\x00" in ident.user_id:
+            raise StateDirError("invalid user id")
+    from agent.registry import get_agent_registry
+
+    registry = get_agent_registry()
+    canonical = shared_root() / "users" / "local-default"
+    if ident.user_id and ident.user_id != "local-default":
         return shared_root() / "users" / ident.user_id
+    if (canonical / ".migration.json").is_file():
+        return canonical
+    if ident.agent_id and ident.agent_id != registry.default_agent_id:
+        raise StateDirError(
+            "local-default user data is not migrated; stop Stella and run "
+            "python -m scripts.migrate_user_data --confirm-offline before using a second Agent")
     return state_root(ident)
 
 
