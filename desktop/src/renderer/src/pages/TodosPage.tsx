@@ -56,6 +56,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [uncertainReminders, setUncertainReminders] = useState<UncertainReminder[]>([])
   const [editing, setEditing] = useState<Todo | 'new' | null>(null)
   const [form, setForm] = useState<TodoInput>(emptyTodo)
+  const [tagsText, setTagsText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const today = dateKey(new Date())
@@ -105,9 +106,10 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
     return grouped
   }, [visible, today])
-  const openNew = () => { setForm(emptyTodo()); setEditing('new'); setError('') }
+  const openNew = () => { setForm(emptyTodo()); setTagsText(''); setEditing('new'); setError('') }
   const openEdit = (todo: Todo) => {
     const original = templates.find(item => item.id === (todo.series_id || todo.id)) || todo
+    setTagsText(tagsOf(original).join(', '))
     setForm({ title: original.title, notes: original.notes, due_on: original.due_on,
       due_time: original.due_time, timezone: original.timezone, priority: original.priority,
       repeat_frequency: original.repeat_frequency, repeat_days: JSON.parse(original.repeat_days || '[]'),
@@ -122,7 +124,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
     setBusy(true); setError('')
     try {
-      const payload = { ...form, title: form.title.trim(),
+      const payload = { ...form, title: form.title.trim(), tags: tagsText.split(/[,，]/).map(value => value.trim()).filter(Boolean),
         repeat_days: form.repeat_frequency === 'weekly' ? (form.repeat_days.length ? form.repeat_days :
           [((new Date(`${form.due_on}T12:00`).getDay() + 6) % 7)]) : [] }
       if (editing === 'new') await apiClient.createTodo(payload)
@@ -189,7 +191,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <label className="block text-sm">{copy.notes}<textarea rows={3} value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
       <label className="block text-sm">{copy.planDate}<input type="date" value={form.planned_on || ''} onChange={event => setForm({ ...form, planned_on: event.target.value || null })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /><span className="block text-xs text-content-tertiary mt-1">{copy.planHint}</span></label>
       <div className="grid grid-cols-2 gap-3"><label className="text-sm">{copy.list}<input list="todo-lists" value={form.list_name || ''} onChange={event => setForm({ ...form, list_name: event.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /><datalist id="todo-lists">{lists.map(name => <option key={name} value={name} />)}</datalist></label><label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={!!form.flagged} onChange={event => setForm({ ...form, flagged: event.target.checked })} /><Flag size={14} />{copy.flagged}</label></div>
-      <label className="block text-sm">{copy.tags}<input value={(form.tags || []).join(', ')} onChange={event => setForm({ ...form, tags: event.target.value.split(/[,，]/).map(value => value.trim()).filter(Boolean) })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
+      <label className="block text-sm">{copy.tags}<input value={tagsText} onChange={event => setTagsText(event.target.value)} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
       <section className="space-y-2"><h3 className="text-sm">{copy.checklist}</h3>{(form.checklist || []).map((step, index) => <div key={step.id} className="flex gap-2"><input aria-label={`${copy.checklist} ${index + 1}`} value={step.title} onChange={event => setForm({ ...form, checklist: form.checklist?.map(item => item.id === step.id ? { ...item, title: event.target.value } : item) })} className="flex-1 rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm" /><button type="button" aria-label={copy.delete} onClick={() => setForm({ ...form, checklist: form.checklist?.filter(item => item.id !== step.id) })}><X size={14} /></button></div>)}<button type="button" className="text-sm text-accent" onClick={() => setForm({ ...form, checklist: [...(form.checklist || []), { id: crypto.randomUUID(), title: '', completed: false }] })}>+ {copy.addStep}</button></section>
       <div className="grid grid-cols-2 gap-3"><label className="text-sm">{copy.dueDate}<input type="date" value={form.due_on || ''} onChange={event => setForm({ ...form, due_on: event.target.value || null, due_time: event.target.value ? form.due_time : null, repeat_frequency: event.target.value ? form.repeat_frequency : 'none' })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-2 py-2" /></label><label className="text-sm">{copy.dueTime}<input type="time" value={form.due_time || ''} disabled={!form.due_on} onChange={event => setForm({ ...form, due_time: event.target.value || null })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-2 py-2 disabled:opacity-50" /></label></div>
       <label className="block text-sm">{copy.priority}<select value={form.priority} onChange={event => setForm({ ...form, priority: Number(event.target.value) })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2">{copy.priorities.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>

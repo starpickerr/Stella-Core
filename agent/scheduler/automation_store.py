@@ -50,6 +50,8 @@ class AutomationStore:
                 db.execute("ALTER TABLE job_runs ADD COLUMN result_ref TEXT")
             if "owner_user_id" not in columns:
                 db.execute("ALTER TABLE job_runs ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT ''")
+            if "retryable" not in columns:
+                db.execute("ALTER TABLE job_runs ADD COLUMN retryable INTEGER NOT NULL DEFAULT 1")
         self._migrate_legacy()
 
     @contextmanager
@@ -218,11 +220,11 @@ class AutomationStore:
                     VALUES (?,?,?,NULL,1,'running',?,1,?)""",
                     (run_id, task_id, self._current_user(), until, now))
                 return run_id
-            row = db.execute("""SELECT job_run_id,status,lease_until,attempts FROM job_runs
+            row = db.execute("""SELECT job_run_id,status,lease_until,attempts,retryable FROM job_runs
                 WHERE task_id=? AND owner_user_id=? AND scheduled_at=? AND manual=0""",
                 (task_id, self._current_user(), scheduled_at)).fetchone()
             if row:
-                if row["status"] in ("completed", "outcome_unknown"):
+                if row["status"] in ("completed", "outcome_unknown") or (row["status"] == "failed" and not row["retryable"]):
                     return None
                 if row["status"] == "running":
                     if row["lease_until"] and row["lease_until"] > now:
@@ -253,10 +255,14 @@ class AutomationStore:
             return row[0] if row else None
 
     def finish_occurrence(self, job_run_id, success, error=None):
+        from agent.scheduler.outcome import ExecutionOutcome
+        outcome = success if isinstance(success, ExecutionOutcome) else None
         with self.lock, self._connect() as db:
-            db.execute("""UPDATE job_runs SET status=?,lease_until=NULL,finished_at=?,error=?
+            db.execute("""UPDATE job_runs SET status=?,lease_until=NULL,finished_at=?,error=?,retryable=?
                 WHERE job_run_id=? AND owner_user_id=?""",
-                ("completed" if success else "failed", _stamp(), error, job_run_id,
+                (outcome.status if outcome is not None else "completed" if success else "failed", _stamp(),
+                 outcome.error if outcome is not None else error,
+                 int(outcome.retryable) if outcome is not None else 1, job_run_id,
                  self._current_user()))
 
     def get_execution_ref(self, job_run_id):

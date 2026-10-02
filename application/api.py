@@ -118,6 +118,15 @@ class Application:
         operation_id = request.idempotency_key or uuid.uuid4().hex
         with use_identity(RuntimeIdentity(agent_id=request.agent_id, user_id=request.user_id,
                                           session_id=request.session_id, run_id=current_identity().run_id)):
+            from agent.runtime.tool_invocation import permission_denial
+            action = {"create_ledger": "add", "update_ledger": "update", "delete_ledger": "delete",
+                      "create_todo": "create", "update_todo": "update", "complete_todo": "complete",
+                      "delete_todo": "delete", "create_event": "create", "update_event": "update",
+                      "delete_event": "delete"}[method]
+            denial = permission_denial(domain, {"action": action}, agent_id=request.agent_id,
+                                       session_id=request.session_id)
+            if denial:
+                raise PermissionError(denial)
             store = None
             if request.idempotency_key:
                 from application.operations import OperationStore

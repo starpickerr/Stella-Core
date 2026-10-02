@@ -96,3 +96,17 @@ class RunRecord:
         with self._connect() as db:
             db.execute("""UPDATE runs SET provider_id=?,protocol_id=?,model_id=?
                 WHERE run_id=?""", (provider_id, protocol_id, model_id, run_id))
+
+    def recent(self, agent_id, limit=30):
+        """Read a bounded activity index without exposing tool outputs."""
+        limit = max(1, min(int(limit), 100))
+        with self._connect() as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute("""SELECT r.run_id,r.session_id,r.source,r.status,
+                COALESCE(r.started_at,(SELECT MIN(e.occurred_at) FROM run_events e WHERE e.run_id=r.run_id)) started_at,
+                r.finished_at,
+                r.provider_id,r.model_id,
+                (SELECT COUNT(*) FROM run_events e WHERE e.run_id=r.run_id AND e.kind='permission_denied') denied_count
+                FROM runs r WHERE r.agent_id=? ORDER BY started_at DESC LIMIT ?""",
+                (agent_id, limit)).fetchall()
+            return [dict(row) for row in rows]

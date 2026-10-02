@@ -373,3 +373,25 @@ def test_a_single_agent_install_keeps_every_path_it_has_today(tmp_path, prepopul
             assert accessor(**kwargs) == resolved.joinpath(*parts), name
     finally:
         set_agent_registry(None)
+
+
+def test_offline_migration_preserves_operation_admission_and_health(tmp_path, monkeypatch):
+    from application.operations import OperationStore, OutcomeUnknown
+    from common.user_data_migration import migrate_local_default
+    import pytest
+    root = tmp_path / 'legacy'
+    root.mkdir()
+    monkeypatch.setattr('application.operations.user_root', lambda: root)
+    ledger = OperationStore()
+    ledger.admit('completed', 'hash-one')
+    ledger.finish('completed', {'id': 'existing'})
+    ledger.admit('unknown', 'hash-two')
+    (root / 'health').mkdir()
+    (root / 'health' / 'source.txt').write_text('local')
+    canonical = migrate_local_default(root)
+    monkeypatch.setattr('application.operations.user_root', lambda: canonical)
+    migrated = OperationStore()
+    assert migrated.admit('completed', 'hash-one') == (True, {'id': 'existing'})
+    with pytest.raises(OutcomeUnknown):
+        migrated.admit('unknown', 'hash-two')
+    assert (canonical / 'health' / 'source.txt').read_text() == 'local'

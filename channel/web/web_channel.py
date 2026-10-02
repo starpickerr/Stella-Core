@@ -1969,6 +1969,7 @@ class WebChannel(ChatChannel):
             '/api/knowledge/action', 'KnowledgeActionHandler',
             '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
+            '/api/security/activity', 'SecurityActivityHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -5682,6 +5683,17 @@ def _scheduler_store():
     workspace_root = _get_workspace_root()
     store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
     return TaskStore(store_path)
+
+
+class SecurityActivityHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from agent.registry import get_agent_registry
+        from agent.runtime.run_record import RunRecord
+        return json.dumps({"status": "success", "runs": RunRecord().recent(get_agent_registry().get().id)},
+                          ensure_ascii=False)
 
 
 class SchedulerHandler:
