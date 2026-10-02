@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 from contextvars import ContextVar
 from contextlib import contextmanager
 
-from agent.permission import FULL_ACCESS, check_tool_call, global_mode, normalize_mode
+from agent.permission import global_mode, normalize_mode
+from agent.permission.gateway import Scope, SecurityGateway
 from common.log import logger
 
 
@@ -32,7 +33,8 @@ def execution_workspace(session_id=None, agent_id=None, workspace=None):
     from common.runtime_identity import current_identity
     workspace = workspace or str(state_root(current_identity().derive(agent_id=agent_id)))
     project = project_store.get_project_dir(session_id, agent_id) if session_id else None
-    return project or workspace, [project or workspace, workspace]
+    active = project or workspace
+    return active, [active]
 
 
 def permission_denial(
@@ -67,9 +69,14 @@ def permission_denial(
 
                 workspace = str(state_root(current_identity().derive(agent_id=agent_id)))
             cwd, roots = execution_workspace(session_id, agent_id, workspace)
-        if mode == FULL_ACCESS:
-            return None
-        decision = check_tool_call(mode, tool_name, arguments, cwd=cwd, write_roots=roots)
+        from config import conf
+        from common.runtime_identity import current_identity
+        configured_allowlist = conf().get("agent_tool_allowlist")
+        allowlist = configured_allowlist if isinstance(configured_allowlist, list) and configured_allowlist else None
+        decision = SecurityGateway.check(
+            mode, tool_name, arguments, cwd=cwd, scope=Scope(write_roots=tuple(roots)),
+            session_id=session_id or current_identity().session_id, allowlist=allowlist,
+        )
         return None if decision.allowed else decision.reason
     except Exception as exc:
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")

@@ -708,7 +708,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
             return ExecutionOutcome("failed", "receiver is required")
 
-        logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}' with params {skill_params}")
+        logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}'")
 
         scheduler_session_id = f"scheduler_{task['id']}"
         context = Context(ContextType.TEXT, "Scheduled skill execution")

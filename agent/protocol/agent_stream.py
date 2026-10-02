@@ -656,10 +656,7 @@ class AgentStreamExecutor:
                     effort_label = f" | effort={effort}"
             except Exception:
                 effort_label = ""
-        _log_msg = user_message if len(user_message) <= 500 else (
-            user_message[:500] + f" …(+{len(user_message) - 500} chars)"
-        )
-        logger.info(f"🤖 {self.model.model}{thinking_label}{effort_label} | 👤 {_log_msg}")
+        logger.info(f"🤖 {self.model.model}{thinking_label}{effort_label} | 👤 message received")
         
         # Add user message (Claude format - use content blocks for consistency)
         self.messages.append({
@@ -817,17 +814,7 @@ class AgentStreamExecutor:
                 for tc in tool_calls:
                     args = tc.get('arguments') or {}
                     if isinstance(args, dict):
-                        parts = []
-                        for k, v in args.items():
-                            v_str = str(v)
-                            if len(v_str) > 200:
-                                v_str = v_str[:200] + f"...({len(v_str)} chars)"
-                            parts.append(f"{k}={v_str}")
-                        args_str = ', '.join(parts)
-                        if args_str:
-                            tool_calls_str.append(f"{tc['name']}({args_str})")
-                        else:
-                            tool_calls_str.append(tc['name'])
+                        tool_calls_str.append(tc['name'])
                     else:
                         tool_calls_str.append(tc['name'])
                 logger.info(f"🔧 {', '.join(tool_calls_str)}")
@@ -887,13 +874,7 @@ class AgentStreamExecutor:
                         
                         # Log tool result in compact format
                         status_emoji = "✅" if result.get("status") == "success" else "❌"
-                        result_data = result.get('result', '')
-                        # Format result string with proper Chinese character support
-                        if isinstance(result_data, (dict, list)):
-                            result_str = json.dumps(result_data, ensure_ascii=False)
-                        else:
-                            result_str = str(result_data)
-                        logger.info(f"  {status_emoji} {tool_call['name']} ({result.get('execution_time', 0):.2f}s): {result_str[:200]}{'...' if len(result_str) > 200 else ''}")
+                        logger.info(f"  {status_emoji} {tool_call['name']} ({result.get('execution_time', 0):.2f}s)")
 
                         # Build tool result block (Claude format)
                         # Format content in a way that's easy for LLM to understand
@@ -1016,7 +997,7 @@ class AgentStreamExecutor:
                     summary_response, summary_tools = self._call_llm_stream(retry_on_empty=False)
                     if summary_response:
                         final_response = summary_response
-                        logger.info(f"💭 Summary: {summary_response[:150]}{'...' if len(summary_response) > 150 else ''}")
+                        logger.info("💭 Summary completed")
                     else:
                         # Fallback if model still doesn't respond
                         final_response = _t(
@@ -1637,13 +1618,21 @@ class AgentStreamExecutor:
             self._record_tool_result(tool_name, arguments, False)
             return result
 
+        tool = tool_override or self.tools.get(tool_name)
+        if tool is not None and getattr(tool, "name", None) == tool_name:
+            from agent.permission.gateway import Capability, register_tool
+            try:
+                register_tool(tool_name, Capability(tool.required_capability))
+            except (ValueError, AttributeError):
+                pass
+
         # Permission gate. Resolved per call so switching mode mid-conversation
         # applies to the very next tool call. A refusal is reported as a normal
         # tool error: the model reads why, and can either take an allowed route
         # or tell the user which mode the task needs.
         denial = self._permission_denial(tool_name, arguments)
         if denial:
-            logger.info(f"🔐 Permission denied for tool {tool_name}: {denial}")
+            logger.info(f"🔐 Permission denied for tool {tool_name}")
             result = {"status": "error", "result": denial, "execution_time": 0}
             self._emit_event("tool_execution_start", {
                 "tool_call_id": tool_id,
@@ -1691,7 +1680,6 @@ class AgentStreamExecutor:
                 }
             return result
 
-        tool = tool_override or self.tools.get(tool_name)
         start_event = {
             "tool_call_id": tool_id,
             "tool_name": tool_name,
