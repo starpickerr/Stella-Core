@@ -28,6 +28,13 @@ class TestSharedDbRecovery(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.db = self.tmp / "index.db"
+        # These cases exercise the opt-in full integrity scan. Production
+        # startup skips that expensive scan unless explicitly requested.
+        from config import conf
+        self._integrity_flag = unittest.mock.patch.dict(
+            conf(), {"memory_integrity_check": True}
+        )
+        self._integrity_flag.start()
         # These cases corrupt databases on purpose. Their recovery logging is
         # indistinguishable from a real incident, and pytest shares run.log
         # with the running app, so keep it out of the file.
@@ -36,6 +43,7 @@ class TestSharedDbRecovery(unittest.TestCase):
         self._log.setLevel(logging.CRITICAL + 1)
 
     def tearDown(self):
+        self._integrity_flag.stop()
         self._log.setLevel(self._log_level)
         shutil.rmtree(self.tmp, ignore_errors=True)
 

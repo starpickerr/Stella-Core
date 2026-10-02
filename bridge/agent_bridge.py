@@ -146,8 +146,9 @@ class AgentLLMModel(LLMModel):
         """Resolve bot type from model name, matching Bridge.__init__ logic."""
         # A session override wins over every global routing switch, including
         # use_linkai: the user picked this provider for this conversation.
-        if self._session_provider:
-            return self.provider_to_bot_type(self._session_provider)
+        session_provider = getattr(self, "_session_provider", None)
+        if session_provider:
+            return self.provider_to_bot_type(session_provider)
 
         if conf().get("use_linkai", False) and conf().get("linkai_api_key"):
             return const.LINKAI

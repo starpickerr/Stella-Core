@@ -37,6 +37,7 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
 
     def tearDown(self):
         from agent.memory import clear_conversation_store_cache, reset_memory_configs
+        from agent.registry import set_agent_registry
         reset_memory_configs()
         clear_conversation_store_cache()
 
@@ -44,6 +45,7 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
             conf().pop("agent_workspace", None)
         else:
             conf()["agent_workspace"] = self._orig_agent_workspace
+        set_agent_registry(None)
 
         if self._real_home is None:
             os.environ.pop("HOME", None)
@@ -107,9 +109,13 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         never set agent_workspace.
         """
         from agent.memory.config import MemoryConfig
+        from agent.registry import set_agent_registry
         from common.utils import expand_path
 
         conf().pop("agent_workspace", None)
+        # Runtime routing caches the registry derived from config. Rebuild it
+        # after changing the config in this test to exercise the unset case.
+        set_agent_registry(None)
         self.assertEqual(
             os.path.realpath(MemoryConfig().workspace_root),
             os.path.realpath(expand_path("~/stella")),

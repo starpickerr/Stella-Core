@@ -2679,6 +2679,12 @@ class ConfigHandler:
                     model: provider_reasoning_metadata(pid, model)
                     for model in p["models"]
                 }
+                if pid == "deepseek":
+                    # Existing sessions can still select the legacy chat model
+                    # even though it is no longer offered in the model picker.
+                    reasoning_by_model[const.DEEPSEEK_CHAT] = provider_reasoning_metadata(
+                        pid, const.DEEPSEEK_CHAT
+                    )
                 providers[pid] = {
                     "label": p["label"],
                     "models": p["models"],
