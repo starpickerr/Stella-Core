@@ -611,7 +611,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
 
 
 def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
-    """Execute a skill_call action by asking Agent to run the skill.
+    """Execute a resolved skill under the scheduled Agent's tool gate.
     Returns True/False for delivery."""
     try:
         action = task.get("action", {})
@@ -632,12 +632,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}' with params {skill_params}")
 
         scheduler_session_id = f"scheduler_{receiver or 'silent'}_{task['id']}"
-        param_str = ", ".join([f"{k}={v}" for k, v in skill_params.items()])
-        query = f"Use {skill_name} skill"
-        if param_str:
-            query += f" with {param_str}"
-
-        context = Context(ContextType.TEXT, query)
+        context = Context(ContextType.TEXT, "Scheduled skill execution")
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
@@ -662,7 +657,9 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         content = load_output(store, job_run_id)
         if content is None:
             try:
-                reply = agent_bridge.agent_reply(query, context=context, on_event=None, clear_history=False)
+                from agent.scheduler.skill_executor import SkillExecutor
+                reply = SkillExecutor(agent_bridge).execute(
+                    skill_name, skill_params, context, agent_id)
             except Exception as e:
                 logger.error(f"[Scheduler] Failed to execute skill via Agent: {e}")
                 return True
