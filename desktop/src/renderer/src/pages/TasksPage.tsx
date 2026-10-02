@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { Loader2, Clock, CalendarClock, Play, Plus } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
@@ -46,24 +46,29 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
   const activeSessionId = useSessionStore((s) => s.activeId)
   const [tasks, setTasks] = useState<SchedulerTask[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const loadGeneration = useRef(0)
   const [editing, setEditing] = useState<SchedulerTask | 'new' | null>(null)
 
   const loadTasks = async () => {
+    const generation = ++loadGeneration.current
+    setLoadError('')
     try {
       setLoading(true)
       const data = await apiClient.getSchedulerTasks()
-      setTasks(data || [])
+      if (generation === loadGeneration.current) setTasks(data || [])
     } catch (err) {
       console.error('Failed to load tasks:', err)
-      setTasks([])
+      if (generation === loadGeneration.current) setLoadError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (generation === loadGeneration.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
     void loadTasks()
+    return () => { loadGeneration.current++ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl])
 
@@ -98,6 +103,8 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
               <Loader2 size={18} className="animate-spin mr-2" />
               {t('tasks_loading')}
             </div>
+          ) : loadError ? (
+            <div className="py-10 text-center text-sm text-danger"><p>{loadError}</p><Btn variant="ghost" onClick={() => void loadTasks()}>{t('tasks_retry')}</Btn></div>
           ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <CalendarClock size={32} className="mb-3 text-content-tertiary opacity-60" />
