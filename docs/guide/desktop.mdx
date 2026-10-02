@@ -49,16 +49,9 @@ git push && git push --tags
 
 Then create a published GitHub Release for that tag (not draft / pre-release) and upload `desktop/release/Stella-0.0.2-arm64.dmg`. Full notes: [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md).
 
-## Desktop vs. Command-line Deployment
+## Desktop-only backend
 
-- **Desktop client**: best for personal use on your own computer — works out of the box, GUI-based; newer GitHub Releases prompt a manual download.
-- **Command-line deployment**: best for developers or long-running servers with more customization. See [Quick Start](/guide/quick-start).
-
-## Access from a Browser
-
-Once the desktop client is running, it listens on port `9876` locally, and its backend is exactly the same Web console. So while the app is open you can also just point your browser at `http://localhost:9876` for the same full experience as the client UI.
-
-If that port is unavailable (for example reserved by Hyper-V/WSL2 on Windows), the client automatically falls back to another one and still starts normally. The actual port is shown on the `Local access` line in `run.log`, and you can pin one by setting `web_port` in `config.json`.
+The Electron client starts a private API on `127.0.0.1`. The old browser frontend and standalone server are removed. The port is selected automatically if `9876` is unavailable; the desktop window receives the actual port from Electron.
 
 ## Local Data Storage
 

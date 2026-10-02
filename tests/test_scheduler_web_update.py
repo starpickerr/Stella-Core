@@ -29,7 +29,7 @@ if "web" not in sys.modules:
     )
     sys.modules["web"] = web_stub
 
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 SchedulerUpdateHandler = web_channel.SchedulerUpdateHandler
 
@@ -50,10 +50,10 @@ def _store_task(tmp_path, action):
 
 
 def _post_update(tmp_path, payload):
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
+         patch("channel.desktop.desktop_channel._get_workspace_root", return_value=str(tmp_path)):
         return json.loads(SchedulerUpdateHandler().POST())
 
 
@@ -84,9 +84,9 @@ def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 
     service = Mock()
-    with patch("channel.web.web_channel._require_auth") as require_auth, \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
+    with patch("channel.desktop.desktop_channel._require_auth") as require_auth, \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
          patch("agent.scheduler.get_scheduler_service", return_value=service):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
@@ -101,9 +101,9 @@ def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
 def test_web_manual_run_rejects_unavailable_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
          patch("agent.scheduler.get_scheduler_service", return_value=None):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
@@ -115,7 +115,7 @@ def test_web_manual_run_rejects_unavailable_scheduler():
 
 def test_manual_run_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
-    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
+    web_source = (root / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 
@@ -190,10 +190,10 @@ SchedulerHandler = web_channel.SchedulerHandler
 
 
 def _post_create(tmp_path, payload):
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
+         patch("channel.desktop.desktop_channel._get_workspace_root", return_value=str(tmp_path)):
         return json.loads(SchedulerHandler().POST())
 
 
@@ -234,7 +234,7 @@ def test_web_create_rejects_missing_session(tmp_path):
 
 def test_create_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
-    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
+    web_source = (root / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 

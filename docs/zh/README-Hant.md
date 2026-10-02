@@ -19,7 +19,7 @@
 
 **Stella** 是一個開源的超級 AI 助理，能夠主動思考和規劃任務、操作電腦和外部資源、創造和執行 Skills、構建知識庫與長期記憶、透過自主進化與你一同成長，是 Agent Harness 工程的最佳實踐之一。
 
-Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微信、飛書、釘釘、企微、QQ、Telegram、Slack、網頁等多渠道，7×24 執行於個人電腦或伺服器中。
+Stella 輕量、易部署、可擴充，自由接入主流大模型，透過桌面客戶端連接微信、飛書、釘釘、企微、QQ、Telegram、Slack 等渠道，在個人電腦上執行。
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
@@ -50,10 +50,10 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微�
 | [自主進化](memory/self-evolution.mdx) | 自動覆盤對話，最佳化技能、處理未完成事項、沉澱記憶與知識，在使用中持續成長 |
 | [技能](skills/index.mdx) | 從 [skill廣場](https://www.skill-marketplace.com/)、GitHub、ClawHub 等一鍵安裝；也可透過對話創造自定義技能 |
 | [工具](tools/index.mdx) | 內建檔案讀寫、終端、瀏覽器、定時任務、記憶檢索、聯網搜尋等 10+ 工具，支援 MCP 協議 |
-| [通道](channels/index.mdx) | 一個 Agent 同時接入 Web、微信、飛書、釘釘、企微、QQ、公眾號、Telegram、Slack 等多個渠道 |
+| [通道](channels/index.mdx) | 一個 Agent 同時接入桌面客戶端、微信、飛書、釘釘、企微、QQ、公眾號、Telegram、Slack 等多個渠道 |
 | 多模態 | 文字、圖片、語音、檔案全訊息型別支援，覆蓋識別、生成、收發 |
 | [模型](models/index.mdx) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流廠商，設定一行切換 |
-| [部署](guide/quick-start.mdx) | 一鍵指令碼安裝，Web 控制台統一管理；本地、Docker、伺服器多種部署方式 |
+| [部署](guide/quick-start.mdx) | Electron 桌面客戶端與專用本地後端 |
 
 <br/>
 
@@ -69,44 +69,18 @@ Stella 是一個完整的 **Agent Harness**：訊息從各類**通道**進入，
 
 ## 🚀 快速開始
 
-專案提供一鍵安裝指令碼，自動完成依賴安裝、設定和啟動：
-
-**Linux / macOS：**
+從 [GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) 下載並開啟 Electron 桌面客戶端。開發者可從原始碼執行：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+pip install -r requirements.txt
+cd desktop
+npm install
+npm run dev
 ```
 
-**Windows（PowerShell）：**
-
-```powershell
-irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
-```
-
-**Docker：**
-
-```bash
-curl -O https://raw.githubusercontent.com/starpickerr/Stella/main/docker/docker-compose.yml
-docker compose up -d
-```
-
-啟動成功後開啟 `http://localhost:9899` 進入 **Web 控制台**，在控制台內即可完成模型設定、渠道接入、技能安裝等全部操作。
-
-> 伺服器部署且需要從外部網路存取控制台時，請在 `config.json` 中將 `web_host` 設為 `0.0.0.0`（同時強烈建議設定 `web_password` 啟用身分驗證），然後訪問 `http://<server-ip>:9899`，並確保防火牆/安全組放行 `9899` 埠。
-
-> 📖 詳細安裝指南：[快速開始](guide/quick-start.mdx) · [原始碼安裝](guide/manual-install.mdx) · [升級](guide/upgrade.mdx)
-
-安裝後可使用 `stella` [CLI 命令](cli/index.mdx) 管理服務：
-
-```bash
-stella start | stop | restart        # 服務管理
-stella status | logs                  # 狀態和日誌
-stella update                         # 拉取最新程式碼並重啟
-stella skill install <名稱>           # 安裝技能
-stella install-browser                # 安裝瀏覽器工具
-```
-
-> 💻 桌面客戶端：前往 **[下載 Stella 桌面客戶端](https://github.com/starpickerr/Stella/releases)**（macOS / Windows），內建 Agent 執行環境，開箱即用。
+`npm run dev` 每次都會建置目前介面並啟動桌面專用後端。詳見[快速開始](guide/quick-start.mdx)與[原始碼建置](guide/manual-install.mdx)。
 
 <br/>
 
@@ -130,7 +104,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 | [LinkAI](models/linkai.mdx) | 一個 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [自定義](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
 
-> 推薦透過 Web 控制台線上設定，無需手動編輯檔案。手動設定請參考各廠商文件，詳見 [模型概覽](models/index.mdx)。
+> 推薦透過 桌面客户端線上設定，無需手動編輯檔案。手動設定請參考各廠商文件，詳見 [模型概覽](models/index.mdx)。
 
 <br/>
 
@@ -140,7 +114,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 | 通道 | 文字 | 圖片 | 檔案 | 語音 | 群聊 |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web 控制台](channels/web.mdx)（預設） | ✅ | ✅ | ✅ | ✅ | |
+| [桌面客户端](guide/desktop.mdx)（預設） | ✅ | ✅ | ✅ | ✅ | |
 | [微信](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
 | [飛書](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [釘釘](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -153,11 +127,11 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 | [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
 | [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> 飛書、企微智慧機器人支援在 Web 控制台內**掃碼一鍵接入**，無需公有 IP。詳見 [通道概覽](channels/index.mdx)。
+> 飛書、企微智慧機器人支援在桌面客户端內**掃碼一鍵接入**，無需公有 IP。詳見 [通道概覽](channels/index.mdx)。
 
-<img src="../images/placeholder-image.svg" alt="Stella Web 控制台" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella 桌面客户端" width="800"/>
 
-*Web 控制台是預設通道，也是統一的 Agent 設定和管理入口*
+*桌面客户端是預設通道，也是統一的 Agent 設定和管理入口*
 
 <br/>
 
@@ -165,7 +139,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 **長期記憶**採用三層架構：對話上下文（短期）→ 天級記憶（中期）→ MEMORY.md（長期）。每日自動執行**夢境蒸餾（Deep Dream）**，將分散記憶整合為精煉的長期記憶並生成敘事日記。詳見 [長期記憶](memory/index.mdx) · [夢境蒸餾](memory/deep-dream.mdx)。
 
-**個人知識庫** 與按時間記錄的記憶不同，以**主題為維度**組織結構化知識。Agent 在對話中自動整理有價值資訊，維護交叉引用與索引，Web 控制台可視覺化瀏覽知識圖譜。詳見 [個人知識庫](knowledge/index.mdx)。
+**個人知識庫** 與按時間記錄的記憶不同，以**主題為維度**組織結構化知識。Agent 在對話中自動整理有價值資訊，維護交叉引用與索引，桌面客户端可視覺化瀏覽知識圖譜。詳見 [個人知識庫](knowledge/index.mdx)。
 
 <table>
   <tr>

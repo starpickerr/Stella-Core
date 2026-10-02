@@ -6,10 +6,10 @@
   "author": "Stella",
   "license": "MIT",
   "scripts": {
-    "dev": "node scripts/sync-version.mjs && npm run build && electron .",
+    "dev": "node scripts/sync-version.mjs && npm run build && node scripts/launch-electron.mjs",
     "dev:hot": "node scripts/sync-version.mjs && concurrently \"npm run dev:renderer\" \"sleep 2 && npm run dev:main\"",
-    "dev:main": "tsc -p tsconfig.main.json && electron .",
-    "dev:renderer": "vite",
+    "dev:main": "tsc -p tsconfig.main.json && node scripts/launch-electron.mjs --hot-renderer",
+    "dev:renderer": "vite --port 5173 --strictPort",
     "build": "node scripts/sync-version.mjs && npm run typecheck && npm run build:renderer && npm run build:main",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "build:main": "tsc -p tsconfig.main.json",

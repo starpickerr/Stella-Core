@@ -106,6 +106,55 @@ def _is_password_enabled():
 # tell "still starting" apart from "wedged and never going to answer".
 SERVING = threading.Event()
 
+
+def desktop_only_wsgi(application, token: str):
+    """Allow only the owning Electron process to call the local API.
+
+    The token stays in Electron's main process. Its network hook attaches the
+    header to requests from the desktop window, including SSE and media GETs.
+    """
+    def guarded(environ, start_response):
+        origin = environ.get("HTTP_ORIGIN", "")
+        allowed_origin = origin in (
+            "null", "http://localhost:5173", "http://127.0.0.1:5173",
+        )
+        cors_headers = [
+            ("Access-Control-Allow-Origin", origin),
+            ("Access-Control-Allow-Credentials", "true"),
+            ("Vary", "Origin"),
+        ] if allowed_origin else []
+
+        def respond(status, headers, exc_info=None):
+            response_headers = headers + cors_headers
+            if exc_info is None:
+                return start_response(status, response_headers)
+            return start_response(status, response_headers, exc_info)
+
+        # Chromium sends this before file:// -> loopback requests with JSON or
+        # Authorization headers. A preflight grants no API access by itself.
+        if environ.get("REQUEST_METHOD") == "OPTIONS" and allowed_origin:
+            respond("204 No Content", [
+                ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+                ("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Stella-Desktop-Token"),
+                ("Content-Length", "0"),
+            ])
+            return [b""]
+        path = environ.get("PATH_INFO", "")
+        if path in ("/api/health", "/mcp/oauth/callback"):
+            return application(environ, respond)
+        supplied = environ.get("HTTP_X_STELLA_DESKTOP_TOKEN", "")
+        authorization = environ.get("HTTP_AUTHORIZATION", "")
+        if (hmac.compare_digest(supplied, token) or
+                hmac.compare_digest(authorization, f"Bearer {token}")):
+            return application(environ, respond)
+        body = b'{"status":"error","message":"Desktop client required"}'
+        respond("403 Forbidden", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Content-Length", str(len(body))),
+        ])
+        return [body]
+    return guarded
+
 _BIND_ERROR_CODE_RE = re.compile(r"\[(WinError|Errno) (\d+)\]")
 
 
@@ -138,18 +187,18 @@ def _log_bind_failure(host: str, port: int, err: OSError):
     winerror, err_no = _bind_error_codes(err)
     if winerror == 10013:
         logger.error(
-            f"[WebChannel] 端口 {port} 被系统保留，无法绑定（WinError 10013）。"
+            f"[DesktopChannel] 端口 {port} 被系统保留，无法绑定（WinError 10013）。"
             f"通常是 Hyper-V/WSL2/Docker 占用了该端口段，可执行 "
             f"`netsh interface ipv4 show excludedportrange protocol=tcp` 查看，"
-            f"或在 config.json 中把 web_port 改成区间外的端口"
+            f"或在 config.json 中把 desktop_backend_port 改成区间外的端口"
         )
     elif winerror == 10048 or err_no in (48, 98):  # WSAEADDRINUSE / macOS / Linux
         logger.error(
-            f"[WebChannel] 端口 {port} 已被占用，可执行 `stella restart` 清理残留进程，"
-            f"或在 config.json 中修改 web_port"
+            f"[DesktopChannel] 端口 {port} 已被占用，请重启桌面客户端；"
+            f"如仍冲突，可在 config.json 中修改 desktop_backend_port"
         )
     else:
-        logger.error(f"[WebChannel] 无法在 {host}:{port} 上启动服务: {err}")
+        logger.error(f"[DesktopChannel] 无法在 {host}:{port} 上启动服务: {err}")
 
 
 def _session_expire_seconds():
@@ -242,7 +291,7 @@ def _require_auth():
         if _get_query_token():
             offered.append("query")
         logger.warning(
-            "[WebChannel] 401 Unauthorized: %s %s (credentials offered: %s)",
+            "[DesktopChannel] 401 Unauthorized: %s %s (credentials offered: %s)",
             web.ctx.env.get("REQUEST_METHOD", "?"),
             web.ctx.env.get("PATH_INFO", "?"),
             ", ".join(offered) or "none",
@@ -311,7 +360,7 @@ def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
             if project_dir:
                 return project_dir
         except Exception as e:
-            logger.debug(f"[WebChannel] project_dir resolve failed: {e}")
+            logger.debug(f"[DesktopChannel] project_dir resolve failed: {e}")
     from common.state_dir import state_root_str
     return state_root_str()
 
@@ -342,7 +391,7 @@ def _get_preview_secret() -> bytes:
                 with open(path, "r", encoding="utf-8") as f:
                     secret = (f.read() or "").strip() or None
         except Exception as e:
-            logger.warning(f"[WebChannel] Could not read preview secret: {e}")
+            logger.warning(f"[DesktopChannel] Could not read preview secret: {e}")
         if not secret:
             secret = uuid.uuid4().hex + uuid.uuid4().hex
             try:
@@ -350,7 +399,7 @@ def _get_preview_secret() -> bytes:
                     f.write(secret)
                 os.chmod(path, 0o600)
             except Exception as e:
-                logger.warning(f"[WebChannel] Could not persist preview secret: {e}")
+                logger.warning(f"[DesktopChannel] Could not persist preview secret: {e}")
         _PREVIEW_SECRET = secret.encode()
         return _PREVIEW_SECRET
 
@@ -658,7 +707,7 @@ class WebMessage(ChatMessage):
 
 
 @singleton
-class WebChannel(ChatChannel):
+class DesktopChannel(ChatChannel):
     NOT_SUPPORT_REPLYTYPE = [ReplyType.VOICE]
     _instance = None
     SSE_REPLAY_MAX_EVENTS = 5000
@@ -669,7 +718,7 @@ class WebChannel(ChatChannel):
 
     # def __new__(cls):
     #     if cls._instance is None:
-    #         cls._instance = super(WebChannel, cls).__new__(cls)
+    #         cls._instance = super(DesktopChannel, cls).__new__(cls)
     #     return cls._instance
 
     def __init__(self):
@@ -698,7 +747,7 @@ class WebChannel(ChatChannel):
             state = self.sse_streams.get(request_id)
         if state is None:
             logger.warning(
-                f"[WebChannel] dropped SSE event for unknown request "
+                f"[DesktopChannel] dropped SSE event for unknown request "
                 f"{request_id}: type={event.get('type')}"
             )
             return False
@@ -707,7 +756,7 @@ class WebChannel(ChatChannel):
             if state.closed or state.stream_complete:
                 reason = "closed" if state.closed else "complete"
                 logger.warning(
-                    f"[WebChannel] dropped SSE event for {reason} stream "
+                    f"[DesktopChannel] dropped SSE event for {reason} stream "
                     f"{request_id}: type={event.get('type')}"
                 )
                 return False
@@ -769,7 +818,7 @@ class WebChannel(ChatChannel):
                 session_id
             )
         except Exception as e:
-            logger.debug(f"[WebChannel] _fetch_latest_pair_seqs failed: {e}")
+            logger.debug(f"[DesktopChannel] _fetch_latest_pair_seqs failed: {e}")
             return {"user_seq": None, "bot_seq": None}
 
     def send(self, reply: Reply, context: Context):
@@ -1035,7 +1084,7 @@ class WebChannel(ChatChannel):
                 # below hide it as "(模型未返回任何内容)".
                 err_msg = data.get("error") or "unknown error"
                 logger.warning(
-                    f"[WebChannel] agent_stream emitted error for "
+                    f"[DesktopChannel] agent_stream emitted error for "
                     f"request {request_id}: {err_msg}"
                 )
                 # Remember it so the agent_end handler below knows not to
@@ -1075,7 +1124,7 @@ class WebChannel(ChatChannel):
                         pass
                     else:
                         logger.warning(
-                            f"[WebChannel] agent_end with empty final_response for "
+                            f"[DesktopChannel] agent_end with empty final_response for "
                             f"request {request_id}, sending fallback done"
                         )
                         publish({
@@ -1184,7 +1233,7 @@ class WebChannel(ChatChannel):
             ).start()
             return True
         except Exception as e:
-            logger.debug(f"[WebChannel] auto-tts dispatch skipped: {e}")
+            logger.debug(f"[DesktopChannel] auto-tts dispatch skipped: {e}")
             return False
 
     def _synthesize_tts_async(
@@ -1199,13 +1248,13 @@ class WebChannel(ChatChannel):
             reply = Bridge().fetch_text_to_voice(text)
             if reply is None or reply.type != ReplyType.VOICE or not reply.content:
                 logger.warning(
-                    f"[WebChannel] TTS produced no audio for request {request_id}: "
+                    f"[DesktopChannel] TTS produced no audio for request {request_id}: "
                     f"reply={reply}"
                 )
                 return
             url = self._publish_tts_audio(reply.content)
             if not url:
-                logger.warning(f"[WebChannel] TTS publish failed for request {request_id}")
+                logger.warning(f"[DesktopChannel] TTS publish failed for request {request_id}")
                 return
             payload = {"audio": {"url": url, "kind": "tts"}}
             try:
@@ -1216,10 +1265,10 @@ class WebChannel(ChatChannel):
                     profile.workspace
                 ).attach_extras_to_last_assistant(session_id, payload)
             except Exception as e:
-                logger.debug(f"[WebChannel] tts persist skipped: {e}")
+                logger.debug(f"[DesktopChannel] tts persist skipped: {e}")
             if request_id not in self.sse_streams:
                 logger.warning(
-                    f"[WebChannel] TTS ready but SSE stream already closed "
+                    f"[DesktopChannel] TTS ready but SSE stream already closed "
                     f"for request {request_id} (url={url})"
                 )
                 return
@@ -1229,10 +1278,10 @@ class WebChannel(ChatChannel):
                 "request_id": request_id,
                 "timestamp": time.time(),
             })
-            logger.info(f"[WebChannel] TTS voice_attach pushed for request {request_id}: {url}")
+            logger.info(f"[DesktopChannel] TTS voice_attach pushed for request {request_id}: {url}")
         except Exception as e:
             # TTS failures are intentionally silent (no user-facing error).
-            logger.warning(f"[WebChannel] TTS synthesis failed: {e}")
+            logger.warning(f"[DesktopChannel] TTS synthesis failed: {e}")
         finally:
             self._publish_sse_event(request_id, {"type": "stream_end"})
 
@@ -1241,7 +1290,7 @@ class WebChannel(ChatChannel):
         """Move a TTS file into uploads/ and return its public URL."""
         try:
             if not src_path or not os.path.isfile(src_path):
-                logger.warning(f"[WebChannel] publish_tts_audio missing source: {src_path!r}")
+                logger.warning(f"[DesktopChannel] publish_tts_audio missing source: {src_path!r}")
                 return ""
             ext = os.path.splitext(src_path)[1].lower() or ".mp3"
             upload_dir = _get_upload_dir()
@@ -1250,10 +1299,10 @@ class WebChannel(ChatChannel):
             dst_name = f"voice_reply_{ts}_{random.randint(0, 9999)}{ext}"
             dst_path = os.path.join(upload_dir, dst_name)
             shutil.move(src_path, dst_path)
-            logger.debug(f"[WebChannel] publish_tts_audio moved {src_path} -> {dst_path}")
+            logger.debug(f"[DesktopChannel] publish_tts_audio moved {src_path} -> {dst_path}")
             return f"/uploads/{dst_name}"
         except Exception as e:
-            logger.warning(f"[WebChannel] publish_tts_audio failed: {e}")
+            logger.warning(f"[DesktopChannel] publish_tts_audio failed: {e}")
             return ""
 
     @staticmethod
@@ -1278,15 +1327,15 @@ class WebChannel(ChatChannel):
                 except OSError:
                     continue
             if removed:
-                logger.info(f"[WebChannel] cleaned up {removed} stale voice recording(s) from {upload_dir}")
+                logger.info(f"[DesktopChannel] cleaned up {removed} stale voice recording(s) from {upload_dir}")
         except Exception as e:
-            logger.warning(f"[WebChannel] voice cleanup failed: {e}")
+            logger.warning(f"[DesktopChannel] voice cleanup failed: {e}")
 
     def upload_file(self):
         """Handle file or directory upload via multipart/form-data."""
 
         def _reject(message):
-            logger.warning("[WebChannel] Upload rejected: %s", message)
+            logger.warning("[DesktopChannel] Upload rejected: %s", message)
             return json.dumps({"status": "error", "message": message})
 
         try:
@@ -1294,7 +1343,7 @@ class WebChannel(ChatChannel):
             # that never sent anything (file picker / drag-drop broken) apart
             # from a request the backend rejected.
             logger.info(
-                "[WebChannel] Upload request received: %s bytes, content-type=%s",
+                "[DesktopChannel] Upload request received: %s bytes, content-type=%s",
                 web.ctx.env.get("CONTENT_LENGTH") or "?",
                 web.ctx.env.get("CONTENT_TYPE") or "?",
             )
@@ -1357,7 +1406,7 @@ class WebChannel(ChatChannel):
                 if not _is_within_directory(upload_root_real, root_path):
                     raise ValueError("Invalid directory upload path")
 
-                logger.info(f"[WebChannel] Directory uploaded: {root_name} -> {root_path} ({saved_files} files)")
+                logger.info(f"[DesktopChannel] Directory uploaded: {root_name} -> {root_path} ({saved_files} files)")
                 return json.dumps({
                     "status": "success",
                     "file_path": root_path,
@@ -1393,7 +1442,7 @@ class WebChannel(ChatChannel):
             from urllib.parse import quote
             preview_url = f"/uploads/{quote(public_path, safe='/')}"
 
-            logger.info(f"[WebChannel] File uploaded: {original_name} -> {save_path} ({file_type})")
+            logger.info(f"[DesktopChannel] File uploaded: {original_name} -> {save_path} ({file_type})")
 
             return json.dumps({
                 "status": "success",
@@ -1404,7 +1453,7 @@ class WebChannel(ChatChannel):
             }, ensure_ascii=False)
 
         except Exception as e:
-            logger.error(f"[WebChannel] File upload error: {e}", exc_info=True)
+            logger.error(f"[DesktopChannel] File upload error: {e}", exc_info=True)
             return json.dumps({"status": "error", "message": str(e)})
 
     def post_message(self):
@@ -1447,7 +1496,7 @@ class WebChannel(ChatChannel):
                 lang = (json_data.get('lang') or 'zh').lower()
                 msg_text = _cancel_reply_text(cancelled, lang)
                 logger.info(
-                    f"[WebChannel] /cancel fast-path: session={session_id}, cancelled={cancelled}, lang={lang}"
+                    f"[DesktopChannel] /cancel fast-path: session={session_id}, cancelled={cancelled}, lang={lang}"
                 )
                 return json.dumps({
                     "status": "success",
@@ -1475,7 +1524,7 @@ class WebChannel(ChatChannel):
                 lang = (json_data.get("lang") or "zh").lower()
                 msg_text = _steer_reply_text(result.status, lang)
                 logger.info(
-                    f"[WebChannel] steer fast-path: session={session_id}, "
+                    f"[DesktopChannel] steer fast-path: session={session_id}, "
                     f"status={result.status.value}, lang={lang}"
                 )
                 return json.dumps({
@@ -1521,7 +1570,7 @@ class WebChannel(ChatChannel):
                         file_refs.append(f"[{i18n.t('文件', 'File')}: {fpath}]")
                 if file_refs:
                     prompt = prompt + "\n" + "\n".join(file_refs)
-                    logger.info(f"[WebChannel] Attached {len(file_refs)} file(s) to message")
+                    logger.info(f"[DesktopChannel] Attached {len(file_refs)} file(s) to message")
 
             request_id = self._generate_request_id()
             self.request_to_session[request_id] = session_id
@@ -1541,7 +1590,7 @@ class WebChannel(ChatChannel):
             if check_prefix(prompt, trigger_prefixs) is None:
                 if trigger_prefixs:
                     prompt = trigger_prefixs[0] + prompt
-                    logger.debug(f"[WebChannel] Added prefix to message: {prompt}")
+                    logger.debug(f"[DesktopChannel] Added prefix to message: {prompt}")
 
             msg = WebMessage(self._generate_msg_id(), prompt)
             msg.from_user_id = session_id
@@ -1549,7 +1598,7 @@ class WebChannel(ChatChannel):
             context = self._compose_context(ContextType.TEXT, prompt, msg=msg, isgroup=False)
 
             if context is None:
-                logger.warning(f"[WebChannel] Context is None for session {session_id}, message may be filtered")
+                logger.warning(f"[DesktopChannel] Context is None for session {session_id}, message may be filtered")
                 self._drop_sse_request(request_id)
                 return json.dumps({"status": "error", "message": "Message was filtered"})
 
@@ -1646,11 +1695,11 @@ class WebChannel(ChatChannel):
                     reclaimed = self._sweep_sse_streams()
                     if reclaimed:
                         logger.info(
-                            f"[WebChannel] SSE janitor reclaimed {reclaimed} "
+                            f"[DesktopChannel] SSE janitor reclaimed {reclaimed} "
                             f"idle stream(s)"
                         )
                 except Exception as e:
-                    logger.warning(f"[WebChannel] SSE janitor error: {e}")
+                    logger.warning(f"[DesktopChannel] SSE janitor error: {e}")
 
         t = threading.Thread(target=_sweep, name="sse-janitor", daemon=True)
         t.start()
@@ -1813,7 +1862,7 @@ class WebChannel(ChatChannel):
                 })
 
             logger.info(
-                f"[WebChannel] cancel request: request_id={request_id!r}, "
+                f"[DesktopChannel] cancel request: request_id={request_id!r}, "
                 f"session_id={session_id!r}, cancelled={cancelled}"
             )
             return json.dumps({
@@ -1822,7 +1871,7 @@ class WebChannel(ChatChannel):
             })
 
         except Exception as e:
-            logger.error(f"[WebChannel] cancel_request error: {e}")
+            logger.error(f"[DesktopChannel] cancel_request error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def poll_response(self):
@@ -1868,13 +1917,12 @@ class WebChannel(ChatChannel):
             return json.dumps({"status": "error", "message": str(e)})
 
     def startup(self):
-        configured_host = conf().get("web_host", "")
-        host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
-        # The desktop app passes its chosen port via STELLA_WEB_PORT so its backend
-        # never collides with a source-run web console (default 9899). This makes
-        # the port a single source of truth owned by the Electron shell.
-        port = int(os.environ.get("STELLA_WEB_PORT") or conf().get("web_port", 9899))
-        is_public_bind = host in ("0.0.0.0", "::")
+        if os.environ.get("STELLA_DESKTOP") != "1":
+            raise RuntimeError("Desktop API can only be started by the Electron client")
+        # The Electron shell owns the port. Ignore legacy web_host/web_port
+        # configuration so the desktop API can never be exposed on a LAN.
+        host = "127.0.0.1"
+        port = int(os.environ["STELLA_BACKEND_PORT"])
 
         self._cleanup_stale_voice_recordings()
 
@@ -1885,9 +1933,8 @@ class WebChannel(ChatChannel):
             # Print available channel types (ordered by language: prioritize
             # locally-popular channels for the current UI language)
             logger.info(
-                "[WebChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
+                "[DesktopChannel] Available channels (edit `channel_type` in config.json to switch, separate multiple with commas):")
             zh_channels = [
-                ("web", "Web"),
                 ("terminal", "Terminal"),
                 ("weixin", "WeChat"),
                 ("feishu", "Feishu"),
@@ -1902,7 +1949,6 @@ class WebChannel(ChatChannel):
                 ("discord", "Discord"),
             ]
             en_channels = [
-                ("web", "Web"),
                 ("terminal", "Terminal"),
                 ("telegram", "Telegram"),
                 ("slack", "Slack"),
@@ -1919,15 +1965,8 @@ class WebChannel(ChatChannel):
             channels = en_channels if i18n.get_language() == "en" else zh_channels
             name_width = max(len(name) for name, _ in channels)
             for idx, (name, label) in enumerate(channels, 1):
-                logger.info(f"[WebChannel]  {idx:>2}. {name:<{name_width}} - {label}")
-            logger.info("[WebChannel] ✅ Web console is running")
-            logger.info(f"[WebChannel] 🌐 Local access: http://localhost:{port}")
-            if is_public_bind:
-                logger.info(f"[WebChannel] 🌍 Server access: http://YOUR_IP:{port} (replace YOUR_IP with your server IP)")
-                if not _is_password_enabled():
-                    logger.info("[WebChannel] ⚠️  Listening on 0.0.0.0 without web_password set; set an access password in config.json for public deployment")
-            else:
-                logger.info(f"[WebChannel] 🔒 Listening on {host} only (local access). For public access, set web_host to 0.0.0.0 and configure web_password")
+                logger.info(f"[DesktopChannel]  {idx:>2}. {name:<{name_width}} - {label}")
+            logger.info(f"[DesktopChannel] Local desktop API ready on {host}:{port}")
 
         urls = (
             '/', 'RootHandler',
@@ -1972,10 +2011,8 @@ class WebChannel(ChatChannel):
             '/api/scheduler', 'SchedulerHandler',
             '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
             '/api/runs/pending', 'PendingRunsHandler',
-            '/api/health/data', 'HealthDataHandler',
-            '/api/health/import', 'HealthImportHandler',
-            '/api/health/delete', 'HealthDeleteHandler',
             '/api/security/activity', 'SecurityActivityHandler',
+            '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -2041,7 +2078,10 @@ class WebChannel(ChatChannel):
         logging.getLogger("web.httpserver").setLevel(logging.ERROR)
 
         # Build WSGI app with middleware (same as runsimple but without print)
-        func = web.httpserver.StaticMiddleware(app.wsgifunc())
+        token = os.environ.get("STELLA_DESKTOP_INTERNAL_TOKEN", "")
+        if not token:
+            raise RuntimeError("Missing Electron desktop API token")
+        func = desktop_only_wsgi(app.wsgifunc(), token)
         func = web.httpserver.LogMiddleware(func)
         server = web.httpserver.WSGIServer((host, port), func)
         server.daemon_threads = True
@@ -2083,9 +2123,9 @@ class WebChannel(ChatChannel):
         if self._http_server:
             try:
                 self._http_server.stop()
-                logger.info("[WebChannel] HTTP server stopped")
+                logger.info("[DesktopChannel] HTTP server stopped")
             except Exception as e:
-                logger.warning(f"[WebChannel] Error stopping HTTP server: {e}")
+                logger.warning(f"[DesktopChannel] Error stopping HTTP server: {e}")
             self._http_server = None
 
 
@@ -2129,7 +2169,7 @@ class McpOAuthCallbackHandler:
             )
 
         if params.error:
-            logger.warning(f"[MCP-OAuth] callback error: {params.error} {params.error_description}")
+            logger.warning("[MCP-OAuth] callback returned an error")
             return _page("授权失败", f"{params.error}: {params.error_description or ''}")
 
         if not params.code or not params.state:
@@ -2185,7 +2225,7 @@ class AuthLoginHandler:
         password = str(data.get("password", "") or "")
         expected = _get_web_password()
         if not hmac.compare_digest(password, expected):
-            logger.warning("[WebChannel] Invalid login attempt")
+            logger.warning("[DesktopChannel] Invalid login attempt")
             return json.dumps({"status": "error", "message": "Wrong password"})
         token = _create_auth_token()
         web.setcookie("cow_auth_token", token, expires=_session_expire_seconds(),
@@ -2205,14 +2245,14 @@ class AuthLogoutHandler:
 class MessageHandler:
     def POST(self):
         _require_auth()
-        return WebChannel().post_message()
+        return DesktopChannel().post_message()
 
 
 class UploadHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        return WebChannel().upload_file()
+        return DesktopChannel().upload_file()
 
 
 class VoiceAsrHandler:
@@ -2283,8 +2323,8 @@ class VoiceTtsHandler:
             agent_id = data.get("agent_id")
             if not text:
                 return json.dumps({"status": "error", "message": "empty text"})
-            # `@singleton` makes WebChannel a factory function — go via instance.
-            channel = WebChannel()
+            # `@singleton` makes DesktopChannel a factory function — go via instance.
+            channel = DesktopChannel()
             if not channel._tts_provider_ready():
                 return json.dumps({"status": "error", "message": "tts not configured"})
 
@@ -2333,7 +2373,7 @@ class UploadsHandler:
         except web.HTTPError:
             raise
         except Exception as e:
-            logger.error(f"[WebChannel] Error serving upload: {e}")
+            logger.error(f"[DesktopChannel] Error serving upload: {e}")
             raise web.notfound()
 
 
@@ -2365,7 +2405,7 @@ class FileServeHandler:
         except web.HTTPError:
             raise
         except Exception as e:
-            logger.error(f"[WebChannel] Error serving file: {e}")
+            logger.error(f"[DesktopChannel] Error serving file: {e}")
             raise web.notfound()
 
 
@@ -2456,20 +2496,20 @@ class PreviewHandler:
         except web.HTTPError:
             raise
         except Exception as e:
-            logger.error(f"[WebChannel] Error serving preview: {e}")
+            logger.error(f"[DesktopChannel] Error serving preview: {e}")
             raise web.notfound()
 
 
 class PollHandler:
     def POST(self):
         _require_auth()
-        return WebChannel().poll_response()
+        return DesktopChannel().poll_response()
 
 
 class CancelHandler:
     def POST(self):
         _require_auth()
-        return WebChannel().cancel_request()
+        return DesktopChannel().cancel_request()
 
 
 class StreamHandler:
@@ -2491,9 +2531,8 @@ class StreamHandler:
         web.header('Content-Type', 'text/event-stream; charset=utf-8')
         web.header('Cache-Control', 'no-cache')
         web.header('X-Accel-Buffering', 'no')
-        web.header('Access-Control-Allow-Origin', '*')
 
-        return WebChannel().stream_response(request_id, after_seq)
+        return DesktopChannel().stream_response(request_id, after_seq)
 
 
 class ConfigHandler:
@@ -2826,7 +2865,6 @@ class ConfigHandler:
             config_path = os.path.join(get_data_root(), "config.json")
             file_cfg = _read_config_file_for_write()
             # Capture old password before updating
-            old_password = file_cfg.get("web_password", "") if "web_password" in applied else ""
             file_cfg.update(applied)
             # Merged rather than assigned: the UI sends the one switch it owns,
             # and the rest of the section is the user's to keep.
@@ -2844,36 +2882,16 @@ class ConfigHandler:
                     local_config, overwrite=os.environ.get("STELLA_DESKTOP") == "1"
                 )
 
-            logger.info(f"[WebChannel] Config updated: {list(applied.keys())}")
+            logger.info(f"[DesktopChannel] Config updated: {list(applied.keys())}")
 
             # Apply a language change immediately so backend logs, agent
             # replies and CLI output switch without a restart.
             if "stella_lang" in applied:
                 try:
                     i18n.resolve_language(applied["stella_lang"])
-                    logger.info(f"[WebChannel] Language switched to: {i18n.get_language()}")
+                    logger.info(f"[DesktopChannel] Language switched to: {i18n.get_language()}")
                 except Exception as lang_err:
-                    logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
-
-            # Check if password was cleared: if there was a password before clearing,
-            # the service is likely bound to 0.0.0.0 (public), so warn the user.
-            password_warning = None
-            if "web_password" in applied:
-                new_password = applied["web_password"]
-                configured_host = file_cfg.get("web_host", "")
-                
-                # If password was cleared and there was a password before
-                if not new_password and old_password:
-                    # If web_host is not explicitly set, the service auto-binds based on password
-                    # With password → 0.0.0.0 (public), without password → 127.0.0.1 (local)
-                    # So clearing password when it was previously set means going from public to local
-                    if not configured_host or configured_host == "0.0.0.0":
-                        password_warning = "password_cleared_with_public_host"
-                        logger.warning(
-                            "[WebChannel] Password cleared while service is likely bound to 0.0.0.0. "
-                            "Consider restarting the service to rebind to 127.0.0.1 "
-                            "or explicitly set web_host in config to prevent unauthorized access."
-                        )
+                    logger.warning(f"[DesktopChannel] Failed to apply language: {lang_err}")
 
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)
@@ -2883,11 +2901,11 @@ class ConfigHandler:
                 try:
                     from bridge.bridge import Bridge
                     Bridge().reset_bot()
-                    logger.info("[WebChannel] Bridge bot routing reset due to config change")
+                    logger.info("[DesktopChannel] Bridge bot routing reset due to config change")
                 except Exception as reset_err:
-                    logger.warning(f"[WebChannel] Failed to reset bridge: {reset_err}")
+                    logger.warning(f"[DesktopChannel] Failed to reset bridge: {reset_err}")
 
-            return json.dumps({"status": "success", "applied": applied, "warning": password_warning}, ensure_ascii=False)
+            return json.dumps({"status": "success", "applied": applied}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -4997,7 +5015,7 @@ class ChannelsHandler:
                 channels.append(ch_info)
             return json.dumps({"status": "success", "channels": channels}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Channels API error: {e}")
+            logger.error(f"[DesktopChannel] Channels API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -5023,7 +5041,7 @@ class ChannelsHandler:
             else:
                 return json.dumps({"status": "error", "message": f"unknown action: {action}"})
         except Exception as e:
-            logger.error(f"[WebChannel] Channels POST error: {e}")
+            logger.error(f"[DesktopChannel] Channels POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def _handle_save(self, channel_name: str, updates: dict):
@@ -5057,7 +5075,7 @@ class ChannelsHandler:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
-        logger.info(f"[WebChannel] Channel '{channel_name}' config updated: {list(applied.keys())}")
+        logger.info(f"[DesktopChannel] Channel '{channel_name}' config updated: {list(applied.keys())}")
 
         should_restart = False
         active_channels = self._active_channel_set()
@@ -5073,9 +5091,9 @@ class ChannelsHandler:
                         args=(channel_name,),
                         daemon=True,
                     ).start()
-                    logger.info(f"[WebChannel] Channel '{channel_name}' restart triggered")
+                    logger.info(f"[DesktopChannel] Channel '{channel_name}' restart triggered")
             except Exception as e:
-                logger.warning(f"[WebChannel] Failed to restart channel '{channel_name}': {e}")
+                logger.warning(f"[DesktopChannel] Failed to restart channel '{channel_name}': {e}")
 
         return json.dumps({
             "status": "success",
@@ -5124,7 +5142,7 @@ class ChannelsHandler:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
-        logger.info(f"[WebChannel] Channel '{channel_name}' connecting, channel_type={new_channel_type}")
+        logger.info(f"[DesktopChannel] Channel '{channel_name}' connecting, channel_type={new_channel_type}")
 
         # Feishu pulls its SDK bundle on first use; tell the UI so it can warn
         # about the one-time wait rather than reporting an instant success.
@@ -5134,7 +5152,7 @@ class ChannelsHandler:
                 from channel.feishu import lark_install
                 downloading = lark_install.needs_download()
             except Exception as e:
-                logger.warning(f"[WebChannel] Could not check Feishu SDK state: {e}")
+                logger.warning(f"[DesktopChannel] Could not check Feishu SDK state: {e}")
 
         def _do_start():
             try:
@@ -5143,24 +5161,24 @@ class ChannelsHandler:
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
                 mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
                 if mgr is None:
-                    logger.warning(f"[WebChannel] ChannelManager not available, cannot start '{channel_name}'")
+                    logger.warning(f"[DesktopChannel] ChannelManager not available, cannot start '{channel_name}'")
                     return
                 # Stop existing instance first if still running (e.g. re-connect without disconnect)
                 existing_ch = mgr.get_channel(channel_name)
                 if existing_ch is not None:
-                    logger.info(f"[WebChannel] Stopping existing '{channel_name}' before reconnect...")
+                    logger.info(f"[DesktopChannel] Stopping existing '{channel_name}' before reconnect...")
                     mgr.stop(channel_name)
                 # Always wait for the remote service to release the old connection before
                 # establishing a new one (DingTalk drops callbacks on duplicate connections)
-                logger.info(f"[WebChannel] Waiting for '{channel_name}' old connection to close...")
+                logger.info(f"[DesktopChannel] Waiting for '{channel_name}' old connection to close...")
                 time.sleep(5)
                 if clear_fn:
                     clear_fn(channel_name)
-                logger.info(f"[WebChannel] Starting channel '{channel_name}'...")
+                logger.info(f"[DesktopChannel] Starting channel '{channel_name}'...")
                 mgr.start([channel_name], first_start=False)
-                logger.info(f"[WebChannel] Channel '{channel_name}' start completed")
+                logger.info(f"[DesktopChannel] Channel '{channel_name}' start completed")
             except Exception as e:
-                logger.error(f"[WebChannel] Failed to start channel '{channel_name}': {e}",
+                logger.error(f"[DesktopChannel] Failed to start channel '{channel_name}': {e}",
                              exc_info=True)
 
         threading.Thread(target=_do_start, daemon=True).start()
@@ -5194,13 +5212,13 @@ class ChannelsHandler:
                 if mgr:
                     mgr.stop(channel_name)
                 else:
-                    logger.warning(f"[WebChannel] ChannelManager not found, cannot stop '{channel_name}'")
+                    logger.warning(f"[DesktopChannel] ChannelManager not found, cannot stop '{channel_name}'")
                 if clear_fn:
                     clear_fn(channel_name)
-                logger.info(f"[WebChannel] Channel '{channel_name}' disconnected, "
+                logger.info(f"[DesktopChannel] Channel '{channel_name}' disconnected, "
                             f"channel_type={new_channel_type}")
             except Exception as e:
-                logger.warning(f"[WebChannel] Failed to stop channel '{channel_name}': {e}",
+                logger.warning(f"[DesktopChannel] Failed to stop channel '{channel_name}': {e}",
                                exc_info=True)
 
         threading.Thread(target=_do_stop, daemon=True).start()
@@ -5280,7 +5298,7 @@ class WeixinQrHandler:
             }
             return json.dumps({"status": "success", "qrcode_url": qrcode_url, "qr_image": qr_image})
         except Exception as e:
-            logger.error(f"[WebChannel] WeixinQr GET error: {e}")
+            logger.error(f"[DesktopChannel] WeixinQr GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -5297,7 +5315,7 @@ class WeixinQrHandler:
             else:
                 return json.dumps({"status": "error", "message": f"unknown action: {action}"})
         except Exception as e:
-            logger.error(f"[WebChannel] WeixinQr POST error: {e}")
+            logger.error(f"[DesktopChannel] WeixinQr POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def _poll_status(self):
@@ -5337,7 +5355,7 @@ class WeixinQrHandler:
             conf()["weixin_base_url"] = result_base_url
 
             WeixinQrHandler._qr_state = {}
-            logger.info(f"[WebChannel] WeChat QR login confirmed: bot_id={bot_id}")
+            logger.info(f"[DesktopChannel] WeChat QR login confirmed: bot_id={bot_id}")
 
             return json.dumps({
                 "status": "success",
@@ -5511,7 +5529,7 @@ class FeishuRegisterHandler:
                     "expire_in": self._state.get("expire_in", 600),
                 })
         except Exception as e:
-            logger.error(f"[WebChannel] FeishuRegister GET error: {e}")
+            logger.error(f"[DesktopChannel] FeishuRegister GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -5555,7 +5573,7 @@ class FeishuRegisterHandler:
                     payload["qr_image"] = self._state.get("qr_image", "")
                 return json.dumps(payload)
         except Exception as e:
-            logger.error(f"[WebChannel] FeishuRegister POST error: {e}")
+            logger.error(f"[DesktopChannel] FeishuRegister POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5590,7 +5608,7 @@ class ToolsHandler:
                     tools.append({"name": name, "description": ""})
             return json.dumps({"status": "success", "tools": tools}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Tools API error: {e}")
+            logger.error(f"[DesktopChannel] Tools API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5614,7 +5632,7 @@ class SkillsHandler:
                                 skill[k] = i18n.to_traditional(v)
             return json.dumps({"status": "success", "skills": skills}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Skills API error: {e}")
+            logger.error(f"[DesktopChannel] Skills API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -5639,7 +5657,7 @@ class SkillsHandler:
                 return json.dumps({"status": "error", "message": f"unknown action: {action}"})
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Skills POST error: {e}")
+            logger.error(f"[DesktopChannel] Skills POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5658,7 +5676,7 @@ class MemoryHandler:
             )
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Memory API error: {e}")
+            logger.error(f"[DesktopChannel] Memory API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5680,7 +5698,7 @@ class MemoryContentHandler:
         except FileNotFoundError:
             return json.dumps({"status": "error", "message": "file not found"})
         except Exception as e:
-            logger.error(f"[WebChannel] Memory content API error: {e}")
+            logger.error(f"[DesktopChannel] Memory content API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5709,6 +5727,23 @@ class SecurityActivityHandler:
                           ensure_ascii=False)
 
 
+class SecurityConfirmationsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from agent.permission.gateway import SecurityGateway
+        return json.dumps({"status": "success", "pending": SecurityGateway.pending()})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.gateway import SecurityGateway
+        body = json.loads(web.data() or b"{}")
+        approved = SecurityGateway.approve(str(body.get("id") or ""))
+        return json.dumps({"status": "success" if approved else "error"})
+
+
 class SchedulerHandler:
     def GET(self):
         _require_auth()
@@ -5717,7 +5752,7 @@ class SchedulerHandler:
             tasks = _scheduler_store().list_tasks()
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler API error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -5813,7 +5848,7 @@ class SchedulerHandler:
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler create error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5841,7 +5876,7 @@ class SchedulerRunHandler:
                 "message": f"Task '{task_id}' queued for immediate execution",
             }, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler manual run error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler manual run error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5860,7 +5895,7 @@ class SchedulerToggleHandler:
             task = store.get_task(task_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler toggle error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler toggle error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5950,7 +5985,7 @@ class SchedulerUpdateHandler:
             task = store.get_task(task_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler update error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5968,7 +6003,7 @@ class SchedulerDeleteHandler:
             store.delete_task(task_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Scheduler delete error: {e}")
+            logger.error(f"[DesktopChannel] Scheduler delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5979,10 +6014,10 @@ def _calendar_response(operation):
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
     except (ValueError, KeyError) as exc:
-        logger.warning(f"[WebChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
+        logger.warning(f"[DesktopChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
-        logger.exception("[WebChannel] Calendar request failed")
+        logger.exception("[DesktopChannel] Calendar request failed")
         return json.dumps({"status": "error", "message": "Calendar request failed"})
 
 
@@ -6086,10 +6121,10 @@ def _todo_response(operation):
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
     except (ValueError, KeyError) as exc:
-        logger.warning(f"[WebChannel] Todo request rejected ({type(exc).__name__}): {exc}")
+        logger.warning(f"[DesktopChannel] Todo request rejected ({type(exc).__name__}): {exc}")
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
-        logger.exception("[WebChannel] Todo request failed")
+        logger.exception("[DesktopChannel] Todo request failed")
         return json.dumps({"status": "error", "message": "Todo request failed"})
 
 
@@ -6224,7 +6259,7 @@ def _briefing_response(operation):
     except (ValueError, KeyError) as exc:
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
-        logger.exception("[WebChannel] Briefing request failed")
+        logger.exception("[DesktopChannel] Briefing request failed")
         return json.dumps({"status": "error", "message": "Briefing request failed"})
 
 
@@ -6386,7 +6421,7 @@ class BillsLedgerHandler:
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills ledger GET error: {e}")
+            logger.error(f"[DesktopChannel] Bills ledger GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self):
@@ -6399,7 +6434,7 @@ class BillsLedgerHandler:
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills ledger POST error: {e}")
+            logger.error(f"[DesktopChannel] Bills ledger POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6430,7 +6465,7 @@ class BillsLedgerExportHandler:
             web.header('Content-Type', 'application/json; charset=utf-8')
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills ledger export error: {e}")
+            logger.error(f"[DesktopChannel] Bills ledger export error: {e}")
             web.header('Content-Type', 'application/json; charset=utf-8')
             return json.dumps({"status": "error", "message": str(e)})
 
@@ -6451,7 +6486,7 @@ class BillsLedgerUpdateHandler:
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills ledger update error: {e}")
+            logger.error(f"[DesktopChannel] Bills ledger update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6469,7 +6504,7 @@ class BillsLedgerDeleteHandler:
         except KeyError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills ledger delete error: {e}")
+            logger.error(f"[DesktopChannel] Bills ledger delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6486,7 +6521,7 @@ class BillsStatementsHandler:
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Bills statements GET error: {e}")
+            logger.error(f"[DesktopChannel] Bills statements GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6502,7 +6537,7 @@ class BillsStatementDetailHandler:
                 return json.dumps({"status": "error", "message": "statement not found"})
             return json.dumps({"status": "success", "statement": statement}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Bills statement GET error: {e}")
+            logger.error(f"[DesktopChannel] Bills statement GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6568,7 +6603,7 @@ class SessionsHandler:
             _annotate_sessions_with_projects(store, result, agent_id)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Sessions API error: {e}")
+            logger.error(f"[DesktopChannel] Sessions API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6576,7 +6611,7 @@ class SessionDetailHandler:
     def DELETE(self, session_id: str):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        logger.info(f"[WebChannel] DELETE session request: {session_id}")
+        logger.info(f"[DesktopChannel] DELETE session request: {session_id}")
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
@@ -6590,11 +6625,11 @@ class SessionDetailHandler:
                 cancelled = get_cancel_registry().cancel_session(scoped)
                 if cancelled:
                     logger.info(
-                        f"[WebChannel] Cancelled {cancelled} in-flight request(s) "
+                        f"[DesktopChannel] Cancelled {cancelled} in-flight request(s) "
                         f"for deleted session {session_id}"
                     )
             except Exception as e:
-                logger.warning(f"[WebChannel] Cancel on delete failed: {e}")
+                logger.warning(f"[DesktopChannel] Cancel on delete failed: {e}")
 
             from agent.memory import get_conversation_store
             store = get_conversation_store()
@@ -6608,7 +6643,7 @@ class SessionDetailHandler:
                 project_store.forget_session(session_id)
                 session_prefs.forget_session(session_id)
             except Exception as e:
-                logger.debug(f"[WebChannel] Session side-store cleanup skipped: {e}")
+                logger.debug(f"[DesktopChannel] Session side-store cleanup skipped: {e}")
 
             # Also remove the Agent instance from AgentBridge if exists
             try:
@@ -6618,19 +6653,19 @@ class SessionDetailHandler:
             except Exception:
                 pass
 
-            channel = WebChannel()
+            channel = DesktopChannel()
             # Drop messages still waiting in the channel queue: processing them
             # after the delete would recreate the session from scratch.
             try:
                 channel.cancel_session(session_id)
             except Exception as e:
-                logger.warning(f"[WebChannel] Failed to drain queue on delete: {e}")
+                logger.warning(f"[DesktopChannel] Failed to drain queue on delete: {e}")
             channel.session_queues.pop(session_id, None)
 
-            logger.info(f"[WebChannel] Session deleted: {session_id}")
+            logger.info(f"[DesktopChannel] Session deleted: {session_id}")
             return json.dumps({"status": "success"})
         except Exception as e:
-            logger.error(f"[WebChannel] Session delete error: {e}")
+            logger.error(f"[DesktopChannel] Session delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def PUT(self, session_id: str):
@@ -6660,7 +6695,7 @@ class SessionDetailHandler:
                 return json.dumps({"status": "error", "message": "session not found"})
             return json.dumps({"status": "success"})
         except Exception as e:
-            logger.error(f"[WebChannel] Session update error: {e}")
+            logger.error(f"[DesktopChannel] Session update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6733,7 +6768,7 @@ def _session_model_catalog() -> List[dict]:
                 "models": models,
             })
     except Exception as e:
-        logger.debug(f"[WebChannel] custom providers unavailable: {e}")
+        logger.debug(f"[DesktopChannel] custom providers unavailable: {e}")
 
     return catalog
 
@@ -6795,7 +6830,7 @@ class SessionSettingsHandler:
             state = _session_settings_state(session_id, params.agent or None)
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Session settings read error: {e}")
+            logger.error(f"[DesktopChannel] Session settings read error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def POST(self, session_id: str):
@@ -6846,15 +6881,15 @@ class SessionSettingsHandler:
                 if agent is not None:
                     ab.apply_session_prefs(agent, session_id, agent_id)
             except Exception as e:
-                logger.debug(f"[WebChannel] session prefs apply-to-agent skipped: {e}")
+                logger.debug(f"[DesktopChannel] session prefs apply-to-agent skipped: {e}")
 
             logger.info(
-                f"[WebChannel] Session settings updated: sid={session_id}, {updates}"
+                f"[DesktopChannel] Session settings updated: sid={session_id}, {updates}"
             )
             state = _session_settings_state(session_id, agent_id)
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Session settings update error: {e}")
+            logger.error(f"[DesktopChannel] Session settings update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6877,11 +6912,11 @@ class SessionTitleHandler:
             from agent.memory import get_conversation_store
             store = get_conversation_store()
             updated = store.rename_session(session_id, title)
-            logger.info(f"[WebChannel] Session title set: sid={session_id}, title='{title}', db_updated={updated}")
+            logger.info(f"[DesktopChannel] Session title set: sid={session_id}, title='{title}', db_updated={updated}")
 
             return json.dumps({"status": "success", "title": title}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Title generation error: {e}")
+            logger.error(f"[DesktopChannel] Title generation error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6907,7 +6942,7 @@ class PromptOptimizeHandler:
                 ensure_ascii=False,
             )
         except Exception as e:
-            logger.error(f"[WebChannel] Prompt optimization error: {e}")
+            logger.error(f"[DesktopChannel] Prompt optimization error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6934,7 +6969,7 @@ class SessionClearContextHandler:
 
             return json.dumps({"status": "success", "context_start_seq": new_seq})
         except Exception as e:
-            logger.error(f"[WebChannel] Clear context error: {e}")
+            logger.error(f"[DesktopChannel] Clear context error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6942,7 +6977,6 @@ class HistoryHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Access-Control-Allow-Origin', '*')
         try:
             params = web.input(session_id='', page='1', page_size='20')
             session_id = params.session_id.strip()
@@ -6967,7 +7001,7 @@ class HistoryHandler:
                 if row['user_seq'] < 0 or row['status'] in ('queued', 'running', 'outcome_unknown')]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] History API error: {e}")
+            logger.error(f"[DesktopChannel] History API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -6975,7 +7009,6 @@ class MessageDeleteHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Access-Control-Allow-Origin', '*')
         try:
             data = json.loads(web.data())
             session_id = data.get('session_id', '').strip()
@@ -6997,11 +7030,11 @@ class MessageDeleteHandler:
                 from bridge.bridge import Bridge
                 Bridge().get_agent_bridge().sync_session_messages_from_store(session_id)
             except Exception as sync_err:
-                logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")
+                logger.warning(f"[DesktopChannel] Failed to sync agent memory: {sync_err}")
 
             return json.dumps({"status": "success", "deleted": deleted}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Message delete error: {e}")
+            logger.error(f"[DesktopChannel] Message delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7069,7 +7102,7 @@ class LogsDownloadHandler:
             with open(log_path, 'rb') as f:
                 data = f.read()
         except Exception as e:
-            logger.error(f"[WebChannel] Log download error: {e}")
+            logger.error(f"[DesktopChannel] Log download error: {e}")
             raise web.internalerror()
 
         # Timestamped name so multiple downloads don't overwrite each other.
@@ -7130,7 +7163,7 @@ class WorkspaceTreeHandler:
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Workspace tree error: {e}")
+            logger.error(f"[DesktopChannel] Workspace tree error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7149,7 +7182,7 @@ class WorkspaceSearchHandler:
             result["results"] = [_decorate_entry(svc, e) for e in result["results"]]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Workspace search error: {e}")
+            logger.error(f"[DesktopChannel] Workspace search error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7209,7 +7242,7 @@ class WorkspaceResolveHandler:
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Workspace resolve error: {e}")
+            logger.error(f"[DesktopChannel] Workspace resolve error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7222,7 +7255,7 @@ class WorkspaceMetaHandler:
             svc = _workspace_service(params.session or None, params.agent or None)
             return json.dumps({"status": "success", **svc.meta()}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Workspace meta error: {e}")
+            logger.error(f"[DesktopChannel] Workspace meta error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7234,7 +7267,7 @@ def _project_state(session_id: str, agent_id: str = None) -> dict:
     current = project_store.get_project_dir(session_id, agent_id) if session_id else None
     return {
         "current": (
-            {"path": current, "name": os.path.basename(current) or current}
+            {"path": current, "name": project_store.display_name_for(current)}
             if current else None
         ),
         "default_workspace": state_root_str(),
@@ -7254,7 +7287,7 @@ class ProjectsHandler:
             state = _project_state(params.session or None, params.agent or None)
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Projects list error: {e}")
+            logger.error(f"[DesktopChannel] Projects list error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7284,13 +7317,13 @@ class ProjectSelectHandler:
                 if agent is not None and getattr(agent, "apply_project_dir", None):
                     agent.apply_project_dir(applied)
             except Exception as e:
-                logger.debug(f"[WebChannel] project apply-to-agent skipped: {e}")
+                logger.debug(f"[DesktopChannel] project apply-to-agent skipped: {e}")
             state = _project_state(session_id, agent_id)
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Project select error: {e}")
+            logger.error(f"[DesktopChannel] Project select error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7318,13 +7351,13 @@ class ProjectCreateHandler:
                     if agent is not None and getattr(agent, "apply_project_dir", None):
                         agent.apply_project_dir(path)
                 except Exception as e:
-                    logger.debug(f"[WebChannel] project apply-to-agent skipped: {e}")
+                    logger.debug(f"[DesktopChannel] project apply-to-agent skipped: {e}")
             state = _project_state(session_id or None, agent_id)
             return json.dumps({"status": "success", "path": path, **state}, ensure_ascii=False)
         except (ValueError, FileExistsError) as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Project create error: {e}")
+            logger.error(f"[DesktopChannel] Project create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7343,7 +7376,7 @@ class ProjectOrderHandler:
             saved = project_store.set_order(order)
             return json.dumps({"status": "success", "order": saved}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Project order error: {e}")
+            logger.error(f"[DesktopChannel] Project order error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7367,7 +7400,7 @@ class ProjectManageHandler:
             name = project_store.rename_project(path, body.get("name") or "")
             return json.dumps({"status": "success", "name": name}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Project rename error: {e}")
+            logger.error(f"[DesktopChannel] Project rename error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
     def DELETE(self):
@@ -7380,10 +7413,23 @@ class ProjectManageHandler:
             agent_id = body.get("agent") or body.get("agent_id")
             if not path:
                 return json.dumps({"status": "error", "message": "path is required"})
+            affected_sessions = [
+                sid for sid, bound in project_store.get_project_map(agent_id).items()
+                if bound == os.path.realpath(os.path.expanduser(path))
+            ]
             unbound = project_store.delete_project(path, agent_id)
+            try:
+                from bridge.bridge import Bridge
+                agent_bridge = Bridge().get_agent_bridge()
+                for sid in affected_sessions:
+                    cached = agent_bridge.get_cached_agent(sid, agent_id)
+                    if cached is not None:
+                        cached.apply_project_dir(None)
+            except Exception as e:
+                logger.warning(f"[DesktopChannel] Could not refresh project sessions: {e}")
             return json.dumps({"status": "success", "unbound": unbound}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Project delete error: {e}")
+            logger.error(f"[DesktopChannel] Project delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7466,7 +7512,7 @@ class ProjectBrowseHandler:
                 "dirs": dirs,
             }, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Project browse error: {e}")
+            logger.error(f"[DesktopChannel] Project browse error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7480,7 +7526,7 @@ class KnowledgeListHandler:
             result = svc.list_tree()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Knowledge list error: {e}")
+            logger.error(f"[DesktopChannel] Knowledge list error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7503,7 +7549,7 @@ class KnowledgeReadHandler:
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
         except Exception as e:
-            logger.error(f"[WebChannel] Knowledge read error: {e}")
+            logger.error(f"[DesktopChannel] Knowledge read error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -7516,7 +7562,7 @@ class KnowledgeGraphHandler:
             svc = KnowledgeService(_get_workspace_root())
             return json.dumps(svc.build_graph(), ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Knowledge graph error: {e}")
+            logger.error(f"[DesktopChannel] Knowledge graph error: {e}")
             return json.dumps({"nodes": [], "links": []})
 
 
@@ -7535,7 +7581,7 @@ class KnowledgeActionHandler:
                 **result,
             }, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Knowledge action error: {e}")
+            logger.error(f"[DesktopChannel] Knowledge action error: {e}")
             return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
 
 
@@ -7600,7 +7646,7 @@ class KnowledgeImportHandler:
                 **result,
             }, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"[WebChannel] Knowledge import error: {e}", exc_info=True)
+            logger.error(f"[DesktopChannel] Knowledge import error: {e}", exc_info=True)
             return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
 
 
@@ -7627,39 +7673,3 @@ class PendingRunsHandler:
         rows = store.list_run_admissions(web.input(session_id=None).session_id)
         web.header('Content-Type', 'application/json; charset=utf-8')
         return json.dumps({"status": "success", "admissions": [r for r in rows if r['user_seq'] < 0 or r['status'] in ('queued', 'running', 'outcome_unknown')]}, ensure_ascii=False)
-
-
-class HealthDataHandler:
-    def GET(self):
-        _require_auth()
-        from agent.health import HealthService
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        return json.dumps({'status': 'success', **HealthService().snapshot()}, ensure_ascii=False)
-
-
-class HealthImportHandler:
-    def POST(self):
-        _require_auth()
-        from agent.health import HealthService
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            if int(getattr(web.ctx, 'env', {}).get('CONTENT_LENGTH') or 0) > HealthService.MAX_UPLOAD + 65536:
-                raise ValueError('Health upload exceeds 32 MiB')
-            params = _raw_web_input()
-            upload = params.get('file')
-            if upload is None:
-                raise ValueError('Select a health export file')
-            data = _read_uploaded_file_bytes_limited(upload, HealthService.MAX_UPLOAD)
-            result = HealthService().import_file(getattr(upload, 'filename', ''), data)
-            return json.dumps({'status': 'success', **result}, ensure_ascii=False)
-        except ValueError as exc:
-            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
-
-
-class HealthDeleteHandler:
-    def POST(self):
-        _require_auth()
-        from agent.health import HealthService
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        body = json.loads(web.data() or b'{}')
-        return json.dumps({'status': 'success', 'deleted': HealthService().delete_import(body.get('import_id'))})

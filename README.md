@@ -10,9 +10,9 @@
   [English] | [<a href="docs/zh/README.md">中文</a>] | [<a href="docs/zh/README-Hant.md">繁體中文</a>] | [<a href="docs/ja/README.md">日本語</a>]
 </p>
 
-**Stella** is a personal AI secretary. It plans tasks, uses your computer and external services, remembers what matters, and grows a private knowledge base — so it can handle everyday work on your behalf across chat, desktop, and messaging apps.
+**Stella** is a personal AI secretary. It plans tasks, uses your computer and external services, remembers what matters, and grows a private knowledge base — so it can handle everyday work on your behalf through the desktop client and messaging apps.
 
-The codebase is an Agent Harness: plug in any major LLM, run it 24/7 on a personal computer or server, and extend it with tools, skills, and channels.
+The codebase is an Agent Harness: plug in any major LLM, run it through the Electron desktop client, and extend it with tools, skills, and channels.
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
@@ -40,10 +40,10 @@ The codebase is an Agent Harness: plug in any major LLM, run it 24/7 on a person
 | [Evolution](docs/memory/self-evolution.mdx) | Self-Evolution reviews conversations automatically to improve skills, follow up on unfinished tasks, and consolidate memory and knowledge, growing through everyday use |
 | [Skills](docs/skills/index.mdx) | One-click install from [skill广场](https://www.skill-marketplace.com/), GitHub, ClawHub; or create custom skills via natural-language conversation |
 | [Tools](docs/tools/index.mdx) | Built-in file I/O, terminal, browser, scheduler, memory retrieval, web search, and 10+ more tools — with native MCP integration |
-| [Channels](docs/channels/index.mdx) | Integrates with Web, WeChat, Feishu, DingTalk, WeCom, QQ, Official Accounts, Telegram, and Slack |
+| [Channels](docs/channels/index.mdx) | Integrates with the desktop client, WeChat, Feishu, DingTalk, WeCom, QQ, Official Accounts, Telegram, and Slack |
 | Multimodal | First-class support for text, images, voice, and files — recognition, generation, and delivery |
-| [Models](docs/models/index.mdx) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click |
-| [Deploy](docs/guide/quick-start.mdx) | One-line installer, unified Web console, multiple deployment modes (local, Docker, server) |
+| [Models](docs/models/index.mdx) | Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the desktop client with one click |
+| [Deploy](docs/guide/quick-start.mdx) | Electron desktop client with a private local backend |
 
 <br/>
 
@@ -59,43 +59,26 @@ Read more in [Architecture](docs/intro/architecture.mdx).
 
 ## 🚀 Quick Start
 
-Clone this repository, install dependencies, and start Stella:
+Download the desktop app from [Releases](https://github.com/starpickerr/Stella/releases/latest), or run the current source locally:
 
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
 pip install -r requirements.txt
-pip install -e .
-stella start
+cd desktop
+npm install
+npm run dev
 ```
 
-**Docker:**
+`npm run dev` builds the current Electron UI and starts its private Python backend. To work with hot UI reload, use `npm run dev:hot`.
 
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-Once started, open `http://localhost:9899` to access the **Web console** — chat with Stella, configure models, connect channels, and install skills.
-
-> Deploying on a server? Set `web_host` to `0.0.0.0` in `config.json` to make the console reachable from outside, and set `web_password` to protect it. Don't forget to open port `9899` in your firewall or security group.
-
-> 📖 Guides in this repo: [Quick Start](docs/guide/quick-start.mdx) · [Install from Source](docs/guide/manual-install.mdx) · [Upgrade](docs/guide/upgrade.mdx)
-
-Manage the service with the `stella` CLI:
-
-```bash
-stella start | stop | restart        # service control
-stella status | logs                  # status and logs
-stella update                         # pull latest code and restart
-stella skill install <name>           # install a skill
-stella install-browser                # install browser automation
-```
+> 📖 See [Desktop development](desktop/README.md) for packaging instructions.
 
 <br/>
 
 ## 🤖 Models
 
-Stella supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor. Providers are configured directly in the Web console — no manual file editing required.
+Stella supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor. Providers are configured in the desktop client.
 
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -119,11 +102,11 @@ Stella supports all mainstream LLM providers. **Chat, vision, image generation, 
 
 ## 💬 Channels
 
-A single Agent instance can serve multiple channels in parallel. Most channels can be onboarded right from the Web console.
+A single Agent instance can serve multiple channels in parallel. Channels can be connected from the desktop client.
 
 | Channel | Text | Image | File | Voice | Group |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web Console](docs/channels/web.mdx) (default) | ✅ | ✅ | ✅ | ✅ | |
+| [Desktop client](docs/guide/desktop.mdx) (default) | ✅ | ✅ | ✅ | ✅ | |
 | [Telegram](docs/channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Slack](docs/channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
 | [Discord](docs/channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
@@ -138,9 +121,9 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 
 > See the [Channels overview](docs/channels/index.mdx) for setup details.
 
-<img src="docs/images/placeholder-image.svg" alt="Stella Web Console" width="800"/>
+<img src="docs/images/placeholder-image.svg" alt="Stella desktop client" width="800"/>
 
-*The Web console is the default channel and the unified entry point to configure models, channels, skills, memory, and more.*
+*The desktop client is the entry point for chat, models, channels, skills, memory, and more.*
 
 <br/>
 
@@ -148,7 +131,7 @@ A single Agent instance can serve multiple channels in parallel. Most channels c
 
 **Long-term memory** uses a three-tier architecture: conversation context (short-term) → daily memory (mid-term) → MEMORY.md (long-term). A nightly **Deep Dream** pass distills scattered memories into refined long-term entries and a narrative journal. See [Long-term Memory](docs/memory/index.mdx) · [Deep Dream](docs/memory/deep-dream.mdx).
 
-**Personal knowledge base** complements the time-ordered memory by organizing structured knowledge **by topic**. The Agent automatically curates valuable information from conversations, maintains cross-references and indexes, and the Web console offers an interactive knowledge-graph view. See [Personal Knowledge Base](docs/knowledge/index.mdx).
+**Personal knowledge base** complements the time-ordered memory by organizing structured knowledge **by topic**. The Agent automatically curates valuable information from conversations, maintains cross-references and indexes, and the desktop client offers an interactive knowledge-graph view. See [Personal Knowledge Base](docs/knowledge/index.mdx).
 
 <table>
   <tr>

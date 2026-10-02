@@ -29,7 +29,7 @@ if "web" not in sys.modules:
     )
     sys.modules["web"] = web_stub
 
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 ROOT = Path(__file__).parents[1]
 
@@ -53,10 +53,10 @@ def _lunch(**extra):
 def test_ledger_create_list_update_delete(tmp_path):
     svc = _service(tmp_path)
 
-    with patch("channel.web.web_channel._require_auth") as require_auth, \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=json.dumps(_lunch()).encode()), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+    with patch("channel.desktop.desktop_channel._require_auth") as require_auth, \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(_lunch()).encode()), \
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         created = json.loads(web_channel.BillsLedgerHandler().POST())
 
     require_auth.assert_called_once_with()
@@ -65,31 +65,31 @@ def test_ledger_create_list_update_delete(tmp_path):
     assert created["entry"]["name"] == "午餐"
     assert created["entry"]["amount_minor"] == 3200
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.input",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.input",
                return_value=types.SimpleNamespace(year="2026", month="8")), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         listed = json.loads(web_channel.BillsLedgerHandler().GET())
 
     assert listed["status"] == "success"
     assert [row["id"] for row in listed["entries"]] == [entry_id]
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data",
                return_value=json.dumps({"id": entry_id, "amount_minor": 5000}).encode()), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         updated = json.loads(web_channel.BillsLedgerUpdateHandler().POST())
 
     assert updated["status"] == "success"
     assert updated["entry"]["amount_minor"] == 5000
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data",
                return_value=json.dumps({"id": entry_id}).encode()), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         deleted = json.loads(web_channel.BillsLedgerDeleteHandler().POST())
 
     assert deleted == {"status": "success"}
@@ -98,11 +98,11 @@ def test_ledger_create_list_update_delete(tmp_path):
 
 def test_ledger_get_requires_year_and_month(tmp_path):
     svc = _service(tmp_path)
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.input",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.input",
                return_value=types.SimpleNamespace(year="", month="")), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         response = json.loads(web_channel.BillsLedgerHandler().GET())
 
     assert response["status"] == "error"
@@ -111,11 +111,11 @@ def test_ledger_get_requires_year_and_month(tmp_path):
 
 def test_ledger_create_rejects_invalid_payload(tmp_path):
     svc = _service(tmp_path)
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data",
                return_value=json.dumps({"name": "", "amount_minor": 100}).encode()), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         response = json.loads(web_channel.BillsLedgerHandler().POST())
 
     assert response["status"] == "error"
@@ -135,11 +135,11 @@ def test_statements_list_and_detail(tmp_path):
         }
     )
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.input",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.input",
                return_value=types.SimpleNamespace(period_type="monthly", year="2026")), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         listed = json.loads(web_channel.BillsStatementsHandler().GET())
 
     assert listed["status"] == "success"
@@ -148,9 +148,9 @@ def test_statements_list_and_detail(tmp_path):
     assert listed["statements"][0]["income_minor"] == 1200000
     assert listed["statements"][0]["expense_minor"] == 3200
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         detail = json.loads(web_channel.BillsStatementDetailHandler().GET(statement_id))
 
     assert detail["status"] == "success"
@@ -163,9 +163,9 @@ def test_statements_list_and_detail(tmp_path):
 
 def test_statement_detail_not_found(tmp_path):
     svc = _service(tmp_path)
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         response = json.loads(
             web_channel.BillsStatementDetailHandler().GET("stmt-missing")
         )
@@ -176,10 +176,10 @@ def test_statement_detail_not_found(tmp_path):
 
 def test_update_and_delete_require_id(tmp_path):
     svc = _service(tmp_path)
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=b"{}"), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=b"{}"), \
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         updated = json.loads(web_channel.BillsLedgerUpdateHandler().POST())
         deleted = json.loads(web_channel.BillsLedgerDeleteHandler().POST())
 
@@ -191,12 +191,12 @@ def test_ledger_export_returns_xlsx(tmp_path):
     svc = _service(tmp_path)
     svc.create_ledger(_lunch())
 
-    with patch("channel.web.web_channel._require_auth") as require_auth, \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.input",
+    with patch("channel.desktop.desktop_channel._require_auth") as require_auth, \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.input",
                return_value=types.SimpleNamespace(
                    start="2026-08-01", end="2026-08-31", lang="zh")), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         data = web_channel.BillsLedgerExportHandler().GET()
 
     require_auth.assert_called_once_with()
@@ -206,11 +206,11 @@ def test_ledger_export_returns_xlsx(tmp_path):
 
 def test_ledger_export_requires_dates(tmp_path):
     svc = _service(tmp_path)
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.input",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.input",
                return_value=types.SimpleNamespace(start="", end="", lang="")), \
-         patch("channel.web.web_channel._bills_service", return_value=svc):
+         patch("channel.desktop.desktop_channel._bills_service", return_value=svc):
         response = json.loads(web_channel.BillsLedgerExportHandler().GET())
 
     assert response["status"] == "error"
@@ -218,7 +218,7 @@ def test_ledger_export_requires_dates(tmp_path):
 
 
 def test_bills_routes_are_wired_in_web_and_desktop():
-    web_source = (ROOT / "channel/web/web_channel.py").read_text(encoding="utf-8")
+    web_source = (ROOT / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_client = (ROOT / "desktop/src/renderer/src/api/client.ts").read_text(
         encoding="utf-8"
     )

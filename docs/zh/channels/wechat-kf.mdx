@@ -48,8 +48,8 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
 填入上一步收集到的 4 个字段（Corp ID / Secret / Token / EncodingAESKey）：
 
 <Tabs>
-  <Tab title="Web 控制台">
-    启动 Stella 项目后打开 Web 控制台，选择 **通道** 菜单，点击 **接入通道**，选择 **微信客服**，依次填入 Corp ID / Secret / Token / AES Key（端口默认 9888，可改），点击接入即可。
+  <Tab title="桌面客户端">
+    启动 Stella 项目后打开 桌面客户端，选择 **通道** 菜单，点击 **接入通道**，选择 **微信客服**，依次填入 Corp ID / Secret / Token / AES Key（端口默认 9888，可改），点击接入即可。
 
     <img src="/images/placeholder-image.svg" width="800"/>
   </Tab>
@@ -77,7 +77,7 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
   </Tab>
 </Tabs>
 
-接入完成后启动程序（Web 控制台方式会自动重启），日志中出现 `Listening on http://0.0.0.0:9888/wxkf/` 表示运行成功，需要将该端口对外开放（如在云服务器安全组中放行）。
+接入完成后启动程序（桌面客户端方式会自动重启），日志中出现 `Listening on http://0.0.0.0:9888/wxkf/` 表示运行成功，需要将该端口对外开放（如在云服务器安全组中放行）。
 
 接着回到企业微信「接收消息 → 设置API接收」，将回调 URL 填为 `http://<your-host>:9888/wxkf/`，点击保存。保存成功后还需将服务器 IP 添加到 **企业可信IP** 中，否则无法收发消息：
 

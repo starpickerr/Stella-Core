@@ -92,6 +92,15 @@ function buildGroups(
       }
       buckets.get(key)!.items.push(s)
     }
+    if (!buckets.has(DEFAULT_SPACE_KEY)) {
+      buckets.set(DEFAULT_SPACE_KEY, {
+        key: DEFAULT_SPACE_KEY,
+        label: t('ws_default_workspace'),
+        isProject: true,
+        isDefault: true,
+        items: [],
+      })
+    }
     const groups = Array.from(buckets.values())
     // Group order must be independent of the session array order: creating a
     // new chat unshifts a session to the top, which would otherwise float its

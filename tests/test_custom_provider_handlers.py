@@ -30,7 +30,7 @@ if "web" not in sys.modules:
 
 import config as config_module
 from config import Config
-from channel.web.web_channel import ModelsHandler
+from channel.desktop.desktop_channel import ModelsHandler
 
 
 def set_conf(d):

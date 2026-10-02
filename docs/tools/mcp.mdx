@@ -9,8 +9,6 @@ Stella supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.
 
 Stella reads `~/stella/mcp.json`. If the file does not exist, no MCP tools are loaded — and no error is raised.
 
-For Docker deployments, the official `docker-compose.yml` already mounts the host's `./stella` directory to `/home/agent/stella` inside the container (i.e. the container user's `~/stella`). Just drop `mcp.json` into the host's `./stella/` directory and it will take effect.
-
 ### Standard Format
 
 Fully compatible with the MCP community standard, identical to Claude Desktop / Cursor:
@@ -95,11 +93,11 @@ Some remote MCP servers require OAuth web authorization, and connecting to them 
 }
 ```
 
-When a server returns `401` on its first load, authorization starts automatically: running locally **opens the browser automatically**, while server deployments **print the authorization link to the log** for you to open in a browser. Once you approve, the server comes online immediately; tokens are refreshed automatically on expiry, so you never have to re-authorize.
+When a server returns `401` on its first load, authorization starts automatically: running locally **opens the browser automatically**, and completes the browser approval flow. Once you approve, the server comes online immediately; tokens are refreshed automatically on expiry, so you never have to re-authorize.
 
-- **Requires the web service**: The authorization callback is received by the web console (default port `9899`), so the Web channel must be running.
+- **Desktop backend**: Stella must be running to receive the OAuth callback.
 - **Credential storage**: Tokens are persisted in `~/.stella/mcp_oauth.json` and reused across restarts.
-- **Callback URL**: Defaults to `http://127.0.0.1:9899/mcp/oauth/callback`. If deployed on a server with the authorizing browser on another device, set `mcp_oauth_redirect_base` in `config.json` (e.g. `http://YOUR_IP:9899`).
+- **Callback URL**: The desktop backend uses its selected loopback port for `/mcp/oauth/callback`; keep Stella open while authorizing.
 
 ## How It Works
 

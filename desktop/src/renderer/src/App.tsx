@@ -28,7 +28,6 @@ import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import HealthPage from './pages/HealthPage'
 import LogsPage from './pages/LogsPage'
-import PlaceholderPage from './pages/PlaceholderPage'
 import BillsPage from './pages/BillsPage'
 import BriefingPage from './pages/BriefingPage'
 import CalendarPage from './pages/CalendarPage'
@@ -240,7 +239,7 @@ const App: React.FC = () => {
             <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
             <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
-            <Route path="/health" element={<HealthPage baseUrl={backend.baseUrl} />} />
+            <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />

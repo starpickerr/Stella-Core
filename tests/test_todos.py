@@ -260,7 +260,7 @@ def test_legacy_unknown_reminder_is_cancelled_if_todo_was_edited(service, monkey
 
 
 def test_uncertain_reminder_desktop_api_uses_todo_service(service, monkeypatch):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
     monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
     monkeypatch.setattr(web_channel, "_require_auth", lambda: None)
     monkeypatch.setattr(web_channel.web, "header", lambda *_args: None)
@@ -280,7 +280,7 @@ def test_tool_and_web_api_are_independent(service, monkeypatch):
     assert not check_tool_call("read-only", "todos", {"action": "complete", "id": "x", "completed": True})
     assert check_tool_call("read-only", "todos", {"action": "list"})
 
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
     monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
     monkeypatch.setattr(web_channel, "_require_auth", lambda: None)
     monkeypatch.setattr(web_channel.web, "header", lambda *_args: None)
@@ -290,7 +290,7 @@ def test_tool_and_web_api_are_independent(service, monkeypatch):
 
 
 def test_todo_api_validation_errors_are_written_to_logs(service, monkeypatch):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
     monkeypatch.setattr(web_channel, "_require_auth", lambda: None)

@@ -2,7 +2,7 @@
 
 Cross-platform desktop client for Stella, built with Electron + React + TypeScript.
 
-New feature development targets the desktop client. The Python HTTP service remains the desktop backend; the Web console is no longer maintained.
+Stella uses the Electron client and its private loopback Python API. The old Web frontend is removed.
 
 The **Briefing** page supports IMAP mailbox setup, daily email briefings, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
 
@@ -23,13 +23,13 @@ npm install
 
 ### Run in Development
 
-Start the renderer dev server and Electron together:
+Build the current renderer and main process, then start Electron:
 
 ```bash
 npm run dev
 ```
 
-Or run them separately:
+For hot renderer reload, run:
 
 ```bash
 # Terminal 1: Start Vite dev server
@@ -39,7 +39,7 @@ npm run dev:renderer
 npm run dev:main
 ```
 
-The app will automatically start the Python backend from the parent directory.
+The app starts the Python backend from the parent directory. `npm run dev` always loads the freshly built renderer; only `dev:main` opts into Vite on port 5173. Development and installed builds use the same `~/.stella` settings and workspace data. Starting either build replaces the running desktop instance before opening that data store. Existing `~/.stella-dev` files remain on disk but are no longer read.
 
 ### Adding a second Agent to an existing installation
 

@@ -13,7 +13,7 @@ from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 
 @pytest.fixture(autouse=True)

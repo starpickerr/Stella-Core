@@ -14,6 +14,9 @@ import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-ic
 // where the default Electron binary would otherwise report "Electron". The name
 // can be overridden by the bundled app-config (appName); defaults to Stella.
 app.setName(loadAppConfig()?.appName || 'Stella')
+const desktopProfile = path.join(app.getPath('appData'), 'Stella')
+fs.mkdirSync(desktopProfile, { recursive: true })
+app.setPath('userData', desktopProfile)
 
 // Windows shows notifications only when an AppUserModelID is set; without it
 // they are silently dropped. Harmless on macOS/Linux.
@@ -27,9 +30,11 @@ let reminderPollTimer: ReturnType<typeof setInterval> | null = null
 let reminderPollActive = false
 // True once the user explicitly quits (menu/tray), so close-to-tray is bypassed.
 let isQuitting = false
+let replacingInstance = false
 
 const isDev = !app.isPackaged
-const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
+const VITE_DEV_PORT = 5173
+const useHotRenderer = isDev && process.argv.includes('--hot-renderer')
 
 // Launched by the OS at login (Windows passes --hidden; macOS reports it via
 // getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
@@ -51,15 +56,6 @@ function probePort(port: number): Promise<boolean> {
     req.on('error', () => resolve(false))
     req.setTimeout(500, () => { req.destroy(); resolve(false) })
   })
-}
-
-async function findViteDevServer(): Promise<string | null> {
-  for (const port of VITE_DEV_PORTS) {
-    if (await probePort(port)) {
-      return `http://localhost:${port}`
-    }
-  }
-  return null
 }
 
 function getIconPath(ext: string = 'png'): string | undefined {
@@ -132,21 +128,22 @@ function createWindow() {
 
   const rendererHtml = path.join(__dirname, '../renderer/index.html')
 
-  if (isDev) {
-    findViteDevServer().then((devUrl) => {
-      if (devUrl) {
-        console.log(`[Electron] Loading Vite dev server: ${devUrl}`)
-        mainWindow?.loadURL(devUrl)
-        mainWindow?.webContents.openDevTools()
-      } else if (fs.existsSync(rendererHtml)) {
-        console.log('[Electron] Vite dev server not found, loading built files')
-        mainWindow?.loadFile(rendererHtml)
-      } else {
-        console.error('[Electron] No renderer available. Run "npm run build:renderer" first.')
+  if (useHotRenderer) {
+    probePort(VITE_DEV_PORT).then((ready) => {
+      if (!ready) {
+        console.error(`[Electron] Vite is not running on port ${VITE_DEV_PORT}`)
+        return
       }
+      const devUrl = `http://localhost:${VITE_DEV_PORT}`
+      console.log(`[Electron] Loading Vite dev server: ${devUrl}`)
+      mainWindow?.loadURL(devUrl)
+      mainWindow?.webContents.openDevTools()
     })
-  } else {
+  } else if (fs.existsSync(rendererHtml)) {
+    console.log('[Electron] Loading built renderer files')
     mainWindow.loadFile(rendererHtml)
+  } else {
+    console.error('[Electron] No renderer available. Run "npm run build:renderer" first.')
   }
 
   // Surface renderer-side console output and load failures to the main-process
@@ -242,6 +239,21 @@ async function startBackend() {
   // manager needs to know: an installed app must never fall back to looking
   // for a Python interpreter, and its writable data always lives in ~/.stella.
   pythonBackend = new PythonBackend(backendPath, !isDev)
+
+  // Keep the private backend token in Electron's main process. This hook
+  // covers fetch, EventSource and media loads from our window alike.
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const port = pythonBackend?.getPort()
+    const ownedUrl = port && details.url.startsWith(`http://127.0.0.1:${port}/`)
+    if (ownedUrl && details.webContentsId === mainWindow?.webContents.id) {
+      callback({ requestHeaders: {
+        ...details.requestHeaders,
+        'X-Stella-Desktop-Token': pythonBackend!.getInternalToken(),
+      } })
+      return
+    }
+    callback({ requestHeaders: details.requestHeaders })
+  })
 
   pythonBackend.on('ready', (port: number) => {
     console.log(`[backend] ready on port ${port}`)
@@ -521,21 +533,32 @@ function emitMaximizeState() {
   mainWindow?.webContents.send('window-maximize-changed', max)
 }
 
-// Single-instance lock: focus the existing window instead of opening a second app.
-const gotTheLock = app.requestSingleInstanceLock()
+// Both builds share one Electron profile and one backend data directory. A new
+// launch asks the current owner to quit, then waits for the lock before it
+// opens either the profile or the data store.
+app.on('second-instance', (_event, _argv, _workingDirectory, additionalData) => {
+  if (replacingInstance) return
+  replacingInstance = true
+  isQuitting = true
+  const request = additionalData as { executable?: unknown; args?: unknown } | undefined
+  if (typeof request?.executable === 'string' && Array.isArray(request.args) &&
+      request.args.every(arg => typeof arg === 'string')) {
+    app.relaunch({ execPath: request.executable, args: request.args })
+  } else {
+    app.relaunch()
+  }
+  app.quit()
+})
+
+const launchArgs = process.argv.slice(1).map((arg, index) =>
+  index === 0 && !arg.startsWith('-') ? path.resolve(arg) : arg)
+const gotTheLock = app.requestSingleInstanceLock({ executable: process.execPath, args: launchArgs })
 if (!gotTheLock) {
   app.quit()
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-    }
-  })
 }
 
-app.whenReady().then(async () => {
+if (gotTheLock) app.whenReady().then(async () => {
+  if (replacingInstance) return
   // Set Dock icon on macOS (PNG is most reliable for nativeImage)
   if (process.platform === 'darwin') {
     const pngPath = getIconPath('png')
@@ -621,5 +644,6 @@ app.on('before-quit', () => {
   isQuitting = true
   saveWindowState()
   destroyTray()
-  pythonBackend?.stop()
+  if (replacingInstance) pythonBackend?.stopSync()
+  else pythonBackend?.stop()
 })

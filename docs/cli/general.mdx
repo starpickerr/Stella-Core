@@ -6,7 +6,7 @@ description: View status, manage config, and control context with commonly used 
 The following commands can be used in chat with the `/` prefix or in the terminal with the `stella` prefix (some are chat-only).
 
 <Tip>
-  In the Web console, typing `/` brings up an autocomplete menu with keyboard navigation and Tab completion.
+  In the desktop client, typing `/` brings up an autocomplete menu with keyboard navigation and Tab completion.
 </Tip>
 
 ## help
@@ -27,7 +27,7 @@ View current session and service status, including process info, model configura
 
 ## cancel
 
-Abort the agent task currently running in this session. When the agent is busy with a long task (e.g. multi-turn tool calls or a long streaming response), send `/cancel` and the agent will stop before the next tool execution. Available across all channels — Web, WeChat, WeCom, Feishu, etc.
+Abort the agent task currently running in this session. When the agent is busy with a long task (e.g. multi-turn tool calls or a long streaming response), send `/cancel` and the agent will stop before the next tool execution. Available across all channels — the desktop client, WeChat, WeCom, Feishu, etc.
 
 ```text
 /cancel
@@ -41,7 +41,7 @@ Redirect the Agent task currently running in this session without cancelling it.
 /steer focus on the failing tests first
 ```
 
-In the Web console, enter an instruction while a reply is running and click **Steer active task**. Sending an ordinary message still uses the session queue.
+In the desktop client, enter an instruction while a reply is running and click **Steer active task**. Sending an ordinary message still uses the session queue.
 
 ## config
 

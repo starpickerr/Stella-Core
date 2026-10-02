@@ -405,6 +405,15 @@ class ApiClient {
     return result.runs
   }
 
+  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string }[]> {
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string }[] }>('/api/security/confirmations')
+    return result.pending || []
+  }
+
+  async approveSecurityConfirmation(id: string): Promise<{ status: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id }) })
+  }
+
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {
     const result = await this.request<{ status: string; applied: Record<string, unknown> }>('/config', {
       method: 'POST',
@@ -563,20 +572,6 @@ class ApiClient {
   async getTaskDestinations(): Promise<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]> {
     const result = await this.request<{destinations: {channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]}>('/api/scheduler/destinations')
     return result.destinations
-  }
-
-  async getHealthData(): Promise<HealthSnapshot> {
-    return this.request('/api/health/data')
-  }
-
-  async importHealth(file: File): Promise<{status: string; message?: string; added: number; duplicates: number}> {
-    const data = new FormData()
-    data.append('file', file)
-    return this.postFormData('/api/health/import', data)
-  }
-
-  async deleteHealthImport(import_id: string): Promise<void> {
-    await this.request('/api/health/delete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({import_id})})
   }
 
   async getSchedulerTasks(): Promise<SchedulerTask[]> {
@@ -958,10 +953,3 @@ class ApiClient {
 
 export const apiClient = new ApiClient()
 export default apiClient
-
-export interface HealthSnapshot {
-  imports: {id: string; filename: string; imported_at: string; records: number}[]
-  summary: {day: string; type: string; source: string; device: string; unit: string; count: number; total?: number; average?: number; sleep_hours?: number}[]
-  samples: {type: string; source: string; device: string; unit: string; value: string; start: string; end: string}[]
-  sample_count: number
-}

@@ -287,9 +287,8 @@ class FeiShuChanel(ChatChannel):
         self.feishu_token = conf().get('feishu_token')
         self.feishu_event_mode = conf().get('feishu_event_mode', 'websocket')
 
-        # 命令行启动场景：缺少凭据时尝试通过 lark.register_app 在终端弹二维码
-        # 引导用户扫码创建应用。Web 控制台启动同样会走到这里，但控制台用户通常
-        # 已经通过 /api/feishu/register 完成了创建并写回 config.json。
+        # 缺少凭据时尝试通过 lark.register_app 在终端弹二维码。
+        # 桌面客户端通常通过 /api/feishu/register 创建并保存凭据。
         if not self.feishu_app_id or not self.feishu_app_secret:
             if _register_via_qr_in_terminal():
                 self.feishu_app_id = conf().get('feishu_app_id')

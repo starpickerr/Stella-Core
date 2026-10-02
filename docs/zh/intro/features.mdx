@@ -27,11 +27,11 @@ description: Stella 长期记忆、个人知识库、任务规划、技能系统
 
 > 知识库系统让 Agent 能够持续积累和组织结构化知识。与按时间线记录的记忆不同，知识库以主题为维度，将文章、对话洞察、学习材料等整理为互相关联的 Markdown 页面，形成持续增长的知识网络。
 
-Agent 会在对话中自动将有价值的信息整理为知识页面，维护交叉引用和索引，通过 Web 控制台可浏览文档和查看知识图谱。知识库存储在工作空间的 `~/stella/knowledge/` 目录下。
+Agent 会在对话中自动将有价值的信息整理为知识页面，维护交叉引用和索引，通过 桌面客户端可浏览文档和查看知识图谱。知识库存储在工作空间的 `~/stella/knowledge/` 目录下。
 
 - **自动整理**：Agent 在对话中自主提取和整理结构化知识，维护索引和交叉引用
-- **知识图谱**：基于页面间的交叉引用自动构建知识图谱，Web 控制台提供可视化关系图浏览
-- **对话联动**：Agent 回复中引用的知识文档链接可在 Web 控制台中直接点击跳转查看
+- **知识图谱**：基于页面间的交叉引用自动构建知识图谱，桌面客户端提供可视化关系图浏览
+- **对话联动**：Agent 回复中引用的知识文档链接可在桌面客户端中直接点击跳转查看
 - **CLI 管理**：通过 `/knowledge` 命令查看统计、浏览目录，通过 `/knowledge on|off` 开关功能
 
 <Frame>
@@ -72,7 +72,7 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 ### 3.4 浏览器操作
 
-内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `stella install-browser` 一键安装，自动适配服务器（无头模式）和桌面环境：
+内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `stella install-browser` 一键安装，适配桌面环境：
 
 <Frame>
   <img src="/images/placeholder-image.svg" width="750" />
@@ -128,21 +128,6 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 <img src="/images/placeholder-image.svg" width="750" />
 
 
-## 5. CLI 命令系统
+## 5. 对话命令
 
-Stella 提供两种命令交互方式，覆盖服务管理、技能安装、配置调整等日常运维操作：
-
-- **终端 CLI：** 在系统终端执行 `stella <命令>`，支持 `start`、`stop`、`restart`、`update`、`status`、`logs`、`skill` 等
-- **对话命令：** 在对话中输入 `/<命令>`，Web 控制台输入 `/` 可弹出指令菜单快速选择
-
-```bash
-stella start              # 启动服务
-stella stop               # 停止服务
-stella update             # 更新并重启
-stella skill install pptx # 安装技能
-stella install-browser    # 安装浏览器工具
-```
-
-详细命令参考 [命令总览](/cli)。
-
-<img src="/images/placeholder-image.svg" width="750" />
+在 Electron 客户端输入 `/` 可打开命令菜单。`/status`、`/config`、`/skill`、`/memory dream` 等命令也可在已连接的消息渠道使用。后端进程由桌面客户端管理。详见[命令总览](/zh/cli/index)。
