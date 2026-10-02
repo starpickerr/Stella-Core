@@ -28,6 +28,10 @@ def test_gateway_allowlist_unknown_capability_and_confirmation(tmp_path, monkeyp
     assert not SecurityGateway.check("full-access", "write", {"path": "x"}, allowlist=["read"])
     assert not SecurityGateway.check("full-access", "mystery_tool", {})
     assert not SecurityGateway.check("full-access", "read", {"path": "x"}, capability="unknown")
+    accounts = Scope(accounts=("authorized",))
+    assert SecurityGateway.check("full-access", "calendar", {"action": "list", "account_id": "authorized"}, scope=accounts)
+    assert not SecurityGateway.check("full-access", "calendar", {"action": "list", "account_id": "other"}, scope=accounts)
+    assert not SecurityGateway.check("full-access", "calendar", {"action": "list"}, scope=accounts)
     args = {"action": "evaluate", "script": "document.title"}
     assert not SecurityGateway.check("full-access", "browser", args, session_id="s")
     pending = [row for row in SecurityGateway.pending() if row["session"] == "s"]
@@ -50,6 +54,7 @@ def test_direct_tool_entry_cannot_skip_gateway(tmp_path, monkeypatch):
 
 def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch):
     monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
+    from config import conf
 
     class SessionAgent:
         def effective_permission_mode(self):
@@ -62,6 +67,10 @@ def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch):
             return [str(tmp_path)]
 
     assert permission_denial("write", {"path": str(tmp_path / "file"), "content": "api_key=TOPSECRET"}, agent=SessionAgent())
+    monkeypatch.setitem(conf(), "agent_account_allowlist", ["authorized"])
+    monkeypatch.setitem(conf(), "agent_tool_allowlist", ["calendar"])
+    assert permission_denial("calendar", {"action": "list", "account_id": "other"}, agent=SessionAgent())
+    assert permission_denial("read", {"path": str(tmp_path / "file")}, agent=SessionAgent())
     audit = (tmp_path / "security-audit.jsonl").read_text()
     assert "TOPSECRET" not in audit
     assert all("arguments" not in row for row in map(json.loads, audit.splitlines()))

@@ -73,8 +73,11 @@ def permission_denial(
         from common.runtime_identity import current_identity
         configured_allowlist = conf().get("agent_tool_allowlist")
         allowlist = configured_allowlist if isinstance(configured_allowlist, list) and configured_allowlist else None
+        configured_accounts = conf().get("agent_account_allowlist")
+        accounts = tuple(str(value) for value in configured_accounts) if isinstance(configured_accounts, list) else ()
         decision = SecurityGateway.check(
-            mode, tool_name, arguments, cwd=cwd, scope=Scope(write_roots=tuple(roots)),
+            mode, tool_name, arguments, cwd=cwd,
+            scope=Scope(write_roots=tuple(roots), accounts=accounts),
             session_id=session_id or current_identity().session_id, allowlist=allowlist,
         )
         return None if decision.allowed else decision.reason

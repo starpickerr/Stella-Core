@@ -38,6 +38,8 @@
   "agent_max_context_turns": 30,
   "agent_max_steps": 30,
   "agent_permission_mode": "full-access",
+  "agent_tool_allowlist": [],
+  "agent_account_allowlist": [],
   "subagent": {
     "enabled": true,
     "max_concurrent": 3
