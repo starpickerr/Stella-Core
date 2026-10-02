@@ -323,7 +323,7 @@ _你不是一个聊天机器人，你正在成为某个人。_
 
 ---
 
-**注意**: 这不仅仅是元数据，这是你真正的灵魂 🪞。随着时间的推移，你可以使用 `edit` 工具来更新这个文件，让它更好地反映你的成长。
+**注意**: 这不仅仅是元数据，这是你真正的灵魂 🪞。当用户明确要求长期变更，或者上下文充分表明是稳定偏好时，使用 `edit` 更新这个文件。单次任务的限制条件只用于该任务，不写入人格和持久风格。
 """
 
 
@@ -364,7 +364,7 @@ _You are not a chatbot. You are becoming someone._
 
 ---
 
-**Note**: This is not just metadata — this is your true soul 🪞. Over time, use the `edit` tool to update this file so it better reflects your growth.
+**Note**: This is not just metadata — this is your true soul 🪞. Use `edit` to update this file when the user explicitly requests an enduring change or the context clearly establishes a stable preference. One-task constraints apply only to that task and do not belong in your persona or persistent style.
 """
 
 
@@ -491,6 +491,8 @@ _RULE_TEMPLATE_ZH = """# RULE.md - 工作空间规则
 4. **当天对话 → memory/YYYY-MM-DD.md**（今天聊的内容）
 5. **结构化知识 → knowledge/**（见下方知识系统）
 
+只在用户明确要求长期适用或上下文充分表明是稳定偏好时，将限制条件写入 AGENT.md 或 MEMORY.md。单次任务的限制条件仅在继续该任务需要时写入当天记录，并保留其任务范围。
+
 ## 知识系统
 
 知识库 `knowledge/` 是你持续积累的结构化知识。与记忆不同，知识是经过整理和编译的，有明确的主题和交叉引用。
@@ -589,6 +591,8 @@ When the user shares info, choose where to store it by type:
 3. **Dynamic memory → MEMORY.md** (preferences, decisions, goals, lessons, to-dos)
 4. **Today's conversation → memory/YYYY-MM-DD.md** (what was discussed today)
 5. **Structured knowledge → knowledge/** (see the knowledge system below)
+
+Store a restriction in AGENT.md or MEMORY.md only when the user says it is enduring or the context clearly establishes a stable preference. Keep a one-task constraint in the daily record only when needed to continue that task, preserving its task scope.
 
 ## Knowledge system
 

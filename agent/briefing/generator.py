@@ -25,6 +25,7 @@ SYSTEM_PROMPT = """你是每日简报 Agent。按照用户提供的规则文稿�
 对每个候选逐一给出是否精选和具体理由；重要信息不要因 noreply 地址一概排除。
 需要处理的事项使用 action，其他有价值的信息使用 fyi。不得编造截止日期、任务或来源。
 摘要应包含具体事项、关键变化和已有的截止时间，而非仅重述标题。
+保留和排除规则用于筛选与写作，不要仅为了说明规则而在简报正文中复述被过滤的主题或事项；只有当规则实质改变结果、与目标冲突、关系到澄清或安全，或者用户明确要求解释筛选决定时才说明。
 正文预览不完整时，可通过 read_briefing_source 按偏移量阅读原文。
 必须调用提供的结果工具提交完整结果；工具拒绝后根据错误修正并重新提交。
 结果工具成功后结束，不要重复提交。简报条目没有数量上限。
@@ -259,7 +260,7 @@ class AgentBriefingGenerator:
                 "source_item_ids": {"type": "array", "items": {"type": "string"}},
             }, "required": ["body", "source_item_ids"]}, lambda payload, expected=ids: validate_body(payload, expected))
             result = self._run_agent("依据规则撰写本批简报正文，调用 briefing_body_result；不要重复每日大标题，"
-                "正文将按批次顺序合并，不得省略低优先级条目。没有精选事项时也按规则写出简报说明，不要重新引入过滤事项。\n" + json.dumps({
+                "正文将按批次顺序合并，不得省略低优先级条目。没有精选事项时给出简短状态说明，不逐项解释过滤内容或复述排除规则。\n" + json.dumps({
                     "date": briefing_date, "window_start": window_start, "window_end": window_end, "items": batch,
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
                 }, ensure_ascii=False), rule_text, tool)
