@@ -634,6 +634,14 @@ class ApiClient {
     return (await this.briefingRequest<{ todo: Todo }>('/api/todos', payload)).todo
   }
 
+  async getTodoFocus(today: string): Promise<Todo[]> {
+    return (await this.briefingRequest<{ todos: Todo[] }>(`/api/todos?mode=focus&today=${encodeURIComponent(today)}`)).todos
+  }
+
+  async completeTodoChecklist(id: string, itemId: string, completed: boolean): Promise<void> {
+    await this.briefingRequest('/api/todos/checklist/complete', { id, item_id: itemId, completed })
+  }
+
   async updateTodo(id: string, payload: TodoInput): Promise<Todo> {
     return (await this.briefingRequest<{ todo: Todo }>('/api/todos/update', { id, ...payload })).todo
   }

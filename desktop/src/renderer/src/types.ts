@@ -819,11 +819,14 @@ export interface Todo {
   due_on: string | null; due_time: string | null; timezone: string; priority: number
   completed_at: string | null; repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
   repeat_days: string; repeat_until: string | null
+  planned_on: string | null; list_name: string; tags: string; flagged: number; checklist: string
   source_type: string | null; source_key: string | null; source_url: string
   user_modified: number; briefing_id: string | null; created_at: string; updated_at: string
 }
+export interface TodoChecklistItem { id: string; title: string; completed: boolean }
 export type TodoInput = Pick<Todo, 'title' | 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until'> &
-  { repeat_days: number[] }
+  { repeat_days: number[]; planned_on?: string | null; list_name?: string; tags?: string[];
+    flagged?: boolean | number; checklist?: TodoChecklistItem[] }
 
 export interface UncertainReminder {
   delivery_id: string

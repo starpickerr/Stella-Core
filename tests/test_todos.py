@@ -35,6 +35,47 @@ def test_undated_todo_can_be_edited_completed_and_deleted(service):
     assert service.list_todos() == []
 
 
+def test_old_database_migrates_without_losing_todos(service):
+    old = service.create_todo({"title": "Existing", "due_on": "2026-10-02"})
+    with sqlite3.connect(service.db_path) as db:
+        for column in ("planned_on", "list_name", "tags", "flagged", "checklist"):
+            db.execute(f"ALTER TABLE todos DROP COLUMN {column}")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    migrated = reopened.get_todo(old["id"])
+    assert migrated["title"] == "Existing" and migrated["due_on"] == "2026-10-02"
+    assert migrated["tags"] == "[]" and migrated["list_name"] == "" and migrated["flagged"] == 0
+    updated = reopened.update_todo(old["id"], {"planned_on": "2026-10-01", "list_name": "Work",
+        "tags": ["urgent", "urgent"], "flagged": True,
+        "checklist": [{"id": "upload", "title": "Upload PDF"}]})
+    assert updated["planned_on"] == "2026-10-01" and updated["due_on"] == "2026-10-02"
+    assert json.loads(updated["tags"]) == ["urgent"]
+
+
+def test_repeating_checklist_completion_and_plan_date_are_occurrence_scoped(service):
+    todo = service.create_todo({"title": "Daily", "due_on": "2026-10-02", "planned_on": "2026-10-01",
+        "repeat_frequency": "daily", "checklist": [{"id": "step", "title": "Check"}]})
+    service.complete_checklist_item(f"{todo['id']}@2026-10-02", "step", True)
+    rows = service.list_todos("2026-10-02", "2026-10-04")
+    assert rows[0]["planned_on"] == "2026-10-01" and rows[1]["planned_on"] == "2026-10-02"
+    assert json.loads(rows[0]["checklist"])[0]["completed"] is True
+    assert json.loads(rows[1]["checklist"])[0]["completed"] is False
+    assert service.list_todos_focus("2026-10-02")[0]["id"] == rows[0]["id"]
+    service.complete_todo(rows[0]["id"], True)
+    focus = service.list_todos_focus("2026-10-02")
+    assert len(focus) == 2
+    assert focus[0]["id"] == rows[1]["id"] and focus[0]["completed_at"] is None
+    assert focus[1]["id"] == rows[0]["id"] and focus[1]["completed_at"] is not None
+
+
+@pytest.mark.parametrize("payload", [{"tags": "oops"}, {"flagged": 2}, {"planned_on": "tomorrow"},
+    {"checklist": [{"title": "", "completed": True}]},
+    {"checklist": [{"id": "x", "title": "One"}, {"id": "x", "title": "Two"}]}])
+def test_organization_fields_reject_invalid_values(service, payload):
+    with pytest.raises(ValueError):
+        service.create_todo({"title": "Test", **payload})
+    assert service.list_todos() == []
+
+
 def test_weekly_completion_applies_to_one_occurrence(service):
     todo = service.create_todo({"title": "上交周报", "due_on": "2026-10-05", "due_time": "17:00",
                                 "repeat_frequency": "weekly", "repeat_days": [0], "repeat_until": "2026-10-19"})
