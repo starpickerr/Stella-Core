@@ -3345,6 +3345,7 @@ class ModelsHandler:
                 "api_base_field": None,
                 "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
                 "api_base": raw_base,
+                "protocol_id": p.get("protocol_id") or "openai_chat",
                 "api_base_default": "",
                 "api_base_placeholder": meta.get("api_base_placeholder") or "",
                 "models": [p.get("model")] if p.get("model") else [],
@@ -3401,6 +3402,10 @@ class ModelsHandler:
                 "api_base_field": base_field,
                 "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
                 "api_base": raw_base or (p.get("api_base_default") or ""),
+                "protocol_id": (local_config.get("provider_protocols") or {}).get(pid) or
+                               ("anthropic_messages" if pid == "claudeAPI" else
+                                "gemini_native" if pid == "gemini" else
+                                "openai_chat" if pid in ("openai", "custom") else "legacy"),
                 "api_base_default": p.get("api_base_default") or "",
                 "api_base_placeholder": p.get("api_base_placeholder") or "",
                 "models": list(p.get("models") or []),
@@ -3517,6 +3522,9 @@ class ModelsHandler:
             "editable": True,
             "current_provider": provider_id,
             "current_model": local_config.get("model", ""),
+            "protocol_id": local_config.get("chat_protocol_id") or next(
+                (card.get("protocol_id") for card in cls._provider_overview()
+                 if card["id"] == provider_id), "legacy"),
             "providers": provider_ids,
             "use_linkai": bool(local_config.get("use_linkai", False)),
         }
@@ -4044,6 +4052,29 @@ class ModelsHandler:
         local_config = conf()
         file_cfg = self._read_file_config()
 
+        if "protocol_id" in data:
+            from models.provider_config import PROTOCOLS
+            protocol_id = (data.get("protocol_id") or "").strip()
+            if provider_id not in ("openai", "claudeAPI", "gemini") or protocol_id not in PROTOCOLS:
+                return json.dumps({"status": "error", "message": "unsupported upstream protocol"})
+            native = {"openai": "openai_chat", "claudeAPI": "anthropic_messages",
+                      "gemini": "gemini_native"}[provider_id]
+            base_field = meta.get("api_base_key")
+            effective_base = api_base if api_base_present else local_config.get(base_field) if base_field else None
+            if protocol_id != native and not effective_base:
+                return json.dumps({"status": "error", "message": "protocol override requires an explicit API base"})
+            from models.provider_config import validate_endpoint
+            try:
+                validate_endpoint(effective_base or meta.get("api_base_default"),
+                                  api_key or local_config.get(meta.get("api_key_field"), ""))
+            except ValueError as exc:
+                return json.dumps({"status": "error", "message": str(exc)})
+            for target in (local_config, file_cfg):
+                protocols = dict(target.get("provider_protocols") or {})
+                protocols[provider_id] = protocol_id
+                target["provider_protocols"] = protocols
+            applied["protocol_id"] = protocol_id
+
         key_field = meta.get("api_key_field")
         if key_field and api_key:
             local_config[key_field] = api_key
@@ -4219,17 +4250,29 @@ class ModelsHandler:
         api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
         model = (data.get("model") or "").strip()
         make_active = bool(data.get("make_active"))
+        from models.provider_config import PROTOCOLS
+        protocol_id = (data.get("protocol_id") or "openai_chat").strip()
+        if protocol_id not in PROTOCOLS:
+            return json.dumps({"status": "error", "message": "unsupported upstream protocol"})
 
         local_config = conf()
         providers = self._normalize_custom_providers(local_config.get("custom_providers"))
 
         existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
+        if "protocol_id" in data:
+            from models.provider_config import validate_endpoint
+            try:
+                validate_endpoint(api_base or (existing or {}).get("api_base"),
+                                  api_key or (existing or {}).get("api_key"))
+            except ValueError as exc:
+                return json.dumps({"status": "error", "message": str(exc)})
         if existing is None:
             # Creating a new provider — api_base is mandatory.
             if not api_base:
                 return json.dumps({"status": "error", "message": "api_base is required"})
             provider_id = generate_provider_id()
             entry = {"id": provider_id, "name": name, "api_key": api_key, "api_base": api_base}
+            entry["protocol_id"] = protocol_id
             if model:
                 entry["model"] = model
             providers.append(entry)
@@ -4248,6 +4291,8 @@ class ModelsHandler:
                     existing["model"] = model
                 else:
                     existing.pop("model", None)
+            if "protocol_id" in data:
+                existing["protocol_id"] = protocol_id
             created = False
 
         # Decide bot_type — only switch when explicitly requested.
@@ -4316,7 +4361,7 @@ class ModelsHandler:
         model = (data.get("model") or "").strip()
 
         if capability == "chat":
-            return self._set_chat(provider_id, model)
+            return self._set_chat(provider_id, model, data.get("protocol_id"))
         if capability == "vision":
             return self._set_vision(provider_id, model)
         if capability == "asr":
@@ -4415,7 +4460,7 @@ class ModelsHandler:
             "model": model,
         })
 
-    def _set_chat(self, provider_id: str, model: str) -> str:
+    def _set_chat(self, provider_id: str, model: str, protocol_id=None) -> str:
         # Accept expanded custom provider ids ("custom:<id>") as well as the
         # built-in vendors, so the chat capability card and the custom
         # providers section behave consistently.
@@ -4433,6 +4478,28 @@ class ModelsHandler:
         applied = {}
         local_config = conf()
         file_cfg = self._read_file_config()
+
+        if protocol_id is not None:
+            from models.provider_config import PROTOCOLS
+            if protocol_id not in PROTOCOLS or not (provider_id in ("openai", "claudeAPI", "gemini", "custom")
+                                                   or provider_id.startswith("custom:")):
+                return json.dumps({"status": "error", "message": "unsupported upstream protocol"})
+            from models.provider_config import resolve_binding, validate_provider_ready
+            try:
+                provider, _ = resolve_binding(provider_id, model or local_config.get("model"),
+                                              protocol_id, local_config)
+                validate_provider_ready(provider)
+            except ValueError as exc:
+                return json.dumps({"status": "error", "message": str(exc)})
+            local_config["chat_protocol_id"] = protocol_id
+            file_cfg["chat_protocol_id"] = protocol_id
+            applied["chat_protocol_id"] = protocol_id
+        elif provider_id and provider_id != ("openai" if local_config.get("bot_type") == "chatGPT"
+                                             else local_config.get("bot_type")):
+            # A protocol selected for the previous global provider must not
+            # travel with a newly selected provider.
+            local_config.pop("chat_protocol_id", None)
+            file_cfg.pop("chat_protocol_id", None)
 
         # Fall back to the custom provider's default model when none is given.
         if not model and custom_provider:

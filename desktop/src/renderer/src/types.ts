@@ -495,6 +495,7 @@ export interface ModelProvider {
   api_base_field?: string | null
   api_key_masked?: string
   api_base?: string
+  protocol_id?: string
   api_base_default?: string
   api_base_placeholder?: string
   models: ModelEntry[]
@@ -516,6 +517,7 @@ export interface CapabilityState {
   editable?: boolean
   current_provider?: string
   current_model?: string
+  protocol_id?: string
   current_voice?: string
   current_dim?: number | null
   suggested_provider?: string
@@ -568,12 +570,12 @@ export interface ModelsData {
 }
 
 export type ModelsAction =
-  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string }
+  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string }
   | { action: 'delete_provider'; provider_id: string }
-  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; protocol_id?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
-  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string }
+  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; protocol_id?: string; voice?: string; strategy?: string; provider?: string }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 

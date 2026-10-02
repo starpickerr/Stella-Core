@@ -48,6 +48,15 @@ const REPLY_MODES: { value: 'off' | 'voice_if_voice' | 'always'; key: string }[]
   { value: 'always', key: 'models_tts_mode_always' },
 ]
 
+const UPSTREAM_PROTOCOLS = [
+  { value: 'openai_chat', label: 'OpenAI Chat Completions' },
+  { value: 'openai_responses', label: 'OpenAI Responses' },
+  { value: 'anthropic_messages', label: 'Anthropic Messages' },
+  { value: 'gemini_native', label: 'Gemini Native' },
+]
+const canSelectProtocol = (id?: string) =>
+  id === 'openai' || id === 'claudeAPI' || id === 'gemini' || id === 'custom' || !!id?.startsWith('custom:')
+
 const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
   const [data, setData] = useState<ModelsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -123,6 +132,20 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         status={statusMap.chat}
         onSave={(p, m) => run('chat', { action: 'set_capability', capability: 'chat', provider_id: p, model: m })}
       />
+      {canSelectProtocol(caps.chat.current_provider) && (
+        <Card icon={<Database size={16} />}
+          title={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}
+          subtitle={localizedLabel({ zh: '仅改变模型接口格式，不改变桌面本地连接', en: 'Changes the model API format only' })}>
+          <Field label={localizedLabel({ zh: '当前聊天绑定', en: 'Current chat binding' })}>
+            <Dropdown value={caps.chat.protocol_id || 'openai_chat'} options={UPSTREAM_PROTOCOLS}
+              onChange={(protocol_id) => run('chat_protocol', {
+                action: 'set_capability', capability: 'chat',
+                provider_id: caps.chat.current_provider, model: caps.chat.current_model, protocol_id,
+              })} />
+          </Field>
+          {statusMap.chat_protocol && <p className="text-xs text-content-secondary">{statusMap.chat_protocol}</p>}
+        </Card>
+      )}
 
       {/* Vision */}
       <CapabilityCard
@@ -321,6 +344,8 @@ const VendorModal: React.FC<{
   const [keyDirty, setKeyDirty] = useState(false)
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
+  const [protocolId, setProtocolId] = useState('openai_chat')
+  const [protocolDirty, setProtocolDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -331,6 +356,8 @@ const VendorModal: React.FC<{
     setPickId(provider ? provider.id : firstUnconfigured?.id || '')
     setApiKey(init?.api_key_masked || '')
     setApiBase(init?.api_base || '')
+    setProtocolId(init?.protocol_id || 'openai_chat')
+    setProtocolDirty(false)
     setKeyDirty(false)
     setKeyVisible(false)
     setSaveError('')
@@ -359,6 +386,8 @@ const VendorModal: React.FC<{
     const p = builtins.find((x) => x.id === val)
     setApiKey(p?.api_key_masked || '')
     setApiBase(p?.api_base || '')
+    setProtocolId(p?.protocol_id || 'openai_chat')
+    setProtocolDirty(false)
     setKeyDirty(false)
   }
 
@@ -369,12 +398,13 @@ const VendorModal: React.FC<{
     setSaving(true)
     setSaveError('')
     try {
-      const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string } = {
+      const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string } = {
         action: 'set_provider',
         provider_id: effective.id,
       }
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
+      if (canSelectProtocol(effective.id) && protocolDirty) payload.protocol_id = protocolId
       const result = await apiClient.modelsAction(payload)
       if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
@@ -468,6 +498,14 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
+      {canSelectProtocol(effective?.id) && (
+        <Field label={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}>
+          <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={(value) => {
+            setProtocolId(value)
+            setProtocolDirty(true)
+          }} />
+        </Field>
+      )}
       {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
@@ -482,6 +520,7 @@ const CustomProviderModal: React.FC<{
   const [name, setName] = useState('')
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [protocolId, setProtocolId] = useState('openai_chat')
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -492,10 +531,12 @@ const CustomProviderModal: React.FC<{
       setName(editing.custom_name || localizedLabel(editing.label))
       setApiBase(editing.api_base || '')
       setApiKey(editing.api_key_masked || '')
+      setProtocolId(editing.protocol_id || 'openai_chat')
     } else {
       setName('')
       setApiBase('')
       setApiKey('')
+      setProtocolId('openai_chat')
     }
     setKeyDirty(false)
     setSaveError('')
@@ -514,10 +555,12 @@ const CustomProviderModal: React.FC<{
         id?: string
         api_base: string
         api_key?: string
+        protocol_id: string
       } = {
         action: 'set_custom_provider',
         name: name.trim(),
         api_base: apiBase.trim(),
+        protocol_id: protocolId,
       }
       if (editing) payload.id = editing.custom_id
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
@@ -579,6 +622,9 @@ const CustomProviderModal: React.FC<{
           onChange={(e) => setApiBase(e.target.value)}
           placeholder="https://...../v1"
         />
+      </Field>
+      <Field label={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}>
+        <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={setProtocolId} />
       </Field>
       <Field label="API Key">
         <TextInput

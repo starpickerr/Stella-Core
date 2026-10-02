@@ -28,7 +28,7 @@ class RunRecord:
                     run_id TEXT PRIMARY KEY, request_id TEXT, job_run_id TEXT,
                     user_id TEXT, agent_id TEXT, session_id TEXT, source TEXT NOT NULL,
                     status TEXT NOT NULL, started_at TEXT, finished_at TEXT,
-                    error TEXT
+                    error TEXT, provider_id TEXT, protocol_id TEXT, model_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS run_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
@@ -38,6 +38,10 @@ class RunRecord:
                 );
                 CREATE INDEX IF NOT EXISTS run_events_by_run ON run_events(run_id,id);
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(runs)")}
+            for column in ("provider_id", "protocol_id", "model_id"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT")
         with _recovery_lock:
             if str(self.path) not in _recovered_paths:
                 with self._connect() as db:
@@ -87,3 +91,8 @@ class RunRecord:
                 (run_id,kind,occurred_at,step_id,tool_call_id,operation_id)
                 VALUES (?,?,?,?,?,?)""",
                 (run_id, kind, _now(), step_id, tool_call_id, operation_id))
+
+    def set_model_binding(self, run_id, provider_id, protocol_id, model_id):
+        with self._connect() as db:
+            db.execute("""UPDATE runs SET provider_id=?,protocol_id=?,model_id=?
+                WHERE run_id=?""", (provider_id, protocol_id, model_id, run_id))
