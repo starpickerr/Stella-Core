@@ -148,8 +148,24 @@ def test_completed_occurrence_advances_after_restart_without_reexecution(tmp_pat
     called = []
     SchedulerService(store, lambda task: called.append(task))._check_and_execute_tasks()
     assert called == []
-    assert store.get_task("once") is None
+    completed = store.get_task("once")
+    assert completed["enabled"] is False
+    assert completed["completed_at"]
+    assert completed["next_run_at"] is None
     assert store.occurrence_status("once", scheduled_at) == "completed"
+
+
+def test_expired_once_task_keeps_its_schedule_for_review(tmp_path):
+    store = AutomationStore(tmp_path / "scheduler" / "tasks.json", "primary")
+    scheduled_at = (datetime.now() - timedelta(hours=1)).isoformat()
+    store.add_task({"id": "once", "name": "Once", "enabled": True,
+                    "schedule": {"type": "once", "run_at": scheduled_at},
+                    "next_run_at": scheduled_at, "action": {"type": "send_message"}})
+    SchedulerService(store, lambda _task: True)._check_and_execute_tasks()
+    expired = store.get_task("once")
+    assert expired["enabled"] is False
+    assert expired["expired_at"]
+    assert expired["schedule"]["run_at"] == scheduled_at
 
 
 def test_expired_running_lease_requires_outcome_review(tmp_path):

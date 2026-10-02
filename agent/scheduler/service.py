@@ -146,8 +146,12 @@ class SchedulerService:
                 "retry_at": None,
             })
         else:
-            self.task_store.delete_task(task['id'])
-            logger.info(f"[Scheduler] One-time task completed and removed: {task['id']}")
+            self.task_store.update_task(task['id'], {
+                "enabled": False, "next_run_at": None, "retry_at": None,
+                "last_run_at": now.isoformat(),
+                "completed_at" if task.get("schedule", {}).get("type") == "once" else "stopped_at": now.isoformat(),
+            })
+            logger.info(f"[Scheduler] Task {task['id']} completed with no next run")
 
     def run_task_now(self, task_id: str) -> None:
         """Queue one immediate execution without changing the task schedule.
@@ -262,8 +266,11 @@ class SchedulerService:
                 )
 
                 if schedule_type == "once":
-                    self.task_store.delete_task(task['id'])
-                    logger.info(f"[Scheduler] One-time task {task['id']} expired, removed")
+                    self.task_store.update_task(task['id'], {
+                        "enabled": False, "next_run_at": None,
+                        "expired_at": now.isoformat(),
+                    })
+                    logger.info(f"[Scheduler] One-time task {task['id']} expired")
                     return False
 
                 next_next_run = self._calculate_next_run(task, now)
