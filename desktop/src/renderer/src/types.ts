@@ -744,6 +744,8 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   next_run_at?: string
+  last_run_status?: string
+  last_error?: string
 }
 
 // ============================================================
