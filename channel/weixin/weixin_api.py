@@ -162,10 +162,14 @@ class WeixinApi:
                                    f"{backoff}s: {e}")
                     time.sleep(backoff)
                     continue
-                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                # The long-poll loop owns its retry and diagnostic log. Logging
+                # here as well produces two errors for each failed poll.
+                if endpoint != "ilink/bot/getupdates":
+                    logger.error(f"[Weixin] API error {endpoint}: {e}")
                 raise
             except Exception as e:
-                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                if endpoint != "ilink/bot/getupdates":
+                    logger.error(f"[Weixin] API error {endpoint}: {e}")
                 raise
 
     # ── getUpdates (long-poll) ─────────────────────────────────────────
