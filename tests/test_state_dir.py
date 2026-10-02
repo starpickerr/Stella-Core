@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -96,6 +97,46 @@ def test_a_user_sits_beside_the_agents_not_under_one(registry, tmp_path):
         assert state_dir.memory_file() == tmp_path / "alpha" / "users" / "u1" / "MEMORY.md"
         # ...while what makes beta a different Agent stays with beta
         assert state_dir.tmp_dir(ensure=False) == tmp_path / "beta" / "tmp"
+
+
+def test_second_agent_cannot_open_legacy_local_user_data_before_migration(registry):
+    with identity_scope(agent_id="alpha", user_id="local-default"):
+        assert state_dir.user_root() == Path(registry.get("alpha").workspace)
+    with identity_scope(agent_id="beta"):
+        with pytest.raises(state_dir.StateDirError, match="not migrated"):
+            state_dir.todos_db(ensure=False)
+    with identity_scope(agent_id="beta", user_id="local-default"):
+        with pytest.raises(state_dir.StateDirError, match="not migrated"):
+            state_dir.todos_db(ensure=False)
+
+
+def test_offline_migration_copies_business_data_and_switches_local_user_path(registry, tmp_path):
+    from common.user_data_migration import migrate_local_default
+
+    root = tmp_path / "alpha"
+    (root / "bills").mkdir(parents=True)
+    legacy_db = root / "bills" / "bills.db"
+    with sqlite3.connect(legacy_db) as db:
+        db.execute("CREATE TABLE entries (amount INTEGER)")
+        db.execute("INSERT INTO entries VALUES (42)")
+    (root / "MEMORY.md").write_text("remember this", encoding="utf-8")
+
+    canonical = migrate_local_default(root)
+    assert migrate_local_default(root) == canonical
+    assert legacy_db.exists()
+    with sqlite3.connect(canonical / "bills" / "bills.db") as db:
+        assert db.execute("SELECT amount FROM entries").fetchone()[0] == 42
+    assert (canonical / "MEMORY.md").read_text(encoding="utf-8") == "remember this"
+    with identity_scope(agent_id="alpha"):
+        assert state_dir.user_root() == canonical
+    with identity_scope(agent_id="beta"):
+        assert state_dir.user_root() == canonical
+
+
+def test_user_id_cannot_escape_canonical_user_root(registry):
+    with identity_scope(user_id="../other"):
+        with pytest.raises(state_dir.StateDirError, match="invalid user id"):
+            state_dir.user_root()
 
 
 def test_a_second_agent_reads_the_shared_assets(registry, tmp_path):

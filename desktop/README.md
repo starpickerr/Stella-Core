@@ -41,6 +41,22 @@ npm run dev:main
 
 The app will automatically start the Python backend from the parent directory.
 
+### Adding a second Agent to an existing installation
+
+The original local user's business data stays in the default Agent workspace
+until it is copied to the canonical `users/local-default` directory. Before
+enabling a second Agent, quit Stella and stop its Python backend, then run from
+the repository root:
+
+```bash
+python -m scripts.migrate_user_data --confirm-offline
+```
+
+The migration copies user data, uses SQLite backups for databases, and retains
+the original files. It activates the new path only after the copy completes.
+If the copy has not been activated, a second Agent cannot open the legacy
+local user's business data.
+
 ### Checks
 
 ```bash
