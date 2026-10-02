@@ -176,6 +176,20 @@ class BriefingStore:
         try:
             conn.executescript(load_schema_sql())
             conn.executescript("""
+                CREATE TABLE IF NOT EXISTS briefing_source_staging (
+                    run_id TEXT NOT NULL, source TEXT NOT NULL, account_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL, snapshot TEXT NOT NULL, staged_at TEXT NOT NULL,
+                    PRIMARY KEY(run_id,source,account_id,source_id)
+                );
+                CREATE INDEX IF NOT EXISTS briefing_source_staging_age
+                    ON briefing_source_staging(staged_at);
+                CREATE TABLE IF NOT EXISTS briefing_source_errors (
+                    run_id TEXT NOT NULL, source TEXT NOT NULL, account_id TEXT NOT NULL,
+                    errors TEXT NOT NULL, staged_at TEXT NOT NULL,
+                    PRIMARY KEY(run_id,source,account_id)
+                );
+                CREATE INDEX IF NOT EXISTS briefing_source_errors_age
+                    ON briefing_source_errors(staged_at);
                 CREATE TABLE IF NOT EXISTS briefing_outbox (
                     briefing_id TEXT NOT NULL, revision INTEGER NOT NULL,
                     snapshot TEXT NOT NULL, calendar_ack_at TEXT, todo_ack_at TEXT,
@@ -279,67 +293,105 @@ class BriefingStore:
     def upsert_source_item(
         self, item: SourceItem, email: Optional[EmailMessage] = None
     ) -> Tuple[SourceItem, Optional[EmailMessage]]:
-        payload = _dump_payload(item.payload)
         with self._conn() as conn:
-            existing = conn.execute(
-                """
-                SELECT id FROM source_items
-                WHERE source = ? AND account_id = ? AND source_id = ?
-                """,
-                (item.source, item.account_id, item.source_id),
-            ).fetchone()
-            if existing is None:
-                conn.execute(
-                    """
-                    INSERT INTO source_items (
-                        id, source, account_id, source_id, thread_id,
-                        sender, title, snippet, occurred_at, url, payload,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        item.id,
-                        item.source,
-                        item.account_id,
-                        item.source_id,
-                        item.thread_id,
-                        item.sender,
-                        item.title,
-                        item.snippet,
-                        item.occurred_at,
-                        item.url,
-                        payload,
-                        item.created_at,
-                        item.updated_at,
-                    ),
-                )
-                persisted_id = item.id
-            else:
-                persisted_id = existing["id"]
-                conn.execute(
-                    """
-                    UPDATE source_items SET
-                        thread_id = ?, sender = ?, title = ?, snippet = ?,
-                        occurred_at = ?, url = ?, payload = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        item.thread_id,
-                        item.sender,
-                        item.title,
-                        item.snippet,
-                        item.occurred_at,
-                        item.url,
-                        payload,
-                        item.updated_at,
-                        persisted_id,
-                    ),
-                )
-            if email is not None:
-                self._upsert_email(conn, persisted_id, email)
+            persisted_id = self._upsert_source_item(conn, item, email)
             found = self._fetch_source(conn, "s.id = ?", (persisted_id,))
         assert found is not None
         return found
+
+    def _upsert_source_item(self, conn, item, email):
+        payload = _dump_payload(item.payload)
+        existing = conn.execute(
+            """SELECT id FROM source_items
+               WHERE source = ? AND account_id = ? AND source_id = ?""",
+            (item.source, item.account_id, item.source_id),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """INSERT INTO source_items (
+                    id, source, account_id, source_id, thread_id,
+                    sender, title, snippet, occurred_at, url, payload,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (item.id, item.source, item.account_id, item.source_id,
+                 item.thread_id, item.sender, item.title, item.snippet,
+                 item.occurred_at, item.url, payload, item.created_at, item.updated_at),
+            )
+            persisted_id = item.id
+        else:
+            persisted_id = existing["id"]
+            conn.execute(
+                """UPDATE source_items SET
+                    thread_id = ?, sender = ?, title = ?, snippet = ?,
+                    occurred_at = ?, url = ?, payload = ?, updated_at = ?
+                WHERE id = ?""",
+                (item.thread_id, item.sender, item.title, item.snippet,
+                 item.occurred_at, item.url, payload, item.updated_at, persisted_id),
+            )
+        if email is not None:
+            self._upsert_email(conn, persisted_id, email)
+        return persisted_id
+
+    def stage_source_items(self, run_id, rows):
+        """Durably stage fetched candidates without changing the live catalog."""
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute("DELETE FROM briefing_source_staging WHERE staged_at<?",
+                         ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),))
+            conn.execute("DELETE FROM briefing_source_errors WHERE staged_at<?",
+                         ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),))
+            for item, email in rows:
+                snapshot = {"item": asdict(item), "email": asdict(email) if email else None}
+                conn.execute("""INSERT INTO briefing_source_staging
+                    (run_id,source,account_id,source_id,snapshot,staged_at) VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(run_id,source,account_id,source_id) DO UPDATE SET
+                    snapshot=excluded.snapshot,staged_at=excluded.staged_at""",
+                    (run_id, item.source, item.account_id, item.source_id,
+                     _dump_payload(snapshot), stamp))
+
+    def stage_source_errors(self, run_id, source, account_id, errors):
+        with self._conn() as conn:
+            conn.execute("""INSERT INTO briefing_source_errors
+                (run_id,source,account_id,errors,staged_at) VALUES (?,?,?,?,?)
+                ON CONFLICT(run_id,source,account_id) DO UPDATE SET
+                errors=excluded.errors,staged_at=excluded.staged_at""",
+                (run_id, source, account_id, json.dumps(errors, ensure_ascii=False),
+                 datetime.now(timezone.utc).isoformat()))
+
+    def staged_source_map(self, run_id):
+        with self._conn() as conn:
+            rows = conn.execute("SELECT snapshot FROM briefing_source_staging WHERE run_id=?",
+                                (run_id,)).fetchall()
+        result = {}
+        for row in rows:
+            snapshot = json.loads(row[0])
+            item = SourceItem(**snapshot["item"])
+            result[item.id] = item
+        return result
+
+    def staged_window_candidates(self, run_id, start, end, accounts):
+        result = {(item.source, item.account_id, item.source_id): (item, email)
+                  for item, email in self.window_candidates(start, end, accounts)}
+        allowed = set(accounts)
+        start_at = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        end_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        with self._conn() as conn:
+            rows = conn.execute("SELECT snapshot FROM briefing_source_staging WHERE run_id=?",
+                                (run_id,)).fetchall()
+        for row in rows:
+            snapshot = json.loads(row[0])
+            item = SourceItem(**snapshot["item"])
+            key = (item.source, item.account_id, item.source_id)
+            if (item.source, item.account_id) not in allowed:
+                continue
+            result.pop(key, None)
+            occurred = datetime.fromisoformat(item.occurred_at.replace("Z", "+00:00"))
+            if not start_at < occurred <= end_at:
+                continue
+            email = EmailMessage(**snapshot["email"]) if snapshot["email"] else None
+            result[key] = item, email
+        return sorted(result.values(), key=lambda row: (
+            datetime.fromisoformat(row[0].occurred_at.replace("Z", "+00:00")), row[0].id))
 
     def get_source_item(
         self, item_id: str
@@ -445,9 +497,19 @@ class BriefingStore:
             ).fetchall()
             return [_briefing_from_row(row) for row in rows]
 
-    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None, cursor_updates=None) -> None:
-        """Commit the document, cards, classified mail and history atomically."""
+    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None, cursor_updates=None, staged_run_id=None) -> None:
+        """Commit candidates, cursors, document, history and Outbox atomically."""
         with self._conn() as conn:
+            if staged_run_id and briefing.status in ("completed", "partial"):
+                staged = conn.execute("SELECT snapshot FROM briefing_source_staging WHERE run_id=?",
+                                      (staged_run_id,)).fetchall()
+                for row in staged:
+                    snapshot = json.loads(row[0])
+                    item = SourceItem(**snapshot["item"])
+                    email = EmailMessage(**snapshot["email"]) if snapshot["email"] else None
+                    self._upsert_source_item(conn, item, email)
+                conn.execute("DELETE FROM briefing_source_staging WHERE run_id=?", (staged_run_id,))
+                conn.execute("DELETE FROM briefing_source_errors WHERE run_id=?", (staged_run_id,))
             self._write_briefing(conn, briefing)
             if items is not None:
                 self._replace_items(conn, briefing.id, items)
