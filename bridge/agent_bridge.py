@@ -692,6 +692,7 @@ class AgentBridge:
         manager = getattr(self, "_session_run", None)
         if manager is None:
             manager = self._session_run = SessionRun()
+        ticket = manager.reserve(user_id, agent_id, session_id)
         with identity_scope(agent_id=agent_id, user_id=user_id,
                             session_id=session_id, run_id=run_id):
             admission_store = None
@@ -711,6 +712,7 @@ class AgentBridge:
                         )
                     except Exception as exc:
                         logger.error(f"[AgentBridge] Failed to admit user message for session={session_id}: {exc}")
+                        manager.discard(ticket)
                         return Reply(ReplyType.ERROR, "Could not save the message; the agent did not run")
             try:
                 store = RunRecord()
@@ -719,10 +721,13 @@ class AgentBridge:
                              job_run_id=context.get("job_run_id") if context else None,
                              source="scheduler" if context and context.get("is_scheduled_task") else "chat")
             except Exception:
-                if admission_store is not None:
-                    admission_store.transition_run_admission(run_id, "failed")
+                try:
+                    if admission_store is not None:
+                        admission_store.transition_run_admission(run_id, "failed")
+                finally:
+                    manager.discard(ticket)
                 raise
-            with manager.enter(user_id, agent_id, session_id):
+            with manager.enter(user_id, agent_id, session_id, ticket=ticket):
                 if admission_store is not None:
                     try:
                         # A newly initialized Agent restores stored history.
@@ -744,7 +749,7 @@ class AgentBridge:
                             data = event.get("data") or {}
                             try:
                                 store.event(run_id, kind, step_id=str(data.get("turn")) if data.get("turn") is not None else None,
-                                            tool_call_id=data.get("tool_call_id"))
+                                            tool_call_id=data.get("tool_call_id"), operation_id=data.get("operation_id"))
                                 if kind == "tool_execution_end" and data.get("permission_denied"):
                                     store.event(run_id, "permission_denied", tool_call_id=data.get("tool_call_id"))
                             except Exception as exc:

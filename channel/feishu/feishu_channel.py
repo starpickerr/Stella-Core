@@ -919,6 +919,7 @@ class FeiShuChanel(ChatChannel):
                 "content": content_json
             }
             res = requests.post(url=url, headers=headers, params=params, json=data, timeout=(5, 10))
+        res.raise_for_status()
         res = res.json()
         if res.get("code") == 0:
             logger.info(f"[FeiShu] send message success")
@@ -947,6 +948,7 @@ class FeiShuChanel(ChatChannel):
                     json=fallback_data,
                     timeout=(5, 10),
                 )
+            fallback_res.raise_for_status()
             fallback_body = fallback_res.json()
             if fallback_body.get("code") == 0:
                 logger.info("[FeiShu] text fallback sent successfully")
@@ -955,8 +957,10 @@ class FeiShuChanel(ChatChannel):
                     "[FeiShu] text fallback failed, "
                     f"code={fallback_body.get('code')}, msg={fallback_body.get('msg')}"
                 )
+                raise RuntimeError(f"Feishu delivery failed: {fallback_body.get('code')}")
         else:
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
+            raise RuntimeError(f"Feishu delivery failed: {res.get('code')}")
 
     def _make_feishu_stream_callback(self, context, access_token):
         """Route to detailed or plain streaming callback based on config.

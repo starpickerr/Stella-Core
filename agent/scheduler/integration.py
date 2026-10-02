@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from config import conf
 from common.log import logger
 from common.utils import expand_path
+from agent.scheduler.outcome import ExecutionOutcome
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 
@@ -129,7 +130,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                             return _execute_skill_call(task, agent_bridge, agent_id)
                         else:
                             logger.warning(f"[Scheduler] Unknown action type: {action_type}")
-                            return True
+                            return ExecutionOutcome("failed", f"Unknown action type: {action_type}")
                 except Exception as e:
                     logger.error(f"[Scheduler] Error executing task {task.get('id')}: {e}")
                     return False
@@ -164,7 +165,7 @@ def _is_channel_ready(
     to preserve previous behaviour.
     """
     if not channel_type or channel_type == "unknown":
-        return True
+        return False
     try:
         from channel.channel_factory import create_channel
         channel = create_channel(channel_type)
@@ -188,7 +189,7 @@ def _is_channel_ready(
         return True
     except Exception as e:
         logger.warning(f"[Scheduler] Channel readiness check failed for {channel_type}: {e}")
-        return True
+        return False
 
 
 def get_task_store(workspace_root: str = None, agent_id: str = None):
@@ -269,6 +270,14 @@ def _remember_delivered_output(
         )
 
 
+def _send_checked(channel, reply, context):
+    context["scheduled_delivery"] = True
+    result = channel.send(reply, context)
+    if result is False or (isinstance(result, dict) and result.get("success") is False):
+        raise RuntimeError("Channel rejected scheduled delivery")
+    return result
+
+
 def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """
     Execute an agent_task action - let Agent handle the task.
@@ -283,11 +292,11 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         
         if not task_description:
             logger.error(f"[Scheduler] Task {task['id']}: No task_description specified")
-            return True  # malformed task, don't loop forever
+            return ExecutionOutcome("failed", "task_description is required")
         
         if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
         
         # Check for unsupported channels
         if channel_type == "dingtalk":
@@ -309,7 +318,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
 
         # Create a unique session_id for this scheduled task to avoid polluting user's conversation
         # Format: scheduler_<receiver>_<task_id> to ensure isolation
-        scheduler_session_id = f"scheduler_{receiver or 'silent'}_{task['id']}"
+        scheduler_session_id = f"scheduler_{task['id']}"
         
         # Create context for Agent
         context = Context(ContextType.TEXT, execution_prompt)
@@ -317,6 +326,8 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
         if task.get("job_run_id"):
             context["job_run_id"] = task["job_run_id"]
         
@@ -326,7 +337,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "dingtalk":
             # DingTalk requires msg object, set to None for scheduled tasks
@@ -352,7 +363,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=False)
                 if getattr(reply, "type", None) == ReplyType.ERROR:
                     logger.error(f"[Scheduler] Task {task['id']}: Agent run failed; outcome needs review")
-                    return True
+                    return ExecutionOutcome("failed", str(reply.content))
                 content = reply.content if reply else ""
                 save_output(store, job_run_id, content)
             reply = Reply(ReplyType.TEXT, content)
@@ -384,7 +395,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                     channel.request_to_session[request_id] = receiver
 
             try:
-                channel.send(reply, context)
+                _send_checked(channel, reply, context)
             except Exception as e:
                 logger.error(f"[Scheduler] Failed to send result: {e}")
                 return False
@@ -399,13 +410,13 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Failed to execute task via Agent: {e}")
             import traceback
             logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-            return bool(task.get("job_run_id"))
+            return ExecutionOutcome("outcome_unknown", str(e))
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in _execute_agent_task: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return bool(task.get("job_run_id"))
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> bool:
@@ -419,7 +430,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         
         if not receiver:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
         
         # Create context for sending message
         context = Context(ContextType.TEXT, content)
@@ -427,6 +438,8 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         context["isgroup"] = is_group
         context["session_id"] = receiver
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
         
         # Channel-specific context setup
         if channel_type == "web":
@@ -438,7 +451,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         elif channel_type == "feishu":
             # Feishu channel: for scheduled tasks, send as new message (no msg_id to reply to)
             # Use chat_id for groups, open_id for private chats
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             # Keep isgroup as is, but set msg to None (no original message to reply to)
             # Feishu channel will detect this and send as new message instead of reply
             context["msg"] = None
@@ -474,7 +487,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
             channel.request_to_session[request_id] = receiver
 
         try:
-            channel.send(reply, context)
+            _send_checked(channel, reply, context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send message: {e}")
             return False
@@ -541,6 +554,7 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
                   agent_id=agent_id or identity.agent_id, session_id=source_session, source="scheduler")
     record.transition(run_id, "running")
     invoked = False
+    tool_call_id = uuid.uuid4().hex
     try:
         with identity_scope(run_id=run_id, session_id=source_session):
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
@@ -553,13 +567,23 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
             if not tool:
                 record.transition(run_id, "failed", f"Tool '{tool_name}' not found")
                 return ExecutionOutcome("failed", f"Tool '{tool_name}' not found")
+            from agent.runtime.tool_invocation import execution_workspace
+            cwd, _ = execution_workspace(source_session, agent_id, _resolve_workspace(agent_id=agent_id))
+            setter = getattr(tool, "set_cwd", None)
+            if callable(setter):
+                setter(cwd)
+            else:
+                tool.cwd = cwd
+            tool.config = dict(getattr(tool, "config", {}) or {}, cwd=cwd)
             tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True,
                 "agent_id": agent_id, "session_id": source_session, "job_run_id": task.get("job_run_id")})
             tool.cancel_event = cancel_event
-            record.event(run_id, "tool_execution_start")
+            record.event(run_id, "tool_execution_start", tool_call_id=tool_call_id)
             invoked = True
-            result = tool.execute(tool_params)
-            record.event(run_id, "tool_execution_end")
+            from agent.runtime.tool_invocation import invocation_scope
+            with invocation_scope(tool_call_id):
+                result = tool.execute(tool_params)
+            record.event(run_id, "tool_execution_end", tool_call_id=tool_call_id)
             content = result.result if hasattr(result, "result") else str(result)
             if getattr(result, "status", None) == "error":
                 record.transition(run_id, "failed", str(content))
@@ -589,17 +613,26 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
 
         if not tool_name:
             logger.error(f"[Scheduler] Task {task['id']}: No tool_name specified")
-            return True
+            return ExecutionOutcome("failed", "tool name is required")
         if not receiver and not silent:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
 
         from agent.scheduler.result_cache import load_output, save_output
         store = get_task_store(agent_id=agent_id)
         job_run_id = task.get("job_run_id")
         content = load_output(store, job_run_id)
         if content is None:
-            content = _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store)
+            from agent.runtime.session_run import SessionRun
+            from common.runtime_identity import current_identity
+            manager = getattr(agent_bridge, "_session_run", None)
+            if manager is None:
+                manager = SessionRun()
+                if agent_bridge is not None:
+                    agent_bridge._session_run = manager
+            source = action.get("execution_session_id") or action.get("notify_session_id")
+            with manager.enter(current_identity().user_id, agent_id, source or f"scheduler_{task['id']}"):
+                content = _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store)
             from agent.scheduler.outcome import ExecutionOutcome
             if isinstance(content, ExecutionOutcome):
                 return content
@@ -613,6 +646,8 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
         context["isgroup"] = is_group
         context["session_id"] = receiver
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
 
         request_id = None
         if channel_type == "web":
@@ -620,7 +655,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "wecom_bot":
             context["msg"] = None
@@ -637,7 +672,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             channel.request_to_session[request_id] = receiver
 
         try:
-            channel.send(reply, context)
+            _send_checked(channel, reply, context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send tool result: {e}")
             return False
@@ -668,19 +703,21 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
 
         if not skill_name:
             logger.error(f"[Scheduler] Task {task['id']}: No skill_name specified")
-            return True
+            return ExecutionOutcome("failed", "skill name is required")
         if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
 
         logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}' with params {skill_params}")
 
-        scheduler_session_id = f"scheduler_{receiver or 'silent'}_{task['id']}"
+        scheduler_session_id = f"scheduler_{task['id']}"
         context = Context(ContextType.TEXT, "Scheduled skill execution")
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
         context["is_scheduled_task"] = True
         if task.get("job_run_id"):
             context["job_run_id"] = task["job_run_id"]
@@ -690,7 +727,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "wecom_bot":
             context["msg"] = None
@@ -706,10 +743,10 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
                     skill_name, skill_params, context, agent_id)
             except Exception as e:
                 logger.error(f"[Scheduler] Failed to execute skill via Agent: {e}")
-                return True
+                return ExecutionOutcome("outcome_unknown", str(e))
             if getattr(reply, "type", None) == ReplyType.ERROR:
                 logger.error(f"[Scheduler] Task {task['id']}: Skill run failed; outcome needs review")
-                return True
+                return ExecutionOutcome("failed", str(reply.content))
             content = reply.content if reply else ""
             save_output(store, job_run_id, content)
 
@@ -735,7 +772,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 channel.request_to_session[req_id] = receiver
 
         try:
-            channel.send(Reply(ReplyType.TEXT, content), context)
+            _send_checked(channel, Reply(ReplyType.TEXT, content), context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send skill result: {e}")
             return False
@@ -750,7 +787,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         logger.error(f"[Scheduler] Error in _execute_skill_call: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return bool(task.get("job_run_id"))
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def attach_scheduler_to_tool(tool, context: Context = None):

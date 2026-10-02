@@ -1,4 +1,5 @@
 import importlib
+import copy
 import importlib.util
 import threading
 from pathlib import Path
@@ -608,7 +609,7 @@ class ToolManager:
             if not (added or removed):
                 return ([], [])
             for name in added:
-                agent_tools[name] = current[name]
+                agent_tools[name] = copy.copy(current[name])
             for name in removed:
                 agent_tools.pop(name, None)
 
@@ -626,7 +627,7 @@ class ToolManager:
                     if not (isinstance(t, McpTool) and t.name in removed)
                 ]
             for name in added:
-                agent.tools.append(current[name])
+                agent.tools.append(copy.copy(current[name]))
 
         else:
             return ([], [])
@@ -732,14 +733,15 @@ class ToolManager:
 
             # Apply configuration if available
             if hasattr(self, 'tool_configs') and name in self.tool_configs:
-                tool_instance.config = self.tool_configs[name]
+                tool_instance.config = dict(self.tool_configs[name])
 
             return tool_instance
 
         # Fall back to MCP tool instances
         mcp_tool = self._mcp_tool_instances.get(name)
         if mcp_tool:
-            return mcp_tool
+            # Per-call fields (context, cwd, cancellation) belong to one Agent.
+            return copy.copy(mcp_tool)
 
         return None
 

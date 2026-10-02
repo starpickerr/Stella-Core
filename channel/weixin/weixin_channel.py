@@ -640,7 +640,7 @@ class WeixinChannel(ChatChannel):
 
         if not context_token:
             logger.error(f"[Weixin] No context_token for receiver={receiver}, cannot send")
-            return
+            raise RuntimeError("Weixin recipient has no context token; send a message to the bot first")
 
         # A media reply can carry an accompanying message (the agent's summary of
         # the file it just sent). ilink has no caption field, so it goes out as a
@@ -682,7 +682,9 @@ class WeixinChannel(ChatChannel):
         per-user token so the next push won't retry forever.
         """
         if not isinstance(resp, dict):
-            return
+            raise RuntimeError("Invalid Weixin send response")
+        if "ret" not in resp and "errcode" not in resp:
+            raise RuntimeError("Weixin send response has no acknowledgement code")
         ret = resp.get("ret")
         errcode = resp.get("errcode")
         if ret == -14 or errcode == -14:
@@ -691,6 +693,8 @@ class WeixinChannel(ChatChannel):
                 f"receiver={receiver}; dropping cached context_token"
             )
             self._invalidate_context_token(receiver)
+        if ret not in (None, 0) or errcode not in (None, 0):
+            raise RuntimeError(f"Weixin send failed: {ret or errcode}")
 
     def _send_text(self, text: str, receiver: str, context_token: str):
         if len(text) <= TEXT_CHUNK_LIMIT:
@@ -700,6 +704,7 @@ class WeixinChannel(ChatChannel):
                 logger.debug(f"[Weixin] Text sent to {receiver}, len={len(text)}")
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text: {e}")
+                raise
             return
 
         chunks = self._split_text(text, TEXT_CHUNK_LIMIT)
@@ -710,7 +715,7 @@ class WeixinChannel(ChatChannel):
                 logger.debug(f"[Weixin] Text chunk {i+1}/{len(chunks)} sent to {receiver}, len={len(chunk)}")
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text chunk {i+1}/{len(chunks)}: {e}")
-                break
+                raise
             if i < len(chunks) - 1:
                 time.sleep(0.5)
 
