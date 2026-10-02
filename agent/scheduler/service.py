@@ -133,6 +133,11 @@ class SchedulerService:
                         "last_error": ok.error, "last_run_status": ok.status,
                         "last_error_at": datetime.now().isoformat()})
                     return
+                self.task_store.update_task(task['id'], {
+                    "last_run_status": ok.status if isinstance(ok, ExecutionOutcome) else "delivery_pending",
+                    "last_error": ok.error if isinstance(ok, ExecutionOutcome) else "Delivery pending; the saved execution output will be reused",
+                    "last_error_at": datetime.now().isoformat(),
+                })
                 retry_seconds = task.get("retry_interval_seconds", 0)
                 if retry_seconds:
                     self.task_store.update_task(task['id'], {
@@ -145,6 +150,7 @@ class SchedulerService:
             logger.error(f"[Scheduler] Error processing task {task.get('id')}: {e}")
 
     def _advance_completed_task(self, task, now):
+        self.task_store.update_task(task['id'], {"last_run_status": "completed", "last_error": None})
         next_run = self._calculate_next_run(task, now)
         if next_run:
             self.task_store.update_task(task['id'], {
@@ -190,6 +196,7 @@ class SchedulerService:
                     self.task_store.update_task(task_id, {
                         "last_run_at": now.isoformat(),
                         "last_manual_run_at": now.isoformat(),
+                        "last_run_status": "completed", "last_error": None,
                     })
                     logger.info(f"[Scheduler] Manual execution completed: {task_id}")
                 else:

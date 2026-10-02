@@ -123,6 +123,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
+                    {task.last_run_status && <p className="text-xs text-content-tertiary mb-2">{t(('task_status_'+task.last_run_status) as Parameters<typeof t>[0])}{task.last_error ? ` · ${task.last_error}` : ''}</p>}
                     <div
                       className="flex items-center gap-2 text-xs text-content-tertiary"
                       onClick={(e) => e.stopPropagation()}
