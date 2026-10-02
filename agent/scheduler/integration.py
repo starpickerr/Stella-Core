@@ -98,7 +98,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
 
                 try:
                     owner_user_id = task.get("owner_user_id") or None
-                    owner_session_id = (task.get("action") or {}).get("notify_session_id")
+                    owner_session_id = ((task.get("action") or {}).get("execution_session_id") or
+                                        (task.get("action") or {}).get("notify_session_id"))
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
                                         session_id=owner_session_id):
                         action = task.get("action", {})
@@ -119,20 +120,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         if action_type == "agent_task":
                             return _execute_agent_task(task, agent_bridge, agent_id)
                         elif action_type == "application_command":
-                            from application import Application, RequestContext
-                            base_context = RequestContext.ambient("scheduler")
-                            context = RequestContext(
-                                user_id=base_context.user_id, agent_id=base_context.agent_id,
-                                session_id=base_context.session_id, source="scheduler",
-                                idempotency_key=task.get("job_run_id"))
-                            try:
-                                result = Application.command(
-                                    action.get("domain"), action.get("command"), action.get("params"), context)
-                                logger.info(f"[Scheduler] Business command completed: {result['operation_id']}")
-                            except Exception as exc:
-                                logger.error(f"[Scheduler] Business command outcome needs review: {exc}")
-                                return True
-                            return True
+                            return _execute_application_command(task, agent_id)
                         elif action_type == "send_message":
                             return _execute_send_message(task, agent_bridge, agent_id)
                         elif action_type == "tool_call":
@@ -504,6 +492,89 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         return False
 
 
+def _execute_application_command(task, agent_id=None):
+    from application import Application, RequestContext
+    from agent.runtime.run_record import RunRecord
+    from agent.scheduler.outcome import ExecutionOutcome
+    from common.runtime_identity import current_identity, identity_scope
+    import uuid
+    action = task.get("action", {})
+    base = RequestContext.ambient("scheduler")
+    run_id = uuid.uuid4().hex
+    record = RunRecord()
+    record.create(run_id, job_run_id=task.get("job_run_id"), user_id=base.user_id,
+                  agent_id=agent_id, session_id=base.session_id, source="scheduler")
+    record.transition(run_id, "running")
+    try:
+        with identity_scope(run_id=run_id):
+            context = RequestContext(user_id=base.user_id, agent_id=agent_id, session_id=base.session_id,
+                source="scheduler", idempotency_key=task.get("job_run_id"))
+            record.event(run_id, "tool_execution_start", operation_id=context.idempotency_key)
+            result = Application.command(action.get("domain"), action.get("command"), action.get("params"), context)
+            record.event(run_id, "tool_execution_end", operation_id=result["operation_id"])
+            record.transition(run_id, "completed")
+            return True
+    except Exception as exc:
+        status = "failed" if isinstance(exc, (PermissionError, ValueError)) else "outcome_unknown"
+        if isinstance(exc, PermissionError):
+            record.event(run_id, "permission_denied")
+        record.event(run_id, "tool_execution_end")
+        record.transition(run_id, status, str(exc))
+        return ExecutionOutcome(status, str(exc))
+
+
+def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store):
+    """Record execution independently of the result's delivery attempts."""
+    from agent.runtime.run_record import RunRecord
+    from agent.runtime.tool_invocation import permission_denial
+    from agent.scheduler.outcome import ExecutionOutcome
+    from agent.scheduler.result_cache import save_output
+    from agent.tools.tool_manager import ToolManager
+    from common.runtime_identity import current_identity, identity_scope
+    import uuid
+    identity = current_identity()
+    run_id = uuid.uuid4().hex
+    record = RunRecord()
+    action = task.get("action", {})
+    source_session = action.get("execution_session_id") or action.get("notify_session_id")
+    record.create(run_id, job_run_id=task.get("job_run_id"), user_id=identity.user_id,
+                  agent_id=agent_id or identity.agent_id, session_id=source_session, source="scheduler")
+    record.transition(run_id, "running")
+    invoked = False
+    try:
+        with identity_scope(run_id=run_id, session_id=source_session):
+            denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
+                session_id=source_session, workspace=_resolve_workspace(agent_id=agent_id))
+            if denial:
+                record.event(run_id, "permission_denied")
+                record.transition(run_id, "failed", denial)
+                return ExecutionOutcome("failed", denial)
+            tool = ToolManager().create_tool(tool_name)
+            if not tool:
+                record.transition(run_id, "failed", f"Tool '{tool_name}' not found")
+                return ExecutionOutcome("failed", f"Tool '{tool_name}' not found")
+            tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True,
+                "agent_id": agent_id, "session_id": source_session, "job_run_id": task.get("job_run_id")})
+            tool.cancel_event = cancel_event
+            record.event(run_id, "tool_execution_start")
+            invoked = True
+            result = tool.execute(tool_params)
+            record.event(run_id, "tool_execution_end")
+            content = result.result if hasattr(result, "result") else str(result)
+            if getattr(result, "status", None) == "error":
+                record.transition(run_id, "failed", str(content))
+                retryable = (tool_name == "briefing" and tool_params.get("action") == "run" and
+                             tool_params.get("operation", "create") == "create")
+                return ExecutionOutcome("failed", str(content), retryable=retryable)
+            save_output(store, task.get("job_run_id"), content)
+            record.transition(run_id, "completed")
+            return content
+    except Exception as exc:
+        status = "outcome_unknown" if invoked else "failed"
+        record.transition(run_id, status, str(exc))
+        return ExecutionOutcome(status, str(exc))
+
+
 def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_event=None) -> bool:
     """Execute a tool_call action. Returns True/False for delivery."""
     try:
@@ -528,36 +599,10 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
         job_run_id = task.get("job_run_id")
         content = load_output(store, job_run_id)
         if content is None:
-            from agent.runtime.tool_invocation import permission_denial
-            denial = permission_denial(
-                tool_name, tool_params, agent_id=agent_id,
-                session_id=action.get("notify_session_id"),
-                workspace=_resolve_workspace(agent_id=agent_id),
-            )
-            if denial:
-                logger.warning(f"[Scheduler] Task {task['id']}: {denial}")
-                return True
-
-            from agent.tools.tool_manager import ToolManager
-            tool = ToolManager().create_tool(tool_name)
-            if not tool:
-                logger.error(f"[Scheduler] Task {task['id']}: Tool '{tool_name}' not found")
-                return True
-
-            logger.info(f"[Scheduler] Task {task['id']}: Executing tool '{tool_name}' with params {tool_params}")
-            tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True, "agent_id": agent_id})
-            tool.cancel_event = cancel_event
-            result = tool.execute(tool_params)
-            content = result.result if hasattr(result, 'result') else str(result)
-            if getattr(result, "status", None) == "error":
-                logger.error(f"[Scheduler] Task {task['id']}: Tool failed: {content}")
-                retryable_briefing = (tool_name == "briefing" and
-                                      tool_params.get("action") == "run" and
-                                      tool_params.get("operation", "create") == "create")
-                # The JSON scheduler retains its established retry semantics.
-                # Desktop SQLite runs only retry the idempotent create briefing.
-                return False if not job_run_id or retryable_briefing else True
-            save_output(store, job_run_id, content)
+            content = _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store)
+            from agent.scheduler.outcome import ExecutionOutcome
+            if isinstance(content, ExecutionOutcome):
+                return content
         if silent:
             return True
         if result_prefix:
@@ -605,9 +650,8 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in _execute_tool_call: {e}")
-        # The execution outcome may be unknown. Do not replay a side-effecting
-        # tool merely because its Python call raised after doing some work.
-        return True
+        from agent.scheduler.outcome import ExecutionOutcome
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:

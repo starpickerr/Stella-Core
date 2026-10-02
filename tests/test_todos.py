@@ -67,6 +67,13 @@ def test_repeating_checklist_completion_and_plan_date_are_occurrence_scoped(serv
     assert focus[1]["id"] == rows[0]["id"] and focus[1]["completed_at"] is not None
 
 
+def test_focus_keeps_sparse_leap_year_series_visible(service):
+    todo = service.create_todo({"title": "Leap day", "due_on": "2096-02-29", "repeat_frequency": "yearly"})
+    service.complete_todo(f"{todo['id']}@2096-02-29", True)
+    focus = service.list_todos_focus("2100-03-01")
+    assert focus[0]["due_on"] == "2104-02-29" and focus[0]["completed_at"] is None
+
+
 @pytest.mark.parametrize("payload", [{"tags": "oops"}, {"flagged": 2}, {"planned_on": "tomorrow"},
     {"checklist": [{"title": "", "completed": True}]},
     {"checklist": [{"id": "x", "title": "One"}, {"id": "x", "title": "Two"}]}])

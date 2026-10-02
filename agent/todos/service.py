@@ -615,8 +615,11 @@ class TodoService:
                 result.append(row)
                 continue
             first = date.fromisoformat(row["due_on"])
+            # Leap-day yearly series can have an eight-year gap around a
+            # non-leap century (e.g. 2096 -> 2104).
+            search_days = 3000 if row["repeat_frequency"] == "yearly" else 371
             latest = None
-            for offset in range(371):
+            for offset in range(search_days):
                 candidate = anchor - timedelta(days=offset)
                 if candidate < first:
                     break
@@ -626,7 +629,7 @@ class TodoService:
             active = latest if latest and (row["id"], latest.isoformat()) not in completions else None
             if active is None:
                 candidate = max(first, anchor + timedelta(days=1))
-                for offset in range(371):
+                for offset in range(search_days):
                     day = candidate + timedelta(days=offset)
                     if self._todo_matches(row, day) and (row["id"], day.isoformat()) not in completions:
                         active = day

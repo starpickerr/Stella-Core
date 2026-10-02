@@ -32,6 +32,7 @@ import BillsPage from './pages/BillsPage'
 import BriefingPage from './pages/BriefingPage'
 import CalendarPage from './pages/CalendarPage'
 import TodosPage from './pages/TodosPage'
+import SecurityPage from './pages/SecurityPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -243,7 +244,7 @@ const App: React.FC = () => {
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
-            <Route path="/security" element={<PlaceholderPage title={t('menu_security')} hint={t('placeholder_coming')} />} />
+            <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             {/* Legacy /models route now lives as a tab inside settings */}
             <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

@@ -127,6 +127,12 @@ class SchedulerService:
             finally:
                 self._release_task(task['id'])
             if not ok:
+                from agent.scheduler.outcome import ExecutionOutcome
+                if isinstance(ok, ExecutionOutcome) and not ok.retryable:
+                    self.task_store.update_task(task['id'], {"enabled": False, "retry_at": None,
+                        "last_error": ok.error, "last_run_status": ok.status,
+                        "last_error_at": datetime.now().isoformat()})
+                    return
                 retry_seconds = task.get("retry_interval_seconds", 0)
                 if retry_seconds:
                     self.task_store.update_task(task['id'], {
@@ -187,6 +193,11 @@ class SchedulerService:
                     })
                     logger.info(f"[Scheduler] Manual execution completed: {task_id}")
                 else:
+                    from agent.scheduler.outcome import ExecutionOutcome
+                    if isinstance(ok, ExecutionOutcome):
+                        self.task_store.update_task(task_id, {"last_error": ok.error,
+                            "last_run_status": ok.status, "last_error_at": now.isoformat(),
+                            **({"enabled": False} if not ok.retryable else {})})
                     logger.warning(f"[Scheduler] Manual execution failed: {task_id}")
             finally:
                 self._release_task(task_id)
@@ -353,6 +364,9 @@ class SchedulerService:
         """
         try:
             result = self.execute_callback(task)
+            from agent.scheduler.outcome import ExecutionOutcome
+            if isinstance(result, ExecutionOutcome):
+                return result
             return False if result is False else True
         except Exception as e:
             logger.error(f"[Scheduler] Error executing task {task['id']}: {e}")

@@ -397,11 +397,27 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
+  async getSecurityActivity(): Promise<{ run_id: string; session_id: string | null; source: string;
+    status: string; started_at: string | null; finished_at: string | null; denied_count: number }[]> {
+    const result = await this.request<{ status: string; runs: { run_id: string; session_id: string | null;
+      source: string; status: string; started_at: string | null; finished_at: string | null; denied_count: number }[] }>('/api/security/activity')
+    if (result.status !== 'success') throw new Error('Unable to load activity')
+    return result.runs
+  }
+
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {
-    return this.request('/config', {
+    const result = await this.request<{ status: string; applied: Record<string, unknown> }>('/config', {
       method: 'POST',
       body: JSON.stringify({ updates }),
     })
+    if (result.status === 'success' && typeof result.applied?.web_password === 'string') {
+      const password = String(updates.web_password || '')
+      if (password) {
+        const login = await this.authLogin(password)
+        if (login.status !== 'success') throw new Error(login.message || 'Password saved; sign in again to continue')
+      } else this.setAuthToken(null)
+    }
+    return result
   }
 
   // ---------------------------------------------------------
