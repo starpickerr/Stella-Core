@@ -31,7 +31,7 @@ import type {
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
   CalendarCategory, CalendarEvent, CalendarEventInput,
-  Todo, TodoInput,
+  Todo, TodoInput, UncertainReminder,
 } from '../types'
 import { getLang } from '../i18n'
 
@@ -644,6 +644,16 @@ class ApiClient {
 
   async deleteTodo(id: string): Promise<void> {
     await this.briefingRequest('/api/todos/delete', { id })
+  }
+
+  async getUncertainReminders(): Promise<UncertainReminder[]> {
+    return (await this.briefingRequest<{ reminders: UncertainReminder[] }>(
+      '/api/todos/reminders/uncertain')).reminders
+  }
+
+  async retryUncertainReminder(deliveryId: string): Promise<boolean> {
+    return (await this.briefingRequest<{ queued: boolean }>(
+      '/api/todos/reminders/retry', { delivery_id: deliveryId })).queued
   }
 
 

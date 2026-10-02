@@ -825,6 +825,13 @@ export interface Todo {
 export type TodoInput = Pick<Todo, 'title' | 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until'> &
   { repeat_days: number[] }
 
+export interface UncertainReminder {
+  delivery_id: string
+  todo_id: string
+  occurrence_on: string
+  title: string
+}
+
 export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
