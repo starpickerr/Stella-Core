@@ -103,6 +103,10 @@ class AgentLLMModel(LLMModel):
 
     @property
     def model(self):
+        from common.runtime_identity import current_identity
+        run_id = current_identity().run_id
+        if run_id and getattr(self, "_binding_run_id", None) == run_id and self._bot_model:
+            return self._bot_model
         return self._session_model or conf().get("model") or const.DEFAULT_MODEL
 
     @model.setter
@@ -193,15 +197,40 @@ class AgentLLMModel(LLMModel):
 
     @property
     def bot(self):
-        """Lazy load the bot, re-create when model or bot_type changes"""
+        """Pin provider, model and upstream protocol for this model call."""
         from models.bot_factory import create_bot
+        from models.provider_config import resolve_binding
+        from models.protocols import create_protocol_adapter
+        from common.runtime_identity import current_identity
+        run_id = current_identity().run_id
+        if run_id and self._bot is not None and getattr(self, "_binding_run_id", None) == run_id:
+            return self._bot
         cur_model = self.model
-        cur_bot_type = self._resolve_bot_type(cur_model)
-        if self._bot is None or self._bot_model != cur_model or getattr(self, '_bot_type', None) != cur_bot_type:
-            self._bot = create_bot(cur_bot_type)
-            self._bot = add_openai_compatible_support(self._bot)
+        configured = conf().get("bot_type")
+        global_selected = (const.LINKAI if conf().get("use_linkai", False) and
+                           conf().get("linkai_api_key") else configured or const.OPENAI)
+        selected = self._session_provider or self._resolve_bot_type(cur_model)
+        # A global protocol override belongs only to the globally selected
+        # model. A session pinned to another provider uses that provider's
+        # own protocol, even when the two models have the same name.
+        override = (conf().get("chat_protocol_id") if not self._session_provider or
+                    self.provider_to_bot_type(self._session_provider) == global_selected else None)
+        provider, binding = resolve_binding(selected, cur_model, override)
+        key = (binding.provider_id, binding.model_id, binding.protocol_id,
+               provider.api_base, provider.credential_ref, provider.api_key)
+        if self._bot is None or getattr(self, "_bot_binding_key", None) != key:
+            if binding.protocol_id == "legacy":
+                self._bot = add_openai_compatible_support(create_bot(provider.bot_type))
+            else:
+                self._bot = create_protocol_adapter(provider, binding)
             self._bot_model = cur_model
-            self._bot_type = cur_bot_type
+            self._bot_type = provider.bot_type
+            self._bot_binding_key = key
+        self._binding_run_id = run_id
+        if run_id:
+            from agent.runtime.run_record import RunRecord
+            RunRecord().set_model_binding(run_id, binding.provider_id,
+                                          binding.protocol_id, binding.model_id)
         return self._bot
 
     def call(self, request: LLMRequest):

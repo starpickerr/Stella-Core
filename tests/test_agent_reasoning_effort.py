@@ -34,6 +34,8 @@ def _model_with_bot(monkeypatch, bot_type, model_name, use_linkai=False):
 
     model = AgentLLMModel(None)
     bot = _Bot()
+    monkeypatch.setattr("models.protocols.create_protocol_adapter", lambda *_args: bot)
+    monkeypatch.setattr("models.bot_factory.create_bot", lambda *_args: bot)
     model._bot = bot
     model._bot_model = model_name
     model._bot_type = model._resolve_bot_type(model_name)
