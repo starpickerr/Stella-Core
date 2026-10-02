@@ -68,11 +68,13 @@ def normalize_mode(value: Any, default: Optional[str] = None) -> str:
     """Coerce anything the API or config may hold into a known mode id."""
     fallback = default if default in MODES else DEFAULT_MODE
     if not isinstance(value, str):
-        return fallback
+        return fallback if value is None else READ_ONLY
     v = value.strip().lower()
+    if not v:
+        return fallback
     if v in MODES:
         return v
-    return _ALIASES.get(v, fallback)
+    return _ALIASES.get(v, READ_ONLY)
 
 
 def global_mode() -> str:
@@ -345,9 +347,10 @@ def _real(path: str, cwd: Optional[str]) -> str:
 
 
 def _normalize_roots(roots: Optional[Iterable[str]], cwd: Optional[str]) -> List[str]:
-    """Absolute, de-duplicated write roots, always including cwd and temp."""
+    """Absolute write roots. Explicit scopes must not gain implicit directories."""
     out: List[str] = []
-    for root in list(roots or []) + [cwd, tempfile.gettempdir()]:
+    candidates = list(roots) if roots is not None else [cwd, tempfile.gettempdir()]
+    for root in candidates:
         if not root:
             continue
         try:
@@ -383,14 +386,10 @@ def _switch_hint() -> str:
     """One line telling the model what to do, without a UI location that could
     mislead a channel user.
 
-    The permission selector lives in the console — the desktop app or the Web
-    console — so a user chatting through a channel (WeChat, Telegram, ...)
-    cannot see anything "under the chat input". We name the console by build so
-    the model can point the user to the right place, and keep it short.
+    Channel users may need to open the desktop app to change permissions.
     """
-    where = "the desktop app" if os.environ.get("STELLA_DESKTOP") == "1" else "the Web console"
     return (
-        f"To allow it, the user can change this session's permission in {where} "
+        "To allow it, the user can change this session's permission in the desktop app "
         f"(or the global security setting). Do not retry the same call: use a "
         f"route the current mode allows, or tell the user which mode is needed."
     )
@@ -425,7 +424,8 @@ def check_tool_call(
         A :class:`Decision` whose ``reason`` is written for the model: what was
         refused, and what to do instead.
     """
-    mode = normalize_mode(mode)
+    if mode not in MODES:
+        return Decision(False, "Unknown permission mode; the tool did not run.")
     if mode == FULL_ACCESS:
         return ALLOW
 
@@ -484,7 +484,7 @@ def _check_workspace_write(
 
     if tool_name in _FILE_WRITE_TOOLS:
         path = str(args.get("path") or "")
-        if path and not _inside_roots(path, roots, cwd):
+        if not path or not _inside_roots(path, roots, cwd):
             return _deny(
                 f"'{path}' is outside the writable area ({_roots_hint(roots)}), so "
                 f"{tool_name} did not run and nothing was written. Reading it is "

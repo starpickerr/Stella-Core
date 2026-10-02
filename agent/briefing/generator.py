@@ -82,6 +82,7 @@ class BriefingAgent(Agent):
 
 
 class ReadSourceTool(BaseTool):
+    required_capability = "read"
     name = "read_briefing_source"
     description = "阅读本批候选原文；只读，支持 offset 分页。"
     params = {"type": "object", "properties": {
@@ -104,6 +105,7 @@ class ReadSourceTool(BaseTool):
 
 
 class ResultTool(BaseTool):
+    required_capability = "read"
     def __init__(self, name, schema, validate):
         self.name = name
         self.description = "提交本批完整结果；所有 ID 必须来自当前批次，且恰好覆盖一次。"

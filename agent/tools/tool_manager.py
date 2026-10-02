@@ -515,6 +515,13 @@ class ToolManager:
                         # Atomic dict assignment is GIL-safe; readers iterate
                         # over a list() snapshot to avoid concurrent mutation.
                         self._mcp_tool_instances[tool_name] = mcp_tool
+                        from agent.permission.gateway import Capability, register_tool
+                        try:
+                            register_tool(tool_name, Capability.EXTERNAL)
+                        except ValueError:
+                            logger.warning("[MCP] Skipped a tool with an invalid security declaration")
+                            self._mcp_tool_instances.pop(tool_name, None)
+                            continue
                         added.append(tool_name)
 
                     # Register client into the shared registry only after its

@@ -100,6 +100,11 @@ class Agent:
         """
         # If tool is already an instance, use it directly
         tool.model = self.model
+        from agent.permission.gateway import Capability, register_tool
+        try:
+            register_tool(tool.name, Capability(tool.required_capability))
+        except (ValueError, AttributeError):
+            pass
         self.tools.append(tool)
 
     # Tools whose cwd defines the working directory. Memory and other tools
@@ -174,12 +179,11 @@ class Agent:
     def write_roots(self) -> list:
         """Directories that stay writable under the workspace-write mode.
 
-        The working directory is where the user's work belongs; the Agent's own
-        state root has to stay writable regardless, or memory, skills and
-        knowledge - which live there by design - would break in project mode.
+        A project chat can write only in its active project. Ordinary chats use
+        the Agent workspace. Internal state writes are handled by services.
         """
         roots = [self.effective_cwd()]
-        if self.workspace_dir:
+        if not self.project_dir and self.workspace_dir:
             roots.append(self.workspace_dir)
         return roots
 

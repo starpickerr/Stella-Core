@@ -2,6 +2,30 @@ import logging
 import os
 import sys
 import io
+import re
+import traceback
+
+
+_SECRET_FIELD = re.compile(
+    r'(?i)(["\']?(?:password|token|api[_-]?key|cookie|authorization|client[_-]?secret|access[_-]?token)["\']?\s*[:=]\s*)(["\']?)([^\s,}"\']+)',
+)
+_BEARER = re.compile(r'(?i)\bBearer\s+[^\s,;]+')
+
+
+class _SecretFilter(logging.Filter):
+    def filter(self, record):
+        message = _redact(record.getMessage())
+        record.msg = message
+        record.args = ()
+        if record.exc_info:
+            record.exc_text = _redact(''.join(traceback.format_exception(*record.exc_info)))
+            record.exc_info = None
+        return True
+
+
+def _redact(message):
+    message = _BEARER.sub('Bearer [REDACTED]', message)
+    return _SECRET_FIELD.sub(r'\1\2[REDACTED]', message)
 
 
 def _log_path():
@@ -27,6 +51,7 @@ def _reset_logger(log):
     if hasattr(stdout, "buffer"):
         stdout = io.TextIOWrapper(stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
     console_handle = logging.StreamHandler(stdout)
+    console_handle.addFilter(_SecretFilter())
     console_handle.setFormatter(
         logging.Formatter(
             "[%(levelname)s][%(asctime)s][%(filename)s:%(lineno)d] - %(message)s",
@@ -34,12 +59,17 @@ def _reset_logger(log):
         )
     )
     log.addHandler(console_handle)
+    # The Electron shell persists the backend's stdout/stderr to run.log.
+    # Writing the same record here would duplicate every packaged-app log.
+    if os.environ.get("STELLA_LOG_MIRRORED_BY_SHELL") == "1":
+        return
     # File logging is best-effort: if the log path isn't writable (e.g. a
     # packaged app installed under Program Files run by a non-admin user, with
     # an unwritable CWD), fall back to console-only instead of crashing the
     # whole process at import time.
     try:
         file_handle = logging.FileHandler(_log_path(), encoding="utf-8")
+        file_handle.addFilter(_SecretFilter())
         file_handle.setFormatter(
             logging.Formatter(
                 "[%(levelname)s][%(asctime)s][%(filename)s:%(lineno)d] - %(message)s",
