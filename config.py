@@ -326,6 +326,8 @@ available_setting = {
     # existing install behaves exactly as before an upgrade. Only a fresh desktop
     # client (STELLA_DESKTOP=1 with no config.json yet) starts in workspace-write.
     "agent_permission_mode": "full-access",
+    "agent_tool_allowlist": [],
+    "agent_account_allowlist": [],
     # In-process sub agents: the Agent hands a self-contained task to a
     # short-lived worker with its own context, and gets back only the result.
     # Set enabled to false to withhold the subagent tool entirely.

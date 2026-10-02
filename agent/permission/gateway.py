@@ -132,7 +132,8 @@ class SecurityGateway:
             decision = Decision(False, "Unknown tool capability or permission mode; the tool did not run.")
         elif allowlist is not None and tool_name not in allowlist:
             decision = Decision(False, "Tool is outside the current allowlist; it did not run.")
-        elif scope and scope.accounts and arguments.get("account") not in scope.accounts:
+        elif scope and scope.accounts and declared in (Capability.EXTERNAL, Capability.ADMIN) and \
+                str(arguments.get("account_id") or arguments.get("account") or "") not in scope.accounts:
             decision = Decision(False, "Account is outside the current scope; the tool did not run.")
         else:
             roots = scope.write_roots if scope else None

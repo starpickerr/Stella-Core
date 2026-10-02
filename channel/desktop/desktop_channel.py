@@ -2682,6 +2682,7 @@ class ConfigHandler:
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
         "agent_permission_mode",
+        "agent_tool_allowlist", "agent_account_allowlist",
     }
 
     # Switches the API exposes flat - one key, one control - while the config
@@ -2840,6 +2841,10 @@ class ConfigHandler:
                 # fall back and the UI would show a setting that does nothing.
                 if key == "agent_permission_mode":
                     value = permission_normalize_mode(value)
+                if key in ("agent_tool_allowlist", "agent_account_allowlist"):
+                    if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+                        return json.dumps({"status": "error", "message": f"{key} must be a list of names"})
+                    value = list(dict.fromkeys(item.strip() for item in value))
                 # reasoning_effort_by_model is a dict that must be *merged* with
                 # the persisted map, not replaced. A frontend submits only the
                 # entries it changed (merged locally), so whole-key replacement
