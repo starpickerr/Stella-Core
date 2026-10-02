@@ -70,7 +70,7 @@ class TestSharedDbRecovery(unittest.TestCase):
         return storage
 
     def _quarantined(self):
-        return [p.name for p in self.tmp.iterdir() if ".corrupt-" in p.name]
+        return [p.name for p in self.tmp.iterdir() if p.name.startswith("index.db.corrupt-")]
 
     # -- tests ---------------------------------------------------------
 
@@ -82,13 +82,10 @@ class TestSharedDbRecovery(unittest.TestCase):
         storage.close()
 
         raw = sqlite3.connect(self.db)
-        raw.execute(
-            "DELETE FROM chunks_fts_data WHERE id=(SELECT MAX(id) FROM chunks_fts_data)"
-        )
+        raw.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('delete-all')")
         raw.commit()
-        self.assertNotEqual(
-            raw.execute("PRAGMA integrity_check").fetchone()[0], "ok"
-        )
+        with self.assertRaises(sqlite3.DatabaseError):
+            raw.execute("INSERT INTO chunks_fts(chunks_fts, rank) VALUES('integrity-check', 1)")
         raw.close()
 
         recovered = MemoryStorage(self.db)
