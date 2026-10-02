@@ -48,15 +48,12 @@ const App: React.FC = () => {
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
   // Backend authentication must settle before the main UI renders.
-  const [authState, setAuthState] = useState<'checking' | 'need_login' | 'ok'>('checking')
+  const [auth, setAuth] = useState<{baseUrl: string; status: 'checking' | 'need_login' | 'ok'}>({baseUrl: '', status: 'checking'})
+  const authState = auth.baseUrl === backend.baseUrl ? auth.status : 'checking'
   const [productAuthed, setProductAuthed] = useState(false)
   // product.auth is fixed for the lifetime of the build.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const productRequiresAuth = product.auth ? product.auth.useRequiresAuth() : false
-
-  useEffect(() => {
-    if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
-  }, [backend.status, backend.baseUrl])
 
   // Prevent unhandled file drops from navigating away from the app.
   useEffect(() => {
@@ -73,20 +70,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (backend.status !== 'ready') {
-      setAuthState('checking')
+      setAuth({baseUrl: backend.baseUrl, status: 'checking'})
       return
     }
     let cancelled = false
+    apiClient.setBaseUrl(backend.baseUrl)
+    setAuth({baseUrl: backend.baseUrl, status: 'checking'})
     apiClient
       .authCheck()
       .then((res) => {
         if (cancelled) return
         const needLogin = res.auth_required && !res.authenticated
-        setAuthState(needLogin ? 'need_login' : 'ok')
+        setAuth({baseUrl: backend.baseUrl, status: needLogin ? 'need_login' : 'ok'})
       })
       .catch(() => {
         // Older backends may not expose the authentication check.
-        if (!cancelled) setAuthState('ok')
+        if (!cancelled) setAuth({baseUrl: backend.baseUrl, status: 'ok'})
       })
     return () => {
       cancelled = true
@@ -117,7 +116,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [backend.status, authState, maybeOpenOnboarding])
+  }, [backend.status, backend.baseUrl, authState, maybeOpenOnboarding])
 
   // Poll for scheduler/push messages once the backend and auth are settled.
   usePushPoll(backend.status === 'ready' && authState === 'ok')
@@ -171,7 +170,7 @@ const App: React.FC = () => {
   }
 
   if (authState === 'need_login') {
-    return <LoginGate onAuthenticated={() => setAuthState('ok')} />
+    return <LoginGate onAuthenticated={() => setAuth({baseUrl: backend.baseUrl, status: 'ok'})} />
   }
 
   // Optional gate from '@product', shown after the local auth check passes.
