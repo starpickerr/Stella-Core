@@ -218,6 +218,35 @@ def display_name_for(path: str) -> str:
     return _display_name(data, os.path.realpath(path))
 
 
+def get_security_policy(path: str) -> Dict:
+    """Only project-specific differences from the global security policy."""
+    with _lock:
+        entry = (_load().get("meta") or {}).get(_normalize(path)) or {}
+    return dict(entry.get("security_policy") or {})
+
+
+def set_security_policy(path: str, patch: Dict) -> Dict:
+    from agent.permission.security_policy import validate_patch
+    real = _normalize(path)
+    if not os.path.isdir(real):
+        raise FileNotFoundError(real)
+    clean = validate_patch(patch)
+    with _lock:
+        data = _load()
+        meta = data.setdefault("meta", {})
+        entry = dict(meta.get(real) or {})
+        if clean:
+            entry["security_policy"] = clean
+        else:
+            entry.pop("security_policy", None)
+        if entry:
+            meta[real] = entry
+        else:
+            meta.pop(real, None)
+        _save(data)
+    return clean
+
+
 def list_recents() -> List[Dict]:
     """Recently used projects, most recent first, pruning ones now gone."""
     with _lock:
@@ -229,6 +258,25 @@ def list_recents() -> List[Dict]:
             if path and os.path.isdir(path):
                 out.append({"path": path, "name": _display_name(data, path)})
     return out
+
+
+def list_known_projects() -> List[Dict]:
+    """Projects with a recent entry, policy, or live conversation binding."""
+    with _lock:
+        data = _load()
+    paths = []
+    for item in data.get("recents", []):
+        paths.append(item.get("path") if isinstance(item, dict) else item)
+    paths.extend((data.get("meta") or {}).keys())
+    for item in (data.get("sessions") or {}).values():
+        paths.append(item.get("path") if isinstance(item, dict) else item)
+    seen = set()
+    result = []
+    for path in paths:
+        if path and path not in seen and os.path.isdir(path):
+            seen.add(path)
+            result.append({"path": path, "name": _display_name(data, path)})
+    return result
 
 
 def rename_project(path: str, display_name: str) -> str:

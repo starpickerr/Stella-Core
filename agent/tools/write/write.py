@@ -141,7 +141,8 @@ class Write(BaseTool):
         # behavior; enable via config.json tools.write.restrict_to_workspace.
         if self.config.get("restrict_to_workspace"):
             ws = os.path.realpath(self.cwd)
-            if os.path.commonpath([ws, real]) != ws:
+            from agent.permission.gateway import _managed
+            if os.path.commonpath([ws, real]) != ws and not _managed(real):
                 raise PermissionError(
                     f"writing outside the workspace is not allowed: {path}"
                 )

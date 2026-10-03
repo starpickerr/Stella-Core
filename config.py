@@ -594,6 +594,27 @@ def load_config():
                 else:
                     config[name] = value
 
+    # One-time migration of stored legacy tool modes. The new policy is the
+    # only runtime authorization source; the old key is read solely here and
+    # from historical conversation preferences. Preserve all other fields.
+    if not isinstance(config.get("security_policy"), dict):
+        from agent.permission.policy import normalize_mode
+        from agent.permission.security_policy import legacy_policy
+
+        migrated = legacy_policy(normalize_mode(config.get("agent_permission_mode")))
+        config["security_policy"] = migrated
+        if config_path == user_config_path and "AGENT_PERMISSION_MODE" not in os.environ:
+            try:
+                stored = json.loads(read_file(user_config_path))
+                stored["security_policy"] = migrated
+                temporary = user_config_path + ".security-tmp"
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(stored, stream, ensure_ascii=False, indent=2)
+                os.replace(temporary, user_config_path)
+            except (OSError, ValueError) as migration_error:
+                logger.warning("[INIT] security policy migration could not be persisted: {}".format(migration_error))
+
     if config.get("debug", False):
         logger.setLevel(logging.DEBUG)
         logger.debug("[INIT] set log level to DEBUG")

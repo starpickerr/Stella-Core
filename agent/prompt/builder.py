@@ -155,15 +155,12 @@ def build_agent_system_prompt(
     # nothing in full-access mode, leaving the prompt as it has always been.
     if permission_mode:
         try:
-            from agent.permission import describe_mode
-
-            sections.extend(
-                describe_mode(
-                    permission_mode,
-                    language,
-                    cwd=project_dir or workspace_dir,
-                )
-            )
+            from agent.permission.security_policy import describe, resolve
+            from common.runtime_identity import current_identity
+            identity = current_identity()
+            policy = resolve(permission_mode, project_dir=project_dir,
+                             session_id=identity.session_id, agent_id=identity.agent_id)
+            sections.extend(describe(policy, language, workspace=project_dir or workspace_dir))
         except Exception as e:
             logger.debug(f"Permission prompt section skipped: {e}")
 

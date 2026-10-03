@@ -242,7 +242,7 @@ export interface ProjectRef {
 
 /** Project picker state for a session (from /api/projects). */
 export interface ProjectState {
-  /** null when the session uses the default workspace (~/stella). */
+  /** null when the session uses the default workspace. */
   current: ProjectRef | null
   default_workspace: string
   projects_root?: string
@@ -381,10 +381,10 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    mode: 'read-only' | 'workspace-write' | 'full-access'
     source: 'session' | 'global'
-    global: string
-    modes: string[]
+    preset: 'strict' | 'standard' | 'custom'
+    global_preset: 'strict' | 'standard' | 'custom'
+    presets: string[]
   }
 }
 
@@ -463,9 +463,6 @@ export interface ConfigData {
   agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
-  /** Global default permission for sessions that have not picked one. */
-  agent_permission_mode?: string
-  permission_modes?: string[]
   enable_thinking?: boolean
   reasoning_effort?: string
   reasoning_effort_by_model?: Record<string, string>
@@ -475,9 +472,6 @@ export interface ConfigData {
   api_keys: Record<string, string>
   providers: Record<string, ProviderMeta>
   web_password_masked?: string
-  // Real password, only returned to the desktop app (trusted local machine) so
-  // it can be edited in place. Undefined for browser access.
-  web_password?: string
 }
 
 // ============================================================

@@ -517,7 +517,7 @@ class ToolManager:
                         self._mcp_tool_instances[tool_name] = mcp_tool
                         from agent.permission.gateway import Capability, register_tool
                         try:
-                            register_tool(tool_name, Capability.EXTERNAL)
+                            register_tool(tool_name, Capability.EXTERNAL, connection=f"mcp:{server_name}")
                         except ValueError:
                             logger.warning("[MCP] Skipped a tool with an invalid security declaration")
                             self._mcp_tool_instances.pop(tool_name, None)

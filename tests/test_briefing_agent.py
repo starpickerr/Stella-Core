@@ -14,7 +14,8 @@ from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
+check_tool_call = SecurityGateway.check
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.tool_manager import ToolManager

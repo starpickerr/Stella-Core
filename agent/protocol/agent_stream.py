@@ -24,6 +24,24 @@ from agent.tools.base_tool import BaseTool, ToolResult, is_tool_available, rende
 from common.log import logger
 from common.i18n import t as _t
 
+
+def _display_tool_arguments(tool_name: str, arguments: dict) -> dict:
+    """Keep credential values out of renderer tool cards."""
+    from common.log import _redact
+
+    def clean(value, key=""):
+        if (tool_name == "env_config" and key == "value") or any(
+            part in key.lower() for part in ("password", "token", "secret", "api_key")
+        ):
+            return "••••"
+        if isinstance(value, dict):
+            return {name: clean(item, str(name)) for name, item in value.items()}
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return _redact(value) if isinstance(value, str) else value
+
+    return clean(arguments)
+
 # Optional: repair malformed JSON args from non-strict providers (e.g. unescaped quotes in long content).
 try:
     from json_repair import repair_json as _repair_json
@@ -1589,6 +1607,7 @@ class AgentStreamExecutor:
         tool_name = tool_call["name"]
         tool_id = tool_call["id"]
         arguments = tool_call["arguments"]
+        display_arguments = _display_tool_arguments(tool_name, arguments)
 
         if "_parse_error" in tool_call:
             result = {
@@ -1637,20 +1656,14 @@ class AgentStreamExecutor:
             self._emit_event("tool_execution_start", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,
-                "arguments": arguments,
+                "arguments": display_arguments,
             })
             # Flag this as a permission refusal (not an ordinary tool error) and
             # carry the mode that refused, so the UI can render an actionable
-            # "switch permission" hint instead of a generic failure.
-            try:
-                denied_mode = self.agent.effective_permission_mode()
-            except Exception:
-                denied_mode = None
             self._emit_event("tool_execution_end", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,
                 "permission_denied": True,
-                "permission_mode": denied_mode,
                 **result,
             })
             # Deliberately not recorded as a tool failure: a refusal is not the
@@ -1683,7 +1696,7 @@ class AgentStreamExecutor:
         start_event = {
             "tool_call_id": tool_id,
             "tool_name": tool_name,
-            "arguments": arguments,
+            "arguments": display_arguments,
         }
         # A call that puts up its own cards gets no card of its own, or the
         # same work is on screen twice. Trust but verify: a tool that turns
@@ -1744,6 +1757,11 @@ class AgentStreamExecutor:
             self._record_tool_result(tool_name, arguments, success)
 
             # Auto-refresh skills after skill creation
+            if tool_name in ("write", "edit") and result.status == "success" and self.agent.skill_manager:
+                from agent.permission.gateway import _skill_store, _path
+                target = arguments.get("path", "")
+                if target and _skill_store(_path(target, self.agent.effective_cwd())):
+                    self.agent.refresh_skills()
             if tool_name == "bash" and result.status == "success":
                 command = arguments.get("command", "")
                 if "init_skill.py" in command and self.agent.skill_manager:

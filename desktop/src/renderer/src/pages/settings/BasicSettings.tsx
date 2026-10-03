@@ -5,10 +5,7 @@ import apiClient from '../../api/client'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { useUIStore } from '../../store/uiStore'
-import { useSessionStore } from '../../store/sessionStore'
-import { useSessionSettingsStore } from '../../store/sessionSettingsStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
-import { PERMISSION_META, PERMISSION_MODE_ORDER, asPermissionMode } from '../../lib/permission'
 
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
@@ -96,8 +93,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [pwDirty, setPwDirty] = useState(false)
   const [pwVisible, setPwVisible] = useState(false)
   const [pwStatus, setPwStatus] = useState('')
-  const [permissionMode, setPermissionMode] = useState('full-access')
-  const [permStatus, setPermStatus] = useState('')
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
@@ -150,10 +145,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setReasoningEffort(data.reasoning_effort || 'high')
       setSubagent(data.subagent_enabled !== false)
       setEvolution(!!data.self_evolution_enabled)
-      setPermissionMode(asPermissionMode(data.agent_permission_mode))
-      // Prefer the real password (desktop only) so it can be edited in place;
-      // fall back to the masked value for browser access.
-      setPassword(data.web_password ?? data.web_password_masked ?? '')
+      setPassword(data.web_password_masked ?? '')
       setPwDirty(false)
 
       const ids = data.providers ? Object.keys(data.providers) : []
@@ -299,14 +291,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setTimeout(() => setAgentStatus(''), 2000)
   }
 
-  // Desktop returns the real password, so the field holds plaintext and can be
-  // saved (including cleared) directly. Browser access only has the masked
-  // value, where a masked string must never be saved as the real password.
-  const hasRealPassword = config?.web_password !== undefined
-
   const savePassword = async () => {
     if (!pwDirty) return
-    if (!hasRealPassword && MASK_RE.test(password)) return
+    if (MASK_RE.test(password)) return
     try {
       await apiClient.updateConfig({ web_password: password })
       setPwStatus(password ? t('config_password_saved') : t('config_password_cleared'))
@@ -315,19 +302,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       setPwStatus(t('config_save_error'))
     }
     setTimeout(() => setPwStatus(''), 3000)
-  }
-
-  const savePermission = async (mode: string) => {
-    setPermissionMode(mode)
-    try {
-      await apiClient.updateConfig({ agent_permission_mode: mode })
-      setPermStatus(t('config_saved'))
-      const sid = useSessionStore.getState().activeId
-      if (sid) useSessionSettingsStore.getState().refresh(sid)
-    } catch {
-      setPermStatus(t('config_save_error'))
-    }
-    setTimeout(() => setPermStatus(''), 2000)
   }
 
   const changeLanguage = async (lang: Lang) => {
@@ -556,20 +530,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       {/* Security */}
       <Card icon={<ShieldCheck size={16} />} title={t('config_security')}>
         <div className="space-y-4">
-          <Field label={t('config_permission')} hint={t('config_permission_desc')}>
-            <Dropdown
-              value={permissionMode}
-              options={PERMISSION_MODE_ORDER.filter(
-                (m) => !config?.permission_modes?.length || config.permission_modes.includes(m)
-              ).map((m) => ({
-                value: m,
-                label: t(PERMISSION_META[m].key),
-                hint: t(PERMISSION_META[m].descKey),
-              }))}
-              onChange={savePermission}
-            />
-            {permStatus && <p className="text-xs text-accent mt-1">{permStatus}</p>}
-          </Field>
           <Field label={t('config_password')} hint={t('config_password_hint')}>
             <div className="relative">
               <TextInput
@@ -578,13 +538,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
                 value={password}
                 placeholder={t('config_password_placeholder')}
                 onFocus={() => {
-                  // Browser access shows a mask; clear it on focus so the user
-                  // types a fresh password. Desktop holds the real password and
-                  // must stay editable in place (cursor at the end).
-                  if (!hasRealPassword && !pwDirty && MASK_RE.test(password)) setPassword('')
+                  // Clear the masked placeholder before entering a new password.
+                  if (!pwDirty && MASK_RE.test(password)) setPassword('')
                 }}
                 onBlur={() => {
-                  if (!hasRealPassword && !pwDirty) setPassword(config?.web_password_masked || '')
+                  if (!pwDirty) setPassword(config?.web_password_masked || '')
                 }}
                 onChange={(e) => {
                   setPassword(e.target.value)
