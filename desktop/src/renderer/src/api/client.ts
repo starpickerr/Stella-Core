@@ -735,8 +735,30 @@ class ApiClient {
     return (await this.briefingRequest<{ todo: Todo }>('/api/todos/update', { id, ...payload })).todo
   }
 
-  async completeTodo(id: string, completed: boolean): Promise<void> {
-    await this.briefingRequest('/api/todos/complete', { id, completed })
+  async changeTodoStatus(id: string, status: Todo['status'], force = false): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/status', { id, status, force })).todo
+  }
+
+  async addSubtask(parentId: string, payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/subtasks', { parent_id: parentId, ...payload })).todo
+  }
+
+  async moveTodo(id: string, parentId: string | null, position?: number): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/move', { id, parent_id: parentId, position })).todo
+  }
+
+  async addTodoDependency(id: string, prerequisiteId: string): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/dependencies/add',
+      { id, prerequisite_id: prerequisiteId })).todo
+  }
+
+  async removeTodoDependency(id: string, prerequisiteId: string): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/dependencies/remove',
+      { id, prerequisite_id: prerequisiteId })).todo
+  }
+
+  async completeTodo(id: string, completed: boolean, force = false): Promise<void> {
+    await this.briefingRequest('/api/todos/complete', { id, completed, force })
   }
 
   async deleteTodo(id: string): Promise<void> {

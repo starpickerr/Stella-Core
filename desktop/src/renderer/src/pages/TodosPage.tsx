@@ -1,208 +1,1538 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { BellRing, CalendarDays, Check, CheckCircle2, ChevronRight, Circle, Clock3, Flag, ListChecks, Plus, Repeat2, Search, Trash2, X } from 'lucide-react'
-import apiClient from '../api/client'
-import { getLang } from '../i18n'
-import type { Todo, TodoInput, TodoChecklistItem, UncertainReminder } from '../types'
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  BellRing,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Clock3,
+  Flag,
+  GripVertical,
+  MoreHorizontal,
+  Plus,
+  Repeat2,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import apiClient from "../api/client";
+import { getLang } from "../i18n";
+import type {
+  Todo,
+  TodoChecklistItem,
+  TodoInput,
+  UncertainReminder,
+} from "../types";
 
-const pad = (value: number) => String(value).padStart(2, '0')
-const dateKey = (value: Date) => `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
-const emptyTodo = (): TodoInput => ({
-  title: '', notes: '', due_on: null, due_time: null,
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-  priority: 0, repeat_frequency: 'none', repeat_days: [], repeat_until: null,
-  planned_on: null, list_name: '', tags: [], flagged: false, checklist: [],
-})
-type View = 'inbox' | 'today' | 'planned' | 'flagged' | 'completed' | 'all'
-const checklistOf = (todo: Todo): TodoChecklistItem[] => JSON.parse(todo.checklist || '[]')
-const tagsOf = (todo: Todo): string[] => JSON.parse(todo.tags || '[]')
+const pad = (value: number) => String(value).padStart(2, "0");
+const dateKey = (value: Date) =>
+  `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+const fromLocalTime = (value: string) =>
+  value ? new Date(value).toISOString() : null;
+const toLocalTime = (value: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  return `${dateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const tagsOf = (todo: Todo) => JSON.parse(todo.tags || "[]") as string[];
+const checklistOf = (todo: Todo) =>
+  JSON.parse(todo.checklist || "[]") as TodoChecklistItem[];
+const isDone = (todo: Todo) =>
+  todo.status === "completed" || todo.status === "cancelled";
+const taskKey = (todo: Todo) => todo.series_id || todo.id;
+const taskDate = (todo: Todo) => todo.planned_on || todo.due_on;
+const statusColors: Record<Todo["status"], string> = {
+  todo: "text-content-tertiary",
+  in_progress: "text-accent",
+  waiting: "text-amber-500",
+  blocked: "text-danger",
+  completed: "text-accent",
+  cancelled: "text-content-tertiary",
+};
+
+type View = "inbox" | "today" | "upcoming" | "planned" | "all" | "completed";
+type Sort = "date" | "priority" | "manual";
 
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
-  const en = getLang() === 'en'
-  const copy = en ? {
-    title: 'To-dos', subtitle: 'Keep track of the things you need to finish.', add: 'New to-do',
-    inbox: 'To do', flagged: 'Flagged', planned: 'Planned', completed: 'Completed', all: 'All', search: 'Search to-dos',
-    overdue: 'Overdue', today: 'Today', upcoming: 'Upcoming', noDate: 'No due date',
-    empty: 'Nothing here yet', titleField: 'Title', notes: 'Notes', dueDate: 'Due date', dueTime: 'Time',
-    priority: 'Priority', priorities: ['None', 'Low', 'Medium', 'High'], repeat: 'Repeat',
-    repeats: ['Never', 'Daily', 'Weekly', 'Monthly', 'Yearly'], repeatUntil: 'End date',
-    save: 'Save', cancel: 'Cancel', delete: 'Delete', edit: 'Edit to-do',
-    deleteConfirm: 'Delete this to-do or the entire recurring series?',
-    series: 'Changes to a repeating to-do apply to the entire series.',
-    planDate: 'Plan to work on', list: 'List', allLists: 'All lists', tags: 'Tags (comma separated)', allTags: 'All tags', checklist: 'Checklist', addStep: 'Add a step', planHint: 'Plan when to work on this; the due date is its deadline.',
-    uncertain: 'These reminders may not have appeared on your device.',
-    retryReminder: 'Send reminder again',
-    reminderInvalid: 'This to-do changed or was completed, so its reminder was cancelled.',
-  } : {
-    title: '事务', subtitle: '集中处理待办、截止时间与提醒。', add: '新建事务',
-    inbox: '待办', flagged: '旗标', planned: '计划', completed: '已完成', all: '全部', search: '搜索事务',
-    overdue: '已逾期', today: '今天', upcoming: '即将到期', noDate: '无截止日期',
-    empty: '这里还没有事务', titleField: '标题', notes: '备注', dueDate: '截止日期', dueTime: '时间',
-    priority: '优先级', priorities: ['无', '低', '中', '高'], repeat: '重复',
-    repeats: ['不重复', '每天', '每周', '每月', '每年'], repeatUntil: '结束日期',
-    save: '保存', cancel: '取消', delete: '删除', edit: '编辑事务',
-    deleteConfirm: '确定删除这条事务或整个重复系列？',
-    series: '修改重复事务会应用于整个系列。',
-    planDate: '计划处理日', list: '清单', allLists: '全部清单', tags: '标签（逗号分隔）', allTags: '全部标签', checklist: '检查清单', addStep: '添加子项', planHint: '计划日决定何时处理，截止日是完成期限。',
-    uncertain: '以下提醒可能未在设备上显示。',
-    retryReminder: '重新发送提醒',
-    reminderInvalid: '事务已修改或完成，原提醒已取消。',
-  }
-  const [view, setView] = useState<View>('inbox')
-  const [query, setQuery] = useState('')
-  const [listFilter, setListFilter] = useState('')
-  const [tagFilter, setTagFilter] = useState('')
-  const [templates, setTemplates] = useState<Todo[]>([])
-  const [rows, setRows] = useState<Todo[]>([])
-  const [uncertainReminders, setUncertainReminders] = useState<UncertainReminder[]>([])
-  const [editing, setEditing] = useState<Todo | 'new' | null>(null)
-  const [form, setForm] = useState<TodoInput>(emptyTodo)
-  const [tagsText, setTagsText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const today = dateKey(new Date())
+  const navigate = useNavigate();
+  const en = getLang() === "en";
+  const copy = en
+    ? {
+        title: "Tasks",
+        subtitle: "One place for what needs attention.",
+        newTask: "New task",
+        inbox: "Inbox",
+        today: "Today",
+        upcoming: "Due soon",
+        planned: "Planned",
+        all: "All tasks",
+        completed: "Completed",
+        search: "Search tasks",
+        list: "List / project",
+        allLists: "All lists",
+        tags: "Tags",
+        allTags: "All tags",
+        flagged: "Flagged",
+        allFlags: "Any flag",
+        status: "Status",
+        allStatuses: "Any status",
+        sort: "Sort",
+        dateSort: "Date",
+        prioritySort: "Priority",
+        manualSort: "Manual order",
+        overdue: "Overdue",
+        later: "Later",
+        noDate: "No date",
+        empty: "No tasks in this view",
+        createHint: "What needs to be done?",
+        add: "Add task",
+        advanced: "More options",
+        agentParse: "Interpret with Agent",
+        details: "Task details",
+        notes: "Notes",
+        planDate: "Plan date",
+        dueDate: "Due date",
+        dueTime: "Time",
+        remindAt: "Remind me",
+        priority: "Priority",
+        priorities: ["None", "Low", "Medium", "High"],
+        repeat: "Repeat",
+        repeats: ["Never", "Daily", "Weekly", "Monthly", "Yearly"],
+        repeatUntil: "End date",
+        subtask: "Subtasks",
+        addSubtask: "Add a subtask",
+        subtaskHint: "Break this task into steps",
+        parent: "Parent task",
+        dependencies: "After these tasks",
+        addDependency: "Add prerequisite",
+        dependencyWaiting: "Waiting for prerequisite",
+        topLevel: "Top level",
+        more: "More properties",
+        save: "Save changes",
+        delete: "Delete task",
+        deleteConfirm: "Delete this task and all its subtasks?",
+        unfinished:
+          "Some subtasks are still open. Complete only this parent task?",
+        finishParent: "All subtasks are done. Complete the parent task?",
+        statusNames: {
+          todo: "To do",
+          in_progress: "In progress",
+          waiting: "Waiting",
+          blocked: "Blocked",
+          completed: "Completed",
+          cancelled: "Cancelled",
+        },
+        progress: (done: number, total: number) => `${done} / ${total} done`,
+        created: "Created",
+        finished: "Completed",
+        legacyChecklist: "Existing checklist",
+        addStep: "Add a checklist item",
+        recurrenceHint: "Repeating tasks cannot have subtasks.",
+        uncertain: "These reminders may not have appeared on your device.",
+        retry: "Send again",
+        reminderInvalid:
+          "The task changed or was completed, so that reminder was cancelled.",
+        moveUp: "Move up",
+        moveDown: "Move down",
+      }
+    : {
+        title: "事务",
+        subtitle: "把需要完成的事安排清楚。",
+        newTask: "新建事务",
+        inbox: "收件箱",
+        today: "今天",
+        upcoming: "即将到期",
+        planned: "计划",
+        all: "全部事务",
+        completed: "已完成",
+        search: "搜索事务",
+        list: "清单 / 项目",
+        allLists: "全部清单",
+        tags: "标签",
+        allTags: "全部标签",
+        flagged: "已旗标",
+        allFlags: "全部旗标",
+        status: "状态",
+        allStatuses: "全部状态",
+        sort: "排序",
+        dateSort: "日期",
+        prioritySort: "优先级",
+        manualSort: "手动顺序",
+        overdue: "已逾期",
+        later: "后续",
+        noDate: "无日期",
+        empty: "这个视图还没有事务",
+        createHint: "需要完成什么？",
+        add: "添加事务",
+        advanced: "更多选项",
+        agentParse: "交给 Agent 识别",
+        details: "事务详情",
+        notes: "备注",
+        planDate: "计划日期",
+        dueDate: "截止日期",
+        dueTime: "时间",
+        remindAt: "提醒时间",
+        priority: "优先级",
+        priorities: ["无", "低", "中", "高"],
+        repeat: "重复",
+        repeats: ["不重复", "每天", "每周", "每月", "每年"],
+        repeatUntil: "结束日期",
+        subtask: "子事务",
+        addSubtask: "添加子事务",
+        subtaskHint: "需要时再拆解成步骤",
+        parent: "父事务",
+        dependencies: "前置事务",
+        addDependency: "添加前置事务",
+        dependencyWaiting: "等待前置事务",
+        topLevel: "顶层事务",
+        more: "更多属性",
+        save: "保存修改",
+        delete: "删除事务",
+        deleteConfirm: "删除这条事务及其所有子事务？",
+        unfinished: "仍有未完成的子事务。只完成父事务，保留子事务原状态？",
+        finishParent: "所有子事务都已完成，是否完成父事务？",
+        statusNames: {
+          todo: "待处理",
+          in_progress: "进行中",
+          waiting: "等待中",
+          blocked: "被阻塞",
+          completed: "已完成",
+          cancelled: "已取消",
+        },
+        progress: (done: number, total: number) => `${done} / ${total} 已完成`,
+        created: "创建于",
+        finished: "完成于",
+        legacyChecklist: "原有检查清单",
+        addStep: "添加清单项",
+        recurrenceHint: "重复事务不能添加子事务。",
+        uncertain: "以下提醒可能未在设备上显示。",
+        retry: "重新发送",
+        reminderInvalid: "事务已修改或完成，原提醒已取消。",
+        moveUp: "上移",
+        moveDown: "下移",
+      };
+  const [rows, setRows] = useState<Todo[]>([]);
+  const [templates, setTemplates] = useState<Todo[]>([]);
+  const [uncertain, setUncertain] = useState<UncertainReminder[]>([]);
+  const [view, setView] = useState<View>("inbox");
+  const [query, setQuery] = useState("");
+  const [listFilter, setListFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [flagFilter, setFlagFilter] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<Todo["status"] | "">("");
+  const [sort, setSort] = useState<Sort>("date");
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TodoInput | null>(null);
+  const [draftTags, setDraftTags] = useState("");
+  const [more, setMore] = useState(false);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickOptions, setQuickOptions] = useState(false);
+  const [quickDate, setQuickDate] = useState("");
+  const [quickDue, setQuickDue] = useState("");
+  const [quickReminder, setQuickReminder] = useState("");
+  const [childTitle, setChildTitle] = useState("");
+  const [dependencyChoice, setDependencyChoice] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const today = dateKey(new Date());
+  const soon = dateKey(new Date(Date.now() + 7 * 86400000));
   const refresh = useCallback(async () => {
     try {
-      const [series, focus, uncertain] = await Promise.all([
-        apiClient.getTodos(), apiClient.getTodoFocus(dateKey(new Date())), apiClient.getUncertainReminders(),
-      ])
-      setTemplates(series)
-      setRows(focus)
-      setUncertainReminders(uncertain)
-      setError('')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-  }, [])
+      const [all, focus, reminders] = await Promise.all([
+        apiClient.getTodos(),
+        apiClient.getTodoFocus(dateKey(new Date())),
+        apiClient.getUncertainReminders(),
+      ]);
+      setTemplates(all);
+      setRows(focus);
+      setUncertain(reminders);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
   useEffect(() => {
-    apiClient.setBaseUrl(baseUrl)
-    void refresh()
-    const onFocus = () => void refresh()
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [baseUrl, refresh])
-
-  const lists = useMemo(() => [...new Set(templates.map(todo => todo.list_name).filter(Boolean))].sort(), [templates])
-  const tags = useMemo(() => [...new Set(templates.flatMap(tagsOf))].sort(), [templates])
-  const inView = (todo: Todo, target: View) => {
-    if (target === 'completed') return !!todo.completed_at
-    if (target === 'all') return true
-    if (todo.completed_at) return false
-    if (target === 'flagged') return !!todo.flagged
-    if (target === 'today') return (!!todo.planned_on && todo.planned_on <= today) || (!!todo.due_on && todo.due_on <= today)
-    if (target === 'planned') return (!!todo.planned_on && todo.planned_on > today) || (!!todo.due_on && todo.due_on > today)
-    return !todo.planned_on || todo.planned_on <= today || (!!todo.due_on && todo.due_on <= today)
+    apiClient.setBaseUrl(baseUrl);
+    void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [baseUrl, refresh]);
+  const byId = useMemo(
+    () => new Map(rows.map((todo) => [todo.id, todo])),
+    [rows],
+  );
+  const selected = selectedId ? byId.get(selectedId) || null : null;
+  const children = useCallback(
+    (parentId: string | null) =>
+      rows.filter((todo) => todo.parent_id === parentId && !todo.series_id),
+    [rows],
+  );
+  const hasOpenDescendant = (parentId: string): boolean =>
+    children(parentId).some(
+      (child) => !isDone(child) || hasOpenDescendant(child.id),
+    );
+  const lists = useMemo(
+    () =>
+      [
+        ...new Set(templates.map((todo) => todo.list_name).filter(Boolean)),
+      ].sort(),
+    [templates],
+  );
+  const tags = useMemo(
+    () => [...new Set(templates.flatMap(tagsOf))].sort(),
+    [templates],
+  );
+  const matchesView = (todo: Todo, target: View) => {
+    if (target === "completed") return isDone(todo);
+    if (target === "all") return true;
+    if (isDone(todo)) return false;
+    if (target === "today")
+      return (
+        (!!todo.planned_on && todo.planned_on <= today) ||
+        (!!todo.due_on && todo.due_on <= today)
+      );
+    if (target === "upcoming")
+      return !!todo.due_on && todo.due_on >= today && todo.due_on <= soon;
+    if (target === "planned")
+      return (
+        (!!todo.planned_on && todo.planned_on > today) ||
+        (!!todo.due_on && todo.due_on > soon)
+      );
+    return !todo.planned_on && !todo.due_on;
+  };
+  const subtreeMatchesView = (todo: Todo, target: View): boolean =>
+    matchesView(todo, target) ||
+    (target !== "inbox" &&
+      children(todo.id).some((child) => subtreeMatchesView(child, target)));
+  const views: View[] = [
+    "inbox",
+    "today",
+    "upcoming",
+    "planned",
+    "all",
+    "completed",
+  ];
+  const counts = Object.fromEntries(
+    views.map((key) => [
+      key,
+      rows.filter((todo) => !todo.parent_id && subtreeMatchesView(todo, key))
+        .length,
+    ]),
+  ) as Record<View, number>;
+  const matchesFilters = (todo: Todo) => {
+    if (listFilter && todo.list_name !== listFilter) return false;
+    if (tagFilter && !tagsOf(todo).includes(tagFilter)) return false;
+    if (flagFilter && !todo.flagged) return false;
+    if (statusFilter && todo.status !== statusFilter) return false;
+    if (
+      query &&
+      !`${todo.title} ${todo.notes} ${todo.list_name} ${tagsOf(todo).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(query.toLocaleLowerCase())
+    )
+      return false;
+    return true;
+  };
+  const containsMatch = (todo: Todo): boolean =>
+    matchesFilters(todo) || children(todo.id).some(containsMatch);
+  const compare = (a: Todo, b: Todo) =>
+    sort === "manual"
+      ? a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at)
+      : sort === "priority"
+        ? b.priority - a.priority ||
+          (taskDate(a) || "9999").localeCompare(taskDate(b) || "9999")
+        : (taskDate(a) || "9999").localeCompare(taskDate(b) || "9999") ||
+          b.priority - a.priority ||
+          a.sort_order - b.sort_order;
+  const roots = rows
+    .filter(
+      (todo) =>
+        !todo.parent_id &&
+        subtreeMatchesView(todo, view) &&
+        containsMatch(todo),
+    )
+    .sort(compare);
+  const groups = new Map<string, Todo[]>();
+  for (const todo of roots) {
+    const day =
+      taskDate(todo) ||
+      children(todo.id)
+        .filter((child) => subtreeMatchesView(child, view))
+        .map(taskDate)
+        .filter((value): value is string => !!value)
+        .sort()[0];
+    const group = !day
+      ? "noDate"
+      : day < today
+        ? "overdue"
+        : day === today
+          ? "today"
+          : day <= soon
+            ? "upcoming"
+            : "later";
+    groups.set(group, [...(groups.get(group) || []), todo]);
   }
-  const counts = Object.fromEntries((['inbox', 'today', 'planned', 'flagged', 'completed', 'all'] as View[])
-    .map(tab => [tab, rows.filter(todo => inView(todo, tab)).length])) as Record<View, number>
-  const visible = rows.filter(todo => {
-    if (listFilter && todo.list_name !== listFilter) return false
-    if (tagFilter && !tagsOf(todo).includes(tagFilter)) return false
-    if (query && !`${todo.title} ${todo.notes} ${todo.list_name} ${tagsOf(todo).join(' ')}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())) return false
-    return inView(todo, view)
-  }).sort((a, b) => (a.planned_on || a.due_on || '9999').localeCompare(b.planned_on || b.due_on || '9999') || b.priority - a.priority)
-  const groups = useMemo(() => {
-    const grouped = new Map<string, Todo[]>()
-    for (const todo of visible) {
-      const key = !todo.due_on ? 'noDate' : todo.due_on < today ? 'overdue' : todo.due_on === today ? 'today' : 'upcoming'
-      grouped.set(key, [...(grouped.get(key) || []), todo])
-    }
-    return grouped
-  }, [visible, today])
-  const openNew = () => { setForm(emptyTodo()); setTagsText(''); setEditing('new'); setError('') }
-  const openEdit = (todo: Todo) => {
-    const original = templates.find(item => item.id === (todo.series_id || todo.id)) || todo
-    setTagsText(tagsOf(original).join(', '))
-    setForm({ title: original.title, notes: original.notes, due_on: original.due_on,
-      due_time: original.due_time, timezone: original.timezone, priority: original.priority,
-      repeat_frequency: original.repeat_frequency, repeat_days: JSON.parse(original.repeat_days || '[]'),
-      repeat_until: original.repeat_until, planned_on: original.planned_on, list_name: original.list_name,
-      tags: tagsOf(original), flagged: !!original.flagged, checklist: checklistOf(original) })
-    setEditing(todo); setError('')
-  }
-  const save = async () => {
-    if (!form.title.trim() || (form.repeat_frequency !== 'none' && !form.due_on)) {
-      setError(en ? 'Enter a title and due date for a repeating to-do.' : '请填写标题；重复事务需要截止日期。')
-      return
-    }
-    setBusy(true); setError('')
+  const run = async (operation: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
     try {
-      const payload = { ...form, title: form.title.trim(), tags: tagsText.split(/[,，]/).map(value => value.trim()).filter(Boolean),
-        repeat_days: form.repeat_frequency === 'weekly' ? (form.repeat_days.length ? form.repeat_days :
-          [((new Date(`${form.due_on}T12:00`).getDay() + 6) % 7)]) : [] }
-      if (editing === 'new') await apiClient.createTodo(payload)
-      else if (editing) await apiClient.updateTodo(editing.series_id || editing.id, payload)
-      setEditing(null); await refresh()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  const toggle = async (todo: Todo) => {
-    setBusy(true)
-    try { await apiClient.completeTodo(todo.id, !todo.completed_at); await refresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  const remove = async (todo: Todo) => {
-    if (!window.confirm(copy.deleteConfirm)) return
-    setBusy(true)
-    try { await apiClient.deleteTodo(todo.series_id || todo.id); setEditing(null); await refresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  const retryReminder = async (deliveryId: string) => {
-    setBusy(true); setError('')
-    try {
-      const queued = await apiClient.retryUncertainReminder(deliveryId)
-      await refresh()
-      if (!queued) setError(copy.reminderInvalid)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  const toggleStep = async (todo: Todo, step: TodoChecklistItem) => {
-    setBusy(true)
-    try { await apiClient.completeTodoChecklist(todo.id, step.id, !step.completed); await refresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  const weekdays = en ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['一', '二', '三', '四', '五', '六', '日']
-  const tabs: View[] = ['inbox', 'today', 'planned', 'flagged', 'completed', 'all']
-  const icons = { inbox: ListChecks, today: Clock3, flagged: Flag, planned: CalendarDays, completed: CheckCircle2, all: Circle }
-
-  return <div className="h-full overflow-y-auto bg-surface-0 px-5 py-6 md:px-8">
-    <div className="max-w-5xl mx-auto space-y-6">
-      <header className="flex flex-wrap gap-4 justify-between items-center"><div><h1 className="text-2xl font-bold">{copy.title}</h1><p className="text-sm text-content-tertiary mt-1">{copy.subtitle}</p></div><button type="button" onClick={openNew} className="inline-flex items-center gap-2 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium"><Plus size={17} />{copy.add}</button></header>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">{tabs.map(tab => { const Icon = icons[tab]; return <button type="button" key={tab} onClick={() => setView(tab)} className={`rounded-card border px-4 py-3 flex items-center gap-3 text-left transition-colors ${view === tab ? 'border-accent bg-accent/10 text-accent' : 'border-default bg-surface hover:bg-surface-2'}`}><Icon size={20} /><span className="flex-1 text-sm font-medium">{copy[tab]}</span><span className="text-lg font-semibold">{counts[tab]}</span></button> })}</div>
-      {uncertainReminders.length > 0 && <section className="rounded-card border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium"><BellRing size={16} />{copy.uncertain}</div>
-        {uncertainReminders.map(reminder => <div key={reminder.delivery_id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span>{reminder.title} · {reminder.occurrence_on}</span>
-          <button type="button" disabled={busy} onClick={() => void retryReminder(reminder.delivery_id)} className="rounded-btn border border-amber-500/50 px-3 py-1.5 disabled:opacity-50">{copy.retryReminder}</button>
-        </div>)}
-      </section>}
-      <div className="relative"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={copy.search} aria-label={copy.search} className="w-full rounded-btn border border-default bg-surface pl-10 pr-3 py-2.5 text-sm" /></div>
-      <div className="flex flex-wrap gap-3"><select aria-label={copy.list} value={listFilter} onChange={event => setListFilter(event.target.value)} className="rounded-btn border border-default bg-surface px-3 py-2 text-sm"><option value="">{copy.allLists}</option>{lists.map(name => <option key={name}>{name}</option>)}</select><select aria-label={copy.tags} value={tagFilter} onChange={event => setTagFilter(event.target.value)} className="rounded-btn border border-default bg-surface px-3 py-2 text-sm"><option value="">{copy.allTags}</option>{tags.map(tag => <option key={tag}>{tag}</option>)}</select></div>
-      {error && !editing && <p role="alert" className="text-sm text-danger">{error}</p>}
-      {visible.length === 0 ? <div className="rounded-card border border-default bg-surface text-center py-20 text-content-tertiary"><Check size={32} className="mx-auto mb-3 text-accent" /><p>{copy.empty}</p><button type="button" onClick={openNew} className="text-accent text-sm mt-3">{copy.add}</button></div> :
-        <div className="space-y-5">{(['overdue', 'today', 'upcoming', 'noDate'] as const).map(group => {
-          const items = groups.get(group)
-          if (!items?.length) return null
-          return <section key={group}><h2 className={`text-sm font-semibold mb-2 ${group === 'overdue' ? 'text-danger' : 'text-content-secondary'}`}>{copy[group]} <span className="font-normal text-content-tertiary">{items.length}</span></h2><div className="rounded-card border border-default bg-surface divide-y divide-default">{items.map(todo => <div key={todo.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2/50"><button type="button" disabled={busy} onClick={() => void toggle(todo)} aria-label={`${todo.completed_at ? copy.completed : copy.inbox} ${todo.title}`} className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center ${todo.completed_at ? 'bg-accent border-accent text-accent-contrast' : 'border-content-tertiary hover:border-accent'}`}>{todo.completed_at && <Check size={13} />}</button><div className="flex-1 min-w-0"><button type="button" onClick={() => openEdit(todo)} className="w-full text-left"><span className={`block font-medium text-sm truncate ${todo.completed_at ? 'line-through text-content-tertiary' : ''}`}>{todo.title}</span><span className="flex flex-wrap gap-2 items-center text-xs text-content-tertiary mt-1">{todo.due_on && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{todo.due_on}{todo.due_time && ` ${todo.due_time}`}</span>}{todo.planned_on && <span>{copy.planDate}: {todo.planned_on}</span>}{todo.list_name && <span>{todo.list_name}</span>}{tagsOf(todo).map(tag => <span key={tag}>#{tag}</span>)}{todo.flagged > 0 && <Flag size={12} className="text-orange-500" />}{todo.repeat_frequency !== 'none' && <Repeat2 size={12} />}{todo.priority > 0 && <span className="text-orange-500">{'!'.repeat(todo.priority)}</span>}{todo.notes && <span className="truncate max-w-[260px]">{todo.notes}</span>}</span></button>{checklistOf(todo).length > 0 && <div className="mt-2 space-y-1">{checklistOf(todo).map(step => <label key={step.id} className="flex items-center gap-2 text-xs text-content-secondary"><input type="checkbox" disabled={busy} checked={step.completed} onChange={() => void toggleStep(todo, step)} /><span className={step.completed ? 'line-through text-content-tertiary' : ''}>{step.title}</span></label>)}</div>}</div><ChevronRight size={16} className="text-content-tertiary" /></div>)}</div></section>
-        })}</div>}
+      await operation();
+      await refresh();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(
+        message.startsWith("unfinished_dependencies")
+          ? copy.dependencyWaiting
+          : message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const open = (todo: Todo) => {
+    const original =
+      templates.find((item) => item.id === taskKey(todo)) || todo;
+    setSelectedId(todo.id);
+    setDraft({
+      title: original.title,
+      notes: original.notes,
+      due_on: original.due_on,
+      due_time: original.due_time,
+      timezone: original.timezone,
+      priority: original.priority,
+      repeat_frequency: original.repeat_frequency,
+      repeat_days: JSON.parse(original.repeat_days || "[]"),
+      repeat_until: original.repeat_until,
+      planned_on: original.planned_on,
+      list_name: original.list_name,
+      tags: tagsOf(original),
+      flagged: !!original.flagged,
+      checklist: checklistOf(original),
+      remind_at: original.remind_at,
+    });
+    setDraftTags(tagsOf(original).join(", "));
+    setChildTitle("");
+    setDependencyChoice("");
+    setMore(false);
+    setError("");
+  };
+  const close = () => {
+    setSelectedId(null);
+    setDraft(null);
+    setError("");
+  };
+  const create = () => {
+    if (!quickTitle.trim()) return;
+    void run(async () => {
+      const payload: TodoInput = {
+        title: quickTitle.trim(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      };
+      if (quickDate) payload.planned_on = quickDate;
+      if (quickDue) payload.due_on = quickDue;
+      if (quickReminder) payload.remind_at = fromLocalTime(quickReminder);
+      await apiClient.createTodo(payload);
+      setQuickTitle("");
+      setQuickDate("");
+      setQuickDue("");
+      setQuickReminder("");
+      setQuickOptions(false);
+    });
+  };
+  const save = () => {
+    if (!selected || !draft?.title.trim()) return;
+    void run(async () => {
+      await apiClient.updateTodo(taskKey(selected), {
+        ...draft,
+        title: draft.title.trim(),
+        tags: draftTags
+          .split(/[,，]/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+        repeat_days:
+          draft.repeat_frequency === "weekly" ? draft.repeat_days : [],
+      });
+    });
+  };
+  const changeStatus = (todo: Todo, status: Todo["status"]) =>
+    void run(async () => {
+      try {
+        await apiClient.changeTodoStatus(todo.id, status);
+      } catch (cause) {
+        if (
+          status === "completed" &&
+          cause instanceof Error &&
+          cause.message.includes("unfinished_subtasks")
+        ) {
+          if (window.confirm(copy.unfinished))
+            await apiClient.changeTodoStatus(todo.id, status, true);
+        } else throw cause;
+      }
+    });
+  const toggle = (todo: Todo) =>
+    changeStatus(todo, todo.status === "completed" ? "todo" : "completed");
+  const addChild = () => {
+    if (!selected || !childTitle.trim()) return;
+    void run(async () => {
+      await apiClient.addSubtask(taskKey(selected), {
+        title: childTitle.trim(),
+      });
+      setChildTitle("");
+      setExpanded((value) => [...new Set([...value, taskKey(selected)])]);
+    });
+  };
+  const move = (id: string, parentId: string | null, position?: number) =>
+    void run(() => apiClient.moveTodo(id, parentId, position));
+  const remove = () => {
+    if (!selected || !window.confirm(copy.deleteConfirm)) return;
+    void run(async () => {
+      await apiClient.deleteTodo(taskKey(selected));
+      close();
+    });
+  };
+  const moveInList = (sourceId: string, target: Todo) => {
+    const source = byId.get(sourceId);
+    if (
+      !source ||
+      source.id === target.id ||
+      source.series_id ||
+      target.series_id
+    )
+      return;
+    const siblings = children(target.parent_id)
+      .filter((item) => item.id !== sourceId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const position = siblings.findIndex((item) => item.id === target.id);
+    if (position >= 0) move(sourceId, target.parent_id, position);
+  };
+  const row = (todo: Todo, depth = 0): React.ReactNode => {
+    const sub = children(todo.id).sort(compare);
+    const isExpanded =
+      expanded.includes(todo.id) ||
+      !!query ||
+      (!matchesView(todo, view) &&
+        sub.some((child) => subtreeMatchesView(child, view)));
+    const visibleChildren = sub.filter(containsMatch);
+    return (
+      <React.Fragment key={todo.id}>
+        <div
+          draggable={!todo.series_id}
+          onDragStart={(event) => {
+            setDragId(todo.id);
+            event.dataTransfer.effectAllowed = "move";
+          }}
+          onDragEnd={() => setDragId(null)}
+          onDragOver={(event) => {
+            if (dragId && dragId !== todo.id) event.preventDefault();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (dragId) moveInList(dragId, todo);
+            setDragId(null);
+          }}
+          className={`group flex items-start gap-2 border-b border-default/70 py-2.5 pr-3 hover:bg-surface-2/60 ${selectedId === todo.id ? "bg-accent/5" : ""}`}
+          style={{ paddingLeft: `${12 + Math.min(depth, 5) * 21}px` }}
+        >
+          <GripVertical
+            size={15}
+            className="mt-1 shrink-0 text-content-tertiary/50 hidden sm:block cursor-grab"
+            aria-hidden="true"
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => toggle(todo)}
+            aria-label={`${todo.status === "completed" ? copy.statusNames.completed : copy.statusNames.todo} ${todo.title}`}
+            className={`mt-0.5 w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${todo.status === "completed" ? "bg-accent border-accent text-accent-contrast" : todo.status === "cancelled" ? "border-content-tertiary text-content-tertiary" : "border-content-tertiary hover:border-accent"}`}
+          >
+            {todo.status === "completed" && <Check size={12} />}
+            {todo.status === "cancelled" && <X size={11} />}
+          </button>
+          <div className="flex-1 min-w-0">
+            <button
+              type="button"
+              onClick={() => open(todo)}
+              className="block w-full text-left"
+            >
+              <span
+                className={`block text-sm font-medium truncate ${isDone(todo) ? "line-through text-content-tertiary" : "text-content-primary"}`}
+              >
+                {todo.title}
+              </span>
+              {(todo.subtask_count > 0 ||
+                todo.status !== "todo" ||
+                todo.due_on ||
+                todo.planned_on ||
+                todo.flagged ||
+                todo.blocked_by.length > 0 ||
+                todo.priority > 0 ||
+                todo.repeat_frequency !== "none") && (
+                <span className="flex flex-wrap gap-x-3 gap-y-0.5 items-center text-xs text-content-tertiary mt-0.5">
+                  {todo.subtask_count > 0 && (
+                    <span className="text-accent">
+                      {copy.progress(
+                        todo.progress_completed,
+                        todo.progress_total,
+                      )}
+                    </span>
+                  )}
+                  {todo.status !== "todo" && (
+                    <span className={statusColors[todo.status]}>
+                      {copy.statusNames[todo.status]}
+                    </span>
+                  )}
+                  {todo.blocked_by.length > 0 && (
+                    <span className="text-amber-500">
+                      {copy.dependencyWaiting}
+                    </span>
+                  )}
+                  {todo.due_on && (
+                    <span
+                      title={copy.dueDate}
+                      className={
+                        todo.due_on < today && !isDone(todo)
+                          ? "text-danger"
+                          : ""
+                      }
+                    >
+                      <Clock3 size={11} className="inline mr-1" />
+                      {todo.due_on}
+                      {todo.due_time && ` ${todo.due_time}`}
+                    </span>
+                  )}
+                  {todo.planned_on && (
+                    <span title={copy.planDate}>
+                      <CalendarDays size={11} className="inline mr-1" />
+                      {todo.planned_on}
+                    </span>
+                  )}
+                  {!!todo.flagged && (
+                    <Flag size={11} className="text-amber-500" />
+                  )}
+                  {todo.priority > 0 && (
+                    <span className="text-amber-500">
+                      {"!".repeat(todo.priority)}
+                    </span>
+                  )}
+                  {todo.repeat_frequency !== "none" && <Repeat2 size={11} />}
+                </span>
+              )}
+              {todo.subtask_count > 0 && (
+                <span className="block h-1 max-w-48 rounded-full bg-surface-3 mt-2 overflow-hidden">
+                  <span
+                    className="block h-full bg-accent"
+                    style={{ width: `${todo.progress_percent}%` }}
+                  />
+                </span>
+              )}
+            </button>
+          </div>
+          {sub.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setExpanded((value) =>
+                  isExpanded
+                    ? value.filter((id) => id !== todo.id)
+                    : [...value, todo.id],
+                )
+              }
+              aria-label={`${copy.subtask} ${todo.title}`}
+              aria-expanded={isExpanded}
+              className="p-1 text-content-tertiary hover:text-accent"
+            >
+              {isExpanded ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )}
+            </button>
+          )}
+        </div>
+        {isExpanded && visibleChildren.map((child) => row(child, depth + 1))}
+      </React.Fragment>
+    );
+  };
+  const input =
+    "w-full rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:border-accent";
+  const statusOptions: Todo["status"][] = [
+    "todo",
+    "in_progress",
+    "waiting",
+    "blocked",
+    "completed",
+    "cancelled",
+  ];
+  const parentChoices = rows.filter(
+    (todo) =>
+      !todo.series_id &&
+      todo.repeat_frequency === "none" &&
+      todo.id !== selected?.id,
+  );
+  const isDescendant = (candidate: Todo) => {
+    let parent = candidate.parent_id ? byId.get(candidate.parent_id) : null;
+    while (parent) {
+      if (parent.id === selected?.id) return true;
+      parent = parent.parent_id ? byId.get(parent.parent_id) : null;
+    }
+    return false;
+  };
+  return (
+    <div className="h-full overflow-y-auto bg-surface-0 text-content-primary">
+      <div
+        className={`mx-auto px-4 py-6 md:px-8 transition-[max-width] ${selected ? "max-w-6xl xl:pr-[400px]" : "max-w-5xl"}`}
+      >
+        <header className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {copy.title}
+            </h1>
+            <p className="text-sm text-content-tertiary mt-1">
+              {copy.subtitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => document.getElementById("todo-quick-title")?.focus()}
+            className="inline-flex items-center gap-1.5 rounded-btn bg-accent text-accent-contrast px-3.5 py-2 text-sm font-medium"
+          >
+            <Plus size={16} />
+            {copy.newTask}
+          </button>
+        </header>
+        <nav
+          aria-label={copy.title}
+          className="flex gap-1 border-b border-default mb-5 overflow-x-auto"
+        >
+          {views.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`shrink-0 inline-flex items-center gap-2 px-3 py-2.5 border-b-2 text-sm transition-colors ${view === key ? "border-accent text-accent font-medium" : "border-transparent text-content-secondary hover:text-content-primary"}`}
+            >
+              {copy[key]}{" "}
+              <span className="text-xs text-content-tertiary">
+                {counts[key]}
+              </span>
+            </button>
+          ))}
+        </nav>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            create();
+          }}
+          className="rounded-card border border-default bg-surface mb-5 overflow-hidden"
+        >
+          <div className="flex items-center gap-2 px-3 py-2">
+            <Circle size={18} className="text-content-tertiary shrink-0" />
+            <input
+              id="todo-quick-title"
+              value={quickTitle}
+              onChange={(event) => setQuickTitle(event.target.value)}
+              placeholder={copy.createHint}
+              aria-label={copy.createHint}
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setQuickOptions(!quickOptions)}
+              aria-expanded={quickOptions}
+              className="p-1.5 text-content-secondary hover:text-accent"
+              title={copy.advanced}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            <button
+              type="submit"
+              disabled={!quickTitle.trim() || busy}
+              className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
+            >
+              {copy.add}
+            </button>
+          </div>
+          {quickOptions && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 py-3 border-t border-default text-xs">
+              <label>
+                {copy.planDate}
+                <input
+                  type="date"
+                  value={quickDate}
+                  onChange={(event) => setQuickDate(event.target.value)}
+                  className={`${input} mt-1`}
+                />
+              </label>
+              <label>
+                {copy.dueDate}
+                <input
+                  type="date"
+                  value={quickDue}
+                  onChange={(event) => setQuickDue(event.target.value)}
+                  className={`${input} mt-1`}
+                />
+              </label>
+              <label>
+                {copy.remindAt}
+                <input
+                  type="datetime-local"
+                  value={quickReminder}
+                  onChange={(event) => setQuickReminder(event.target.value)}
+                  className={`${input} mt-1`}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!quickTitle.trim()}
+                onClick={() =>
+                  navigate("/", {
+                    state: {
+                      taskDraft: `${en ? "Create a task from: " : "请根据这句话创建事务："}${quickTitle.trim()}`,
+                    },
+                  })
+                }
+                className="text-left text-accent disabled:opacity-40"
+              >
+                {copy.agentParse}
+              </button>
+            </div>
+          )}
+        </form>
+        {uncertain.length > 0 && (
+          <section className="border border-amber-500/40 bg-amber-500/10 rounded-card p-3 mb-5 text-sm">
+            <div className="flex items-center gap-2 font-medium mb-2">
+              <BellRing size={15} />
+              {copy.uncertain}
+            </div>
+            {uncertain.map((item) => (
+              <div
+                key={item.delivery_id}
+                className="flex justify-between items-center gap-3 py-1"
+              >
+                <span>{item.title}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void run(async () => {
+                      const queued = await apiClient.retryUncertainReminder(
+                        item.delivery_id,
+                      );
+                      if (!queued) setError(copy.reminderInvalid);
+                    })
+                  }
+                  className="text-accent shrink-0"
+                >
+                  {copy.retry}
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={copy.search}
+              aria-label={copy.search}
+              className={`${input} pl-9`}
+            />
+          </div>
+          <select
+            aria-label={copy.list}
+            value={listFilter}
+            onChange={(event) => setListFilter(event.target.value)}
+            className={`${input} w-auto max-w-36`}
+          >
+            <option value="">{copy.allLists}</option>
+            {lists.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+          <select
+            aria-label={copy.tags}
+            value={tagFilter}
+            onChange={(event) => setTagFilter(event.target.value)}
+            className={`${input} w-auto max-w-32`}
+          >
+            <option value="">{copy.allTags}</option>
+            {tags.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setFlagFilter(!flagFilter)}
+            aria-pressed={flagFilter}
+            className={`rounded-btn border px-3 text-sm ${flagFilter ? "border-accent text-accent bg-accent/10" : "border-default text-content-secondary bg-surface"}`}
+          >
+            <Flag size={15} aria-label={copy.flagged} />
+          </button>
+          <select
+            aria-label={copy.status}
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(event.target.value as Todo["status"] | "")
+            }
+            className={`${input} w-auto max-w-36`}
+          >
+            <option value="">{copy.allStatuses}</option>
+            {statusOptions.map((value) => (
+              <option key={value} value={value}>
+                {copy.statusNames[value]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={copy.sort}
+            value={sort}
+            onChange={(event) => setSort(event.target.value as Sort)}
+            className={`${input} w-auto max-w-36`}
+          >
+            <option value="date">{copy.dateSort}</option>
+            <option value="priority">{copy.prioritySort}</option>
+            <option value="manual">{copy.manualSort}</option>
+          </select>
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-danger mb-4">
+            {error}
+          </p>
+        )}
+        {roots.length === 0 ? (
+          <div className="rounded-card border border-default bg-surface py-16 text-center text-content-tertiary text-sm">
+            {copy.empty}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {(["overdue", "today", "upcoming", "later", "noDate"] as const).map(
+              (key) => {
+                const items = groups.get(key);
+                if (!items?.length) return null;
+                return (
+                  <section key={key}>
+                    <h2
+                      className={`text-xs font-semibold uppercase tracking-wide mb-2 ${key === "overdue" ? "text-danger" : "text-content-secondary"}`}
+                    >
+                      {copy[key]}{" "}
+                      <span className="font-normal text-content-tertiary ml-1">
+                        {items.length}
+                      </span>
+                    </h2>
+                    <div className="rounded-card border border-default bg-surface overflow-hidden">
+                      {items.map((todo) => row(todo))}
+                    </div>
+                  </section>
+                );
+              },
+            )}
+          </div>
+        )}
+      </div>
+      {selected && draft && (
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-black/30 xl:bg-transparent xl:pointer-events-none"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+        >
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label={copy.details}
+            className="pointer-events-auto w-full sm:max-w-[440px] h-full overflow-y-auto bg-surface border-l border-default shadow-xl xl:shadow-none px-5 py-5 space-y-5"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                {copy.details}
+              </span>
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Close"
+                className="p-1.5 rounded-btn hover:bg-surface-2"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div>
+              <input
+                aria-label={copy.title}
+                value={draft.title}
+                onChange={(event) =>
+                  setDraft({ ...draft, title: event.target.value })
+                }
+                className="w-full text-xl font-semibold bg-transparent outline-none border-b border-transparent focus:border-accent pb-1"
+              />
+              <textarea
+                aria-label={copy.notes}
+                value={draft.notes || ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, notes: event.target.value })
+                }
+                placeholder={copy.notes}
+                rows={3}
+                className="mt-3 w-full resize-y rounded-btn border border-default bg-surface-2 p-3 text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(["todo", "in_progress", "completed"] as const).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => changeStatus(selected, status)}
+                  className={`rounded-btn border px-3 py-1.5 text-xs ${selected.status === status ? "border-accent bg-accent/10 text-accent font-medium" : "border-default text-content-secondary"}`}
+                >
+                  {copy.statusNames[status]}
+                </button>
+              ))}
+              <select
+                aria-label={copy.status}
+                value={
+                  ["waiting", "blocked", "cancelled"].includes(selected.status)
+                    ? selected.status
+                    : ""
+                }
+                onChange={(event) => {
+                  if (event.target.value)
+                    changeStatus(
+                      selected,
+                      event.target.value as Todo["status"],
+                    );
+                }}
+                className="rounded-btn border border-default bg-surface px-2 py-1.5 text-xs text-content-secondary"
+              >
+                <option value="">{copy.advanced}</option>
+                {(["waiting", "blocked", "cancelled"] as const).map(
+                  (status) => (
+                    <option key={status} value={status}>
+                      {copy.statusNames[status]}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">
+                  {copy.subtask}{" "}
+                  {selected.subtask_count > 0 && (
+                    <span className="text-content-tertiary font-normal">
+                      {copy.progress(
+                        selected.progress_completed,
+                        selected.progress_total,
+                      )}
+                    </span>
+                  )}
+                </h3>
+              </div>
+              {selected.subtask_count > 0 && (
+                <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                  <div
+                    className="h-full bg-accent"
+                    style={{ width: `${selected.progress_percent}%` }}
+                  />
+                </div>
+              )}
+              {children(taskKey(selected))
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map((child) => (
+                  <div
+                    key={child.id}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggle(child)}
+                      className="w-4 h-4 border border-content-tertiary rounded-full shrink-0 flex items-center justify-center"
+                    >
+                      {child.status === "completed" && <Check size={12} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => open(child)}
+                      className={`text-left flex-1 truncate ${isDone(child) ? "line-through text-content-tertiary" : ""}`}
+                    >
+                      {child.title}
+                    </button>
+                  </div>
+                ))}
+              {selected.repeat_frequency === "none" ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    addChild();
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    value={childTitle}
+                    onChange={(event) => setChildTitle(event.target.value)}
+                    placeholder={copy.subtaskHint}
+                    aria-label={copy.addSubtask}
+                    className={`${input} flex-1`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!childTitle.trim() || busy}
+                    className="px-2 text-accent disabled:opacity-40"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </form>
+              ) : (
+                <p className="text-xs text-content-tertiary">
+                  {copy.recurrenceHint}
+                </p>
+              )}
+              {selected.subtask_count > 0 &&
+                selected.progress_total > 0 &&
+                selected.progress_completed === selected.progress_total &&
+                !hasOpenDescendant(selected.id) &&
+                selected.status !== "completed" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(copy.finishParent))
+                        changeStatus(selected, "completed");
+                    }}
+                    className="text-xs text-accent"
+                  >
+                    {copy.finishParent}
+                  </button>
+                )}
+            </section>
+            <section className="grid grid-cols-2 gap-3 text-xs">
+              <label>
+                {copy.planDate}
+                <input
+                  type="date"
+                  value={draft.planned_on || ""}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      planned_on: event.target.value || null,
+                    })
+                  }
+                  className={`${input} mt-1`}
+                />
+              </label>
+              <label>
+                {copy.dueDate}
+                <input
+                  type="date"
+                  value={draft.due_on || ""}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      due_on: event.target.value || null,
+                      due_time: event.target.value ? draft.due_time : null,
+                      repeat_frequency: event.target.value
+                        ? draft.repeat_frequency
+                        : "none",
+                    })
+                  }
+                  className={`${input} mt-1`}
+                />
+              </label>
+              <label>
+                {copy.dueTime}
+                <input
+                  type="time"
+                  value={draft.due_time || ""}
+                  disabled={!draft.due_on}
+                  onChange={(event) =>
+                    setDraft({ ...draft, due_time: event.target.value || null })
+                  }
+                  className={`${input} mt-1 disabled:opacity-40`}
+                />
+              </label>
+              <label>
+                {copy.remindAt}
+                <input
+                  type="datetime-local"
+                  value={toLocalTime(draft.remind_at || null)}
+                  disabled={draft.repeat_frequency !== "none"}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      remind_at: fromLocalTime(event.target.value),
+                    })
+                  }
+                  className={`${input} mt-1 disabled:opacity-40`}
+                />
+              </label>
+            </section>
+            <button
+              type="button"
+              onClick={() => setMore(!more)}
+              aria-expanded={more}
+              className="flex items-center gap-1 text-sm text-content-secondary hover:text-accent"
+            >
+              {more ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              {copy.more}
+            </button>
+            {more && (
+              <section className="space-y-3 text-xs">
+                <label className="block">
+                  {copy.priority}
+                  <select
+                    value={draft.priority || 0}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        priority: Number(event.target.value),
+                      })
+                    }
+                    className={`${input} mt-1`}
+                  >
+                    {copy.priorities.map((name, value) => (
+                      <option key={name} value={value}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  {copy.list}
+                  <input
+                    list="todo-lists"
+                    value={draft.list_name || ""}
+                    onChange={(event) =>
+                      setDraft({ ...draft, list_name: event.target.value })
+                    }
+                    className={`${input} mt-1`}
+                  />
+                  <datalist id="todo-lists">
+                    {lists.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="block">
+                  {copy.tags}
+                  <input
+                    value={draftTags}
+                    onChange={(event) => setDraftTags(event.target.value)}
+                    className={`${input} mt-1`}
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.flagged}
+                    onChange={(event) =>
+                      setDraft({ ...draft, flagged: event.target.checked })
+                    }
+                  />
+                  {copy.flagged}
+                </label>
+                <label className="block">
+                  {copy.parent}
+                  <select
+                    value={selected.parent_id || ""}
+                    onChange={(event) =>
+                      move(taskKey(selected), event.target.value || null)
+                    }
+                    disabled={selected.repeat_frequency !== "none"}
+                    className={`${input} mt-1`}
+                  >
+                    <option value="">{copy.topLevel}</option>
+                    {parentChoices
+                      .filter((candidate) => !isDescendant(candidate))
+                      .map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {candidate.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {selected.repeat_frequency === "none" && (
+                  <div className="space-y-2">
+                    <div className="font-medium">{copy.dependencies}</div>
+                    {selected.dependency_ids.map((id) => (
+                      <div key={id} className="flex items-center gap-2">
+                        <span
+                          className={`flex-1 truncate ${selected.blocked_by.includes(id) ? "text-amber-500" : "text-content-secondary"}`}
+                        >
+                          {byId.get(id)?.title || id}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={copy.delete}
+                          onClick={() =>
+                            void run(() =>
+                              apiClient.removeTodoDependency(selected.id, id),
+                            )
+                          }
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <select
+                        aria-label={copy.addDependency}
+                        value={dependencyChoice}
+                        onChange={(event) =>
+                          setDependencyChoice(event.target.value)
+                        }
+                        className={`${input} flex-1`}
+                      >
+                        <option value="">{copy.addDependency}</option>
+                        {parentChoices
+                          .filter(
+                            (item) =>
+                              !selected.dependency_ids.includes(item.id),
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.title}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!dependencyChoice || busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await apiClient.addTodoDependency(
+                              selected.id,
+                              dependencyChoice,
+                            );
+                            setDependencyChoice("");
+                          })
+                        }
+                        className="text-accent disabled:opacity-40"
+                        aria-label={copy.addDependency}
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const siblings = children(selected.parent_id).sort(
+                        (a, b) => a.sort_order - b.sort_order,
+                      );
+                      const index = siblings.findIndex(
+                        (item) => item.id === selected.id,
+                      );
+                      if (index > 0)
+                        move(selected.id, selected.parent_id, index - 1);
+                    }}
+                    className="rounded-btn border border-default px-2 py-1.5"
+                  >
+                    ↑ {copy.moveUp}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const siblings = children(selected.parent_id).sort(
+                        (a, b) => a.sort_order - b.sort_order,
+                      );
+                      const index = siblings.findIndex(
+                        (item) => item.id === selected.id,
+                      );
+                      if (index < siblings.length - 1)
+                        move(selected.id, selected.parent_id, index + 1);
+                    }}
+                    className="rounded-btn border border-default px-2 py-1.5"
+                  >
+                    ↓ {copy.moveDown}
+                  </button>
+                </div>
+                <label className="block">
+                  {copy.repeat}
+                  <select
+                    value={draft.repeat_frequency || "none"}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        repeat_frequency: event.target
+                          .value as Todo["repeat_frequency"],
+                        remind_at:
+                          event.target.value === "none"
+                            ? draft.remind_at
+                            : null,
+                      })
+                    }
+                    disabled={
+                      !draft.due_on ||
+                      selected.subtask_count > 0 ||
+                      !!selected.parent_id
+                    }
+                    className={`${input} mt-1`}
+                  >
+                    {(
+                      ["none", "daily", "weekly", "monthly", "yearly"] as const
+                    ).map((value, index) => (
+                      <option key={value} value={value}>
+                        {copy.repeats[index]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {draft.repeat_frequency !== "none" && (
+                  <label className="block">
+                    {copy.repeatUntil}
+                    <input
+                      type="date"
+                      value={draft.repeat_until || ""}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          repeat_until: event.target.value || null,
+                        })
+                      }
+                      className={`${input} mt-1`}
+                    />
+                  </label>
+                )}
+                {((draft.checklist?.length || 0) > 0 ||
+                  selected.checklist !== "[]") && (
+                  <div className="space-y-1">
+                    <div className="font-medium">{copy.legacyChecklist}</div>
+                    {(draft.checklist || []).map((step, index) => (
+                      <div key={step.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={
+                            selected.repeat_frequency !== "none"
+                              ? checklistOf(selected).find(
+                                  (item) => item.id === step.id,
+                                )?.completed || false
+                              : step.completed
+                          }
+                          onChange={() =>
+                            selected.repeat_frequency !== "none"
+                              ? void run(() =>
+                                  apiClient.completeTodoChecklist(
+                                    selected.id,
+                                    step.id,
+                                    !checklistOf(selected).find(
+                                      (item) => item.id === step.id,
+                                    )?.completed,
+                                  ),
+                                )
+                              : setDraft({
+                                  ...draft,
+                                  checklist: draft.checklist?.map((item) =>
+                                    item.id === step.id
+                                      ? { ...item, completed: !item.completed }
+                                      : item,
+                                  ),
+                                })
+                          }
+                        />
+                        <input
+                          aria-label={`${copy.legacyChecklist} ${index + 1}`}
+                          value={step.title}
+                          onChange={(event) =>
+                            setDraft({
+                              ...draft,
+                              checklist: draft.checklist?.map((item) =>
+                                item.id === step.id
+                                  ? { ...item, title: event.target.value }
+                                  : item,
+                              ),
+                            })
+                          }
+                          className={`${input} flex-1`}
+                        />
+                        <button
+                          type="button"
+                          aria-label={copy.delete}
+                          onClick={() =>
+                            setDraft({
+                              ...draft,
+                              checklist: draft.checklist?.filter(
+                                (item) => item.id !== step.id,
+                              ),
+                            })
+                          }
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="text-accent"
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      checklist: [
+                        ...(draft.checklist || []),
+                        {
+                          id: crypto.randomUUID(),
+                          title: "",
+                          completed: false,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  + {copy.addStep}
+                </button>
+              </section>
+            )}
+            <div className="text-xs text-content-tertiary space-y-1">
+              <div>
+                {copy.created}: {new Date(selected.created_at).toLocaleString()}
+              </div>
+              {selected.completed_at && (
+                <div>
+                  {copy.finished}:{" "}
+                  {new Date(selected.completed_at).toLocaleString()}
+                </div>
+              )}
+            </div>
+            {error && (
+              <p role="alert" className="text-sm text-danger">
+                {error}
+              </p>
+            )}
+            <div className="sticky bottom-0 bg-surface border-t border-default py-3 flex justify-between gap-3">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={remove}
+                className="text-danger text-sm inline-flex items-center gap-1"
+              >
+                <Trash2 size={15} />
+                {copy.delete}
+              </button>
+              <button
+                type="button"
+                disabled={busy || !draft.title?.trim()}
+                onClick={save}
+                className="rounded-btn bg-accent px-4 py-2 text-accent-contrast text-sm disabled:opacity-40"
+              >
+                {copy.save}
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
-    {editing && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={event => { if (event.target === event.currentTarget) setEditing(null) }}><div role="dialog" aria-modal="true" aria-label={editing === 'new' ? copy.add : copy.edit} className="bg-surface rounded-card border border-default w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl p-5 space-y-4"><div className="flex justify-between items-center"><h2 className="font-semibold text-lg">{editing === 'new' ? copy.add : copy.edit}</h2><button type="button" onClick={() => setEditing(null)} aria-label="Close"><X size={18} /></button></div>
-      <label className="block text-sm">{copy.titleField}<input autoFocus value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
-      <label className="block text-sm">{copy.notes}<textarea rows={3} value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
-      <label className="block text-sm">{copy.planDate}<input type="date" value={form.planned_on || ''} onChange={event => setForm({ ...form, planned_on: event.target.value || null })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /><span className="block text-xs text-content-tertiary mt-1">{copy.planHint}</span></label>
-      <div className="grid grid-cols-2 gap-3"><label className="text-sm">{copy.list}<input list="todo-lists" value={form.list_name || ''} onChange={event => setForm({ ...form, list_name: event.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /><datalist id="todo-lists">{lists.map(name => <option key={name} value={name} />)}</datalist></label><label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={!!form.flagged} onChange={event => setForm({ ...form, flagged: event.target.checked })} /><Flag size={14} />{copy.flagged}</label></div>
-      <label className="block text-sm">{copy.tags}<input value={tagsText} onChange={event => setTagsText(event.target.value)} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>
-      <section className="space-y-2"><h3 className="text-sm">{copy.checklist}</h3>{(form.checklist || []).map((step, index) => <div key={step.id} className="flex gap-2"><input aria-label={`${copy.checklist} ${index + 1}`} value={step.title} onChange={event => setForm({ ...form, checklist: form.checklist?.map(item => item.id === step.id ? { ...item, title: event.target.value } : item) })} className="flex-1 rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm" /><button type="button" aria-label={copy.delete} onClick={() => setForm({ ...form, checklist: form.checklist?.filter(item => item.id !== step.id) })}><X size={14} /></button></div>)}<button type="button" className="text-sm text-accent" onClick={() => setForm({ ...form, checklist: [...(form.checklist || []), { id: crypto.randomUUID(), title: '', completed: false }] })}>+ {copy.addStep}</button></section>
-      <div className="grid grid-cols-2 gap-3"><label className="text-sm">{copy.dueDate}<input type="date" value={form.due_on || ''} onChange={event => setForm({ ...form, due_on: event.target.value || null, due_time: event.target.value ? form.due_time : null, repeat_frequency: event.target.value ? form.repeat_frequency : 'none' })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-2 py-2" /></label><label className="text-sm">{copy.dueTime}<input type="time" value={form.due_time || ''} disabled={!form.due_on} onChange={event => setForm({ ...form, due_time: event.target.value || null })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-2 py-2 disabled:opacity-50" /></label></div>
-      <label className="block text-sm">{copy.priority}<select value={form.priority} onChange={event => setForm({ ...form, priority: Number(event.target.value) })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2">{copy.priorities.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>
-      <label className="block text-sm">{copy.repeat}<select value={form.repeat_frequency} disabled={!form.due_on} onChange={event => setForm({ ...form, repeat_frequency: event.target.value as TodoInput['repeat_frequency'] })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2 disabled:opacity-50">{(['none', 'daily', 'weekly', 'monthly', 'yearly'] as const).map((frequency, index) => <option key={frequency} value={frequency}>{copy.repeats[index]}</option>)}</select></label>
-      {form.repeat_frequency === 'weekly' && <div className="flex flex-wrap gap-2">{weekdays.map((day, index) => <label key={index} className="inline-flex items-center gap-1 rounded-btn border border-default px-2 py-1 text-xs"><input type="checkbox" checked={form.repeat_days.includes(index)} onChange={() => setForm({ ...form, repeat_days: form.repeat_days.includes(index) ? form.repeat_days.filter(value => value !== index) : [...form.repeat_days, index] })} />{day}</label>)}</div>}
-      {form.repeat_frequency !== 'none' && <label className="block text-sm">{copy.repeatUntil}<input type="date" value={form.repeat_until || ''} onChange={event => setForm({ ...form, repeat_until: event.target.value || null })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2" /></label>}
-      {editing !== 'new' && editing.repeat_frequency !== 'none' && <p className="text-xs text-content-tertiary">{copy.series}</p>}
-      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      <div className="flex justify-between items-center">{editing !== 'new' ? <button type="button" disabled={busy} onClick={() => void remove(editing)} className="text-sm text-danger inline-flex items-center gap-1"><Trash2 size={14} />{copy.delete}</button> : <span />}<div className="flex gap-2"><button type="button" onClick={() => setEditing(null)} className="px-3 py-2 text-sm">{copy.cancel}</button><button type="button" disabled={busy} onClick={() => void save()} className="px-4 py-2 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{copy.save}</button></div></div>
-    </div></div>}
-  </div>
-}
+  );
+};
 
-export default TodosPage
+export default TodosPage;
