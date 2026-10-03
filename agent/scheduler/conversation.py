@@ -25,9 +25,11 @@ def _known_project(path):
 
 
 def validate_conversation_action(action, *, allow_pending_source=False):
-    """Validate explicit task choices without changing legacy task routing."""
+    """Require an explicit conversation choice for desktop tasks."""
     action = dict(action)
     if "conversation_mode" not in action:
+        if action.get("channel_type") == "web":
+            raise ValueError("Choose a conversation mode for this desktop task")
         return action
     if action.get("channel_type") != "web":
         raise ValueError("Conversation choices require desktop delivery")
