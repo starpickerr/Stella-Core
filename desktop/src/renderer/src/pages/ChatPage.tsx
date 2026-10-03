@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ChevronUp,
   Loader2,
@@ -46,6 +47,8 @@ const SUGGESTIONS: {
 ]
 
 const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
+  const location = useLocation()
+  const navigate = useNavigate()
   const activeId = useSessionStore((s) => s.activeId)
   const newSession = useSessionStore((s) => s.newSession)
   const loadSessions = useSessionStore((s) => s.loadSessions)
@@ -74,6 +77,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
   }, [baseUrl])
+
+  useEffect(() => {
+    const draft = (location.state as { taskDraft?: unknown } | null)?.taskDraft
+    if (typeof draft === 'string' && draft.trim()) {
+      inputResetRef.current?.(draft, [])
+      navigate('/', { replace: true, state: null })
+    }
+  }, [location.state, navigate])
 
   // Load history when switching to a session that hasn't been loaded yet.
   useEffect(() => {

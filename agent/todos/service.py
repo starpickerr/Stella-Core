@@ -23,6 +23,10 @@ def _text(value, field, limit=500):
     return value.strip()
 
 
+TODO_STATUSES = frozenset({"todo", "in_progress", "waiting", "blocked", "completed", "cancelled"})
+TERMINAL_STATUSES = frozenset({"completed", "cancelled"})
+
+
 class TodoService:
     def __init__(self, db_path=None, legacy_calendar_db_path=None):
         from common.state_dir import calendar_db, todos_db
@@ -52,6 +56,12 @@ class TodoService:
                     todo_id TEXT NOT NULL, occurrence_on TEXT NOT NULL, item_id TEXT NOT NULL,
                     PRIMARY KEY(todo_id, occurrence_on, item_id),
                     FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS todo_dependencies (
+                    task_id TEXT NOT NULL, prerequisite_id TEXT NOT NULL,
+                    PRIMARY KEY(task_id, prerequisite_id),
+                    FOREIGN KEY(task_id) REFERENCES todos(id) ON DELETE CASCADE,
+                    FOREIGN KEY(prerequisite_id) REFERENCES todos(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS todo_notifications (
                     todo_id TEXT NOT NULL, occurrence_on TEXT NOT NULL, notified_at TEXT NOT NULL,
@@ -85,9 +95,14 @@ class TodoService:
                 ("planned_on", "TEXT"), ("list_name", "TEXT NOT NULL DEFAULT ''"),
                 ("tags", "TEXT NOT NULL DEFAULT '[]'"), ("flagged", "INTEGER NOT NULL DEFAULT 0"),
                 ("checklist", "TEXT NOT NULL DEFAULT '[]'"),
+                ("status", "TEXT NOT NULL DEFAULT 'todo'"), ("parent_id", "TEXT"),
+                ("sort_order", "INTEGER NOT NULL DEFAULT 0"), ("remind_at", "TEXT"),
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE todos ADD COLUMN {name} {definition}")
+            db.execute("CREATE INDEX IF NOT EXISTS todos_parent_order ON todos(parent_id,sort_order,created_at)")
+            if "status" not in columns:
+                db.execute("UPDATE todos SET status='completed' WHERE completed_at IS NOT NULL")
         self._migrate_calendar_records()
         if os.environ.get("STELLA_DESKTOP") == "1":
             self._record_legacy_claims()
@@ -167,10 +182,11 @@ class TodoService:
                 return
             for row in db.execute("SELECT todo_id,occurrence_on,notified_at FROM todo_notifications"):
                 occurrence_id = str(uuid.uuid4())
+                kind = "custom" if "T" in row["occurrence_on"] else "due"
                 inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
                     (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at,state)
-                    VALUES (?,?,?,'due',?,'legacy_claimed_unknown')""",
-                    (occurrence_id, row["todo_id"], row["occurrence_on"], row["notified_at"]))
+                    VALUES (?,?,?,?,?,'legacy_claimed_unknown')""",
+                    (occurrence_id, row["todo_id"], row["occurrence_on"], kind, row["notified_at"]))
                 if inserted.rowcount:
                     db.execute("""INSERT INTO reminder_deliveries
                         (delivery_id,occurrence_id,status,error) VALUES (?,?,'legacy_claimed_unknown',?)""",
@@ -195,23 +211,27 @@ class TodoService:
             raise ValueError("delivery_id is required")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("""SELECT d.status,o.occurrence_id,o.occurrence_on,o.due_at,t.*
+            row = db.execute("""SELECT d.status,o.occurrence_id,o.occurrence_on,o.reminder_kind,o.due_at,t.*
                 FROM reminder_deliveries d
                 JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
                 JOIN todos t ON t.id=o.todo_id WHERE d.delivery_id=?""",
                 (delivery_id,)).fetchone()
             if not row or row["status"] != "legacy_claimed_unknown":
                 raise ValueError("uncertain reminder not found")
-            day = date.fromisoformat(row["occurrence_on"])
             # A legacy row stores the old claim time in due_at. Any edit after
             # that claim makes the old reminder payload or timing uncertain.
             changed_since_claim = datetime.fromisoformat(row["updated_at"]) > datetime.fromisoformat(row["due_at"])
-            valid = bool(row["due_time"]) and (
-                day.isoformat() == row["due_on"] and not row["completed_at"]
-                if row["repeat_frequency"] == "none" else
-                self._todo_matches(row, day) and not db.execute(
-                    "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
-                    (row["todo_id"], row["occurrence_on"])).fetchone())
+            if row["reminder_kind"] == "custom":
+                valid = (row["remind_at"] == row["occurrence_on"] and
+                         row["status"] not in TERMINAL_STATUSES)
+            else:
+                day = date.fromisoformat(row["occurrence_on"])
+                valid = bool(row["due_time"]) and (
+                    day.isoformat() == row["due_on"] and not row["completed_at"]
+                    if row["repeat_frequency"] == "none" else
+                    self._todo_matches(row, day) and not db.execute(
+                        "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
+                        (row["todo_id"], row["occurrence_on"])).fetchone())
             if not valid or changed_since_claim:
                 db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?",
                            (row["occurrence_id"],))
@@ -231,7 +251,7 @@ class TodoService:
         row = dict(existing or {})
         for key in ("title", "notes", "due_on", "due_time", "timezone", "priority",
                     "repeat_frequency", "repeat_days", "repeat_until", "planned_on",
-                    "list_name", "tags", "flagged", "checklist"):
+                    "list_name", "tags", "flagged", "checklist", "remind_at"):
             if key in payload:
                 row[key] = payload[key]
         row["title"] = _text(row.get("title"), "title")
@@ -295,6 +315,18 @@ class TodoService:
             except (ValueError, TypeError) as exc:
                 raise ValueError("planned_on must be YYYY-MM-DD") from exc
         row["planned_on"] = planned
+        reminder = row.get("remind_at") or None
+        if reminder:
+            try:
+                instant = datetime.fromisoformat(reminder.replace("Z", "+00:00"))
+                if instant.tzinfo is None:
+                    raise ValueError("timezone required")
+                reminder = instant.astimezone(timezone.utc).isoformat()
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise ValueError("remind_at must be an ISO timestamp with timezone") from exc
+        row["remind_at"] = reminder
+        if frequency != "none" and reminder:
+            raise ValueError("recurring tasks use their due time for reminders")
         list_name = row.get("list_name") or ""
         if not isinstance(list_name, str) or len(list_name.strip()) > 80:
             raise ValueError("list_name must be at most 80 characters")
@@ -334,17 +366,25 @@ class TodoService:
 
     def create_todo(self, payload):
         row = self._validate_todo(payload)
+        status = self._status(payload.get("status", "todo"))
+        if row["repeat_frequency"] != "none" and status != "todo":
+            raise ValueError("recurring task status is set per occurrence")
+        parent_id = payload.get("parent_id")
         todo_id, now = str(uuid.uuid4()), _now()
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._validate_parent(db, todo_id, parent_id, row["repeat_frequency"])
+            order = self._next_order(db, parent_id)
             db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                  repeat_days,repeat_until,source_type,source_key,source_url,user_modified,created_at,updated_at,
-                 planned_on,list_name,tags,flagged,checklist)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
-                 row["priority"], None, row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
+                 row["priority"], now if status == "completed" else None,
+                 row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
                  None, None, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
-                 row["flagged"], row["checklist"]))
+                 row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"]))
         return self.get_todo(todo_id)
 
     def get_todo(self, todo_id):
@@ -352,33 +392,186 @@ class TodoService:
             raise ValueError("todo id is required")
         with self._connect() as db:
             row = db.execute("SELECT * FROM todos WHERE id=?", (todo_id.split("@", 1)[0],)).fetchone()
-        if row is None:
-            raise KeyError("todo not found")
-        return dict(row)
+            if row is None:
+                raise KeyError("todo not found")
+            return self._with_progress(db, dict(row))
 
     def update_todo(self, todo_id, payload):
         old = self.get_todo(todo_id)
         row = self._validate_todo(payload, old)
         with self._connect() as db:
+            if row["repeat_frequency"] != "none" and old["status"] != "todo":
+                raise ValueError("recurring task status is set per occurrence")
+            if row["repeat_frequency"] != old["repeat_frequency"] and old["parent_id"]:
+                raise ValueError("subtasks cannot repeat")
+            if row["repeat_frequency"] != "none" and db.execute(
+                "SELECT 1 FROM todos WHERE parent_id=?", (old["id"],)).fetchone():
+                raise ValueError("tasks with subtasks cannot repeat")
+            if row["repeat_frequency"] != "none" and db.execute(
+                "SELECT 1 FROM todo_dependencies WHERE task_id=? OR prerequisite_id=?",
+                (old["id"], old["id"])).fetchone():
+                raise ValueError("tasks with dependencies cannot repeat")
             self._cancel_pending_reminders(db, old["id"])
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
-                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=? WHERE id=?""",
+                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=? WHERE id=?""",
                 (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                 row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
-                row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"], old["id"]))
+                row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
+                row["remind_at"], old["id"]))
         return self.get_todo(old["id"])
 
     def delete_todo(self, todo_id):
         old = self.get_todo(todo_id)
         with self._connect() as db:
-            if old["source_type"] == "briefing" and old["source_key"]:
-                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
-                           (old["source_key"], _now()))
-            self._cancel_pending_reminders(db, old["id"])
-            db.execute("DELETE FROM todos WHERE id=?", (old["id"],))
+            db.execute("BEGIN IMMEDIATE")
+            descendants = db.execute("""WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM todos WHERE id=? UNION ALL
+                SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
+                SELECT t.id,t.source_type,t.source_key FROM todos t JOIN subtree s ON t.id=s.id""",
+                (old["id"],)).fetchall()
+            for item in descendants:
+                if item["source_type"] == "briefing" and item["source_key"]:
+                    db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
+                               (item["source_key"], _now()))
+                self._cancel_pending_reminders(db, item["id"])
+                db.execute("DELETE FROM todos WHERE id=?", (item["id"],))
 
-    def complete_todo(self, todo_id, completed):
+    @staticmethod
+    def _status(value):
+        if value not in TODO_STATUSES:
+            raise ValueError("invalid todo status")
+        return value
+
+    @staticmethod
+    def _next_order(db, parent_id):
+        row = db.execute("SELECT MAX(sort_order) FROM todos WHERE parent_id IS ?", (parent_id,)).fetchone()
+        return (row[0] or 0) + 1
+
+    @staticmethod
+    def _with_progress(db, row):
+        children = db.execute("SELECT status FROM todos WHERE parent_id=?", (row["id"],)).fetchall()
+        effective = [child for child in children if child["status"] != "cancelled"]
+        done = sum(child["status"] == "completed" for child in effective)
+        row.update(subtask_count=len(children), progress_completed=done,
+                   progress_total=len(effective), progress_percent=round(100 * done / len(effective)) if effective else 0)
+        dependencies = db.execute("""SELECT d.prerequisite_id,t.status FROM todo_dependencies d
+            JOIN todos t ON t.id=d.prerequisite_id WHERE d.task_id=?""", (row["id"],)).fetchall()
+        row["dependency_ids"] = [item["prerequisite_id"] for item in dependencies]
+        row["blocked_by"] = [item["prerequisite_id"] for item in dependencies if item["status"] != "completed"]
+        return row
+
+    @staticmethod
+    def _validate_parent(db, todo_id, parent_id, frequency):
+        if parent_id is None:
+            return
+        if not isinstance(parent_id, str) or not parent_id or "@" in parent_id or parent_id == todo_id:
+            raise ValueError("invalid parent task")
+        parent = db.execute("SELECT id,parent_id,repeat_frequency FROM todos WHERE id=?", (parent_id,)).fetchone()
+        if not parent:
+            raise ValueError("parent task not found")
+        if frequency != "none" or parent["repeat_frequency"] != "none":
+            raise ValueError("recurring tasks cannot have subtasks")
+        ancestor = parent
+        while ancestor:
+            if ancestor["id"] == todo_id:
+                raise ValueError("task hierarchy cannot contain a cycle")
+            ancestor = db.execute("SELECT id,parent_id FROM todos WHERE id=?", (ancestor["parent_id"],)).fetchone() if ancestor["parent_id"] else None
+
+    def add_subtask(self, parent_id, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("todo must be an object")
+        return self.create_todo({**payload, "parent_id": parent_id})
+
+    def move_todo(self, todo_id, parent_id=None, position=None):
+        old = self.get_todo(todo_id)
+        if "@" in todo_id:
+            raise ValueError("move the series, not an occurrence")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._validate_parent(db, old["id"], parent_id, old["repeat_frequency"])
+            siblings = [row[0] for row in db.execute(
+                "SELECT id FROM todos WHERE parent_id IS ? AND id!=? ORDER BY sort_order,created_at,id",
+                (parent_id, old["id"]))]
+            if position is None:
+                position = len(siblings)
+            if type(position) is not int or position < 0 or position > len(siblings):
+                raise ValueError("invalid sibling position")
+            siblings.insert(position, old["id"])
+            now = _now()
+            for index, sibling in enumerate(siblings):
+                db.execute("UPDATE todos SET parent_id=?,sort_order=?,updated_at=? WHERE id=?",
+                           (parent_id, index + 1, now, sibling))
+            db.execute("UPDATE todos SET user_modified=1 WHERE id=?", (old["id"],))
+        return self.get_todo(old["id"])
+
+    def add_dependency(self, todo_id, prerequisite_id):
+        if not isinstance(todo_id, str) or not isinstance(prerequisite_id, str) or not todo_id or not prerequisite_id:
+            raise ValueError("task and prerequisite ids are required")
+        if todo_id == prerequisite_id or "@" in todo_id or "@" in prerequisite_id:
+            raise ValueError("invalid task dependency")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            tasks = db.execute("SELECT id,repeat_frequency,status FROM todos WHERE id IN (?,?)",
+                               (todo_id, prerequisite_id)).fetchall()
+            if len(tasks) != 2:
+                raise ValueError("task dependency target not found")
+            if any(item["repeat_frequency"] != "none" for item in tasks):
+                raise ValueError("recurring tasks cannot have dependencies")
+            states = {item["id"]: item["status"] for item in tasks}
+            if states[todo_id] in ("in_progress", "completed") and states[prerequisite_id] != "completed":
+                raise ValueError("finish the prerequisite before adding it to an active task")
+            cycle = db.execute("""WITH RECURSIVE chain(id) AS (
+                SELECT prerequisite_id FROM todo_dependencies WHERE task_id=?
+                UNION SELECT d.prerequisite_id FROM todo_dependencies d JOIN chain c ON d.task_id=c.id)
+                SELECT 1 FROM chain WHERE id=?""", (prerequisite_id, todo_id)).fetchone()
+            if cycle:
+                raise ValueError("task dependencies cannot contain a cycle")
+            db.execute("INSERT OR IGNORE INTO todo_dependencies VALUES (?,?)", (todo_id, prerequisite_id))
+            db.execute("UPDATE todos SET user_modified=1,updated_at=? WHERE id=?", (_now(), todo_id))
+        return self.get_todo(todo_id)
+
+    def remove_dependency(self, todo_id, prerequisite_id):
+        old = self.get_todo(todo_id)
+        with self._connect() as db:
+            db.execute("DELETE FROM todo_dependencies WHERE task_id=? AND prerequisite_id=?",
+                       (old["id"], prerequisite_id))
+            db.execute("UPDATE todos SET user_modified=1,updated_at=? WHERE id=?", (_now(), old["id"]))
+        return self.get_todo(old["id"])
+
+    def change_todo_status(self, todo_id, status, force=False):
+        status = self._status(status)
+        if type(force) is not bool:
+            raise ValueError("force must be true or false")
+        old = self.get_todo(todo_id)
+        if status == "completed" and old["repeat_frequency"] != "none":
+            return self.complete_todo(todo_id, True, force=force)
+        if "@" in todo_id:
+            raise ValueError("recurring occurrence only supports completion")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if status in ("in_progress", "completed") and not force:
+                blocked = db.execute("""SELECT COUNT(*) FROM todo_dependencies d
+                    JOIN todos t ON t.id=d.prerequisite_id
+                    WHERE d.task_id=? AND t.status!='completed'""", (old["id"],)).fetchone()[0]
+                if blocked:
+                    raise ValueError(f"unfinished_dependencies:{blocked}")
+            if status == "completed" and not force:
+                pending = db.execute("""WITH RECURSIVE subtree(id) AS (
+                    SELECT id FROM todos WHERE parent_id=? UNION ALL
+                    SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
+                    SELECT COUNT(*) FROM todos WHERE id IN (SELECT id FROM subtree)
+                    AND status NOT IN ('completed','cancelled')""", (old["id"],)).fetchone()[0]
+                if pending:
+                    raise ValueError(f"unfinished_subtasks:{pending}")
+            if status in TERMINAL_STATUSES:
+                self._cancel_pending_reminders(db, old["id"])
+            now = _now()
+            db.execute("UPDATE todos SET status=?,completed_at=?,user_modified=1,updated_at=? WHERE id=?",
+                       (status, now if status == "completed" else None, now, old["id"]))
+        return self.get_todo(old["id"])
+
+    def complete_todo(self, todo_id, completed, force=False):
         if type(completed) is not bool:
             raise ValueError("completed must be true or false")
         old = self.get_todo(todo_id)
@@ -394,6 +587,8 @@ class TodoService:
                 raise ValueError("date is not a todo occurrence")
         elif occurrence:
             raise ValueError("nonrecurring todo has no occurrence id")
+        if not occurrence:
+            return self.change_todo_status(todo_id, "completed" if completed else "todo", force=force)
         now = _now()
         with self._connect() as db:
             if completed:
@@ -445,6 +640,7 @@ class TodoService:
         occurrence_on = day.isoformat()
         item.update(series_id=row["id"], id=f"{row['id']}@{occurrence_on}", due_on=occurrence_on,
                     completed_at=completions.get((row["id"], occurrence_on)))
+        item["status"] = "completed" if item["completed_at"] else "todo"
         if row.get("planned_on"):
             item["planned_on"] = (day + (date.fromisoformat(row["planned_on"]) -
                                          date.fromisoformat(row["due_on"]))).isoformat()
@@ -475,7 +671,7 @@ class TodoService:
         leased = []
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL").fetchall()
+            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL AND status NOT IN ('completed','cancelled')").fetchall()
             for stored in rows:
                 row = dict(stored)
                 zone = ZoneInfo(row["timezone"])
@@ -513,6 +709,27 @@ class TodoService:
                                         db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
                                             lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
                     candidate += timedelta(days=1)
+            for row in db.execute("SELECT * FROM todos WHERE remind_at IS NOT NULL AND status NOT IN ('completed','cancelled')"):
+                remind_at = datetime.fromisoformat(row["remind_at"]).astimezone(timezone.utc)
+                if oldest <= remind_at <= instant:
+                    reminder_key = remind_at.isoformat()
+                    occurrence_id = str(uuid.uuid4())
+                    inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                        (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at)
+                        VALUES (?,?,?,'custom',?)""",
+                        (occurrence_id, row["id"], reminder_key, remind_at.isoformat()))
+                    if inserted.rowcount:
+                        db.execute("INSERT INTO reminder_deliveries(delivery_id,occurrence_id) VALUES (?,?)",
+                                   (str(uuid.uuid4()), occurrence_id))
+                    else:
+                        cancelled = db.execute("""SELECT occurrence_id FROM reminder_occurrences
+                            WHERE todo_id=? AND occurrence_on=? AND reminder_kind='custom'
+                            AND state='cancelled'""", (row["id"], reminder_key)).fetchone()
+                        if cancelled:
+                            db.execute("UPDATE reminder_occurrences SET state='pending',due_at=? WHERE occurrence_id=?",
+                                       (remind_at.isoformat(), cancelled[0]))
+                            db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                                lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
             candidates = db.execute("""SELECT d.delivery_id,o.occurrence_id,o.todo_id,o.occurrence_on,
                 t.title FROM reminder_deliveries d JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
                 JOIN todos t ON t.id=o.todo_id
@@ -579,7 +796,7 @@ class TodoService:
                            for row in db.execute("SELECT * FROM todo_completions")}
             checklist_completions = {tuple(row) for row in db.execute("SELECT * FROM todo_checklist_completions")}
         if first is None:
-            return [row for row in templates if include_completed or not row["completed_at"]]
+            return self._decorate_rows(templates, include_completed)
         result = []
         for row in templates:
             if not row["due_on"]:
@@ -595,7 +812,32 @@ class TodoService:
                     if include_completed or not item["completed_at"]:
                         result.append(item)
                 candidate += timedelta(days=1)
-        return sorted(result, key=lambda row: (row["due_on"], row["due_time"] or "", -row["priority"], row["id"]))
+        return sorted(self._decorate_rows(result, include_completed),
+                      key=lambda row: (row["due_on"], row["due_time"] or "", -row["priority"], row["id"]))
+
+    def _decorate_rows(self, rows, include_completed=True):
+        with self._connect() as db:
+            counts = {row["id"]: dict(total=row["total"], done=row["done"], count=row["count"])
+                      for row in db.execute("""SELECT parent_id AS id, COUNT(*) AS count,
+                        SUM(CASE WHEN status!='cancelled' THEN 1 ELSE 0 END) AS total,
+                        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS done
+                        FROM todos WHERE parent_id IS NOT NULL GROUP BY parent_id""")}
+            dependencies = {}
+            for item in db.execute("""SELECT d.task_id,d.prerequisite_id,t.status FROM todo_dependencies d
+                JOIN todos t ON t.id=d.prerequisite_id"""):
+                dependencies.setdefault(item["task_id"], []).append((item["prerequisite_id"], item["status"]))
+        result = []
+        for row in rows:
+            if not include_completed and row["status"] in TERMINAL_STATUSES:
+                continue
+            progress = counts.get(row["id"], {"count": 0, "total": 0, "done": 0})
+            result.append({**row, "subtask_count": progress["count"],
+                           "progress_completed": progress["done"], "progress_total": progress["total"],
+                           "progress_percent": round(100 * progress["done"] / progress["total"]) if progress["total"] else 0,
+                           "dependency_ids": [item[0] for item in dependencies.get(row.get("series_id", row["id"]), [])],
+                           "blocked_by": [item[0] for item in dependencies.get(row.get("series_id", row["id"]), [])
+                                          if item[1] != "completed"]})
+        return result
 
     def list_todos_focus(self, today=None):
         """Show one actionable and the last completed occurrence per series."""
@@ -640,7 +882,7 @@ class TodoService:
                               self._todo_matches(row, date.fromisoformat(day))]
             if completed_days:
                 result.append(self._project_todo(row, date.fromisoformat(max(completed_days)), completions, checklist_completions))
-        return result
+        return self._decorate_rows(result)
 
     def claim_due_todo_notifications(self, now=None):
         """Claim timed reminders due in the past day, once per occurrence."""
@@ -652,7 +894,7 @@ class TodoService:
         claimed = []
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL").fetchall()
+            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL AND status NOT IN ('completed','cancelled')").fetchall()
             for stored in rows:
                 row = dict(stored)
                 zone = ZoneInfo(row["timezone"])
@@ -677,6 +919,13 @@ class TodoService:
                                 item["due_on"] = day
                                 claimed.append(item)
                     candidate += timedelta(days=1)
+            for row in db.execute("SELECT * FROM todos WHERE remind_at IS NOT NULL AND status NOT IN ('completed','cancelled')"):
+                remind_at = datetime.fromisoformat(row["remind_at"]).astimezone(timezone.utc)
+                if oldest <= remind_at <= instant:
+                    cursor = db.execute("INSERT OR IGNORE INTO todo_notifications VALUES (?,?,?)",
+                                        (row["id"], remind_at.isoformat(), instant.isoformat()))
+                    if cursor.rowcount:
+                        claimed.append(dict(row))
         return claimed
 
     def _upsert_sourced_todo(self, source_key, item, due_value, briefing_id, db=None):

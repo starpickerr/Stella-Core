@@ -52,6 +52,98 @@ def test_old_database_migrates_without_losing_todos(service):
     assert json.loads(updated["tags"]) == ["urgent"]
 
 
+def test_status_migration_preserves_completed_legacy_rows(service):
+    done = service.create_todo({"title": "Old completed task"})
+    completed = service.complete_todo(done["id"], True)
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("DROP INDEX todos_parent_order")
+        for column in ("status", "parent_id", "sort_order", "remind_at"):
+            db.execute(f"ALTER TABLE todos DROP COLUMN {column}")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    migrated = reopened.get_todo(done["id"])
+    assert migrated["status"] == "completed"
+    assert migrated["completed_at"] == completed["completed_at"]
+    assert migrated["parent_id"] is None
+    assert reopened.list_todos(include_completed=False) == []
+
+
+def test_subtasks_status_progress_and_explicit_parent_completion(service):
+    parent = service.create_todo({"title": "Homework"})
+    first = service.add_subtask(parent["id"], {"title": "Read"})
+    second = service.add_subtask(parent["id"], {"title": "Solve"})
+    leaf = service.add_subtask(second["id"], {"title": "Problem 1"})
+    assert service.get_todo(parent["id"])["progress_total"] == 2
+    service.change_todo_status(first["id"], "completed")
+    assert service.get_todo(parent["id"])["progress_percent"] == 50
+    with pytest.raises(ValueError, match="unfinished_subtasks:2"):
+        service.complete_todo(parent["id"], True)
+    service.complete_todo(parent["id"], True, force=True)
+    assert service.get_todo(parent["id"])["status"] == "completed"
+    assert service.get_todo(second["id"])["status"] == "todo"
+    service.change_todo_status(leaf["id"], "cancelled")
+    assert service.get_todo(second["id"])["progress_total"] == 0
+    service.change_todo_status(parent["id"], "in_progress")
+    assert service.get_todo(parent["id"])["completed_at"] is None
+
+
+def test_move_reorder_promote_and_cycle_rejection(service):
+    first = service.create_todo({"title": "First"})
+    second = service.create_todo({"title": "Second"})
+    third = service.add_subtask(first["id"], {"title": "Third"})
+    service.move_todo(second["id"], first["id"], 0)
+    assert [row["title"] for row in sorted(
+        (row for row in service.list_todos() if row["parent_id"] == first["id"]),
+        key=lambda row: row["sort_order"])] == ["Second", "Third"]
+    with pytest.raises(ValueError, match="cycle"):
+        service.move_todo(first["id"], third["id"])
+    service.move_todo(third["id"], None, 0)
+    assert service.get_todo(third["id"])["parent_id"] is None
+    assert service.get_todo(first["id"])["progress_total"] == 1
+
+
+def test_recurring_task_cannot_be_parent_or_child(service):
+    recurring = service.create_todo({"title": "Daily", "due_on": "2026-10-02", "repeat_frequency": "daily"})
+    with pytest.raises(ValueError, match="recurring"):
+        service.add_subtask(recurring["id"], {"title": "Child"})
+    parent = service.create_todo({"title": "Parent"})
+    with pytest.raises(ValueError, match="recurring"):
+        service.create_todo({"title": "Child", "parent_id": parent["id"],
+                             "due_on": "2026-10-02", "repeat_frequency": "daily"})
+
+
+def test_dependencies_are_separate_from_hierarchy_and_gate_progress(service):
+    check = service.create_todo({"title": "Check answers"})
+    submit = service.create_todo({"title": "Submit homework"})
+    service.add_dependency(submit["id"], check["id"])
+    assert service.get_todo(submit["id"])["parent_id"] is None
+    assert service.get_todo(submit["id"])["blocked_by"] == [check["id"]]
+    with pytest.raises(ValueError, match="unfinished_dependencies"):
+        service.change_todo_status(submit["id"], "in_progress")
+    with pytest.raises(ValueError, match="cycle"):
+        service.add_dependency(check["id"], submit["id"])
+    service.complete_todo(check["id"], True)
+    service.change_todo_status(submit["id"], "in_progress")
+    assert service.get_todo(submit["id"])["blocked_by"] == []
+    service.remove_dependency(submit["id"], check["id"])
+    assert service.get_todo(submit["id"])["dependency_ids"] == []
+    later = service.create_todo({"title": "Later"})
+    with pytest.raises(ValueError, match="active task"):
+        service.add_dependency(submit["id"], later["id"])
+
+
+def test_independent_reminder_can_be_rescheduled_and_cancelled(service):
+    todo = service.create_todo({"title": "Review", "remind_at": "2026-10-02T08:00:00+08:00"})
+    first_due = datetime.fromisoformat("2026-10-02T00:01:00+00:00")
+    first = service.claim_desktop_reminders(first_due)
+    assert len(first) == 1 and first[0]["todo_id"] == todo["id"]
+    service.update_todo(todo["id"], {"remind_at": "2026-10-02T09:00:00+08:00"})
+    assert not service.acknowledge_desktop_reminder(first[0]["delivery_id"], first[0]["claim_id"], True)
+    second = service.claim_desktop_reminders(datetime.fromisoformat("2026-10-02T01:01:00+00:00"))
+    assert len(second) == 1 and second[0]["delivery_id"] != first[0]["delivery_id"]
+    service.change_todo_status(todo["id"], "cancelled")
+    assert service.claim_desktop_reminders(datetime.fromisoformat("2026-10-02T01:02:00+00:00")) == []
+
+
 def test_repeating_checklist_completion_and_plan_date_are_occurrence_scoped(service):
     todo = service.create_todo({"title": "Daily", "due_on": "2026-10-02", "planned_on": "2026-10-01",
         "repeat_frequency": "daily", "checklist": [{"id": "step", "title": "Check"}]})
@@ -279,6 +371,7 @@ def test_tool_and_web_api_are_independent(service, monkeypatch):
     tool = TodosTool(service=service)
     assert json.loads(tool.execute({"action": "create", "title": "准备报告"}).result)["todo"]["title"] == "准备报告"
     assert not check_tool_call("read-only", "todos", {"action": "complete", "id": "x", "completed": True})
+    assert not check_tool_call("read-only", "todos", {"action": "add_dependency", "id": "x", "prerequisite_id": "y"})
     assert check_tool_call("read-only", "todos", {"action": "list"})
 
     from channel.desktop import desktop_channel as web_channel
@@ -288,6 +381,31 @@ def test_tool_and_web_api_are_independent(service, monkeypatch):
     with patch.object(web_channel.web, "data", return_value='{"title":"来自页面"}'.encode()):
         result = json.loads(web_channel.TodosHandler().POST())
     assert result["status"] == "success" and result["todo"]["title"] == "来自页面"
+
+
+def test_agent_and_desktop_share_hierarchy_and_status_rules(service, monkeypatch):
+    from channel.desktop import desktop_channel as web_channel
+    monkeypatch.setattr(web_channel, "_todo_service", lambda: service)
+    monkeypatch.setattr(web_channel, "_require_auth", lambda: None)
+    monkeypatch.setattr(web_channel.web, "header", lambda *_args: None)
+    tool = TodosTool(service=service)
+    parent = json.loads(tool.execute({"action": "create", "title": "Homework"}).result)["todo"]
+    with patch.object(web_channel.web, "data", return_value=json.dumps({
+        "parent_id": parent["id"], "title": "Check answers"}).encode()):
+        child = json.loads(web_channel.TodoSubtaskHandler().POST())["todo"]
+    assert child["parent_id"] == parent["id"]
+    assert json.loads(tool.execute({"action": "get", "id": parent["id"]}).result)["todo"]["progress_total"] == 1
+    blocked = tool.execute({"action": "status", "id": parent["id"], "status": "completed"})
+    assert blocked.status == "error" and "unfinished_subtasks" in blocked.result
+    with patch.object(web_channel.web, "data", return_value=json.dumps({
+        "id": child["id"], "status": "completed"}).encode()):
+        assert json.loads(web_channel.TodoStatusHandler().POST())["todo"]["status"] == "completed"
+    assert json.loads(tool.execute({"action": "complete", "id": parent["id"],
+                                    "completed": True}).result)["todo"]["status"] == "completed"
+    next_step = json.loads(tool.execute({"action": "create", "title": "Submit"}).result)["todo"]
+    linked = tool.execute({"action": "add_dependency", "id": next_step["id"],
+                           "prerequisite_id": child["id"]})
+    assert json.loads(linked.result)["todo"]["dependency_ids"] == [child["id"]]
 
 
 def test_todo_api_validation_errors_are_written_to_logs(service, monkeypatch):
