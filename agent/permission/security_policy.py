@@ -156,9 +156,9 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
             lines.append(("eLearning file sync may write only to the selected folder: " if english else
                           "eLearning 文件同步仅可写入已选目录：") + root + ".")
         else:
-            lines.append("eLearning file sync is not ready; the user must enable the source and sync, "
-                         "select courses and a save folder in briefing settings."
-                         if english else "eLearning 文件同步未就绪；需要用户在简报设置中启用来源及同步、选择课程与保存目录。")
+            lines.append("eLearning file sync is not ready; the user must configure the account, "
+                         "authorize courses and a save folder, and enable file sync in eLearning settings."
+                         if english else "eLearning 文件同步未就绪；需要用户在 eLearning 设置中配置账号、授权课程和保存目录，并开启文件同步。")
     lines.extend([
         ("Read actions generally use workspace_read; changing tasks, calendar entries or briefings and "
          "eLearning sync_files use workspace_write. Shell also follows shell plus operation-specific rules."

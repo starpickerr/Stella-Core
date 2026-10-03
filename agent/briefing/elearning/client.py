@@ -54,7 +54,7 @@ class Canvas:
         auth = session_path(self.config)
         if cookies is None and not self.token:
             if not auth.is_file():
-                raise LoginRequired("尚未连接 eLearning，请在简报设置中测试连接。")
+                raise LoginRequired("eLearning 尚无可用登录状态，请在 eLearning 设置中配置账号，或重新登录。")
             try:
                 cookies = json.loads(auth.read_text(encoding="utf-8"))["cookies"]
             except (ValueError, KeyError, TypeError):
@@ -141,7 +141,7 @@ class Canvas:
                 code, retry = error.code, error.headers.get("Retry-After", "")
                 error.close()
                 if code == 401:
-                    raise LoginRequired("登录已失效，请在简报设置中重新测试连接。") from None
+                    raise LoginRequired("eLearning 登录已失效，请在 eLearning 设置中重新登录。") from None
                 if code in (429, 500, 502, 503, 504) and attempt < 3:
                     time.sleep(min(int(retry), 30) if retry.isdigit() else 2 ** attempt)
                     continue
@@ -182,7 +182,7 @@ def read_login_credentials(config):
     username = (values.get("username") or "").strip()
     password = values.get("password") or ""
     if not username or not password:
-        raise SyncError("请在简报设置中填写 eLearning 学工号和密码。")
+        raise SyncError("请在 eLearning 设置中填写学工号和密码。")
     return username, password
 
 

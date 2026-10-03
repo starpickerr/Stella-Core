@@ -28,7 +28,7 @@ class ElearningSource:
 
     def fetch(self, cursors):
         if not self.config["courses"]:
-            raise SyncError("尚未选择课程，请在简报设置中测试连接并勾选课程。")
+            raise SyncError("尚未选择课程，请在 eLearning 设置中选择课程。")
         client = self.client_factory(self.config)
         courses = select_courses(course_list(client), self.config["courses"])
         profile, _ = client.get("/api/v1/users/self/profile")

@@ -19,7 +19,7 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
     monkeypatch.setattr("config.conf", lambda: live)
     monkeypatch.setattr("agent.prompt.builder.conf", lambda: live)
     monkeypatch.setattr("agent.briefing.elearning_settings.public_settings", lambda: {
-        "enabled": True, "configured": True, "file_sync_enabled": True,
+        "enabled": False, "configured": True, "file_sync_enabled": True,
         "file_sync_root": str(tmp_path / "selected"),
         "password": "TOPSECRET",
     })
