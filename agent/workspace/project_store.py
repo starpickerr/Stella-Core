@@ -33,11 +33,6 @@ from common.log import logger
 # stays trivial to read and write on every selection.
 MAX_RECENTS = 20
 
-# Sentinel standing for "the default workspace" in the sidebar ordering, so the
-# default space can be dragged among real projects instead of being pinned.
-DEFAULT_SPACE_KEY = "__default__"
-
-
 def _store_file() -> str:
     from common.state_dir import shared_root
     return str(shared_root() / "projects.json")
@@ -78,8 +73,7 @@ def _load() -> Dict:
     # ``meta``: path -> {"display_name": str}. A rename lives here, never on
     # disk, so the folder keeps its name and existing bindings stay valid.
     data.setdefault("meta", {})
-    # ``order``: user-chosen sidebar order of spaces (project paths and the
-    # DEFAULT_SPACE_KEY sentinel). Absent entries fall back to recency order.
+    # ``order``: user-chosen sidebar order of project paths.
     data.setdefault("order", [])
     return data
 
@@ -192,6 +186,9 @@ def set_project_dir(
 
 
 def _touch_recent(data: Dict, real_path: str) -> None:
+    # A project is a durable sidebar entry, even before its first conversation
+    # and after it falls out of the short recent-project picker list.
+    data.setdefault("meta", {}).setdefault(real_path, {}).setdefault("added_at", time.time())
     recents: List[Dict] = [
         r for r in data.get("recents", [])
         if (r.get("path") if isinstance(r, dict) else r) != real_path
@@ -261,7 +258,7 @@ def list_recents() -> List[Dict]:
 
 
 def list_known_projects() -> List[Dict]:
-    """Projects with a recent entry, policy, or live conversation binding."""
+    """Projects with a saved entry, policy, or live conversation binding."""
     with _lock:
         data = _load()
     paths = []
@@ -338,24 +335,23 @@ def delete_project(path: str, agent_id: Optional[str] = None) -> int:
 
 
 def get_order() -> List[str]:
-    """User-chosen sidebar order of spaces (paths + DEFAULT_SPACE_KEY)."""
+    """User-chosen sidebar order of project paths."""
     with _lock:
         data = _load()
-        return list(data.get("order") or [])
+        return [path for path in data.get("order") or [] if path != "__default__"]
 
 
 def set_order(order: List[str]) -> List[str]:
-    """Persist the sidebar order of spaces. Unknown/blank entries are dropped."""
+    """Persist the sidebar order of projects. Unknown/blank entries are dropped."""
     cleaned: List[str] = []
     seen = set()
     for key in order or []:
         if not isinstance(key, str):
             continue
         k = key.strip()
-        if not k or k in seen:
+        if not k or k == "__default__" or k in seen:
             continue
-        # Real project paths are normalized; the default sentinel is kept as-is.
-        norm = k if k == DEFAULT_SPACE_KEY else _normalize(k)
+        norm = _normalize(k)
         if norm in seen:
             continue
         seen.add(norm)
@@ -388,5 +384,9 @@ def create_project(name: str) -> str:
     if os.path.exists(target):
         raise FileExistsError(f"Project already exists: {name}")
     os.makedirs(target)
+    with _lock:
+        data = _load()
+        _touch_recent(data, target)
+        _save(data)
     logger.info(f"[ProjectStore] Created project: {target}")
     return target
