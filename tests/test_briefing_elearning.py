@@ -64,32 +64,42 @@ def test_course_names_are_cached_per_account_for_settings(config_path):
     assert not previous_path.exists()
 
 
+def test_connection_test_discovers_courses_before_file_grant(config_path, tmp_path):
+    settings.save_settings(config(enabled=False, courses=[]))
+    canvas = FakeCanvas()
+    with patch("agent.briefing.elearning.client.ensure_login", return_value=canvas):
+        rows = settings.check_connection({"file_sync_enabled": True,
+                                          "file_sync_root": str(tmp_path)})
+    assert rows == [{"id": "42", "name": "课程"}]
+    assert settings.load_settings()["file_sync_enabled"] is False
+
+
 def test_disabled_source_is_not_available(config_path):
     settings.save_settings(config(enabled=False))
     assert settings.public_settings()["configured"]
     assert settings.elearning_sources() == []
 
 
-def test_elearning_tool_discovers_courses_before_selection_and_obeys_enabled(config_path):
-    settings.save_settings(config(courses=[]))
+def test_elearning_tool_discovers_and_fetches_without_briefing_selection(config_path):
+    settings.save_settings(config(courses=[], enabled=False))
     canvas = FakeCanvas()
     tool = ElearningTool(client_factory=lambda cfg: canvas)
     result = tool.execute({"action": "courses"})
     assert result.status == "success"
     assert json.loads(result.result) == {"courses": [{"id": "42", "name": "课程"}]}
-    assert tool.execute({"action": "fetch"}).status == "error"
-    settings.save_settings({"enabled": False})
-    canvas.calls.clear()
-    assert tool.execute({"action": "courses"}).status == "error"
-    assert canvas.calls == []
+    fetched = tool.execute({"action": "fetch", "since": "2026-09-08T12:00:00Z",
+                            "until": "2026-09-09T00:00:00Z"})
+    assert fetched.status == "success", fetched.result
+    assert json.loads(fetched.result)["total"] == 6
+    assert tool.execute({"action": "fetch", "course_ids": ["99"]}).status == "error"
 
 
-def test_elearning_tool_fetch_uses_shared_crawler_and_never_commits_cursor(config_path, tmp_path):
-    from agent.briefing.store import BriefingStore
+def test_elearning_tool_fetch_uses_shared_crawler_without_briefing_database(config_path, tmp_path, monkeypatch):
     settings.save_settings(config())
     canvas = FakeCanvas()
-    store = BriefingStore(tmp_path / "briefing.db")
-    tool = ElearningTool(client_factory=lambda cfg: canvas, store=store)
+    db_path = tmp_path / "briefing.db"
+    monkeypatch.setattr("common.state_dir.briefing_db", lambda ensure=False: db_path)
+    tool = ElearningTool(client_factory=lambda cfg: canvas)
     params = {"action": "fetch", "since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z", "limit": 2}
     result = tool.execute(params)
     assert result.status == "success", result.result
@@ -99,8 +109,7 @@ def test_elearning_tool_fetch_uses_shared_crawler_and_never_commits_cursor(confi
     assert all(item["source"] == "elearning" and item["payload"]["body"] for item in first["source_items"])
     second = json.loads(tool.execute({**params, "offset": 2}).result)
     assert {item["source_id"] for item in first["source_items"]}.isdisjoint(item["source_id"] for item in second["source_items"])
-    assert store.get_cursor("elearning", settings.account_id(settings.load_settings()), "elearning_state") is None
-    assert store.list_briefings() == []
+    assert not db_path.exists()
     assert "campus-secret" not in result.result
     calls = list(canvas.calls)
     assert tool.execute({**params, "limit": 0}).status == "error"
@@ -137,7 +146,7 @@ def test_elearning_credentials_are_protected_from_file_tools(config_path):
 def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path, tmp_path, security_audit_path):
     root = tmp_path / "selected"
     root.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(enabled=False, file_sync_enabled=True, file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"] = [
         {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"},
@@ -158,7 +167,7 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
     page = json.loads(tool.execute({"action": "sync_files", "limit": 1}).result)
     assert page["total"] == 2 and page["next_offset"] == 1
     settings.save_settings({"file_sync_enabled": False})
-    assert "开启课程文件同步" in tool.execute({"action": "sync_files"}).result
+    assert "开启文件同步" in tool.execute({"action": "sync_files"}).result
 
 
 class FakeCanvas:

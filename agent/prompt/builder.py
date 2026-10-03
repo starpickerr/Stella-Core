@@ -165,8 +165,7 @@ def build_agent_system_prompt(
                 try:
                     from agent.briefing.elearning_settings import public_settings
                     settings = public_settings()
-                    elearning_sync = {"enabled": bool(settings.get("enabled") and
-                                                     settings.get("configured") and
+                    elearning_sync = {"enabled": bool(settings.get("configured") and
                                                      settings.get("file_sync_enabled") and
                                                      settings.get("file_sync_root")),
                                       "root": settings["file_sync_root"]}
