@@ -242,6 +242,16 @@ const TaskEditModal: React.FC<{
       delete a.conversation_space
       delete a.execution_project_dir
     }
+    // Editing an existing silent tool task without choosing a conversation
+    // must not silently turn its previously destination-less action into a
+    // desktop delivery action.
+    if (task?.action.silent && !task.action.channel_type && conversationMode === 'legacy') {
+      delete a.channel_type
+      delete a.receiver
+      delete a.receiver_name
+      delete a.is_group
+      delete a.execution_session_id
+    }
     if (isToolCall) return a
     if (actionType === 'send_message') a.content = content
     else a.task_description = content
@@ -278,12 +288,13 @@ const TaskEditModal: React.FC<{
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       } else if (task) {
-        await apiClient.updateTask(task.id, {
+        const result = await apiClient.updateTask(task.id, {
           name: name.trim(),
           enabled,
           schedule: buildSchedule(),
           action: buildAction(),
         })
+        if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       }
       onSaved()
     } catch (e) {
@@ -411,7 +422,8 @@ const TaskEditModal: React.FC<{
         <Field label={t('task_channel')}>
           <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }} options={destinations.filter(d => d.ready || d.channel_type === channel).map(d => ({value:d.channel_type,label:t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0])}))} />
         </Field>
-        {channel === 'web' && <>
+      </>}
+      {channel === 'web' && <>
           <Field label={t('task_conversation_mode')}>
             <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'legacy' | 'source' | 'reuse' | 'new')}
               options={[
@@ -428,7 +440,7 @@ const TaskEditModal: React.FC<{
                   destinations.find((d) => d.channel_type === 'web')?.recipients || []
                 ).map((r) => ({ value: r.receiver, label: r.name }))]} />
             </Field>
-            <p className="text-xs text-content-tertiary">{t('task_conversation_source_hint')}</p>
+            <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_source_hint')}</p>
           </>}
           {(conversationMode === 'reuse' || conversationMode === 'new') && <>
             <Field label={t('task_conversation_space')}>
@@ -439,10 +451,11 @@ const TaskEditModal: React.FC<{
               <Dropdown value={projectDir} onChange={setProjectDir}
                 options={[{ value: '', label: t('task_conversation_project_pick') }, ...projects.map((project) => ({ value: project.path, label: project.name }))]} />
             </Field>}
-            <p className="text-xs text-content-tertiary">{t('task_conversation_hint')}</p>
+            <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_hint')}</p>
             {conversationSpace === 'project' && !projectDir && <p className="text-xs text-danger">{t('task_conversation_project_required')}</p>}
           </>}
-        </>}
+      </>}
+      {!task?.action.silent && task?.action.type !== 'application_command' && <>
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
           <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
         </Field>}
