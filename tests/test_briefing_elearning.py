@@ -329,3 +329,78 @@ def test_crawler_file_fallback_reads_modules_without_downloading(config_path):
     result = ElearningSource(config(), client_factory=lambda cfg: canvas).fetch({})
     assert any(item.payload["resource_type"] == "file" and "单元文件" in item.title for item in result.items)
     assert result.errors and result.cursors == {}
+
+
+def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, tmp_path, monkeypatch):
+    from agent.briefing.elearning.file_sync import sync_files
+
+    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
+    root = tmp_path / "project"
+    root.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    cfg = settings.load_settings()
+    course = {"id": 42, "name": "课程"}
+    raw = {"id": 4, "filename": "讲义.pdf", "size": 5, "updated_at": "v1", "url": BASE + "/files/4/download"}
+    client = Mock()
+    client.open.side_effect = lambda *args, **kwargs: io.BytesIO(client.content)
+    client.content = b"first"
+
+    assert sync_files(client, cfg, [(course, raw)]) == []
+    saved = root / "课程资料" / "课程--42" / "讲义--4.pdf"
+    assert saved.read_bytes() == b"first"
+    assert sync_files(client, cfg, [(course, raw)]) == []
+    assert client.open.call_count == 1
+
+    raw["updated_at"] = "v2"
+    client.content = b"newer"
+    assert sync_files(client, cfg, [(course, raw)]) == []
+    assert saved.read_bytes() == b"newer"
+
+    saved.write_bytes(b"my notes")
+    raw["updated_at"] = "v3"
+    client.content = b"third"
+    assert sync_files(client, cfg, [(course, raw)]) == []
+    assert saved.read_bytes() == b"my notes"
+    assert any(path.read_bytes() == b"third" for path in saved.parent.iterdir() if path != saved)
+    assert len((tmp_path / "audit.jsonl").read_text().splitlines()) >= 4
+
+
+def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_path, monkeypatch):
+    from agent.briefing.elearning.file_sync import sync_files
+
+    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
+    root, outside = tmp_path / "project", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    cfg = settings.load_settings()
+    course = {"id": 42, "name": "课程"}
+    raw = {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}
+    (root / "课程资料").mkdir()
+    (root / "课程资料" / "课程--42").symlink_to(outside, target_is_directory=True)
+    client = Mock()
+    assert "安全目录" in sync_files(client, cfg, [(course, raw)])[0]
+    assert list(outside.iterdir()) == []
+    client.open.assert_not_called()
+
+    settings.save_settings({"file_sync_enabled": False})
+    assert "授权已变更" in sync_files(client, cfg, [(course, raw)])[0]
+    client.open.assert_not_called()
+
+
+def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, tmp_path, monkeypatch):
+    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
+    root = tmp_path / "project"
+    root.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    canvas = FakeCanvas()
+    canvas.rows["files"][0]["filename"] = "讲义.pdf"
+    canvas.rows["files"][0]["url"] = BASE + "/files/4/download"
+    canvas.open = Mock(return_value=io.BytesIO(b"pdf"))
+    cfg = settings.load_settings()
+
+    assert ElearningSource(cfg, client_factory=lambda _: canvas).fetch({}).errors == []
+    canvas.open.assert_not_called()
+    result = ElearningSource(cfg, client_factory=lambda _: canvas, auto_sync_files=True).fetch({})
+    assert result.errors == []
+    assert (root / "课程资料" / "课程--42" / "讲义--4.pdf").read_bytes() == b"pdf"
