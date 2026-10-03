@@ -238,6 +238,7 @@ export interface ProjectRef {
   name: string
   /** Unix seconds of last use; present on recents. */
   ts?: number
+  conversation_count?: number
 }
 
 /** Project picker state for a session (from /api/projects). */
@@ -356,12 +357,9 @@ export interface SessionsPage {
   page: number
   page_size: number
   has_more: boolean
-  /** "project" once more than one distinct workspace is in play, else "time". */
-  group_mode?: 'project' | 'time'
-  /** Number of distinct project spaces across all sessions (decides group_mode). */
-  space_count?: number
-  default_workspace?: string
-  /** User-defined order of project spaces; "__default__" marks the default one. */
+  /** Durable project entries, including projects without conversations. */
+  projects: ProjectRef[]
+  /** User-defined order of project entries. */
   project_order?: string[]
 }
 

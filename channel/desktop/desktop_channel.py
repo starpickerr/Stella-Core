@@ -6647,22 +6647,10 @@ class BillsStatementDetailHandler:
 
 
 def _annotate_sessions_with_projects(store, result: dict, agent_id: Optional[str]) -> None:
-    """Attach each session's project space, and say how to group the list.
-
-    ``group_mode`` is decided here rather than in the browser because the client
-    only ever holds one page: whether more than one space is in play is a fact
-    about all sessions, not about the fifty currently on screen.
-
-    - ``time``    one space in use (the common case) - group by 今天/昨天/更早,
-                  exactly as before projects existed.
-    - ``project`` several spaces in use - group by project, so multi-project
-                  users can find a conversation by where it belongs.
-    """
+    """Attach project bindings and the durable project list to chat history."""
     from agent.workspace import project_store
-    from common.state_dir import state_root_str
 
     project_map = project_store.get_project_map(agent_id)
-    default_workspace = state_root_str()
 
     for session in result.get("sessions") or []:
         path = project_map.get(session["session_id"])
@@ -6671,23 +6659,15 @@ def _annotate_sessions_with_projects(store, result: dict, agent_id: Optional[str
             if path else None
         )
 
-    # Distinct spaces across every web session, default workspace included as
-    # one space when any session is still using it.
-    space_paths = set()
-    uses_default = False
+    counts = {}
     for sid in store.list_session_ids(channel_type="web"):
         path = project_map.get(sid)
         if path:
-            space_paths.add(path)
-        else:
-            uses_default = True
-
-    result["space_count"] = len(space_paths) + (1 if uses_default else 0)
-    result["group_mode"] = "project" if result["space_count"] > 1 else "time"
-    result["default_workspace"] = default_workspace
-    # The user's chosen sidebar order of spaces (project paths + the default
-    # sentinel). The client uses it to sort project groups; unspecified spaces
-    # fall back after the ordered ones.
+            counts[path] = counts.get(path, 0) + 1
+    result["projects"] = [
+        {**item, "conversation_count": counts.get(item["path"], 0)}
+        for item in project_store.list_known_projects()
+    ]
     result["project_order"] = project_store.get_order()
 
 
