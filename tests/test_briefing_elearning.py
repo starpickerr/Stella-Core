@@ -346,7 +346,7 @@ def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, 
     client.content = b"first"
 
     assert sync_files(client, cfg, [(course, raw)]) == []
-    saved = root / "课程资料" / "课程--42" / "讲义--4.pdf"
+    saved = root / "课程--42" / "讲义--4.pdf"
     assert saved.read_bytes() == b"first"
     assert sync_files(client, cfg, [(course, raw)]) == []
     assert client.open.call_count == 1
@@ -376,8 +376,7 @@ def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_pat
     cfg = settings.load_settings()
     course = {"id": 42, "name": "课程"}
     raw = {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}
-    (root / "课程资料").mkdir()
-    (root / "课程资料" / "课程--42").symlink_to(outside, target_is_directory=True)
+    (root / "课程--42").symlink_to(outside, target_is_directory=True)
     client = Mock()
     assert "安全目录" in sync_files(client, cfg, [(course, raw)])[0]
     assert list(outside.iterdir()) == []
@@ -403,4 +402,4 @@ def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, 
     canvas.open.assert_not_called()
     result = ElearningSource(cfg, client_factory=lambda _: canvas, auto_sync_files=True).fetch({})
     assert result.errors == []
-    assert (root / "课程资料" / "课程--42" / "讲义--4.pdf").read_bytes() == b"pdf"
+    assert (root / "课程--42" / "讲义--4.pdf").read_bytes() == b"pdf"
