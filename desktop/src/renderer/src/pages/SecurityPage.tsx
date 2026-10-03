@@ -10,7 +10,6 @@ import {
   securityCopy,
   securityReason,
   securityResource,
-  securityResourceSummary,
   securityRuleName,
   securitySecretName,
   securityTrace,
@@ -81,7 +80,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           : state.project || state.projects[0]?.path || '',
       )
     } catch (cause) {
-      setError(copy.loadFailed)
+      setError(cause instanceof Error ? cause.message : copy.saveFailed)
     }
   }, [sid, filters, copy])
   useEffect(() => {
@@ -99,7 +98,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       await load()
       return true
     } catch (cause) {
-      setError(copy.saveFailed)
+      setError(cause instanceof Error ? cause.message : copy.saveFailed)
       return false
     } finally {
       setBusy(false)
@@ -209,7 +208,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 />
                 <span className="min-w-0 flex-1">
                   <span className="font-medium">
-                    {event} · {securityResourceSummary(copy, item.resource)}
+                    {event} · {securityResource(copy, item.resource)}
                   </span>
                   <span className="block text-xs text-content-secondary mt-1">
                     {new Date(item.at * 1000).toLocaleString(getLang() === 'en' ? 'en-US' : 'zh-CN')}
@@ -228,11 +227,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   {copy.reason}
                   {copy.fieldSeparator}
                   {securityReason(copy, item)}
-                </p>
-                <p>
-                  {copy.resource}
-                  {copy.fieldSeparator}
-                  {securityResource(copy, item.resource)}
                 </p>
                 <p>
                   {copy.assistant}
@@ -631,7 +625,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         <div className="min-w-0">
                           <p className="font-medium">{securitySecretName(copy, item.name)}</p>
                           <p className="text-xs text-content-secondary mt-0.5">
-                            {copy.source}
+                            <code>{item.name}</code> · {copy.source}
                             {copy.fieldSeparator}
                             {(copy.secretSources as Record<string, string>)[item.source] ||
                               copy.secretSources['credential store']}
@@ -788,7 +782,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       <option value="">{copy.all}</option>
                       {[...new Set(availableEvents.map((event) => event.tool))].map((tool) => (
                         <option key={tool} value={tool}>
-                          {(copy.tools as Record<string, string>)[tool] || copy.otherTool}
+                          {(copy.tools as Record<string, string>)[tool] || tool}
                         </option>
                       ))}
                     </select>
