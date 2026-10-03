@@ -52,7 +52,7 @@ def test_direct_tool_entry_cannot_skip_gateway(tmp_path, monkeypatch):
     assert not target.exists()
 
 
-def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch):
+def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch, security_audit_path):
     monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
     from config import conf
 
@@ -71,7 +71,7 @@ def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch):
     monkeypatch.setitem(conf(), "agent_tool_allowlist", ["browser"])
     assert permission_denial("browser", {"action": "navigate", "account_id": "other"}, agent=SessionAgent())
     assert permission_denial("read", {"path": str(tmp_path / "file")}, agent=SessionAgent())
-    audit = (tmp_path / "security-activity.jsonl").read_text()
+    audit = security_audit_path.read_text()
     assert "TOPSECRET" not in audit
     assert all("arguments" not in row for row in map(json.loads, audit.splitlines()))
 
