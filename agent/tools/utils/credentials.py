@@ -33,12 +33,15 @@ DENIED_MESSAGE = (
 def protected_credential_paths() -> set[str]:
     from config import get_data_root, get_weixin_credentials_path
     from common.state_dir import mcp_config_file, shared_root
+    from agent.briefing import elearning_settings
+    elearning_config = elearning_settings.settings_path()
     return {os.path.realpath(path) for path in (
         expand_path("~/.stella/.env"),
         os.path.join(get_data_root(), "config.json"),
         get_weixin_credentials_path(),
         str(mcp_config_file()),
         str(shared_root() / ".env"),
+        str(elearning_config),
     )}
 
 
@@ -65,6 +68,10 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
     for candidate in candidates:
         if _PROC_ENVIRON_RE.match(candidate):
             return True
+    from agent.briefing import elearning_settings
+    session_root = os.path.realpath(elearning_settings.settings_path().parent / "elearning-sessions")
+    if any(candidate.startswith(session_root + "/") for candidate in candidates):
+        return True
 
     # 2. The credential file itself, following symlinks on both sides.
     return any(path.replace(os.sep, "/") in candidates for path in (protected_paths or protected_credential_paths()))
