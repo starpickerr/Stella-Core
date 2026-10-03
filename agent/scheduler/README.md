@@ -135,16 +135,19 @@ Agent: [调用 scheduler 工具]
 
 ## 任务存储
 
-任务保存在 JSON 文件中：
+桌面版任务保存在 SQLite 中；其他渠道仍使用 JSON：
 ```
+~/stella/scheduler/automation.db
 ~/stella/scheduler/tasks.json
 ```
 
 任务数据结构：
 
-桌面版首次启动会在同一存储中注册「每日简报」工具任务（`daily-briefing`），默认 `0 8 * * *`；它静默调用 `briefing` 工具生成当天缺失的简报。修改、暂停和删除均使用现有任务入口，存储的 `initialized_defaults` 标记确保已删除的默认任务不会在重启后重建。
+首次启动不会自动创建定时任务。需要每日简报时，可手动创建调用 `briefing` 工具的任务。
 
-任务可选 `catch_up: "same_day"` 以补执行当天最近一次 Cron，避免重放离线期间的每日任务；未设置时仍使用原十分钟宽限。`retry_interval_seconds` 指定失败重试间隔（简报为 300 秒），`retry_at` 保存重试时间。静默 `tool_call` 设置 `action.silent: true`，无需接收人或就绪的消息通道；工具报错不会被当作成功，保留计划并重试。
+桌面任务必须明确选择 `source`（绑定现有对话）、`reuse`（同一个任务对话）或 `new`（每次新对话）；`reuse` 和 `new` 还需选择普通或项目空间。其他消息渠道继续使用各自的接收人。
+
+任务可选 `catch_up: "same_day"` 以补执行当天最近一次 Cron，避免重放离线期间的每日任务；未设置时仍使用原十分钟宽限。`retry_interval_seconds` 指定失败重试间隔，`retry_at` 保存重试时间。静默 `tool_call` 设置 `action.silent: true`，无需接收人或就绪的消息通道；工具报错不会被当作成功，保留计划并重试。
 
 **静态消息任务：**
 ```json
@@ -212,7 +215,7 @@ Agent: [调用 scheduler 工具]
 
 ## 接收者确定
 
-定时任务会发送给**创建任务时的对话对象**：
+其他消息渠道的定时任务会发送给**创建任务时的对话对象**：
 
 - 如果在私聊中创建，发送给该用户
 - 如果在群聊中创建，发送到该群

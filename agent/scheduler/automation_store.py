@@ -85,8 +85,6 @@ class AutomationStore:
                     shutil.copy2(self.legacy_path, backup)
             for task_id, task in data.get("tasks", {}).items():
                 self._write_task(db, task_id, task)
-            db.execute("INSERT INTO metadata VALUES ('initialized_defaults',?)",
-                       (json.dumps(data.get("initialized_defaults", [])),))
             db.execute("INSERT INTO metadata VALUES ('source_sha256',?)",
                        (hashlib.sha256(source).hexdigest(),))
             db.execute("INSERT INTO metadata VALUES ('migration_version','1')")
@@ -120,7 +118,7 @@ class AutomationStore:
                     (self.agent_id, self._current_user()))
             return {row["task_id"]: json.loads(row["data"]) for row in rows}
 
-    def save_tasks(self, tasks, initialized_defaults=None):
+    def save_tasks(self, tasks):
         with self.lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("DELETE FROM tasks WHERE owner_agent_id=? AND owner_user_id=?",
@@ -129,26 +127,6 @@ class AutomationStore:
                 if (task.get("owner_user_id") or "") != self._current_user():
                     raise ValueError("Task belongs to a different user")
                 self._write_task(db, task_id, task)
-            if initialized_defaults is not None:
-                db.execute("""INSERT INTO metadata VALUES ('initialized_defaults',?)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
-                    (json.dumps(initialized_defaults),))
-
-    def ensure_default_task(self, task):
-        with self.lock, self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            defaults = json.loads(db.execute(
-                "SELECT value FROM metadata WHERE key='initialized_defaults'").fetchone()[0])
-            if task["id"] in defaults:
-                return False
-            exists = db.execute("SELECT 1 FROM tasks WHERE task_id=?", (task["id"],)).fetchone()
-            if not exists:
-                self._write_task(db, task["id"], task)
-            defaults.append(task["id"])
-            db.execute("UPDATE metadata SET value=? WHERE key='initialized_defaults'",
-                       (json.dumps(defaults),))
-            return not bool(exists)
-
     def add_task(self, task):
         task_id = task.get("id")
         if not task_id:

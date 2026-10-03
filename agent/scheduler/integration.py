@@ -83,10 +83,6 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                 _task_stores[workspace_root] = task_store
                 logger.debug(f"[Scheduler] Task store initialized: {store_path}")
 
-            if os.environ.get("STELLA_DESKTOP") == "1":
-                from agent.briefing.scheduler import ensure_daily_briefing_task
-                ensure_daily_briefing_task(task_store)
-
             # Create execute callback. Returns True on success, False to ask
             # the scheduler to retry on the next tick (e.g. channel not yet
             # ready right after process start).
@@ -235,7 +231,7 @@ def _remember_delivered_output(
     content: str,
     agent_id: str = None,
 ) -> bool:
-    """Persist scoped desktop output; legacy delivery keeps best-effort injection.
+    """Persist desktop output; message channels keep best-effort injection.
 
     Uses notify_session_id (the real chat session_id stored at task creation time)
     so that group chats correctly associate the output with the user's conversation.
@@ -244,9 +240,9 @@ def _remember_delivered_output(
     Per-action-type behaviour:
         - agent_task / tool_call / skill_call: gated by ``scheduler_inject_to_session``
           (default True). These produce AI-generated content worth remembering.
-        - send_message: additionally gated by ``scheduler_inject_send_message``
-          (default False). Fixed reminder text rarely benefits follow-up Q&A and
-          would just consume context tokens.
+        - send_message: other channels additionally use
+          ``scheduler_inject_send_message`` (default False). Desktop task
+          conversations always keep the delivered text.
     """
     if not content:
         return True
