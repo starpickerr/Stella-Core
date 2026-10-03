@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from .errors import LoginRequired, SyncError
+from .errors import LoginRequired, SyncCancelled, SyncError
 from .utils import next_link
 from agent.briefing.elearning_settings import session_path, save_session
 
@@ -33,11 +33,12 @@ def cookie_matches_host(domain, host):
 
 
 class Canvas:
-    def __init__(self, config, cookies=None, auto_login=True):
+    def __init__(self, config, cookies=None, auto_login=True, cancel_event=None):
         self.config = config
         self.base = config["base_url"].rstrip("/")
         self.origin = urllib.parse.urlparse(self.base).netloc
         self.interval = max(float(config.get("request_interval", 0.4)), 0)
+        self.cancel_event = cancel_event
         # Verification during browser login must never trigger another browser login.
         self.auto_login = auto_login and cookies is None
         # Explicit browser cookies must be verified independently of any configured Token.
@@ -84,11 +85,14 @@ class Canvas:
         self.opener = urllib.request.build_opener(SafeRedirect(), urllib.request.HTTPCookieProcessor(jar))
 
     def _renew_login(self):
+        self.check_cancelled()
         print("尚未登录或 Cookie 已失效，正在连接 eLearning……", flush=True)
         LOGGER.info("开始自动登录")
         try:
-            login(self.config)
+            login(self.config, cancel_event=self.cancel_event)
             self._load_cookies()
+        except SyncCancelled:
+            raise
         except (SyncError, OSError) as error:
             LOGGER.warning("自动登录失败（%s）", type(error).__name__)
             raise LoginRequired("自动登录未成功：{}".format(error)) from None
@@ -103,6 +107,7 @@ class Canvas:
                             for item in self.cookie_jar if cookie_matches_host(item.domain, host)]}
 
     def open(self, url, api=True):
+        self.check_cancelled()
         try:
             return self._open(url, api)
         except LoginRequired:
@@ -114,6 +119,7 @@ class Canvas:
             return self._open(url, api)
 
     def _open(self, url, api=True):
+        self.check_cancelled()
         url = urllib.parse.urljoin(self.base + "/", url)
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https":
@@ -124,9 +130,14 @@ class Canvas:
         if self.token and parsed.netloc == self.origin:
             headers["Authorization"] = "Bearer " + self.token
         for attempt in range(4):
-            time.sleep(self.interval)
+            self.wait(self.interval)
             try:
-                response = self.opener.open(urllib.request.Request(url, headers=headers), timeout=60)
+                # A cancelled agent must not hold its session behind a 60 s socket read.
+                response = self.opener.open(urllib.request.Request(url, headers=headers),
+                                            timeout=5 if self.cancel_event is not None else 60)
+                if self.cancel_event is not None and self.cancel_event.is_set():
+                    response.close()
+                    raise SyncCancelled("eLearning 读取已取消")
                 if api and (urllib.parse.urlparse(response.geturl()).netloc != self.origin or
                             "json" not in response.headers.get("Content-Type", "").lower()):
                     response.close()
@@ -143,16 +154,17 @@ class Canvas:
                 if code == 401:
                     raise LoginRequired("eLearning 登录已失效，请在 eLearning 设置中重新登录。") from None
                 if code in (429, 500, 502, 503, 504) and attempt < 3:
-                    time.sleep(min(int(retry), 30) if retry.isdigit() else 2 ** attempt)
+                    self.wait(min(int(retry), 30) if retry.isdigit() else 2 ** attempt)
                     continue
                 raise SyncError("网站返回 HTTP {}。".format(code)) from None
             except (urllib.error.URLError, TimeoutError, OSError):
                 if attempt < 3:
-                    time.sleep(2 ** attempt)
+                    self.wait(2 ** attempt)
                     continue
                 raise SyncError("连接失败，请检查网络或校园网连接。") from None
 
     def get(self, path, params=None):
+        self.check_cancelled()
         if params:
             path += ("&" if "?" in path else "?") + urllib.parse.urlencode(params, doseq=True)
         with self.open(path) as response:
@@ -160,12 +172,14 @@ class Canvas:
                 data = json.load(response)
             except (ValueError, UnicodeDecodeError):
                 raise SyncError("接口数据格式不正确。") from None
+            self.check_cancelled()
             return data, next_link(response.headers.get("Link"))
 
     def list(self, path, params=None):
         params = dict(params or {}, per_page=100)
         output, seen = [], set()
         while path:
+            self.check_cancelled()
             if path in seen:
                 raise SyncError("接口分页循环，已停止以防重复请求。")
             seen.add(path)
@@ -175,6 +189,17 @@ class Canvas:
                 raise SyncError("接口未返回列表。")
             output.extend(data)
         return output
+
+    def check_cancelled(self):
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise SyncCancelled("eLearning 读取已取消")
+
+    def wait(self, seconds):
+        self.check_cancelled()
+        if self.cancel_event is None:
+            time.sleep(seconds)
+        elif self.cancel_event.wait(seconds):
+            raise SyncCancelled("eLearning 读取已取消")
 
 
 def read_login_credentials(config):
@@ -186,15 +211,20 @@ def read_login_credentials(config):
     return username, password
 
 
-def ensure_login(config):
-    canvas = Canvas(config)
+def ensure_login(config, cancel_event=None):
+    canvas = Canvas(config, cancel_event=cancel_event)
     profile, _ = canvas.get("/api/v1/users/self/profile")
     if not isinstance(profile, dict) or not profile.get("id"):
         raise LoginRequired("未能验证登录状态，请检查登录配置。")
     return canvas
 
 
-def login(config, manual=False):
+def login(config, manual=False, cancel_event=None):
+    def check_cancelled():
+        if cancel_event is not None and cancel_event.is_set():
+            raise SyncCancelled("eLearning 登录已取消")
+
+    check_cancelled()
     username, password = (None, None) if manual else read_login_credentials(config)
     try:
         from playwright.sync_api import Error as PlaywrightError, sync_playwright
@@ -211,27 +241,38 @@ def login(config, manual=False):
     apply_browsers_path_env()
     with sync_playwright() as p:
         stage = "打开登录页面"
+        launch_options = {"timeout": 5000} if cancel_event is not None else {}
         try:
-            browser = p.chromium.launch(channel="chrome", headless=not manual)
+            browser = p.chromium.launch(channel="chrome", headless=not manual, **launch_options)
         except Exception:
+            check_cancelled()
             try:
-                browser = p.chromium.launch(headless=not manual)
+                browser = p.chromium.launch(headless=not manual, **launch_options)
             except Exception:
                 raise SyncError("无法打开浏览器，请安装 Chrome，或运行 python -m playwright install chromium。") from None
         try:
+            check_cancelled()
             context = browser.new_context()
             page = context.new_page()
-            page.goto(base + "/login", timeout=60000)
+            page.goto(base + "/login", timeout=5000 if cancel_event is not None else 60000)
+            check_cancelled()
             if not manual:
                 # Form selectors verified on Fudan's public SSO page.
                 try:
                     stage = "提交登录表单"
-                    page.locator('#login-username').wait_for(state="visible", timeout=20000)
+                    page.locator('#login-username').wait_for(state="visible", timeout=5000 if cancel_event is not None else 20000)
+                    check_cancelled()
                     if urllib.parse.urlparse(page.url).hostname != "id.fudan.edu.cn":
                         raise SyncError("登录页面不属于复旦统一身份认证。")
-                    page.locator('#login-username').fill(username, timeout=20000)
-                    page.locator('#login-password').fill(password, timeout=20000)
-                    page.get_by_role('button', name='登录', exact=True).click(timeout=20000)
+                    form_timeout = 5000 if cancel_event is not None else 20000
+                    page.locator('#login-username').fill(username, timeout=form_timeout)
+                    check_cancelled()
+                    page.locator('#login-password').fill(password, timeout=form_timeout)
+                    check_cancelled()
+                    page.get_by_role('button', name='登录', exact=True).click(timeout=form_timeout)
+                    check_cancelled()
+                except SyncCancelled:
+                    raise
                 except Exception:
                     if not manual:
                         raise SyncError("自动登录未成功，请检查学工号、密码和学校认证要求。") from None
@@ -240,6 +281,7 @@ def login(config, manual=False):
             deadline = time.monotonic() + (600 if manual else 90)
             stage = "等待登录跳转"
             while time.monotonic() < deadline:
+                check_cancelled()
                 if page.is_closed():
                     raise SyncError("登录窗口已关闭，未保存登录状态。")
                 if urllib.parse.urlparse(page.url).hostname == host:
@@ -247,28 +289,36 @@ def login(config, manual=False):
                     cookies = [c for c in context.cookies() if cookie_matches_host(c["domain"], host)]
                     stage = "验证登录状态"
                     try:
-                        canvas = Canvas(config, cookies=cookies)
+                        canvas = Canvas(config, cookies=cookies, cancel_event=cancel_event)
                         profile, _ = canvas.get("/api/v1/users/self/profile")
                         if isinstance(profile, dict) and profile.get("id"):
                             save_session(config, canvas.session_data())
                             print("登录成功，已验证并保存 elearning 登录状态。浏览器将关闭。", flush=True)
                             return
+                    except SyncCancelled:
+                        raise
                     except LoginRequired:
                         # The success redirect may arrive before Canvas has finished establishing its session.
                         pass
                     except SyncError as error:
                         raise SyncError("验证登录状态失败：{} 登录状态尚未保存。".format(error)) from None
                     stage = "等待登录跳转"
-                page.wait_for_timeout(1500)
+                if cancel_event is not None:
+                    if cancel_event.wait(1.5):
+                        check_cancelled()
+                else:
+                    page.wait_for_timeout(1500)
             raise SyncError("等待登录状态验证超时，未保存 Cookie。请检查账号密码和网络后重试。")
         except SyncError:
             raise
         except PlaywrightError as error:
+            check_cancelled()
             # Report useful categories without exposing SSO tickets or credentials in raw browser errors.
             codes = re.findall(r"net::ERR_[A-Z_]+|ENOTFOUND|ECONNREFUSED|ETIMEDOUT", str(error))
             detail = "（{}）".format(codes[0]) if codes else ""
             raise SyncError("{}失败{}，登录状态尚未保存，请检查网络后重试。".format(stage, detail)) from None
         except Exception:
+            check_cancelled()
             raise SyncError("{}失败，登录状态尚未保存，请重试。".format(stage)) from None
         finally:
             browser.close()

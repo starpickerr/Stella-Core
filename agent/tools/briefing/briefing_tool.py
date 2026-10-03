@@ -101,7 +101,8 @@ class BriefingTool(BaseTool):
         from agent.briefing.generator import AgentBriefingGenerator
 
         return BriefingPipeline(service, configured_sources(), generator=AgentBriefingGenerator(
-            model=self.model, cancel_event=self.cancel_event, progress=self.report_progress))
+            model=self.model, cancel_event=self.cancel_event, progress=self.report_progress),
+            cancel_event=self.cancel_event)
 
     def execute(self, params: dict) -> ToolResult:
         if not isinstance(params, dict):

@@ -2,6 +2,9 @@
 import io
 import http.client
 import json
+import threading
+import time
+import urllib.error
 from datetime import datetime, timezone
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -10,7 +13,7 @@ import pytest
 
 from agent.briefing import elearning_settings as settings
 from agent.briefing.elearning.client import Canvas, SafeRedirect
-from agent.briefing.elearning.errors import LoginRequired, SyncError
+from agent.briefing.elearning.errors import LoginRequired, SyncCancelled, SyncError
 from agent.briefing.sources.elearning import ElearningSource
 from agent.tools.elearning.elearning_tool import ElearningTool
 
@@ -94,6 +97,101 @@ def test_elearning_tool_discovers_and_fetches_without_briefing_selection(config_
     assert tool.execute({"action": "fetch", "course_ids": ["99"]}).status == "error"
 
 
+def test_canvas_cancel_interrupts_request_spacing_without_waiting_for_network(config_path):
+    event = threading.Event()
+    client = Canvas(config(token="token", request_interval=30), auto_login=False, cancel_event=event)
+    entered = threading.Event()
+    result = []
+    original_wait = client.wait
+
+    def waiting(seconds):
+        entered.set()
+        return original_wait(seconds)
+
+    client.wait = waiting
+    client.opener.open = Mock(side_effect=AssertionError("request should never start"))
+    worker = threading.Thread(target=lambda: result.append(_capture_cancel(client)), daemon=True)
+    worker.start()
+    assert entered.wait(1)
+    started = time.monotonic()
+    event.set()
+    worker.join(1)
+    assert not worker.is_alive()
+    assert time.monotonic() - started < 1
+    assert result == ["cancelled"]
+    client.opener.open.assert_not_called()
+
+
+def test_canvas_cancel_stops_retry_and_uses_bounded_socket_timeout(config_path):
+    event = threading.Event()
+    client = Canvas(config(token="token"), auto_login=False, cancel_event=event)
+
+    def fail_first(_request, timeout):
+        assert timeout == 5
+        event.set()
+        raise urllib.error.URLError("temporary outage")
+
+    client.opener.open = Mock(side_effect=fail_first)
+    with pytest.raises(SyncCancelled):
+        client.get("/api/v1/courses")
+    client.opener.open.assert_called_once()
+
+
+def _capture_cancel(client):
+    try:
+        client.get("/api/v1/courses")
+    except SyncCancelled:
+        return "cancelled"
+    return "not cancelled"
+
+
+def test_elearning_fetch_stops_after_current_resource_when_cancelled(config_path):
+    settings.save_settings(config())
+    event = threading.Event()
+    canvas = FakeCanvas()
+    original_list = canvas.list
+
+    def cancel_during_first_resource(path, params=None):
+        rows = original_list(path, params)
+        if path.endswith("discussion_topics"):
+            event.set()
+        return rows
+
+    canvas.list = cancel_during_first_resource
+    tool = ElearningTool(client_factory=lambda _: canvas)
+    tool.cancel_event = event
+    result = tool.execute({"action": "fetch"})
+    assert result.status == "error" and "已取消" in result.result
+    assert [path.rsplit("/", 1)[-1] for path, _ in canvas.calls] == ["courses", "discussion_topics"]
+
+
+def test_cancelled_elearning_tool_returns_so_next_session_work_can_run(config_path):
+    settings.save_settings(config(token="token", request_interval=30))
+    entered = threading.Event()
+    event = threading.Event()
+    canvas = Canvas(config(token="token", request_interval=30), auto_login=False)
+    original_wait = canvas.wait
+
+    def waiting(seconds):
+        entered.set()
+        return original_wait(seconds)
+
+    canvas.wait = waiting
+    canvas.opener.open = Mock(side_effect=AssertionError("request should not start"))
+    tool = ElearningTool(client_factory=lambda _: canvas)
+    tool.cancel_event = event
+    results = []
+    worker = threading.Thread(target=lambda: results.append(tool.execute({"action": "courses"})), daemon=True)
+    worker.start()
+    assert entered.wait(1)
+    event.set()
+    worker.join(1)
+    assert not worker.is_alive()
+    assert results[0].status == "error" and "已取消" in results[0].result
+    next_tool = ElearningTool(client_factory=lambda _: FakeCanvas())
+    assert next_tool.execute({"action": "courses"}).status == "success"
+
+
 def test_elearning_tool_fetch_uses_shared_crawler_without_briefing_database(config_path, tmp_path, monkeypatch):
     settings.save_settings(config())
     canvas = FakeCanvas()
@@ -168,6 +266,29 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
     assert page["total"] == 2 and page["next_offset"] == 1
     settings.save_settings({"file_sync_enabled": False})
     assert "开启文件同步" in tool.execute({"action": "sync_files"}).result
+
+
+def test_cancel_during_file_download_removes_partial_file(config_path, tmp_path, security_audit_path):
+    root = tmp_path / "selected"
+    root.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    canvas = FakeCanvas()
+    canvas.rows["files"] = [{"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}]
+    event = threading.Event()
+
+    class CancelAfterFirstBlock(io.BytesIO):
+        def read(self, size=-1):
+            block = super().read(size)
+            event.set()
+            return block
+
+    canvas.open = Mock(return_value=CancelAfterFirstBlock(b"pdf"))
+    tool = ElearningTool(client_factory=lambda _: canvas)
+    tool.cancel_event = event
+    result = tool.execute({"action": "sync_files"})
+    assert result.status == "error" and "已取消" in result.result
+    folder = root / "课程--42"
+    assert folder.is_dir() and list(folder.iterdir()) == []
 
 
 class FakeCanvas:

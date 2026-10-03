@@ -7,3 +7,7 @@ class SyncError(Exception):
 
 class LoginRequired(SyncError):
     pass
+
+
+class SyncCancelled(SyncError):
+    """The calling agent stopped an in-flight eLearning operation."""
