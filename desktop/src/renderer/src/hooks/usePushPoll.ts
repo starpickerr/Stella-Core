@@ -15,6 +15,7 @@ const DELAY_IDLE_MS = 10000
 // destructive get, so two loops (e.g. React StrictMode double-mounting the
 // effect in dev) would steal messages from each other and drop notifications.
 let loopActive = false
+let lastSessionRefresh = 0
 
 export function usePushPoll(ready: boolean): void {
   useEffect(() => {
@@ -30,6 +31,10 @@ export function usePushPoll(ready: boolean): void {
 
     async function poll() {
       if (cancelled) return
+      if (Date.now() - lastSessionRefresh > 30000) {
+        lastSessionRefresh = Date.now()
+        void useSessionStore.getState().refreshSessions()
+      }
       // Keep polling while hidden: push messages are exactly what the OS
       // notification below should deliver to a background window.
       const sid = useSessionStore.getState().activeId

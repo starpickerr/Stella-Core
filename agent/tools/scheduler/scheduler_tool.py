@@ -206,6 +206,17 @@ class SchedulerTool(BaseTool):
         msg = context.kwargs.get("msg")
         if msg and hasattr(msg, 'sender_staff_id') and not context.get("isgroup", False):
             action["dingtalk_sender_staff_id"] = msg.sender_staff_id
+
+        # A task created by the Agent in a desktop chat belongs to that chat
+        # by default. Freeze its current project scope at creation time.
+        if action["channel_type"] == "web" and notify_session_id:
+            from agent.scheduler.conversation import validate_conversation_action
+            action["conversation_mode"] = "source"
+            action["source_session_id"] = notify_session_id
+            try:
+                action = validate_conversation_action(action, allow_pending_source=True)
+            except ValueError as exc:
+                return f"错误: 无法绑定当前对话: {exc}"
         
         task_data = {
             "id": task_id,

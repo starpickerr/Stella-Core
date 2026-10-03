@@ -20,6 +20,7 @@ interface SessionState {
   bumpProjects: () => void
 
   loadSessions: (page?: number) => Promise<void>
+  refreshSessions: () => Promise<void>
   loadMore: () => Promise<void>
   setActive: (id: string) => void
   newSession: () => string
@@ -82,6 +83,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }))
     } catch {
       set({ loading: false })
+    }
+  },
+
+  refreshSessions: async () => {
+    try {
+      const res = await apiClient.getSessions(1, 50)
+      set((s) => {
+        const latest = new Set(res.sessions.map((item) => item.session_id))
+        return {
+          sessions: sortSessions([...res.sessions, ...s.sessions.filter((item) => !latest.has(item.session_id))]),
+          total: res.total,
+          projects: res.projects || s.projects,
+          projectOrder: res.project_order || s.projectOrder,
+        }
+      })
+    } catch {
+      /* The next poll will retry. */
     }
   },
 
