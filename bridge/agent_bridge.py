@@ -586,7 +586,7 @@ class AgentBridge:
             logger.debug(f"[AgentBridge] apply_session_project failed: {e}")
 
     def apply_session_prefs(self, agent, session_id: str, agent_id: str = None) -> None:
-        """Apply a session's model / permission overrides to its agent.
+        """Apply a session's model override to its agent.
 
         Called on every agent fetch and right after the user changes a setting,
         so a switch takes effect on the next message without rebuilding the
@@ -602,8 +602,6 @@ class AgentBridge:
             model = getattr(agent, "model", None)
             if model is not None and hasattr(model, "set_session_override"):
                 model.set_session_override(prefs.get("provider"), prefs.get("model"))
-            if hasattr(agent, "apply_permission_mode"):
-                agent.apply_permission_mode(prefs.get("permission"))
         except Exception as e:
             logger.debug(f"[AgentBridge] apply_session_prefs failed: {e}")
 

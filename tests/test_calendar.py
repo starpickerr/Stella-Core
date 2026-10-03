@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from agent.calendar import CalendarService
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
+check_tool_call = SecurityGateway.check
 from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.tool_manager import ToolManager
 

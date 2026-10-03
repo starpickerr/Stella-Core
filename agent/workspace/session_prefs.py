@@ -1,7 +1,7 @@
-"""Per-session runtime preferences: which model answers, what it may change.
+"""Per-session model preferences and Security Center policy differences.
 
 Sibling of :mod:`agent.workspace.project_store`, same shape and same key scheme.
-A conversation can pin its own model and its own permission mode; anything not
+A conversation can pin its own model and its own security policy; anything not
 pinned follows the global settings, so an untouched session keeps behaving the
 way the instance is configured.
 
@@ -17,7 +17,7 @@ Stored under ``<shared_root>/session_prefs.json``::
         "default::session_abc": {
           "provider": "claudeAPI",
           "model": "claude-sonnet-5",
-          "permission": "workspace-write",
+          "security_policy": {"preset": "standard"},
           "ts": 1731999999.0
         }
       }
@@ -36,7 +36,7 @@ from typing import Dict, Optional
 
 from common.log import logger
 
-_FIELDS = ("provider", "model", "permission")
+_FIELDS = ("provider", "model", "security_policy")
 
 _lock = threading.Lock()
 
@@ -59,6 +59,16 @@ def _load() -> Dict:
         return {"sessions": {}}
     if not isinstance(data.get("sessions"), dict):
         data["sessions"] = {}
+    from agent.permission.security_policy import legacy_policy
+    changed = False
+    for entry in data["sessions"].values():
+        if isinstance(entry, dict) and "permission" in entry:
+            if not entry.get("security_policy"):
+                entry["security_policy"] = legacy_policy(entry["permission"])
+            del entry["permission"]
+            changed = True
+    if changed:
+        _save(data)
     return data
 
 
@@ -114,6 +124,9 @@ def set_prefs(
             if field not in updates:
                 continue
             value = updates[field]
+            if field == "security_policy" and value is not None:
+                from agent.permission.security_policy import validate_patch
+                value = validate_patch(value)
             if value is None or (isinstance(value, str) and not value.strip()):
                 entry.pop(field, None)
             else:
@@ -138,13 +151,3 @@ def forget_session(session_id: str, agent_id: Optional[str] = None) -> None:
         data = _load()
         if data["sessions"].pop(key, None) is not None:
             _save(data)
-
-
-def resolve_permission(session_id: str, agent_id: Optional[str] = None) -> str:
-    """The permission mode in force for a session: its own, else the global one."""
-    from agent.permission import global_mode, normalize_mode
-
-    prefs = get_prefs(session_id, agent_id)
-    if prefs.get("permission"):
-        return normalize_mode(prefs["permission"], global_mode())
-    return global_mode()

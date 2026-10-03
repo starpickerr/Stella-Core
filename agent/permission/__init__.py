@@ -6,9 +6,6 @@ from agent.permission.policy import (
     MODES,
     READ_ONLY,
     WORKSPACE_WRITE,
-    Decision,
-    check_tool_call,
-    describe_mode,
     global_mode,
     normalize_mode,
 )
@@ -19,9 +16,6 @@ __all__ = [
     "MODES",
     "READ_ONLY",
     "WORKSPACE_WRITE",
-    "Decision",
-    "check_tool_call",
-    "describe_mode",
     "global_mode",
     "normalize_mode",
 ]

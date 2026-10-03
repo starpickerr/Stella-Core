@@ -613,10 +613,10 @@ export class PythonBackend extends EventEmitter {
     // in the file the user can open from the failure screen.
     this.openLogStream(dataDir)
 
-    // Prefer the packaged self-contained backend (production); fall back to
-    // running app.py with a Python interpreter (local development).
+    // Development always runs the checked-out Python source. A stale bundle
+    // left under the repo must not hide backend changes from npm run dev.
     const bundle = this.inspectBundle()
-    const bundled = bundle.hasExe ? bundle.exePath : null
+    const bundled = this.packaged && bundle.hasExe ? bundle.exePath : null
 
     // An installed app has no other way to run: there is no source tree and no
     // Python to fall back to. Say so now, naming the file that is missing, and

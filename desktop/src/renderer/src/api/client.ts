@@ -40,6 +40,41 @@ interface ApiResult {
   message?: string
 }
 
+export interface SecurityPolicy {
+  preset?: 'strict' | 'standard' | 'custom'
+  rules?: Record<string, 'allow' | 'confirm' | 'deny'>
+  connections?: Record<string, { allowed: boolean; scopes: string[] }>
+  extra_roots?: string[]
+}
+
+export interface SecurityRecord {
+  at: number
+  agent: string
+  conversation: string | null
+  project: string | null
+  tool: string
+  operation: string
+  event: string
+  resource: string
+  risk: string
+  decision: string
+  reason: string
+  trace: string[]
+}
+
+export interface SecurityCenterState extends ApiResult {
+  global_policy: SecurityPolicy
+  effective_policy: SecurityPolicy
+  project: string | null
+  project_policy: SecurityPolicy
+  projects: { path: string; name: string; policy: SecurityPolicy }[]
+  conversation_policy: SecurityPolicy
+  connections: { id: string; name: string; connected: boolean; allowed: boolean; scopes: string[]; last_access: number | null }[]
+  secrets: { name: string; source: string; configured: boolean }[]
+  summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
+    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[] }
+}
+
 const AUTH_TOKEN_KEY = 'cow_auth_token'
 
 class ApiClient {
@@ -364,7 +399,7 @@ class ApiClient {
    *  field to drop the override and follow the global default. */
   async updateSessionSettings(
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; permission?: string | null }
+    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
   ): Promise<{ status: string } & Partial<SessionSettingsState> & { message?: string }> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
       method: 'POST',
@@ -397,12 +432,32 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
-  async getSecurityActivity(): Promise<{ run_id: string; session_id: string | null; source: string;
-    status: string; started_at: string | null; finished_at: string | null; denied_count: number }[]> {
-    const result = await this.request<{ status: string; runs: { run_id: string; session_id: string | null;
-      source: string; status: string; started_at: string | null; finished_at: string | null; denied_count: number }[] }>('/api/security/activity')
-    if (result.status !== 'success') throw new Error('Unable to load activity')
-    return result.runs
+  async getSecurityCenter(session?: string): Promise<SecurityCenterState> {
+    return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
+  }
+
+  async getSecurityRecords(filters: Record<string, string> = {}): Promise<SecurityRecord[]> {
+    const query = new URLSearchParams(filters).toString()
+    const result = await this.request<{ status: string; records: SecurityRecord[] }>(`/api/security/activity${query ? `?${query}` : ''}`)
+    if (result.status !== 'success') throw new Error('Unable to load security activity')
+    return result.records || []
+  }
+
+  async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
+    options: { project?: string; session?: string } = {}): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
+  }
+
+  async updateSecurityConnection(id: string, allowed: boolean, scopes: string[]): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, allowed, scopes }) })
+  }
+
+  async saveSecuritySecret(name: string, value: string): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/secrets', { method: 'POST', body: JSON.stringify({ name, value }) })
+  }
+
+  async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
   }
 
   async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string }[]> {
@@ -411,7 +466,11 @@ class ApiClient {
   }
 
   async approveSecurityConfirmation(id: string): Promise<{ status: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id }) })
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, action: 'approve' }) })
+  }
+
+  async rejectSecurityConfirmation(id: string): Promise<{ status: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, action: 'reject' }) })
   }
 
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {

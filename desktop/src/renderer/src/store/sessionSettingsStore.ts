@@ -29,7 +29,7 @@ interface SessionSettingsStore {
   /** Apply a model / permission change, then repaint from the server echo. */
   apply: (
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; permission?: string | null }
+    body: { provider?: string | null; model?: string | null; security_policy?: { preset?: 'strict' | 'standard' | 'custom' } | null }
   ) => Promise<boolean>
   /** Drop cached settings (e.g. on a brand-new chat) so chips fall back to global. */
   reset: () => void

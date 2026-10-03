@@ -40,9 +40,7 @@ from config import (
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
 from agent.permission import (
-    MODES as PERMISSION_MODES,
     global_mode as permission_global_mode,
-    normalize_mode as permission_normalize_mode,
 )
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
@@ -2012,6 +2010,10 @@ class DesktopChannel(ChatChannel):
             '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
             '/api/runs/pending', 'PendingRunsHandler',
             '/api/security/activity', 'SecurityActivityHandler',
+            '/api/security/center', 'SecurityCenterHandler',
+            '/api/security/policy', 'SecurityPolicyHandler',
+            '/api/security/connections', 'SecurityConnectionsHandler',
+            '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
@@ -2681,7 +2683,6 @@ class ConfigHandler:
         "custom_providers",
         "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
-        "agent_permission_mode",
         "agent_tool_allowlist", "agent_account_allowlist",
     }
 
@@ -2776,7 +2777,7 @@ class ConfigHandler:
                 logger.warning(f"[ConfigHandler] failed to expand custom providers: {cp_err}")
 
             raw_pwd = str(local_config.get("web_password", "") or "")
-            masked_pwd = ("*" * len(raw_pwd)) if raw_pwd else ""
+            masked_pwd = "********" if raw_pwd else ""
 
             result = {
                 "status": "success",
@@ -2796,19 +2797,11 @@ class ConfigHandler:
                 # applies to an absent setting is the one shown here.
                 "self_evolution_enabled": get_evolution_config().enabled,
                 "subagent_enabled": SubagentSettings.from_config().enabled,
-                # Default permission mode for sessions that have not pinned one.
-                "agent_permission_mode": permission_global_mode(),
-                "permission_modes": list(PERMISSION_MODES),
                 "api_bases": api_bases,
                 "api_keys": api_keys_masked,
                 "providers": providers,
                 "web_password_masked": masked_pwd,
             }
-            # The desktop app runs on the local trusted machine, so it can edit
-            # the real password in place (cursor at the end, delete to clear).
-            # Browser access only ever sees the masked value.
-            if os.environ.get("STELLA_DESKTOP") == "1":
-                result["web_password"] = raw_pwd
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error getting config: {e}")
@@ -2837,10 +2830,6 @@ class ConfigHandler:
                     value = int(value)
                 if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)
-                # Never persist an unknown mode: every later read would silently
-                # fall back and the UI would show a setting that does nothing.
-                if key == "agent_permission_mode":
-                    value = permission_normalize_mode(value)
                 if key in ("agent_tool_allowlist", "agent_account_allowlist"):
                     if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
                         return json.dumps({"status": "error", "message": f"{key} must be a list of names"})
@@ -2881,6 +2870,7 @@ class ConfigHandler:
                 applied[section] = merged
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(file_cfg, f, indent=4, ensure_ascii=False)
+            os.chmod(config_path, 0o600)
 
             if any(key.endswith(("_api_key", "_api_base")) for key in applied):
                 sync_model_config_to_env(
@@ -2910,7 +2900,10 @@ class ConfigHandler:
                 except Exception as reset_err:
                     logger.warning(f"[DesktopChannel] Failed to reset bridge: {reset_err}")
 
-            return json.dumps({"status": "success", "applied": applied}, ensure_ascii=False)
+            safe_applied = {key: ("********" if key == "web_password" or key.endswith(("_api_key", "_token"))
+                                  else {"updated": True} if key == "custom_providers" else value)
+                            for key, value in applied.items()}
+            return json.dumps({"status": "success", "applied": safe_applied}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -5726,10 +5719,111 @@ class SecurityActivityHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        from agent.registry import get_agent_registry
-        from agent.runtime.run_record import RunRecord
-        return json.dumps({"status": "success", "runs": RunRecord().recent(get_agent_registry().get().id)},
-                          ensure_ascii=False)
+        from agent.permission.audit import recent
+        params = web.input(limit="100", agent="", project="", tool="", risk="", decision="", conversation="", since="")
+        filters = {key: getattr(params, key, "") for key in ("agent", "project", "tool", "risk", "decision", "conversation")}
+        records = recent(limit=params.limit, filters=filters)
+        if params.since:
+            try:
+                records = [row for row in records if row["at"] >= float(params.since)]
+            except ValueError:
+                return json.dumps({"status": "error", "message": "invalid since timestamp"})
+        return json.dumps({"status": "success", "records": records}, ensure_ascii=False)
+
+
+class SecurityCenterHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from agent.permission.center import overview
+        params = web.input(session='', agent='')
+        return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
+
+
+class SecurityPolicyHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.audit import record
+        from agent.permission.center import save_global_policy, overview
+        from agent.permission.security_policy import validate_patch
+        from agent.workspace import project_store, session_prefs
+        try:
+            body = json.loads(web.data() or b"{}")
+            target = body.get("target")
+            policy = body.get("policy")
+            if target == "global":
+                saved = save_global_policy(policy)
+            elif target == "project":
+                path = str(body.get("project") or "")
+                if not path:
+                    raise ValueError("project path required")
+                saved = project_store.set_security_policy(path, policy)
+                record(operation="update", resource="project policy", project=path, decision="policy_change",
+                       reason="Project security difference updated.")
+            elif target == "conversation":
+                session = str(body.get("session") or "")
+                if not session:
+                    raise ValueError("conversation required")
+                saved = validate_patch(policy)
+                session_prefs.set_prefs(session, body.get("agent"), security_policy=saved or None)
+                record(operation="update", resource="conversation policy", conversation=session,
+                       decision="policy_change", reason="Conversation security difference updated.")
+            else:
+                raise ValueError("invalid policy target")
+            return json.dumps({"status": "success", "policy": saved,
+                               "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as error:
+            return json.dumps({"status": "error", "message": str(error)})
+
+
+class SecurityConnectionsHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.center import global_policy, save_global_policy, connections
+        try:
+            body = json.loads(web.data() or b"{}")
+            connection_id = str(body.get("id") or "")
+            if connection_id not in {item["id"] for item in connections()}:
+                raise ValueError("unknown connection")
+            allowed = body.get("allowed")
+            if not isinstance(allowed, bool):
+                raise ValueError("allowed must be a boolean")
+            policy = global_policy()
+            policy.setdefault("connections", {})[connection_id] = {"allowed": allowed,
+                "scopes": [str(item) for item in body.get("scopes", [])] if isinstance(body.get("scopes", []), list) else []}
+            save_global_policy(policy)
+            return json.dumps({"status": "success", "connections": connections()}, ensure_ascii=False)
+        except ValueError as error:
+            return json.dumps({"status": "error", "message": str(error)})
+
+
+class SecuritySecretsHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.center import set_secret, secrets
+        try:
+            body = json.loads(web.data() or b"{}")
+            if "value" not in body or not isinstance(body["value"], str) or not body["value"]:
+                raise ValueError("credential value required")
+            set_secret(str(body.get("name") or ""), body["value"])
+            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
+        except ValueError as error:
+            return json.dumps({"status": "error", "message": str(error)})
+
+    def DELETE(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.center import set_secret, secrets
+        try:
+            body = json.loads(web.data() or b"{}")
+            set_secret(str(body.get("name") or ""), None)
+            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
+        except ValueError as error:
+            return json.dumps({"status": "error", "message": str(error)})
 
 
 class SecurityConfirmationsHandler:
@@ -5745,8 +5839,14 @@ class SecurityConfirmationsHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         from agent.permission.gateway import SecurityGateway
         body = json.loads(web.data() or b"{}")
-        approved = SecurityGateway.approve(str(body.get("id") or ""))
-        return json.dumps({"status": "success" if approved else "error"})
+        action = body.get("action", "approve")
+        if action not in ("approve", "reject"):
+            return json.dumps({"status": "error", "message": "invalid confirmation action"})
+        try:
+            handled = (SecurityGateway.approve if action == "approve" else SecurityGateway.reject)(str(body.get("id") or ""))
+            return json.dumps({"status": "success" if handled else "error"})
+        except OSError:
+            return json.dumps({"status": "error", "message": "security audit is unavailable"})
 
 
 class SchedulerHandler:
@@ -6796,6 +6896,11 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
         global_provider = "linkai"
     global_model = local_config.get("model") or ""
     global_permission = permission_global_mode()
+    from agent.permission.security_policy import resolve
+    from agent.workspace import project_store
+    project_dir = project_store.get_project_dir(session_id, agent_id)
+    effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
+    global_policy = resolve(global_permission)
 
     return {
         "model": {
@@ -6806,13 +6911,10 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "providers": _session_model_catalog(),
         },
         "permission": {
-            "mode": (
-                permission_normalize_mode(prefs["permission"], global_permission)
-                if prefs.get("permission") else global_permission
-            ),
-            "source": "session" if prefs.get("permission") else "global",
-            "global": global_permission,
-            "modes": list(PERMISSION_MODES),
+            "source": "session" if prefs.get("security_policy") else "global",
+            "preset": effective_policy["preset"],
+            "global_preset": global_policy["preset"],
+            "presets": ["strict", "standard", "custom"],
         },
     }
 
@@ -6856,11 +6958,9 @@ class SessionSettingsHandler:
             agent_id = body.get("agent") or body.get("agent_id")
 
             updates = {}
-            if "permission" in body:
-                mode = body.get("permission")
-                updates["permission"] = (
-                    permission_normalize_mode(mode) if mode else None
-                )
+            if "security_policy" in body:
+                from agent.permission.security_policy import validate_patch
+                updates["security_policy"] = validate_patch(body["security_policy"]) if body["security_policy"] else None
             if "model" in body or "provider" in body:
                 model = (body.get("model") or "").strip() or None
                 provider = (body.get("provider") or "").strip() or None
@@ -6872,7 +6972,7 @@ class SessionSettingsHandler:
             if not updates:
                 return json.dumps({
                     "status": "error",
-                    "message": "permission, model or provider required",
+                    "message": "security_policy, model or provider required",
                 })
 
             session_prefs.set_prefs(session_id, agent_id, **updates)

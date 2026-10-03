@@ -54,15 +54,16 @@ def permission_denial(
     """
     mode = None
     try:
+        from common.runtime_identity import current_identity
+        identity = current_identity()
+        session_id = session_id or identity.session_id
+        agent_id = agent_id or identity.agent_id
         if agent is not None:
             mode = agent.effective_permission_mode()
             cwd = agent.effective_cwd()
             roots = agent.write_roots()
         else:
-            from agent.workspace import session_prefs
-
-            pref = session_prefs.get_prefs(session_id, agent_id) if session_id else {}
-            mode = normalize_mode(pref.get("permission"), global_mode())
+            mode = global_mode()
             if workspace is None:
                 from common.state_dir import state_root
                 from common.runtime_identity import current_identity
@@ -70,7 +71,16 @@ def permission_denial(
                 workspace = str(state_root(current_identity().derive(agent_id=agent_id)))
             cwd, roots = execution_workspace(session_id, agent_id, workspace)
         from config import conf
-        from common.runtime_identity import current_identity
+        from agent.permission.security_policy import resolve
+        from agent.workspace import project_store
+        project_dir = project_store.get_project_dir(session_id, agent_id) if session_id else None
+        policy = resolve(mode, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
+        # Direct tool calls can carry a legacy Agent override without a
+        # conversation id. Honor that one stored choice during migration.
+        if agent is not None and not session_id and mode != global_mode():
+            from agent.permission.security_policy import legacy_policy
+            policy["preset"] = legacy_policy(mode)["preset"]
+            policy["rules"] = {}
         configured_allowlist = conf().get("agent_tool_allowlist")
         allowlist = configured_allowlist if isinstance(configured_allowlist, list) and configured_allowlist else None
         configured_accounts = conf().get("agent_account_allowlist")
@@ -78,7 +88,8 @@ def permission_denial(
         decision = SecurityGateway.check(
             mode, tool_name, arguments, cwd=cwd,
             scope=Scope(write_roots=tuple(roots), accounts=accounts),
-            session_id=session_id or current_identity().session_id, allowlist=allowlist,
+            session_id=session_id, allowlist=allowlist,
+            policy=policy, agent_id=agent_id, project_dir=project_dir,
         )
         return None if decision.allowed else decision.reason
     except Exception as exc:

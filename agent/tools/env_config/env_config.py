@@ -80,13 +80,12 @@ class EnvConfig(BaseTool):
         
         if not os.path.exists(self.env_path):
             Path(self.env_path).touch()
+            os.chmod(self.env_path, 0o600)
             logger.info(f"[EnvConfig] Created .env file at {self.env_path}")
     
     def _mask_value(self, value: str) -> str:
         """Mask sensitive parts of a value for logging"""
-        if not value or len(value) <= 10:
-            return "***"
-        return f"{value[:6]}***{value[-4:]}"
+        return "••••" if value else ""
     
     def _read_env_file(self) -> Dict[str, str]:
         """Read all key-value pairs from .env file"""
@@ -107,11 +106,15 @@ class EnvConfig(BaseTool):
     
     def _write_env_file(self, env_vars: Dict[str, str]):
         """Write all key-value pairs to .env file"""
-        with open(self.env_path, 'w', encoding='utf-8') as f:
+        tmp_path = self.env_path + ".tmp"
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.chmod(tmp_path, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write("# Environment variables for agent skills\n")
             f.write("# Auto-managed by env_config tool\n\n")
             for key, value in sorted(env_vars.items()):
                 f.write(f"{key}={value}\n")
+        os.replace(tmp_path, self.env_path)
     
     def _reload_env(self):
         """Reload environment variables from .env file"""
@@ -149,6 +152,10 @@ class EnvConfig(BaseTool):
         action = args.get("action")
         key = args.get("key")
         value = args.get("value")
+        if key is not None and (not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{1,79}", key)):
+            return ToolResult.fail("Error: invalid credential name")
+        if value is not None and (not isinstance(value, str) or "\n" in value or "\r" in value):
+            return ToolResult.fail("Error: invalid credential value")
         
         try:
             if action == "set":
@@ -198,12 +205,15 @@ class EnvConfig(BaseTool):
                 
                 if value is not None:
                     logger.info(f"[EnvConfig] Got {key}={self._mask_value(value)}")
+                    from agent.permission.audit import record
+                    record(tool=self.name, operation="get", resource=f"credential:{key}", risk="L0",
+                           decision="secret_use", reason="Credential status read; value was masked.")
                     return ToolResult.success({
                         "key": key,
                         "value": self._mask_value(value),
                         "description": description,
                         "exists": True,
-                        "note": f"Value is masked for security. In bash, use ${key} directly — it is auto-injected."
+                        "note": "Value is masked. Authorized integrations use the credential provider."
                     })
                 else:
                     return ToolResult.success({

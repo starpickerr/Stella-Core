@@ -9,7 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from agent.calendar import CalendarService
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
+check_tool_call = SecurityGateway.check
 from agent.todos import TodoService
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.tool_manager import ToolManager

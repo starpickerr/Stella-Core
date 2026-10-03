@@ -160,9 +160,11 @@ class Send(BaseTool):
     def _resolve_path(self, path: str) -> str:
         """Resolve path to absolute path"""
         path = expand_path(path)
-        if os.path.isabs(path):
-            return path
-        return os.path.abspath(os.path.join(self.cwd, path))
+        absolute = path if os.path.isabs(path) else os.path.abspath(os.path.join(self.cwd, path))
+        from agent.tools.utils.credentials import is_credential_path
+        if is_credential_path(absolute):
+            raise PermissionError("Credentials cannot be sent as files")
+        return absolute
     
     def _get_image_mime_type(self, ext: str) -> str:
         """Get MIME type for image"""
