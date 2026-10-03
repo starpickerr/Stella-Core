@@ -209,7 +209,9 @@ class SchedulerTool(BaseTool):
 
         # A task created by the Agent in a desktop chat belongs to that chat
         # by default. Freeze its current project scope at creation time.
-        if action["channel_type"] == "web" and notify_session_id:
+        if action["channel_type"] == "web":
+            if not notify_session_id:
+                return "错误: 桌面定时任务需要当前对话"
             from agent.scheduler.conversation import validate_conversation_action
             action["conversation_mode"] = "source"
             action["source_session_id"] = notify_session_id

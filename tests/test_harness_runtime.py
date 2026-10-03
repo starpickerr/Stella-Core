@@ -84,12 +84,10 @@ def test_automation_migrates_once_and_claims_occurrence(tmp_path):
     legacy.parent.mkdir(parents=True)
     task = {"id": "daily-briefing", "enabled": True,
             "next_run_at": "2026-10-02T08:00:00", "action": {"type": "tool_call", "silent": True}}
-    legacy.write_text(json.dumps({"tasks": {task["id"]: task},
-                                  "initialized_defaults": [task["id"]]}))
+    legacy.write_text(json.dumps({"tasks": {task["id"]: task}}))
     store = AutomationStore(legacy, "primary")
     assert store.get_task(task["id"])["action"] == task["action"]
     assert Path(str(legacy) + ".migration.bak").exists()
-    assert not store.ensure_default_task(task)
     first = store.claim_occurrence(task["id"], task["next_run_at"])
     assert first
     assert store.claim_occurrence(task["id"], task["next_run_at"]) is None

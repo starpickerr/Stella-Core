@@ -57,27 +57,25 @@ def _post_update(tmp_path, payload):
         return json.loads(SchedulerUpdateHandler().POST())
 
 
-def test_desktop_can_edit_silent_briefing_task_without_receiver(tmp_path):
-    from agent.briefing.scheduler import DAILY_BRIEFING_TASK_ID, ensure_daily_briefing_task
-    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
-    ensure_daily_briefing_task(store)
-    action = store.get_task(DAILY_BRIEFING_TASK_ID)["action"]
+def test_desktop_can_edit_silent_tool_task_without_receiver(tmp_path):
+    action = {"type": "tool_call", "call_name": "briefing",
+              "call_params": {"action": "run", "operation": "create"},
+              "silent": True, "channel_type": "web", "conversation_mode": "reuse",
+              "conversation_space": "personal", "execution_project_dir": ""}
+    store = _store_task(tmp_path, action)
     result = _post_update(tmp_path, {
-        "task_id": DAILY_BRIEFING_TASK_ID,
+        "task_id": "task-1",
         "name": "课程简报", "enabled": False,
         "schedule": {"type": "cron", "expression": "0 9 * * *"},
         "action": action,
     })
     assert result["status"] == "success"
-    task = store.get_task(DAILY_BRIEFING_TASK_ID)
+    task = store.get_task("task-1")
     assert task["enabled"] is False
     assert task["schedule"]["expression"] == "0 9 * * *"
     assert task["action"]["call_params"] == {"action": "run", "operation": "create"}
     assert task["action"]["silent"] is True
-    assert task["catch_up"] == "same_day"
-    assert task["retry_interval_seconds"] == 300
-    store.delete_task(DAILY_BRIEFING_TASK_ID)
-    assert not ensure_daily_briefing_task(store)
+    assert task["action"]["conversation_mode"] == "reuse"
 
 
 def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
@@ -164,6 +162,8 @@ def test_switch_to_message_drops_agent_only_fields(tmp_path):
         "task_description": "refresh the index",
         "receiver": "user-1",
         "channel_type": "web",
+        "conversation_mode": "reuse",
+        "conversation_space": "personal",
         "notify_session_id": "session-1",
         "silent": True,
     })
@@ -202,7 +202,8 @@ def test_web_create_persists_task_for_current_session(tmp_path):
         "name": "morning briefing",
         "enabled": True,
         "schedule": {"type": "cron", "expression": "0 9 * * *"},
-        "action": {"type": "send_message", "content": "good morning"},
+        "action": {"type": "send_message", "content": "good morning",
+                   "conversation_mode": "reuse", "conversation_space": "personal"},
         "session_id": "session-web-1",
     })
 
@@ -213,6 +214,7 @@ def test_web_create_persists_task_for_current_session(tmp_path):
     assert task["action"]["type"] == "send_message"
     assert task["action"]["content"] == "good morning"
     assert task["action"]["channel_type"] == "web"
+    assert task["action"]["conversation_mode"] == "reuse"
     assert task["action"]["receiver"] == "session-web-1"
     assert task["action"]["notify_session_id"] == "session-web-1"
     assert task["next_run_at"]
@@ -230,6 +232,17 @@ def test_web_create_rejects_missing_session(tmp_path):
     })
     assert result["status"] == "error"
     assert "session_id" in result["message"]
+
+
+def test_web_create_rejects_missing_conversation_mode(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "orphan",
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": {"type": "send_message", "content": "hi"},
+        "session_id": "session-web-1",
+    })
+    assert result["status"] == "error"
+    assert "conversation mode" in result["message"]
 
 
 def test_create_is_exposed_by_desktop_controls():

@@ -86,9 +86,12 @@ def test_agent_created_task_defaults_to_source_even_before_chat_is_saved(scope):
     assert saved[0]["action"]["execution_project_dir"] == str(project)
 
 
-def test_legacy_task_keeps_existing_routing(scope):
-    task = {"id": "old", "action": {"channel_type": "web", "receiver": "original"}}
-    assert conversation.prepare_run(task) is task
+def test_desktop_task_requires_explicit_mode_and_other_channels_keep_routing(scope):
+    task = {"id": "missing", "action": {"channel_type": "web", "receiver": "original"}}
+    with pytest.raises(ValueError, match="conversation mode"):
+        conversation.prepare_run(task)
+    other = {"id": "feishu", "action": {"channel_type": "feishu", "receiver": "recipient"}}
+    assert conversation.prepare_run(other) is other
 
 
 def test_bound_chat_supplies_recent_visible_context(scope, monkeypatch):
