@@ -118,8 +118,8 @@ def resolve_settings(payload):
     if not isinstance(cfg["file_sync_enabled"], bool) or not isinstance(cfg["file_sync_root"], str):
         raise ValueError("课程文件同步设置无效")
     if cfg["file_sync_enabled"]:
-        if not cfg["enabled"] or not cfg["courses"]:
-            raise ValueError("先启用 eLearning 并选择课程，再开启文件同步")
+        if not cfg["courses"]:
+            raise ValueError("请先选择允许保存文件的课程，再开启文件同步")
         root = Path(cfg["file_sync_root"]).expanduser()
         if not root.is_dir():
             raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
@@ -162,7 +162,10 @@ def delete_settings():
 def check_connection(payload):
     from agent.briefing.elearning.client import ensure_login
     from agent.briefing.elearning.courses import course_list
-    cfg = resolve_settings(payload)
+    if not isinstance(payload, dict):
+        raise ValueError("eLearning 设置必须是对象")
+    # Discovering courses is independent of the later file-save grant.
+    cfg = resolve_settings({**payload, "file_sync_enabled": False, "file_sync_root": ""})
     client = ensure_login(cfg)
     options = [{"id": str(row["id"]), "name": row.get("name") if isinstance(row.get("name"), str) else ""}
                for row in course_list(client)]
