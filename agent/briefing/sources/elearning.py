@@ -19,11 +19,12 @@ from agent.briefing.sources.base import FetchResult, FetchedItem
 class ElearningSource:
     name = "elearning"
 
-    def __init__(self, config, client_factory=None):
+    def __init__(self, config, client_factory=None, auto_sync_files=False):
         self.config = dict(config)
         self.account_id = account_id(config)
         self.display_name = "eLearning · " + config["username"]
         self.client_factory = client_factory or ensure_login
+        self.auto_sync_files = auto_sync_files
 
     def fetch(self, cursors):
         if not self.config["courses"]:
@@ -36,6 +37,7 @@ class ElearningSource:
         start, end = parse_date(cursors.get("since")), parse_date(cursors.get("until"))
         observed = end or datetime.now(timezone.utc)
         items, errors, quiz_not_found = [], [], []
+        course_files = []
         reads = 0
 
         def add(course, kind, raw, title, body, url, sender="", actionable=False):
@@ -124,6 +126,7 @@ class ElearningSource:
                 body = "课程：{}\n文件：{}\n大小：{} 字节\n更新时间：{}\n原页面：{}".format(
                     course["name"], title, raw.get("size", "未提供"), raw.get("updated_at") or raw.get("modified_at") or "未提供", page)
                 add(course, "file", raw, title, body, page)
+                course_files.append((course, raw))
             for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
                 document = course_grade(client, course, raw)
                 add(course, "course_grade", raw, document.title, document.text, document.url)
@@ -134,6 +137,9 @@ class ElearningSource:
             logger.info("[Briefing] quizzes endpoint unavailable for %s courses", len(quiz_not_found))
         if not reads and errors:
             raise SyncError("；".join(errors))
+        if self.auto_sync_files and self.config.get("file_sync_enabled"):
+            from agent.briefing.elearning.file_sync import sync_files
+            errors.extend(sync_files(client, self.config, course_files))
         # Partial reads do not advance source state, so inaccessible resources
         # remain eligible when permissions/network recover.
         return FetchResult(items, {} if errors else {"elearning_state": json.dumps(state, ensure_ascii=False)}, errors)

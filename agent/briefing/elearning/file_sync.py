@@ -1,0 +1,228 @@
+"""Download selected Canvas files into an explicitly granted course folder."""
+from __future__ import annotations
+
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import stat
+import threading
+from pathlib import Path
+from urllib.parse import urlparse
+
+from agent.briefing import elearning_settings
+from agent.briefing.elearning.errors import SyncError
+from agent.permission.audit import record
+
+_lock = threading.RLock()
+_MAX_FILE_SIZE = 512 * 1024 * 1024
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+_FILE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+
+
+def _component(value, fallback):
+    # Canvas names are display data, never trusted path components.
+    cleaned = re.sub(r"[^\w .()\-]+", "_", str(value or "").replace("/", "_").replace("\\", "_"))
+    cleaned = cleaned.strip(" ._")[:90].rstrip(" ._")
+    return cleaned or fallback
+
+
+def _filename(raw):
+    original = _component(raw.get("filename") or raw.get("display_name"), "course-file")
+    stem, extension = os.path.splitext(original)
+    file_id = _component(raw.get("id"), "unknown")
+    return f"{stem[:70]}--{file_id}{extension[:16]}"
+
+
+def _manifest_name(value):
+    return (isinstance(value, str) and value not in ("", ".", "..")
+            and os.path.basename(value) == value and "\\" not in value
+            and not any(ord(char) < 32 for char in value))
+
+
+def _fingerprint(raw):
+    fields = {key: raw.get(key) for key in ("id", "filename", "display_name", "size", "updated_at", "modified_at")}
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _open_child(parent_fd, name):
+    try:
+        os.mkdir(name, 0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        pass
+    try:
+        return os.open(name, _DIRECTORY_FLAGS, dir_fd=parent_fd)
+    except OSError as exc:
+        raise SyncError(f"课程资料路径不是安全目录：{name}") from exc
+
+
+def _digest_existing(directory_fd, name):
+    try:
+        info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise SyncError(f"课程文件目标不是普通文件：{name}")
+    descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory_fd)
+    digest = hashlib.sha256()
+    with os.fdopen(descriptor, "rb") as stream:
+        for block in iter(lambda: stream.read(128 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _download(client, url, directory_fd):
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise SyncError("课程文件下载地址必须是 HTTPS")
+    host = parsed.hostname.lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise SyncError("课程文件下载地址不能指向本机")
+    try:
+        if ipaddress.ip_address(host).is_private:
+            raise SyncError("课程文件下载地址不能指向私有网络")
+    except ValueError:
+        pass
+    temporary = ".elearning-" + os.urandom(8).hex()
+    descriptor = os.open(temporary, _FILE_FLAGS, 0o600, dir_fd=directory_fd)
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with os.fdopen(descriptor, "wb") as output, client.open(url, api=False) as response:
+            while True:
+                block = response.read(128 * 1024)
+                if not block:
+                    break
+                size += len(block)
+                if size > _MAX_FILE_SIZE:
+                    raise SyncError("课程文件超过 512 MB，未保存")
+                output.write(block)
+                digest.update(block)
+            output.flush()
+            os.fsync(output.fileno())
+        return temporary, digest.hexdigest()
+    except Exception:
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _load_manifest(config, root):
+    path = elearning_settings.file_sync_manifest_path(config)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if data.get("root") != str(root):
+        return {"root": str(root), "courses": {}, "files": {}}
+    return data
+
+
+def _save_manifest(config, manifest):
+    elearning_settings._write(elearning_settings.file_sync_manifest_path(config), manifest)
+
+
+def _current_grant(config, course_id):
+    current = elearning_settings.load_settings()
+    if (not current.get("enabled") or not current.get("file_sync_enabled")
+            or elearning_settings.account_id(current) != elearning_settings.account_id(config)
+            or current.get("file_sync_root") != config.get("file_sync_root")
+            or course_id not in current.get("courses", [])):
+        raise SyncError("课程文件同步授权已变更，请检查 eLearning 设置")
+
+
+def sync_files(client, config, rows):
+    """Save changed files; return per-file errors without hiding briefing data."""
+    if not config.get("file_sync_enabled"):
+        return []
+    if not rows:
+        return []
+    root = Path(config.get("file_sync_root") or "")
+    if not root.is_absolute() or not root.is_dir() or root.resolve(strict=True) != root:
+        return ["课程文件保存目录已移动或不可用，请重新选择目录"]
+    try:
+        _current_grant(config, str(rows[0][0]["id"]))
+    except SyncError as exc:
+        return [str(exc)]
+    errors = []
+    with _lock:
+        manifest = _load_manifest(config, root)
+        try:
+            root_fd = os.open(str(root), _DIRECTORY_FLAGS)
+        except OSError:
+            return ["课程文件保存目录不可用，请重新选择目录"]
+        try:
+            materials_fd = _open_child(root_fd, "课程资料")
+            try:
+                for course, raw in rows:
+                    try:
+                        _sync_one(client, config, root, materials_fd, manifest, course, raw)
+                    except Exception as exc:
+                        errors.append(f"{course.get('name', '课程')} / {raw.get('display_name') or raw.get('filename') or '文件'}：{exc}")
+            finally:
+                os.close(materials_fd)
+        except SyncError as exc:
+            errors.append(str(exc))
+        finally:
+            os.close(root_fd)
+    return errors
+
+
+def _sync_one(client, config, root, materials_fd, manifest, course, raw):
+    course_id, file_id = str(course["id"]), str(raw["id"])
+    _current_grant(config, course_id)
+    if isinstance(raw.get("size"), (int, float)) and raw["size"] > _MAX_FILE_SIZE:
+        raise SyncError("课程文件超过 512 MB，未保存")
+    folder = manifest["courses"].setdefault(course_id,
+        f"{_component(course.get('name'), '课程')}--{_component(course_id, 'unknown')}")
+    if not _manifest_name(folder):
+        raise SyncError("课程文件目录记录无效")
+    directory_fd = _open_child(materials_fd, folder)
+    try:
+        key = f"{course_id}:{file_id}"
+        previous = manifest["files"].get(key) or {}
+        remote = _fingerprint(raw)
+        name = previous.get("name") or _filename(raw)
+        if not _manifest_name(name):
+            raise SyncError("课程文件名记录无效")
+        existing_digest = _digest_existing(directory_fd, name)
+        if previous.get("remote") == remote and existing_digest == previous.get("sha256"):
+            return
+        # A locally edited file stays untouched until Canvas reports a new version.
+        if previous.get("remote") == remote and existing_digest is not None:
+            return
+        url = raw.get("url")
+        if not isinstance(url, str) or not url:
+            raise SyncError("课程文件没有可用的下载地址")
+        temporary, downloaded_digest = _download(client, url, directory_fd)
+        try:
+            _current_grant(config, course_id)
+            existing_digest = _digest_existing(directory_fd, name)
+            replace = (existing_digest is None or
+                       bool(previous.get("sha256") and existing_digest == previous["sha256"]))
+            if not replace:
+                stem, extension = os.path.splitext(_filename(raw))
+                name = f"{stem}-更新-{remote[:8]}{extension}"
+                if _digest_existing(directory_fd, name) is not None:
+                    name = f"{stem}-更新-{remote[:8]}-{downloaded_digest[:8]}{extension}"
+            destination = root / "课程资料" / folder / name
+            record(tool="elearning", operation="download", resource=str(destination), event="file_modify",
+                   risk="L1", decision="allow", reason="Configured course file sync within the selected folder.")
+            if replace:
+                os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+            else:
+                os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
+                        follow_symlinks=False)
+                os.unlink(temporary, dir_fd=directory_fd)
+            manifest["files"][key] = {"remote": remote, "name": name, "sha256": downloaded_digest}
+            _save_manifest(config, manifest)
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+    finally:
+        os.close(directory_fd)
