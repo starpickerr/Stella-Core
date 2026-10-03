@@ -665,7 +665,7 @@ class ApiClient {
     })
   }
 
-  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action'>>): Promise<{ status: string; task: SchedulerTask }> {
+  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action'>>): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler/update', {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId, ...updates }),
