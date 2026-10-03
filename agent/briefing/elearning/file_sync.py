@@ -155,15 +155,11 @@ def sync_files(client, config, rows):
         except OSError:
             return ["课程文件保存目录不可用，请重新选择目录"]
         try:
-            materials_fd = _open_child(root_fd, "课程资料")
-            try:
-                for course, raw in rows:
-                    try:
-                        _sync_one(client, config, root, materials_fd, manifest, course, raw)
-                    except Exception as exc:
-                        errors.append(f"{course.get('name', '课程')} / {raw.get('display_name') or raw.get('filename') or '文件'}：{exc}")
-            finally:
-                os.close(materials_fd)
+            for course, raw in rows:
+                try:
+                    _sync_one(client, config, root, root_fd, manifest, course, raw)
+                except Exception as exc:
+                    errors.append(f"{course.get('name', '课程')} / {raw.get('display_name') or raw.get('filename') or '文件'}：{exc}")
         except SyncError as exc:
             errors.append(str(exc))
         finally:
@@ -208,7 +204,7 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw):
                 name = f"{stem}-更新-{remote[:8]}{extension}"
                 if _digest_existing(directory_fd, name) is not None:
                     name = f"{stem}-更新-{remote[:8]}-{downloaded_digest[:8]}{extension}"
-            destination = root / "课程资料" / folder / name
+            destination = root / folder / name
             record(tool="elearning", operation="download", resource=str(destination), event="file_modify",
                    risk="L1", decision="allow", reason="Configured course file sync within the selected folder.")
             if replace:
