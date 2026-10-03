@@ -152,7 +152,7 @@ def _save_manifest(config, manifest):
 
 def _current_grant(config, course_id):
     current = elearning_settings.load_settings()
-    if (not current.get("enabled") or not current.get("file_sync_enabled")
+    if (not current.get("file_sync_enabled")
             or elearning_settings.account_id(current) != elearning_settings.account_id(config)
             or current.get("file_sync_root") != config.get("file_sync_root")
             or course_id not in current.get("courses", [])):
