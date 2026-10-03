@@ -331,10 +331,9 @@ def test_crawler_file_fallback_reads_modules_without_downloading(config_path):
     assert result.errors and result.cursors == {}
 
 
-def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, tmp_path, monkeypatch):
+def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, tmp_path, security_audit_path):
     from agent.briefing.elearning.file_sync import sync_files
 
-    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
     root = tmp_path / "project"
     root.mkdir()
     settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
@@ -362,13 +361,12 @@ def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, 
     assert sync_files(client, cfg, [(course, raw)]) == []
     assert saved.read_bytes() == b"my notes"
     assert any(path.read_bytes() == b"third" for path in saved.parent.iterdir() if path != saved)
-    assert len((tmp_path / "audit.jsonl").read_text().splitlines()) >= 4
+    assert len(security_audit_path.read_text().splitlines()) >= 4
 
 
 def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_path, monkeypatch):
     from agent.briefing.elearning.file_sync import sync_files
 
-    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
     root, outside = tmp_path / "project", tmp_path / "outside"
     root.mkdir()
     outside.mkdir()
@@ -388,7 +386,6 @@ def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_pat
 
 
 def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, tmp_path, monkeypatch):
-    monkeypatch.setattr("agent.permission.audit._path", lambda: tmp_path / "audit.jsonl")
     root = tmp_path / "project"
     root.mkdir()
     settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
