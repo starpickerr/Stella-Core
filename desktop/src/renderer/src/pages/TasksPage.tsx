@@ -190,8 +190,8 @@ const TaskEditModal: React.FC<{
   const [content, setContent] = useState(task?.action.content || task?.action.task_description || '')
   const [channel, setChannel] = useState(task?.action.channel_type || 'web')
   const [receiver, setReceiver] = useState(task?.action.receiver || sessionId)
-  const [conversationMode, setConversationMode] = useState<'legacy' | 'source' | 'reuse' | 'new'>(
-    task?.action.conversation_mode || (task ? 'legacy' :
+  const [conversationMode, setConversationMode] = useState<'source' | 'reuse' | 'new'>(
+    task?.action.conversation_mode || (
       useSessionStore.getState().sessions.some((s) => s.session_id === sessionId) ? 'source' : 'reuse'))
   const [sourceSessionId, setSourceSessionId] = useState(task?.action.source_session_id || sessionId)
   const [conversationSpace, setConversationSpace] = useState<'personal' | 'project'>(
@@ -223,7 +223,7 @@ const TaskEditModal: React.FC<{
     a.is_group = channel === 'feishu' && receiveIdType === 'chat_id'
     if (channel === 'feishu') a.receive_id_type = receiveIdType
     a.execution_session_id = task?.action.execution_session_id || task?.action.notify_session_id || sessionId
-    if (channel === 'web' && conversationMode !== 'legacy') {
+    if (channel === 'web') {
       a.conversation_mode = conversationMode
       if (conversationMode === 'source') {
         a.source_session_id = sourceSessionId
@@ -241,16 +241,6 @@ const TaskEditModal: React.FC<{
       delete a.source_session_id
       delete a.conversation_space
       delete a.execution_project_dir
-    }
-    // Editing an existing silent tool task without choosing a conversation
-    // must not silently turn its previously destination-less action into a
-    // desktop delivery action.
-    if (task?.action.silent && !task.action.channel_type && conversationMode === 'legacy') {
-      delete a.channel_type
-      delete a.receiver
-      delete a.receiver_name
-      delete a.is_group
-      delete a.execution_session_id
     }
     if (isToolCall) return a
     if (actionType === 'send_message') a.content = content
@@ -425,9 +415,8 @@ const TaskEditModal: React.FC<{
       </>}
       {channel === 'web' && <>
           <Field label={t('task_conversation_mode')}>
-            <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'legacy' | 'source' | 'reuse' | 'new')}
+            <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'source' | 'reuse' | 'new')}
               options={[
-                ...(task && !task.action.conversation_mode ? [{ value: 'legacy', label: t('task_conversation_legacy') }] : []),
                 { value: 'source', label: t('task_conversation_source') },
                 { value: 'reuse', label: t('task_conversation_reuse') },
                 { value: 'new', label: t('task_conversation_new') },
@@ -459,12 +448,12 @@ const TaskEditModal: React.FC<{
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
           <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
         </Field>}
-        {(channel !== 'web' || conversationMode === 'legacy') && <Field label={t('task_receiver')}>
+        {channel !== 'web' && <Field label={t('task_receiver')}>
           <TextInput value={receiver} onChange={event => setReceiver(event.target.value)} list="task-recipients" />
           <datalist id="task-recipients">{destinations.find(d => d.channel_type === channel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
         </Field>}
         {channel === 'weixin' && <p className="text-xs text-content-tertiary">{t('task_weixin_condition')}</p>}
-        {(channel !== 'web' || conversationMode === 'legacy') && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
+        {channel !== 'web' && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
       </>}
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
