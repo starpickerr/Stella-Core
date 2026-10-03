@@ -724,6 +724,10 @@ export interface TaskAction {
   params?: Record<string, unknown>
   execution_session_id?: string
   notify_session_id?: string
+  conversation_mode?: 'source' | 'reuse' | 'new'
+  source_session_id?: string
+  conversation_space?: 'personal' | 'project'
+  execution_project_dir?: string
   receive_id_type?: string
 }
 
