@@ -122,7 +122,7 @@ def resolve_settings(payload):
             raise ValueError("先启用 eLearning 并选择课程，再开启文件同步")
         root = Path(cfg["file_sync_root"]).expanduser()
         if not root.is_dir():
-            raise ValueError("请选择已存在的保存目录；课程资料文件夹会自动创建")
+            raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
         cfg["file_sync_root"] = str(root.resolve(strict=True))
     password = payload.get("password", "")
     if not isinstance(password, str):
