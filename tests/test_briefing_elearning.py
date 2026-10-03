@@ -110,7 +110,8 @@ def test_elearning_tool_fetch_uses_shared_crawler_and_never_commits_cursor(confi
 
 def test_elearning_tool_is_registered_and_read_only():
     import agent.tools as exports
-    from agent.permission.policy import check_tool_call
+    from agent.permission.gateway import SecurityGateway
+    check_tool_call = SecurityGateway.check
     from agent.tools.tool_manager import ToolManager
     assert "ElearningTool" in exports.__all__
     assert exports.ElearningTool is ElearningTool

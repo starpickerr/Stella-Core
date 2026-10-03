@@ -18,10 +18,9 @@ from common.log import logger
 
 
 def _evolution_dir(workspace_dir: Path, user_id: Optional[str] = None) -> Path:
-    base = Path(workspace_dir) / "memory"
-    if user_id:
-        return base / "users" / user_id / "evolution"
-    return base / "evolution"
+    from common.state_dir import user_root_for_workspace
+
+    return user_root_for_workspace(workspace_dir, user_id) / "memory" / "evolution"
 
 
 def append_session_evolution(

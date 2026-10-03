@@ -306,6 +306,8 @@ class SearchFiles(BaseTool):
                 f"Hint: Relative paths are based on workspace ({self.cwd}). For directories outside workspace, use absolute paths."
             )
 
+        from agent.tools.utils.credentials import protected_credential_paths
+        self._credential_paths = protected_credential_paths()
         if target == "files":
             return self._find_by_name(pattern, root, ignore_case, no_ignore, max_results)
 
@@ -315,7 +317,17 @@ class SearchFiles(BaseTool):
             no_ignore=no_ignore, max_results=max_results, deadline=time.monotonic() + self.timeout,
         )
 
-        backend = self._pick_backend()
+        # External search binaries cannot apply the exact credential-path
+        # guard to every file they open. Use the guarded Python scanner when
+        # the searched tree contains a protected credential file.
+        real_root = os.path.realpath(root)
+        def contains(path):
+            try:
+                return os.path.commonpath((real_root, path)) == real_root
+            except ValueError:
+                return False
+        protected_inside = any(contains(path) for path in self._credential_paths)
+        backend = self._backend_python if protected_inside else self._pick_backend()
         used = _BACKEND_LABELS.get(backend.__name__, backend.__name__)
         try:
             outcome = backend(opts)
@@ -362,7 +374,9 @@ class SearchFiles(BaseTool):
         for candidate in candidates:
             if _PROC_ENVIRON_RE.match(candidate):
                 return True
-        return any(c == self._stella_dir or c.startswith(self._stella_dir + "/") for c in candidates)
+        from agent.tools.utils.credentials import is_credential_path
+        return is_credential_path(absolute_path, getattr(self, "_credential_paths", None)) or any(
+            c == self._stella_dir or c.startswith(self._stella_dir + "/") for c in candidates)
 
     def _rel(self, file_path: str, root: str) -> str:
         # Always emit forward slashes so paths are consistent across platforms

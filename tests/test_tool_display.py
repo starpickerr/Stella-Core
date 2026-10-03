@@ -94,19 +94,14 @@ def test_a_tool_can_tell_which_call_it_is_running():
     assert tool.tool_call_id is None
 
 
-def test_both_consoles_render_what_the_backend_sends():
-    """The web console and the desktop app read the same stream. A field only
-    one of them understands is a feature that exists on one client."""
+def test_desktop_renders_what_the_backend_sends():
     root = Path(__file__).parents[1]
-    web = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     desktop_store = (root / "desktop/src/renderer/src/store/chatStore.ts").read_text(encoding="utf-8")
     desktop_steps = (root / "desktop/src/renderer/src/components/MessageSteps.tsx").read_text(encoding="utf-8")
 
     # The readable form is rendered as markdown rather than dumped as text.
-    assert "renderMarkdown(String(item.display))" in web
     assert "<Markdown content={step.display} />" in desktop_steps
 
-    # A sub agent's own tool calls are filed under its card on both.
-    assert "item.type === 'subagent_step'" in web
+    # A sub agent's own tool calls are filed under its card.
     assert "case 'subagent_step':" in desktop_store
     assert "substeps" in desktop_steps

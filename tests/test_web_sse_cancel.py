@@ -5,12 +5,12 @@ import threading
 import time
 from types import SimpleNamespace
 
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 
-WebChannel = dict(zip(
-    web_channel.WebChannel.__code__.co_freevars,
-    (cell.cell_contents for cell in web_channel.WebChannel.__closure__),
+DesktopChannel = dict(zip(
+    web_channel.DesktopChannel.__code__.co_freevars,
+    (cell.cell_contents for cell in web_channel.DesktopChannel.__closure__),
 ))["cls"]
 
 
@@ -24,8 +24,8 @@ def _fake_channel():
         SSE_REPLAY_MAX_BYTES=4 * 1024 * 1024,
         SSE_POST_DONE_TAIL_SECONDS=60,
     )
-    channel._drop_sse_request = lambda rid: WebChannel._drop_sse_request(channel, rid)
-    channel._publish_sse_event = lambda rid, event: WebChannel._publish_sse_event(
+    channel._drop_sse_request = lambda rid: DesktopChannel._drop_sse_request(channel, rid)
+    channel._publish_sse_event = lambda rid, event: DesktopChannel._publish_sse_event(
         channel, rid, event
     )
     return channel
@@ -59,7 +59,7 @@ def test_events_after_cancel_still_reach_the_client():
         channel._publish_sse_event(request_id, {"type": "stream_end"})
 
     threading.Thread(target=late_producer, daemon=True).start()
-    events = _events(WebChannel.stream_response(channel, request_id))
+    events = _events(DesktopChannel.stream_response(channel, request_id))
 
     assert [event["type"] for event in events] == [
         "cancelled", "tool_end", "done", "stream_end"
@@ -75,7 +75,7 @@ def test_unfinished_run_does_not_hold_closed_client():
         request_id, {"type": "cancelled", "content": "Cancelled"}
     )
 
-    generator = WebChannel.stream_response(channel, request_id)
+    generator = DesktopChannel.stream_response(channel, request_id)
     event = _events([next(generator)])[0]
     assert event["type"] == "cancelled"
     assert event["seq"] == 1

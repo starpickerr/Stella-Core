@@ -7,7 +7,7 @@ description: Stella - LLM を活用した AI スーパーアシスタント
 
 **Stella** は、自律的なタスク計画、長期記憶、Skill システム、マルチモーダルメッセージ、複数モデル対応、マルチプラットフォームデプロイを備えた、LLM を活用した AI スーパーアシスタントです。
 
-Stella は自ら思考しタスクを計画し、コンピュータや外部リソースを操作し、Skill を作成・実行し、長期記憶により継続的に成長します。複数モデルの柔軟な切り替えをサポートし、テキスト、音声、画像、ファイルなどのマルチモーダルメッセージを処理でき、WeChat、Web、Feishu（飛書）、DingTalk（釘釘）、WeCom（企業微信）、WeChat公式アカウントに統合できます。お使いのパソコンやサーバー上で24時間365日稼働します。
+Stella は自ら思考しタスクを計画し、コンピュータや外部リソースを操作し、Skill を作成・実行し、長期記憶により継続的に成長します。複数モデルの柔軟な切り替えをサポートし、テキスト、音声、画像、ファイルなどのマルチモーダルメッセージを処理でき、デスクトップクライアント、WeChat、Feishu（飛書）、DingTalk（釘釘）、WeCom（企業微信）、WeChat公式アカウントに統合できます。お使いのパソコンで稼働します。
 
 <Frame>
   <img src="/images/placeholder-video.svg" alt="Stella video placeholder" />
@@ -35,7 +35,7 @@ Stella は自ら思考しタスクを計画し、コンピュータや外部リ�
   <Card title="Skill システム" icon="puzzle-piece" href="/ja/skills/index">
     Skill の作成・実行エンジンを実装し、組み込み Skill を搭載。自然言語の会話を通じてカスタム Skill の開発もサポートしています。
   </Card>
-  <Card title="マルチモーダルメッセージ" icon="image" href="/ja/channels/web">
+  <Card title="マルチモーダルメッセージ" icon="image" href="/ja/guide/desktop">
     テキスト、画像、音声、ファイルなどのメッセージタイプの解析、処理、生成、送信をサポートします。
   </Card>
   <Card title="ツールシステム" icon="wrench" href="/ja/tools/index">
@@ -48,28 +48,13 @@ Stella は自ら思考しタスクを計画し、コンピュータや外部リ�
     OpenAI、Claude、Gemini、DeepSeek、MiniMax、GLM、Qwen、Kimi、Doubao など、主要なモデルプロバイダーをサポートしています。
   </Card>
   <Card title="マルチプラットフォームデプロイ" icon="server" href="/ja/channels/weixin">
-    ローカルコンピュータやサーバー上で動作し、WeChat、Web、Feishu（飛書）、DingTalk（釘釘）、WeChat公式アカウント、WeCom（企業微信）アプリケーションに統合できます。
+    ローカルコンピュータ上で動作し、デスクトップクライアント、WeChat、Feishu（飛書）、DingTalk（釘釘）、WeChat公式アカウント、WeCom（企業微信）アプリケーションに統合できます。
   </Card>
 </CardGroup>
 
 ## クイック体験
 
-ターミナルで以下のコマンドを実行すると、ワンクリックでインストール、設定、起動ができます：
-
-<Tabs>
-  <Tab title="Linux / macOS">
-    ```bash
-    bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
-    ```
-  </Tab>
-  <Tab title="Windows (PowerShell)">
-    ```powershell
-    irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
-    ```
-  </Tab>
-</Tabs>
-
-デフォルトでは実行後に Web サービスが起動します。`http://localhost:9899/chat` にアクセスして Web インターフェースでチャットできます。
+[デスクトップ版](https://github.com/starpickerr/Stella/releases/latest)をダウンロードするか、ソースディレクトリで `cd desktop && npm install && npm run dev` を実行します。Electron が専用バックエンドを自動的に起動します。
 
 <CardGroup cols={2}>
   <Card title="クイックスタート" icon="rocket" href="/ja/guide/quick-start">

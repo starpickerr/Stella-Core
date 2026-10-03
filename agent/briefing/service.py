@@ -241,12 +241,14 @@ class BriefingService:
             updated_sources=payload.get("updated_sources", existing.updated_sources) if status != "failed" else existing.updated_sources,
         )
         snapshots = None
+        staged_run_id = payload.get("staged_run_id") if status != "failed" else None
+        staged_sources = self.store.staged_source_map(staged_run_id) if staged_run_id else {}
         if "items" in payload:
             raw_items = payload.get("items")
             if not isinstance(raw_items, list):
                 raise ValueError("items must be a list")
             snapshots = [
-                self._build_snapshot_item(briefing_id, raw, index, now)
+                self._build_snapshot_item(briefing_id, raw, index, now, staged_sources)
                 for index, raw in enumerate(raw_items)
             ]
             previous = {
@@ -267,7 +269,8 @@ class BriefingService:
                 or row.get("category") not in {"selected", "filtered"} for row in mail
             ):
                 raise ValueError("mail must be a list of classified candidate snapshots")
-        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail)
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail,
+                                 payload.get("cursor_updates"), staged_run_id)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
         return detail
@@ -289,6 +292,9 @@ class BriefingService:
     ) -> Tuple[SourceItem, Optional[EmailMessage]]:
         item, email = self._build_source_item(payload)
         return self.store.upsert_source_item(item, email)
+
+    def build_source_item(self, payload: dict) -> Tuple[SourceItem, Optional[EmailMessage]]:
+        return self._build_source_item(payload)
 
     # ------------------------------------------------------------------
     # Filter rules
@@ -406,17 +412,19 @@ class BriefingService:
         return item, email
 
     def _build_snapshot_item(
-        self, briefing_id: str, payload: Any, index: int, now: str
+        self, briefing_id: str, payload: Any, index: int, now: str,
+        staged_sources=None,
     ) -> BriefingItem:
         if not isinstance(payload, dict):
             raise ValueError("each briefing item must be an object")
         catalog: Optional[SourceItem] = None
         source_item_id = payload.get("source_item_id")
         if source_item_id:
-            found = self.store.get_source_item(str(source_item_id))
-            if found is None:
+            catalog = (staged_sources or {}).get(str(source_item_id))
+            found = None if catalog else self.store.get_source_item(str(source_item_id))
+            if catalog is None and found is None:
                 raise ValueError(f"source item not found: {source_item_id}")
-            catalog = found[0]
+            catalog = catalog or found[0]
             source_item_id = catalog.id
         else:
             source_item_id = None

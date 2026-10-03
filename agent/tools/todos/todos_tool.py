@@ -17,6 +17,13 @@ class TodosTool(BaseTool):
             "action": {"type": "string", "enum": ["list", "get", "create", "update", "complete", "delete"]},
             "id": {"type": "string"}, "title": {"type": "string"}, "notes": {"type": "string"},
             "due_on": {"type": "string", "description": "YYYY-MM-DD，可留空"},
+            "planned_on": {"type": "string", "description": "计划处理日 YYYY-MM-DD，与截止日分开"},
+            "list_name": {"type": "string", "description": "清单名称"},
+            "flagged": {"type": "boolean"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "checklist": {"type": "array", "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "title": {"type": "string"}, "completed": {"type": "boolean"}},
+                "required": ["title"]}},
             "due_time": {"type": "string", "description": "HH:MM，可留空"},
             "timezone": {"type": "string", "description": "IANA 时区"},
             "priority": {"type": "integer", "minimum": 0, "maximum": 3},
@@ -36,10 +43,15 @@ class TodosTool(BaseTool):
         try:
             if not isinstance(params, dict):
                 raise ValueError("parameters must be an object")
-            service = self.service or TodoService()
+            if self.service is None:
+                from application import Application, RequestContext
+                service = Application.port("todos", RequestContext.ambient("agent"))
+            else:
+                service = self.service
             action = params.get("action")
             fields = ("title", "notes", "due_on", "due_time", "timezone", "priority",
-                      "repeat_frequency", "repeat_days", "repeat_until")
+                      "repeat_frequency", "repeat_days", "repeat_until", "planned_on", "list_name",
+                      "flagged", "tags", "checklist")
             payload = {key: params[key] for key in fields if key in params}
             if action == "list":
                 result = {"todos": service.list_todos(params.get("start"), params.get("end"),

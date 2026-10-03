@@ -6,15 +6,12 @@ import os from 'os'
 import fs from 'fs'
 import http from 'http'
 import net from 'net'
+import { randomBytes } from 'crypto'
 
-// Writable data dir for the packaged app (config.json, run.log, user data).
-// Lives in the user's home so it survives app updates and avoids writing into
-// the read-only app bundle. Source/dev runs keep using the repo CWD instead.
+// The installed app and source checkout use the same writable state.
 const STELLA_DATA_DIR = path.join(os.homedir(), '.stella')
 
-// Preferred port for the desktop backend. Deliberately not 9899 (the web
-// console's default) so a source-run `python app.py` never collides with the
-// packaged app. The renderer starts by probing this port, but it is only a
+// Preferred port for the desktop backend. The renderer starts by probing this port, but it is only a
 // PREFERENCE, not a guarantee — see pickPort() for why, and note that the real
 // port is always published to the renderer via the 'port' event / whenPortReady.
 export const DESKTOP_BACKEND_PORT = 9876
@@ -22,7 +19,7 @@ export const DESKTOP_BACKEND_PORT = 9876
 // Tried in order when the preferred port can't be bound. Windows reserves
 // pseudo-random port ranges for Hyper-V/WSL2/Docker (netsh "excluded port
 // range"): binding one fails with WinError 10013 even though nothing is
-// listening, so freePort() has nothing to kill and the old fixed-port design
+// listening, and the old fixed-port design
 // left those users permanently stuck on "initializing". The candidates are
 // spread far apart so a single reserved block can't swallow all of them.
 const FALLBACK_PORTS = [19876, 29876, 39876, 49876, 55876]
@@ -77,6 +74,7 @@ export interface BackendError {
 }
 
 export class PythonBackend extends EventEmitter {
+  private readonly internalToken = randomBytes(32).toString('hex')
   private process: ChildProcess | null = null
   private backendPath: string
   // Whether we're running inside an installed app (as opposed to a source
@@ -108,9 +106,8 @@ export class PythonBackend extends EventEmitter {
   private recovering = false
   private recoveryAttempts = 0
   private recoveryWindowStart = 0
-  // Append stream to run.log so the backend's OWN stdout/stderr is persisted by
-  // the shell too. The backend writes run.log itself once its Python logging is
-  // up — but a bootstrap crash (missing DLL, broken onedir after an update,
+  // Append stream to run.log so backend stdout/stderr is persisted. A bootstrap
+  // crash (missing DLL, broken onedir after an update,
   // antivirus block) dies BEFORE that, spilling the real cause only to stderr.
   // We captured that stderr already, but never wrote it anywhere durable, so the
   // "open log folder" button showed a stale run.log with no trace of the crash.
@@ -136,6 +133,10 @@ export class PythonBackend extends EventEmitter {
     return this.port
   }
 
+  getInternalToken(): string {
+    return this.internalToken
+  }
+
   /** The failure that put the backend in 'error', or null if none. */
   getLastError(): BackendError | null {
     return this.lastError
@@ -157,13 +158,11 @@ export class PythonBackend extends EventEmitter {
    * Writable data dir the backend runs against (holds config.json + run.log),
    * and the folder the failure screen's "open log folder" button reveals.
    *
-   * Keyed on how the app was built, never on whether the bundle is currently
-   * intact: when the executable went missing this used to return the read-only
-   * install dir, so a user following the on-screen instructions opened a folder
-   * that had no run.log in it at all.
+   * Both builds use the same folder so their configuration, channels and
+   * workspace stay in sync after one instance hands over to the other.
    */
   getDataDir(): string {
-    return this.packaged ? STELLA_DATA_DIR : this.backendPath
+    return STELLA_DATA_DIR
   }
 
   // Optional runtime-origin tag from the bundled app-config, forwarded to the
@@ -194,18 +193,16 @@ export class PythonBackend extends EventEmitter {
 
   /**
    * Open an append stream to <dataDir>/run.log so we can persist the backend's
-   * stdout/stderr from the shell side. This is the same file the backend writes
-   * once its Python logging initializes, and the same file the "open log folder"
-   * button reveals — so a bootstrap crash's stderr lands exactly where the user
-   * (and we) already look. Best-effort: any failure just disables mirroring.
+   * stdout/stderr from the shell side. The Python logger skips its file handler
+   * under Electron so each line appears once. A bootstrap crash still lands in
+   * the folder opened by the "open log folder" button.
    */
   private openLogStream(dataDir: string): void {
     this.closeLogStream()
     try {
       fs.mkdirSync(dataDir, { recursive: true })
       const logPath = path.join(dataDir, 'run.log')
-      // Append (not truncate): the backend appends to this same file, so we must
-      // not clobber its history, and interleaving is fine — both are line-based.
+      // Append across launches without truncating previous diagnostics.
       this.logStream = fs.createWriteStream(logPath, { flags: 'a' })
       // A logging error must never crash the app; drop the stream instead.
       this.logStream.on('error', () => {
@@ -418,18 +415,13 @@ export class PythonBackend extends EventEmitter {
     return process.platform === 'win32' ? 'python' : 'python3'
   }
 
-  /**
-   * Read an explicit `web_port` from config.json, if the user pinned one. The
-   * packaged build keeps config in STELLA_DATA_DIR (~/.stella); dev reads it from the
-   * repo path. Returns null when unset, so the caller can auto-pick a free port
-   * instead of fighting over a fixed one.
-   */
+  /** Read an optional desktop-only backend port override. */
   private readConfiguredPort(dataDir: string): number | null {
     try {
       const configPath = path.join(dataDir, 'config.json')
       if (fs.existsSync(configPath)) {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-        const p = Number(config.web_port)
+        const p = Number(config.desktop_backend_port)
         if (Number.isInteger(p) && p > 0 && p < 65536) {
           return p
         }
@@ -442,14 +434,13 @@ export class PythonBackend extends EventEmitter {
 
   /**
    * Pick a port the backend can actually bind, preferring the pinned/default
-   * one. Each candidate is probed for real (bind + close); a busy one gets a
-   * freePort() pass first, since the usual cause is a stale backend from a
-   * previous run. Anything still unusable is skipped rather than fought over:
+   * one. Each candidate is probed for real (bind + close). A busy one is
+   * skipped: another running desktop instance may own it.
    * on Windows a port can be permanently unbindable (reserved by Hyper-V/WSL2)
    * with no process to kill, which used to strand the app on "initializing".
    *
    * The result is the single source of truth handed to both the backend
-   * (STELLA_WEB_PORT) and the renderer (whenPortReady / the 'port' event).
+   * (STELLA_BACKEND_PORT) and the renderer (whenPortReady / the 'port' event).
    */
   private async pickPort(dataDir: string): Promise<number> {
     const pinned = this.readConfiguredPort(dataDir)
@@ -457,10 +448,6 @@ export class PythonBackend extends EventEmitter {
     const candidates = [preferred, ...FALLBACK_PORTS.filter((p) => p !== preferred)]
 
     for (const port of candidates) {
-      if (await this.isPortFree(port)) {
-        return port
-      }
-      await this.freePort(port)
       if (await this.isPortFree(port)) {
         return port
       }
@@ -504,80 +491,6 @@ export class PythonBackend extends EventEmitter {
           tester.close(() => resolve(true))
         })
         .listen(port, '127.0.0.1')
-    })
-  }
-
-  /**
-   * Make sure our fixed port is usable before launch by killing whatever is
-   * holding it (almost always a stale backend from a previous run that didn't
-   * shut down cleanly). We only ever target a process actually listening on
-   * 127.0.0.1:<port>, so we won't touch unrelated apps. Best-effort: if we
-   * can't free it we still try to bind and let the backend surface EADDRINUSE.
-   */
-  private async freePort(port: number): Promise<void> {
-    if (await this.isPortFree(port)) {
-      return
-    }
-    this.emit('log', `Port ${port} is busy — clearing stale process before launch`)
-    const pids = await this.findListenerPids(port)
-    for (const pid of pids) {
-      // Never signal ourselves (Electron could, in theory, be the listener).
-      if (pid === process.pid) continue
-      try {
-        process.kill(pid, 'SIGTERM')
-      } catch {
-        // already gone / no permission — ignore
-      }
-    }
-    // Give the OS a beat to release the socket, then force-kill leftovers.
-    await new Promise((r) => setTimeout(r, 600))
-    if (!(await this.isPortFree(port))) {
-      for (const pid of await this.findListenerPids(port)) {
-        if (pid === process.pid) continue
-        try {
-          process.kill(pid, 'SIGKILL')
-        } catch {
-          // ignore
-        }
-      }
-      await new Promise((r) => setTimeout(r, 400))
-    }
-  }
-
-  /** PIDs listening on 127.0.0.1:<port>, via lsof (POSIX) / netstat (Windows). */
-  private findListenerPids(port: number): Promise<number[]> {
-    return new Promise((resolve) => {
-      const isWin = process.platform === 'win32'
-      const cmd = isWin ? 'netstat' : 'lsof'
-      const args = isWin
-        ? ['-ano', '-p', 'tcp']
-        : ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']
-      let out = ''
-      try {
-        const child = spawn(cmd, args)
-        child.stdout?.on('data', (d: Buffer) => (out += d.toString()))
-        child.on('error', () => resolve([]))
-        child.on('close', () => {
-          const pids = new Set<number>()
-          if (isWin) {
-            // Match lines like: TCP 127.0.0.1:9876 ... LISTENING  12345
-            for (const line of out.split('\n')) {
-              if (!/LISTENING/i.test(line)) continue
-              if (!new RegExp(`[:.]${port}\\b`).test(line)) continue
-              const pid = Number(line.trim().split(/\s+/).pop())
-              if (Number.isInteger(pid) && pid > 0) pids.add(pid)
-            }
-          } else {
-            for (const tok of out.split(/\s+/)) {
-              const pid = Number(tok)
-              if (Number.isInteger(pid) && pid > 0) pids.add(pid)
-            }
-          }
-          resolve([...pids])
-        })
-      } catch {
-        resolve([])
-      }
     })
   }
 
@@ -693,7 +606,6 @@ export class PythonBackend extends EventEmitter {
     this.recentLogs = []
     this.lastError = null
 
-    // Packaged app stores writable data in ~/.stella; dev keeps it in the repo.
     const dataDir = this.getDataDir()
 
     // Start mirroring backend output to run.log before we spawn, so even an
@@ -701,10 +613,10 @@ export class PythonBackend extends EventEmitter {
     // in the file the user can open from the failure screen.
     this.openLogStream(dataDir)
 
-    // Prefer the packaged self-contained backend (production); fall back to
-    // running app.py with a Python interpreter (local development).
+    // Development always runs the checked-out Python source. A stale bundle
+    // left under the repo must not hide backend changes from npm run dev.
     const bundle = this.inspectBundle()
-    const bundled = bundle.hasExe ? bundle.exePath : null
+    const bundled = this.packaged && bundle.hasExe ? bundle.exePath : null
 
     // An installed app has no other way to run: there is no source tree and no
     // Python to fall back to. Say so now, naming the file that is missing, and
@@ -772,8 +684,6 @@ export class PythonBackend extends EventEmitter {
     this.process = spawn(command, args, {
       cwd,
       // STELLA_DESKTOP enables the lighter desktop runtime (no plugins, no MCP).
-      // STELLA_DATA_DIR (packaged only) redirects writable data to ~/.stella so the
-      // app bundle stays read-only; dev runs omit it and keep using the repo.
       env: {
         ...process.env,
         // Recover the user's real PATH (login shell + common bin dirs) so the
@@ -782,10 +692,12 @@ export class PythonBackend extends EventEmitter {
         PATH: this.resolveEnvPath(),
         PYTHONUNBUFFERED: '1',
         STELLA_DESKTOP: '1',
+        STELLA_LOG_MIRRORED_BY_SHELL: '1',
+        STELLA_DESKTOP_INTERNAL_TOKEN: this.internalToken,
         // The shell owns the port: tell the backend to bind exactly here so the
         // two sides can never disagree (and we avoid the 9899 web-console clash).
-        STELLA_WEB_PORT: String(this.port),
-        ...(bundled ? { STELLA_DATA_DIR } : {}),
+        STELLA_BACKEND_PORT: String(this.port),
+        STELLA_DATA_DIR: dataDir,
         ...(this.clientSource() ? { STELLA_CLIENT_SOURCE: this.clientSource() } : {}),
         STELLA_CLIENT_VERSION: app.getVersion(),
       },
@@ -796,8 +708,7 @@ export class PythonBackend extends EventEmitter {
       const text = data.toString()
       // Persist raw output to run.log first, so nothing is lost even if the
       // per-line handling below throws. The backend already writes its own
-      // structured lines here once up; this captures the pre-logging bootstrap
-      // output (and anything it prints straight to stdout/stderr) as well.
+      // structured lines to stdout once up; this also captures bootstrap output.
       if (this.logStream) {
         try {
           this.logStream.write(text)

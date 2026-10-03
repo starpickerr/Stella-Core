@@ -30,7 +30,7 @@ if "web" not in sys.modules:
 
 import config as config_module
 from config import Config
-from channel.web.web_channel import ModelsHandler
+from channel.desktop.desktop_channel import ModelsHandler
 
 
 def set_conf(d):
@@ -97,6 +97,21 @@ class TestSetCustomProvider(unittest.TestCase):
         self.assertEqual(res["status"], "success")
         bot_type = config_module.conf().get("bot_type")
         self.assertEqual(bot_type, f"custom:{res['id']}")
+
+    def test_provider_protocol_is_explicit_and_preserved_on_edit(self):
+        res = self.h.call(action="set_custom_provider", name="proxy",
+                          api_base="https://example.com/v1", api_key="key",
+                          protocol_id="anthropic_messages")
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(config_module.conf()["custom_providers"][0]["protocol_id"],
+                         "anthropic_messages")
+        self.h.call(action="set_custom_provider", id=res["id"], name="renamed",
+                    api_base="https://example.com/v1")
+        self.assertEqual(config_module.conf()["custom_providers"][0]["protocol_id"],
+                         "anthropic_messages")
+        rejected = self.h.call(action="set_custom_provider", name="bad",
+                               api_base="https://example.com/v1", protocol_id="unknown")
+        self.assertEqual(rejected["status"], "error")
 
     def test_create_requires_api_base(self):
         res = self.h.call(action="set_custom_provider", name="x", api_key="k")

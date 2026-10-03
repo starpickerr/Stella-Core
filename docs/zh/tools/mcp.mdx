@@ -9,8 +9,6 @@ Stella 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，
 
 Stella 读取 `~/stella/mcp.json`。文件不存在时不会启用任何 MCP 工具，也不会报错。
 
-Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./stella` 挂载到容器内 `/home/agent/stella`（即容器用户的 `~/stella`），把 `mcp.json` 放进宿主机 `./stella/` 目录即可生效。
-
 ### 标准格式
 
 完全兼容 MCP 社区标准，同 Claude Desktop / Cursor 一致：
@@ -95,11 +93,11 @@ Agent 会：
 }
 ```
 
-server 首次加载遇到 `401` 时会自动发起授权：本机运行会**自动打开浏览器**，服务器部署则把**授权链接打印到日志**，复制到浏览器打开。授权同意后即完成，该 server 随即上线，令牌过期自动刷新，无需重复授权。
+server 首次加载遇到 `401` 时会自动发起授权：本机运行会**自动打开浏览器**，并在浏览器中完成授权。授权同意后即完成，该 server 随即上线，令牌过期自动刷新，无需重复授权。
 
-- **依赖 Web 服务**：授权回调由 Web 控制台（默认端口 `9899`）接收，需保证 Web channel 正在运行。
+- **桌面后端**：授权回调由运行中的 Stella 接收。
 - **凭证存储**：令牌持久化在 `~/.stella/mcp_oauth.json`，重启后复用。
-- **回调地址**：默认 `http://127.0.0.1:9899/mcp/oauth/callback`；若部署在服务器、授权浏览器在另一台设备，在 `config.json` 设置 `mcp_oauth_redirect_base`（如 `http://你的IP:9899`）即可。
+- **回调地址**：桌面后端使用当前选择的本机端口接收 `/mcp/oauth/callback`；授权时请保持 Stella 运行。
 
 ## 工作方式
 

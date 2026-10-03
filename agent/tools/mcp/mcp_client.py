@@ -61,20 +61,15 @@ def notify_server_authorized(server_name: str) -> None:
 
 
 def _oauth_redirect_uri() -> str:
-    """Build the OAuth redirect URI served by the web console callback.
-
-    Priority: explicit mcp_oauth_redirect_base config, otherwise the local
-    web console address (127.0.0.1:<web_port>). Both point at the shared
-    /mcp/oauth/callback route.
-    """
+    """Build the OAuth callback URI served by the desktop backend."""
     try:
         from config import conf
         base = (conf().get("mcp_oauth_redirect_base") or "").strip().rstrip("/")
         if not base:
-            port = int(os.environ.get("STELLA_WEB_PORT") or conf().get("web_port", 9899))
+            port = int(os.environ.get("STELLA_BACKEND_PORT") or 9876)
             base = f"http://127.0.0.1:{port}"
     except Exception:
-        base = "http://127.0.0.1:9899"
+        base = "http://127.0.0.1:9876"
     return f"{base}/mcp/oauth/callback"
 
 
@@ -775,7 +770,7 @@ class McpClient:
 
         if "error" in resp:
             self._initialized = False
-            logger.warning(f"[MCP:{self.name}] Handshake error: {resp['error']}")
+            logger.warning(f"[MCP:{self.name}] Handshake error")
             return False
 
         self._send_notification("notifications/initialized", {})

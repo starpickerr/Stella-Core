@@ -19,7 +19,7 @@
 
 **Stella** は、自律的にタスクを計画し、コンピュータや外部リソースを操作し、Skill を作成・実行し、パーソナルナレッジベースと長期記憶を構築し、自己進化によってユーザーとともに成長するオープンソースのスーパー AI アシスタントです。エンドツーエンドの Agent Harness のリファレンス実装の一つでもあります。
 
-Stella は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、Web や主要な IM プラットフォーム上で動作。個人 PC やサーバー上で 24 時間 365 日稼働できます。
+Stella は軽量でデプロイしやすく、拡張性に優れています。主要な LLM プロバイダーをそのまま組み込み、デスクトップクライアントと主要な IM プラットフォームで利用できます。
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
@@ -50,10 +50,10 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
 | [自己進化](memory/self-evolution.mdx) | 会話を自動でレビューして Skill を改善し、未完了のタスクを引き継ぎ、記憶と知識を補完。日々の利用を通じて成長 |
 | [Skill](skills/index.mdx) | [skill広場](https://www.skill-marketplace.com/)、GitHub、ClawHub からワンクリックでインストール；対話によるカスタム Skill 作成にも対応 |
 | [ツール](tools/index.mdx) | ファイル I/O、ターミナル、ブラウザ、スケジューラ、記憶検索、Web 検索など 10+ の組み込みツール — MCP プロトコルに完全対応 |
-| [チャネル](channels/index.mdx) | 一つの Agent で Web、WeChat、Feishu、DingTalk、WeCom、QQ、公式アカウント、Telegram、Slack を同時にサポート |
+| [チャネル](channels/index.mdx) | 一つの Agent でデスクトップクライアント、WeChat、Feishu、DingTalk、WeCom、QQ、公式アカウント、Telegram、Slack を同時にサポート |
 | マルチモーダル | テキスト・画像・音声・ファイルをフルサポート — 認識・生成・双方向送受信 |
 | [モデル](models/index.mdx) | Claude、GPT、Gemini、DeepSeek、GLM、Qwen、Kimi、MiniMax、Doubao など、設定 1 行で切り替え可能 |
-| [デプロイ](guide/quick-start.mdx) | ワンラインインストーラー、統合された Web コンソール、複数のデプロイモード（ローカル / Docker / サーバー） |
+| [デプロイ](guide/quick-start.mdx) | Electron デスクトップクライアントと専用ローカルバックエンド |
 
 <br/>
 
@@ -69,44 +69,18 @@ Stella は完全な **Agent Harness** です：メッセージは各種**チャ�
 
 ## 🚀 クイックスタート
 
-依存関係のインストール、設定、起動を自動で行うワンラインインストーラーを提供しています：
-
-**Linux / macOS:**
+[GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) から Electron デスクトップアプリをダウンロードして起動します。ソースから実行する場合：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+pip install -r requirements.txt
+cd desktop
+npm install
+npm run dev
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
-```
-
-**Docker:**
-
-```bash
-curl -O https://raw.githubusercontent.com/starpickerr/Stella/main/docker/docker-compose.yml
-docker compose up -d
-```
-
-起動後、`http://localhost:9899` にアクセスして **Web コンソール**を開くと、モデル設定・チャネル接続・Skill インストールがすべてここで完結します。
-
-> サーバーデプロイでコンソールに公開アクセスする場合は、`config.json` の `web_host` を `0.0.0.0` に設定してください（あわせて `web_password` の設定も強く推奨）。その後 `http://<server-ip>:9899` にアクセスし、ファイアウォール／セキュリティグループで `9899` ポートを開放することも忘れずに。
-
-> 📖 詳細ガイド: [クイックスタート](guide/quick-start.mdx) · [ソースからインストール](guide/manual-install.mdx) · [アップグレード](guide/upgrade.mdx)
-
-インストール後は、[`stella` CLI](cli/index.mdx) でサービスを管理できます：
-
-```bash
-stella start | stop | restart        # サービス制御
-stella status | logs                  # ステータスとログ
-stella update                         # 最新コード取得後に再起動
-stella skill install <名前>           # Skill のインストール
-stella install-browser                # ブラウザツールのインストール
-```
-
-> 💻 デスクトップクライアント：**[Stella デスクトップクライアント](https://github.com/starpickerr/Stella/releases)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
+`npm run dev` は現在の画面を毎回ビルドし、デスクトップ専用バックエンドを起動します。[クイックスタート](guide/quick-start.mdx)と[ソースからビルド](guide/manual-install.mdx)を参照してください。
 
 <br/>
 
@@ -130,7 +104,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 | [LinkAI](models/linkai.mdx) | 1 つの Key で 100+ モデルに接続 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [カスタム](models/custom.mdx) | ローカルモデル / サードパーティプロキシ | ✅ | | | | | |
 
-> Web コンソールでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](models/index.mdx) を参照してください。
+> デスクトップクライアントでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](models/index.mdx) を参照してください。
 
 <br/>
 
@@ -140,7 +114,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 | チャネル | テキスト | 画像 | ファイル | 音声 | グループ |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web コンソール](channels/web.mdx)（デフォルト） | ✅ | ✅ | ✅ | ✅ | |
+| [デスクトップクライアント](guide/desktop.mdx)（デフォルト） | ✅ | ✅ | ✅ | ✅ | |
 | [WeChat](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
 | [Feishu / Lark](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [DingTalk](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -153,11 +127,11 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 | [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
 | [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> Feishu と WeCom Bot は **Web コンソール内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](channels/index.mdx) を参照してください。
+> Feishu と WeCom Bot は **デスクトップクライアント内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](channels/index.mdx) を参照してください。
 
-<img src="../images/placeholder-image.svg" alt="Stella Web Console" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella desktop client" width="800"/>
 
-*Web コンソールはデフォルトのチャネルであると同時に、Agent の設定・管理を統一的に行う場でもあります。*
+*デスクトップクライアントはデフォルトのチャネルであると同時に、Agent の設定・管理を統一的に行う場でもあります。*
 
 <br/>
 
@@ -165,7 +139,7 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 **長期記憶**は三層構造：会話コンテキスト（短期）→ デイリー記憶（中期）→ MEMORY.md（長期）。毎晩の **Deep Dream** が散在する記憶を洗練された長期記憶とナラティブな日記に蒸留します。詳細は [長期記憶](memory/index.mdx) · [Deep Dream](memory/deep-dream.mdx) を参照してください。
 
-**パーソナルナレッジベース**は時系列の記憶とは異なり、構造化された知識を**トピック単位**で整理します。Agent が会話中に有用な情報を自動でキュレーションし、相互参照とインデックスを維持し、Web コンソールでナレッジグラフを可視化できます。詳細は [パーソナルナレッジベース](knowledge/index.mdx) を参照してください。
+**パーソナルナレッジベース**は時系列の記憶とは異なり、構造化された知識を**トピック単位**で整理します。Agent が会話中に有用な情報を自動でキュレーションし、相互参照とインデックスを維持し、デスクトップクライアントでナレッジグラフを可視化できます。詳細は [パーソナルナレッジベース](knowledge/index.mdx) を参照してください。
 
 <table>
   <tr>

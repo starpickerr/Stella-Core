@@ -44,7 +44,7 @@ class Bash(BaseTool):
 {'''
 PLATFORM: Windows (cmd.exe), not Bash, WSL, PowerShell, or Windows Terminal. Use cmd.exe syntax: double quotes (single quotes are literal), `>nul 2>&1` instead of `/dev/null`, `&&` instead of `;`, and `findstr /I "pattern"` without grep-style `-i`/`-e` flags. Do not invoke `bash script.sh` or use Unix-only commands such as grep, head, tail, sed, or awk. Use the search_files tool for file/content search and Python for portable scripting.
 ''' if _IS_WIN else ''}
-ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME directly.
+ENVIRONMENT: Credentials are supplied only to authorized integrations; shell commands do not receive Stella secrets.
 
 SAFETY:
 - Freely create/modify/delete files within the workspace
@@ -190,19 +190,20 @@ SAFETY:
             except Exception:
                 pass
 
-            # Load environment variables from ~/.stella/.env if it exists
+            # Shell commands must not inherit backend credentials.
             env_file = expand_path("~/.stella/.env")
             dotenv_vars = {}
             if os.path.exists(env_file):
                 try:
                     from dotenv import dotenv_values
                     dotenv_vars = dotenv_values(env_file)
-                    env.update(dotenv_vars)
-                    logger.debug(f"[Bash] Loaded {len(dotenv_vars)} variables from {env_file}")
                 except ImportError:
-                    logger.debug("[Bash] python-dotenv not installed, skipping .env loading")
+                    pass
                 except Exception as e:
-                    logger.debug(f"[Bash] Failed to load .env: {e}")
+                    logger.debug(f"[Bash] Could not inspect credential names: {e}")
+            for key in list(env):
+                if key in dotenv_vars or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
+                    env.pop(key, None)
 
             # getuid() only exists on Unix-like systems
             if hasattr(os, 'getuid'):
@@ -217,7 +218,7 @@ SAFETY:
             # On Windows, convert $VAR references to %VAR% for cmd.exe
             if self._IS_WIN:
                 env["PYTHONIOENCODING"] = "utf-8"
-                command = self._convert_env_vars_for_windows(command, dotenv_vars)
+                command = self._convert_env_vars_for_windows(command, {})
                 # cmd.exe has an ~8191 char command line limit. Long
                 # `python -c "..."` commands silently fail, so spill the inline
                 # code into a temp .py file and run that instead.

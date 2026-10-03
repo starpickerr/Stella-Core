@@ -1,109 +1,48 @@
 import React, { useCallback, useEffect } from 'react'
-import { Check, Eye, LockOpen, Shield } from 'lucide-react'
-import { t } from '../i18n'
+import { Check, Eye, Shield, SlidersHorizontal } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { getLang } from '../i18n'
 import ComposerChip from './ComposerChip'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
-import {
-  PERMISSION_META,
-  PERMISSION_MODE_ORDER,
-  asPermissionMode,
-  permLabel,
-  type PermissionMode,
-} from '../lib/permission'
 
-const ICONS: Record<PermissionMode, React.ReactNode> = {
-  'full-access': <LockOpen size={13} />,
-  'workspace-write': <Shield size={13} />,
-  'read-only': <Eye size={13} />,
+type Preset = 'strict' | 'standard' | 'custom'
+const names: Record<Preset, [string, string]> = {
+  strict: ['严格', 'Strict'], standard: ['标准', 'Standard'], custom: ['自定义', 'Custom'],
+}
+const icons: Record<Preset, React.ReactNode> = {
+  strict: <Eye size={13} />, standard: <Shield size={13} />, custom: <SlidersHorizontal size={13} />,
 }
 
-interface PermissionSelectorProps {
-  sessionId: string
-}
-
-const PermissionSelector: React.FC<PermissionSelectorProps> = ({ sessionId }) => {
-  const cfg = useSessionSettingsStore((s) => (s.sessionId === sessionId ? s.cfg : null))
-  const openMenu = useSessionSettingsStore((s) => s.openMenu)
-  const setOpenMenu = useSessionSettingsStore((s) => s.setOpenMenu)
-  const apply = useSessionSettingsStore((s) => s.apply)
-  const refresh = useSessionSettingsStore((s) => s.refresh)
-  const error = useSessionSettingsStore((s) => s.error)
+const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const en = getLang() === 'en'
+  const navigate = useNavigate()
+  const cfg = useSessionSettingsStore(s => s.sessionId === sessionId ? s.cfg : null)
+  const openMenu = useSessionSettingsStore(s => s.openMenu)
+  const setOpenMenu = useSessionSettingsStore(s => s.setOpenMenu)
+  const apply = useSessionSettingsStore(s => s.apply)
+  const refresh = useSessionSettingsStore(s => s.refresh)
+  const error = useSessionSettingsStore(s => s.error)
   const open = openMenu === 'permission'
-
   const state = cfg?.permission
-  const mode = asPermissionMode(state?.mode)
+  const preset: Preset = state?.preset || 'standard'
   const isGlobal = !state || state.source === 'global'
-  const offered = (state?.modes?.length ? state.modes : PERMISSION_MODE_ORDER).filter(
-    (m): m is PermissionMode => m in PERMISSION_META
-  )
-
-  useEffect(() => {
-    if (!open) return
-    const el = document.getElementById('permission-selector-chip')
-    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    refresh(sessionId)
-  }, [open, refresh, sessionId])
-
+  useEffect(() => { if (open) refresh(sessionId) }, [open, refresh, sessionId])
   const close = useCallback(() => setOpenMenu(null), [setOpenMenu])
-
-  const toggle = () => {
-    if (open) {
-      close()
-      return
-    }
-    setOpenMenu('permission')
-    if (!cfg) refresh(sessionId)
-  }
-
-  const select = async (next: PermissionMode | null) => {
-    // Keep the menu open if the change fails, so the inline error is visible.
-    const ok = await apply(sessionId, { permission: next })
+  const select = async (next: Preset | null) => {
+    const ok = await apply(sessionId, { security_policy: next ? { preset: next } : null })
     if (ok) close()
   }
-
-  const tip =
-    t('perm_tip').replace('{name}', permLabel(mode)) + (isGlobal ? ` · ${t('perm_follow_global')}` : '')
-
-  return (
-    <div id="permission-selector-chip">
-      <ComposerChip
-        icon={ICONS[mode]}
-        label={permLabel(mode)}
-        tip={tip}
-        open={open}
-        onToggle={toggle}
-        onClose={close}
-      >
-        <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold text-content-tertiary">
-          {t('perm_menu_title')}
-        </div>
-        {error && <div className="px-2.5 pb-1.5 text-[11px] text-red-500">{error}</div>}
-        {PERMISSION_MODE_ORDER.filter((m) => offered.includes(m)).map((m) => {
-          const active = m === mode
-          const meta = PERMISSION_META[m]
-          return (
-            <button
-              key={m}
-              type="button"
-              onClick={() => select(active && !isGlobal ? null : m)}
-              className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
-                active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
-              }`}
-            >
-              <span className="mt-0.5 shrink-0">{ICONS[m]}</span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-[13px]">{t(meta.key)}</span>
-                <span className={`block text-[11px] mt-0.5 leading-snug ${active ? 'text-accent/80' : 'text-content-tertiary'}`}>
-                  {t(meta.descKey)}
-                </span>
-              </span>
-              {active && <Check size={14} className="shrink-0 mt-0.5" />}
-            </button>
-          )
-        })}
-      </ComposerChip>
-    </div>
-  )
+  return <div id="permission-selector-chip"><ComposerChip icon={icons[preset]} label={names[preset][en ? 1 : 0]}
+    tip={isGlobal ? (en ? 'Follows Security Center default' : '跟随安全中心默认策略') : (en ? 'Conversation policy' : '当前对话策略')}
+    open={open} onToggle={() => { if (open) close(); else { setOpenMenu('permission'); refresh(sessionId) } }} onClose={close}>
+    <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold text-content-tertiary">{en ? 'Conversation policy' : '当前对话策略'}</div>
+    {error && <div className="px-2.5 pb-1.5 text-[11px] text-red-500">{error}</div>}
+    {(['strict', 'standard', 'custom'] as Preset[]).map(item => <button key={item} type="button"
+      onClick={() => void select(item === preset && !isGlobal ? null : item)}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-[13px] ${item === preset ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'}`}>
+      {icons[item]}<span className="flex-1">{names[item][en ? 1 : 0]}</span>{item === preset && <Check size={14} />}
+    </button>)}
+    <button type="button" className="w-full px-2.5 py-2 text-left text-xs text-accent" onClick={() => { close(); navigate('/security') }}>{en ? 'Advanced settings in Security Center' : '在安全中心管理高级权限'}</button>
+  </ComposerChip></div>
 }
-
 export default PermissionSelector

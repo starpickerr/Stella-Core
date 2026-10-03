@@ -45,7 +45,7 @@ description: Sub Agent：把独立的任务交给子 Agent 执行，支持并行
 
 ## 运行展示
 
-每个子 Agent 在 Web 控制台和桌面端都对应一张独立的卡片，展开可以看到它当前调用的工具和执行到的步骤，结束后卡片内是它的完整报告。多个子 Agent 各自开始和结束，可以直接看出哪一个尚未完成。
+每个子 Agent 在桌面客户端都对应一张独立的卡片，展开可以看到它当前调用的工具和执行到的步骤，结束后卡片内是它的完整报告。多个子 Agent 各自开始和结束，可以直接看出哪一个尚未完成。
 
 <Frame>
   <img src="/images/placeholder-image.svg" style={{ maxWidth: "800px" }} />
@@ -114,7 +114,7 @@ tools: web_search, web_fetch, read, write
 
 ## 相关配置
 
-子 Agent 默认开启。可在 Web 控制台与桌面端的「配置 → Agent 配置」中开关，修改后下一轮对话生效，无需重启。更细的限制在 `config.json` 中调整：
+子 Agent 默认开启。可在桌面客户端的「配置 → Agent 配置」中开关，修改后下一轮对话生效，无需重启。更细的限制在 `config.json` 中调整：
 
 ```json
 "subagent": {

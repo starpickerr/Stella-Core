@@ -11,6 +11,7 @@ import logging
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -28,7 +29,7 @@ except ImportError:
     web_stub.seeother = lambda *args, **kwargs: Exception("seeother")
     sys.modules["web"] = web_stub
 
-from channel.web.web_channel import _log_bind_failure  # noqa: E402
+from channel.desktop.desktop_channel import _log_bind_failure  # noqa: E402
 
 
 class _WinError(OSError):
@@ -40,33 +41,32 @@ class _WinError(OSError):
 
 
 def _capture(caplog, err: OSError, port: int = 9876) -> str:
-    caplog.clear()
-    with caplog.at_level(logging.ERROR, logger="log"):
+    with patch("channel.desktop.desktop_channel.logger.error") as logged:
         _log_bind_failure("127.0.0.1", port, err)
-    return "\n".join(record.getMessage() for record in caplog.records)
+    return "\n".join(str(call.args[0]) for call in logged.call_args_list)
 
 
 def test_reserved_windows_port_points_at_the_excluded_range(caplog):
     output = _capture(caplog, _WinError(10013, "access denied"))
 
     assert "excludedportrange" in output
-    assert "web_port" in output
+    assert "desktop_backend_port" in output
     # The stale-process advice would be actively misleading here: nothing is
     # listening on a reserved port.
-    assert "stella restart" not in output
+    assert "重启桌面客户端" not in output
 
 
 def test_port_in_use_on_windows_keeps_the_stale_process_advice(caplog):
     output = _capture(caplog, _WinError(10048, "address in use"))
 
-    assert "stella restart" in output
+    assert "重启桌面客户端" in output
     assert "excludedportrange" not in output
 
 
 def test_port_in_use_on_posix_keeps_the_stale_process_advice(caplog):
     output = _capture(caplog, OSError(48, "Address already in use"))
 
-    assert "stella restart" in output
+    assert "重启桌面客户端" in output
 
 
 def test_unrecognized_failure_still_reports_host_and_port(caplog):
@@ -96,4 +96,4 @@ def test_cheroot_wrapped_port_in_use_is_still_recognized(caplog):
     )
     output = _capture(caplog, wrapped)
 
-    assert "stella restart" in output
+    assert "重启桌面客户端" in output

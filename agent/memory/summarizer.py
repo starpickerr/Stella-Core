@@ -25,6 +25,7 @@ SUMMARIZE_SYSTEM_PROMPT_ZH = """你是一个对话记录助手。请将对话内
 - 合并同一件事的多轮对话
 - 只记录有意义的事件，忽略闲聊和问候
 - 保留关键的决策、结论和待办事项
+- 单次任务的限制条件仅在理解或继续该事件需要时记录，并注明只适用于该任务；不要把它改写成用户的长期偏好
 
 当对话没有任何记录价值（仅含问候或无意义内容），直接回复"无"。"""
 
@@ -37,6 +38,7 @@ Summarize by "event", not turn by turn:
 - Merge multiple turns about the same thing
 - Only record meaningful events; ignore small talk and greetings
 - Keep key decisions, conclusions and to-dos
+- Record a one-task restriction only when needed to understand or continue that event, and preserve its task scope; do not rewrite it as an enduring user preference
 
 If the conversation has no record value (only greetings or meaningless content), reply with exactly "None"."""
 
@@ -69,6 +71,7 @@ MEMORY.md 会注入每次对话的系统提示词中，因此必须保持精炼�
 在现有记忆基础上进行整理和提炼，输出完整的更新后内容：
 - **合并提炼**：将含义相近的多条合并为一条高密度表述，而非简单罗列
 - **新增萃取**：从今日日记中提取值得永久记住的新信息（偏好、决策、人物、规则、经验）
+- 只有用户明确表示长期适用，或上下文充分表明是稳定偏好时，才把限制条件写入长期记忆；单次任务的排除条件只用于该任务
 - **冲突更新**：当新信息与旧条目矛盾时，以新信息为准，替换旧条目
 - **清理无效**：删除临时性记录、空白条目、格式残留、无意义、重复内容等
 - **删除冗余**：已被更精炼表述涵盖的旧条目应删除，避免信息重复
@@ -113,6 +116,7 @@ MEMORY.md is injected into the system prompt of every conversation, so it must s
 Organize and distill on top of the existing memory, and output the complete updated content:
 - **Merge & distill**: combine semantically similar items into one dense statement rather than listing them
 - **Extract new**: pull memory-worthy new info from today's diary (preferences, decisions, people, rules, lessons)
+- Store a restriction as long-term memory only when the user says it is enduring or the context clearly establishes a stable preference; an exclusion for one task applies only to that task
 - **Resolve conflicts**: when new info contradicts an old item, prefer the new and replace the old
 - **Clean invalid**: remove temporary notes, blank items, formatting residue, meaningless or duplicate content
 - **Drop redundancy**: delete old items already covered by a more concise statement
@@ -207,10 +211,12 @@ class MemoryFlushManager:
         workspace_dir: Path,
         llm_model: Optional[Any] = None,
     ):
-        self.workspace_dir = workspace_dir
+        from common.state_dir import user_root_for_workspace
+
+        self.workspace_dir = Path(workspace_dir)
         self.llm_model = llm_model
-        
-        self.memory_dir = workspace_dir / "memory"
+
+        self.memory_dir = user_root_for_workspace(self.workspace_dir) / "memory"
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         
         self.last_flush_timestamp: Optional[datetime] = None
@@ -222,14 +228,7 @@ class MemoryFlushManager:
     def get_today_memory_file(self, user_id: Optional[str] = None, ensure_exists: bool = False) -> Path:
         """Get today's memory file path: memory/YYYY-MM-DD.md"""
         today = datetime.now().strftime("%Y-%m-%d")
-        
-        if user_id:
-            user_dir = self.memory_dir / "users" / user_id
-            if ensure_exists:
-                user_dir.mkdir(parents=True, exist_ok=True)
-            today_file = user_dir / f"{today}.md"
-        else:
-            today_file = self.memory_dir / f"{today}.md"
+        today_file = self._memory_dir(user_id) / f"{today}.md"
         
         if ensure_exists and not today_file.exists():
             today_file.parent.mkdir(parents=True, exist_ok=True)
@@ -239,12 +238,16 @@ class MemoryFlushManager:
     
     def get_main_memory_file(self, user_id: Optional[str] = None) -> Path:
         """Get main memory file path: MEMORY.md (workspace root)"""
-        if user_id:
-            user_dir = self.memory_dir / "users" / user_id
-            user_dir.mkdir(parents=True, exist_ok=True)
-            return user_dir / "MEMORY.md"
-        else:
-            return Path(self.workspace_dir) / "MEMORY.md"
+        from common.state_dir import user_root_for_workspace
+
+        root = user_root_for_workspace(self.workspace_dir, user_id)
+        root.mkdir(parents=True, exist_ok=True)
+        return root / "MEMORY.md"
+
+    def _memory_dir(self, user_id: Optional[str] = None) -> Path:
+        from common.state_dir import user_root_for_workspace
+
+        return user_root_for_workspace(self.workspace_dir, user_id) / "memory"
     
     def get_status(self) -> dict:
         return {
@@ -604,10 +607,7 @@ class MemoryFlushManager:
         for offset in range(lookback_days):
             day = today - timedelta(days=offset)
             date_str = day.strftime("%Y-%m-%d")
-            if user_id:
-                daily_file = self.memory_dir / "users" / user_id / f"{date_str}.md"
-            else:
-                daily_file = self.memory_dir / f"{date_str}.md"
+            daily_file = self._memory_dir(user_id) / f"{date_str}.md"
 
             if daily_file.exists():
                 content = daily_file.read_text(encoding="utf-8").strip()
@@ -639,9 +639,7 @@ class MemoryFlushManager:
 
     def _write_dream_diary(self, content: str, user_id: Optional[str] = None):
         """Write dream diary to memory/dreams/YYYY-MM-DD.md."""
-        dreams_dir = self.memory_dir / "dreams"
-        if user_id:
-            dreams_dir = self.memory_dir / "users" / user_id / "dreams"
+        dreams_dir = self._memory_dir(user_id) / "dreams"
         dreams_dir.mkdir(parents=True, exist_ok=True)
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -866,16 +864,13 @@ def create_memory_files_if_needed(workspace_dir: Path, user_id: Optional[str] = 
         workspace_dir: Workspace directory
         user_id: Optional user ID for user-specific files
     """
-    memory_dir = workspace_dir / "memory"
+    from common.state_dir import user_root_for_workspace
+
+    root = user_root_for_workspace(workspace_dir, user_id)
+    memory_dir = root / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create main MEMORY.md in workspace root (always needed for bootstrap)
-    if user_id:
-        user_dir = memory_dir / "users" / user_id
-        user_dir.mkdir(parents=True, exist_ok=True)
-        main_memory = user_dir / "MEMORY.md"
-    else:
-        main_memory = Path(workspace_dir) / "MEMORY.md"
+
+    main_memory = root / "MEMORY.md"
     
     if not main_memory.exists():
         main_memory.write_text("")
@@ -893,16 +888,13 @@ def ensure_daily_memory_file(workspace_dir: Path, user_id: Optional[str] = None)
     Returns:
         Path to today's memory file
     """
-    memory_dir = workspace_dir / "memory"
+    from common.state_dir import user_root_for_workspace
+
+    memory_dir = user_root_for_workspace(workspace_dir, user_id) / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
-    
+
     today = datetime.now().strftime("%Y-%m-%d")
-    if user_id:
-        user_dir = memory_dir / "users" / user_id
-        user_dir.mkdir(parents=True, exist_ok=True)
-        today_memory = user_dir / f"{today}.md"
-    else:
-        today_memory = memory_dir / f"{today}.md"
+    today_memory = memory_dir / f"{today}.md"
     
     if not today_memory.exists():
         today_memory.write_text(

@@ -264,7 +264,6 @@ available_setting = {
     "clear_memory_commands": ["#清除记忆"],  # session-reset command; must start with #
     # channel config
     "channel_type": "",  # channel type; supports running multiple channels at once. Single: "feishu", multiple: "feishu, dingtalk" or ["feishu", "dingtalk"]. Options: web,feishu,dingtalk,wecom_bot,weixin,wechatmp,wechatmp_service,wechatcom_app,wechat_kf,telegram,slack,discord
-    "web_console": True,  # whether to auto-start the Web console (on by default). Set False to disable
     "subscribe_msg": "",  # subscribe message; supported by: wechatmp, wechatmp_service, wechatcom_app
     "debug": False,  # whether to enable debug mode; prints more logs when on
     "appdata_dir": "",  # data directory
@@ -301,12 +300,11 @@ available_setting = {
     # Xiaomi MiMo LLM
     "mimo_api_key": "",
     "mimo_api_base": "https://api.xiaomimimo.com/v1",
-    "web_host": "",  # Web console bind address; empty means auto
-    "web_port": 9898,
-    "web_password": "",  # Web console password; empty means no authentication required
+    "desktop_backend_port": 0,  # Optional local API port; 0 lets Electron choose
+    "web_password": "",  # Legacy key for optional desktop unlock password
     "web_session_expire_days": 30,  # Auth session expiry in days
     "web_file_serve_root": "~",  # Root dir the /api/file endpoint may serve; "/" allows the whole filesystem
-    "mcp_oauth_redirect_base": "",  # Base URL for MCP OAuth callback (e.g. http://your-ip:9898); empty uses local web console
+    "mcp_oauth_redirect_base": "",  # Optional MCP OAuth callback override; empty uses desktop backend
     "agent": True,  # whether to enable Agent mode
     "agent_workspace": "~/stella",  # agent workspace path, used to store skills, memory, etc.
     # Optional native multi-agent registry. When empty or omitted, Stella
@@ -326,9 +324,10 @@ available_setting = {
     # Default permission mode for sessions that have not picked one of their own:
     # "read-only" | "workspace-write" | "full-access". Kept at full-access so an
     # existing install behaves exactly as before an upgrade. Only a fresh desktop
-    # client (STELLA_DESKTOP=1 with no config.json yet) is tightened to the stricter
-    # workspace-write in load_config(); docker/source stay at full-access.
+    # client (STELLA_DESKTOP=1 with no config.json yet) starts in workspace-write.
     "agent_permission_mode": "full-access",
+    "agent_tool_allowlist": [],
+    "agent_account_allowlist": [],
     # In-process sub agents: the Agent hands a self-contained task to a
     # short-lived worker with its own context, and gets back only the result.
     # Set enabled to false to withhold the subagent tool entirely.
@@ -557,15 +556,14 @@ def load_config():
     # other case keeps the template's "full-access". A packaged client only
     # lacks config.json on its very first launch (config_path fell back to the
     # bundled template) — once the user configures anything (e.g. a model) the
-    # console persists config.json, so an existing install always has it and is
-    # never silently tightened by an upgrade. Non-desktop (docker, source) is
-    # untouched. Placed before the env override so AGENT_PERMISSION_MODE still
+    # client persists config.json, so an existing install always has it and is
+    # never silently tightened by an upgrade. Placed before the env override so AGENT_PERMISSION_MODE still
     # wins if explicitly set.
     if os.environ.get("STELLA_DESKTOP") == "1" and config_path != user_config_path:
         config["agent_permission_mode"] = "workspace-write"
 
     # override config with environment variables.
-    # Some online deployment platforms (e.g. Railway) deploy project from github directly. So you shouldn't put your secrets like api key in a config file, instead use environment variables to override the default config.
+    # Environment variables may override locally stored credentials.
     for name, value in os.environ.items():
         name = name.lower()
         # skip comment fields starting with an underscore
@@ -595,6 +593,27 @@ def load_config():
                     config[name] = True
                 else:
                     config[name] = value
+
+    # One-time migration of stored legacy tool modes. The new policy is the
+    # only runtime authorization source; the old key is read solely here and
+    # from historical conversation preferences. Preserve all other fields.
+    if not isinstance(config.get("security_policy"), dict):
+        from agent.permission.policy import normalize_mode
+        from agent.permission.security_policy import legacy_policy
+
+        migrated = legacy_policy(normalize_mode(config.get("agent_permission_mode")))
+        config["security_policy"] = migrated
+        if config_path == user_config_path and "AGENT_PERMISSION_MODE" not in os.environ:
+            try:
+                stored = json.loads(read_file(user_config_path))
+                stored["security_policy"] = migrated
+                temporary = user_config_path + ".security-tmp"
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(stored, stream, ensure_ascii=False, indent=2)
+                os.replace(temporary, user_config_path)
+            except (OSError, ValueError) as migration_error:
+                logger.warning("[INIT] security policy migration could not be persisted: {}".format(migration_error))
 
     if config.get("debug", False):
         logger.setLevel(logging.DEBUG)

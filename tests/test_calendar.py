@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from agent.calendar import CalendarService
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
+check_tool_call = SecurityGateway.check
 from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.tool_manager import ToolManager
 
@@ -268,7 +269,7 @@ def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch):
 def test_web_calendar_handlers_share_service_and_require_auth(service, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import patch
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     def call(handler, method="POST", body=None, params=None):
         with patch.object(web_channel.web, "data", return_value=json.dumps(body or {}).encode()), \
@@ -289,7 +290,7 @@ def test_web_calendar_handlers_share_service_and_require_auth(service, monkeypat
 
 def test_web_calendar_import_handlers_use_the_same_event_store(service, monkeypatch):
     from unittest.mock import patch
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     def call(handler, body):
         with patch.object(web_channel.web, "data", return_value=json.dumps(body).encode()):

@@ -9,7 +9,7 @@ description: Stella - Open-source super AI assistant and Agent Harness
 
 **Stella** is an open-source super AI assistant and Agent Harness. It proactively plans tasks, runs tools and skills, and autonomously grows with memory and knowledge.
 
-Stella is lightweight, easy to deploy, and built to extend. Plug in any major LLM provider, run it across Web and major IM platforms, 24/7 on a personal computer or server.
+Stella is lightweight, easy to deploy, and built to extend. Plug in any major LLM provider, use it through the Electron client and messaging channels on your computer.
 
 <Frame>
   <img src="/images/placeholder-video.svg" alt="Stella video placeholder" />
@@ -42,7 +42,7 @@ Stella is lightweight, easy to deploy, and built to extend. Plug in any major LL
   <Card title="Skills System" icon="puzzle-piece" href="/skills/index">
     A complete skill creation and execution engine. Install from [skill广场](https://www.skill-marketplace.com/) or generate custom skills via natural-language conversation.
   </Card>
-  <Card title="Multimodal Messaging" icon="image" href="/channels/web">
+  <Card title="Multimodal Messaging" icon="image" href="/guide/desktop">
     First-class support for text, images, voice, and files — recognition, generation, and delivery.
   </Card>
   <Card title="Tool System" icon="wrench" href="/tools/index">
@@ -52,31 +52,16 @@ Stella is lightweight, easy to deploy, and built to extend. Plug in any major LL
     Terminal CLI and in-chat commands for process management, skill installation, configuration, and context inspection.
   </Card>
   <Card title="Pluggable Models" icon="microchip" href="/models/index">
-    Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the Web console with one click.
+    Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, MiniMax, Doubao, and more — swap providers from the desktop client with one click.
   </Card>
   <Card title="Multi-channel Integration" icon="server" href="/channels/index">
-    A single Agent simultaneously serves Web, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts.
+    A single Agent simultaneously serves the desktop client, WeChat, Feishu, DingTalk, WeCom, QQ, and Official Accounts.
   </Card>
 </CardGroup>
 
 ## Quick Start
 
-Run one of the commands below to install, configure, and start Stella in a single step:
-
-<Tabs>
-  <Tab title="Linux / macOS">
-    ```bash
-    bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
-    ```
-  </Tab>
-  <Tab title="Windows (PowerShell)">
-    ```powershell
-    irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
-    ```
-  </Tab>
-</Tabs>
-
-Once started, open `http://localhost:9899` to access the **Web console** — the unified place to chat, configure providers, connect channels, and install skills.
+Download the [desktop release](https://github.com/starpickerr/Stella/releases/latest), or run `cd desktop && npm install && npm run dev` from a source checkout. The Electron client starts its private backend automatically.
 
 <CardGroup cols={2}>
   <Card title="Quick Start" icon="rocket" href="/guide/quick-start">

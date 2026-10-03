@@ -7,6 +7,7 @@ import type { BackendErrorCode } from '../types'
 // Hyper-V/WSL2), and it publishes the real one via getBackendPort / the
 // 'starting' backend-status event. Always prefer that over this constant.
 const BACKEND_PORT = 9876
+const validPort = (port: unknown): port is number => typeof port === 'number' && Number.isInteger(port) && port > 0 && port <= 65535
 
 // A healthy backend answers in a few seconds; a crash exits immediately and a
 // wedged one is killed by the watchdog in app.py, so both real failure modes
@@ -69,11 +70,12 @@ export function useBackend() {
   const readyRef = useRef(false)
   // Holds the latest resolved port so the visibility handler (registered once)
   // always probes the correct port without re-running the effect.
-  const portRef = useRef(BACKEND_PORT)
+  const portRef = useRef<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let offStatus: (() => void) | undefined
+    let portDeadline: ReturnType<typeof setTimeout> | undefined
     const api = window.electronAPI
 
     // Use a wall-clock deadline instead of an attempt counter so timer
@@ -96,7 +98,10 @@ export function useBackend() {
         pollingRef.current = null
       }
       portRef.current = port
-      setState((prev) => (prev.port === port ? prev : { ...prev, port }))
+      setState((prev) => ({ ...prev, port, status: 'connecting',
+        reconnecting: prev.status === 'ready' || prev.reconnecting,
+        error: undefined, code: undefined, path: undefined }))
+      readyRef.current = false
       const startedAt = Date.now()
       const deadline = startedAt + GIVE_UP_AFTER_MS
 
@@ -156,24 +161,32 @@ export function useBackend() {
     }
 
     if (api) {
-      // Start on the preferred port immediately, without waiting for IPC:
-      // probing is the self-sufficient path to "ready" and must never depend on
-      // the round trip succeeding (otherwise the app can hang on "connecting").
-      // Both the IPC result and the 'starting' event redirect us to the real
-      // port if the main process had to fall back to another one.
-      startPolling(BACKEND_PORT)
-
-      api
-        .getBackendPort()
+      // Electron owns the selected port. A preferred-port probe can reach a
+      // different running installation before IPC resolves the real backend.
+      let portResolved = false
+      const ipcDeadline = portDeadline = setTimeout(() => {
+        if (cancelled || portResolved) return
+        setState(prev => ({...prev, status: 'error', error: 'Could not resolve the desktop backend port'}))
+      }, GIVE_UP_AFTER_MS)
+      api.getBackendPort()
         .then((port) => {
-          if (port) startPolling(port)
+          if (portResolved) return
+          portResolved = true
+          clearTimeout(ipcDeadline)
+          if (cancelled) return
+          if (validPort(port)) startPolling(port)
+          else setState(prev => ({...prev, status: 'error', error: 'Invalid desktop backend port'}))
         })
         .catch(() => {
-          // Preferred-port polling is already running; nothing to recover.
+          if (portResolved) return
+          portResolved = true
+          clearTimeout(ipcDeadline)
+          if (!cancelled) setState(prev => ({...prev, status: 'error', error: 'Could not resolve the desktop backend port'}))
         })
 
       offStatus = api.onBackendStatus((data) => {
-        if (data.status === 'ready' && data.port) {
+        if (validPort(data.port)) { portResolved = true; clearTimeout(ipcDeadline) }
+        if (data.status === 'ready' && validPort(data.port)) {
           readyRef.current = true
           portRef.current = data.port
           setState({ status: 'ready', port: data.port })
@@ -184,7 +197,7 @@ export function useBackend() {
             clearTimeout(pollingRef.current)
             pollingRef.current = null
           }
-        } else if (data.status === 'starting' && data.port) {
+        } else if (data.status === 'starting' && validPort(data.port)) {
           startPolling(data.port)
         } else if (data.status === 'lost') {
           // The main process found a previously-ready backend unreachable and is
@@ -206,6 +219,11 @@ export function useBackend() {
             slow: false,
           }))
         } else if (data.status === 'error' && !readyRef.current) {
+          portResolved = true
+          clearTimeout(ipcDeadline)
+          pollGeneration++
+          activePort = null
+          if (pollingRef.current) { clearTimeout(pollingRef.current); pollingRef.current = null }
           // Ignore late "error" from the main process once we've been ready —
           // it usually means the window was backgrounded, not a real failure.
           // Keep the message and code: together they are the only diagnostic a
@@ -221,9 +239,11 @@ export function useBackend() {
     // user returning after a while sees the real (ready) state right away
     // instead of waiting for the throttled timer to catch up.
     const onVisible = () => {
-      if (cancelled || document.visibilityState !== 'visible') return
-      probeBackend(portRef.current).then((ready) => {
-        if (cancelled || !ready) return
+      if (cancelled || document.visibilityState !== 'visible' || portRef.current === null) return
+      const port = portRef.current
+      const generation = pollGeneration
+      probeBackend(port).then((ready) => {
+        if (cancelled || !ready || port !== portRef.current || generation !== pollGeneration) return
         readyRef.current = true
         setState((prev) => ({ ...prev, status: 'ready' }))
       })
@@ -235,6 +255,7 @@ export function useBackend() {
       if (pollingRef.current) {
         clearTimeout(pollingRef.current)
       }
+      if (portDeadline) clearTimeout(portDeadline)
       offStatus?.()
       document.removeEventListener('visibilitychange', onVisible)
     }

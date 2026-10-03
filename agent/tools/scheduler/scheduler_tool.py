@@ -185,6 +185,7 @@ class SchedulerTool(BaseTool):
                 "is_group": context.get("isgroup", False),
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
+                "execution_session_id": notify_session_id,
             }
         else:  # ai_task
             action = {
@@ -195,6 +196,7 @@ class SchedulerTool(BaseTool):
                 "is_group": context.get("isgroup", False),
                 "channel_type": self.config.get("channel_type", "unknown"),
                 "notify_session_id": notify_session_id,
+                "execution_session_id": notify_session_id,
             }
             # silent only applies to ai_task; fixed messages always deliver
             if kwargs.get("silent", False):
@@ -214,6 +216,10 @@ class SchedulerTool(BaseTool):
             "schedule": schedule,
             "action": action
         }
+        from common.runtime_identity import current_identity
+        identity = current_identity()
+        task_data["owner_agent_id"] = identity.agent_id
+        task_data["owner_user_id"] = identity.user_id
         
         # Calculate initial next_run_at
         next_run = self._calculate_next_run(task_data)

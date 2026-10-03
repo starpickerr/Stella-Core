@@ -195,6 +195,24 @@ class MemoryStorage:
             report = str(e)
 
         if report == "ok":
+            # Newer SQLite builds can report a clean page scan while an
+            # external-content FTS index has lost rows. Ask FTS5 to compare
+            # its index against the content table when the full scan is enabled.
+            for table, flag in (("chunks_fts", "_fts5_needs_rebuild"),
+                                ("chunks_fts_trigram", "_trigram_needs_rebuild")):
+                if not self.conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                ).fetchone():
+                    continue
+                try:
+                    self.conn.execute(
+                        f"INSERT INTO {table}({table}, rank) VALUES('integrity-check', 1)"
+                    )
+                except sqlite3.DatabaseError as e:
+                    if _is_corruption_error(e):
+                        setattr(self, flag, True)
+                    else:
+                        logger.warning(f"[MemoryStorage] FTS5 check skipped for {table}: {e}")
             return
 
         fts5_lines, other_lines = _split_fts5_damage(report)

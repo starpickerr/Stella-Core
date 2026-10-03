@@ -48,8 +48,8 @@ Required resources:
 Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token / EncodingAESKey):
 
 <Tabs>
-  <Tab title="Web Console">
-    Start the Stella project and open the Web Console. Go to the **Channels** menu, click **Connect**, choose **WeChat Customer Service**, fill in Corp ID / Secret / Token / AES Key (port defaults to 9888, configurable), and click Connect.
+  <Tab title="Desktop Client">
+    Start the Stella project and open the Desktop Client. Go to the **Channels** menu, click **Connect**, choose **WeChat Customer Service**, fill in Corp ID / Secret / Token / AES Key (port defaults to 9888, configurable), and click Connect.
 
     <img src="/images/placeholder-image.svg" width="800"/>
   </Tab>
@@ -77,7 +77,7 @@ Fill in the 4 fields collected from the previous step (Corp ID / Secret / Token 
   </Tab>
 </Tabs>
 
-After connecting, start the program (the Web Console method restarts the channel automatically). When the log shows `Listening on http://0.0.0.0:9888/wxkf/`, the program is running successfully. You need to open this port externally (e.g., allow it in the cloud server security group).
+After connecting, start the program (the Desktop Client method restarts the channel automatically). When the log shows `Listening on http://0.0.0.0:9888/wxkf/`, the program is running successfully. You need to open this port externally (e.g., allow it in the cloud server security group).
 
 Then go back to **Receive Messages → Set API Reception** in the WeCom console and set the callback URL to `http://<your-host>:9888/wxkf/`, then click Save. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
 

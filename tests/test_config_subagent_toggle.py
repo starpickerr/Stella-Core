@@ -40,7 +40,7 @@ except ImportError:
 
 from agent.subagent import SubagentSettings
 from agent.tools.subagent import SubagentTool
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 ROOT = Path(__file__).parents[1]
 
@@ -51,13 +51,13 @@ def _post(tmp_path, updates, stored=None, runtime=None):
     config_path.write_text(json.dumps(stored or {}), encoding="utf-8")
     live = runtime if runtime is not None else {}
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data",
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data",
                return_value=json.dumps({"updates": updates}).encode()), \
-         patch("channel.web.web_channel.conf", return_value=live), \
-         patch("channel.web.web_channel.get_data_root", return_value=str(tmp_path)), \
-         patch("channel.web.web_channel._read_config_file_for_write",
+         patch("channel.desktop.desktop_channel.conf", return_value=live), \
+         patch("channel.desktop.desktop_channel.get_data_root", return_value=str(tmp_path)), \
+         patch("channel.desktop.desktop_channel._read_config_file_for_write",
                return_value=json.loads(config_path.read_text(encoding="utf-8"))):
         response = json.loads(web_channel.ConfigHandler().POST())
 
@@ -140,16 +140,11 @@ def test_a_broken_availability_check_does_not_cost_the_agent_the_tool():
     assert is_tool_available(_Broken()) is True
 
 
-def test_the_switch_is_exposed_by_both_consoles():
-    web_source = (ROOT / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_markup = (ROOT / "channel/web/chat.html").read_text(encoding="utf-8")
-    web_console = (ROOT / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+def test_the_switch_is_exposed_by_desktop():
+    web_source = (ROOT / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/BasicSettings.tsx").read_text(encoding="utf-8")
 
     assert '"subagent_enabled": ("subagent", "enabled")' in web_source
-    assert 'id="cfg-subagent"' in web_markup
-    assert "subagent_enabled: document.getElementById('cfg-subagent').checked" in web_console
     assert "subagent_enabled: subagent" in desktop_page
-    # Absent means on, so neither console may read it as a bare truthy check.
-    assert "data.subagent_enabled !== false" in web_console
+    # Absent means on, so the desktop must not read it as a bare truthy check.
     assert "data.subagent_enabled !== false" in desktop_page

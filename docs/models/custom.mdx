@@ -9,9 +9,9 @@ For model services accessed via the OpenAI-compatible protocol, such as:
 - **Local models**: models deployed locally with tools like Ollama, vLLM
 - **Private deployments**: model services deployed inside an enterprise
 
-## Web Console
+## Desktop Client
 
-Recommended. On the "Models" page of the Web console, click "Add Provider" and pick "Custom", then fill in the name, API Base and API Key. Multiple custom providers can be added; after adding one, select it together with a model in the "Main Model" card to enable it.
+Recommended. On the "Models" page of the desktop client, click "Add Provider" and pick "Custom", then fill in the name, API Base and API Key. Multiple custom providers can be added; after adding one, select it together with a model in the "Main Model" card to enable it.
 
 <img width="900" src="/images/placeholder-image.svg" />
 
@@ -53,7 +53,7 @@ You can also edit `config.json` directly: define multiple providers in the `cust
 | --- | --- |
 | `custom_providers` | List of custom providers; each item has `id`, `name`, `api_base`, `api_key` (optional) and `model` (optional) |
 | `bot_type` | Set to `"custom:<id>"` to activate the corresponding provider |
-| `id` | Unique identifier (8-char hex); auto-generated when adding via the Web console, or any unique string when editing manually |
+| `id` | Unique identifier (8-char hex); auto-generated when adding via the desktop client, or any unique string when editing manually |
 | `name` | Display label, can be renamed freely |
 | `model` | Model used by this provider, takes effect when activated |
 
