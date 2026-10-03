@@ -5922,10 +5922,15 @@ class SchedulerHandler:
 
             now = datetime.now()
             from agent.scheduler.delivery import normalize_destination
+            from agent.scheduler.conversation import validate_conversation_action
             action = normalize_destination({**action_in,
                 "channel_type": action_in.get("channel_type") or "web",
                 "receiver": action_in.get("receiver") or session_id}, current_identity().agent_id)
             action.update(type=action_type, execution_session_id=session_id)
+            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
+                if field in action_in:
+                    action[field] = action_in[field]
+            action = validate_conversation_action(action)
             if action_type == "send_message":
                 action["content"] = content
             else:
@@ -6068,7 +6073,16 @@ class SchedulerUpdateHandler:
                 # as notify_session_id, silent, and channel-specific delivery
                 # fields survive unrelated edits.
                 from agent.scheduler.delivery import patch_destination
+                from agent.scheduler.conversation import validate_conversation_action
                 action = patch_destination(original_action, action_patch, current_identity().agent_id)
+                if (action.get("conversation_mode") == "source" and
+                        action.get("source_session_id") != original_action.get("source_session_id")):
+                    action.pop("conversation_space", None)
+                    action.pop("execution_project_dir", None)
+                if action.get("channel_type") != "web":
+                    for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
+                        action.pop(field, None)
+                action = validate_conversation_action(action)
                 action_type = action.get("type")
                 if action_type == "send_message":
                     action.pop("task_description", None)

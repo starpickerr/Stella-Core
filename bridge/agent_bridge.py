@@ -1312,6 +1312,8 @@ class AgentBridge:
         channel_type: str = "",
         task_description: str = "",
         agent_id: str = None,
+        force: bool = False,
+        require_existing: bool = False,
     ) -> None:
         """Add the visible output of a scheduled task to the receiver's session.
 
@@ -1331,14 +1333,15 @@ class AgentBridge:
         from bloating one entry.
         """
         from config import conf
-        if not conf().get("scheduler_inject_to_session", True):
+        if not force and not conf().get("scheduler_inject_to_session", True):
             return
         if not session_id or not content:
             return
 
-        max_len = 2000
-        if len(content) > max_len:
-            content = content[:max_len] + "..."
+        if not force:
+            max_len = 2000
+            if len(content) > max_len:
+                content = content[:max_len] + "..."
 
         user_text = self._SCHEDULED_MARKER
         if task_description:
@@ -1351,9 +1354,19 @@ class AgentBridge:
 
         # Persist first so the new pair gets a stable seq, then prune old
         # scheduler pairs in DB, then sync the in-memory agent.messages buffer.
-        self._persist_messages(session_id, messages, channel_type, agent_id)
+        if force:
+            stored = self.get_conversation_store(agent_id).append_messages(
+                session_id, messages, channel_type=channel_type,
+                create_if_missing=not require_existing,
+            )
+            if not stored:
+                raise RuntimeError("The bound conversation was removed before delivery")
+        else:
+            self._persist_messages(session_id, messages, channel_type, agent_id)
 
         keep_last_n = max(int(conf().get("scheduler_inject_max_per_session", 3) or 0), 0)
+        if force:
+            keep_last_n = 10**9
         try:
             deleted = self.get_conversation_store(agent_id).prune_scheduled_messages(
                 session_id, keep_last_n=keep_last_n

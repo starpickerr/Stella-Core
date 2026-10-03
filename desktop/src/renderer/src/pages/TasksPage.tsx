@@ -177,6 +177,7 @@ const TaskEditModal: React.FC<{
   onSaved: () => void
   onDeleted: () => void
 }> = ({ task, sessionId, onClose, onSaved, onDeleted }) => {
+  const projects = useSessionStore((s) => s.projects)
   const isCreate = task == null
   const isToolCall = !!task && ['tool_call', 'skill_call', 'application_command'].includes(task.action.type)
   const [name, setName] = useState(task?.name || '')
@@ -189,6 +190,13 @@ const TaskEditModal: React.FC<{
   const [content, setContent] = useState(task?.action.content || task?.action.task_description || '')
   const [channel, setChannel] = useState(task?.action.channel_type || 'web')
   const [receiver, setReceiver] = useState(task?.action.receiver || sessionId)
+  const [conversationMode, setConversationMode] = useState<'legacy' | 'source' | 'reuse' | 'new'>(
+    task?.action.conversation_mode || (task ? 'legacy' :
+      useSessionStore.getState().sessions.some((s) => s.session_id === sessionId) ? 'source' : 'reuse'))
+  const [sourceSessionId, setSourceSessionId] = useState(task?.action.source_session_id || sessionId)
+  const [conversationSpace, setConversationSpace] = useState<'personal' | 'project'>(
+    task?.action.conversation_space || 'personal')
+  const [projectDir, setProjectDir] = useState(task?.action.execution_project_dir || '')
   const [receiveIdType, setReceiveIdType] = useState(task?.action.receive_id_type || (task?.action.is_group ? 'chat_id' : 'open_id'))
   const [destinations, setDestinations] = useState<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]>([])
   useEffect(() => { apiClient.getTaskDestinations().then(setDestinations).catch(() => {}) }, [])
@@ -215,6 +223,25 @@ const TaskEditModal: React.FC<{
     a.is_group = channel === 'feishu' && receiveIdType === 'chat_id'
     if (channel === 'feishu') a.receive_id_type = receiveIdType
     a.execution_session_id = task?.action.execution_session_id || task?.action.notify_session_id || sessionId
+    if (channel === 'web' && conversationMode !== 'legacy') {
+      a.conversation_mode = conversationMode
+      if (conversationMode === 'source') {
+        a.source_session_id = sourceSessionId
+        if (sourceSessionId !== task?.action.source_session_id) {
+          delete a.conversation_space
+          delete a.execution_project_dir
+        }
+      } else {
+        delete a.source_session_id
+        a.conversation_space = conversationSpace
+        a.execution_project_dir = conversationSpace === 'project' ? projectDir : ''
+      }
+    } else {
+      delete a.conversation_mode
+      delete a.source_session_id
+      delete a.conversation_space
+      delete a.execution_project_dir
+    }
     if (isToolCall) return a
     if (actionType === 'send_message') a.content = content
     else a.task_description = content
@@ -228,6 +255,14 @@ const TaskEditModal: React.FC<{
     }
     if (!isToolCall && !content.trim()) {
       setError(t('task_save_error'))
+      return
+    }
+    if (channel === 'web' && conversationMode === 'source' && !sourceSessionId) {
+      setError(t('task_conversation_source_required'))
+      return
+    }
+    if (channel === 'web' && (conversationMode === 'reuse' || conversationMode === 'new') && conversationSpace === 'project' && !projectDir) {
+      setError(t('task_conversation_project_required'))
       return
     }
     setSaving(true)
@@ -376,15 +411,47 @@ const TaskEditModal: React.FC<{
         <Field label={t('task_channel')}>
           <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }} options={destinations.filter(d => d.ready || d.channel_type === channel).map(d => ({value:d.channel_type,label:t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0])}))} />
         </Field>
+        {channel === 'web' && <>
+          <Field label={t('task_conversation_mode')}>
+            <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'legacy' | 'source' | 'reuse' | 'new')}
+              options={[
+                ...(task && !task.action.conversation_mode ? [{ value: 'legacy', label: t('task_conversation_legacy') }] : []),
+                { value: 'source', label: t('task_conversation_source') },
+                { value: 'reuse', label: t('task_conversation_reuse') },
+                { value: 'new', label: t('task_conversation_new') },
+              ]} />
+          </Field>
+          {conversationMode === 'source' && <>
+            <Field label={t('task_conversation_source_pick')}>
+              <Dropdown value={sourceSessionId} onChange={setSourceSessionId}
+                options={[{ value: '', label: t('task_conversation_source_pick') }, ...(
+                  destinations.find((d) => d.channel_type === 'web')?.recipients || []
+                ).map((r) => ({ value: r.receiver, label: r.name }))]} />
+            </Field>
+            <p className="text-xs text-content-tertiary">{t('task_conversation_source_hint')}</p>
+          </>}
+          {(conversationMode === 'reuse' || conversationMode === 'new') && <>
+            <Field label={t('task_conversation_space')}>
+              <Dropdown value={conversationSpace} onChange={(value) => { setConversationSpace(value as 'personal' | 'project'); if (value === 'personal') setProjectDir('') }}
+                options={[{ value: 'personal', label: t('task_conversation_personal') }, { value: 'project', label: t('task_conversation_project') }]} />
+            </Field>
+            {conversationSpace === 'project' && <Field label={t('task_conversation_project_pick')}>
+              <Dropdown value={projectDir} onChange={setProjectDir}
+                options={[{ value: '', label: t('task_conversation_project_pick') }, ...projects.map((project) => ({ value: project.path, label: project.name }))]} />
+            </Field>}
+            <p className="text-xs text-content-tertiary">{t('task_conversation_hint')}</p>
+            {conversationSpace === 'project' && !projectDir && <p className="text-xs text-danger">{t('task_conversation_project_required')}</p>}
+          </>}
+        </>}
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
           <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
         </Field>}
-        <Field label={t('task_receiver')}>
+        {(channel !== 'web' || conversationMode === 'legacy') && <Field label={t('task_receiver')}>
           <TextInput value={receiver} onChange={event => setReceiver(event.target.value)} list="task-recipients" />
           <datalist id="task-recipients">{destinations.find(d => d.channel_type === channel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
-        </Field>
+        </Field>}
         {channel === 'weixin' && <p className="text-xs text-content-tertiary">{t('task_weixin_condition')}</p>}
-        <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>
+        {(channel !== 'web' || conversationMode === 'legacy') && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
       </>}
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}

@@ -96,9 +96,13 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                 # reached from a task (ToolManager, tmp_dir, memory) then lands
                 # in this Agent's workspace rather than the default one's.
                 from common.runtime_identity import identity_scope
+                from agent.scheduler.conversation import prepare_run
+                from agent.scheduler.outcome import ExecutionOutcome
 
                 try:
                     owner_user_id = task.get("owner_user_id") or None
+                    with identity_scope(agent_id=agent_id, user_id=owner_user_id):
+                        task = prepare_run(task, agent_id)
                     owner_session_id = ((task.get("action") or {}).get("execution_session_id") or
                                         (task.get("action") or {}).get("notify_session_id"))
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
@@ -110,7 +114,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
 
                         silent = (action_type == "application_command" or
                                   action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
-                        if not silent and not _is_channel_ready(channel_type, receiver, agent_id):
+                        persist_in_chat = channel_type == "web" and "conversation_mode" in action
+                        if not silent and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "
@@ -131,6 +136,9 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         else:
                             logger.warning(f"[Scheduler] Unknown action type: {action_type}")
                             return ExecutionOutcome("failed", f"Unknown action type: {action_type}")
+                except ValueError as e:
+                    logger.warning(f"[Scheduler] Task {task.get('id')} has no valid conversation scope: {e}")
+                    return ExecutionOutcome("failed", str(e))
                 except Exception as e:
                     logger.error(f"[Scheduler] Error executing task {task.get('id')}: {e}")
                     return False
@@ -226,8 +234,8 @@ def _remember_delivered_output(
     channel_type: str,
     content: str,
     agent_id: str = None,
-) -> None:
-    """Best-effort persistence of the message the scheduler sent to a user.
+) -> bool:
+    """Persist scoped desktop output; legacy delivery keeps best-effort injection.
 
     Uses notify_session_id (the real chat session_id stored at task creation time)
     so that group chats correctly associate the output with the user's conversation.
@@ -241,21 +249,29 @@ def _remember_delivered_output(
           would just consume context tokens.
     """
     if not content:
-        return
+        return True
     action = task.get("action", {})
     action_type = action.get("type", "")
 
     # send_message defaults to NOT being injected; explicit opt-in via config.
-    if action_type == "send_message":
+    if action_type == "send_message" and "conversation_mode" not in action:
         if not conf().get("scheduler_inject_send_message", False):
-            return
+            return True
 
     session_id = action.get("notify_session_id") or action.get("receiver")
     if not session_id:
-        return
+        return False
     try:
         remember = getattr(agent_bridge, "remember_scheduled_output", None)
         if remember:
+            conversation_store = None
+            is_new = False
+            if channel_type == "web" and "conversation_mode" in action:
+                from agent.memory import get_conversation_store
+                from agent.registry import get_agent_registry
+                profile = get_agent_registry().get(agent_id)
+                conversation_store = get_conversation_store(profile.workspace)
+                is_new = session_id not in conversation_store.list_session_ids(channel_type="web")
             task_desc = action.get("task_description") or action.get("content", "")
             kwargs = {
                 "channel_type": channel_type,
@@ -263,11 +279,22 @@ def _remember_delivered_output(
             }
             if hasattr(agent_bridge, "agent_registry"):
                 kwargs["agent_id"] = agent_id
+                if channel_type == "web" and "conversation_mode" in action:
+                    kwargs["force"] = True
+                    kwargs["require_existing"] = action.get("conversation_mode") == "source"
             remember(session_id, str(content), **kwargs)
+            if is_new and conversation_store and action.get("conversation_mode") in ("reuse", "new"):
+                title = task.get("name") or "Scheduled task"
+                if action.get("conversation_mode") == "new":
+                    from datetime import datetime
+                    title += " · " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                conversation_store.rename_session(session_id, title)
+            return True
     except Exception as e:
         logger.warning(
             f"[Scheduler] Failed to remember delivered output for {session_id}: {e}"
         )
+    return False
 
 
 def _send_checked(channel, reply, context):
@@ -315,10 +342,16 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             "若执行失败，返回简洁明确的失败说明。\n\n"
             f"任务描述：\n{task_description}"
         )
+        if action.get("conversation_mode") == "source":
+            from agent.scheduler.conversation import source_context
+            recent = source_context(action, agent_id)
+            if recent:
+                execution_prompt += "\n\n绑定对话的最近上下文（供参考）：\n" + recent
 
         # Create a unique session_id for this scheduled task to avoid polluting user's conversation
         # Format: scheduler_<receiver>_<task_id> to ensure isolation
-        scheduler_session_id = f"scheduler_{task['id']}"
+        from agent.scheduler.conversation import agent_session_id
+        scheduler_session_id = agent_session_id(task)
         
         # Create context for Agent
         context = Context(ContextType.TEXT, execution_prompt)
@@ -400,9 +433,11 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 logger.error(f"[Scheduler] Failed to send result: {e}")
                 return False
 
-            _remember_delivered_output(
+            persisted = _remember_delivered_output(
                 agent_bridge, task, channel_type, reply.content, agent_id
             )
+            if channel_type == "web" and "conversation_mode" in action and not persisted:
+                return False
             logger.info(f"[Scheduler] Task {task['id']} executed successfully, result sent to {receiver}")
             return True
 
@@ -492,9 +527,11 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
             logger.error(f"[Scheduler] Failed to send message: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if channel_type == "web" and "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent message to {receiver}")
         return True
 
@@ -677,9 +714,11 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             logger.error(f"[Scheduler] Failed to send tool result: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if channel_type == "web" and "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent tool result to {receiver}")
         return True
 
@@ -710,7 +749,8 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
 
         logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}'")
 
-        scheduler_session_id = f"scheduler_{task['id']}"
+        from agent.scheduler.conversation import agent_session_id
+        scheduler_session_id = agent_session_id(task)
         context = Context(ContextType.TEXT, "Scheduled skill execution")
         context["receiver"] = receiver
         context["isgroup"] = is_group
@@ -777,9 +817,11 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Failed to send skill result: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if channel_type == "web" and "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: skill result sent to {receiver}")
         return True
 
