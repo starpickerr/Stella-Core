@@ -21,12 +21,20 @@ avoid duplicates, and make sure you're on the latest version.
 
 ## Submitting a pull request
 
-1. **Fork** the repo and create a branch from `master`
-   (e.g. `feat/web-search`, `fix/telegram-reconnect`).
+1. **Fork** the repo and create a branch from `develop`
+   (e.g. `feat/web-search`, `fix/telegram-reconnect`). Use `feat/` for new
+   features and `fix/` for bug fixes; use `docs/`, `refactor/`, or `chore/`
+   when those better describe the change.
 2. Make your change. Keep it focused — one logical change per PR.
 3. Follow the existing code style. Write comments and docstrings in English.
 4. Run the app locally to confirm your change works.
-5. Open a PR with a clear title and a short description of **what** and **why**.
+5. Open a PR targeting `develop`, with a clear title and a short description of
+   **what** and **why**. If your branch depends on another open PR, mention that
+   dependency and update the target after the earlier PR merges.
+
+`develop` holds integrated work before release. `main` is the release branch:
+when a version is ready, open a PR from `develop` into `main`, verify the
+release, and tag the release from `main`.
 
 We keep the bar friendly: clear, focused, and working is enough. Maintainers are
 happy to help polish details during review.
