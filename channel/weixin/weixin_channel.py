@@ -74,6 +74,11 @@ def _save_credentials(cred_path: str, data: dict):
 @singleton
 class WeixinChannel(ChatChannel):
 
+    # A retry here would create a new client_id and can duplicate a message
+    # already accepted by Weixin. WeixinApi retries transport errors with the
+    # same request body and client_id instead.
+    SEND_RETRY_LIMIT = 0
+
     # ilink bot protocol has no outbound voice item; deliver TTS as a file.
     NOT_SUPPORT_REPLYTYPE = []
 
@@ -685,8 +690,8 @@ class WeixinChannel(ChatChannel):
         """
         if not isinstance(resp, dict):
             raise RuntimeError("Invalid Weixin send response")
-        if "ret" not in resp and "errcode" not in resp:
-            raise RuntimeError("Weixin send response has no acknowledgement code")
+        # sendMessage can return an empty JSON object on HTTP 200. Only an
+        # explicit non-zero business code means failure.
         ret = resp.get("ret")
         errcode = resp.get("errcode")
         if ret == -14 or errcode == -14:
