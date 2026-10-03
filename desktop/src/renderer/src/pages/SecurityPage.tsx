@@ -1,72 +1,39 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Shield, RefreshCw } from 'lucide-react'
+import { ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
 import type { SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
 import { useSessionStore } from '../store/sessionStore'
+import {
+  commonCredentials,
+  ruleGroups,
+  securityCopy,
+  securityReason,
+  securityResource,
+  securityResourceSummary,
+  securityRuleName,
+  securitySecretName,
+  securityTrace,
+} from './securityLocale'
 
-const ruleNames = [
-  'managed',
-  'workspace_read',
-  'workspace_write',
-  'workspace_outside',
-  'shell',
-  'git',
-  'network',
-  'install',
-  'background',
-  'external',
-  'high_risk',
-] as const
-const zhRules: Record<string, string> = {
-  managed: 'Agent 内部资源',
-  workspace_read: '读取工作区',
-  workspace_write: '写入工作区',
-  workspace_outside: '工作区外访问',
-  shell: '终端命令',
-  git: 'Git 操作',
-  network: '网络访问',
-  install: '软件安装',
-  background: '后台进程',
-  external: '外部服务',
-  high_risk: '高风险操作',
-}
-const enRules: Record<string, string> = {
-  managed: 'Agent managed storage',
-  workspace_read: 'Workspace read',
-  workspace_write: 'Workspace write',
-  workspace_outside: 'Outside workspace access',
-  shell: 'Shell',
-  git: 'Git operations',
-  network: 'Network',
-  install: 'Software install',
-  background: 'Background process',
-  external: 'External services',
-  high_risk: 'High risk operations',
-}
 const tabs = ['overview', 'permissions', 'projects', 'connections', 'secrets', 'activity'] as const
 type Tab = (typeof tabs)[number]
-const labels: Record<Tab, [string, string]> = {
-  overview: ['总览', 'Overview'],
-  permissions: ['Agent 权限', 'Agent permissions'],
-  projects: ['项目权限', 'Projects'],
-  connections: ['连接与访问', 'Connections'],
-  secrets: ['凭据', 'Credentials'],
-  activity: ['安全活动', 'Activity'],
-}
 const card = 'rounded-card border border-default bg-surface p-5'
-const input = 'rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm'
-const action = 'rounded-btn bg-accent text-accent-contrast px-3 py-2 text-sm disabled:opacity-50'
+const input =
+  'rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent'
+const action =
+  'rounded-btn bg-accent text-accent-contrast px-3 py-2 text-sm disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
 const faded = 'text-sm text-content-secondary'
 
 const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
-  const en = getLang() === 'en'
+  const copy = securityCopy(getLang())
   const sid = useSessionStore((s) => s.activeId)
   const [tab, setTab] = useState<Tab>(
     new URLSearchParams(window.location.search).get('tab') === 'activity' ? 'activity' : 'overview',
   )
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
   const [records, setRecords] = useState<SecurityRecord[]>([])
+  const [availableEvents, setAvailableEvents] = useState<SecurityRecord[]>([])
   const [pending, setPending] = useState<
     {
       id: string
@@ -79,27 +46,33 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }[]
   >([])
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [sinceDraft, setSinceDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [selectedProject, setSelectedProject] = useState('')
   const [extraRoot, setExtraRoot] = useState('')
   const [secretName, setSecretName] = useState('')
+  const [customSecretName, setCustomSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
 
   const load = useCallback(async () => {
     try {
       const queryFilters = { ...filters }
-      if (queryFilters.since) queryFilters.since = String(Math.floor(new Date(queryFilters.since).getTime() / 1000))
-      const [state, events, confirmations] = await Promise.all([
+      if (queryFilters.since)
+        queryFilters.since = String(Math.floor(new Date(queryFilters.since + 'T00:00:00').getTime() / 1000))
+      const filtered = Object.values(filters).some(Boolean)
+      const [state, events, confirmations, allEvents] = await Promise.all([
         apiClient.getSecurityCenter(sid || undefined),
         apiClient.getSecurityRecords(queryFilters),
         apiClient.getSecurityConfirmations(),
+        filtered ? apiClient.getSecurityRecords() : Promise.resolve(null),
       ])
-      if (state.status !== 'success') throw new Error(state.message || 'Unable to load security state')
+      if (state.status !== 'success') throw new Error(copy.loading)
       setCenter(state)
       setRecords(events)
+      setAvailableEvents(allEvents || events)
       setPending(confirmations as typeof pending)
       setError('')
       setSelectedProject((previous) =>
@@ -108,25 +81,25 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           : state.project || state.projects[0]?.path || '',
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(copy.loadFailed)
     }
-  }, [sid, filters])
+  }, [sid, filters, copy])
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
     void load()
   }, [baseUrl, load])
-  const mutate = async (fn: () => Promise<{ status: string; message?: string }>) => {
+  const mutate = async (fn: () => Promise<{ status: string; message?: string }>, success = copy.saved) => {
     setBusy(true)
     setError('')
     setNotice('')
     try {
       const result = await fn()
-      if (result.status !== 'success') throw new Error(result.message || (en ? 'Save failed' : '保存失败'))
-      setNotice(en ? 'Saved' : '已保存')
+      if (result.status !== 'success') throw new Error(copy.saveFailed)
+      setNotice(success)
       await load()
       return true
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(copy.saveFailed)
       return false
     } finally {
       setBusy(false)
@@ -137,6 +110,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     void mutate(() => apiClient.saveSecurityPolicy('global', { ...center.global_policy, ...patch }))
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
+  const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
   const saveProject = (patch: SecurityPolicy) => {
     if (!project) return
     void mutate(() =>
@@ -169,83 +143,148 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     onSave({ rules })
   }
   const ruleTable = (policy: SecurityPolicy, onSave: (patch: SecurityPolicy) => void, inherit: boolean) => (
-    <div className="divide-y divide-default">
-      {ruleNames.map((name) => (
-        <div key={name} className="py-2 flex items-center justify-between gap-3 text-sm">
-          <span>{(en ? enRules : zhRules)[name]}</span>
-          <select
-            disabled={busy}
-            className={input}
-            value={policy.rules?.[name] || ''}
-            onChange={(event) => selectRule(event.target.value, policy, onSave, name)}
-          >
-            <option value="">{inherit ? (en ? 'Inherit' : '继承') : en ? 'Preset' : '预设'}</option>
-            <option value="allow">Allow</option>
-            <option value="confirm">Confirm</option>
-            <option value="deny">Deny</option>
-          </select>
-        </div>
+    <div className="space-y-5">
+      {ruleGroups.map((group) => (
+        <section key={group.id}>
+          <h3 className="text-xs font-semibold text-content-secondary mb-1">{copy.groups[group.id]}</h3>
+          <div className="divide-y divide-default">
+            {group.rules.map((name) => (
+              <div
+                key={name}
+                className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{copy.rules[name].name}</p>
+                  <p className="text-xs text-content-secondary mt-0.5">{copy.rules[name].help}</p>
+                </div>
+                <select
+                  aria-label={copy.rules[name].name}
+                  disabled={busy}
+                  className={`${input} w-full sm:w-44 shrink-0`}
+                  value={policy.rules?.[name] || ''}
+                  onChange={(event) => selectRule(event.target.value, policy, onSave, name)}
+                >
+                  <option value="">{inherit ? copy.decisions.inherit : copy.decisions.preset}</option>
+                  <option value="allow">{copy.decisions.allow}</option>
+                  <option value="confirm">{copy.decisions.confirm}</option>
+                  <option value="deny">{copy.decisions.deny}</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   )
-  const eventList = (items: SecurityRecord[]) =>
-    items.length ? (
-      <div className="divide-y divide-default">
-        {items.map((item, index) => (
-          <details key={`${item.at}-${index}`} className="py-3 text-sm">
-            <summary className="cursor-pointer flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="text-content-tertiary">{new Date(item.at * 1000).toLocaleString()}</span>
-              <strong
-                className={
-                  item.decision === 'deny'
-                    ? 'text-danger'
-                    : item.decision === 'confirm'
-                      ? 'text-amber-500'
-                      : 'text-accent'
-                }
-              >
-                {item.decision.toUpperCase()}
-              </strong>
-              <span>
-                {item.event || item.tool} · {item.operation}
-              </span>
-              <span className="text-content-tertiary">{item.risk}</span>
-            </summary>
-            <div className="mt-2 pl-4 space-y-1 text-content-secondary break-all">
-              <p>
-                {en ? 'Resource' : '资源'}: {item.resource}
-              </p>
-              <p>
-                {en ? 'Agent / conversation' : 'Agent / 对话'}: {item.agent} / {item.conversation || '—'}
-              </p>
-              <p>
-                {en ? 'Project' : '项目'}: {item.project || '—'}
-              </p>
-              <p>
-                {en ? 'Reason' : '原因'}: {item.reason}
-              </p>
-              <div className="text-xs">
-                {item.trace?.map((step, i) => (
-                  <p key={i}>{step}</p>
-                ))}
-              </div>
-            </div>
-          </details>
+  const overrideSummary = (policy: SecurityPolicy) => {
+    const entries = Object.entries(policy.rules || {})
+    return entries.length ? (
+      <div className="flex flex-wrap gap-2 mt-3">
+        {entries.map(([name, value]) => (
+          <span key={name} className="rounded-btn bg-surface-2 px-2.5 py-1 text-xs text-content-secondary">
+            {securityRuleName(copy, name)} · {copy.decisions[value]}
+          </span>
         ))}
       </div>
     ) : (
-      <p className={faded}>{en ? 'No events yet.' : '暂无记录。'}</p>
+      <p className={`${faded} mt-3`}>{copy.noOverrides}</p>
+    )
+  }
+  const eventList = (items: SecurityRecord[]) =>
+    items.length ? (
+      <div className="divide-y divide-default">
+        {items.map((item, index) => {
+          const outcome = (copy.outcomes as Record<string, string>)[item.decision] || copy.reasonFallback
+          const event =
+            (copy.events as Record<string, string>)[item.event] ||
+            (copy.tools as Record<string, string>)[item.tool] ||
+            copy.events.tool_decision
+          const risk = (copy.risk as Record<string, string>)[item.risk] || copy.risk.L2
+          const trace = securityTrace(copy, item.trace || [])
+          return (
+            <details key={`${item.at}-${index}`} className="group py-3 text-sm">
+              <summary className="cursor-pointer list-none flex items-start gap-3 focus-visible:outline-2 focus-visible:outline-accent">
+                <span
+                  className={`mt-0.5 inline-block size-2.5 rounded-full shrink-0 ${item.decision === 'deny' ? 'bg-danger' : item.decision === 'confirm' ? 'bg-amber-500' : 'bg-accent'}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">
+                    {event} · {securityResourceSummary(copy, item.resource)}
+                  </span>
+                  <span className="block text-xs text-content-secondary mt-1">
+                    {new Date(item.at * 1000).toLocaleString(getLang() === 'en' ? 'en-US' : 'zh-CN')}
+                    {' · '}
+                    {risk}
+                  </span>
+                </span>
+                <span className="text-xs font-medium text-content-secondary shrink-0">{outcome}</span>
+                <ChevronRight
+                  size={15}
+                  className="text-content-tertiary shrink-0 transition-transform group-open:rotate-90"
+                />
+              </summary>
+              <div className="mt-3 ml-5 space-y-2 text-content-secondary break-words">
+                <p className="text-content">
+                  {copy.reason}
+                  {copy.fieldSeparator}
+                  {securityReason(copy, item)}
+                </p>
+                <p>
+                  {copy.resource}
+                  {copy.fieldSeparator}
+                  {securityResource(copy, item.resource)}
+                </p>
+                <p>
+                  {copy.assistant}
+                  {copy.fieldSeparator}
+                  {item.agent === 'default' ? 'Stella' : item.agent}
+                </p>
+                {item.project && (
+                  <p>
+                    {copy.project}
+                    {copy.fieldSeparator}
+                    {item.project}
+                  </p>
+                )}
+                {item.conversation && (
+                  <p>
+                    {copy.conversation}
+                    {copy.fieldSeparator}
+                    {item.conversation}
+                  </p>
+                )}
+                {trace.length > 0 && (
+                  <div className="rounded-btn bg-surface-2 px-3 py-2 text-xs space-y-1">
+                    <p className="font-medium text-content">{copy.decisionSteps}</p>
+                    {trace.map((step, i) => (
+                      <p key={i}>{step}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+          )
+        })}
+      </div>
+    ) : (
+      <p className={faded}>{copy.noEvents}</p>
     )
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
-      <div className="max-w-5xl mx-auto space-y-5">
-        <header className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Shield size={23} />
-            Stella Security Center
-          </h1>
-          <button type="button" aria-label={en ? 'Refresh' : '刷新'} onClick={() => void load()}>
+    <div
+      lang={getLang() === 'en' ? 'en-US' : 'zh-CN'}
+      className="h-full overflow-y-auto px-4 sm:px-6 py-5 sm:py-7"
+    >
+      <div className="max-w-4xl mx-auto space-y-5">
+        <header className="flex justify-between items-start gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold flex items-center gap-2">
+              <ShieldCheck size={23} className="text-accent" />
+              {copy.title}
+            </h1>
+            <p className="text-sm text-content-secondary mt-1">{copy.subtitle}</p>
+          </div>
+          <button type="button" className={input} aria-label={copy.refresh} onClick={() => void load()}>
             <RefreshCw size={17} />
           </button>
         </header>
@@ -257,7 +296,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               onClick={() => setTab(name)}
               className={`shrink-0 px-3 py-2 rounded-btn text-sm ${tab === name ? 'bg-accent-soft text-accent font-semibold' : 'text-content-secondary hover:bg-surface-2'}`}
             >
-              {labels[name][en ? 1 : 0]}
+              {copy.tabs[name]}
             </button>
           ))}
         </nav>
@@ -272,53 +311,92 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </p>
         )}
         {!center ? (
-          <p className={faded}>{en ? 'Loading security state…' : '正在加载安全状态…'}</p>
+          <p className={faded}>{copy.loading}</p>
         ) : (
           <>
             {tab === 'overview' && (
               <div className="space-y-5">
-                <div className="grid sm:grid-cols-4 gap-3">
-                  {[
-                    [
-                      en ? 'Status' : '安全状态',
-                      center.summary.status === 'normal'
-                        ? en
-                          ? 'Normal'
-                          : '正常'
-                        : en
-                          ? 'Needs review'
-                          : '需查看',
-                    ],
-                    [en ? 'Default policy' : '默认策略', center.global_policy.preset || 'standard'],
-                    [en ? 'Connections' : '已授权连接', String(center.summary.connection_count)],
-                    [en ? 'Credentials' : '已配置凭据', String(center.summary.secret_count)],
-                  ].map(([title, value]) => (
-                    <div className={card} key={title}>
-                      <p className="text-xs text-content-tertiary">{title}</p>
-                      <p className="text-xl font-semibold mt-2">{value}</p>
+                <section className={card}>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`mt-1 size-3 rounded-full shrink-0 ${center.summary.status === 'normal' ? 'bg-accent' : 'bg-amber-500'}`}
+                    />
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-semibold">
+                        {center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
+                      </h2>
+                      <p className={faded}>
+                        {center.summary.status === 'normal'
+                          ? copy.statusNormalHelp
+                          : copy.statusAttentionHelp}
+                      </p>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                  <div className="mt-5 pt-4 border-t border-default grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <span className="text-content-secondary">{copy.currentProtection}</span>
+                      <p className="font-medium mt-1">
+                        {copy.presets[center.global_policy.preset || 'standard'].name}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-content-secondary">{copy.connectionsCount}</span>
+                      <p className="font-medium mt-1">{center.summary.connection_count}</p>
+                    </div>
+                    <div>
+                      <span className="text-content-secondary">{copy.secretsCount}</span>
+                      <p className="font-medium mt-1">{center.summary.secret_count}</p>
+                    </div>
+                  </div>
+                </section>
                 {pending.length > 0 && (
                   <section className={card}>
-                    <h2 className="font-semibold mb-3">{en ? 'Awaiting confirmation' : '待确认操作'}</h2>
+                    <h2 className="font-semibold">{copy.reviewActions}</h2>
+                    <p className={`${faded} mt-1 mb-3`}>{copy.reviewHelp}</p>
                     {pending.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                        <span>
-                          {item.tool} · {item.resource} · {item.risk}
-                          <br />
-                          <code className="text-xs break-all">{item.summary}</code>
-                          <br />
-                          <span className="text-content-secondary">{item.reason}</span>
-                        </span>
+                      <div
+                        key={item.id}
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3 border-t border-default text-sm"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium">
+                            {(copy.tools as Record<string, string>)[item.tool] || copy.events.tool_decision}
+                          </p>
+                          <p className="text-content-secondary mt-0.5">
+                            {securityResource(copy, item.resource) !==
+                              ((copy.tools as Record<string, string>)[item.tool] ||
+                                copy.events.tool_decision) && (
+                              <>
+                                {securityResource(copy, item.resource)}
+                                {' · '}
+                              </>
+                            )}
+                            {(copy.risk as Record<string, string>)[item.risk] || copy.risk.L3}
+                          </p>
+                          {item.summary && (
+                            <code className="block text-xs text-content-secondary break-all mt-1">
+                              {item.summary}
+                            </code>
+                          )}
+                        </div>
                         <div className="flex gap-2 shrink-0">
-                          <button disabled={busy} className={action}
-                            onClick={() => void mutate(() => apiClient.approveSecurityConfirmation(item.id))}>
-                            {en ? 'Allow once' : '允许一次'}
+                          <button
+                            disabled={busy}
+                            className={action}
+                            onClick={() =>
+                              void mutate(() => apiClient.approveSecurityConfirmation(item.id), copy.approved)
+                            }
+                          >
+                            {copy.allowOnce}
                           </button>
-                          <button disabled={busy} className={`${input} text-danger`}
-                            onClick={() => void mutate(() => apiClient.rejectSecurityConfirmation(item.id))}>
-                            {en ? 'Deny' : '拒绝'}
+                          <button
+                            disabled={busy}
+                            className={`${input} text-danger`}
+                            onClick={() =>
+                              void mutate(() => apiClient.rejectSecurityConfirmation(item.id), copy.rejected)
+                            }
+                          >
+                            {copy.deny}
                           </button>
                         </div>
                       </div>
@@ -326,65 +404,66 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </section>
                 )}
                 <section className={card}>
-                  <h2 className="font-semibold mb-3">{en ? 'Recent high risk events' : '近期高风险事件'}</h2>
+                  <h2 className="font-semibold mb-3">{copy.recentHighRisk}</h2>
                   {eventList(center.summary.recent_high_risk)}
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold mb-3">{en ? 'Recent denials' : '近期权限拒绝'}</h2>
+                  <h2 className="font-semibold mb-3">{copy.recentDenials}</h2>
                   {eventList(center.summary.recent_denials)}
                 </section>
+                <button type="button" className="text-sm text-accent" onClick={() => setTab('activity')}>
+                  {copy.seeActivity}
+                </button>
               </div>
             )}
             {tab === 'permissions' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold">{en ? 'Default agent policy' : 'Agent 默认策略'}</h2>
-                  <p className={`${faded} mt-2`}>
-                    {en
-                      ? 'Agent skills and internal state are managed independently from project files.'
-                      : 'Agent 的 Skill 和内部状态与项目文件分别授权。'}
-                  </p>
-                  <div className="mt-4 flex gap-2 flex-wrap">
+                  <h2 className="font-semibold">{copy.presetsTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
+                  <div className="mt-4 grid sm:grid-cols-3 gap-2">
                     {(['strict', 'standard', 'custom'] as const).map((preset) => (
                       <button
                         type="button"
                         key={preset}
                         disabled={busy}
                         onClick={() => saveGlobal({ preset, rules: {} })}
-                        className={`px-4 py-2 rounded-btn text-sm border ${center.global_policy.preset === preset ? 'border-accent text-accent bg-accent-soft' : 'border-default'}`}
+                        aria-pressed={center.global_policy.preset === preset}
+                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.global_policy.preset === preset ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
                       >
-                        {
-                          {
-                            strict: en ? 'Strict' : '严格',
-                            standard: en ? 'Standard · recommended' : '标准 · 推荐',
-                            custom: en ? 'Custom' : '自定义',
-                          }[preset]
-                        }
+                        <span className="font-semibold text-sm">{copy.presets[preset].name}</span>
+                        {preset === 'standard' && (
+                          <span className="ml-2 text-xs text-accent">{copy.recommended}</span>
+                        )}
+                        <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
+                          {copy.presets[preset].description}
+                        </span>
                       </button>
                     ))}
                   </div>
                 </section>
-                <section className={card}>
-                  <h2 className="font-semibold mb-2">{en ? 'Advanced rules' : '高级权限'}</h2>
-                  {ruleTable(center.global_policy, saveGlobal, false)}
-                </section>
-                <p className="text-xs text-content-tertiary">
-                  {en
-                    ? 'Shell and child processes use argument checks; they are not an operating system sandbox.'
-                    : '终端与子进程经过参数检查，但不提供操作系统级隔离。'}
-                </p>
+                <details className={card}>
+                  <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-accent">
+                    {copy.advanced}
+                  </summary>
+                  <p className={`${faded} mt-2`}>{copy.advancedHelp}</p>
+                  <div className="mt-4">{ruleTable(center.global_policy, saveGlobal, false)}</div>
+                  <p className="text-xs text-content-tertiary mt-4">{copy.shellBoundaryNote}</p>
+                </details>
               </div>
             )}
             {tab === 'projects' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold mb-3">{en ? 'Project policy' : '项目权限'}</h2>
+                  <h2 className="font-semibold">{copy.projectsTitle}</h2>
+                  <p className={`${faded} mt-1 mb-3`}>{copy.projectsHelp}</p>
                   <select
+                    aria-label={copy.selectProject}
                     className={`${input} w-full`}
                     value={selectedProject}
                     onChange={(event) => setSelectedProject(event.target.value)}
                   >
-                    <option value="">{en ? 'Select a project' : '选择项目'}</option>
+                    <option value="">{copy.selectProject}</option>
                     {center.projects.map((item) => (
                       <option key={item.path} value={item.path}>
                         {item.name} · {item.path}
@@ -393,34 +472,43 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </select>
                   {project ? (
                     <>
-                      <p className={`${faded} mt-3`}>
-                        {en ? 'Only differences from the default are saved.' : '仅保存与默认策略不同的权限。'}
-                      </p>
-                      <div className="mt-3">{ruleTable(project.policy, saveProject, true)}</div>
+                      {overrideSummary(project.policy)}
+                      <details className="mt-4 border-t border-default pt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-accent">
+                          {copy.projectAdjust}
+                        </summary>
+                        <div className="mt-4">{ruleTable(project.policy, saveProject, true)}</div>
+                      </details>
                     </>
                   ) : (
-                    <p className={`${faded} mt-3`}>
-                      {en ? 'Open a project to manage its permissions.' : '打开项目后即可管理项目权限。'}
-                    </p>
+                    <p className={`${faded} mt-3`}>{copy.noProject}</p>
                   )}
                 </section>
                 {sid && (
                   <section className={card}>
-                    <h2 className="font-semibold">{en ? 'This conversation' : '当前对话临时权限'}</h2>
-                    <p className={`${faded} mt-2`}>
-                      {center.project || (en ? 'Default workspace' : '默认工作区')}
+                    <h2 className="font-semibold">{copy.conversationTitle}</h2>
+                    <p className={`${faded} mt-2`}>{copy.conversationHelp}</p>
+                    <p className="text-xs text-content-tertiary mt-1 break-all">
+                      {center.project || copy.defaultWorkspace}
                     </p>
-                    <div className="mt-3">
-                      {ruleTable(center.conversation_policy, saveConversation, true)}
-                    </div>
+                    {overrideSummary(center.conversation_policy)}
+                    <details className="mt-4 border-t border-default pt-3">
+                      <summary className="cursor-pointer text-sm font-medium text-accent">
+                        {copy.conversationAdjust}
+                      </summary>
+                      <div className="mt-4">
+                        {ruleTable(center.conversation_policy, saveConversation, true)}
+                      </div>
+                    </details>
                     <label className="block text-sm mt-4">
-                      {en ? 'Additional directory' : '额外授权目录'}
+                      {copy.extraRoot}
+                      <span className="block text-xs text-content-secondary mt-1">{copy.extraRootHelp}</span>
                       <div className="flex gap-2 mt-2">
                         <input
                           className={`${input} flex-1`}
                           value={extraRoot}
                           onChange={(event) => setExtraRoot(event.target.value)}
-                          placeholder="/path/to/directory"
+                          placeholder={copy.pathPlaceholder}
                         />
                         <button
                           disabled={busy || !extraRoot.trim()}
@@ -435,7 +523,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                             setExtraRoot('')
                           }}
                         >
-                          {en ? 'Add' : '添加'}
+                          {copy.add}
                         </button>
                       </div>
                     </label>
@@ -453,7 +541,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                             })
                           }
                         >
-                          {en ? 'Remove' : '移除'}
+                          {copy.remove}
                         </button>
                       </div>
                     ))}
@@ -463,60 +551,70 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
             {tab === 'connections' && (
               <div className="space-y-3">
+                <div>
+                  <h2 className="font-semibold">{copy.connectionsTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.connectionsHelp}</p>
+                </div>
+                {center.connections.length === 0 && <p className={faded}>{copy.noConnections}</p>}
                 {center.connections.map((connection) => (
-                  <section key={connection.id} className={`${card} flex justify-between gap-4 items-start`}>
-                    <div>
-                      <h2 className="font-semibold">{connection.name}</h2>
+                  <section
+                    key={connection.id}
+                    className={`${card} flex flex-col sm:flex-row sm:justify-between gap-4 sm:items-center`}
+                  >
+                    <div className="min-w-0">
+                      <h3 className="font-semibold">
+                        {(copy.connectionNames as Record<string, string>)[connection.id] || connection.name}
+                      </h3>
                       <p className={faded}>
                         {connection.connected
-                          ? en
-                            ? 'Connected'
-                            : '已连接'
-                          : en
-                            ? 'Not connected'
-                            : '未连接'}{' '}
-                        ·{' '}
-                        {connection.allowed
-                          ? en
-                            ? 'Access allowed'
-                            : '允许访问'
-                          : en
-                            ? 'Access revoked'
-                            : '访问已撤销'}
+                          ? `${copy.connected} · ${connection.allowed ? copy.accessAllowed : copy.accessRevoked}`
+                          : copy.disconnected}
                       </p>
-                      <p className="text-xs text-content-tertiary mt-2">
-                          Scope: {connection.scopes.includes('*')
-                            ? en ? 'All operations' : '全部操作'
-                            : connection.scopes.length ? connection.scopes.join(', ') : '—'}
-                      </p>
-                      <p className="text-xs text-content-tertiary">
-                        {en ? 'Last access' : '最近访问'}:{' '}
-                        {connection.last_access
-                          ? new Date(connection.last_access * 1000).toLocaleString()
-                          : '—'}
-                      </p>
+                      {!connection.connected && (
+                        <p className="text-xs text-content-tertiary mt-1">{copy.connectInFeature}</p>
+                      )}
+                      {connection.connected && (
+                        <p className="text-xs text-content-tertiary mt-2">
+                          {copy.accessRange}
+                          {copy.fieldSeparator}
+                          {connection.scopes.includes('*')
+                            ? copy.allOperations
+                            : connection.scopes.length
+                              ? connection.scopes
+                                  .map((scope) => (copy.operations as Record<string, string>)[scope] || scope)
+                                  .join(copy.listSeparator)
+                              : copy.allOperations}
+                        </p>
+                      )}
+                      {connection.connected && (
+                        <p className="text-xs text-content-tertiary">
+                          {copy.lastAccess}
+                          {copy.fieldSeparator}
+                          {connection.last_access
+                            ? new Date(connection.last_access * 1000).toLocaleString(
+                                getLang() === 'en' ? 'en-US' : 'zh-CN',
+                              )
+                            : copy.never}
+                        </p>
+                      )}
                     </div>
-                    <button
-                      disabled={busy}
-                      className={action}
-                      onClick={() =>
-                        void mutate(() =>
-                          apiClient.updateSecurityConnection(
-                            connection.id,
-                            !connection.allowed,
-                            connection.scopes,
-                          ),
-                        )
-                      }
-                    >
-                      {connection.allowed
-                        ? en
-                          ? 'Revoke access'
-                          : '撤销访问'
-                        : en
-                          ? 'Reauthorize'
-                          : '重新授权'}
-                    </button>
+                    {connection.connected && (
+                      <button
+                        disabled={busy}
+                        className={connection.allowed ? input : action}
+                        onClick={() =>
+                          void mutate(() =>
+                            apiClient.updateSecurityConnection(
+                              connection.id,
+                              !connection.allowed,
+                              connection.scopes,
+                            ),
+                          )
+                        }
+                      >
+                        {connection.allowed ? copy.revoke : copy.restore}
+                      </button>
+                    )}
                   </section>
                 ))}
               </div>
@@ -524,73 +622,95 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'secrets' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold">{en ? 'Agent credentials' : 'Agent 凭据'}</h2>
-                  <p className={`${faded} mt-2`}>
-                    {en
-                      ? 'Configured status is visible here. Credential values are never shown.'
-                      : '此处仅显示配置状态，不显示凭据明文。'}
-                  </p>
+                  <h2 className="font-semibold">{copy.secretsTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.secretsHelp}</p>
                   <div className="mt-3 divide-y divide-default">
+                    {center.secrets.length === 0 && <p className={`${faded} py-3`}>{copy.noSecrets}</p>}
                     {center.secrets.map((item) => (
-                      <div key={item.name} className="flex justify-between items-center py-2 text-sm">
-                        <span>
-                          {item.name} <span className="text-content-tertiary">· {item.source}</span>
-                        </span>
+                      <div key={item.name} className="flex justify-between items-center gap-3 py-3 text-sm">
+                        <div className="min-w-0">
+                          <p className="font-medium">{securitySecretName(copy, item.name)}</p>
+                          <p className="text-xs text-content-secondary mt-0.5">
+                            {copy.source}
+                            {copy.fieldSeparator}
+                            {(copy.secretSources as Record<string, string>)[item.source] ||
+                              copy.secretSources['credential store']}
+                          </p>
+                        </div>
                         <button
                           disabled={busy}
-                          className="text-danger"
+                          className="text-danger shrink-0"
+                          aria-label={`${copy.deleteSecret} ${item.name}`}
                           onClick={() => void mutate(() => apiClient.deleteSecuritySecret(item.name))}
                         >
-                          {en ? 'Delete' : '删除'}
+                          {copy.deleteSecret}
                         </button>
                       </div>
                     ))}
                   </div>
                   <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 mt-4">
-                    <input
+                    <select
                       className={input}
-                      placeholder={en ? 'Credential name' : '凭据名称'}
+                      aria-label={copy.selectService}
                       value={secretName}
-                      onChange={(event) => setSecretName(event.target.value.toUpperCase())}
-                    />
+                      onChange={(event) => setSecretName(event.target.value)}
+                    >
+                      <option value="">{copy.selectService}</option>
+                      {commonCredentials.map(([name]) => (
+                        <option key={name} value={name}>
+                          {securitySecretName(copy, name)}
+                        </option>
+                      ))}
+                      <option value="other">{copy.otherCredential}</option>
+                    </select>
                     <input
                       type="password"
                       autoComplete="new-password"
                       className={input}
-                      placeholder={en ? 'New value' : '新凭据值'}
+                      aria-label={copy.secretValue}
+                      placeholder={copy.secretValue}
                       value={secretValue}
                       onChange={(event) => setSecretValue(event.target.value)}
                     />
                     <button
-                      disabled={busy || !secretName || !secretValue}
+                      disabled={busy || !credentialName || !secretValue}
                       className={action}
                       onClick={() => {
-                        void mutate(() => apiClient.saveSecuritySecret(secretName, secretValue)).then((ok) => {
-                          if (ok) setSecretValue('')
-                        })
+                        void mutate(() => apiClient.saveSecuritySecret(credentialName, secretValue)).then(
+                          (ok) => {
+                            if (ok) setSecretValue('')
+                          },
+                        )
                       }}
                     >
-                      {en ? 'Save' : '保存'}
+                      {copy.saveSecret}
                     </button>
                   </div>
+                  {secretName === 'other' && (
+                    <label className="block text-xs text-content-secondary mt-3">
+                      {copy.customCredentialName}
+                      <input
+                        className={`${input} block w-full mt-1`}
+                        value={customSecretName}
+                        onChange={(event) => setCustomSecretName(event.target.value.toUpperCase())}
+                      />
+                      <span className="block mt-1">{copy.secretNameHelp}</span>
+                    </label>
+                  )}
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{en ? 'App access password' : '应用访问密码'}</h2>
-                  <p className={`${faded} mt-2`}>
-                    {center.summary.app_password_set
-                      ? en
-                        ? 'Configured'
-                        : '已设置'
-                      : en
-                        ? 'Not configured'
-                        : '未设置'}
+                  <h2 className="font-semibold">{copy.appPassword}</h2>
+                  <p className={`${faded} mt-1`}>{copy.appPasswordHelp}</p>
+                  <p className="text-xs text-content-tertiary mt-2">
+                    {center.summary.app_password_set ? copy.configured : copy.notConfigured}
                   </p>
                   <div className="flex gap-2 mt-3">
                     <input
                       type="password"
                       autoComplete="new-password"
                       className={`${input} flex-1`}
-                      placeholder={en ? 'New app password' : '新应用密码'}
+                      aria-label={copy.newPassword}
+                      placeholder={copy.newPassword}
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                     />
@@ -603,7 +723,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         })
                       }}
                     >
-                      {en ? 'Change password' : '修改密码'}
+                      {copy.changePassword}
                     </button>
                   </div>
                 </section>
@@ -611,48 +731,128 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
             {tab === 'activity' && (
               <section className={card}>
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h2 className="font-semibold">{en ? 'Security activity' : '安全活动'}</h2>
-                  <button className="text-xs text-accent" onClick={() => setFilters({})}>
-                    {en ? 'Clear filters' : '清除筛选'}
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+                  <div>
+                    <h2 className="font-semibold">{copy.activityTitle}</h2>
+                    <p className={`${faded} mt-1`}>{copy.activityHelp}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs text-accent shrink-0 self-end"
+                    onClick={() => {
+                      setFilters({})
+                      setSinceDraft('')
+                    }}
+                  >
+                    {copy.clearFilters}
                   </button>
                 </div>
-                <div className="grid sm:grid-cols-3 gap-2 mb-4">
-                  {['agent', 'project', 'tool', 'risk', 'decision', 'since'].map((key) =>
-                    key === 'risk' || key === 'decision' ? (
-                      <select
-                        key={key}
-                        className={input}
-                        value={filters[key] || ''}
-                        onChange={(event) => setFilters({ ...filters, [key]: event.target.value })}
-                      >
-                        <option value="">{key}</option>
-                        {(key === 'risk'
-                          ? ['L0', 'L1', 'L2', 'L3', 'L4']
-                          : ['allow', 'confirm', 'deny', 'policy_change', 'secret_use', 'external_access']
-                        ).map((value) => (
-                          <option key={value} value={value}>
-                            {value}
-                          </option>
-                        ))}
-                      </select>
-                    ) : key === 'since' ? (
-                      <label key={key} className="text-xs text-content-secondary">
-                        {en ? 'From' : '起始时间'}
-                        <input type="datetime-local" className={`${input} w-full mt-1`}
-                          value={filters.since || ''}
-                          onChange={(event) => setFilters({ ...filters, since: event.target.value })} />
-                      </label>
-                    ) : (
-                      <input
-                        key={key}
-                        className={input}
-                        placeholder={key}
-                        value={filters[key] || ''}
-                        onChange={(event) => setFilters({ ...filters, [key]: event.target.value })}
-                      />
-                    ),
-                  )}
+                <div className="grid sm:grid-cols-3 gap-3 mb-4">
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterAgent}
+                    <select
+                      className={`${input} w-full mt-1`}
+                      value={filters.agent || ''}
+                      onChange={(event) => setFilters({ ...filters, agent: event.target.value })}
+                    >
+                      <option value="">{copy.all}</option>
+                      {[...new Set(availableEvents.map((event) => event.agent))].map((agent) => (
+                        <option key={agent} value={agent}>
+                          {agent === 'default' ? 'Stella' : agent}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterProject}
+                    <select
+                      className={`${input} w-full mt-1`}
+                      value={filters.project || ''}
+                      onChange={(event) => setFilters({ ...filters, project: event.target.value })}
+                    >
+                      <option value="">{copy.all}</option>
+                      {center.projects.map((item) => (
+                        <option key={item.path} value={item.path}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterTool}
+                    <select
+                      className={`${input} w-full mt-1`}
+                      value={filters.tool || ''}
+                      onChange={(event) => setFilters({ ...filters, tool: event.target.value })}
+                    >
+                      <option value="">{copy.all}</option>
+                      {[...new Set(availableEvents.map((event) => event.tool))].map((tool) => (
+                        <option key={tool} value={tool}>
+                          {(copy.tools as Record<string, string>)[tool] || copy.otherTool}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterRisk}
+                    <select
+                      className={`${input} w-full mt-1`}
+                      value={filters.risk || ''}
+                      onChange={(event) => setFilters({ ...filters, risk: event.target.value })}
+                    >
+                      <option value="">{copy.all}</option>
+                      {(['L0', 'L1', 'L2', 'L3', 'L4'] as const).map((risk) => (
+                        <option key={risk} value={risk}>
+                          {copy.risk[risk]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterDecision}
+                    <select
+                      className={`${input} w-full mt-1`}
+                      value={filters.decision || ''}
+                      onChange={(event) => setFilters({ ...filters, decision: event.target.value })}
+                    >
+                      <option value="">{copy.all}</option>
+                      {(
+                        [
+                          'allow',
+                          'confirm',
+                          'deny',
+                          'policy_change',
+                          'secret_use',
+                          'external_access',
+                        ] as const
+                      ).map((outcome) => (
+                        <option key={outcome} value={outcome}>
+                          {copy.outcomes[outcome]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-secondary">
+                    {copy.filterSince}
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className={`${input} w-full mt-1`}
+                      placeholder={copy.datePlaceholder}
+                      value={sinceDraft}
+                      onChange={(event) => {
+                        const value = event.target.value.trim()
+                        setSinceDraft(value)
+                        if (
+                          !value ||
+                          (/^\d{4}-\d{2}-\d{2}$/.test(value) &&
+                            !Number.isNaN(new Date(value + 'T00:00:00').getTime()))
+                        ) {
+                          setFilters({ ...filters, since: value })
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
                 {eventList(records)}
               </section>
