@@ -42,7 +42,7 @@ def test_managed_skills_are_not_workspace_writes(tmp_path, monkeypatch):
     assert rows[0]["trace"][-1] == "Decision: allow"
 
 
-def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch):
+def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch, security_audit_path):
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
@@ -64,7 +64,7 @@ def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch):
                for row in recent(filters={"conversation": "risk"}))
     assert SecurityGateway.check("full-access", "bash", {"command": "sudo true"}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
     assert SecurityGateway.check("full-access", "read", {"path": str(state / "config.json")}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
-    assert "TOPSECRET" not in (state / "security-activity.jsonl").read_text()
+    assert "TOPSECRET" not in security_audit_path.read_text()
 
 
 def test_policy_inheritance_and_restart_persistence(tmp_path, monkeypatch):
