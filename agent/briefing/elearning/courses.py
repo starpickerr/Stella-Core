@@ -1,6 +1,6 @@
 """Course selection adapted from elearning_crawler/src/service.py."""
 import re
-from .errors import LoginRequired, SyncError
+from .errors import LoginRequired, SyncCancelled, SyncError
 
 def course_list(client):
     return client.list("/api/v1/courses", {"enrollment_type": "student", "enrollment_state": "active", "include[]": "term"})
@@ -29,7 +29,7 @@ def select_courses(courses, selectors):
 def list_files(client, cid):
     try:
         return client.list("/api/v1/courses/{}/files".format(cid)), []
-    except LoginRequired:
+    except (LoginRequired, SyncCancelled):
         raise
     except SyncError as error:
         original = str(error)
@@ -43,7 +43,7 @@ def list_files(client, cid):
                     continue
                 try:
                     files[fid] = client.get("/api/v1/files/{}".format(fid))[0]
-                except LoginRequired:
+                except (LoginRequired, SyncCancelled):
                     raise
                 except SyncError as error:
                     errors.append("单元文件 {}：{}".format(fid, error))

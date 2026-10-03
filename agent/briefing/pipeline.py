@@ -11,6 +11,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import uuid
 
 from common.log import logger
+from agent.protocol.cancel import AgentCancelledError
+from agent.briefing.elearning.errors import SyncCancelled
 
 from agent.briefing.generator import AgentBriefingGenerator, briefing_title
 from agent.briefing.models import EmailMessage, SourceItem
@@ -30,11 +32,17 @@ class BriefingPipeline:
         sources: Optional[Sequence[Source]] = None,
         clock=None,
         generator=None,
+        cancel_event=None,
     ):
         self.service = service if service is not None else BriefingService()
         self.sources = list(sources or [])
         self.clock = clock or _now
         self.generator = generator if generator is not None else AgentBriefingGenerator()
+        self.cancel_event = cancel_event
+
+    def _check_cancelled(self):
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise AgentCancelledError("briefing cancelled by user")
 
     def run(
         self,
@@ -44,6 +52,7 @@ class BriefingPipeline:
         trigger: str = "manual",
         sources=None,
     ) -> dict:
+        self._check_cancelled()
         selected = select_sources(self.sources, sources)
         if not selected:
             raise ValueError("no briefing sources configured")
@@ -108,8 +117,12 @@ class BriefingPipeline:
 
         try:
             for source in selected:
+                self._check_cancelled()
                 try:
                     result = self._fetch_source(source, starts[source_key(source)], finish)
+                    self._check_cancelled()
+                except (AgentCancelledError, SyncCancelled):
+                    raise
                 except Exception as exc:
                     label = getattr(source, "display_name", source.name)
                     logger.warning(
@@ -169,10 +182,12 @@ class BriefingPipeline:
 
             drafted, mail = {}, []
             if status != "failed":
+                self._check_cancelled()
                 drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
                     briefing_date=day, kind=kind, window_start=start, window_end=finish,
                     preserved_decisions=preserved_decisions)
                 mail = drafted["mail"]
+                self._check_cancelled()
             filtered_count = sum(row["category"] == "filtered" for row in mail)
 
             detail = self.service.complete_briefing(
@@ -238,6 +253,9 @@ class BriefingPipeline:
                 "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
 
     def _fetch_source(self, source: Source, start: str, end: str) -> FetchResult:
+        self._check_cancelled()
+        if hasattr(source, "cancel_event"):
+            source.cancel_event = self.cancel_event
         cursors: Dict[str, str] = {}
         # Adapters may use several keys; we pass known values and ignore misses.
         for key in ("imap_uid", "imap_uidvalidity", "sync_token", "since", "elearning_state"):

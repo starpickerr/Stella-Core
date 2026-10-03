@@ -7,7 +7,7 @@ from common.log import logger
 from agent.briefing import elearning_settings
 from agent.briefing.elearning.client import ensure_login
 from agent.briefing.elearning.courses import course_list, list_files, select_courses
-from agent.briefing.elearning.errors import SyncError
+from agent.briefing.elearning.errors import SyncCancelled, SyncError
 from agent.briefing.elearning.utils import parse_date
 from agent.briefing.sources.elearning import ElearningSource
 from agent.tools.base_tool import BaseTool, ToolResult
@@ -44,12 +44,24 @@ class ElearningTool(BaseTool):
 
     def __init__(self, config=None, client_factory=None, clock=None):
         super().__init__()
-        self.client_factory = client_factory or ensure_login
+        self.client_factory = client_factory
         self.clock = clock or (lambda: datetime.now().astimezone())
+
+    def _client(self, cfg):
+        self._check_cancelled()
+        if self.client_factory is None:
+            return ensure_login(cfg, cancel_event=self.cancel_event)
+        client = self.client_factory(cfg)
+        # Injected clients used by tests and integrations can expose the same
+        # cancellation contract without changing the factory signature.
+        if hasattr(client, "cancel_event"):
+            client.cancel_event = self.cancel_event
+        self._check_cancelled()
+        return client
 
     def _check_cancelled(self):
         if self.cancel_event and self.cancel_event.is_set():
-            raise ValueError("eLearning 读取已取消")
+            raise SyncCancelled("eLearning 读取已取消")
 
     def execute(self, params):
         try:
@@ -61,7 +73,8 @@ class ElearningTool(BaseTool):
                                                elearning_settings.session_path(cfg).is_file()):
                 raise ValueError("请先在 eLearning 设置中配置账号和登录凭据")
             if params["action"] == "courses":
-                rows = course_list(self.client_factory(cfg))
+                rows = course_list(self._client(cfg))
+                self._check_cancelled()
                 output = {"courses": [{"id": str(row["id"]), "name": row.get("name", str(row["id"]))} for row in rows]}
             elif params["action"] == "fetch":
                 output = self._fetch(cfg, params)
@@ -98,8 +111,9 @@ class ElearningTool(BaseTool):
                 raise ValueError(f"{key} 必须是文件或课程 ID 列表")
         requested_courses = set(params.get("course_ids", []))
         requested_files = set(params.get("file_ids", []))
-        client = self.client_factory(cfg)
+        client = self._client(cfg)
         courses = select_courses(course_list(client), cfg["courses"])
+        self._check_cancelled()
         selected_ids = {str(course["id"]) for course in courses}
         if requested_courses - selected_ids:
             raise ValueError("只能同步 eLearning 设置中已授权保存文件的课程")
@@ -110,10 +124,13 @@ class ElearningTool(BaseTool):
                 continue
             try:
                 files, warnings = list_files(client, course["id"])
+                self._check_cancelled()
                 errors.extend(f"{course['name']}：{warning}" for warning in warnings)
                 rows.extend((course, raw) for raw in files
                             if not raw.get("hidden_for_user") and
                             (not requested_files or str(raw.get("id")) in requested_files))
+            except SyncCancelled:
+                raise
             except SyncError as exc:
                 errors.append(f"{course['name']} / files：{exc}")
         rows.sort(key=lambda pair: (str(pair[0]["id"]), str(pair[1]["id"])))
@@ -122,7 +139,7 @@ class ElearningTool(BaseTool):
             errors.append("以下课程文件未在已选课程中找到：" + "、".join(sorted(requested_files - found_files)))
         page = rows[offset:offset + limit]
         self._check_cancelled()
-        errors.extend(sync_files(client, cfg, page))
+        errors.extend(sync_files(client, cfg, page, cancel_event=self.cancel_event))
         return {"status": "partial" if errors else "completed", "total": len(rows),
                 "processed": len(page), "next_offset": offset + len(page) if offset + len(page) < len(rows) else None,
                 "save_root": cfg["file_sync_root"], "errors": errors}
@@ -141,10 +158,11 @@ class ElearningTool(BaseTool):
         selected = params.get("course_ids", cfg.get("courses") or [])
         if not isinstance(selected, list) or any(not isinstance(value, str) or not value.strip() for value in selected):
             raise ValueError("course_ids 必须是课程 ID 列表")
-        client_factory = self.client_factory
+        client_factory = self._client
         if "course_ids" in params or not selected:
-            client = self.client_factory(cfg)
+            client = self._client(cfg)
             courses = course_list(client)
+            self._check_cancelled()
             selected = ([str(course["id"]) for course in select_courses(courses, selected)]
                         if selected else [str(course["id"]) for course in courses])
             client_factory = lambda _: client
@@ -153,7 +171,8 @@ class ElearningTool(BaseTool):
                     "window": {"start": start.astimezone(timezone.utc).isoformat(),
                                "end": end.astimezone(timezone.utc).isoformat()},
                     "status": "completed", "errors": []}
-        source = ElearningSource({**cfg, "courses": selected}, client_factory=client_factory)
+        source = ElearningSource({**cfg, "courses": selected}, client_factory=client_factory,
+                                 cancel_event=self.cancel_event)
         cursors = {"since": start.astimezone(timezone.utc).isoformat(), "until": end.astimezone(timezone.utc).isoformat()}
         fetched = source.fetch(cursors)
         rows = sorted((item for item in fetched.items if start < parse_date(item.occurred_at) <= end),

@@ -15,7 +15,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 
 from agent.briefing import elearning_settings
-from agent.briefing.elearning.errors import SyncError
+from agent.briefing.elearning.errors import SyncCancelled, SyncError
 from agent.permission.audit import record
 
 _lock = threading.RLock()
@@ -60,7 +60,8 @@ def _open_child(parent_fd, name):
         raise SyncError(f"课程资料路径不是安全目录：{name}") from exc
 
 
-def _digest_existing(directory_fd, name):
+def _digest_existing(directory_fd, name, cancel_event=None):
+    _check_cancelled(cancel_event)
     try:
         info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
     except FileNotFoundError:
@@ -71,6 +72,7 @@ def _digest_existing(directory_fd, name):
     digest = hashlib.sha256()
     with os.fdopen(descriptor, "rb") as stream:
         for block in iter(lambda: stream.read(128 * 1024), b""):
+            _check_cancelled(cancel_event)
             digest.update(block)
     return digest.hexdigest()
 
@@ -79,7 +81,21 @@ class _TruncatedDownload(Exception):
     pass
 
 
-def _download(client, url, directory_fd):
+def _check_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise SyncCancelled("eLearning 文件同步已取消")
+
+
+def _wait(cancel_event, seconds):
+    _check_cancelled(cancel_event)
+    if cancel_event is None:
+        time.sleep(seconds)
+    elif cancel_event.wait(seconds):
+        raise SyncCancelled("eLearning 文件同步已取消")
+
+
+def _download(client, url, directory_fd, cancel_event=None):
+    _check_cancelled(cancel_event)
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise SyncError("课程文件下载地址必须是 HTTPS")
@@ -93,14 +109,15 @@ def _download(client, url, directory_fd):
         pass
     for attempt in range(3):
         try:
-            return _download_once(client, url, directory_fd)
+            return _download_once(client, url, directory_fd, cancel_event)
         except _TruncatedDownload as exc:
             if attempt == 2:
                 raise SyncError("课程文件传输中断，已重试 3 次；下次同步会继续尝试") from exc
-            time.sleep(2 ** attempt)
+            _wait(cancel_event, 2 ** attempt)
 
 
-def _download_once(client, url, directory_fd):
+def _download_once(client, url, directory_fd, cancel_event=None):
+    _check_cancelled(cancel_event)
     temporary = ".elearning-" + os.urandom(8).hex()
     descriptor = os.open(temporary, _FILE_FLAGS, 0o600, dir_fd=directory_fd)
     digest = hashlib.sha256()
@@ -111,12 +128,14 @@ def _download_once(client, url, directory_fd):
             length = headers.get("Content-Length") if headers else None
             expected = int(length) if length and length.isdecimal() else None
             while True:
+                _check_cancelled(cancel_event)
                 try:
                     block = response.read(128 * 1024)
                 except (http.client.HTTPException, URLError, TimeoutError, OSError) as exc:
                     raise _TruncatedDownload() from exc
                 if not block:
                     break
+                _check_cancelled(cancel_event)
                 size += len(block)
                 if size > _MAX_FILE_SIZE:
                     raise SyncError("课程文件超过 512 MB，未保存")
@@ -124,6 +143,7 @@ def _download_once(client, url, directory_fd):
                 digest.update(block)
             if expected is not None and size != expected:
                 raise _TruncatedDownload()
+            _check_cancelled(cancel_event)
             output.flush()
             os.fsync(output.fileno())
         return temporary, digest.hexdigest()
@@ -159,12 +179,13 @@ def _current_grant(config, course_id):
         raise SyncError("课程文件同步授权已变更，请检查 eLearning 设置")
 
 
-def sync_files(client, config, rows):
+def sync_files(client, config, rows, cancel_event=None):
     """Save changed files; return per-file errors without hiding briefing data."""
     if not config.get("file_sync_enabled"):
         return []
     if not rows:
         return []
+    _check_cancelled(cancel_event)
     root = Path(config.get("file_sync_root") or "")
     if not root.is_absolute() or not root.is_dir() or root.resolve(strict=True) != root:
         return ["课程文件保存目录已移动或不可用，请重新选择目录"]
@@ -173,7 +194,10 @@ def sync_files(client, config, rows):
     except SyncError as exc:
         return [str(exc)]
     errors = []
-    with _lock:
+    while not _lock.acquire(timeout=0.1):
+        _check_cancelled(cancel_event)
+    try:
+        _check_cancelled(cancel_event)
         manifest = _load_manifest(config, root)
         try:
             root_fd = os.open(str(root), _DIRECTORY_FLAGS)
@@ -181,18 +205,26 @@ def sync_files(client, config, rows):
             return ["课程文件保存目录不可用，请重新选择目录"]
         try:
             for course, raw in rows:
+                _check_cancelled(cancel_event)
                 try:
-                    _sync_one(client, config, root, root_fd, manifest, course, raw)
+                    _sync_one(client, config, root, root_fd, manifest, course, raw, cancel_event)
+                except SyncCancelled:
+                    raise
                 except Exception as exc:
                     errors.append(f"{course.get('name', '课程')} / {raw.get('display_name') or raw.get('filename') or '文件'}：{exc}")
+        except SyncCancelled:
+            raise
         except SyncError as exc:
             errors.append(str(exc))
         finally:
             os.close(root_fd)
+    finally:
+        _lock.release()
     return errors
 
 
-def _sync_one(client, config, root, materials_fd, manifest, course, raw):
+def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_event=None):
+    _check_cancelled(cancel_event)
     course_id, file_id = str(course["id"]), str(raw["id"])
     _current_grant(config, course_id)
     if isinstance(raw.get("size"), (int, float)) and raw["size"] > _MAX_FILE_SIZE:
@@ -209,7 +241,7 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw):
         name = previous.get("name") or _filename(raw)
         if not _manifest_name(name):
             raise SyncError("课程文件名记录无效")
-        existing_digest = _digest_existing(directory_fd, name)
+        existing_digest = _digest_existing(directory_fd, name, cancel_event)
         if previous.get("remote") == remote and existing_digest == previous.get("sha256"):
             return
         # A locally edited file stays untouched until Canvas reports a new version.
@@ -218,20 +250,22 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw):
         url = raw.get("url")
         if not isinstance(url, str) or not url:
             raise SyncError("课程文件没有可用的下载地址")
-        temporary, downloaded_digest = _download(client, url, directory_fd)
+        temporary, downloaded_digest = _download(client, url, directory_fd, cancel_event)
         try:
+            _check_cancelled(cancel_event)
             _current_grant(config, course_id)
-            existing_digest = _digest_existing(directory_fd, name)
+            existing_digest = _digest_existing(directory_fd, name, cancel_event)
             replace = (existing_digest is None or
                        bool(previous.get("sha256") and existing_digest == previous["sha256"]))
             if not replace:
                 stem, extension = os.path.splitext(_filename(raw))
                 name = f"{stem}-更新-{remote[:8]}{extension}"
-                if _digest_existing(directory_fd, name) is not None:
+                if _digest_existing(directory_fd, name, cancel_event) is not None:
                     name = f"{stem}-更新-{remote[:8]}-{downloaded_digest[:8]}{extension}"
             destination = root / folder / name
             record(tool="elearning", operation="download", resource=str(destination), event="file_modify",
                    risk="L1", decision="allow", reason="Configured course file sync within the selected folder.")
+            _check_cancelled(cancel_event)
             if replace:
                 os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
             else:
