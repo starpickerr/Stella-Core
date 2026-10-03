@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from typing import Any
 
 from agent.permission.policy import FULL_ACCESS, READ_ONLY, WORKSPACE_WRITE
@@ -112,20 +113,66 @@ def rule(policy: dict, name: str) -> str:
     return policy.get("rules", {}).get(name, PRESETS[policy.get("preset", "standard")][name])
 
 
-def describe(policy: dict, language: str = "zh", workspace: str | None = None) -> list[str]:
-    """Short prompt guidance from the same resolved policy used by tool execution."""
-    if language == "en":
-        lines = ["## Security policy", "", f"Preset: {policy.get('preset', 'standard')}.",
-                 f"Agent-managed Skills and internal state: {rule(policy, 'managed')}.",
-                 f"Workspace reads: {rule(policy, 'workspace_read')}; writes: {rule(policy, 'workspace_write')}.",
-                 f"Access outside the authorized workspace: {rule(policy, 'workspace_outside')}.",
-                 f"Shell: {rule(policy, 'shell')}; Git: {rule(policy, 'git')}; network: {rule(policy, 'network')}; high risk: {rule(policy, 'high_risk')}."]
-    else:
-        lines = ["## 安全策略", "", f"模式：{policy.get('preset', 'standard')}。",
-                 f"Agent 内部 Skills 与状态：{rule(policy, 'managed')}。",
-                 f"工作区读取：{rule(policy, 'workspace_read')}；写入：{rule(policy, 'workspace_write')}。",
-                 f"授权工作区外访问：{rule(policy, 'workspace_outside')}。",
-                 f"终端：{rule(policy, 'shell')}；Git：{rule(policy, 'git')}；网络：{rule(policy, 'network')}；高风险：{rule(policy, 'high_risk')}。"]
+def describe(policy: dict, language: str = "zh", workspace: str | None = None,
+             *, tool_allowlist: list[str] | None = None,
+             elearning_sync: dict | None = None) -> list[str]:
+    """Explain the effective policy to the model; the gateway remains authoritative."""
+    english = language == "en"
+    lines = ["## Security context" if english else "## 本次会话的安全边界", ""]
+    lines.append(("Effective preset: " if english else "有效预设：") +
+                 str(policy.get("preset", "standard")) + ".")
+    groups = (
+        (("Managed state", "托管状态"), ("managed",)),
+        (("Workspace read/write/outside", "工作区读取/写入/区外访问"),
+         ("workspace_read", "workspace_write", "workspace_outside")),
+        (("Shell/Git/network/install/background", "终端/Git/网络/安装/后台运行"),
+         ("shell", "git", "network", "install", "background")),
+        (("External/high-risk", "外部连接/高风险操作"), ("external", "high_risk")),
+    )
+    for labels, names in groups:
+        lines.append(f"{labels[0 if english else 1]}: " +
+                     ", ".join(f"{name}={rule(policy, name)}" for name in names) + ".")
     if workspace:
-        lines.append(f"Workspace: {workspace}")
-    return lines + [""]
+        lines.append(("Active workspace: " if english else "当前工作区：") +
+                     json.dumps(workspace, ensure_ascii=False) + ".")
+    extra_roots = policy.get("extra_roots") or []
+    if extra_roots:
+        lines.append(("Additional authorized paths: " if english else "额外授权路径：") +
+                     json.dumps(extra_roots, ensure_ascii=False) + ".")
+    if tool_allowlist:
+        lines.append(("Available tool allowlist: " if english else "工具白名单：") +
+                     json.dumps(tool_allowlist, ensure_ascii=False) + ".")
+    for name, grant in sorted((policy.get("connections") or {}).items()):
+        if grant.get("allowed") is False or grant.get("scopes"):
+            status = "denied" if grant.get("allowed") is False else "allowed"
+            scopes = grant.get("scopes") or []
+            lines.append(("Connection restriction: " if english else "连接限制：") +
+                         json.dumps(name, ensure_ascii=False) + f"={status}, scopes=" +
+                         json.dumps(scopes, ensure_ascii=False) + ".")
+    if elearning_sync is not None:
+        enabled = bool(elearning_sync.get("enabled"))
+        if enabled:
+            root = json.dumps(elearning_sync.get("root", ""), ensure_ascii=False)
+            lines.append(("eLearning file sync may write only to the selected folder: " if english else
+                          "eLearning 文件同步仅可写入已选目录：") + root + ".")
+        else:
+            lines.append("eLearning file sync is not ready; the user must enable the source and sync, "
+                         "select courses and a save folder in briefing settings."
+                         if english else "eLearning 文件同步未就绪；需要用户在简报设置中启用来源及同步、选择课程与保存目录。")
+    lines.extend([
+        ("Read actions generally use workspace_read; changing tasks, calendar entries or briefings and "
+         "eLearning sync_files use workspace_write. Shell also follows shell plus operation-specific rules."
+         if english else "读取操作通常使用 workspace_read；修改事务、日程、简报及 eLearning sync_files 使用 "
+                         "workspace_write。终端还要符合 shell 及具体操作规则。"),
+        ("allow permits, confirm requires explicit Security Center approval for the exact action, deny forbids it. "
+         "Protected credentials and privilege escalation remain unavailable even when a rule says allow."
+         if english else "allow 表示可尝试，confirm 表示该次具体操作须经安全中心确认，deny 表示禁止。"
+                         "即使规则为 allow，受保护凭据读取和提权仍被禁止。"),
+        ("Use built-in tools for credentials and authorized file sync. Never use shell scripts or an equivalent "
+         "tool to work around a refusal. If a call is denied, explain the required setting or scope; if it awaits "
+         "confirmation, wait for approval before retrying the same action. Tool checks use the latest policy."
+         if english else "凭据和文件同步使用内置工具；不要用脚本或换工具绕过拒绝。被拒绝时说明需要的设置或授权范围；"
+                         "需要确认时等待批准后再重试同一操作。工具执行以当时的最新策略为准。"),
+        "",
+    ])
+    return lines
