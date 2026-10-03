@@ -3,7 +3,7 @@ import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
 import { notifyRunDone } from '../lib/taskNotify'
 import { parseAttachmentMarkers } from '../lib/fileKind'
-import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
+import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage, PendingAdmission } from '../types'
 
 /**
  * Per-session chat state. Supports parallel sessions: each session keeps its
@@ -13,6 +13,7 @@ import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, Histo
 
 interface SessionRuntime {
   messages: ChatMessage[]
+  pendingAdmissions?: PendingAdmission[]
   isStreaming: boolean
   requestId: string | null
   // history pagination
@@ -573,6 +574,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         const res = await apiClient.getHistory(sid, page, 20)
         const uiMsgs = res.messages.map(historyToMessage)
         patchSession(sid, {
+          pendingAdmissions: res.pending_admissions || [],
           historyPage: res.page,
           historyHasMore: res.has_more,
           historyLoaded: true,

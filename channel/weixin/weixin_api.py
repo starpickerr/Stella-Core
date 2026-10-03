@@ -145,7 +145,9 @@ class WeixinApi:
                 return resp.json()
             except requests.exceptions.Timeout:
                 logger.debug(f"[Weixin] API timeout: {endpoint}")
-                return {"ret": 0, "msgs": []}
+                if endpoint == "ilink/bot/getupdates":
+                    return {"ret": 0, "msgs": []}
+                raise
             except (requests.exceptions.SSLError,
                     requests.exceptions.ConnectionError,
                     requests.exceptions.ChunkedEncodingError) as e:
@@ -160,10 +162,14 @@ class WeixinApi:
                                    f"{backoff}s: {e}")
                     time.sleep(backoff)
                     continue
-                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                # The long-poll loop owns its retry and diagnostic log. Logging
+                # here as well produces two errors for each failed poll.
+                if endpoint != "ilink/bot/getupdates":
+                    logger.error(f"[Weixin] API error {endpoint}: {e}")
                 raise
             except Exception as e:
-                logger.error(f"[Weixin] API error {endpoint}: {e}")
+                if endpoint != "ilink/bot/getupdates":
+                    logger.error(f"[Weixin] API error {endpoint}: {e}")
                 raise
 
     # ── getUpdates (long-poll) ─────────────────────────────────────────

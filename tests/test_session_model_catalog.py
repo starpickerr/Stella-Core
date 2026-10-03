@@ -28,7 +28,7 @@ if "web" not in sys.modules:
 
 
 def _catalog_with(config):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     with patch.object(web_channel, "conf", return_value=config), \
             patch("models.custom_provider.conf", return_value=config):

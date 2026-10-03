@@ -26,7 +26,7 @@ def _backups_root(workspace_dir: Path) -> Path:
     return Path(workspace_dir) / "memory" / _BACKUP_DIRNAME
 
 
-def create_backup(workspace_dir: Path, files: List[Path]) -> Optional[str]:
+def create_backup(workspace_dir: Path, files: List[Path], user_id: Optional[str] = None) -> Optional[str]:
     """Snapshot ``files`` (those that exist) under a new backup id.
 
     Returns the backup_id, or None when there is nothing to back up.
@@ -41,17 +41,25 @@ def create_backup(workspace_dir: Path, files: List[Path]) -> Optional[str]:
     try:
         target.mkdir(parents=True, exist_ok=True)
         ws = Path(workspace_dir)
+        from common.state_dir import user_root_for_workspace
+
+        user_root = user_root_for_workspace(ws, user_id)
         manifest = []
         for idx, src in enumerate(existing):
             # Store under a flat index plus the relative path so restore knows
             # where it came from, even for nested skill files.
             try:
                 rel = str(src.relative_to(ws))
+                entry = {"rel": rel, "bak": f"{idx}.bak"}
             except ValueError:
-                rel = src.name
+                try:
+                    rel = str(src.relative_to(user_root))
+                    entry = {"rel": rel, "bak": f"{idx}.bak", "scope": "user", "user_id": user_id}
+                except ValueError:
+                    entry = {"rel": src.name, "bak": f"{idx}.bak"}
             dst = target / f"{idx}.bak"
             shutil.copy2(src, dst)
-            manifest.append({"rel": rel, "bak": f"{idx}.bak"})
+            manifest.append(entry)
         (target / _MANIFEST_NAME).write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -78,7 +86,12 @@ def restore_backup(workspace_dir: Path, backup_id: str) -> bool:
         ws = Path(workspace_dir)
         for entry in manifest:
             bak = target / entry["bak"]
-            dst = ws / entry["rel"]
+            if entry.get("scope") == "user":
+                from common.state_dir import user_root_for_workspace
+
+                dst = user_root_for_workspace(ws, entry.get("user_id")) / entry["rel"]
+            else:
+                dst = ws / entry["rel"]
             if bak.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(bak, dst)

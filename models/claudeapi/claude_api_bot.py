@@ -66,10 +66,12 @@ class ClaudeAPIBot(Bot, OpenAIImage):
 
     @property
     def api_key(self):
-        return conf().get("claude_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("claude_api_key")
 
     @property
     def api_base(self):
+        if hasattr(self, "_stella_api_base"):
+            return self._stella_api_base or "https://api.anthropic.com/v1"
         return conf().get("claude_api_base") or "https://api.anthropic.com/v1"
 
     @property

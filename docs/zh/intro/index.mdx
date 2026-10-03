@@ -9,7 +9,7 @@ description: Stella - 基于大模型的超级AI助理
 
 **Stella** 是基于大模型的超级AI助理，能够主动思考和任务规划、操作计算机和外部资源、创造和执行Skills、拥有长期记忆和知识库并不断成长。
 
-Stella 支持灵活切换多种模型，能处理文本、语音、图片、文件等多模态消息，可接入微信、飞书、钉钉、企业微信应用、微信公众号、网页中使用，7×24小时运行于你的个人电脑或服务器中。
+Stella 支持灵活切换多种模型，能处理文本、语音、图片、文件等多模态消息，可接入微信、飞书、钉钉、企业微信应用、微信公众号等渠道中使用，在桌面客户端所在电脑上运行。
 
 <Frame>
   <img src="/images/placeholder-video.svg" alt="Stella video placeholder" />
@@ -52,30 +52,13 @@ Stella 支持灵活切换多种模型，能处理文本、语音、图片、文�
     支持 OpenAI, Claude, Gemini, DeepSeek, MiniMax, GLM, Qwen, Kimi, Doubao 等国内外主流模型厂商。
   </Card>
   <Card title="多通道接入" icon="server" href="/zh/channels/weixin">
-    支持运行在本地计算机或服务器，可集成到微信、网页、飞书、钉钉、微信公众号、企业微信应用中使用。
+    运行在本地计算机，可集成到桌面客户端、微信、飞书、钉钉、微信公众号、企业微信应用中使用。
   </Card>
 </CardGroup>
 
 ## 快速体验
 
-在终端执行以下命令，即可一键安装、配置、启动 Stella：
-
-<Tabs>
-  <Tab title="Linux / macOS">
-    ```bash
-    bash <(curl -fsSL https://raw.githubusercontent.com/starpickerr/Stella/main/run.sh)
-    ```
-  </Tab>
-  <Tab title="Windows (PowerShell)">
-    ```powershell
-    irm https://raw.githubusercontent.com/starpickerr/Stella/main/scripts/run.ps1 | iex
-    ```
-  </Tab>
-</Tabs>
-
-运行后默认会启动 Web 控制台，通过访问 `http://localhost:9899` 可以在网页端进行对话、配置、应用通道接入等操作。
-
-也可以使用桌面客户端（macOS / Windows），内置 Agent 运行环境，[下载安装](https://github.com/starpickerr/Stella/releases)后开箱即用。
+下载[桌面版](https://github.com/starpickerr/Stella/releases/latest)，或在源码目录运行 `cd desktop && npm install && npm run dev`。Electron 客户端会自动启动专用后端。
 
 <CardGroup cols={2}>
   <Card title="快速开始" icon="rocket" href="/zh/guide/quick-start">

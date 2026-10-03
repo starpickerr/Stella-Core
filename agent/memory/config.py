@@ -61,7 +61,7 @@ class MemoryConfig:
     def get_memory_dir(self) -> Path:
         """Get memory files directory"""
         from common import state_dir
-        return state_dir.memory_dir(base=self.workspace_root)
+        return state_dir.user_root_for_workspace(self.workspace_root) / "memory"
 
     def get_db_path(self) -> Path:
         """Get SQLite database path for long-term memory index"""

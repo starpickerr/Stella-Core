@@ -187,7 +187,7 @@ def test_ordinary_chat_message_keeps_using_the_session_queue(monkeypatch):
 
 
 def test_web_steer_button_payload_is_handled_inline(monkeypatch):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     bridge, factory = _fake_agent_bridge(SteerResult(SteerStatus.ACCEPTED))
     monkeypatch.setattr("bridge.bridge.Bridge", lambda: factory)
@@ -197,7 +197,7 @@ def test_web_steer_button_payload_is_handled_inline(monkeypatch):
         "steer": True,
         "lang": "en",
     }).encode())
-    raw_class = web_channel.WebChannel.__closure__[0].cell_contents
+    raw_class = web_channel.DesktopChannel.__closure__[0].cell_contents
     instance = object.__new__(raw_class)
 
     response = json.loads(raw_class.post_message(instance))
@@ -213,7 +213,7 @@ def test_web_steer_button_payload_is_handled_inline(monkeypatch):
 
 
 def test_web_steer_does_not_start_a_run_when_session_is_idle(monkeypatch):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     _, factory = _fake_agent_bridge(SteerResult(SteerStatus.INACTIVE))
     monkeypatch.setattr("bridge.bridge.Bridge", lambda: factory)
@@ -223,7 +223,7 @@ def test_web_steer_does_not_start_a_run_when_session_is_idle(monkeypatch):
         "stream": True,
         "lang": "en",
     }).encode())
-    raw_class = web_channel.WebChannel.__closure__[0].cell_contents
+    raw_class = web_channel.DesktopChannel.__closure__[0].cell_contents
     instance = object.__new__(raw_class)
 
     response = json.loads(raw_class.post_message(instance))

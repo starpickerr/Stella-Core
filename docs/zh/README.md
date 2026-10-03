@@ -10,7 +10,7 @@
   [<a href="../../README.md">English</a>] | [中文] | [<a href="README-Hant.md">繁體中文</a>] | [<a href="../ja/README.md">日本語</a>]
 </p>
 
-**Stella** 是一个 AI 私人秘书。它能规划任务、操作电脑和外部服务、记住重要信息，并逐步积累你的个人知识库，在网页、桌面和各类即时通讯里替你处理日常事务。
+**Stella** 是一个 AI 私人秘书。它能规划任务、操作电脑和外部服务、记住重要信息，并逐步积累你的个人知识库，在桌面客户端和各类即时通讯里替你处理日常事务。
 
 项目基于可扩展的 Agent Harness：可接入主流大模型，7×24 运行在个人电脑或服务器上，并用工具、技能和消息通道继续扩展。
 
@@ -40,10 +40,10 @@
 | [自主进化](memory/self-evolution.mdx) | 自动复盘对话，优化技能、处理未完成事项、沉淀记忆与知识，在使用中持续成长 |
 | [技能](skills/index.mdx) | 从 [skill广场](https://www.skill-marketplace.com/)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
 | [工具](tools/index.mdx) | 内置文件读写、终端、浏览器、定时任务、记忆检索、联网搜索等 10+ 工具，支持 MCP 协议 |
-| [通道](channels/index.mdx) | 一个 Agent 同时接入 Web、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
+| [通道](channels/index.mdx) | 一个 Agent 同时接入桌面客户端、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
 | 多模态 | 文本、图片、语音、文件全消息类型支持，覆盖识别、生成、收发 |
 | [模型](models/index.mdx) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流厂商，配置一行切换 |
-| [部署](guide/quick-start.mdx) | 一键脚本安装，Web 控制台统一管理；本地、Docker、服务器多种部署方式 |
+| [部署](guide/quick-start.mdx) | Electron 桌面客户端与专用本地后端 |
 
 <br/>
 
@@ -59,37 +59,18 @@ Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，
 
 ## 🚀 快速开始
 
-克隆本仓库，安装依赖后启动 Stella：
+从 [GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) 下载并打开 Electron 桌面客户端。开发者可从源码运行：
 
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
 pip install -r requirements.txt
-pip install -e .
-stella start
+cd desktop
+npm install
+npm run dev
 ```
 
-**Docker：**
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-启动成功后访问 `http://localhost:9899` 进入 **Web 控制台**，即可对话、配置模型、接入通道和安装技能。
-
-> 服务器部署且需要公网访问控制台时，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（同时强烈建议设置 `web_password` 启用鉴权），然后访问 `http://<server-ip>:9899`，并确保防火墙/安全组放行 `9899` 端口。
-
-> 📖 仓库内指南：[快速开始](guide/quick-start.mdx) · [源码安装](guide/manual-install.mdx) · [升级](guide/upgrade.mdx)
-
-安装后可使用 `stella` CLI 管理服务：
-
-```bash
-stella start | stop | restart        # 服务管理
-stella status | logs                  # 状态和日志
-stella update                         # 拉取最新代码并重启
-stella skill install <名称>           # 安装技能
-stella install-browser                # 安装浏览器工具
-```
+`npm run dev` 每次都会构建当前界面并启动桌面专用后端。详见[快速开始](guide/quick-start.mdx)和[源码构建](guide/manual-install.mdx)。
 
 <br/>
 
@@ -113,7 +94,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 | [LinkAI](models/linkai.mdx) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [自定义](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
 
-> 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](models/index.mdx)。
+> 推荐通过 桌面客户端在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](models/index.mdx)。
 
 <br/>
 
@@ -123,7 +104,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 | 通道 | 文本 | 图片 | 文件 | 语音 | 群聊 |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| [Web 控制台](channels/web.mdx)（默认） | ✅ | ✅ | ✅ | ✅ | |
+| [桌面客户端](guide/desktop.mdx)（默认） | ✅ | ✅ | ✅ | ✅ | |
 | [微信](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
 | [飞书](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [钉钉](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -136,11 +117,11 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 | [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
 | [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
 
-> 飞书、企微智能机器人支持在 Web 控制台内**扫码一键接入**，无需公网 IP。详见 [通道概览](channels/index.mdx)。
+> 飞书、企微智能机器人支持在桌面客户端内**扫码一键接入**，无需公网 IP。详见 [通道概览](channels/index.mdx)。
 
-<img src="../images/placeholder-image.svg" alt="Stella Web 控制台" width="800"/>
+<img src="../images/placeholder-image.svg" alt="Stella 桌面客户端" width="800"/>
 
-*Web 控制台是默认通道，也是统一的 Agent 配置和管理入口*
+*桌面客户端是默认通道，也是统一的 Agent 配置和管理入口*
 
 <br/>
 
@@ -148,7 +129,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 **长期记忆**采用三层架构：对话上下文（短期）→ 天级记忆（中期）→ MEMORY.md（长期）。每日自动执行**梦境蒸馏（Deep Dream）**，将分散记忆整合为精炼的长期记忆并生成叙事日记。详见 [长期记忆](memory/index.mdx) · [梦境蒸馏](memory/deep-dream.mdx)。
 
-**个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，Web 控制台可可视化浏览知识图谱。详见 [个人知识库](knowledge/index.mdx)。
+**个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，桌面客户端可视化浏览知识图谱。详见 [个人知识库](knowledge/index.mdx)。
 
 <table>
   <tr>

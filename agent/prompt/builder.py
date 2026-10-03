@@ -155,15 +155,12 @@ def build_agent_system_prompt(
     # nothing in full-access mode, leaving the prompt as it has always been.
     if permission_mode:
         try:
-            from agent.permission import describe_mode
-
-            sections.extend(
-                describe_mode(
-                    permission_mode,
-                    language,
-                    cwd=project_dir or workspace_dir,
-                )
-            )
+            from agent.permission.security_policy import describe, resolve
+            from common.runtime_identity import current_identity
+            identity = current_identity()
+            policy = resolve(permission_mode, project_dir=project_dir,
+                             session_id=identity.session_id, agent_id=identity.agent_id)
+            sections.extend(describe(policy, language, workspace=project_dir or workspace_dir))
         except Exception as e:
             logger.debug(f"Permission prompt section skipped: {e}")
 
@@ -181,6 +178,10 @@ def build_agent_system_prompt(
 
     # 8. Response language (always appended, independent of the skeleton language)
     sections.extend(_build_response_language_section(language))
+
+    # 9. Final-answer relevance. This also applies when tools, memory and
+    # workspace context are absent (for example, a freshly created Agent).
+    sections.extend(_build_response_relevance_section(language))
 
     return "\n".join(sections)
 
@@ -203,6 +204,29 @@ def _build_response_language_section(language: str) -> List[str]:
         "## 🌐 回复语言",
         "",
         "默认使用与用户输入相同的语言回复，除非用户明确要求使用其他语言。",
+        "",
+    ]
+
+
+def _build_response_relevance_section(language: str) -> List[str]:
+    """Keep user exclusions as generation boundaries, not answer topics."""
+    if language == "en":
+        return [
+            "## Response relevance",
+            "",
+            "Treat exclusions in a user request as boundaries on what to produce. First decide whether the excluded content would otherwise belong in the requested result.",
+            "Focus the final answer on the requested result. Do not repeat an exclusion merely to show compliance, or make it a title, theme, aside, or summary point.",
+            "Mention an exclusion only when it materially changes the result, conflicts with the goal, is needed for clarity or safety, or the user asks you to discuss it.",
+            "Before replying, remove any detail whose only reason for appearing is that the user excluded it.",
+            "",
+        ]
+    return [
+        "## 回复相关性",
+        "",
+        "将用户请求中的排除条件用于限定生成内容。先判断被排除的内容是否原本就会出现在所需结果中。",
+        "最终回答聚焦用户要的结果。不要仅为证明遵守要求而复述排除条件，也不要把它放进标题、主题、补充说明或总结。",
+        "只有当排除条件实质改变结果、与目标冲突、关系到澄清或安全，或者用户明确要求讨论时，才在回答中提及。",
+        "回复前删除那些仅因用户提出排除条件才出现的信息。",
         "",
     ]
 
@@ -315,7 +339,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             # belong in the description, which it reads once it looks.
             lines.insert(
                 -1,
-                "- Hand a self-contained task that needs research, search or information gathering to `subagent`: one task, or several at once via tasks running in parallel; it brings back the conclusion",
+                "- Independent work: hand a self-contained task to `subagent`; one task or several can run in parallel and bring back conclusions",
             )
     else:
         lines = [
@@ -335,7 +359,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         if has_subagent:
             lines.insert(
                 -1,
-                "- 需要深入调研、搜索或信息采集的独立任务，交给 `subagent`：可以单个任务，也可以用 tasks 同时执行多个任务，`subagent` 负责把结论带回来",
+                "- 能整块交出去的独立工作可交给 `subagent`：单个任务或多个并行任务都能带回结论",
             )
 
     return lines
@@ -476,7 +500,7 @@ def _build_memory_section(
             "",
             "In the following cases, **proactively** write info to memory files (no need to tell the user):",
             "",
-            "- The user asks you to remember something, or uses words like \"remember\", \"from now on\", \"always\", \"never\", \"prefer\"",
+            "- The user explicitly asks you to remember an enduring rule, or states a durable preference; a one-off exclusion for the current request is not a long-term memory",
             "- The user shares important personal preferences, habits or decisions",
             "- The conversation produces an important conclusion, plan or agreement",
             "- A complex task is completed and the key steps and results are worth recording",
@@ -514,7 +538,7 @@ def _build_memory_section(
             "",
             "遇到以下情况时，**主动**将信息写入记忆文件（无需告知用户）：",
             "",
-            "- 用户要求记住某些信息，或使用了「记住」「以后」「总是」「不要」「偏好」等表达",
+            "- 用户明确要求长期记住某项规则，或表达了稳定偏好；仅适用于当前请求的排除条件不构成长期记忆",
             "- 用户分享了重要的个人偏好、习惯、决策",
             "- 对话中产生了重要的结论、方案、约定",
             "- 完成了复杂任务，值得记录关键步骤和结果",
@@ -705,7 +729,7 @@ def _build_workspace_section(
                 "",
                 "The following files are **already auto-loaded** into the system prompt at session start, so you **don't need to read them again with the read tool**:",
                 "",
-                "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. When your name, personality or style changes, proactively `edit` this file",
+                "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. Proactively `edit` it when the user establishes an enduring change to your name, personality or style; a one-task request is not a persona change",
                 "- ✅ `USER.md`: loaded - the user's identity info. When the user changes how they're addressed, their name, etc., `edit` this file",
                 "- ✅ `RULE.md`: loaded - workspace guide and rules; follow them strictly",
                 "- ✅ `MEMORY.md`: loaded - long-term memory index",
@@ -748,7 +772,7 @@ def _build_workspace_section(
                 "",
                 "以下文件在会话启动时**已经自动加载**到系统提示词中，你**无需再用 read 工具读取**：",
                 "",
-                "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当你的名字、性格或交流风格发生变化时，主动用 `edit` 更新此文件",
+                "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当用户明确对你的名字、性格或交流风格提出长期变更时，主动用 `edit` 更新此文件；单次任务要求不构成人格变更",
                 "- ✅ `USER.md`: 已加载 - 用户的身份信息。当用户修改称呼、姓名等身份信息时，用 `edit` 更新此文件",
                 "- ✅ `RULE.md`: 已加载 - 工作空间使用指南和规则，请严格遵循",
                 "- ✅ `MEMORY.md`: 已加载 - 长期记忆索引",
@@ -886,10 +910,10 @@ def _build_context_files_section(context_files: List[ContextFile], language: str
     if has_agent:
         if is_en:
             lines.append("**`AGENT.md` is your soul file** 🪞: strictly follow the persona, tone and settings it defines. Be your real self, avoid stiff, template-like replies.")
-            lines.append("When the user reveals new expectations about your personality, style, responsibilities or capability boundaries, proactively `edit` AGENT.md to reflect that evolution.")
+            lines.append("Proactively `edit` AGENT.md only when the user explicitly asks for an enduring change to your personality, style, responsibilities or capability boundaries, or the context clearly establishes a stable preference. Keep one-task constraints within that task.")
         else:
             lines.append("**`AGENT.md` 是你的灵魂文件** 🪞：严格遵循其中定义的人格、语气和设定，做真实的自己，避免僵硬、模板化的回复。")
-            lines.append("当用户通过对话透露了对你性格、风格、职责、能力边界的新期望，你应该主动用 `edit` 更新 AGENT.md 以反映这些演变。")
+            lines.append("只有当用户明确要求长期改变你的性格、风格、职责或能力边界，或者上下文充分表明是稳定偏好时，才主动用 `edit` 更新 AGENT.md。单次任务的限制条件只用于该任务。")
         lines.append("")
     
     # Append the content of each file

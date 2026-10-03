@@ -9,7 +9,6 @@ import LoginGate from './components/LoginGate'
 import { useBackend } from './hooks/useBackend'
 import { usePlatform } from './hooks/usePlatform'
 import { usePushPoll } from './hooks/usePushPoll'
-import { useTodoNotifications } from './hooks/useTodoNotifications'
 import { useUIStore } from './store/uiStore'
 import { useSessionStore } from './store/sessionStore'
 import { useWorkspaceStore } from './store/workspaceStore'
@@ -27,12 +26,13 @@ import SkillsPage from './pages/SkillsPage'
 import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
+import HealthPage from './pages/HealthPage'
 import LogsPage from './pages/LogsPage'
-import PlaceholderPage from './pages/PlaceholderPage'
 import BillsPage from './pages/BillsPage'
 import BriefingPage from './pages/BriefingPage'
 import CalendarPage from './pages/CalendarPage'
 import TodosPage from './pages/TodosPage'
+import SecurityPage from './pages/SecurityPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -47,15 +47,12 @@ const App: React.FC = () => {
   const maybeOpenOnboarding = useOnboardingStore((s) => s.maybeOpen)
   const [, forceUpdate] = useState(0)
   // Backend authentication must settle before the main UI renders.
-  const [authState, setAuthState] = useState<'checking' | 'need_login' | 'ok'>('checking')
+  const [auth, setAuth] = useState<{baseUrl: string; status: 'checking' | 'need_login' | 'ok'}>({baseUrl: '', status: 'checking'})
+  const authState = auth.baseUrl === backend.baseUrl ? auth.status : 'checking'
   const [productAuthed, setProductAuthed] = useState(false)
   // product.auth is fixed for the lifetime of the build.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const productRequiresAuth = product.auth ? product.auth.useRequiresAuth() : false
-
-  useEffect(() => {
-    if (backend.status === 'ready') apiClient.setBaseUrl(backend.baseUrl)
-  }, [backend.status, backend.baseUrl])
 
   // Prevent unhandled file drops from navigating away from the app.
   useEffect(() => {
@@ -72,20 +69,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (backend.status !== 'ready') {
-      setAuthState('checking')
+      setAuth({baseUrl: backend.baseUrl, status: 'checking'})
       return
     }
     let cancelled = false
+    apiClient.setBaseUrl(backend.baseUrl)
+    setAuth({baseUrl: backend.baseUrl, status: 'checking'})
     apiClient
       .authCheck()
       .then((res) => {
         if (cancelled) return
         const needLogin = res.auth_required && !res.authenticated
-        setAuthState(needLogin ? 'need_login' : 'ok')
+        setAuth({baseUrl: backend.baseUrl, status: needLogin ? 'need_login' : 'ok'})
       })
       .catch(() => {
         // Older backends may not expose the authentication check.
-        if (!cancelled) setAuthState('ok')
+        if (!cancelled) setAuth({baseUrl: backend.baseUrl, status: 'ok'})
       })
     return () => {
       cancelled = true
@@ -116,11 +115,10 @@ const App: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [backend.status, authState, maybeOpenOnboarding])
+  }, [backend.status, backend.baseUrl, authState, maybeOpenOnboarding])
 
   // Poll for scheduler/push messages once the backend and auth are settled.
   usePushPoll(backend.status === 'ready' && authState === 'ok')
-  useTodoNotifications(backend.status === 'ready' && authState === 'ok')
 
   // A clicked OS notification asks us to open its session.
   useEffect(() => {
@@ -171,7 +169,7 @@ const App: React.FC = () => {
   }
 
   if (authState === 'need_login') {
-    return <LoginGate onAuthenticated={() => setAuthState('ok')} />
+    return <LoginGate onAuthenticated={() => setAuth({baseUrl: backend.baseUrl, status: 'ok'})} />
   }
 
   // Optional gate from '@product', shown after the local auth check passes.
@@ -241,11 +239,12 @@ const App: React.FC = () => {
             <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
             <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
+            <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
-            <Route path="/security" element={<PlaceholderPage title={t('menu_security')} hint={t('placeholder_coming')} />} />
+            <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             {/* Legacy /models route now lives as a tab inside settings */}
             <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

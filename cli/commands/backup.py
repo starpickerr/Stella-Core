@@ -303,7 +303,7 @@ def restore_command(archive: Path, workspace: Optional[Path], yes: bool):
     pid = _read_pid()
     if pid:
         raise click.ClickException(
-            f"Stella is running (PID: {pid}). Run 'stella stop' before restoring."
+            f"Stella is running (PID: {pid}). Quit the desktop app before restoring."
         )
     if not yes:
         click.confirm(

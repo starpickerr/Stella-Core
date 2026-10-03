@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -47,14 +48,49 @@ class TodoService:
                     PRIMARY KEY(todo_id, occurrence_on),
                     FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS todo_checklist_completions (
+                    todo_id TEXT NOT NULL, occurrence_on TEXT NOT NULL, item_id TEXT NOT NULL,
+                    PRIMARY KEY(todo_id, occurrence_on, item_id),
+                    FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS todo_notifications (
                     todo_id TEXT NOT NULL, occurrence_on TEXT NOT NULL, notified_at TEXT NOT NULL,
                     PRIMARY KEY(todo_id, occurrence_on),
                     FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS reminder_occurrences (
+                    occurrence_id TEXT PRIMARY KEY, todo_id TEXT NOT NULL,
+                    occurrence_on TEXT NOT NULL, reminder_kind TEXT NOT NULL,
+                    due_at TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+                    UNIQUE(todo_id,occurrence_on,reminder_kind),
+                    FOREIGN KEY(todo_id) REFERENCES todos(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS reminder_deliveries (
+                    delivery_id TEXT PRIMARY KEY, occurrence_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending', claim_id TEXT,
+                    lease_until TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+                    shown_at TEXT, error TEXT,
+                    FOREIGN KEY(occurrence_id) REFERENCES reminder_occurrences(occurrence_id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS todo_migrations (name TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS briefing_applied (
+                    briefing_id TEXT PRIMARY KEY, last_revision INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS source_tombstones (
+                    source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
+                );
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(todos)")}
+            for name, definition in (
+                ("planned_on", "TEXT"), ("list_name", "TEXT NOT NULL DEFAULT ''"),
+                ("tags", "TEXT NOT NULL DEFAULT '[]'"), ("flagged", "INTEGER NOT NULL DEFAULT 0"),
+                ("checklist", "TEXT NOT NULL DEFAULT '[]'"),
+            ):
+                if name not in columns:
+                    db.execute(f"ALTER TABLE todos ADD COLUMN {name} {definition}")
         self._migrate_calendar_records()
+        if os.environ.get("STELLA_DESKTOP") == "1":
+            self._record_legacy_claims()
 
     @contextmanager
     def _connect(self):
@@ -123,13 +159,79 @@ class TodoService:
                              row["briefing_id"], now, now))
             db.execute("INSERT INTO todo_migrations VALUES ('calendar_affairs_v1')")
 
+    def _record_legacy_claims(self):
+        """Keep old destructive claims visible without assuming they were shown."""
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM todo_migrations WHERE name='desktop_reminders_v1'").fetchone():
+                return
+            for row in db.execute("SELECT todo_id,occurrence_on,notified_at FROM todo_notifications"):
+                occurrence_id = str(uuid.uuid4())
+                inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                    (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at,state)
+                    VALUES (?,?,?,'due',?,'legacy_claimed_unknown')""",
+                    (occurrence_id, row["todo_id"], row["occurrence_on"], row["notified_at"]))
+                if inserted.rowcount:
+                    db.execute("""INSERT INTO reminder_deliveries
+                        (delivery_id,occurrence_id,status,error) VALUES (?,?,'legacy_claimed_unknown',?)""",
+                        (str(uuid.uuid4()), occurrence_id,
+                         "Claimed by the former renderer; OS delivery is unknown"))
+            db.execute("INSERT INTO todo_migrations VALUES ('desktop_reminders_v1')")
+
+    def list_uncertain_reminders(self):
+        """Expose former renderer claims whose OS delivery cannot be confirmed."""
+        with self._connect() as db:
+            rows = db.execute("""SELECT d.delivery_id,o.todo_id,o.occurrence_on,t.title
+                FROM reminder_deliveries d
+                JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id
+                WHERE d.status='legacy_claimed_unknown'
+                ORDER BY o.occurrence_on,t.title""").fetchall()
+            return [dict(row) for row in rows]
+
+    def retry_uncertain_reminder(self, delivery_id):
+        """Queue an explicit retry only while the original occurrence is valid."""
+        if not isinstance(delivery_id, str) or not delivery_id:
+            raise ValueError("delivery_id is required")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("""SELECT d.status,o.occurrence_id,o.occurrence_on,o.due_at,t.*
+                FROM reminder_deliveries d
+                JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id WHERE d.delivery_id=?""",
+                (delivery_id,)).fetchone()
+            if not row or row["status"] != "legacy_claimed_unknown":
+                raise ValueError("uncertain reminder not found")
+            day = date.fromisoformat(row["occurrence_on"])
+            # A legacy row stores the old claim time in due_at. Any edit after
+            # that claim makes the old reminder payload or timing uncertain.
+            changed_since_claim = datetime.fromisoformat(row["updated_at"]) > datetime.fromisoformat(row["due_at"])
+            valid = bool(row["due_time"]) and (
+                day.isoformat() == row["due_on"] and not row["completed_at"]
+                if row["repeat_frequency"] == "none" else
+                self._todo_matches(row, day) and not db.execute(
+                    "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
+                    (row["todo_id"], row["occurrence_on"])).fetchone())
+            if not valid or changed_since_claim:
+                db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?",
+                           (row["occurrence_id"],))
+                db.execute("""UPDATE reminder_deliveries SET status='cancelled',error='todo changed or completed'
+                    WHERE delivery_id=?""", (delivery_id,))
+                return False
+            db.execute("UPDATE reminder_occurrences SET state='pending' WHERE occurrence_id=?",
+                       (row["occurrence_id"],))
+            db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                lease_until=NULL,error=NULL WHERE delivery_id=?""", (delivery_id,))
+        return True
+
     @staticmethod
     def _validate_todo(payload, existing=None):
         if not isinstance(payload, dict):
             raise ValueError("todo must be an object")
         row = dict(existing or {})
         for key in ("title", "notes", "due_on", "due_time", "timezone", "priority",
-                    "repeat_frequency", "repeat_days", "repeat_until"):
+                    "repeat_frequency", "repeat_days", "repeat_until", "planned_on",
+                    "list_name", "tags", "flagged", "checklist"):
             if key in payload:
                 row[key] = payload[key]
         row["title"] = _text(row.get("title"), "title")
@@ -186,6 +288,48 @@ class TodoService:
             if not due_on or until < due_on:
                 raise ValueError("repeat_until must follow due_on")
         row["repeat_until"] = until if frequency != "none" else None
+        planned = row.get("planned_on") or None
+        if planned:
+            try:
+                planned = date.fromisoformat(planned).isoformat()
+            except (ValueError, TypeError) as exc:
+                raise ValueError("planned_on must be YYYY-MM-DD") from exc
+        row["planned_on"] = planned
+        list_name = row.get("list_name") or ""
+        if not isinstance(list_name, str) or len(list_name.strip()) > 80:
+            raise ValueError("list_name must be at most 80 characters")
+        row["list_name"] = list_name.strip()
+        flagged = row.get("flagged", False)
+        if type(flagged) not in (bool, int) or flagged not in (0, 1):
+            raise ValueError("flagged must be true or false")
+        row["flagged"] = int(flagged)
+        for field in ("tags", "checklist"):
+            values = row.get(field) or []
+            if isinstance(values, str):
+                try:
+                    values = json.loads(values)
+                except ValueError as exc:
+                    raise ValueError(f"invalid {field}") from exc
+            if not isinstance(values, list) or len(values) > 100:
+                raise ValueError(f"{field} must be an array of at most 100 items")
+            if field == "tags":
+                values = list(dict.fromkeys(_text(value, "tag", 40) for value in values))
+            else:
+                cleaned = []
+                ids = set()
+                for item in values:
+                    if not isinstance(item, dict) or type(item.get("completed", False)) is not bool:
+                        raise ValueError("checklist items need a title and boolean completed")
+                    item_id = _text(item.get("id") or str(uuid.uuid4()), "checklist id", 80)
+                    if item_id in ids:
+                        raise ValueError("duplicate checklist id")
+                    ids.add(item_id)
+                    cleaned.append({"id": item_id, "title": _text(item.get("title"), "checklist title", 500),
+                                    "completed": item.get("completed", False)})
+                values = cleaned
+                if frequency != "none":
+                    values = [{**item, "completed": False} for item in values]
+            row[field] = json.dumps(values, ensure_ascii=False)
         return row
 
     def create_todo(self, payload):
@@ -194,11 +338,13 @@ class TodoService:
         with self._connect() as db:
             db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
-                 repeat_days,repeat_until,source_type,source_key,source_url,user_modified,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 repeat_days,repeat_until,source_type,source_key,source_url,user_modified,created_at,updated_at,
+                 planned_on,list_name,tags,flagged,checklist)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], None, row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
-                 None, None, "", 0, now, now))
+                 None, None, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
+                 row["flagged"], row["checklist"]))
         return self.get_todo(todo_id)
 
     def get_todo(self, todo_id):
@@ -214,15 +360,22 @@ class TodoService:
         old = self.get_todo(todo_id)
         row = self._validate_todo(payload, old)
         with self._connect() as db:
+            self._cancel_pending_reminders(db, old["id"])
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
-                WHERE id=?""", (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
-                row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(), old["id"]))
+                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=? WHERE id=?""",
+                (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
+                row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
+                row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"], old["id"]))
         return self.get_todo(old["id"])
 
     def delete_todo(self, todo_id):
         old = self.get_todo(todo_id)
         with self._connect() as db:
+            if old["source_type"] == "briefing" and old["source_key"]:
+                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
+                           (old["source_key"], _now()))
+            self._cancel_pending_reminders(db, old["id"])
             db.execute("DELETE FROM todos WHERE id=?", (old["id"],))
 
     def complete_todo(self, todo_id, completed):
@@ -243,6 +396,8 @@ class TodoService:
             raise ValueError("nonrecurring todo has no occurrence id")
         now = _now()
         with self._connect() as db:
+            if completed:
+                self._cancel_pending_reminders(db, old["id"], occurrence)
             if occurrence:
                 if completed:
                     db.execute("INSERT OR IGNORE INTO todo_completions VALUES (?,?,?)",
@@ -254,6 +409,148 @@ class TodoService:
                 db.execute("UPDATE todos SET completed_at=? WHERE id=?", (now if completed else None, old["id"]))
             db.execute("UPDATE todos SET user_modified=1, updated_at=? WHERE id=?", (now, old["id"]))
         return self.get_todo(old["id"])
+
+    def complete_checklist_item(self, todo_id, item_id, completed):
+        if type(completed) is not bool:
+            raise ValueError("completed must be true or false")
+        old = self.get_todo(todo_id)
+        items = json.loads(old["checklist"])
+        if not any(item["id"] == item_id for item in items):
+            raise ValueError("checklist item not found")
+        if old["repeat_frequency"] == "none":
+            if "@" in todo_id:
+                raise ValueError("nonrecurring todo has no occurrence id")
+            return self.update_todo(todo_id, {"checklist": [
+                {**item, "completed": completed} if item["id"] == item_id else item for item in items]})
+        occurrence = todo_id.split("@", 1)[1] if "@" in todo_id else None
+        try:
+            day = date.fromisoformat(occurrence)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("recurring checklist requires an occurrence date") from exc
+        if not self._todo_matches(old, day):
+            raise ValueError("date is not a todo occurrence")
+        with self._connect() as db:
+            if completed:
+                db.execute("INSERT OR IGNORE INTO todo_checklist_completions VALUES (?,?,?)",
+                           (old["id"], occurrence, item_id))
+            else:
+                db.execute("DELETE FROM todo_checklist_completions WHERE todo_id=? AND occurrence_on=? AND item_id=?",
+                           (old["id"], occurrence, item_id))
+            db.execute("UPDATE todos SET user_modified=1,updated_at=? WHERE id=?", (_now(), old["id"]))
+        return self.get_todo(old["id"])
+
+    @staticmethod
+    def _project_todo(row, day, completions, checklist_completions):
+        item = dict(row)
+        occurrence_on = day.isoformat()
+        item.update(series_id=row["id"], id=f"{row['id']}@{occurrence_on}", due_on=occurrence_on,
+                    completed_at=completions.get((row["id"], occurrence_on)))
+        if row.get("planned_on"):
+            item["planned_on"] = (day + (date.fromisoformat(row["planned_on"]) -
+                                         date.fromisoformat(row["due_on"]))).isoformat()
+        item["checklist"] = json.dumps([{**entry, "completed":
+            (row["id"], occurrence_on, entry["id"]) in checklist_completions}
+            for entry in json.loads(row.get("checklist") or "[]")], ensure_ascii=False)
+        return item
+
+    @staticmethod
+    def _cancel_pending_reminders(db, todo_id, occurrence_on=None):
+        condition = "AND occurrence_on=?" if occurrence_on else ""
+        params = (todo_id, occurrence_on) if occurrence_on else (todo_id,)
+        ids = [row[0] for row in db.execute(
+            "SELECT occurrence_id FROM reminder_occurrences WHERE todo_id=? " + condition +
+            " AND state='pending'", params)]
+        for occurrence_id in ids:
+            db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?", (occurrence_id,))
+            db.execute("""UPDATE reminder_deliveries SET status='cancelled',claim_id=NULL,lease_until=NULL
+                WHERE occurrence_id=? AND status!='shown'""", (occurrence_id,))
+
+    def claim_desktop_reminders(self, now=None, limit=20):
+        """Lease due reminders; repeated claims after a crash may show twice."""
+        instant = now or datetime.now(timezone.utc)
+        if instant.tzinfo is None:
+            raise ValueError("now must include a timezone")
+        instant = instant.astimezone(timezone.utc)
+        oldest = instant - timedelta(days=1)
+        leased = []
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL").fetchall()
+            for stored in rows:
+                row = dict(stored)
+                zone = ZoneInfo(row["timezone"])
+                candidate = oldest.astimezone(zone).date()
+                last = instant.astimezone(zone).date()
+                while candidate <= last:
+                    day = candidate.isoformat()
+                    matches = (day == row["due_on"] and not row["completed_at"]
+                               if row["repeat_frequency"] == "none" else
+                               self._todo_matches(row, candidate) and not db.execute(
+                                   "SELECT 1 FROM todo_completions WHERE todo_id=? AND occurrence_on=?",
+                                   (row["id"], day)).fetchone())
+                    if matches:
+                        due_at = datetime.combine(candidate, time.fromisoformat(row["due_time"]), zone).astimezone(timezone.utc)
+                        if oldest <= due_at <= instant:
+                            # Legacy destructive claims have unknown delivery state.
+                            legacy = db.execute("SELECT 1 FROM todo_notifications WHERE todo_id=? AND occurrence_on=?",
+                                                (row["id"], day)).fetchone()
+                            if not legacy:
+                                occurrence_id = str(uuid.uuid4())
+                                inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                                    (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at)
+                                    VALUES (?,?,?,'due',?)""",
+                                    (occurrence_id, row["id"], day, due_at.isoformat()))
+                                if inserted.rowcount:
+                                    db.execute("INSERT INTO reminder_deliveries(delivery_id,occurrence_id) VALUES (?,?)",
+                                               (str(uuid.uuid4()), occurrence_id))
+                                else:
+                                    cancelled = db.execute("""SELECT occurrence_id FROM reminder_occurrences
+                                        WHERE todo_id=? AND occurrence_on=? AND reminder_kind='due'
+                                        AND state='cancelled'""", (row["id"], day)).fetchone()
+                                    if cancelled:
+                                        db.execute("""UPDATE reminder_occurrences SET state='pending',due_at=?
+                                            WHERE occurrence_id=?""", (due_at.isoformat(), cancelled[0]))
+                                        db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                                            lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
+                    candidate += timedelta(days=1)
+            candidates = db.execute("""SELECT d.delivery_id,o.occurrence_id,o.todo_id,o.occurrence_on,
+                t.title FROM reminder_deliveries d JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                JOIN todos t ON t.id=o.todo_id
+                WHERE o.state='pending' AND (d.status IN ('pending','retry') OR
+                    (d.status='leased' AND d.lease_until<=?))
+                ORDER BY o.due_at LIMIT ?""", (instant.isoformat(), limit)).fetchall()
+            lease_until = (instant + timedelta(minutes=2)).isoformat()
+            for row in candidates:
+                claim_id = str(uuid.uuid4())
+                db.execute("""UPDATE reminder_deliveries SET status='leased',claim_id=?,lease_until=?,
+                    attempts=attempts+1 WHERE delivery_id=?""",
+                    (claim_id, lease_until, row["delivery_id"]))
+                leased.append({"delivery_id": row["delivery_id"], "claim_id": claim_id,
+                               "todo_id": row["todo_id"], "occurrence_on": row["occurrence_on"],
+                               "title": row["title"], "lease_until": lease_until})
+        return leased
+
+    def acknowledge_desktop_reminder(self, delivery_id, claim_id, shown, error=None):
+        if not delivery_id or not claim_id or type(shown) is not bool:
+            raise ValueError("delivery_id, claim_id and shown are required")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM reminder_deliveries WHERE delivery_id=?",
+                             (delivery_id,)).fetchone()
+            if not row or row["claim_id"] != claim_id:
+                return False
+            if row["status"] == "shown":
+                return True
+            if row["status"] != "leased":
+                return False
+            status = "shown" if shown else "retry"
+            db.execute("""UPDATE reminder_deliveries SET status=?,lease_until=NULL,
+                shown_at=?,error=? WHERE delivery_id=?""",
+                (status, _now() if shown else None, None if shown else str(error or "notification failed"), delivery_id))
+            if shown:
+                db.execute("UPDATE reminder_occurrences SET state='shown' WHERE occurrence_id=?",
+                           (row["occurrence_id"],))
+            return True
 
     @staticmethod
     def _todo_matches(row, candidate):
@@ -280,6 +577,7 @@ class TodoService:
             templates = [dict(row) for row in db.execute("SELECT * FROM todos ORDER BY due_on, priority DESC, created_at")]
             completions = {(row["todo_id"], row["occurrence_on"]): row["completed_at"]
                            for row in db.execute("SELECT * FROM todo_completions")}
+            checklist_completions = {tuple(row) for row in db.execute("SELECT * FROM todo_checklist_completions")}
         if first is None:
             return [row for row in templates if include_completed or not row["completed_at"]]
         result = []
@@ -293,15 +591,56 @@ class TodoService:
             candidate = max(first, date.fromisoformat(row["due_on"]))
             while candidate < last:
                 if self._todo_matches(row, candidate):
-                    item = dict(row)
-                    item["series_id"] = row["id"]
-                    item["id"] = f"{row['id']}@{candidate.isoformat()}"
-                    item["due_on"] = candidate.isoformat()
-                    item["completed_at"] = completions.get((row["id"], item["due_on"]))
+                    item = self._project_todo(row, candidate, completions, checklist_completions)
                     if include_completed or not item["completed_at"]:
                         result.append(item)
                 candidate += timedelta(days=1)
         return sorted(result, key=lambda row: (row["due_on"], row["due_time"] or "", -row["priority"], row["id"]))
+
+    def list_todos_focus(self, today=None):
+        """Show one actionable and the last completed occurrence per series."""
+        try:
+            anchor = date.fromisoformat(today) if today else date.today()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("today must be YYYY-MM-DD") from exc
+        with self._connect() as db:
+            templates = [dict(row) for row in db.execute("SELECT * FROM todos ORDER BY created_at")]
+            completions = {(row["todo_id"], row["occurrence_on"]): row["completed_at"]
+                           for row in db.execute("SELECT * FROM todo_completions")}
+            checklist_completions = {tuple(row) for row in db.execute("SELECT * FROM todo_checklist_completions")}
+
+        result = []
+        for row in templates:
+            if row["repeat_frequency"] == "none":
+                result.append(row)
+                continue
+            first = date.fromisoformat(row["due_on"])
+            # Leap-day yearly series can have an eight-year gap around a
+            # non-leap century (e.g. 2096 -> 2104).
+            search_days = 3000 if row["repeat_frequency"] == "yearly" else 371
+            latest = None
+            for offset in range(search_days):
+                candidate = anchor - timedelta(days=offset)
+                if candidate < first:
+                    break
+                if self._todo_matches(row, candidate):
+                    latest = candidate
+                    break
+            active = latest if latest and (row["id"], latest.isoformat()) not in completions else None
+            if active is None:
+                candidate = max(first, anchor + timedelta(days=1))
+                for offset in range(search_days):
+                    day = candidate + timedelta(days=offset)
+                    if self._todo_matches(row, day) and (row["id"], day.isoformat()) not in completions:
+                        active = day
+                        break
+            if active:
+                result.append(self._project_todo(row, active, completions, checklist_completions))
+            completed_days = [day for todo_id, day in completions if todo_id == row["id"] and
+                              self._todo_matches(row, date.fromisoformat(day))]
+            if completed_days:
+                result.append(self._project_todo(row, date.fromisoformat(max(completed_days)), completions, checklist_completions))
+        return result
 
     def claim_due_todo_notifications(self, now=None):
         """Claim timed reminders due in the past day, once per occurrence."""
@@ -340,7 +679,10 @@ class TodoService:
                     candidate += timedelta(days=1)
         return claimed
 
-    def _upsert_sourced_todo(self, source_key, item, due_value, briefing_id):
+    def _upsert_sourced_todo(self, source_key, item, due_value, briefing_id, db=None):
+        if db is None:
+            with self._connect() as connection:
+                return self._upsert_sourced_todo(source_key, item, due_value, briefing_id, connection)
         try:
             due = datetime.fromisoformat(due_value.replace("Z", "+00:00")) if due_value else None
             if due and due.tzinfo is None:
@@ -350,12 +692,13 @@ class TodoService:
         zone = ZoneInfo("Asia/Shanghai")
         local_due = due.astimezone(zone) if due else None
         now = _now()
-        with self._connect() as db:
-            old = db.execute("SELECT * FROM todos WHERE source_type='briefing' AND source_key=?",
+        if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
+            return
+        old = db.execute("SELECT * FROM todos WHERE source_type='briefing' AND source_key=?",
                              (source_key,)).fetchone()
-            if old and old["user_modified"]:
-                return
-            db.execute("""INSERT INTO todos
+        if old and old["user_modified"]:
+            return
+        db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                  repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -368,8 +711,24 @@ class TodoService:
                  "none", "[]", None, "briefing", source_key, getattr(item, "url", "") or "", 0,
                  briefing_id, now, now))
 
-    def ingest_briefing(self, detail):
+    def ingest_briefing_revision(self, detail, revision):
+        briefing_id = detail["briefing"].id
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT last_revision FROM briefing_applied WHERE briefing_id=?",
+                             (briefing_id,)).fetchone()
+            if row and row[0] >= revision:
+                return
+            self.ingest_briefing(detail, db=db)
+            db.execute("""INSERT INTO briefing_applied VALUES (?,?)
+                ON CONFLICT(briefing_id) DO UPDATE SET last_revision=excluded.last_revision""",
+                (briefing_id, revision))
+
+    def ingest_briefing(self, detail, db=None):
         """Sync action items from a briefing without creating calendar events."""
+        if db is None:
+            with self._connect() as connection:
+                return self.ingest_briefing(detail, db=connection)
         briefing = detail["briefing"]
         decisions = {row["id"]: row.get("decision") or {} for row in detail.get("mail", [])}
         items = list(detail.get("items", []))
@@ -394,13 +753,11 @@ class TodoService:
             calendar = decision.get("calendar") if isinstance(decision.get("calendar"), dict) else {}
             due_at = item.payload.get("due_at") if isinstance(item.payload, dict) else None
             if item.section == "action":
-                self._upsert_sourced_todo(source_key, item, due_at or calendar.get("start_at"), briefing.id)
+                self._upsert_sourced_todo(source_key, item, due_at or calendar.get("start_at"), briefing.id, db=db)
             else:
-                with self._connect() as db:
-                    db.execute("DELETE FROM todos WHERE source_type='briefing' AND source_key=? AND user_modified=0",
-                               (source_key,))
-        with self._connect() as db:
-            for row in db.execute("SELECT id,source_key FROM todos WHERE source_type='briefing' AND briefing_id=?",
+                db.execute("DELETE FROM todos WHERE source_type='briefing' AND source_key=? AND user_modified=0",
+                           (source_key,))
+        for row in db.execute("SELECT id,source_key FROM todos WHERE source_type='briefing' AND briefing_id=?",
                                   (briefing.id,)).fetchall():
-                if row["source_key"] not in current_keys:
-                    db.execute("DELETE FROM todos WHERE id=? AND user_modified=0", (row["id"],))
+            if row["source_key"] not in current_keys:
+                db.execute("DELETE FROM todos WHERE id=? AND user_modified=0", (row["id"],))

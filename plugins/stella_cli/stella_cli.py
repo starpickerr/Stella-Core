@@ -29,8 +29,8 @@ from cli import __version__
 
 
 # Known top-level subcommands that stella supports.
-# "start" / "stop" / "restart" refer to daemon lifecycle on the host shell;
-# in chat, "/cancel" aborts the in-flight agent run instead.
+# Keep legacy lifecycle commands as hints for existing users. The Electron
+# client owns the backend process; in chat, "/cancel" stops the current run.
 KNOWN_COMMANDS = {
     "help", "version", "status", "logs",
     "start", "stop", "restart",
@@ -40,7 +40,7 @@ KNOWN_COMMANDS = {
     "install-browser",
 }
 
-# Commands that can only run from the CLI (terminal), not in chat.
+# Lifecycle commands are handled as hints, not process operations.
 CLI_ONLY_COMMANDS = {"start", "stop", "restart"}
 
 # Commands that can only run from chat (need access to in-process memory)
@@ -327,8 +327,8 @@ class StellaCliPlugin(Plugin):
     def _dispatch(self, cmd: str, args: str, e_context: EventContext, session_id: str = "") -> str:
         if cmd in CLI_ONLY_COMMANDS:
             return _t(
-                f"⚠️ `stella {cmd}` 只能在命令行终端中执行。\n请在终端运行: stella {cmd}",
-                f"⚠️ `stella {cmd}` can only run in a terminal.\nRun it in your shell: stella {cmd}",
+                "后端由 Stella 桌面客户端管理。请打开或退出桌面应用。",
+                "The Stella desktop client manages the backend. Open or quit the app.",
             )
 
         handler_attr = "_cmd_" + cmd.replace("-", "_")

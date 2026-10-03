@@ -90,9 +90,8 @@ class BriefingTool(BaseTool):
     def _get_service(self):
         if self._service is not None:
             return self._service
-        from agent.briefing.service import BriefingService
-
-        return BriefingService()
+        from application import Application, RequestContext
+        return Application.port("briefing", RequestContext.ambient("agent"))
 
     def _get_pipeline(self, service):
         if self._pipeline is not None:

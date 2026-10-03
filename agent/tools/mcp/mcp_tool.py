@@ -22,7 +22,7 @@ class McpTool(BaseTool):
         self.params = tool_schema.get("inputSchema", {})
 
     def execute(self, params: dict) -> ToolResult:
-        logger.info(f"[McpTool] server={self.server_name} tool={self.name} params={params}")
+        logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
             result = self.client.call_tool(self.name, params)
             return ToolResult.success(result)

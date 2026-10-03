@@ -49,16 +49,9 @@ git push && git push --tags
 
 然后在 GitHub 为该 tag 建正式 Release（不要 draft / pre-release），上传 `desktop/release/Stella-0.0.2-arm64.dmg`。完整说明见仓库里的 [desktop/README.md](https://github.com/starpickerr/Stella/blob/main/desktop/README.md)。
 
-## 与命令行部署的区别
+## 桌面专用后端
 
-- **桌面客户端**：适合个人用户开箱即用，无需安装任何依赖，图形界面操作；有新 GitHub Release 时提示手动下载。
-- **命令行部署**：源码运行方式，适合开发者在本地或服务器部署，方便扩展功能，可定制性更强，详见 [一键安装](/zh/guide/quick-start)。
-
-## 通过浏览器访问
-
-桌面客户端启动后会在本机监听 `9876` 端口，其后端与 Web 控制台完全一致。因此在打开客户端的同时，也可以直接用浏览器访问 `http://localhost:9876`，获得与客户端界面一致的完整体验。
-
-如果该端口不可用（例如 Windows 上被 Hyper-V/WSL2 保留），客户端会自动改用其它端口并正常启动。此时实际端口可在 `run.log` 中的 `Local access` 一行查到，也可以在 `config.json` 中设置 `web_port` 来指定固定端口。
+Electron 客户端在 `127.0.0.1` 启动私有 API。独立 Web 前端和服务器部署入口已删除。若 `9876` 被占用，客户端会自动选择其它端口并通知桌面界面。
 
 ## 本地数据存储
 

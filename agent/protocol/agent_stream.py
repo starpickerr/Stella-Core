@@ -24,6 +24,24 @@ from agent.tools.base_tool import BaseTool, ToolResult, is_tool_available, rende
 from common.log import logger
 from common.i18n import t as _t
 
+
+def _display_tool_arguments(tool_name: str, arguments: dict) -> dict:
+    """Keep credential values out of renderer tool cards."""
+    from common.log import _redact
+
+    def clean(value, key=""):
+        if (tool_name == "env_config" and key == "value") or any(
+            part in key.lower() for part in ("password", "token", "secret", "api_key")
+        ):
+            return "••••"
+        if isinstance(value, dict):
+            return {name: clean(item, str(name)) for name, item in value.items()}
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return _redact(value) if isinstance(value, str) else value
+
+    return clean(arguments)
+
 # Optional: repair malformed JSON args from non-strict providers (e.g. unescaped quotes in long content).
 try:
     from json_repair import repair_json as _repair_json
@@ -656,10 +674,7 @@ class AgentStreamExecutor:
                     effort_label = f" | effort={effort}"
             except Exception:
                 effort_label = ""
-        _log_msg = user_message if len(user_message) <= 500 else (
-            user_message[:500] + f" …(+{len(user_message) - 500} chars)"
-        )
-        logger.info(f"🤖 {self.model.model}{thinking_label}{effort_label} | 👤 {_log_msg}")
+        logger.info(f"🤖 {self.model.model}{thinking_label}{effort_label} | 👤 message received")
         
         # Add user message (Claude format - use content blocks for consistency)
         self.messages.append({
@@ -817,17 +832,7 @@ class AgentStreamExecutor:
                 for tc in tool_calls:
                     args = tc.get('arguments') or {}
                     if isinstance(args, dict):
-                        parts = []
-                        for k, v in args.items():
-                            v_str = str(v)
-                            if len(v_str) > 200:
-                                v_str = v_str[:200] + f"...({len(v_str)} chars)"
-                            parts.append(f"{k}={v_str}")
-                        args_str = ', '.join(parts)
-                        if args_str:
-                            tool_calls_str.append(f"{tc['name']}({args_str})")
-                        else:
-                            tool_calls_str.append(tc['name'])
+                        tool_calls_str.append(tc['name'])
                     else:
                         tool_calls_str.append(tc['name'])
                 logger.info(f"🔧 {', '.join(tool_calls_str)}")
@@ -887,13 +892,7 @@ class AgentStreamExecutor:
                         
                         # Log tool result in compact format
                         status_emoji = "✅" if result.get("status") == "success" else "❌"
-                        result_data = result.get('result', '')
-                        # Format result string with proper Chinese character support
-                        if isinstance(result_data, (dict, list)):
-                            result_str = json.dumps(result_data, ensure_ascii=False)
-                        else:
-                            result_str = str(result_data)
-                        logger.info(f"  {status_emoji} {tool_call['name']} ({result.get('execution_time', 0):.2f}s): {result_str[:200]}{'...' if len(result_str) > 200 else ''}")
+                        logger.info(f"  {status_emoji} {tool_call['name']} ({result.get('execution_time', 0):.2f}s)")
 
                         # Build tool result block (Claude format)
                         # Format content in a way that's easy for LLM to understand
@@ -1016,7 +1015,7 @@ class AgentStreamExecutor:
                     summary_response, summary_tools = self._call_llm_stream(retry_on_empty=False)
                     if summary_response:
                         final_response = summary_response
-                        logger.info(f"💭 Summary: {summary_response[:150]}{'...' if len(summary_response) > 150 else ''}")
+                        logger.info("💭 Summary completed")
                     else:
                         # Fallback if model still doesn't respond
                         final_response = _t(
@@ -1608,6 +1607,7 @@ class AgentStreamExecutor:
         tool_name = tool_call["name"]
         tool_id = tool_call["id"]
         arguments = tool_call["arguments"]
+        display_arguments = _display_tool_arguments(tool_name, arguments)
 
         if "_parse_error" in tool_call:
             result = {
@@ -1637,31 +1637,33 @@ class AgentStreamExecutor:
             self._record_tool_result(tool_name, arguments, False)
             return result
 
+        tool = tool_override or self.tools.get(tool_name)
+        if tool is not None and getattr(tool, "name", None) == tool_name:
+            from agent.permission.gateway import Capability, register_tool
+            try:
+                register_tool(tool_name, Capability(tool.required_capability))
+            except (ValueError, AttributeError):
+                pass
+
         # Permission gate. Resolved per call so switching mode mid-conversation
         # applies to the very next tool call. A refusal is reported as a normal
         # tool error: the model reads why, and can either take an allowed route
         # or tell the user which mode the task needs.
         denial = self._permission_denial(tool_name, arguments)
         if denial:
-            logger.info(f"🔐 Permission denied for tool {tool_name}: {denial}")
+            logger.info(f"🔐 Permission denied for tool {tool_name}")
             result = {"status": "error", "result": denial, "execution_time": 0}
             self._emit_event("tool_execution_start", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,
-                "arguments": arguments,
+                "arguments": display_arguments,
             })
             # Flag this as a permission refusal (not an ordinary tool error) and
             # carry the mode that refused, so the UI can render an actionable
-            # "switch permission" hint instead of a generic failure.
-            try:
-                denied_mode = self.agent.effective_permission_mode()
-            except Exception:
-                denied_mode = None
             self._emit_event("tool_execution_end", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,
                 "permission_denied": True,
-                "permission_mode": denied_mode,
                 **result,
             })
             # Deliberately not recorded as a tool failure: a refusal is not the
@@ -1691,11 +1693,10 @@ class AgentStreamExecutor:
                 }
             return result
 
-        tool = tool_override or self.tools.get(tool_name)
         start_event = {
             "tool_call_id": tool_id,
             "tool_name": tool_name,
-            "arguments": arguments,
+            "arguments": display_arguments,
         }
         # A call that puts up its own cards gets no card of its own, or the
         # same work is on screen twice. Trust but verify: a tool that turns
@@ -1735,7 +1736,9 @@ class AgentStreamExecutor:
             # Execute tool
             start_time = time.time()
             try:
-                result: ToolResult = tool.execute_tool(arguments)
+                from agent.runtime.tool_invocation import invocation_scope
+                with invocation_scope(tool_id):
+                    result: ToolResult = tool.execute_tool(arguments)
             finally:
                 tool.progress_callback = None
                 tool.cancel_event = None
@@ -1754,6 +1757,11 @@ class AgentStreamExecutor:
             self._record_tool_result(tool_name, arguments, success)
 
             # Auto-refresh skills after skill creation
+            if tool_name in ("write", "edit") and result.status == "success" and self.agent.skill_manager:
+                from agent.permission.gateway import _skill_store, _path
+                target = arguments.get("path", "")
+                if target and _skill_store(_path(target, self.agent.effective_cwd())):
+                    self.agent.refresh_skills()
             if tool_name == "bash" and result.status == "success":
                 command = arguments.get("command", "")
                 if "init_skill.py" in command and self.agent.skill_manager:
@@ -1800,30 +1808,11 @@ class AgentStreamExecutor:
     def _permission_denial(self, tool_name: str, arguments: Dict) -> Optional[str]:
         """Reason this call is not allowed, or None when it may run.
 
-        Never raises: a broken permission check must not take the conversation
-        down with it, so an error here falls through to the historical
-        unrestricted behavior.
+        Never raises; policy failures refuse execution.
         """
-        agent = self.agent
-        if agent is None:
-            return None
-        try:
-            from agent.permission import FULL_ACCESS, check_tool_call
+        from agent.runtime.tool_invocation import permission_denial
 
-            mode = agent.effective_permission_mode()
-            if mode == FULL_ACCESS:
-                return None
-            decision = check_tool_call(
-                mode,
-                tool_name,
-                arguments,
-                cwd=agent.effective_cwd(),
-                write_roots=agent.write_roots(),
-            )
-            return None if decision.allowed else decision.reason
-        except Exception as e:
-            logger.warning(f"[Permission] Check skipped for {tool_name}: {e}")
-            return None
+        return permission_denial(tool_name, arguments, agent=self.agent)
 
     def _build_tool_not_found_message(self, tool_name: str) -> str:
         """Build a helpful error message when a tool is not found.

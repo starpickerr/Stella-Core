@@ -242,7 +242,7 @@ export interface ProjectRef {
 
 /** Project picker state for a session (from /api/projects). */
 export interface ProjectState {
-  /** null when the session uses the default workspace (~/stella). */
+  /** null when the session uses the default workspace. */
   current: ProjectRef | null
   default_workspace: string
   projects_root?: string
@@ -381,10 +381,10 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    mode: 'read-only' | 'workspace-write' | 'full-access'
     source: 'session' | 'global'
-    global: string
-    modes: string[]
+    preset: 'strict' | 'standard' | 'custom'
+    global_preset: 'strict' | 'standard' | 'custom'
+    presets: string[]
   }
 }
 
@@ -404,7 +404,15 @@ export interface HistoryMessage {
   _seq?: number
 }
 
+export interface PendingAdmission {
+  run_id: string
+  user_content: {type: string; text?: string}[]
+  status: string
+  clear_history: boolean
+}
+
 export interface HistoryPage {
+  pending_admissions?: PendingAdmission[]
   messages: HistoryMessage[]
   total: number
   page: number
@@ -455,9 +463,6 @@ export interface ConfigData {
   agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
-  /** Global default permission for sessions that have not picked one. */
-  agent_permission_mode?: string
-  permission_modes?: string[]
   enable_thinking?: boolean
   reasoning_effort?: string
   reasoning_effort_by_model?: Record<string, string>
@@ -467,9 +472,6 @@ export interface ConfigData {
   api_keys: Record<string, string>
   providers: Record<string, ProviderMeta>
   web_password_masked?: string
-  // Real password, only returned to the desktop app (trusted local machine) so
-  // it can be edited in place. Undefined for browser access.
-  web_password?: string
 }
 
 // ============================================================
@@ -495,6 +497,7 @@ export interface ModelProvider {
   api_base_field?: string | null
   api_key_masked?: string
   api_base?: string
+  protocol_id?: string
   api_base_default?: string
   api_base_placeholder?: string
   models: ModelEntry[]
@@ -516,6 +519,7 @@ export interface CapabilityState {
   editable?: boolean
   current_provider?: string
   current_model?: string
+  protocol_id?: string
   current_voice?: string
   current_dim?: number | null
   suggested_provider?: string
@@ -568,12 +572,12 @@ export interface ModelsData {
 }
 
 export type ModelsAction =
-  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string }
+  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string }
   | { action: 'delete_provider'; provider_id: string }
-  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; protocol_id?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
-  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string }
+  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; protocol_id?: string; voice?: string; strategy?: string; provider?: string }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 
@@ -703,7 +707,7 @@ export interface TaskSchedule {
 }
 
 export interface TaskAction {
-  type: 'send_message' | 'agent_task' | 'tool_call'
+  type: 'send_message' | 'agent_task' | 'tool_call' | 'skill_call' | 'application_command'
   content?: string
   task_description?: string
   receiver?: string
@@ -715,6 +719,14 @@ export interface TaskAction {
   call_params?: Record<string, unknown>
   tool_name?: string
   tool_params?: Record<string, unknown>
+  skill_name?: string
+  skill_params?: Record<string, unknown>
+  domain?: string
+  command?: string
+  params?: Record<string, unknown>
+  execution_session_id?: string
+  notify_session_id?: string
+  receive_id_type?: string
 }
 
 export interface SchedulerTask {
@@ -726,6 +738,8 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   next_run_at?: string
+  last_run_status?: string
+  last_error?: string
 }
 
 // ============================================================
@@ -817,11 +831,21 @@ export interface Todo {
   due_on: string | null; due_time: string | null; timezone: string; priority: number
   completed_at: string | null; repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
   repeat_days: string; repeat_until: string | null
+  planned_on: string | null; list_name: string; tags: string; flagged: number; checklist: string
   source_type: string | null; source_key: string | null; source_url: string
   user_modified: number; briefing_id: string | null; created_at: string; updated_at: string
 }
+export interface TodoChecklistItem { id: string; title: string; completed: boolean }
 export type TodoInput = Pick<Todo, 'title' | 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until'> &
-  { repeat_days: number[] }
+  { repeat_days: number[]; planned_on?: string | null; list_name?: string; tags?: string[];
+    flagged?: boolean | number; checklist?: TodoChecklistItem[] }
+
+export interface UncertainReminder {
+  delivery_id: string
+  todo_id: string
+  occurrence_on: string
+  title: string
+}
 
 export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'

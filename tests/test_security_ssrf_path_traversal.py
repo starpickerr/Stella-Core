@@ -7,18 +7,10 @@ Unit tests for security fixes:
 import os
 import sys
 import tempfile
-import types
 import unittest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-# Stub 'requests' if not installed so vision.py can be imported for testing.
-if "requests" not in sys.modules:
-    _requests_stub = types.ModuleType("requests")
-    _requests_stub.get = lambda *a, **k: None
-    sys.modules["requests"] = _requests_stub
-
 
 # =============================================================================
 # Vision SSRF tests

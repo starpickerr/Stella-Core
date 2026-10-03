@@ -9,7 +9,7 @@ thing that is stored — the spawn call's result.
 
 import json
 
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 
 def _subagent_step(results, is_error=False):
