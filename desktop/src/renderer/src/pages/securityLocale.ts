@@ -24,7 +24,6 @@ const locales = {
     subtitle: '管理 Stella 可以使用的资源，查看每次安全判断。',
     refresh: '刷新',
     loading: '正在加载安全信息…',
-    loadFailed: '无法加载安全信息，请重试。',
     saved: '已保存',
     saveFailed: '保存失败',
     tabs: {
@@ -48,6 +47,7 @@ const locales = {
     deny: '拒绝',
     approved: '已允许一次',
     rejected: '已拒绝',
+    noPending: '目前没有待确认操作。',
     recentDenials: '最近拦截',
     recentHighRisk: '高风险记录',
     noEvents: '暂无安全活动。',
@@ -57,7 +57,7 @@ const locales = {
     presets: {
       strict: { name: '谨慎', description: '可查看文件；修改文件或运行命令前会受到更多限制。' },
       standard: { name: '标准', description: '允许日常项目工作；安装软件和高风险操作会先征求同意。' },
-      custom: { name: '自定义', description: '默认允许项目外文件访问及安装依赖；可在下方逐项收紧。' },
+      custom: { name: '自定义', description: '从下面逐项决定 Stella 可以做什么。' },
     },
     recommended: '推荐',
     advanced: '逐项调整权限',
@@ -134,6 +134,7 @@ const locales = {
     otherCredential: '其他凭据',
     customCredentialName: '凭据标识',
     secretNameHelp: '其他凭据需要填写服务提供的环境变量名称。',
+    secretName: '凭据名称',
     secretValue: '密钥或密码',
     secretKeyLabel: '密钥',
     qianfanName: '千帆',
@@ -176,14 +177,12 @@ const locales = {
       secret_use: '凭据已使用',
       external_access: '已访问外部服务',
     },
+    detail: '查看原因',
     reason: '原因',
     fieldSeparator: '：',
     decisionSteps: '判断过程',
     resource: '目标',
     project: '项目',
-    fileTarget: '文件',
-    otherTarget: '其他资源',
-    otherTool: '其他操作',
     assistant: '助理',
     conversation: '对话',
     notApplicable: '无',
@@ -231,13 +230,6 @@ const locales = {
       external: '外部服务',
       system: '系统资源',
       credential: '凭据',
-      todos: '事务',
-      bills: '账单',
-      briefing: '简报',
-      scheduler: '定时任务',
-      knowledge: '知识',
-      memory: '记忆',
-      unclassified_mcp_tool: '未识别的扩展工具',
     },
     tools: {
       bash: '终端',
@@ -251,11 +243,6 @@ const locales = {
       browser: '浏览器',
       env_config: '凭据管理',
       send: '发送文件',
-      todos: '事务',
-      bills: '账单',
-      calendar: '日程',
-      briefing: '简报',
-      scheduler: '定时任务',
     },
     reasonPolicy: (rule: string) => `“${rule}”权限设置阻止了这次操作。`,
     reasonRequired: (rule: string) => `这次操作还需要“${rule}”权限，当前设置不允许。`,
@@ -277,14 +264,13 @@ const locales = {
     reasonSecretChanged: '凭据状态已更新。',
     reasonSecretMasked: '已查看凭据状态，未读取凭据原值。',
     reasonFallback: '本次操作由当前安全设置决定。',
-    shellBoundaryNote: '终端命令可能影响电脑上的其他文件，请只在信任的项目中开启。',
+    shellBoundaryNote: '终端权限根据命令内容判断，不能代替操作系统隔离。',
   },
   en: {
     title: 'Security Center',
     subtitle: 'Control what Stella can access and review security decisions.',
     refresh: 'Refresh',
     loading: 'Loading security information…',
-    loadFailed: 'Could not load security information. Please try again.',
     saved: 'Saved',
     saveFailed: 'Save failed',
     tabs: {
@@ -308,6 +294,7 @@ const locales = {
     deny: 'Deny',
     approved: 'Allowed once',
     rejected: 'Denied',
+    noPending: 'No actions are waiting for approval.',
     recentDenials: 'Recently blocked',
     recentHighRisk: 'High risk activity',
     noEvents: 'No security activity yet.',
@@ -320,7 +307,7 @@ const locales = {
         name: 'Standard',
         description: 'Handles everyday project work; asks before installs and high risk actions.',
       },
-      custom: { name: 'Custom', description: 'Starts with access outside projects and installs allowed; tighten permissions below.' },
+      custom: { name: 'Custom', description: 'Choose what Stella can do, one permission at a time.' },
     },
     recommended: 'Recommended',
     advanced: 'Adjust individual permissions',
@@ -412,6 +399,7 @@ const locales = {
     otherCredential: 'Other credential',
     customCredentialName: 'Credential identifier',
     secretNameHelp: 'For other credentials, enter the environment variable name supplied by the service.',
+    secretName: 'Credential name',
     secretValue: 'Key or password',
     secretKeyLabel: 'key',
     qianfanName: 'Qianfan',
@@ -454,14 +442,12 @@ const locales = {
       secret_use: 'Credential used',
       external_access: 'External service accessed',
     },
+    detail: 'Why this happened',
     reason: 'Reason',
     fieldSeparator: ': ',
     decisionSteps: 'Decision path',
     resource: 'Target',
     project: 'Project',
-    fileTarget: 'File',
-    otherTarget: 'Other resource',
-    otherTool: 'Other action',
     assistant: 'Assistant',
     conversation: 'Conversation',
     notApplicable: 'None',
@@ -509,13 +495,6 @@ const locales = {
       external: 'External service',
       system: 'System resource',
       credential: 'Credential',
-      todos: 'Tasks',
-      bills: 'Bills',
-      briefing: 'Briefings',
-      scheduler: 'Automations',
-      knowledge: 'Knowledge',
-      memory: 'Memory',
-      unclassified_mcp_tool: 'Unrecognized extension tool',
     },
     tools: {
       bash: 'Terminal',
@@ -529,11 +508,6 @@ const locales = {
       browser: 'Browser',
       env_config: 'Credential management',
       send: 'Send file',
-      todos: 'Tasks',
-      bills: 'Bills',
-      calendar: 'Calendar',
-      briefing: 'Briefings',
-      scheduler: 'Automations',
     },
     reasonPolicy: (rule: string) => `The “${rule}” permission blocked this action.`,
     reasonRequired: (rule: string) => `This action also needs “${rule}” access, which is currently blocked.`,
@@ -555,7 +529,8 @@ const locales = {
     reasonSecretChanged: 'Credential status was updated.',
     reasonSecretMasked: 'Credential status was viewed; the saved value was not read.',
     reasonFallback: 'Your current security settings determined this action.',
-    shellBoundaryNote: 'Terminal commands may affect other files on your computer. Enable them only for trusted projects.',
+    shellBoundaryNote:
+      'Terminal access is checked from command arguments and does not provide an operating system sandbox.',
   },
 }
 
@@ -576,17 +551,6 @@ export function securitySecretName(copy: SecurityCopy, name: string): string {
 export function securityResource(copy: SecurityCopy, value: string): string {
   if (value.startsWith('credential:')) return `${copy.resources['Credential Store']} · ${value.slice(11)}`
   return fromMap(copy.resources, value)
-}
-
-export function securityResourceSummary(copy: SecurityCopy, value: string): string {
-  const mapped = (copy.resources as Record<string, string>)[value]
-  if (mapped) return mapped
-  if (value.startsWith('credential:')) return copy.resources['Credential Store']
-  if (value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)) {
-    const filename = value.split(/[\\/]/).filter(Boolean).pop()
-    return filename ? `${copy.fileTarget} · ${filename}` : copy.fileTarget
-  }
-  return copy.otherTarget
 }
 
 export function securityReason(copy: SecurityCopy, row: SecurityRecord): string {
