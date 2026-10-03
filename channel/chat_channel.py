@@ -27,6 +27,7 @@ handler_pool = ThreadPoolExecutor(max_workers=8)  # 处理消息的线程池
 class ChatChannel(Channel):
     name = None  # 登录的用户名
     user_id = None  # 登录的用户id
+    SEND_RETRY_LIMIT = 2
 
     def __init__(self):
         super().__init__()
@@ -437,7 +438,7 @@ class ChatChannel(Channel):
             if isinstance(e, NotImplementedError):
                 return
             logger.exception(e)
-            if retry_cnt < 2:
+            if retry_cnt < self.SEND_RETRY_LIMIT:
                 time.sleep(3 + 3 * retry_cnt)
                 self._send(reply, context, retry_cnt + 1)
 
