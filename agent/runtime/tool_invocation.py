@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from contextlib import contextmanager
 
 from agent.permission import global_mode, normalize_mode
-from agent.permission.gateway import Scope, SecurityGateway
+from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
 from common.log import logger
 
 
@@ -91,7 +91,14 @@ def permission_denial(
             session_id=session_id, allowlist=allowlist,
             policy=policy, agent_id=agent_id, project_dir=project_dir,
         )
-        return None if decision.allowed else decision.reason
+        if decision.allowed:
+            return None
+        if decision.kind is DecisionKind.CONFIRM:
+            return (decision.reason + " Wait for approval in Security Center before retrying "
+                    "this exact action; do not try a different tool to avoid confirmation.")
+        return (decision.reason + " The action did not run. Do not bypass the refusal "
+                "with a script or equivalent tool. Use a supported connector or explain the "
+                "required policy or resource grant to the user.")
     except Exception as exc:
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")
         # A failed policy check is never an authorization to run a tool.
