@@ -102,7 +102,7 @@ def build_agent_system_prompt(
     3. Memory - memory recall and writing guidance
     3.5 Knowledge - structured knowledge base (injects knowledge/index.md)
     4. Workspace - working environment description
-    4.5 Permissions - what this session may change (omitted for full access)
+    4.5 Permissions - effective rules and resource grants for this session
     5. User identity - user info (optional)
     6. Project context - AGENT.md, USER.md, RULE.md, MEMORY.md, BOOTSTRAP.md
     7. Runtime info - meta info (time, model, etc.)
@@ -150,9 +150,8 @@ def build_agent_system_prompt(
         )
     )
 
-    # 4.5 Permissions. Right after the workspace, because what the model may
-    # change only means something once it knows where it is working. Emits
-    # nothing in full-access mode, leaving the prompt as it has always been.
+    # 4.5 Permissions. Generated from the same resolved policy as the gateway,
+    # not an editable Skill that might be disabled or become stale.
     if permission_mode:
         try:
             from agent.permission.security_policy import describe, resolve
@@ -160,9 +159,33 @@ def build_agent_system_prompt(
             identity = current_identity()
             policy = resolve(permission_mode, project_dir=project_dir,
                              session_id=identity.session_id, agent_id=identity.agent_id)
-            sections.extend(describe(policy, language, workspace=project_dir or workspace_dir))
+            available_names = {getattr(tool, "name", "") for tool in (tools or [])}
+            elearning_sync = None
+            if "elearning" in available_names:
+                try:
+                    from agent.briefing.elearning_settings import public_settings
+                    settings = public_settings()
+                    elearning_sync = {"enabled": bool(settings.get("enabled") and
+                                                     settings.get("configured") and
+                                                     settings.get("file_sync_enabled") and
+                                                     settings.get("file_sync_root")),
+                                      "root": settings["file_sync_root"]}
+                except Exception:
+                    pass
+            allowlist = conf().get("agent_tool_allowlist")
+            sections.extend(describe(
+                policy, language, workspace=project_dir or workspace_dir,
+                tool_allowlist=allowlist if isinstance(allowlist, list) else None,
+                elearning_sync=elearning_sync,
+            ))
         except Exception as e:
-            logger.debug(f"Permission prompt section skipped: {e}")
+            logger.warning(f"Permission prompt section unavailable: {e}")
+            sections.extend([
+                "## Security context" if language == "en" else "## 安全边界",
+                "Current rules are unavailable. Tool execution still checks the current policy; do not bypass a refusal."
+                if language == "en" else "当前规则暂不可读取。工具执行仍会检查实时策略；不要绕过拒绝。",
+                "",
+            ])
 
     # 5. User identity (if present)
     if user_identity:
