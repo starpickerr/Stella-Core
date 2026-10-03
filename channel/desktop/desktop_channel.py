@@ -2043,6 +2043,11 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/categories/delete', 'CalendarCategoryDeleteHandler',
             '/api/todos', 'TodosHandler',
             '/api/todos/update', 'TodoUpdateHandler',
+            '/api/todos/status', 'TodoStatusHandler',
+            '/api/todos/subtasks', 'TodoSubtaskHandler',
+            '/api/todos/move', 'TodoMoveHandler',
+            '/api/todos/dependencies/add', 'TodoDependencyAddHandler',
+            '/api/todos/dependencies/remove', 'TodoDependencyRemoveHandler',
             '/api/todos/delete', 'TodoDeleteHandler',
             '/api/todos/complete', 'TodoCompleteHandler',
             '/api/todos/checklist/complete', 'TodoChecklistCompleteHandler',
@@ -6269,6 +6274,48 @@ class TodoUpdateHandler:
         return _todo_response(operation)
 
 
+class TodoStatusHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().change_todo_status(
+                body.get("id"), body.get("status"), body.get("force", False))}
+        return _todo_response(operation)
+
+
+class TodoSubtaskHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().add_subtask(body.get("parent_id"), body)}
+        return _todo_response(operation)
+
+
+class TodoMoveHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().move_todo(
+                body.get("id"), body.get("parent_id"), body.get("position"))}
+        return _todo_response(operation)
+
+
+class TodoDependencyAddHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().add_dependency(body.get("id"), body.get("prerequisite_id"))}
+        return _todo_response(operation)
+
+
+class TodoDependencyRemoveHandler:
+    def POST(self):
+        def operation():
+            body = _todo_body()
+            return {"todo": _todo_service().remove_dependency(body.get("id"), body.get("prerequisite_id"))}
+        return _todo_response(operation)
+
+
 class TodoDeleteHandler:
     def POST(self):
         def operation():
@@ -6281,7 +6328,8 @@ class TodoCompleteHandler:
     def POST(self):
         def operation():
             body = _todo_body()
-            return {"todo": _todo_service().complete_todo(body.get("id"), body.get("completed"))}
+            return {"todo": _todo_service().complete_todo(body.get("id"), body.get("completed"),
+                                                            body.get("force", False))}
         return _todo_response(operation)
 
 

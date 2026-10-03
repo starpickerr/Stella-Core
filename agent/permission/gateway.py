@@ -73,7 +73,7 @@ _EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "
 _ADMIN_TOOLS = frozenset({"evolution_undo"})
 _LOCAL_ACTIONS = {
     "calendar": {"create", "update", "delete", "create_category", "update_category", "delete_category"},
-    "todos": {"create", "update", "complete", "delete"},
+    "todos": {"create", "update", "complete", "delete", "status", "add_subtask", "move", "add_dependency", "remove_dependency"},
     "bills": {"add", "update", "delete"},
     "briefing": {"run", "item_status", "add_rule", "update_rule", "delete_rule"},
     "scheduler": {"create", "delete", "enable", "disable"},
