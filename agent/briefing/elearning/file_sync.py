@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
 import re
 import stat
 import threading
+import time
 from pathlib import Path
+from urllib.error import URLError
 from urllib.parse import urlparse
 
 from agent.briefing import elearning_settings
@@ -72,6 +75,10 @@ def _digest_existing(directory_fd, name):
     return digest.hexdigest()
 
 
+class _TruncatedDownload(Exception):
+    pass
+
+
 def _download(client, url, directory_fd):
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -84,14 +91,30 @@ def _download(client, url, directory_fd):
             raise SyncError("课程文件下载地址不能指向私有网络")
     except ValueError:
         pass
+    for attempt in range(3):
+        try:
+            return _download_once(client, url, directory_fd)
+        except _TruncatedDownload as exc:
+            if attempt == 2:
+                raise SyncError("课程文件传输中断，已重试 3 次；下次同步会继续尝试") from exc
+            time.sleep(2 ** attempt)
+
+
+def _download_once(client, url, directory_fd):
     temporary = ".elearning-" + os.urandom(8).hex()
     descriptor = os.open(temporary, _FILE_FLAGS, 0o600, dir_fd=directory_fd)
     digest = hashlib.sha256()
     size = 0
     try:
         with os.fdopen(descriptor, "wb") as output, client.open(url, api=False) as response:
+            headers = getattr(response, "headers", None)
+            length = headers.get("Content-Length") if headers else None
+            expected = int(length) if length and length.isdecimal() else None
             while True:
-                block = response.read(128 * 1024)
+                try:
+                    block = response.read(128 * 1024)
+                except (http.client.HTTPException, URLError, TimeoutError, OSError) as exc:
+                    raise _TruncatedDownload() from exc
                 if not block:
                     break
                 size += len(block)
@@ -99,6 +122,8 @@ def _download(client, url, directory_fd):
                     raise SyncError("课程文件超过 512 MB，未保存")
                 output.write(block)
                 digest.update(block)
+            if expected is not None and size != expected:
+                raise _TruncatedDownload()
             output.flush()
             os.fsync(output.fileno())
         return temporary, digest.hexdigest()

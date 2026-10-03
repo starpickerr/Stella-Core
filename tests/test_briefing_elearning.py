@@ -1,5 +1,6 @@
 """Crawler integration tests use fake Canvas responses and private temp files."""
 import io
+import http.client
 import json
 from datetime import datetime, timezone
 from unittest.mock import Mock
@@ -120,6 +121,44 @@ def test_elearning_tool_is_registered_and_read_only():
     assert manager.tool_classes["elearning"] is ElearningTool
     for action in ("courses", "fetch"):
         assert check_tool_call("read-only", "elearning", {"action": action})
+    assert not check_tool_call("read-only", "elearning", {"action": "sync_files"})
+    assert check_tool_call("workspace-write", "elearning", {"action": "sync_files"})
+
+
+def test_elearning_credentials_are_protected_from_file_tools(config_path):
+    from agent.permission.gateway import SecurityGateway
+    settings.save_settings(config())
+    session = settings.session_path(settings.load_settings())
+    assert not SecurityGateway.check("full-access", "read", {"path": str(config_path)})
+    assert not SecurityGateway.check("full-access", "read", {"path": str(session)})
+    assert not SecurityGateway.check("full-access", "bash", {"command": f"cat {session}"})
+
+
+def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path, tmp_path, security_audit_path):
+    root = tmp_path / "selected"
+    root.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    canvas = FakeCanvas()
+    canvas.rows["files"] = [
+        {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"},
+        {"id": 5, "filename": "作业.pdf", "url": BASE + "/files/5/download"},
+    ]
+    canvas.open = Mock(return_value=io.BytesIO(b"pdf"))
+    tool = ElearningTool(client_factory=lambda _: canvas)
+    result = tool.execute({"action": "sync_files", "file_ids": ["5"]})
+    assert result.status == "success", result.result
+    assert json.loads(result.result) == {"status": "completed", "total": 1, "processed": 1,
+                                        "next_offset": None, "save_root": str(root), "errors": []}
+    assert (root / "课程--42" / "作业--5.pdf").read_bytes() == b"pdf"
+    assert not (root / "课程--42" / "讲义--4.pdf").exists()
+    assert tool.execute({"action": "sync_files", "course_ids": ["unselected"]}).status == "error"
+    assert tool.execute({"action": "sync_files", "limit": 0}).status == "error"
+    missing = json.loads(tool.execute({"action": "sync_files", "file_ids": ["missing"]}).result)
+    assert missing["status"] == "partial" and "missing" in missing["errors"][0]
+    page = json.loads(tool.execute({"action": "sync_files", "limit": 1}).result)
+    assert page["total"] == 2 and page["next_offset"] == 1
+    settings.save_settings({"file_sync_enabled": False})
+    assert "开启课程文件同步" in tool.execute({"action": "sync_files"}).result
 
 
 class FakeCanvas:
@@ -383,6 +422,29 @@ def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_pat
     settings.save_settings({"file_sync_enabled": False})
     assert "授权已变更" in sync_files(client, cfg, [(course, raw)])[0]
     client.open.assert_not_called()
+
+
+def test_file_sync_retries_incomplete_response_without_leaving_partial_file(config_path, tmp_path, monkeypatch):
+    from agent.briefing.elearning.file_sync import sync_files
+
+    root = tmp_path / "selected"
+    root.mkdir()
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    monkeypatch.setattr("agent.briefing.elearning.file_sync.time.sleep", lambda _: None)
+    course = {"id": 42, "name": "课程"}
+    raw = {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}
+
+    class Interrupted(io.BytesIO):
+        def read(self, size=-1):
+            raise http.client.IncompleteRead(b"partial", 10)
+
+    client = Mock()
+    client.open.side_effect = [Interrupted(), io.BytesIO(b"complete")]
+    assert sync_files(client, settings.load_settings(), [(course, raw)]) == []
+    folder = root / "课程--42"
+    assert (folder / "讲义--4.pdf").read_bytes() == b"complete"
+    assert not any(path.name.startswith(".elearning-") for path in folder.iterdir())
+    assert client.open.call_count == 2
 
 
 def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, tmp_path, monkeypatch):

@@ -79,7 +79,7 @@ _LOCAL_ACTIONS = {
     "scheduler": {"create", "delete", "enable", "disable"},
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
+_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|elearning-sessions/[^\s'\"]+)|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
 _ESCALATE = re.compile(r"\b(?:sudo|doas|pkexec|su)\b")
 _BULK_DELETE = re.compile(r"\b(?:rm\s+-(?:\w*r\w*f|\w*f\w*r)|find\b[^\n]*-delete|git\s+clean\s+-\w*f)\b", re.I)
 _PUBLISH = re.compile(r"\b(?:git\s+push|npm\s+publish|gh\s+release|docker\s+push)\b", re.I)
@@ -298,6 +298,11 @@ class SecurityGateway:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]
             risk, policy_key = ("L1", "workspace_write") if mutating else ("L0", "workspace_read")
+        elif tool_name == "elearning" and action == "sync_files":
+            # The tool itself restricts writes to the folder granted in eLearning settings.
+            resource_kind, resource, risk, policy_key = (
+                ResourceKind.USER_WORKSPACE, "eLearning selected course folder", "L1", "workspace_write")
+            event = "file_modify"
         elif tool_name == "subagent":
             resource_kind, resource, risk, policy_key = ResourceKind.AGENT_MANAGED, "Agent subagent", "L1", "managed"
         elif declared == Capability.EXTERNAL or declared == Capability.ADMIN:
