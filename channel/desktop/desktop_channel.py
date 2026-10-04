@@ -1783,6 +1783,14 @@ class DesktopChannel(ChatChannel):
                 if not pending:
                     if complete or closed:
                         break
+                    # A confirmation pauses the original run. Keep its SSE
+                    # connection alive while the Security dialog is open.
+                    try:
+                        from agent.permission.gateway import SecurityGateway
+                        if SecurityGateway.has_pending_session(self.request_to_session.get(request_id)):
+                            deadline = time.time() + idle_timeout
+                    except Exception:
+                        pass
                     yield b": keepalive\n\n"
                     continue
 

@@ -168,11 +168,12 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
          "Protected credentials and privilege escalation remain unavailable even when a rule says allow."
          if english else "allow 表示可尝试，confirm 表示该次具体操作须经安全中心确认，deny 表示禁止。"
                          "即使规则为 allow，受保护凭据读取和提权仍被禁止。"),
-        ("Use built-in tools for credentials and authorized file sync. Never use shell scripts or an equivalent "
-         "tool to work around a refusal. If a call is denied, explain the required setting or scope; if it awaits "
-         "confirmation, wait for approval before retrying the same action. Tool checks use the latest policy."
-         if english else "凭据和文件同步使用内置工具；不要用脚本或换工具绕过拒绝。被拒绝时说明需要的设置或授权范围；"
-                         "需要确认时等待批准后再重试同一操作。工具执行以当时的最新策略为准。"),
+        ("Use built-in tools for credentials and authorized file sync. Never use a script, rename, move, "
+         "or equivalent tool to work around a refusal. If denied, explain the required setting or scope. "
+         "If confirmation is required, the current call pauses and resumes after approval; do not retry it. "
+         "Tool checks use the latest policy."
+         if english else "凭据和文件同步使用内置工具；不要用脚本或换工具绕过拒绝，包括借重命名、移动绕过确认。被拒绝时说明需要的设置或授权范围。"
+                         "需要确认时当前调用会暂停，批准后继续，不要重新发起。工具执行以当时的最新策略为准。"),
         "",
     ])
     return lines

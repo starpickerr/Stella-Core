@@ -1649,7 +1649,22 @@ class AgentStreamExecutor:
         # applies to the very next tool call. A refusal is reported as a normal
         # tool error: the model reads why, and can either take an allowed route
         # or tell the user which mode the task needs.
-        denial = self._permission_denial(tool_name, arguments)
+        try:
+            denial = self._permission_denial(tool_name, arguments)
+        except Exception as exc:
+            from agent.runtime.tool_invocation import ApprovalRejectedError
+            if not isinstance(exc, ApprovalRejectedError):
+                raise
+            result = {"status": "critical_error", "result": str(exc), "execution_time": 0}
+            self._emit_event("tool_execution_start", {
+                "tool_call_id": tool_id, "tool_name": tool_name, "arguments": display_arguments,
+            })
+            self._emit_event("tool_execution_end", {
+                "tool_call_id": tool_id, "tool_name": tool_name,
+                "permission_denied": True, **result,
+            })
+            return result
+        self._check_cancelled()
         if denial:
             logger.info(f"🔐 Permission denied for tool {tool_name}")
             result = {"status": "error", "result": denial, "execution_time": 0}
@@ -1812,7 +1827,9 @@ class AgentStreamExecutor:
         """
         from agent.runtime.tool_invocation import permission_denial
 
-        return permission_denial(tool_name, arguments, agent=self.agent)
+        return permission_denial(tool_name, arguments, agent=self.agent,
+                                 wait_for_approval=self.cancel_event is not None,
+                                 cancel_event=self.cancel_event)
 
     def _build_tool_not_found_message(self, tool_name: str) -> str:
         """Build a helpful error message when a tool is not found.

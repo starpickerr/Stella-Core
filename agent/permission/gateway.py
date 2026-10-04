@@ -87,8 +87,12 @@ _INSTALL = re.compile(r"\b(?:npm|pnpm|yarn|pip|pip3|brew|apt|apt-get)\s+(?:insta
 _NETWORK = re.compile(r"\b(?:curl|wget|ssh|scp|git\s+(?:clone|fetch|pull))\b", re.I)
 _EXTERNAL_VERB = re.compile(r"(?:^|[_\-.])(create|add|update|edit|delete|remove|send|publish|deploy|revoke|install)(?:$|[_\-.])", re.I)
 _lock = threading.RLock()
+_condition = threading.Condition(_lock)
 _pending: dict[str, dict] = {}
 _approved: dict[str, float] = {}
+_outcomes: dict[str, tuple[str, float]] = {}
+_claims: dict[str, tuple[str, float]] = {}
+_claim_assigned: set[str] = set()
 _registered: dict[str, Capability] = {}
 _connections: dict[str, str] = {}
 
@@ -210,6 +214,8 @@ class SecurityGateway:
         scope: Optional[Scope] = None, session_id: Optional[str] = None,
         allowlist: Optional[Sequence[str]] = None, capability: Optional[Capability] = None,
         policy: Optional[dict] = None, agent_id: str | None = None, project_dir: str | None = None,
+        approval_request_id: str | None = None,
+        reserve_for_waiter: bool = False,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -352,16 +358,35 @@ class SecurityGateway:
         elif selected == "confirm" or "confirm" in required.values():
             key = _fingerprint(tool_name, args, session_id, project_dir)
             with _lock:
-                if _approved.pop(key, 0) >= time.time():
+                claim = _claims.get(approval_request_id) if approval_request_id else None
+                if claim and claim[0] == key and claim[1] >= time.time():
+                    del _claims[approval_request_id]
+                    kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
+                elif _approved.pop(key, 0) >= time.time():
                     kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
                 else:
-                    request_id = uuid.uuid4().hex
-                    _pending[request_id] = {"key": key, "tool": tool_name, "session": session_id,
-                                            "summary": _summary(tool_name, args), "resource": resource,
-                                            "risk": risk, "reason": f"Policy requires confirmation for {operation}.",
-                                            "agent": agent_id, "project": project_dir, "operation": operation,
-                                            "expires": time.time() + 300}
-                    kind, reason = DecisionKind.CONFIRM, f"Confirmation required for {tool_name}. Request {request_id} is waiting in Security; retry after approval."
+                    reserved_id = next((rid for rid, claim in _claims.items()
+                                        if claim[0] == key and claim[1] >= time.time()), None)
+                    if reserved_id is not None:
+                        if reserve_for_waiter:
+                            request_id = reserved_id
+                            kind, reason = DecisionKind.CONFIRM, "An identical approved action is resuming."
+                        else:
+                            kind, reason = DecisionKind.DENY, "An identical approval is reserved for the waiting conversation."
+                    else:
+                        request_id = next((rid for rid, pending in _pending.items()
+                                           if pending["key"] == key and pending["expires"] >= time.time()), None)
+                        if request_id is None:
+                            request_id = uuid.uuid4().hex
+                            _pending[request_id] = {"key": key, "tool": tool_name, "session": session_id,
+                                                    "summary": _summary(tool_name, args), "resource": resource,
+                                                    "risk": risk, "reason": f"Policy requires confirmation for {operation}.",
+                                                    "agent": agent_id, "project": project_dir, "operation": operation,
+                                                    "interactive": reserve_for_waiter,
+                                                    "expires": time.time() + 3600}
+                        elif reserve_for_waiter:
+                            _pending[request_id]["interactive"] = True
+                        kind, reason = DecisionKind.CONFIRM, f"Confirmation required for {tool_name}. Request {request_id} is waiting in Security."
         else:
             kind, reason = DecisionKind.ALLOW, f"Policy allowed {operation} on {resource_kind.value}; rule {policy_key}."
         result = PolicyDecision(kind, reason, resource_kind, operation, risk, resource,
@@ -390,8 +415,24 @@ class SecurityGateway:
             for key, expires in list(_approved.items()):
                 if expires < now:
                     del _approved[key]
+            for request_id, (_, expires) in list(_outcomes.items()):
+                if expires < now:
+                    del _outcomes[request_id]
+                    _claim_assigned.discard(request_id)
+            for request_id, (_, expires) in list(_claims.items()):
+                if expires < now:
+                    del _claims[request_id]
             return [{"id": request_id, **{k: request[k] for k in ("tool", "session", "summary", "resource", "risk", "reason")}}
                     for request_id, request in _pending.items()]
+
+    @staticmethod
+    def has_pending_session(session_id: str | None) -> bool:
+        if not session_id:
+            return False
+        with _lock:
+            now = time.time()
+            return any(request["session"] == session_id and request["expires"] >= now
+                       for request in _pending.values())
 
     @staticmethod
     def approve(request_id: str) -> bool:
@@ -408,7 +449,13 @@ class SecurityGateway:
             for other_id, other in list(_pending.items()):
                 if other["key"] == request["key"]:
                     del _pending[other_id]
-            _approved[request["key"]] = time.time() + 300
+                    _outcomes[other_id] = ("superseded", time.time() + 300)
+            if request.get("interactive"):
+                _claims[request_id] = (request["key"], time.time() + 300)
+            else:
+                _approved[request["key"]] = time.time() + 300
+            _outcomes[request_id] = ("approved", time.time() + 300)
+            _condition.notify_all()
             return True
 
     @staticmethod
@@ -423,4 +470,30 @@ class SecurityGateway:
                    risk=request["risk"], decision="deny", event="confirmation",
                    reason="User rejected this action.")
             del _pending[request_id]
+            _outcomes[request_id] = ("rejected", time.time() + 300)
+            _condition.notify_all()
             return True
+
+    @staticmethod
+    def wait_for_decision(request_id: str, cancel_event=None) -> str:
+        """Pause one tool call until the exact request is approved, rejected, or cancelled."""
+        with _condition:
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    _pending.pop(request_id, None)
+                    _claims.pop(request_id, None)
+                    _outcomes[request_id] = ("cancelled", time.time() + 300)
+                    _condition.notify_all()
+                    return "cancelled"
+                outcome = _outcomes.get(request_id)
+                if outcome:
+                    if outcome[0] == "approved" and request_id in _claims:
+                        if request_id in _claim_assigned:
+                            return "superseded"
+                        _claim_assigned.add(request_id)
+                    return outcome[0]
+                request = _pending.get(request_id)
+                if request is None or request["expires"] < time.time():
+                    _pending.pop(request_id, None)
+                    return "expired"
+                _condition.wait(timeout=0.1 if cancel_event is not None else 1)
