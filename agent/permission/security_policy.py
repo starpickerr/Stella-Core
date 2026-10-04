@@ -161,6 +161,17 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
             "该权限也不能开放凭据。若连接器报告登录超时或 HTTP 401，应说明是登录或网络问题，"
             "引导用户到 eLearning 设置重新登录。"
         )
+        lines.append(
+            "For a live, complete Canvas file inventory use elearning list_files with pagination and "
+            "file_extensions; use elearning sync_files with the same filter and layout=courseware when the "
+            "user wants original names under each course's 课件 folder. Do not read cookies, "
+            "call Canvas through scripts, or export tool results into intermediate files."
+            if english else
+            "获取 Canvas 实时完整文件清单时使用 elearning list_files 分页及 file_extensions 筛选；"
+            "下载使用 elearning sync_files 并传相同筛选；需要按课程中文名/课件/原名保存时传 layout=courseware。"
+            "不要读取 Cookie、用脚本直连 Canvas，"
+            "也不要为对比而把工具结果另存中间文件。"
+        )
         enabled = bool(elearning_sync.get("enabled"))
         if enabled:
             root = json.dumps(elearning_sync.get("root", ""), ensure_ascii=False)

@@ -33,12 +33,13 @@ def cookie_matches_host(domain, host):
 
 
 class Canvas:
-    def __init__(self, config, cookies=None, auto_login=True, cancel_event=None):
+    def __init__(self, config, cookies=None, auto_login=True, cancel_event=None, progress_callback=None):
         self.config = config
         self.base = config["base_url"].rstrip("/")
         self.origin = urllib.parse.urlparse(self.base).netloc
         self.interval = max(float(config.get("request_interval", 0.4)), 0)
         self.cancel_event = cancel_event
+        self.progress_callback = progress_callback
         # Verification during browser login must never trigger another browser login.
         self.auto_login = auto_login and cookies is None
         # Explicit browser cookies must be verified independently of any configured Token.
@@ -89,7 +90,7 @@ class Canvas:
         print("尚未登录或 Cookie 已失效，正在连接 eLearning……", flush=True)
         LOGGER.info("开始自动登录")
         try:
-            login(self.config, cancel_event=self.cancel_event)
+            login(self.config, cancel_event=self.cancel_event, progress_callback=self.progress_callback)
             self._load_cookies()
         except SyncCancelled:
             raise
@@ -211,15 +212,15 @@ def read_login_credentials(config):
     return username, password
 
 
-def ensure_login(config, cancel_event=None):
-    canvas = Canvas(config, cancel_event=cancel_event)
+def ensure_login(config, cancel_event=None, progress_callback=None):
+    canvas = Canvas(config, cancel_event=cancel_event, progress_callback=progress_callback)
     profile, _ = canvas.get("/api/v1/users/self/profile")
     if not isinstance(profile, dict) or not profile.get("id"):
         raise LoginRequired("未能验证登录状态，请检查登录配置。")
     return canvas
 
 
-def login(config, manual=False, cancel_event=None):
+def login(config, manual=False, cancel_event=None, progress_callback=None):
     def check_cancelled():
         if cancel_event is not None and cancel_event.is_set():
             raise SyncCancelled("eLearning 登录已取消")
@@ -278,10 +279,17 @@ def login(config, manual=False, cancel_event=None):
                         raise SyncError("自动登录未成功，请检查学工号、密码和学校认证要求。") from None
                 finally:
                     username = password = None
-            deadline = time.monotonic() + (600 if manual else 90)
+            # The university SSO redirect can finish near the former 90 s
+            # deadline. Keep the browser cancellable while allowing that delay.
+            deadline = time.monotonic() + (600 if manual else 150)
             stage = "等待登录跳转"
+            next_progress = time.monotonic() + 15
+            verification_error = None
             while time.monotonic() < deadline:
                 check_cancelled()
+                if progress_callback is not None and time.monotonic() >= next_progress:
+                    progress_callback("正在等待 eLearning 登录跳转和状态验证…")
+                    next_progress = time.monotonic() + 15
                 if page.is_closed():
                     raise SyncError("登录窗口已关闭，未保存登录状态。")
                 if urllib.parse.urlparse(page.url).hostname == host:
@@ -301,14 +309,19 @@ def login(config, manual=False, cancel_event=None):
                         # The success redirect may arrive before Canvas has finished establishing its session.
                         pass
                     except SyncError as error:
-                        raise SyncError("验证登录状态失败：{} 登录状态尚未保存。".format(error)) from None
+                        # Agent requests use short, cancellable socket timeouts;
+                        # a slow verification must not fail the whole login.
+                        verification_error = str(error)
                     stage = "等待登录跳转"
                 if cancel_event is not None:
                     if cancel_event.wait(1.5):
                         check_cancelled()
                 else:
                     page.wait_for_timeout(1500)
-            raise SyncError("等待登录状态验证超时，未保存 Cookie。请检查账号密码和网络后重试。")
+            if verification_error:
+                raise SyncError("等待登录状态验证超时（{}），未保存 Cookie。请检查账号密码和网络后重试。".format(
+                    verification_error))
+            raise SyncError("等待登录跳转超时，未保存 Cookie。请检查已保存的账号密码和网络后重试。")
         except SyncError:
             raise
         except PlaywrightError as error:

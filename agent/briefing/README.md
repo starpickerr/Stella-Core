@@ -45,6 +45,8 @@ Agent 为每个候选给出精选或过滤的理由，并为精选信息提供�
 
 爬虫以独立的 `elearning` 工具注册到项目 Agent 中，与简报来源共用 `ElearningSource` 和项目内 Canvas 模块，没有外部脚本或命令调用。`{"action":"courses"}` 返回可选课程；`{"action":"fetch","since":"2026-09-28T12:00:00Z","until":"2026-09-29T00:00:00Z","offset":0,"limit":20}` 返回归一化 `source_items`、总数、下一页起点和部分读取错误。读取默认使用设置中勾选的课程，未勾选时读取所有可访问课程，也可传 `course_ids` 指定课程；不要求先测试连接或纳入简报。`sync_files` 只在用户开启文件同步、选择保存目录和授权课程后保存文件，可用 `course_ids`/`file_ids` 限定范围。读取支持只读会话；工具不会提交作业、生成简报或推进同步游标。账号和凭据只能在设置中管理，不作为工具参数传入或返回。
 
+`elearning list_files` 直接从 Canvas 读取完整文件清单，支持 `course_ids`、`file_extensions` 和每页最多 200 条的分页，不依赖简报的时间窗口或临时脚本。`sync_files` 使用相同的扩展名筛选，但仍只写入设置中已授权的课程和目录。连接器会用已保存的配置自动重登，无须先在设置页测试连接。
+
 `action=mail` 支持 `briefing_id`、`source=email/elearning/*`、`category=candidate/selected/filtered` 和 `offset`，每页 50 条，可继续翻页；默认查询邮件，提供 `source_item_id` 时返回对应候选的完整正文。`list_rules`、`update_rule`、`delete_rule` 分别查询、修改和删除文稿，编辑内容用 `text`，启停用 `enabled`。
 
 工具调用沿用调用方 Agent 的模型和取消信号；桌面手动生成与每日自动生成使用当前配置的模型，不污染聊天历史。筛选 Agent 只获得本批候选的原文读取工具与结果工具，正文 Agent 只获得结果工具，不加载聊天技能、文件工具或 MCP。候选正文作为资料处理，不作为操作指令。Agent 未提交完整结果、模型失败或取消时保留上次成功的正文、条目、分类、规则文稿和时间窗口，不提交游标；不会用旧关键词筛选替代失败的 Agent 结果。

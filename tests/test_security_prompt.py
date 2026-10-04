@@ -49,3 +49,5 @@ def test_security_prompt_explains_disabled_sync_and_hard_boundaries():
     assert "受保护凭据读取和提权仍被禁止" in text
     assert "会话文件读取被拒绝不代表连接器被拒绝" in text
     assert "不要建议开放 workspace_outside" in text
+    assert "elearning list_files" in text
+    assert "不要读取 Cookie、用脚本直连 Canvas" in text
