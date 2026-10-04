@@ -6,7 +6,7 @@ import threading
 import time
 import urllib.error
 from datetime import datetime, timezone
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 from unittest.mock import patch
 
 import pytest
@@ -226,7 +226,7 @@ def test_elearning_tool_is_registered_and_read_only():
     manager = ToolManager()
     manager._load_tools_from_init()
     assert manager.tool_classes["elearning"] is ElearningTool
-    for action in ("courses", "fetch"):
+    for action in ("courses", "fetch", "list_files"):
         assert check_tool_call("read-only", "elearning", {"action": action})
     assert not check_tool_call("read-only", "elearning", {"action": "sync_files"})
     assert check_tool_call("workspace-write", "elearning", {"action": "sync_files"})
@@ -250,7 +250,7 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
         {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"},
         {"id": 5, "filename": "作业.pdf", "url": BASE + "/files/5/download"},
     ]
-    canvas.open = Mock(return_value=io.BytesIO(b"pdf"))
+    canvas.open = Mock(side_effect=lambda *args, **kwargs: io.BytesIO(b"pdf"))
     tool = ElearningTool(client_factory=lambda _: canvas)
     result = tool.execute({"action": "sync_files", "file_ids": ["5"]})
     assert result.status == "success", result.result
@@ -266,6 +266,112 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
     assert page["total"] == 2 and page["next_offset"] == 1
     settings.save_settings({"file_sync_enabled": False})
     assert "开启文件同步" in tool.execute({"action": "sync_files"}).result
+
+
+def test_elearning_lists_live_files_and_filters_downloads_without_scripts(config_path, tmp_path, security_audit_path):
+    root = tmp_path / "selected"
+    root.mkdir()
+    settings.save_settings(config(enabled=False, file_sync_enabled=True, file_sync_root=str(root)))
+    canvas = FakeCanvas()
+    canvas.rows["files"] = [
+        {"id": 4, "filename": "第一讲.PDF", "size": 3, "url": BASE + "/files/4/download"},
+        {"id": 5, "filename": "第二讲.pptx", "size": 3, "url": BASE + "/files/5/download"},
+        {"id": 6, "filename": "成绩.csv", "size": 3, "url": BASE + "/files/6/download"},
+    ]
+    canvas.open = Mock(side_effect=lambda *args, **kwargs: io.BytesIO(b"pdf"))
+    tool = ElearningTool(client_factory=lambda _: canvas)
+
+    first = json.loads(tool.execute({"action": "list_files", "file_extensions": [".PDF", "pptx"], "limit": 1}).result)
+    second = json.loads(tool.execute({"action": "list_files", "file_extensions": ["pdf", "pptx"], "offset": 1}).result)
+    assert first["total"] == 2 and first["next_offset"] == 1
+    assert [first["files"][0]["file_id"], second["files"][0]["file_id"]] == ["4", "5"]
+    assert second["next_offset"] is None
+    assert "url" not in first["files"][0]  # signed download links remain inside the connector
+    assert tool.execute({"action": "list_files", "file_extensions": ["../secret"]}).status == "error"
+    canvas.open.assert_not_called()
+
+    result = json.loads(tool.execute({"action": "sync_files", "file_extensions": ["pdf", "pptx"]}).result)
+    assert result["status"] == "completed" and result["total"] == 2
+    assert len(list((root / "课程--42").iterdir())) == 2
+    assert not (root / "课程--42" / "成绩--6.csv").exists()
+
+
+def test_headless_auto_login_retries_transient_verification_without_connection_test(config_path):
+    from agent.briefing.elearning import client as canvas_module
+
+    browser = Mock()
+    context = browser.new_context.return_value
+    page = context.new_page.return_value
+    page.url = "https://id.fudan.edu.cn/login"
+    page.is_closed.return_value = False
+    page.get_by_role.return_value.click.side_effect = lambda **kwargs: setattr(page, "url", BASE)
+    context.cookies.return_value = []
+    playwright = MagicMock()
+    playwright.__enter__.return_value.chromium.launch.return_value = browser
+    verified = Mock()
+    verified.get.side_effect = [SyncError("临时网络超时"), ({"id": 7}, None)]
+    verified.session_data.return_value = {"cookies": []}
+    event = Mock()
+    event.is_set.return_value = False
+    event.wait.return_value = False
+
+    with patch("playwright.sync_api.sync_playwright", return_value=playwright), \
+         patch.object(canvas_module, "Canvas", return_value=verified), \
+         patch.object(canvas_module, "save_session") as save:
+        canvas_module.login(config(), cancel_event=event)
+
+    assert verified.get.call_count == 2
+    save.assert_called_once()
+    assert playwright.__enter__.return_value.chromium.launch.call_args.kwargs["headless"] is True
+    browser.close.assert_called_once()
+
+
+def test_live_file_inventory_reports_expired_login_as_failure(config_path):
+    settings.save_settings(config())
+    canvas = FakeCanvas()
+    canvas.rows["files"] = LoginRequired("登录已失效")
+    result = ElearningTool(client_factory=lambda _: canvas).execute({"action": "list_files"})
+    assert result.status == "error"
+    assert "登录已失效" in result.result
+
+
+def test_courseware_layout_adopts_existing_original_name_and_blocks_symlink(config_path, tmp_path, security_audit_path):
+    root = tmp_path / "selected"
+    materials = root / "计算机网络" / "课件"
+    materials.mkdir(parents=True)
+    (materials / "讲义.pdf").write_bytes(b"pdf")
+    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    canvas = FakeCanvas()
+    canvas.rows["courses"] = [{"id": 42, "name": "CS30066.01 计算机网络"}]
+    canvas.rows["files"] = [
+        {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"},
+        {"id": 5, "filename": "脚本.py", "url": BASE + "/files/5/download"},
+    ]
+    canvas.open = Mock(side_effect=lambda *args, **kwargs: io.BytesIO(b"pdf"))
+    tool = ElearningTool(client_factory=lambda _: canvas)
+    args = {"action": "sync_files", "layout": "courseware", "file_extensions": ["pdf", "ppt", "pptx"]}
+
+    first = json.loads(tool.execute(args).result)
+    assert first["status"] == "completed" and first["total"] == 1
+    assert [p.name for p in materials.iterdir()] == ["讲义.pdf"]
+    assert (materials / "讲义.pdf").read_bytes() == b"pdf"
+    assert canvas.open.call_count == 1
+    assert json.loads(tool.execute(args).result)["status"] == "completed"
+    assert canvas.open.call_count == 1  # manifest now owns the existing matching file
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    unsafe = root / "其他课程"
+    unsafe.symlink_to(outside, target_is_directory=True)
+    canvas.rows["courses"] = [{"id": 42, "name": "其他课程"}]
+    # A new layout manifest maps this course to its original safe directory;
+    # exercise a fresh account so the symlink is the first candidate.
+    settings.save_settings({"username": "another", "password": "replacement", "courses": ["42"],
+                            "file_sync_enabled": True, "file_sync_root": str(root)})
+    result = json.loads(tool.execute(args).result)
+    assert result["status"] == "partial"
+    assert "安全目录" in result["errors"][0]
+    assert list(outside.iterdir()) == []
 
 
 def test_cancel_during_file_download_removes_partial_file(config_path, tmp_path, security_audit_path):

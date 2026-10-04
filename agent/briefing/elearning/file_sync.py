@@ -38,6 +38,36 @@ def _filename(raw):
     return f"{stem[:70]}--{file_id}{extension[:16]}"
 
 
+def _courseware_filename(raw):
+    # Preserve the Canvas name unless it would escape the selected directory
+    # or exceed a filesystem component limit.
+    original = str(raw.get("filename") or raw.get("display_name") or "").replace("/", "_").replace("\\", "_")
+    original = "".join(char for char in original if ord(char) >= 32).strip()
+    if original in ("", ".", ".."):
+        return _filename(raw)
+    if len(original.encode("utf-8")) <= 240:
+        return original
+    stem, extension = os.path.splitext(original)
+    suffix = f"--{_component(raw.get('id'), 'unknown')}{extension[:16]}"
+    allowed = 240 - len(suffix.encode("utf-8"))
+    while len(stem.encode("utf-8")) > allowed:
+        stem = stem[:-1]
+    return stem + suffix
+
+
+def _courseware_folder(course):
+    name = re.sub(r"^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+", "", str(course.get("name") or ""))
+    safe = _component(name, "课程")
+    while len(safe.encode("utf-8")) > 240:
+        safe = safe[:-1]
+    return safe
+
+
+def _manifest_path(config, layout):
+    path = elearning_settings.file_sync_manifest_path(config)
+    return path if layout == "managed" else path.with_name(path.stem + "-courseware.json")
+
+
 def _manifest_name(value):
     return (isinstance(value, str) and value not in ("", ".", "..")
             and os.path.basename(value) == value and "\\" not in value
@@ -155,8 +185,8 @@ def _download_once(client, url, directory_fd, cancel_event=None):
         raise
 
 
-def _load_manifest(config, root):
-    path = elearning_settings.file_sync_manifest_path(config)
+def _load_manifest(config, root, layout):
+    path = _manifest_path(config, layout)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -166,8 +196,8 @@ def _load_manifest(config, root):
     return data
 
 
-def _save_manifest(config, manifest):
-    elearning_settings._write(elearning_settings.file_sync_manifest_path(config), manifest)
+def _save_manifest(config, manifest, layout):
+    elearning_settings._write(_manifest_path(config, layout), manifest)
 
 
 def _current_grant(config, course_id):
@@ -179,8 +209,10 @@ def _current_grant(config, course_id):
         raise SyncError("课程文件同步授权已变更，请检查 eLearning 设置")
 
 
-def sync_files(client, config, rows, cancel_event=None):
+def sync_files(client, config, rows, cancel_event=None, layout="managed"):
     """Save changed files; return per-file errors without hiding briefing data."""
+    if layout not in ("managed", "courseware"):
+        raise ValueError("invalid eLearning file layout")
     if not config.get("file_sync_enabled"):
         return []
     if not rows:
@@ -198,7 +230,7 @@ def sync_files(client, config, rows, cancel_event=None):
         _check_cancelled(cancel_event)
     try:
         _check_cancelled(cancel_event)
-        manifest = _load_manifest(config, root)
+        manifest = _load_manifest(config, root, layout)
         try:
             root_fd = os.open(str(root), _DIRECTORY_FLAGS)
         except OSError:
@@ -207,7 +239,7 @@ def sync_files(client, config, rows, cancel_event=None):
             for course, raw in rows:
                 _check_cancelled(cancel_event)
                 try:
-                    _sync_one(client, config, root, root_fd, manifest, course, raw, cancel_event)
+                    _sync_one(client, config, root, root_fd, manifest, course, raw, cancel_event, layout)
                 except SyncCancelled:
                     raise
                 except Exception as exc:
@@ -223,24 +255,40 @@ def sync_files(client, config, rows, cancel_event=None):
     return errors
 
 
-def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_event=None):
+def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_event=None, layout="managed"):
     _check_cancelled(cancel_event)
     course_id, file_id = str(course["id"]), str(raw["id"])
     _current_grant(config, course_id)
     if isinstance(raw.get("size"), (int, float)) and raw["size"] > _MAX_FILE_SIZE:
         raise SyncError("课程文件超过 512 MB，未保存")
-    folder = manifest["courses"].setdefault(course_id,
-        f"{_component(course.get('name'), '课程')}--{_component(course_id, 'unknown')}")
+    if course_id not in manifest["courses"]:
+        folder = (_courseware_folder(course) if layout == "courseware" else
+                  f"{_component(course.get('name'), '课程')}--{_component(course_id, 'unknown')}")
+        if layout == "courseware" and folder in manifest["courses"].values():
+            folder = f"{folder[:70]}--{_component(course_id, 'unknown')}"
+        manifest["courses"][course_id] = folder
+    folder = manifest["courses"][course_id]
     if not _manifest_name(folder):
         raise SyncError("课程文件目录记录无效")
-    directory_fd = _open_child(materials_fd, folder)
+    course_fd = _open_child(materials_fd, folder)
+    try:
+        directory_fd = _open_child(course_fd, "课件") if layout == "courseware" else course_fd
+    except Exception:
+        os.close(course_fd)
+        raise
     try:
         key = f"{course_id}:{file_id}"
         previous = manifest["files"].get(key) or {}
         remote = _fingerprint(raw)
-        name = previous.get("name") or _filename(raw)
+        name = previous.get("name") or (_courseware_filename(raw) if layout == "courseware" else _filename(raw))
         if not _manifest_name(name):
             raise SyncError("课程文件名记录无效")
+        if layout == "courseware" and not previous and any(
+            entry.get("name") == name for other_key, entry in manifest["files"].items()
+            if other_key != key and other_key.startswith(course_id + ":") and isinstance(entry, dict)
+        ):
+            stem, extension = os.path.splitext(name)
+            name = f"{stem}--{_component(file_id, 'unknown')}{extension}"
         existing_digest = _digest_existing(directory_fd, name, cancel_event)
         if previous.get("remote") == remote and existing_digest == previous.get("sha256"):
             return
@@ -255,14 +303,18 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_
             _check_cancelled(cancel_event)
             _current_grant(config, course_id)
             existing_digest = _digest_existing(directory_fd, name, cancel_event)
+            if layout == "courseware" and existing_digest == downloaded_digest:
+                manifest["files"][key] = {"remote": remote, "name": name, "sha256": downloaded_digest}
+                _save_manifest(config, manifest, layout)
+                return
             replace = (existing_digest is None or
                        bool(previous.get("sha256") and existing_digest == previous["sha256"]))
             if not replace:
-                stem, extension = os.path.splitext(_filename(raw))
+                stem, extension = os.path.splitext(name if layout == "courseware" else _filename(raw))
                 name = f"{stem}-更新-{remote[:8]}{extension}"
                 if _digest_existing(directory_fd, name, cancel_event) is not None:
                     name = f"{stem}-更新-{remote[:8]}-{downloaded_digest[:8]}{extension}"
-            destination = root / folder / name
+            destination = root / folder / "课件" / name if layout == "courseware" else root / folder / name
             record(tool="elearning", operation="download", resource=str(destination), event="file_modify",
                    risk="L1", decision="allow", reason="Configured course file sync within the selected folder.")
             _check_cancelled(cancel_event)
@@ -273,11 +325,13 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_
                         follow_symlinks=False)
                 os.unlink(temporary, dir_fd=directory_fd)
             manifest["files"][key] = {"remote": remote, "name": name, "sha256": downloaded_digest}
-            _save_manifest(config, manifest)
+            _save_manifest(config, manifest, layout)
         finally:
             try:
                 os.unlink(temporary, dir_fd=directory_fd)
             except FileNotFoundError:
                 pass
     finally:
-        os.close(directory_fd)
+        if directory_fd != course_fd:
+            os.close(directory_fd)
+        os.close(course_fd)
