@@ -25,6 +25,11 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 # Cap on how many redirects we follow; each hop's target is re-validated
 # against the SSRF guard so a public URL cannot bounce us into an internal one.
 MAX_REDIRECTS = 10
+_CANCEL_SOCKET_TIMEOUT = 5
+
+
+class _Cancelled(Exception):
+    pass
 
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -102,7 +107,13 @@ class WebFetch(BaseTool):
         self.config = config or {}
         self.cwd = self.config.get("cwd", os.getcwd())
 
+    def _check_cancelled(self):
+        if self.is_cancelled():
+            raise _Cancelled("Web fetch cancelled")
+
     def execute(self, args: Dict[str, Any]) -> ToolResult:
+        if self.is_cancelled():
+            return ToolResult.fail("Web fetch cancelled")
         url = args.get("url", "").strip()
         if not url:
             return ToolResult.fail("Error: 'url' parameter is required")
@@ -125,8 +136,7 @@ class WebFetch(BaseTool):
 
     # ---- Safe request helper ----
 
-    @staticmethod
-    def _safe_get(url: str, **kwargs) -> requests.Response:
+    def _safe_get(self, url: str, **kwargs) -> requests.Response:
         """Issue a GET request while re-validating every redirect hop (SSRF guard).
 
         Auto-redirect is disabled and each hop is followed manually so the
@@ -141,13 +151,17 @@ class WebFetch(BaseTool):
         kwargs.pop("allow_redirects", None)
         current = url
         for _ in range(MAX_REDIRECTS + 1):
+            self._check_cancelled()
             response = requests.get(
                 current,
                 headers=DEFAULT_HEADERS,
-                timeout=DEFAULT_TIMEOUT,
+                timeout=_CANCEL_SOCKET_TIMEOUT if self.cancel_event is not None else DEFAULT_TIMEOUT,
                 allow_redirects=False,
                 **kwargs,
             )
+            if self.is_cancelled():
+                response.close()
+                self._check_cancelled()
             if not response.is_redirect and not response.is_permanent_redirect:
                 return response
 
@@ -158,8 +172,8 @@ class WebFetch(BaseTool):
             # Resolve the redirect target relative to the current URL, then
             # re-validate it before following.
             current = requests.compat.urljoin(current, location)
-            validate_url_safe(current)
             response.close()
+            validate_url_safe(current)
 
         raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
 
@@ -168,9 +182,24 @@ class WebFetch(BaseTool):
     def _fetch_webpage(self, url: str) -> ToolResult:
         """Fetch and extract readable text from an HTML web page."""
         parsed = urlparse(url)
+        response = None
         try:
             response = self._safe_get(url)
             response.raise_for_status()
+            self._check_cancelled()
+            content_type = response.headers.get("Content-Type", "")
+            if self._is_binary_content_type(content_type) and not _is_document_url(url):
+                return self._handle_download_by_content_type(url, response, content_type)
+
+            response.encoding = self._detect_encoding(response)
+            self._check_cancelled()
+            html = response.text
+            title = self._extract_title(html)
+            text = self._extract_text(html)
+            self._check_cancelled()
+            return ToolResult.success(f"Title: {title}\n\nContent:\n{text}")
+        except _Cancelled:
+            return ToolResult.fail("Web fetch cancelled")
         except requests.Timeout:
             return ToolResult.fail(f"Error: Request timed out after {DEFAULT_TIMEOUT}s")
         except requests.ConnectionError:
@@ -181,17 +210,9 @@ class WebFetch(BaseTool):
             return ToolResult.fail(f"Error: {e}")
         except Exception as e:
             return ToolResult.fail(f"Error: Failed to fetch URL: {e}")
-
-        content_type = response.headers.get("Content-Type", "")
-        if self._is_binary_content_type(content_type) and not _is_document_url(url):
-            return self._handle_download_by_content_type(url, response, content_type)
-
-        response.encoding = self._detect_encoding(response)
-        html = response.text
-        title = self._extract_title(html)
-        text = self._extract_text(html)
-
-        return ToolResult.success(f"Title: {title}\n\nContent:\n{text}")
+        finally:
+            if response is not None:
+                response.close()
 
     # ---- Document fetching ----
 
@@ -205,9 +226,11 @@ class WebFetch(BaseTool):
         local_path = os.path.join(tmp_dir, filename)
         logger.info(f"[WebFetch] Downloading document: {url} -> {local_path}")
 
+        response = None
         try:
             response = self._safe_get(url, stream=True)
             response.raise_for_status()
+            self._check_cancelled()
 
             content_length = int(response.headers.get("Content-Length", 0))
             if content_length > MAX_FILE_SIZE:
@@ -218,6 +241,7 @@ class WebFetch(BaseTool):
             downloaded = 0
             with open(local_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
+                    self._check_cancelled()
                     downloaded += len(chunk)
                     if downloaded > MAX_FILE_SIZE:
                         f.close()
@@ -227,11 +251,19 @@ class WebFetch(BaseTool):
                         )
                     f.write(chunk)
 
+            self._check_cancelled()
+
+        except _Cancelled:
+            self._cleanup_file(local_path)
+            return ToolResult.fail("Web fetch cancelled")
         except requests.Timeout:
+            self._cleanup_file(local_path)
             return ToolResult.fail(f"Error: Download timed out after {DEFAULT_TIMEOUT}s")
         except requests.ConnectionError:
+            self._cleanup_file(local_path)
             return ToolResult.fail(f"Error: Failed to connect to {parsed.netloc}")
         except requests.HTTPError as e:
+            self._cleanup_file(local_path)
             return ToolResult.fail(f"Error: HTTP {e.response.status_code} for URL: {url}")
         except ValueError as e:
             self._cleanup_file(local_path)
@@ -239,9 +271,17 @@ class WebFetch(BaseTool):
         except Exception as e:
             self._cleanup_file(local_path)
             return ToolResult.fail(f"Error: Failed to download file: {e}")
+        finally:
+            if response is not None:
+                response.close()
 
         try:
+            self._check_cancelled()
             text = self._parse_document(local_path, suffix)
+            self._check_cancelled()
+        except _Cancelled:
+            self._cleanup_file(local_path)
+            return ToolResult.fail("Web fetch cancelled")
         except Exception as e:
             self._cleanup_file(local_path)
             return ToolResult.fail(f"Error: Failed to parse document: {e}")
@@ -289,6 +329,7 @@ class WebFetch(BaseTool):
         reader = PdfReader(file_path)
         text_parts = []
         for page_num, page in enumerate(reader.pages, 1):
+            self._check_cancelled()
             page_text = page.extract_text()
             if page_text and page_text.strip():
                 text_parts.append(f"--- Page {page_num}/{len(reader.pages)} ---\n{page_text}")
@@ -330,17 +371,20 @@ class WebFetch(BaseTool):
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
         result_parts = []
 
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            rows = []
-            for row in ws.iter_rows(values_only=True):
-                cells = [str(c) if c is not None else "" for c in row]
-                if any(cells):
-                    rows.append(" | ".join(cells))
-            if rows:
-                result_parts.append(f"--- Sheet: {sheet_name} ---\n" + "\n".join(rows))
-
-        wb.close()
+        try:
+            for sheet_name in wb.sheetnames:
+                self._check_cancelled()
+                ws = wb[sheet_name]
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    self._check_cancelled()
+                    cells = [str(c) if c is not None else "" for c in row]
+                    if any(cells):
+                        rows.append(" | ".join(cells))
+                if rows:
+                    result_parts.append(f"--- Sheet: {sheet_name} ---\n" + "\n".join(rows))
+        finally:
+            wb.close()
         return "\n\n".join(result_parts)
 
     def _parse_ppt(self, file_path: str) -> str:
@@ -356,6 +400,7 @@ class WebFetch(BaseTool):
         text_parts = []
 
         for slide_num, slide in enumerate(prs.slides, 1):
+            self._check_cancelled()
             slide_texts = []
             for shape in slide.shapes:
                 if shape.has_text_frame:

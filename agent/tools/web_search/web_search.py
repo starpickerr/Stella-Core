@@ -31,6 +31,11 @@ from config import conf
 
 
 DEFAULT_TIMEOUT = 30
+_CANCEL_SOCKET_TIMEOUT = 5
+
+
+class _Cancelled(Exception):
+    pass
 
 # Canonical fallback order. Empirically ordered by Chinese real-time
 # quality + relevance: bocha (best overall), qianfan (best for hot news),
@@ -194,6 +199,8 @@ class WebSearch(BaseTool):
     # ------------------------------------------------------------------
 
     def execute(self, args: Dict[str, Any]) -> ToolResult:
+        if self.is_cancelled():
+            return ToolResult.fail("Web search cancelled")
         query = (args.get("query") or "").strip()
         if not query:
             return ToolResult.fail("Error: 'query' parameter is required")
@@ -232,6 +239,8 @@ class WebSearch(BaseTool):
             if provider == "linkai":
                 return self._search_linkai(query, count, freshness)
             return ToolResult.fail(f"Error: Unknown provider '{provider}'")
+        except _Cancelled:
+            return ToolResult.fail("Web search cancelled")
         except requests.Timeout:
             return ToolResult.fail(f"Error: Search request timed out after {DEFAULT_TIMEOUT}s")
         except requests.ConnectionError:
@@ -239,6 +248,18 @@ class WebSearch(BaseTool):
         except Exception as e:
             logger.error(f"[WebSearch] Unexpected error ({provider}): {e}", exc_info=True)
             return ToolResult.fail(f"Error: Search failed - {str(e)}")
+
+    def _post(self, url, **kwargs):
+        if self.is_cancelled():
+            raise _Cancelled()
+        response = requests.post(
+            url, timeout=_CANCEL_SOCKET_TIMEOUT if self.cancel_event is not None else DEFAULT_TIMEOUT,
+            **kwargs,
+        )
+        if self.is_cancelled():
+            response.close()
+            raise _Cancelled()
+        return response
 
     # ------------------------------------------------------------------
     # Bocha
@@ -255,7 +276,7 @@ class WebSearch(BaseTool):
         payload = {"query": query, "count": count, "freshness": freshness, "summary": summary}
 
         logger.debug(f"[WebSearch] bocha: query='{query}', count={count}")
-        resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        resp = self._post(url, headers=headers, json=payload)
 
         if resp.status_code == 401:
             return ToolResult.fail("Error: Invalid bocha API key.")
@@ -325,7 +346,7 @@ class WebSearch(BaseTool):
             payload["content_size"] = content_size
 
         logger.debug(f"[WebSearch] zhipu: query='{trimmed_query}', count={payload['count']}, engine={engine}")
-        resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        resp = self._post(url, headers=headers, json=payload)
 
         if resp.status_code == 401:
             return ToolResult.fail("Error: Invalid Zhipu API key.")
@@ -383,7 +404,7 @@ class WebSearch(BaseTool):
             payload["search_filter"] = search_filter
 
         logger.debug(f"[WebSearch] qianfan: query='{query}', count={count}, freshness={freshness!r}")
-        resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        resp = self._post(url, headers=headers, json=payload)
 
         if resp.status_code == 401:
             return ToolResult.fail("Error: Invalid Qianfan API key.")
@@ -437,7 +458,7 @@ class WebSearch(BaseTool):
 
         payload = {"code": "web-search", "args": {"query": query, "count": count, "freshness": freshness}}
         logger.debug(f"[WebSearch] linkai: query='{query}', count={count}")
-        resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        resp = self._post(url, headers=headers, json=payload)
 
         if resp.status_code == 401:
             return ToolResult.fail("Error: Invalid LinkAI API key.")

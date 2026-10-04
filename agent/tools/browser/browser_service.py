@@ -14,6 +14,8 @@ import uuid
 import queue
 import signal
 import threading
+import time
+from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, Callable
 
 from common.log import logger
@@ -21,6 +23,11 @@ from common.utils import expand_path, is_cloud_deployment, memory_headroom_mb
 
 
 _DEFAULT_USER_DATA_DIR = "~/.stella/browser_profile"
+_CANCEL_OPERATION_TIMEOUT_MS = 5000
+
+
+class BrowserCancelledError(Exception):
+    """The caller stopped this browser operation."""
 
 # Bounds for the renderer's JS heap cap. The floor is what even simple pages need
 # to run at all; the ceiling is where constraining it stops being useful. The
@@ -522,6 +529,23 @@ class BrowserService:
         # (e.g. user manually closed the window). The next _submit() will then
         # tear down the stale thread and relaunch.
         self._needs_restart = False
+        self._request_local = threading.local()
+        self._active_cancel_event = None
+
+    @contextmanager
+    def cancel_scope(self, cancel_event):
+        previous = getattr(self._request_local, "cancel_event", None)
+        self._request_local.cancel_event = cancel_event
+        try:
+            yield
+        finally:
+            self._request_local.cancel_event = previous
+
+    def _request_cancel_event(self):
+        return getattr(self._request_local, "cancel_event", None)
+
+    def _bounded_timeout(self, milliseconds):
+        return min(milliseconds, _CANCEL_OPERATION_TIMEOUT_MS) if self._request_cancel_event() is not None else milliseconds
 
     # ------------------------------------------------------------------
     # Background-thread lifecycle
@@ -538,7 +562,14 @@ class BrowserService:
             # Wait for old thread to fully exit before creating a new one
             old = self._thread
             if old and old.is_alive():
-                old.join(timeout=5)
+                deadline = time.monotonic() + 5
+                while old.is_alive() and time.monotonic() < deadline:
+                    cancel_event = self._request_cancel_event()
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise BrowserCancelledError("Browser operation cancelled")
+                    old.join(timeout=0.1)
+                if old.is_alive():
+                    raise RuntimeError("Previous browser operation is still stopping")
             # Fresh queue to avoid stale sentinels from a previous close()
             self._task_queue = queue.Queue()
             self._alive = True
@@ -549,7 +580,14 @@ class BrowserService:
 
         # Wait outside the lock: a launch that never finishes has to be torn down
         # from here, and close() needs the same lock.
-        if not ready.wait(timeout=self._startup_timeout):
+        cancel_event = self._request_cancel_event()
+        deadline = time.monotonic() + self._startup_timeout
+        while not ready.is_set() and time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                self._alive = False
+                raise BrowserCancelledError("Browser operation cancelled")
+            ready.wait(timeout=min(0.1, max(0, deadline - time.monotonic())))
+        if not ready.is_set():
             # A launch that hangs (rather than raising) leaves _alive set, so
             # without this the caller would queue work onto a thread that never
             # consumes it and then wait out a second, longer timeout on top.
@@ -580,8 +618,14 @@ class BrowserService:
                 continue
             if task is None:
                 break
-            fn, args, kwargs, result_slot = task
+            fn, args, kwargs, result_slot, cancel_event = task
             try:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise BrowserCancelledError("Browser operation cancelled")
+                self._active_cancel_event = cancel_event
+                if cancel_event is not None and self._page is not None:
+                    self._page.set_default_timeout(_CANCEL_OPERATION_TIMEOUT_MS)
+                    self._page.set_default_navigation_timeout(_CANCEL_OPERATION_TIMEOUT_MS)
                 result_slot["value"] = fn(*args, **kwargs)
             except Exception as e:
                 result_slot["error"] = e
@@ -592,6 +636,13 @@ class BrowserService:
                         "will relaunch on next request."
                     )
             finally:
+                self._active_cancel_event = None
+                if cancel_event is not None and self._page is not None:
+                    try:
+                        self._page.set_default_timeout(30000)
+                        self._page.set_default_navigation_timeout(30000)
+                    except Exception:
+                        pass
                 result_slot["event"].set()
 
         self._shutdown_browser()
@@ -607,7 +658,7 @@ class BrowserService:
                 break
             if task is None:
                 continue
-            _, _, _, result_slot = task
+            _, _, _, result_slot, _ = task
             result_slot["error"] = error
             result_slot["event"].set()
 
@@ -917,6 +968,9 @@ class BrowserService:
 
     def _submit(self, fn: Callable, *args, **kwargs):
         """Submit *fn* to the background thread and block until it completes."""
+        cancel_event = self._request_cancel_event()
+        if cancel_event is not None and cancel_event.is_set():
+            raise BrowserCancelledError("Browser operation cancelled")
         # If the browser died externally (e.g. user closed the window), tear
         # down the stale thread first so _start_thread() will relaunch fresh.
         if self._needs_restart:
@@ -932,10 +986,15 @@ class BrowserService:
         self._reset_idle_timer()
 
         result_slot: Dict[str, Any] = {"event": threading.Event()}
-        self._task_queue.put((fn, args, kwargs, result_slot))
+        self._task_queue.put((fn, args, kwargs, result_slot, cancel_event))
 
         # Timeout prevents permanent hang if the background thread crashes
-        completed = result_slot["event"].wait(timeout=120)
+        deadline = time.monotonic() + 120
+        while not result_slot["event"].is_set() and time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                raise BrowserCancelledError("Browser operation cancelled")
+            result_slot["event"].wait(timeout=min(0.1, max(0, deadline - time.monotonic())))
+        completed = result_slot["event"].is_set()
         if not completed:
             raise TimeoutError("Browser operation timed out (120s)")
 
@@ -1035,7 +1094,7 @@ class BrowserService:
     # ------------------------------------------------------------------
 
     def navigate(self, url: str, timeout: int = 30000) -> Dict[str, Any]:
-        return self._submit(self._do_navigate, url, timeout)
+        return self._submit(self._do_navigate, url, self._bounded_timeout(timeout))
 
     def _do_navigate(self, url: str, timeout: int) -> Dict[str, Any]:
         page = self._page
@@ -1116,7 +1175,7 @@ class BrowserService:
 
     def click(self, ref: Optional[int] = None, selector: Optional[str] = None,
               timeout: int = 5000) -> Dict[str, Any]:
-        return self._submit(self._do_click, ref, selector, timeout)
+        return self._submit(self._do_click, ref, selector, self._bounded_timeout(timeout))
 
     def _do_click(self, ref, selector, timeout) -> Dict[str, Any]:
         page = self._page
@@ -1144,7 +1203,7 @@ class BrowserService:
 
     def fill(self, text: str, ref: Optional[int] = None,
              selector: Optional[str] = None, timeout: int = 5000) -> Dict[str, Any]:
-        return self._submit(self._do_fill, text, ref, selector, timeout)
+        return self._submit(self._do_fill, text, ref, selector, self._bounded_timeout(timeout))
 
     def _do_fill(self, text, ref, selector, timeout) -> Dict[str, Any]:
         page = self._page
@@ -1173,7 +1232,7 @@ class BrowserService:
 
     def select(self, value: str, ref: Optional[int] = None,
                selector: Optional[str] = None, timeout: int = 5000) -> Dict[str, Any]:
-        return self._submit(self._do_select, value, ref, selector, timeout)
+        return self._submit(self._do_select, value, ref, selector, self._bounded_timeout(timeout))
 
     def _do_select(self, value, ref, selector, timeout) -> Dict[str, Any]:
         page = self._page
@@ -1227,7 +1286,7 @@ class BrowserService:
 
     def wait(self, selector: Optional[str] = None, timeout: int = 5000,
              state: str = "visible") -> Dict[str, Any]:
-        return self._submit(self._do_wait, selector, timeout, state)
+        return self._submit(self._do_wait, selector, self._bounded_timeout(timeout), state)
 
     def _do_wait(self, selector, timeout, state) -> Dict[str, Any]:
         page = self._page
@@ -1247,7 +1306,7 @@ class BrowserService:
     def _do_go_back(self) -> Dict[str, Any]:
         page = self._page
         try:
-            page.go_back(wait_until="domcontentloaded", timeout=10000)
+            page.go_back(wait_until="domcontentloaded", timeout=5000 if self._active_cancel_event is not None else 10000)
             try:
                 title = page.title()
             except Exception:
@@ -1266,7 +1325,7 @@ class BrowserService:
     def _do_go_forward(self) -> Dict[str, Any]:
         page = self._page
         try:
-            page.go_forward(wait_until="domcontentloaded", timeout=10000)
+            page.go_forward(wait_until="domcontentloaded", timeout=5000 if self._active_cancel_event is not None else 10000)
             try:
                 title = page.title()
             except Exception:

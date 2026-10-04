@@ -19,6 +19,7 @@ import ipaddress
 import json
 import os
 import socket
+from contextlib import nullcontext
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 
@@ -270,6 +271,8 @@ class BrowserTool(BaseTool):
         )
 
     def execute(self, args: Dict[str, Any]) -> ToolResult:
+        if self.is_cancelled():
+            return ToolResult.fail("Browser operation cancelled")
         action = args.get("action", "").strip().lower()
         if not action:
             return ToolResult.fail("Error: 'action' parameter is required")
@@ -293,7 +296,13 @@ class BrowserTool(BaseTool):
             return no_budget
 
         try:
-            return handler(self, args)
+            service = self._get_service()
+            scope = service.cancel_scope(self.cancel_event) if hasattr(service, "cancel_scope") else nullcontext()
+            with scope:
+                result = handler(self, args)
+            if self.is_cancelled():
+                return ToolResult.fail("Browser operation cancelled")
+            return result
         except Exception as e:
             logger.error(f"[Browser] Action '{action}' error: {e}")
             return ToolResult.fail(f"Browser error ({action}): {e}")

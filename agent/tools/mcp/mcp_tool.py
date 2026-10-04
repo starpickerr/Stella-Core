@@ -22,9 +22,16 @@ class McpTool(BaseTool):
         self.params = tool_schema.get("inputSchema", {})
 
     def execute(self, params: dict) -> ToolResult:
+        if self.is_cancelled():
+            return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
-            result = self.client.call_tool(self.name, params)
+            if self.cancel_event is None:
+                result = self.client.call_tool(self.name, params)
+            else:
+                result = self.client.call_tool(self.name, params, cancel_event=self.cancel_event)
+            if self.is_cancelled():
+                return ToolResult.fail("MCP call cancelled")
             return ToolResult.success(result)
         except Exception as e:
             logger.error(f"[McpTool] server={self.server_name} tool={self.name} error: {e}")
