@@ -14,6 +14,10 @@ from common.log import logger
 _tool_call_id = ContextVar("stella_tool_call_id", default=None)
 
 
+class ApprovalRejectedError(Exception):
+    """The user rejected the pending action; this run must stop."""
+
+
 def current_tool_call_id():
     return _tool_call_id.get()
 
@@ -45,6 +49,8 @@ def permission_denial(
     agent_id: Optional[str] = None,
     session_id: Optional[str] = None,
     workspace: Optional[str] = None,
+    wait_for_approval: bool = False,
+    cancel_event=None,
 ) -> Optional[str]:
     """Return a refusal reason, resolving the current mode at call time.
 
@@ -85,21 +91,52 @@ def permission_denial(
         allowlist = configured_allowlist if isinstance(configured_allowlist, list) and configured_allowlist else None
         configured_accounts = conf().get("agent_account_allowlist")
         accounts = tuple(str(value) for value in configured_accounts) if isinstance(configured_accounts, list) else ()
-        decision = SecurityGateway.check(
-            mode, tool_name, arguments, cwd=cwd,
-            scope=Scope(write_roots=tuple(roots), accounts=accounts),
+        check_kwargs = dict(
+            cwd=cwd, scope=Scope(write_roots=tuple(roots), accounts=accounts),
             session_id=session_id, allowlist=allowlist,
             policy=policy, agent_id=agent_id, project_dir=project_dir,
+            reserve_for_waiter=wait_for_approval,
         )
+        decision = SecurityGateway.check(mode, tool_name, arguments, **check_kwargs)
+        if decision.kind is DecisionKind.CONFIRM and wait_for_approval:
+            outcome = SecurityGateway.wait_for_decision(decision.request_id, cancel_event)
+            if outcome == "approved":
+                if cancel_event is not None and cancel_event.is_set():
+                    from agent.protocol.cancel import AgentCancelledError
+                    raise AgentCancelledError("cancelled while waiting for approval")
+                # Recheck the current policy and consume the one-use approval.
+                # A changed policy can still deny the action.
+                decision = SecurityGateway.check(mode, tool_name, arguments,
+                                                 approval_request_id=decision.request_id, **check_kwargs)
+                if cancel_event is not None and cancel_event.is_set():
+                    from agent.protocol.cancel import AgentCancelledError
+                    raise AgentCancelledError("cancelled while waiting for approval")
+                if not decision.allowed:
+                    raise ApprovalRejectedError(
+                        f"审批后安全策略仍不允许 {tool_name} 操作，本轮已停止。{decision.reason}")
+            elif outcome in ("rejected", "superseded"):
+                message = (f"用户拒绝了 {tool_name} 操作，本轮已停止。" if outcome == "rejected" else
+                           f"{tool_name} 的一次性审批已由另一轮使用，本轮已停止。")
+                raise ApprovalRejectedError(message)
+            elif outcome == "cancelled":
+                from agent.protocol.cancel import AgentCancelledError
+                raise AgentCancelledError("cancelled while waiting for approval")
+            else:
+                raise ApprovalRejectedError(f"{tool_name} 审批已过期，本轮已停止；操作未执行。")
         if decision.allowed:
             return None
         if decision.kind is DecisionKind.CONFIRM:
-            return (decision.reason + " Wait for approval in Security Center before retrying "
-                    "this exact action; do not try a different tool to avoid confirmation.")
+            return (decision.reason + " Wait for approval before retrying this exact action; "
+                    "do not try a different tool to avoid confirmation.")
         return (decision.reason + " The action did not run. Do not bypass the refusal "
                 "with a script or equivalent tool. Use a supported connector or explain the "
                 "required policy or resource grant to the user.")
+    except ApprovalRejectedError:
+        raise
     except Exception as exc:
+        from agent.protocol.cancel import AgentCancelledError
+        if isinstance(exc, AgentCancelledError):
+            raise
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")
         # A failed policy check is never an authorization to run a tool.
         return f"Permission check failed for {tool_name}; the tool did not run."

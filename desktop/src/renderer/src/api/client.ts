@@ -460,8 +460,8 @@ class ApiClient {
     return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
   }
 
-  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string }[]> {
-    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string }[] }>('/api/security/confirmations')
+  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string }[]> {
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string }[] }>('/api/security/confirmations')
     return result.pending || []
   }
 
