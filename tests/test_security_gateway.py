@@ -1,7 +1,7 @@
 import json
 import logging
 
-from agent.permission.gateway import Capability, Scope, SecurityGateway
+from agent.permission.gateway import Capability, DecisionKind, Scope, SecurityGateway
 from agent.runtime.tool_invocation import permission_denial
 from agent.tools.write.write import Write
 from agent.permission.policy import normalize_mode
@@ -83,3 +83,24 @@ def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch, secur
 def test_unknown_mode_denied():
     assert not SecurityGateway.check("unexpected", "read", {"path": "x"})
     assert normalize_mode("unexpected") == "read-only"
+
+
+def test_elearning_connector_uses_session_without_exposing_cookie_file(tmp_path, monkeypatch):
+    config = tmp_path / "briefing" / "elearning.json"
+    monkeypatch.setattr("agent.briefing.elearning_settings.settings_path", lambda: config)
+    session = config.parent / "elearning-sessions" / "account.json"
+    scope = Scope(write_roots=(str(tmp_path / "workspace"),))
+
+    connector = SecurityGateway.check("workspace-write", "elearning", {"action": "fetch"}, scope=scope)
+    assert connector.kind is DecisionKind.ALLOW
+
+    raw = SecurityGateway.check("full-access", "read", {"path": str(session)}, scope=scope)
+    assert raw.kind is DecisionKind.DENY
+    assert "workspace_outside" in raw.reason
+    assert "elearning tool" in raw.reason
+    assert "eLearning settings" in raw.reason
+
+    shell = SecurityGateway.check("full-access", "bash", {"command": f"cat {session}"}, scope=scope)
+    assert shell.kind is DecisionKind.DENY
+    assert "workspace_outside" in shell.reason
+    assert "elearning tool" in shell.reason

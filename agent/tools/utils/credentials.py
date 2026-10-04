@@ -28,6 +28,25 @@ DENIED_MESSAGE = (
     "Error: Access denied. API keys and credentials must be accessed "
     "through the env_config tool only."
 )
+ELEARNING_DENIED_MESSAGE = (
+    "Error: Direct access to eLearning login settings and session cookies is denied; "
+    "workspace_outside permission does not grant credential access. Use the built-in "
+    "elearning tool for courses, fetch, or sync_files; it uses the saved session "
+    "internally. If login times out, retry login in eLearning settings."
+)
+
+
+def is_elearning_credential_path(absolute_path: str) -> bool:
+    from agent.briefing import elearning_settings
+
+    config = os.path.realpath(elearning_settings.settings_path())
+    session_root = os.path.realpath(elearning_settings.settings_path().parent / "elearning-sessions")
+    candidates = (os.path.normpath(absolute_path), os.path.realpath(absolute_path))
+    return any(path == config or path.startswith(session_root + os.sep) for path in candidates)
+
+
+def credential_denial_message(absolute_path: str) -> str:
+    return ELEARNING_DENIED_MESSAGE if is_elearning_credential_path(absolute_path) else DENIED_MESSAGE
 
 
 def protected_credential_paths() -> set[str]:
@@ -68,9 +87,7 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
     for candidate in candidates:
         if _PROC_ENVIRON_RE.match(candidate):
             return True
-    from agent.briefing import elearning_settings
-    session_root = os.path.realpath(elearning_settings.settings_path().parent / "elearning-sessions")
-    if any(candidate.startswith(session_root + "/") for candidate in candidates):
+    if is_elearning_credential_path(absolute_path):
         return True
 
     # 2. The credential file itself, following symlinks on both sides.

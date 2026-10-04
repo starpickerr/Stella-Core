@@ -233,10 +233,10 @@ class SecurityGateway:
         event = "tool_decision"
         if tool_name in ("read", "write", "edit", "ls", "search_files", "send") and path_arg and not path_arg.lower().startswith(("http://", "https://")):
             real = _path(path_arg, cwd)
-            from agent.tools.utils.credentials import is_credential_path
+            from agent.tools.utils.credentials import credential_denial_message, is_credential_path
             if is_credential_path(real):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
-                hard_reason = "Credential contents are unavailable to file tools; use the credential provider."
+                hard_reason = credential_denial_message(real)
             elif _managed(real):
                 resource_kind, policy_key = ResourceKind.AGENT_MANAGED, "managed"
                 resource = "Agent Skill Store" if _skill_store(real) else "Agent Config/Internal State"
@@ -269,7 +269,10 @@ class SecurityGateway:
                 event = "skill_install"
             elif _SECRET_COMMAND.search(command):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
-                hard_reason = "Shell access to credential data or environment variables is blocked."
+                from agent.tools.utils.credentials import ELEARNING_DENIED_MESSAGE
+                hard_reason = (ELEARNING_DENIED_MESSAGE if re.search(
+                    r"/briefing/(?:elearning\.json|elearning-sessions/)", command, re.I)
+                    else "Shell access to credential data or environment variables is blocked.")
             elif _ESCALATE.search(command):
                 risk, hard_reason = "L4", "Privilege escalation is blocked."
             elif _BULK_DELETE.search(command):

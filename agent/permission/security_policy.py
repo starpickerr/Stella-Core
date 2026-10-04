@@ -150,6 +150,17 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                          json.dumps(name, ensure_ascii=False) + f"={status}, scopes=" +
                          json.dumps(scopes, ensure_ascii=False) + ".")
     if elearning_sync is not None:
+        lines.append(
+            "The built-in eLearning tool reads its saved login session internally, even when workspace_outside=deny. "
+            "A refusal to read the raw session file does not block this connector. Never request workspace_outside "
+            "access to inspect cookies; it cannot grant credential access. If the connector reports login timeout "
+            "or HTTP 401, report an authentication/network problem and direct the user to eLearning settings."
+            if english else
+            "内置 elearning 工具会在内部读取已保存的登录状态，不受 workspace_outside=deny 对原始文件读取的限制。"
+            "会话文件读取被拒绝不代表连接器被拒绝；不要建议开放 workspace_outside 来查看 Cookie，"
+            "该权限也不能开放凭据。若连接器报告登录超时或 HTTP 401，应说明是登录或网络问题，"
+            "引导用户到 eLearning 设置重新登录。"
+        )
         enabled = bool(elearning_sync.get("enabled"))
         if enabled:
             root = json.dumps(elearning_sync.get("root", ""), ensure_ascii=False)
