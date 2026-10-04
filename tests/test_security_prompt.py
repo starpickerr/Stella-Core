@@ -47,3 +47,5 @@ def test_security_prompt_explains_disabled_sync_and_hard_boundaries():
     assert "workspace_write=deny" in text
     assert "eLearning 文件同步未就绪" in text
     assert "受保护凭据读取和提权仍被禁止" in text
+    assert "会话文件读取被拒绝不代表连接器被拒绝" in text
+    assert "不要建议开放 workspace_outside" in text
