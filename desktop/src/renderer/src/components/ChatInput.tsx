@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
 import {
-  Plus,
   Paperclip,
   Square,
   X,
@@ -760,14 +759,6 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             The middle chip group shrinks/truncates so a narrow composer (right
             panel open) never overflows the card. */}
         <div className="composer-toolbar flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
-          <Tooltip label={t('session_new')}>
-            <button
-              onClick={onNewChat}
-              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors"
-            >
-              <Plus size={17} />
-            </button>
-          </Tooltip>
           <Tooltip label={t('chat_attach')}>
             <button
               onClick={() => fileInputRef.current?.click()}
