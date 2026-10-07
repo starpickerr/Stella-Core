@@ -5757,7 +5757,10 @@ class SecurityCenterHandler:
         web.header('Cache-Control', 'no-store')
         from agent.permission.center import overview
         params = web.input(session='', agent='')
-        return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
+        try:
+            return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
+        except (ValueError, OSError) as error:
+            return json.dumps({"status": "error", "message": str(error)}, ensure_ascii=False)
 
 
 class SecurityPolicyHandler:

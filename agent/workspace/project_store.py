@@ -15,8 +15,8 @@ What lives where:
   creates folders. Browsing/opening an arbitrary directory is also allowed;
   the projects root is just a convenient default home.
 
-Selecting nothing keeps ``project_dir == state_root``, so a session that never
-picks a project behaves exactly as before.
+Selecting nothing uses the user's personal work folder, while Agent state
+remains under ``state_root``.
 """
 
 from __future__ import annotations
@@ -65,9 +65,14 @@ def _load() -> Dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f) or {}
+        if not isinstance(data, dict) or any(
+            key in data and not isinstance(data[key], expected)
+            for key, expected in (("sessions", dict), ("recents", list), ("meta", dict), ("order", list))
+        ):
+            raise ValueError("invalid project store structure")
     except Exception as e:
         logger.warning(f"[ProjectStore] Could not read {path}: {e}")
-        return {"sessions": {}, "recents": [], "meta": {}, "order": []}
+        raise ValueError(f"Project store is invalid: {e}") from e
     data.setdefault("sessions", {})
     data.setdefault("recents", [])
     # ``meta``: path -> {"display_name": str}. A rename lives here, never on
