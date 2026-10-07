@@ -378,7 +378,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
       {!isStreaming && (session?.pendingAdmissions?.length || 0) > 0 && <div className="mx-6 my-2 rounded-card border border-default p-3 text-sm text-content-secondary">
         <p>{t('pending_saved')}</p>
         {session?.pendingAdmissions?.map(row => <div key={row.run_id} className="mt-2">
-          <span className="text-xs text-content-tertiary">{row.status} {row.clear_history ? '· '+t('context_cleared') : ''}</span>
+          <span className="text-xs text-content-tertiary">{row.status === 'outcome_unknown' ? t('task_status_outcome_unknown') : row.status === 'running' ? t('pending_running') : t('pending_queued')} {row.clear_history ? '· '+t('context_cleared') : ''}</span>
           <p className="whitespace-pre-wrap select-text">{row.user_content?.map(block => block.text || '').join('\n')}</p>
           <button className="text-accent text-xs" onClick={() => navigator.clipboard.writeText(row.user_content?.map(block => block.text || '').join('\n') || '')}>{t('copy')}</button>
         </div>)}
