@@ -6,6 +6,7 @@ import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingSo
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
 import { SettingsPanel } from './briefing/SettingsPanel'
+import { useBriefingRunStore } from '../store/briefingRunStore'
 
 const localDay = () => {
   const now = new Date()
@@ -18,7 +19,12 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const generating = useBriefingRunStore((state) => state.running)
+  const pendingResultId = useBriefingRunStore((state) => state.pendingResultId)
+  const runError = useBriefingRunStore((state) => state.error)
+  const runBriefing = useBriefingRunStore((state) => state.run)
+  const takeRunResult = useBriefingRunStore((state) => state.takeResult)
+  const clearRunError = useBriefingRunStore((state) => state.clearError)
   const [marking, setMarking] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sources, setSources] = useState<BriefingSource[]>([])
@@ -92,18 +98,19 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
   }, [briefings])
 
-  const generate = async () => {
-    setGenerating(true)
+  useEffect(() => {
+    if (!pendingResultId) return
+    const id = takeRunResult()
+    if (!id) return
+    setVersion(null)
+    setSelectedId(id)
+    setRevision((n) => n + 1)
+    void load()
+  }, [pendingResultId, takeRunResult, load])
+
+  const generate = () => {
     setError('')
-    try {
-      const value = await apiClient.runBriefing(todayBriefing ? 'update' : 'create')
-      setVersion(null)
-      setSelectedId(value.briefing.id)
-      setRevision((n) => n + 1)
-      await load()
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err))
-    } finally { setGenerating(false) }
+    void runBriefing(todayBriefing ? 'update' : 'create')
   }
 
   const mark = async (id: string, status: BriefingItemStatus) => {
@@ -121,7 +128,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-bold text-content">{t('menu_briefing')}</h1><p className="text-xs text-content-tertiary mt-1">{t('briefing_desc')}</p></div>
       <div className="flex gap-2">
-        <button type="button" disabled={generating || marking} onClick={() => { void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
+        <button type="button" disabled={generating || marking} onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 disabled:opacity-50"><RefreshCw size={15} /></button>
         <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label={t('briefing_settings')} aria-expanded={settingsOpen}
           className={`h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 ${settingsOpen ? 'bg-surface-2' : ''}`}><Settings size={15} /></button>
@@ -131,7 +138,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         </button>
       </div>
     </header>
-    {error && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error}</span><button type="button" onClick={() => { void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
+    {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId ? 'hidden lg:block' : ''}`}>
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
