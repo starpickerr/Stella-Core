@@ -21,7 +21,7 @@ class ElearningSource:
     name = "elearning"
 
     def __init__(self, config, client_factory=None, auto_sync_files=False, cancel_event=None,
-                 on_items_ready=None):
+                 on_items_ready=None, briefing_only=False):
         self.config = dict(config)
         self.account_id = account_id(config)
         self.display_name = "eLearning · " + config["username"]
@@ -29,6 +29,7 @@ class ElearningSource:
         self.auto_sync_files = auto_sync_files
         self.cancel_event = cancel_event
         self.on_items_ready = on_items_ready
+        self.briefing_only = briefing_only
 
     def _check_cancelled(self):
         if self.cancel_event is not None and self.cancel_event.is_set():
@@ -42,8 +43,10 @@ class ElearningSource:
                   else ensure_login(self.config, cancel_event=self.cancel_event))
         courses = select_courses(course_list(client), self.config["courses"])
         self._check_cancelled()
-        profile, _ = client.get("/api/v1/users/self/profile")
-        self._check_cancelled()
+        profile = None
+        if not self.briefing_only:
+            profile, _ = client.get("/api/v1/users/self/profile")
+            self._check_cancelled()
         old = json.loads(cursors.get("elearning_state") or "{}")
         state = dict(old)
         start, end = parse_date(cursors.get("since")), parse_date(cursors.get("until"))
@@ -112,11 +115,12 @@ class ElearningSource:
 
         for course in courses:
             self._check_cancelled()
-            for raw in read(course, "discussion_topics", {"only_announcements": "true"}):
-                self._check_cancelled()
-                document = announcement(client, course, raw)
-                add(course, "announcement", raw, document.title, document.text, document.url,
-                    (raw.get("author") or {}).get("display_name", ""))
+            if not self.briefing_only:
+                for raw in read(course, "discussion_topics", {"only_announcements": "true"}):
+                    self._check_cancelled()
+                    document = announcement(client, course, raw)
+                    add(course, "announcement", raw, document.title, document.text, document.url,
+                        (raw.get("author") or {}).get("display_name", ""))
             assignments = read(course, "assignments", {"include[]": ["submission", "submission_comments"]})
             for raw in assignments:
                 self._check_cancelled()
@@ -131,26 +135,27 @@ class ElearningSource:
                 if raw.get("submission") and ((raw["submission"].get("graded_at")) or raw["submission"].get("submission_comments")):
                     document = grade(client, course, raw)
                     add(course, "grade", raw, document.title + " · 评分", document.text, document.url)
-            known_quizzes = {str(row["quiz_id"]) for row in assignments if row.get("quiz_id")}
-            known_quiz_assignments = {str(row["id"]) for row in assignments if row.get("is_quiz_assignment") or row.get("quiz_id")}
-            for raw in read(course, "quizzes"):
-                self._check_cancelled()
-                if str(raw["id"]) in known_quizzes or str(raw.get("assignment_id")) in known_quiz_assignments:
-                    continue
-                document = quiz(client, course, raw)
-                add(course, "quiz", raw, document.title, document.text, document.url, actionable=True)
-            for raw in files(course):
-                self._check_cancelled()
-                title = raw.get("display_name") or raw.get("filename") or "课程文件"
-                page = "{}/courses/{}/files/{}".format(client.base, course["id"], raw["id"])
-                body = "课程：{}\n文件：{}\n大小：{} 字节\n更新时间：{}\n原页面：{}".format(
-                    course["name"], title, raw.get("size", "未提供"), raw.get("updated_at") or raw.get("modified_at") or "未提供", page)
-                add(course, "file", raw, title, body, page)
-                course_files.append((course, raw))
-            for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
-                self._check_cancelled()
-                document = course_grade(client, course, raw)
-                add(course, "course_grade", raw, document.title, document.text, document.url)
+            if not self.briefing_only:
+                known_quizzes = {str(row["quiz_id"]) for row in assignments if row.get("quiz_id")}
+                known_quiz_assignments = {str(row["id"]) for row in assignments if row.get("is_quiz_assignment") or row.get("quiz_id")}
+                for raw in read(course, "quizzes"):
+                    self._check_cancelled()
+                    if str(raw["id"]) in known_quizzes or str(raw.get("assignment_id")) in known_quiz_assignments:
+                        continue
+                    document = quiz(client, course, raw)
+                    add(course, "quiz", raw, document.title, document.text, document.url, actionable=True)
+                for raw in files(course):
+                    self._check_cancelled()
+                    title = raw.get("display_name") or raw.get("filename") or "课程文件"
+                    page = "{}/courses/{}/files/{}".format(client.base, course["id"], raw["id"])
+                    body = "课程：{}\n文件：{}\n大小：{} 字节\n更新时间：{}\n原页面：{}".format(
+                        course["name"], title, raw.get("size", "未提供"), raw.get("updated_at") or raw.get("modified_at") or "未提供", page)
+                    add(course, "file", raw, title, body, page)
+                    course_files.append((course, raw))
+                for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
+                    self._check_cancelled()
+                    document = course_grade(client, course, raw)
+                    add(course, "course_grade", raw, document.title, document.text, document.url)
         if quiz_not_found:
             # Some courses do not expose a standalone quizzes endpoint. The
             # assignments endpoint can still contain quiz assignments, and
@@ -162,7 +167,7 @@ class ElearningSource:
         # the fully read course metadata while the configured sync continues.
         if self.on_items_ready is not None:
             self.on_items_ready(list(items))
-        if self.auto_sync_files and self.config.get("file_sync_enabled"):
+        if not self.briefing_only and self.auto_sync_files and self.config.get("file_sync_enabled"):
             from agent.briefing.elearning.file_sync import sync_files
             # Briefing auto-sync shares the same human-readable courseware
             # layout as the Agent's explicit sync, avoiding a second set of
