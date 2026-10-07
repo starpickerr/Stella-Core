@@ -36,6 +36,23 @@ def test_project_command_cannot_write_outside_actual_sandbox(tmp_path):
     assert not outside.exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt-specific Unicode paths")
+def test_seatbelt_can_write_unicode_project_only(tmp_path):
+    if process_sandbox.capability()["status"] != "enabled":
+        pytest.skip("Seatbelt unavailable")
+    work = tmp_path / "课程资料"
+    work.mkdir()
+    inside, outside = work / "new.txt", tmp_path / "outside.txt"
+    env = os.environ.copy()
+    plan = process_sandbox.prepare(f"touch '{inside}'", str(work), [str(work)], default_policy(), env)
+    assert _run(plan, str(work), env).returncode == 0
+    assert inside.exists()
+    env = os.environ.copy()
+    plan = process_sandbox.prepare(f"touch '{outside}'", str(work), [str(work)], default_policy(), env)
+    assert _run(plan, str(work), env).returncode != 0
+    assert not outside.exists()
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt-specific exact path grant")
 def test_seatbelt_approval_opens_only_named_outside_file(tmp_path):
     if process_sandbox.capability()["status"] != "enabled":

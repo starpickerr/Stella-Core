@@ -2,6 +2,7 @@ import json
 import logging
 
 from agent.permission.gateway import Capability, DecisionKind, Scope, SecurityGateway
+from agent.permission.security_policy import default_policy
 from agent.runtime.tool_invocation import permission_denial
 from agent.tools.write.write import Write
 from agent.permission.policy import normalize_mode
@@ -83,6 +84,19 @@ def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch, secur
 def test_unknown_mode_denied():
     assert not SecurityGateway.check("unexpected", "read", {"path": "x"})
     assert normalize_mode("unexpected") == "read-only"
+
+
+def test_project_full_allows_in_project_bulk_cleanup_but_keeps_boundary(tmp_path):
+    project = tmp_path / "课程资料"
+    project.mkdir()
+    scope = Scope(write_roots=(str(project),))
+    policy = default_policy()
+    inside = SecurityGateway.check("workspace-write", "bash", {"command": "rm -rf ./old-copies"},
+                                   cwd=str(project), scope=scope, policy=policy)
+    outside = SecurityGateway.check("workspace-write", "bash", {"command": f"rm -rf '{tmp_path / 'other'}'"},
+                                    cwd=str(project), scope=scope, policy=policy, create_pending=False)
+    assert inside.kind is DecisionKind.ALLOW
+    assert outside.kind is DecisionKind.CONFIRM
 
 
 def test_elearning_connector_uses_session_without_exposing_cookie_file(tmp_path, monkeypatch):

@@ -49,7 +49,10 @@ def capability() -> dict:
 
 
 def _seatbelt_literal(path: str) -> str:
-    return json.dumps(os.path.realpath(os.path.expanduser(path)))
+    # Seatbelt reads UTF-8 path literals but does not decode JSON's \u escapes.
+    # Escaping a Chinese workspace name makes an otherwise allowed directory
+    # appear read-only to every shell child process.
+    return json.dumps(os.path.realpath(os.path.expanduser(path)), ensure_ascii=False)
 
 
 def _protected_paths() -> tuple[list[str], list[str]]:

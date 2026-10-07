@@ -53,7 +53,7 @@ def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch, security
     monkeypatch.setattr("common.state_dir.mcp_config_file", lambda *args, **kwargs: state / "mcp.json")
     monkeypatch.setattr("config.get_data_root", lambda: str(state))
     policy = legacy_policy("full-access")
-    args = {"command": "rm -rf ./old"}
+    args = {"command": "git push origin main"}
     first = SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy)
     assert first.kind is DecisionKind.CONFIRM
     assert SecurityGateway.approve(first.request_id)

@@ -298,7 +298,11 @@ class SecurityGateway:
             elif _ESCALATE.search(command):
                 risk, hard_reason = "L4", "Privilege escalation is blocked."
             elif _BULK_DELETE.search(command):
-                risk, policy_key = "L3", "high_risk"
+                # Destructive changes inside the selected workspace are part of
+                # project access. The boundary check below still rejects or
+                # confirms targets outside the authorized roots.
+                risk, policy_key = "L2", "workspace_write"
+                event = "file_modify"
             elif _PUBLISH.search(command):
                 risk, policy_key = "L3", "high_risk"
                 resource_kind = ResourceKind.EXTERNAL
@@ -323,7 +327,7 @@ class SecurityGateway:
                     prerequisites.append("install")
                 if args.get("run_in_background") and policy_key != "background":
                     prerequisites.append("background")
-                if (_BULK_DELETE.search(command) or _PUBLISH.search(command)) and policy_key != "high_risk":
+                if _PUBLISH.search(command) and policy_key != "high_risk":
                     prerequisites.append("high_risk")
             if not hard_reason and resource_kind != ResourceKind.AGENT_MANAGED:
                 outside = _shell_boundary(command, scope.write_roots + scope.extra_roots +
@@ -564,7 +568,7 @@ class SecurityGateway:
             return True
 
     @staticmethod
-    def wait_for_decision(request_id: str, cancel_event=None) -> str:
+    def wait_for_decision(request_id: str, cancel_event=None, policy_allows=None) -> str:
         """Pause one tool call until the exact request is approved, rejected, or cancelled."""
         with _condition:
             while True:
@@ -585,4 +589,9 @@ class SecurityGateway:
                 if request is None or request["expires"] < time.time():
                     _pending.pop(request_id, None)
                     return "expired"
+                if policy_allows is not None and policy_allows():
+                    _pending.pop(request_id, None)
+                    _outcomes[request_id] = ("policy_allowed", time.time() + 300)
+                    _condition.notify_all()
+                    return "policy_allowed"
                 _condition.wait(timeout=0.1 if cancel_event is not None else 1)
