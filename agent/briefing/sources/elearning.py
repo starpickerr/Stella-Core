@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 
 from common.log import logger
@@ -160,8 +161,13 @@ class ElearningSource:
             # Briefing auto-sync shares the same human-readable courseware
             # layout as the Agent's explicit sync, avoiding a second set of
             # ID-suffixed course folders in the selected workspace.
-            errors.extend(sync_files(client, self.config, course_files,
-                                     cancel_event=self.cancel_event, layout="courseware"))
+            sync_started = time.monotonic()
+            logger.info("[Briefing] courseware sync started files=%d", len(course_files))
+            sync_errors = sync_files(client, self.config, course_files,
+                                     cancel_event=self.cancel_event, layout="courseware")
+            logger.info("[Briefing] courseware sync finished files=%d errors=%d elapsed=%.1fs",
+                        len(course_files), len(sync_errors), time.monotonic() - sync_started)
+            errors.extend(sync_errors)
         # Partial reads do not advance source state, so inaccessible resources
         # remain eligible when permissions/network recover.
         return FetchResult(items, {} if errors else {"elearning_state": json.dumps(state, ensure_ascii=False)}, errors)
