@@ -131,6 +131,14 @@ class WeixinApi:
         self.base_url = base_url
         self.token = token
         self.cdn_base_url = cdn_base_url
+        self._poll_direct = False
+        self._direct_session = None
+
+    def _direct_poll_session(self):
+        if self._direct_session is None:
+            self._direct_session = requests.Session()
+            self._direct_session.trust_env = False
+        return self._direct_session
 
     def _post(self, endpoint: str, body: dict, timeout: int = DEFAULT_API_TIMEOUT,
               retries: int = 0) -> dict:
@@ -140,7 +148,8 @@ class WeixinApi:
         attempt = 0
         while True:
             try:
-                resp = requests.post(url, json=body, headers=headers, timeout=timeout)
+                post = self._direct_poll_session().post if endpoint == "ilink/bot/getupdates" and self._poll_direct else requests.post
+                resp = post(url, json=body, headers=headers, timeout=timeout)
                 resp.raise_for_status()
                 return resp.json()
             except requests.exceptions.Timeout:
@@ -151,6 +160,23 @@ class WeixinApi:
             except (requests.exceptions.SSLError,
                     requests.exceptions.ConnectionError,
                     requests.exceptions.ChunkedEncodingError) as e:
+                # Polling is read-only. If an inherited proxy drops TLS, try
+                # this host directly once and keep using the working route.
+                # Never do this for sends: a failed send may already be accepted.
+                if (endpoint == "ilink/bot/getupdates" and not self._poll_direct
+                        and isinstance(e, (requests.exceptions.ProxyError, requests.exceptions.SSLError))
+                        and requests.utils.get_environ_proxies(url)):
+                    try:
+                        direct = self._direct_poll_session().post(
+                            url, json=body, headers=headers, timeout=timeout)
+                        direct.raise_for_status()
+                        payload = direct.json()
+                    except (requests.RequestException, ValueError):
+                        pass
+                    else:
+                        self._poll_direct = True
+                        logger.info("[Weixin] getUpdates proxy failed; direct HTTPS polling is available")
+                        return payload
                 # Transient transport-level errors (e.g. SSLEOFError from the
                 # peer dropping the connection) are usually recoverable, so
                 # retry a few times with exponential backoff before giving up.
