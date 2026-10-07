@@ -251,6 +251,11 @@ def output_dir(identity=None, ensure: bool = False, base=None) -> Path:
     return _ensure(_user_base(identity, base) / "output", ensure)
 
 
+def personal_work_dir(identity=None, ensure: bool = True, base=None) -> Path:
+    """Files made in a chat without a project; separate from Agent control data."""
+    return _ensure(_user_base(identity, base) / "work", ensure)
+
+
 def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
     """Personal ledger. User-scoped: spending is a fact about the person,
     not about one Agent."""

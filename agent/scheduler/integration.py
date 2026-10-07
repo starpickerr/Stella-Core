@@ -35,6 +35,12 @@ def _resolve_workspace(workspace_root: str = None, agent_id: str = None):
     return str(state_root(identity))
 
 
+def _resolve_working_dir(agent_id: str = None):
+    from common.runtime_identity import current_identity
+    from common.state_dir import personal_work_dir
+    return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
+
+
 def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = None) -> bool:
     """
     Initialize scheduler service (idempotent).
@@ -591,17 +597,19 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     try:
         with identity_scope(run_id=run_id, session_id=source_session):
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
-                session_id=source_session, workspace=_resolve_workspace(agent_id=agent_id))
+                session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
+                noninteractive=True)
             if denial:
                 record.event(run_id, "permission_denied")
-                record.transition(run_id, "failed", denial)
-                return ExecutionOutcome("failed", denial)
+                status = "pending_approval" if "Authorization required" in denial else "failed"
+                record.transition(run_id, status, denial)
+                return ExecutionOutcome(status, denial)
             tool = ToolManager().create_tool(tool_name)
             if not tool:
                 record.transition(run_id, "failed", f"Tool '{tool_name}' not found")
                 return ExecutionOutcome("failed", f"Tool '{tool_name}' not found")
             from agent.runtime.tool_invocation import execution_workspace
-            cwd, _ = execution_workspace(source_session, agent_id, _resolve_workspace(agent_id=agent_id))
+            cwd, _ = execution_workspace(source_session, agent_id, _resolve_working_dir(agent_id=agent_id))
             setter = getattr(tool, "set_cwd", None)
             if callable(setter):
                 setter(cwd)

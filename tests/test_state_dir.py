@@ -311,9 +311,9 @@ def test_consumers_follow_the_routed_agent(registry, tmp_path):
     from agent.protocol.artifact import get_workspace_root
     from common.tmp_dir import TmpDir
 
-    with identity_scope(agent_id="beta"):
+    with identity_scope(agent_id="beta", user_id="u1"):
         assert TmpDir().path().startswith(str(tmp_path / "beta"))
-        assert get_workspace_root() == os.path.realpath(str(tmp_path / "beta"))
+        assert get_workspace_root() == os.path.realpath(str(tmp_path / "alpha" / "users" / "u1" / "work"))
         assert MemoryConfig().workspace_root == str(tmp_path / "beta")
 
 

@@ -8,6 +8,7 @@ period of inactivity to free resources.
 """
 
 import os
+from urllib.parse import urlparse, unquote
 import sys
 import json
 import uuid
@@ -445,6 +446,9 @@ class BrowserService:
         self._browser = None
         self._context = None
         self._page = None
+        self._last_url = ""
+        self._file_roots: tuple[str, ...] = ()
+        self._file_paths: tuple[str, ...] = ()
 
         # When we drive a system Chrome/Edge, we spawn it ourselves with a
         # debugging port and attach over CDP (see chrome_launcher). This avoids
@@ -627,6 +631,11 @@ class BrowserService:
                     self._page.set_default_timeout(_CANCEL_OPERATION_TIMEOUT_MS)
                     self._page.set_default_navigation_timeout(_CANCEL_OPERATION_TIMEOUT_MS)
                 result_slot["value"] = fn(*args, **kwargs)
+                if self._page is not None:
+                    try:
+                        self._last_url = self._page.url
+                    except Exception:
+                        pass
             except Exception as e:
                 result_slot["error"] = e
                 if _is_browser_dead_error(e):
@@ -902,6 +911,8 @@ class BrowserService:
             self._needs_restart = True
 
         try:
+            if self._context:
+                self._context.route("**/*", self._authorize_request)
             if self._browser:
                 self._browser.on("disconnected", _on_dead)
             if self._context:
@@ -909,7 +920,37 @@ class BrowserService:
             if self._page:
                 self._page.on("close", _on_dead)
         except Exception as e:
-            logger.debug(f"[Browser] Failed to wire close listeners: {e}")
+            raise RuntimeError(f"Browser request protection could not be installed: {e}") from e
+
+    def set_authorized_roots(self, roots, files=()) -> None:
+        self._submit(self._set_authorized_roots, tuple(roots), tuple(files))
+
+    def _set_authorized_roots(self, roots, files) -> None:
+        self._file_roots = tuple(os.path.realpath(path) for path in roots)
+        self._file_paths = tuple(os.path.realpath(path) for path in files)
+
+    def _authorize_request(self, route) -> None:
+        from agent.tools.browser.browser_tool import BrowserTool
+        from agent.tools.utils.credentials import is_credential_path
+        url = route.request.url
+        parsed = urlparse(url)
+        try:
+            if parsed.scheme in ("http", "https"):
+                if not self._config.get("allow_private_targets", False):
+                    BrowserTool._validate_url_safe(url)
+            elif parsed.scheme == "file":
+                path = os.path.realpath(unquote(parsed.path))
+                inside = any(os.path.commonpath((path, root)) == root for root in self._file_roots)
+                if parsed.netloc not in ("", "localhost") or is_credential_path(path) or not (
+                    inside or path in self._file_paths
+                ):
+                    raise ValueError("Local file is outside the authorized browser scope")
+            elif parsed.scheme not in ("about", "data", "blob", "chrome", "chrome-extension"):
+                raise ValueError("Unsupported browser request scheme")
+        except (ValueError, OSError):
+            route.abort()
+            return
+        route.continue_()
 
     def _shutdown_browser(self):
         """Shut down Playwright resources on the background thread.
@@ -1122,6 +1163,7 @@ class BrowserService:
             current_url = page.url
         except Exception:
             current_url = url
+        self._last_url = current_url
 
         return {"url": current_url, "title": title, "status": status}
 

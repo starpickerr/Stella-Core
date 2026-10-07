@@ -322,10 +322,9 @@ available_setting = {
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
     # Default permission mode for sessions that have not picked one of their own:
-    # "read-only" | "workspace-write" | "full-access". Kept at full-access so an
-    # existing install behaves exactly as before an upgrade. Only a fresh desktop
-    # client (STELLA_DESKTOP=1 with no config.json yet) starts in workspace-write.
-    "agent_permission_mode": "full-access",
+    # Historical mode key. Existing installs are migrated to an exact policy
+    # snapshot; new installs start with project-scoped access.
+    "agent_permission_mode": "workspace-write",
     "agent_tool_allowlist": [],
     "agent_account_allowlist": [],
     # In-process sub agents: the Agent hands a self-contained task to a
@@ -552,16 +551,6 @@ def load_config():
     _merge_legacy_namespace(config, legacy="tool",  canonical="tools")
     _merge_legacy_namespace(config, legacy="skill", canonical="skills")
 
-    # Fresh desktop installs default to the stricter "workspace-write"; every
-    # other case keeps the template's "full-access". A packaged client only
-    # lacks config.json on its very first launch (config_path fell back to the
-    # bundled template) — once the user configures anything (e.g. a model) the
-    # client persists config.json, so an existing install always has it and is
-    # never silently tightened by an upgrade. Placed before the env override so AGENT_PERMISSION_MODE still
-    # wins if explicitly set.
-    if os.environ.get("STELLA_DESKTOP") == "1" and config_path != user_config_path:
-        config["agent_permission_mode"] = "workspace-write"
-
     # override config with environment variables.
     # Environment variables may override locally stored credentials.
     for name, value in os.environ.items():
@@ -599,9 +588,11 @@ def load_config():
     # from historical conversation preferences. Preserve all other fields.
     if not isinstance(config.get("security_policy"), dict):
         from agent.permission.policy import normalize_mode
-        from agent.permission.security_policy import legacy_policy
+        from agent.permission.security_policy import default_policy, legacy_policy
 
-        migrated = legacy_policy(normalize_mode(config.get("agent_permission_mode")))
+        migrated = (legacy_policy(normalize_mode(config.get("agent_permission_mode")))
+                    if config_path == user_config_path or "AGENT_PERMISSION_MODE" in os.environ
+                    else default_policy())
         config["security_policy"] = migrated
         if config_path == user_config_path and "AGENT_PERMISSION_MODE" not in os.environ:
             try:

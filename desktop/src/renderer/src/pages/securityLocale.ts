@@ -55,9 +55,10 @@ const locales = {
     presetsTitle: 'Stella 的默认权限',
     presetsHelp: '选一种适合你的方式，之后仍可单独调整项目或对话。',
     presets: {
-      strict: { name: '谨慎', description: '可查看文件；修改文件或运行命令前会受到更多限制。' },
-      standard: { name: '标准', description: '允许日常项目工作；安装软件和高风险操作会先征求同意。' },
-      custom: { name: '自定义', description: '从下面逐项决定 Stella 可以做什么。' },
+      approval: { name: '审批模式', description: '日常读取直接执行，修改和命令逐次确认。' },
+      'project-full': { name: '项目内完全访问', description: '在当前工作区自主开发。' },
+      'full-access': { name: '完全访问', description: '扩大到项目外目录。' },
+      custom: { name: '自定义', description: '复制当前规则后调整。' },
     },
     recommended: '推荐',
     advanced: '逐项调整权限',
@@ -264,7 +265,7 @@ const locales = {
     reasonSecretChanged: '凭据状态已更新。',
     reasonSecretMasked: '已查看凭据状态，未读取凭据原值。',
     reasonFallback: '本次操作由当前安全设置决定。',
-    shellBoundaryNote: '终端权限根据命令内容判断，不能代替操作系统隔离。',
+    shellBoundaryNote: '终端使用系统进程隔离；状态以总览中的实际检测结果为准。',
   },
   en: {
     title: 'Security Center',
@@ -302,12 +303,10 @@ const locales = {
     presetsTitle: 'Stella’s default access',
     presetsHelp: 'Choose a starting point. You can adjust individual projects and conversations later.',
     presets: {
-      strict: { name: 'Cautious', description: 'Can view files; changes and commands face tighter limits.' },
-      standard: {
-        name: 'Standard',
-        description: 'Handles everyday project work; asks before installs and high risk actions.',
-      },
-      custom: { name: 'Custom', description: 'Choose what Stella can do, one permission at a time.' },
+      approval: { name: 'Approval mode', description: 'Confirm changes and commands one at a time.' },
+      'project-full': { name: 'Full project access', description: 'Work within the current workspace.' },
+      'full-access': { name: 'Full access', description: 'Expand access outside the project.' },
+      custom: { name: 'Custom', description: 'Copy and adjust the current rules.' },
     },
     recommended: 'Recommended',
     advanced: 'Adjust individual permissions',
@@ -530,7 +529,7 @@ const locales = {
     reasonSecretMasked: 'Credential status was viewed; the saved value was not read.',
     reasonFallback: 'Your current security settings determined this action.',
     shellBoundaryNote:
-      'Terminal access is checked from command arguments and does not provide an operating system sandbox.',
+      'Terminal uses OS process isolation when available; see Overview for the actual status.',
   },
 }
 

@@ -379,9 +379,18 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    source: 'session' | 'global'
-    preset: 'strict' | 'standard' | 'custom'
-    global_preset: 'strict' | 'standard' | 'custom'
+    source: 'session' | 'project' | 'global' | 'mixed'
+    preset: 'approval' | 'project-full' | 'full-access' | 'custom'
+    global_preset: 'approval' | 'project-full' | 'full-access' | 'custom'
+    mode: 'approval' | 'project-full' | 'full-access' | 'custom'
+    base_preset: 'approval' | 'project-full' | 'full-access'
+    rules: Record<string, 'allow' | 'confirm' | 'deny'>
+    policy: import('./api/client').SecurityPolicy
+    mode_definitions: import('./api/client').SecurityModeDefinition[]
+    authorized_roots: string[]
+    project: string | null
+    error?: string | null
+    process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
     presets: string[]
   }
 }

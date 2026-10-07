@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import apiClient from '../api/client'
 import { t } from '../i18n'
 import type { SessionSettingsState } from '../types'
+import type { SecurityPolicy } from '../api/client'
 
 /**
  * Per-session model + permission overrides, mirroring the web console's
@@ -29,7 +30,7 @@ interface SessionSettingsStore {
   /** Apply a model / permission change, then repaint from the server echo. */
   apply: (
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; security_policy?: { preset?: 'strict' | 'standard' | 'custom' } | null }
+    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
   ) => Promise<boolean>
   /** Drop cached settings (e.g. on a brand-new chat) so chips fall back to global. */
   reset: () => void
@@ -60,12 +61,12 @@ export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) =
       // A newer request has superseded this one: drop the response entirely.
       if (token !== requestSeq) return
       if (data.status !== 'success') {
-        set({ loading: false })
+        set({ cfg: null, sessionId, loading: false, error: data.message || t('session_settings_failed') })
         return
       }
-      set({ cfg: { model: data.model, permission: data.permission }, sessionId, loading: false })
-    } catch {
-      if (token === requestSeq) set({ loading: false })
+      set({ cfg: { model: data.model, permission: data.permission }, sessionId, loading: false, error: null })
+    } catch (cause) {
+      if (token === requestSeq) set({ cfg: null, sessionId, loading: false, error: cause instanceof Error ? cause.message : t('session_settings_failed') })
     }
   },
 
@@ -77,14 +78,14 @@ export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) =
     try {
       const data = await apiClient.updateSessionSettings(sessionId, body)
       if (data.status !== 'success' || !data.model || !data.permission) {
-        set({ error: t('session_settings_failed') })
+        set({ error: data.message || t('session_settings_failed') })
         return false
       }
       if (token !== requestSeq) return true
       set({ cfg: { model: data.model, permission: data.permission }, sessionId })
       return true
-    } catch {
-      set({ error: t('session_settings_failed') })
+    } catch (cause) {
+      set({ error: cause instanceof Error ? cause.message : t('session_settings_failed') })
       return false
     }
   },

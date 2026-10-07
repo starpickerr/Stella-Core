@@ -82,6 +82,7 @@ def _save(data: Dict) -> None:
         os.replace(tmp, path)
     except Exception as e:
         logger.warning(f"[SessionPrefs] Could not write {path}: {e}")
+        raise
 
 
 def _session_key(session_id: str, agent_id: Optional[str]) -> str:

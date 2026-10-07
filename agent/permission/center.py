@@ -10,8 +10,8 @@ from pathlib import Path
 
 from agent.permission import global_mode
 from agent.permission.audit import record, recent
-from agent.permission.security_policy import legacy_policy, resolve, validate_patch
-from common.state_dir import mcp_config_file
+from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve, validate_patch
+from common.state_dir import mcp_config_file, personal_work_dir
 
 _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 
@@ -19,18 +19,18 @@ _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 def global_policy() -> dict:
     from config import conf
     raw = conf().get("security_policy")
-    return resolve(global_mode(), global_value=raw) if isinstance(raw, dict) else legacy_policy(global_mode())
+    return resolve(global_mode(), global_value=raw)
 
 
 def save_global_policy(value: dict) -> dict:
     from config import conf, get_data_root, read_config_template
     clean = validate_patch(value, global_policy=True)
     current = conf()
-    current["security_policy"] = clean
     path = Path(get_data_root()) / "config.json"
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
     data["security_policy"] = clean
     _write_config(path, data)
+    current["security_policy"] = clean
     record(operation="update", resource="global policy", decision="policy_change", reason="Global security policy updated.")
     return clean
 
@@ -156,7 +156,17 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     project = project_store.get_project_dir(session_id, agent_id) if session_id else None
     mode = global_mode()
     effective = resolve(mode, project_dir=project, session_id=session_id, agent_id=agent_id)
+    project_patch = project_store.get_security_policy(project) if project else {}
+    conversation_patch = session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {}
+    layers = [name for name, patch in (("project", project_patch), ("session", conversation_patch)) if patch]
+    source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
+    work_root = project or str(personal_work_dir())
     from agent.permission.gateway import SecurityGateway
+    from agent.permission.process_sandbox import capability
+    isolation = capability()
+    if effective_mode(effective) == "full-access" and isolation["status"] == "enabled":
+        isolation = {**isolation, "status": "full-access",
+                     "reason": "Full access permits general filesystem writes; protected controls remain blocked."}
     activity = [row for row in recent(limit=200) if row.get("at", 0) >= time.time() - 7 * 86400]
     denials = [row for row in activity if row.get("decision") == "deny"]
     high = [row for row in activity if row.get("risk") in ("L3", "L4")]
@@ -165,10 +175,15 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     all_secrets = secrets()
     return {
         "global_policy": global_policy(), "effective_policy": effective,
-        "project": project, "project_policy": project_store.get_security_policy(project) if project else {},
+        "effective_mode": effective_mode(effective), "effective_rules": effective_rules(effective),
+        "policy_source": source, "mode_definitions": MODE_DEFINITIONS,
+        "authorized_roots": [work_root, *(effective.get("extra_roots") or [])],
+        "policy_error": effective.get("error"),
+        "process_isolation": isolation,
+        "project": project, "project_policy": project_patch,
         "projects": [{**item, "policy": project_store.get_security_policy(item["path"])}
                      for item in project_store.list_known_projects()],
-        "conversation_policy": session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {},
+        "conversation_policy": conversation_patch,
         "connections": all_connections, "secrets": all_secrets,
         "summary": {"status": "attention" if denials or active_pending else "normal",
                     "app_password_set": bool(__import__("config").conf().get("web_password")),
