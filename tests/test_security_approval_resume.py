@@ -39,7 +39,7 @@ def _wait_for_pending(session):
 def test_approval_resumes_same_call_and_request_id_is_stable(tmp_path, monkeypatch, security_audit_path):
     monkeypatch.setattr("agent.permission.security_policy.resolve", lambda *args, **kwargs: legacy_policy("full-access"))
     session = "approval-resume-case"
-    args = {"command": "rm -rf old"}
+    args = {"command": "git push origin main"}
     agent = _Agent(tmp_path)
     finished = []
 
@@ -76,7 +76,7 @@ def test_rejection_stops_waiting_run_without_executing(tmp_path, monkeypatch, se
     def run():
         with identity_scope(session_id=session):
             try:
-                permission_denial("bash", {"command": "rm -rf old"}, agent=_Agent(tmp_path),
+                permission_denial("bash", {"command": "git push origin main"}, agent=_Agent(tmp_path),
                                   wait_for_approval=True, cancel_event=threading.Event())
             except ApprovalRejectedError:
                 outcome.append("rejected")
@@ -87,6 +87,28 @@ def test_rejection_stops_waiting_run_without_executing(tmp_path, monkeypatch, se
     assert SecurityGateway.reject(request["id"])
     worker.join(2)
     assert not worker.is_alive() and outcome == ["rejected"]
+
+
+def test_changing_conversation_mode_resumes_waiting_action(tmp_path, monkeypatch, security_audit_path):
+    policy = {"preset": "approval", "rules": {}}
+    monkeypatch.setattr("agent.permission.security_policy.resolve", lambda *args, **kwargs: policy)
+    session = "live-permission-change"
+    outcome = []
+
+    def run():
+        with identity_scope(session_id=session):
+            outcome.append(permission_denial("bash", {"command": "touch new.txt"},
+                                             agent=_Agent(tmp_path), wait_for_approval=True,
+                                             cancel_event=threading.Event()))
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    request = _wait_for_pending(session)
+    policy = {"preset": "project-full", "rules": {}}
+    worker.join(2)
+    assert not worker.is_alive() and outcome == [None]
+    assert not _pending(session)
+    assert not SecurityGateway.approve(request["id"])
     assert not _pending(session)
 
 
@@ -99,7 +121,7 @@ def test_policy_change_while_waiting_invalidates_approval(tmp_path, monkeypatch,
     def run():
         with identity_scope(session_id=session):
             try:
-                permission_denial("bash", {"command": "rm -rf old"}, agent=_Agent(tmp_path),
+                permission_denial("bash", {"command": "git push origin main"}, agent=_Agent(tmp_path),
                                   wait_for_approval=True, cancel_event=threading.Event())
             except ApprovalRejectedError as exc:
                 outcome.append(str(exc))
@@ -123,7 +145,7 @@ def test_workspace_change_while_waiting_invalidates_approval(tmp_path, monkeypat
     def run():
         with identity_scope(session_id=session):
             try:
-                permission_denial("bash", {"command": "rm -rf old"}, agent=agent,
+                permission_denial("bash", {"command": "git push origin main"}, agent=agent,
                                   wait_for_approval=True, cancel_event=threading.Event())
             except ApprovalRejectedError as exc:
                 outcome.append(str(exc))
@@ -149,7 +171,7 @@ def test_stopping_conversation_removes_pending_request(tmp_path, monkeypatch, se
     def run():
         with identity_scope(session_id=session):
             try:
-                permission_denial("bash", {"command": "rm -rf old"}, agent=_Agent(tmp_path),
+                permission_denial("bash", {"command": "git push origin main"}, agent=_Agent(tmp_path),
                                   wait_for_approval=True, cancel_event=event)
             except AgentCancelledError:
                 outcome.append("cancelled")
@@ -174,7 +196,7 @@ def test_rejected_approval_stops_agent_turn_instead_of_inviting_a_workaround():
     events = []
     executor._emit_event = lambda kind, data: events.append((kind, data))
 
-    result = executor._execute_tool({"id": "call-1", "name": "bash", "arguments": {"command": "rm -rf old"}})
+    result = executor._execute_tool({"id": "call-1", "name": "bash", "arguments": {"command": "git push origin main"}})
 
     assert result["status"] == "critical_error"
     assert events[-1][1]["permission_denied"] is True
@@ -211,7 +233,7 @@ def test_agent_executes_original_tool_once_after_inline_approval(tmp_path, monke
     def run():
         with identity_scope(session_id=session):
             results.append(executor._execute_tool({"id": "call-1", "name": "bash",
-                                                   "arguments": {"command": "rm -rf old"}}))
+                                                   "arguments": {"command": "git push origin main"}}))
 
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
@@ -220,13 +242,13 @@ def test_agent_executes_original_tool_once_after_inline_approval(tmp_path, monke
     assert SecurityGateway.approve(request["id"])
     worker.join(2)
     assert not worker.is_alive()
-    assert called == ["rm -rf old"]
+    assert called == ["git push origin main"]
     assert results[0]["status"] == "success"
 
 
 def test_interactive_approval_is_reserved_even_if_approved_before_wait_starts(tmp_path, security_audit_path):
     session = "approval-early-case"
-    args = {"command": "rm -rf old"}
+    args = {"command": "git push origin main"}
     policy = legacy_policy("full-access")
     first = SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path),
                                   session_id=session, policy=policy, reserve_for_waiter=True)

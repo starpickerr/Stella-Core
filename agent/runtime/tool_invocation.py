@@ -141,8 +141,27 @@ def permission_denial(
         decision = SecurityGateway.check(mode, tool_name, arguments,
                                          create_pending=not noninteractive, **check_kwargs)
         if decision.kind is DecisionKind.CONFIRM and wait_for_approval:
-            outcome = SecurityGateway.wait_for_decision(decision.request_id, cancel_event)
-            if outcome == "approved":
+            def policy_now_allows():
+                fresh_mode, fresh_kwargs, fresh_binding = _current_authorization(
+                    agent, agent_id, session_id, workspace, wait_for_approval)
+                # A mode change may authorize this exact action while it waits.
+                # Changing the workspace or identity cannot transfer approval.
+                if fresh_binding[:-1] != binding[:-1] or fresh_binding[-1] == binding[-1]:
+                    return False
+                return SecurityGateway.check(fresh_mode, tool_name, arguments,
+                                             create_pending=False, **fresh_kwargs).allowed
+
+            outcome = SecurityGateway.wait_for_decision(
+                decision.request_id, cancel_event, policy_allows=policy_now_allows)
+            if outcome == "policy_allowed":
+                mode, fresh_kwargs, fresh_binding = _current_authorization(
+                    agent, agent_id, session_id, workspace, wait_for_approval)
+                if fresh_binding[:-1] != binding[:-1] or not SecurityGateway.check(
+                        mode, tool_name, arguments, create_pending=False, **fresh_kwargs).allowed:
+                    raise ApprovalRejectedError("权限或工作区在执行前再次变化，本轮已停止。")
+                decision = SecurityGateway.check(mode, tool_name, arguments,
+                                                 create_pending=False, **fresh_kwargs)
+            elif outcome == "approved":
                 if cancel_event is not None and cancel_event.is_set():
                     from agent.protocol.cancel import AgentCancelledError
                     raise AgentCancelledError("cancelled while waiting for approval")
