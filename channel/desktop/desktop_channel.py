@@ -7185,8 +7185,7 @@ class HistoryHandler:
                 artifacts = _artifacts_from_steps(msg.get("steps"), session_id)
                 if artifacts:
                     msg["artifacts"] = artifacts
-            result["pending_admissions"] = [row for row in store.list_run_admissions(session_id)
-                if row['user_seq'] < 0 or row['status'] in ('queued', 'running', 'outcome_unknown')]
+            result["pending_admissions"] = _pending_admissions(store.list_run_admissions(session_id))
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] History API error: {e}")
@@ -7853,6 +7852,21 @@ class SchedulerDestinationsHandler:
         return json.dumps({"status": "success", "destinations": destination_catalog(current_identity().agent_id)})
 
 
+def _pending_admissions(rows):
+    """Hide an uncertain input once an identical later run completed here."""
+    completed = set()
+    pending = []
+    for row in rows:  # newest first, as returned by ConversationStore
+        key = (row["session_id"], json.dumps(row.get("user_content"), sort_keys=True, ensure_ascii=False))
+        if row["status"] == "completed":
+            completed.add(key)
+        elif row["user_seq"] < 0 or row["status"] in ("queued", "running"):
+            pending.append(row)
+        elif row["status"] == "outcome_unknown" and key not in completed:
+            pending.append(row)
+    return pending
+
+
 class PendingRunsHandler:
     def GET(self):
         _require_auth()
@@ -7860,4 +7874,4 @@ class PendingRunsHandler:
         store = get_conversation_store()
         rows = store.list_run_admissions(web.input(session_id=None).session_id)
         web.header('Content-Type', 'application/json; charset=utf-8')
-        return json.dumps({"status": "success", "admissions": [r for r in rows if r['user_seq'] < 0 or r['status'] in ('queued', 'running', 'outcome_unknown')]}, ensure_ascii=False)
+        return json.dumps({"status": "success", "admissions": _pending_admissions(rows)}, ensure_ascii=False)
