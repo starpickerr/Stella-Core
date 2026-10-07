@@ -245,8 +245,9 @@ class BriefingPipeline:
                 lower = datetime.fromisoformat(starts[key].replace("Z", "+00:00"))
                 upper = datetime.fromisoformat(finish.replace("Z", "+00:00"))
                 candidates = {(item.source, item.account_id, item.source_id): (item, email)
-                              for item, email in self.service.store.window_candidates(
-                                  starts[key], finish, [(source.name, source.account_id)])}
+                              for item, email in self._source_candidates(source,
+                                  self.service.store.window_candidates(
+                                      starts[key], finish, [(source.name, source.account_id)]))}
                 for fetched in items:
                     item, email = self.service.build_source_item(fetched.to_catalog_payload())
                     item_key = (item.source, item.account_id, item.source_id)
@@ -302,8 +303,9 @@ class BriefingPipeline:
                     fully_refreshed.add(source_key(source))
                     source_windows[source_key(source)] = {"source": source.name, "account_id": source.account_id,
                         "name": getattr(source, "display_name", source.name), "start": starts[source_key(source)], "end": finish}
-                preview_rows_by_source[source_key(source)] = self.service.store.staged_window_candidates(
-                    staged_run_id, starts[source_key(source)], finish, [(source.name, source.account_id)])
+                preview_rows_by_source[source_key(source)] = self._source_candidates(source,
+                    self.service.store.staged_window_candidates(
+                        staged_run_id, starts[source_key(source)], finish, [(source.name, source.account_id)]))
                 schedule_preview()
                 completed_sources += 1
                 briefing_progress.update(briefing.id, completed_sources=completed_sources)
@@ -314,8 +316,9 @@ class BriefingPipeline:
             catalog_rows = []
             for source in refreshed:
                 key = source_key(source)
-                catalog_rows.extend(self.service.store.staged_window_candidates(
-                    staged_run_id, starts[key], finish, [(source.name, source.account_id)]))
+                catalog_rows.extend(self._source_candidates(source,
+                    self.service.store.staged_window_candidates(
+                        staged_run_id, starts[key], finish, [(source.name, source.account_id)])))
                 if key in fully_refreshed:
                     source_windows[key]["end"] = finish
             # A source that returned errors may have an incomplete snapshot.
@@ -447,6 +450,12 @@ class BriefingPipeline:
                 "reason": snapshot.get("filter_reason") or "保留上次筛选结果",
                 "section": card.section if card else "fyi", "score": card.score if card else 50,
                 "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
+
+    @staticmethod
+    def _source_candidates(source, rows):
+        if getattr(source, "briefing_only", False):
+            return [row for row in rows if row[0].payload.get("resource_type") in {"assignment", "grade"}]
+        return rows
 
     @staticmethod
     def _same_candidate(left, right):
