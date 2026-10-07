@@ -37,6 +37,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const todayBriefing = todayRow?.generated_at ? todayRow : undefined
   const [revision, setRevision] = useState(0)
   const [runProgress, setRunProgress] = useState<BriefingRunProgress | null>(null)
+  const [draftSelected, setDraftSelected] = useState(true)
   const listRequest = useRef(0)
   const sourceRequest = useRef(0)
 
@@ -123,6 +124,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     const id = takeRunResult()
     if (!id) return
     setVersion(null)
+    setDraftSelected(false)
     setSelectedId(id)
     setRevision((n) => n + 1)
     void load()
@@ -130,10 +132,12 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
 
   const generate = () => {
     setError('')
+    setSelectedId(null)
+    setDraftSelected(true)
     void runBriefing(todayBriefing ? 'update' : 'create')
   }
 
-  const showDraft = generating && runProgress !== null
+  const showDraft = generating && draftSelected
 
   const mark = async (id: string, status: BriefingItemStatus) => {
     setMarking(true)
@@ -160,19 +164,26 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         </button>
       </div>
     </header>
+    {generating && !showDraft && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
+      className="mx-6 mt-3 self-start text-sm text-accent">{t('briefing_view_draft')}</button>}
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
+        {generating && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
+          className={`w-full text-left rounded-btn px-3 py-2 mb-4 text-sm ${showDraft ? 'bg-accent/10 text-accent font-medium' : 'text-content-secondary hover:bg-surface-2'}`}>
+          {t('briefing_view_draft')}{runProgress && <span className="ml-2 text-xs">{runProgress.completed_sources}/{runProgress.total_sources}</span>}
+        </button>}
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
-        {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setSelectedId(id) }} />}
+        {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setDraftSelected(false); setSelectedId(id) }} />}
       </aside>
       <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
         {showDraft ? <section className="space-y-4" aria-label={t('briefing_draft')}>
-          <h2 className="text-lg font-semibold text-content">{t('briefing_draft')}</h2>
-          <p role="status" className="text-sm text-content-secondary">{t(runProgress.stage === 'finalizing' ? 'briefing_draft_finalizing' : 'briefing_draft_progress')
+          <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-content">{t('briefing_draft')}</h2>
+            <button type="button" onClick={() => { setDraftSelected(false); setSelectedId(null) }} className="lg:hidden text-sm text-accent">{t('briefing_view_history')}</button></div>
+          {runProgress && <p role="status" className="text-sm text-content-secondary">{t(runProgress.stage === 'finalizing' ? 'briefing_draft_finalizing' : 'briefing_draft_progress')
             .replace('{done}', String(runProgress.completed_sources))
-            .replace('{total}', String(runProgress.total_sources))}</p>
-          {runProgress.body ? <div className="rounded-card border border-default bg-surface p-5"><Markdown content={runProgress.body} /></div>
+            .replace('{total}', String(runProgress.total_sources))}</p>}
+          {runProgress?.body ? <div className="rounded-card border border-default bg-surface p-5"><Markdown content={runProgress.body} /></div>
             : <p className="flex items-center gap-2 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_draft_waiting')}</p>}
         </section> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>

@@ -465,6 +465,20 @@ def test_canvas_resources_use_source_items_full_body_and_event_time(config_path)
     assert again.items == []
 
 
+def test_briefing_source_reads_assignments_without_scanning_files(config_path):
+    settings.save_settings(config())
+    canvas = FakeCanvas()
+    canvas.rows["files"] = SyncError("files endpoint must not be called")
+    source = settings.elearning_sources()[0]
+    source.client_factory = lambda _: canvas
+
+    result = source.fetch({"since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z"})
+
+    assert result.errors == []
+    assert {item.payload["resource_type"] for item in result.items} == {"assignment", "grade"}
+    assert [path.rsplit("/", 1)[-1] for path, _ in canvas.calls] == ["courses", "assignments"]
+
+
 def test_new_pending_task_and_changes_without_server_dates_are_observed_once(config_path):
     canvas = FakeCanvas()
     canvas.rows["assignments"] = [{"id": 2, "name": "旧发布待完成作业", "created_at": "2026-01-01T00:00:00Z", "description": "要求",
