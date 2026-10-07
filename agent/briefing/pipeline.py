@@ -1,4 +1,4 @@
-"""Daily run: fetch → catalog upsert → Agent decisions and draft → persist.
+"""Daily run: fetch and preview in parallel → final draft → persist.
 
 Cursors advance only after a non-failed briefing is saved. Source adapters
 are injected; IMAP lives in sources.email.
@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from contextlib import contextmanager
+from dataclasses import replace
+import contextvars
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import uuid
 import time
@@ -18,6 +20,7 @@ from agent.protocol.cancel import AgentCancelledError
 from agent.briefing.elearning.errors import SyncCancelled
 
 from agent.briefing.generator import AgentBriefingGenerator, briefing_title
+from agent.briefing import progress as briefing_progress
 from agent.briefing.models import EmailMessage, SourceItem
 from agent.briefing.service import BriefingService, briefing_id_for
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
@@ -45,6 +48,89 @@ def _stage_heartbeat(briefing_id: str, stage: str):
     finally:
         stopped.set()
         worker.join(timeout=1)
+
+
+class _PreviewWorker:
+    """Coalesce source snapshots while the next source continues fetching."""
+
+    def __init__(self, generator, rules, briefing_id, day, kind, start, end):
+        self.generator = generator
+        self.rules = rules
+        self.briefing_id = briefing_id
+        self.day = day
+        self.kind = kind
+        self.start = start
+        self.end = end
+        self.condition = threading.Condition()
+        self.pending = None
+        self.last_submitted = None
+        self.closed = False
+        self.thread = None
+        self.results = []
+
+    def submit(self, rows):
+        if not rows or not hasattr(self.generator, "preview"):
+            return
+        snapshot = list(rows)
+        with self.condition:
+            if snapshot == self.last_submitted or self.closed:
+                return
+            self.last_submitted = snapshot
+            self.pending = snapshot
+            if self.thread is None:
+                context = contextvars.copy_context()
+                self.thread = threading.Thread(target=lambda: context.run(self._run),
+                                               name="briefing-preview", daemon=True)
+                self.thread.start()
+            self.condition.notify()
+
+    def _run(self):
+        while True:
+            with self.condition:
+                while self.pending is None and not self.closed:
+                    self.condition.wait()
+                if self.pending is None and self.closed:
+                    return
+                rows, self.pending = self.pending, None
+            previous = getattr(self.generator, "progress", None)
+            if hasattr(self.generator, "progress"):
+                def report(stage):
+                    logger.info("[BriefingPipeline] id=%s preview %s", self.briefing_id, stage)
+                    if previous:
+                        previous(stage)
+                self.generator.progress = report
+            try:
+                previous_decisions = {}
+                for prior_rows, prior_draft in self.results:
+                    prior_items = {item.id: (item, email) for item, email in prior_rows}
+                    for row in prior_draft["mail"]:
+                        previous_decisions[row["id"]] = (prior_items[row["id"]], row["decision"])
+                preserved = {item.id: previous_decisions[item.id][1] for item, email in rows
+                             if item.id in previous_decisions and BriefingPipeline._same_candidate(
+                                 previous_decisions[item.id][0], (item, email))}
+                with _stage_heartbeat(self.briefing_id, "draft-preview"):
+                    drafted = self.generator.preview(rows, self.rules,
+                        briefing_date=self.day, kind=self.kind,
+                        window_start=self.start, window_end=self.end,
+                        preserved_decisions=preserved)
+                self.results.append((rows, drafted))
+                briefing_progress.update(self.briefing_id, body=drafted["body"],
+                                         candidate_count=len(rows))
+                logger.info("[BriefingPipeline] preview ready id=%s candidates=%d",
+                            self.briefing_id, len(rows))
+            except Exception as exc:
+                logger.warning("[BriefingPipeline] preview failed id=%s: %s", self.briefing_id, exc)
+            finally:
+                if hasattr(self.generator, "progress"):
+                    self.generator.progress = previous
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+            self.pending = None
+            self.condition.notify_all()
+        if self.thread is not None:
+            self.thread.join()
 
 
 class BriefingPipeline:
@@ -143,15 +229,51 @@ class BriefingPipeline:
         errors: List[str] = []
         refreshed = []
         fully_refreshed = set()
+        preview = None
+        preview_rows_by_source = {}
+        early_ids = {}
+        completed_sources = 0
+
+        def schedule_preview():
+            rows = [row for source_rows in preview_rows_by_source.values() for row in source_rows]
+            rows.sort(key=lambda row: (row[0].occurred_at, row[0].id))
+            preview.submit(rows)
+
+        def early_items(source, items):
+            try:
+                key = source_key(source)
+                lower = datetime.fromisoformat(starts[key].replace("Z", "+00:00"))
+                upper = datetime.fromisoformat(finish.replace("Z", "+00:00"))
+                candidates = {(item.source, item.account_id, item.source_id): (item, email)
+                              for item, email in self.service.store.window_candidates(
+                                  starts[key], finish, [(source.name, source.account_id)])}
+                for fetched in items:
+                    item, email = self.service.build_source_item(fetched.to_catalog_payload())
+                    item_key = (item.source, item.account_id, item.source_id)
+                    occurred = datetime.fromisoformat(item.occurred_at.replace("Z", "+00:00"))
+                    if lower < occurred <= upper:
+                        candidates[item_key] = (item, email)
+                        early_ids[item_key] = item.id
+                    else:
+                        candidates.pop(item_key, None)
+                preview_rows_by_source[key] = list(candidates.values())
+                schedule_preview()
+            except Exception:
+                logger.exception("[BriefingPipeline] early preview unavailable id=%s source=%s",
+                                 briefing.id, source.name)
 
         try:
+            rules = self.service.list_rules(enabled_only=True)
+            preview = _PreviewWorker(self.generator, rules, briefing.id, day, kind, start, finish)
+            briefing_progress.begin(briefing.id, len(selected))
             for source in selected:
                 self._check_cancelled()
                 source_started = time.monotonic()
                 logger.info("[BriefingPipeline] fetching id=%s source=%s", briefing.id, source.name)
                 try:
                     with _stage_heartbeat(briefing.id, f"fetch:{source.name}"):
-                        result = self._fetch_source(source, starts[source_key(source)], finish)
+                        result = self._fetch_source(source, starts[source_key(source)], finish,
+                            on_items_ready=lambda items, current=source: early_items(current, items))
                     self._check_cancelled()
                 except (AgentCancelledError, SyncCancelled):
                     raise
@@ -163,12 +285,14 @@ class BriefingPipeline:
                     errors.append(f"{label}: {exc}")
                     self.service.store.stage_source_errors(
                         staged_run_id, source.name, source.account_id, [str(exc)])
+                    completed_sources += 1
+                    briefing_progress.update(briefing.id, completed_sources=completed_sources)
                     continue
                 pending_cursors.append((source, result.cursors))
                 logger.info("[BriefingPipeline] fetched id=%s source=%s items=%d errors=%d elapsed=%.1fs",
                             briefing.id, source.name, len(result.items), len(result.errors),
                             time.monotonic() - source_started)
-                self._stage_fetched(staged_run_id, result.items)
+                self._stage_fetched(staged_run_id, result.items, early_ids)
                 refreshed.append(source)
                 errors.extend(result.errors)
                 if result.errors:
@@ -178,7 +302,14 @@ class BriefingPipeline:
                     fully_refreshed.add(source_key(source))
                     source_windows[source_key(source)] = {"source": source.name, "account_id": source.account_id,
                         "name": getattr(source, "display_name", source.name), "start": starts[source_key(source)], "end": finish}
+                preview_rows_by_source[source_key(source)] = self.service.store.staged_window_candidates(
+                    staged_run_id, starts[source_key(source)], finish, [(source.name, source.account_id)])
+                schedule_preview()
+                completed_sources += 1
+                briefing_progress.update(briefing.id, completed_sources=completed_sources)
 
+            preview.close()
+            briefing_progress.update(briefing.id, stage="finalizing")
             finish = self.clock().astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             catalog_rows = []
             for source in refreshed:
@@ -204,6 +335,17 @@ class BriefingPipeline:
                     catalog_keys.add(item_key)
                 decision = snapshot.get("decision") or self._legacy_decision(snapshot, prior_detail["items"])
                 preserved_decisions[item.id] = decision
+            # Reuse decisions made while the remaining sources were fetching,
+            # but only when the final candidate's source content is unchanged.
+            preview_decisions = {}
+            for preview_rows, draft in preview.results:
+                preview_items = {item.id: (item, email) for item, email in preview_rows}
+                for row in draft["mail"]:
+                    preview_decisions[row["id"]] = (preview_items[row["id"]], row["decision"])
+            for item, email in catalog_rows:
+                previous_preview = preview_decisions.get(item.id)
+                if item.id not in preserved_decisions and previous_preview and self._same_candidate(previous_preview[0], (item, email)):
+                    preserved_decisions[item.id] = previous_preview[1]
             windows = [window for window in source_windows.values() if window.get("end")]
             if windows:
                 start = min(window["start"] for window in windows)
@@ -228,7 +370,7 @@ class BriefingPipeline:
                     self.generator.progress = report
                 try:
                     with _stage_heartbeat(briefing.id, "draft"):
-                        drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
+                        drafted = self.generator.generate(catalog_rows, rules,
                             briefing_date=day, kind=kind, window_start=start, window_end=finish,
                             preserved_decisions=preserved_decisions)
                 finally:
@@ -282,6 +424,10 @@ class BriefingPipeline:
                 },
             )
             raise
+        finally:
+            if preview is not None:
+                preview.close()
+            briefing_progress.finish(briefing.id)
 
     @staticmethod
     def _restore_candidate(snapshot):
@@ -302,7 +448,15 @@ class BriefingPipeline:
                 "section": card.section if card else "fyi", "score": card.score if card else 50,
                 "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
 
-    def _fetch_source(self, source: Source, start: str, end: str) -> FetchResult:
+    @staticmethod
+    def _same_candidate(left, right):
+        """Ignore storage timestamps while checking that source content stayed fixed."""
+        first, first_email = left
+        second, second_email = right
+        return (replace(first, created_at="", updated_at="") ==
+                replace(second, created_at="", updated_at="") and first_email == second_email)
+
+    def _fetch_source(self, source: Source, start: str, end: str, on_items_ready=None) -> FetchResult:
         self._check_cancelled()
         if hasattr(source, "cancel_event"):
             source.cancel_event = self.cancel_event
@@ -317,9 +471,21 @@ class BriefingPipeline:
             old_rows = self.service.store.window_candidates(start, end, [(source.name, source.account_id)])
             if any("body" not in row[0].payload for row in old_rows):
                 cursors["refresh_existing_content"] = "1"
-        return source.fetch(cursors)
+        if not hasattr(source, "on_items_ready"):
+            return source.fetch(cursors)
+        previous = source.on_items_ready
+        try:
+            source.on_items_ready = on_items_ready
+            return source.fetch(cursors)
+        finally:
+            source.on_items_ready = previous
 
-    def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem]) -> None:
-        rows = [self.service.build_source_item(fetched.to_catalog_payload())
-                for fetched in items]
+    def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem], early_ids=None) -> None:
+        rows = []
+        for fetched in items:
+            payload = fetched.to_catalog_payload()
+            key = (payload["source"], payload["account_id"], payload["source_id"])
+            if early_ids and key in early_ids:
+                payload["id"] = early_ids[key]
+            rows.append(self.service.build_source_item(payload))
         self.service.store.stage_source_items(run_id, rows)

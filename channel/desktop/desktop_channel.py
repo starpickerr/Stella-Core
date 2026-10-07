@@ -2034,6 +2034,7 @@ class DesktopChannel(ChatChannel):
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/briefings', 'BriefingsHandler',
+            '/api/briefings/run/progress', 'BriefingRunProgressHandler',
             '/api/briefings/run', 'BriefingRunHandler',
             '/api/briefings/sources', 'BriefingSourcesHandler',
             '/api/briefings/elearning', 'BriefingElearningHandler',
@@ -6490,6 +6491,12 @@ class BriefingRunHandler:
                 sources=body.get("sources"),
             )
         return _briefing_response(operation)
+
+
+class BriefingRunProgressHandler:
+    def GET(self):
+        from agent.briefing.progress import snapshot
+        return _briefing_response(lambda: {"progress": snapshot()})
 
 
 class BriefingItemStatusHandler:

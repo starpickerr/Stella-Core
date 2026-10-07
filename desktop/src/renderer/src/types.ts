@@ -934,6 +934,16 @@ export interface BriefingDetail {
   revisions: { number: number; trigger: string; created_at: string; status: BriefingStatus }[]
 }
 
+export interface BriefingRunProgress {
+  briefing_id: string
+  body: string
+  stage: 'fetching' | 'finalizing'
+  completed_sources: number
+  total_sources: number
+  candidate_count: number
+  updated_at: string | null
+}
+
 export interface BriefingRule {
   id: string
   enabled: boolean
