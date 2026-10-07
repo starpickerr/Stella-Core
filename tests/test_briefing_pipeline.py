@@ -21,6 +21,17 @@ def _svc(tmp_path) -> BriefingService:
     return BriefingService(BriefingStore(tmp_path / "briefing.db"))
 
 
+def test_concurrent_run_reports_active_briefing_instead_of_waiting(tmp_path):
+    service = _svc(tmp_path)
+    source = StaticSource([])
+    assert service.store.run_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(ValueError, match="正在生成"):
+            BriefingPipeline(service, [source]).run(briefing_date="2026-09-09")
+    finally:
+        service.store.run_lock.release()
+
+
 def _item(source_id, title, sender="Ada", email="ada@example.com", **extra):
     values = dict(
         source="email",

@@ -157,7 +157,11 @@ class ElearningSource:
             raise SyncError("；".join(errors))
         if self.auto_sync_files and self.config.get("file_sync_enabled"):
             from agent.briefing.elearning.file_sync import sync_files
-            errors.extend(sync_files(client, self.config, course_files, cancel_event=self.cancel_event))
+            # Briefing auto-sync shares the same human-readable courseware
+            # layout as the Agent's explicit sync, avoiding a second set of
+            # ID-suffixed course folders in the selected workspace.
+            errors.extend(sync_files(client, self.config, course_files,
+                                     cancel_event=self.cancel_event, layout="courseware"))
         # Partial reads do not advance source state, so inaccessible resources
         # remain eligible when permissions/network recover.
         return FetchResult(items, {} if errors else {"elearning_state": json.dumps(state, ensure_ascii=False)}, errors)
