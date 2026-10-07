@@ -313,11 +313,15 @@ def login(config, manual=False, cancel_event=None, progress_callback=None):
                         # a slow verification must not fail the whole login.
                         verification_error = str(error)
                     stage = "等待登录跳转"
-                if cancel_event is not None:
-                    if cancel_event.wait(1.5):
-                        check_cancelled()
-                else:
+                if cancel_event is None:
                     page.wait_for_timeout(1500)
+                else:
+                    # Playwright's sync API processes navigation events while
+                    # its own wait runs. Blocking on threading.Event.wait here
+                    # leaves page.url stuck on the SSO page for agent calls.
+                    for _ in range(6):
+                        page.wait_for_timeout(250)
+                        check_cancelled()
             if verification_error:
                 raise SyncError("等待登录状态验证超时（{}），未保存 Cookie。请检查账号密码和网络后重试。".format(
                     verification_error))
