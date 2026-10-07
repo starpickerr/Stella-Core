@@ -70,7 +70,7 @@ class PolicyDecision:
 _READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "web_search", "web_fetch", "vision", "elearning"})
 _WRITE_TOOLS = frozenset({"write", "edit", "bash"})
 _EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "send", "subagent"})
-_ADMIN_TOOLS = frozenset({"evolution_undo"})
+_ADMIN_TOOLS = frozenset({"evolution_undo", "skill"})
 _LOCAL_ACTIONS = {
     "calendar": {"create", "update", "delete", "create_category", "update_category", "delete_category"},
     "todos": {"create", "update", "complete", "delete", "status", "add_subtask", "move", "add_dependency", "remove_dependency"},
@@ -262,7 +262,9 @@ class SecurityGateway:
                 risk = "L0" if declared == Capability.READ else "L1"
                 if tool_name in ("write", "edit"):
                     event = ("skill_modify" if os.path.exists(real) else "skill_install") if _skill_store(real) else "agent_config_change"
-                    hard_reason = "Long-term instructions and executable skills require their dedicated settings flow."
+                    hard_reason = ("Use the skill tool to create or update skills; generic file writes are blocked."
+                                   if _skill_store(real) else
+                                   "Long-term instructions require their dedicated settings flow.")
             else:
                 resource = real
                 roots = tuple(scope.write_roots) + tuple(scope.extra_roots) + tuple(policy.get("extra_roots") or ())
@@ -288,7 +290,7 @@ class SecurityGateway:
             if _trusted_skill_init(command, cwd):
                 resource_kind, resource, policy_key, risk = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed", "L3"
                 event = "skill_install"
-                hard_reason = "Executable skill installation requires the dedicated skill settings flow."
+                hard_reason = "Use the skill tool to create skills; shell writes to the skill store are blocked."
             elif _SECRET_COMMAND.search(command):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 from agent.tools.utils.credentials import ELEARNING_DENIED_MESSAGE
@@ -346,6 +348,14 @@ class SecurityGateway:
                 risk, policy_key = "L3", "high_risk"
             else:
                 risk, policy_key = "L0", "managed"
+        elif tool_name == "skill":
+            resource_kind, resource, policy_key = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed"
+            event = "skill_install" if action == "create" else "skill_modify"
+            if action in ("create", "update", "write_resource"):
+                risk = "L2"
+                prerequisites.extend(("workspace_write", "workspace_outside"))
+            else:
+                hard_reason = "Unknown skill action; the tool did not run."
         elif tool_name in _LOCAL_ACTIONS:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]

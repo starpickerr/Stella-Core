@@ -277,6 +277,9 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                          "authorize courses and a save folder, and enable file sync in eLearning settings."
                          if english else "eLearning 文件同步未就绪；需要用户在 eLearning 设置中配置账号、授权课程和保存目录，并开启文件同步。")
     lines.extend([
+        ("Create or update custom skills with the skill tool. Full access permits this managed operation; "
+         "project access may require confirmation for the system skill store."
+         if english else "创建或更新自定义技能请使用 skill 工具；完全访问可直接执行，项目内访问可能需确认系统技能库的授权。"),
         ("Read actions generally use workspace_read; changing tasks, calendar entries or briefings and "
          "eLearning sync_files use workspace_write. Shell also follows shell plus operation-specific rules."
          if english else "读取操作通常使用 workspace_read；修改事务、日程、简报及 eLearning sync_files 使用 "

@@ -110,16 +110,16 @@ Install target directory: `<workspace>/skills/<name>/` (the `<workspace>` is fro
 
 1. Locate the SKILL.md (may be at top level or inside a subdirectory)
 2. Extract `name` from YAML frontmatter
-3. Copy the **entire skill directory** (SKILL.md and all sibling files/folders such as `references/`, `scripts/`, `assets/`, etc.) into `<workspace>/skills/<name>/`
+3. Call `skill(action="create", name="...", content="...")` with the complete SKILL.md. Add any text resources with `skill(action="write_resource", name="...", path="scripts/...", content="...")` (or `references/` / `assets/`).
 4. If an install/setup file exists (e.g. INSTALL.md), follow its instructions — the final result must still end up in `<workspace>/skills/<name>/`
 
 ## Skill Creation Process (from scratch)
 
 1. **Understand** - Clarify use cases with concrete examples
 2. **Plan** - Identify needed scripts, references, assets
-3. **Initialize** - Run init_skill.py to create template
-4. **Edit** - Implement SKILL.md and resources
-5. **Validate** (optional) - Run quick_validate.py to check format
+3. **Create** - Call the `skill` tool with the finished SKILL.md
+4. **Add resources** - Call `skill` with `write_resource` for any needed files
+5. **Validate** - Check the tool result and read the installed SKILL.md
 6. **Iterate** - Improve based on real usage
 
 ## Skill Naming
@@ -188,32 +188,13 @@ At this point, it is time to actually create the skill.
 
 Skip this step only if the skill being developed already exists, and iteration is needed. In this case, continue to the next step.
 
-When creating a new skill from scratch, always run the `init_skill.py` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
-
-Usage:
-
-```bash
-scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets] [--examples]
-```
-
-Examples:
-
-```bash
-scripts/init_skill.py my-skill --path <workspace>/skills
-scripts/init_skill.py my-skill --path <workspace>/skills --resources scripts,references
-scripts/init_skill.py my-skill --path <workspace>/skills --resources scripts --examples
-```
-
-Where `<workspace>` is your workspace directory shown in the "Workspace" section of the system prompt.
-
-The script:
-
-- Creates the skill directory at the specified path
-- Generates a SKILL.md template with proper frontmatter and TODO placeholders
-- Optionally creates resource directories based on `--resources`
-- Optionally adds example files when `--examples` is set
-
-After initialization, customize the SKILL.md and add resources as needed. If you used `--examples`, replace or delete placeholder files.
+Write the finished SKILL.md, including its YAML frontmatter, then call
+`skill(action="create", name="my-skill", content="<complete SKILL.md>")`.
+The tool validates the name and frontmatter, creates the custom skill, and
+refreshes the skill catalog. Use `action="update"` for an existing custom
+skill. Use `action="write_resource"` for text files under `scripts/`,
+`references/`, or `assets/`. Generic `write`, `edit`, and `bash` cannot write
+to the skill store, even in full-access mode.
 
 **Important**: Always create skills in workspace skills directory (`<workspace>/skills`), NOT in project directory. Check the "Workspace" section for the actual workspace path.
 
@@ -250,6 +231,7 @@ The agent has access to these core tools that you can leverage in your skill:
 - **read**: Read file contents
 - **write**: Write files
 - **edit**: Edit files with search/replace
+- **skill**: Create or update skills and their text resources in the skill store
 
 **Minimize Dependencies**:
 - ✅ **Prefer bash + curl** for HTTP API calls (no Python dependencies)
@@ -264,7 +246,7 @@ The agent has access to these core tools that you can leverage in your skill:
 
 Added scripts must be tested by actually running them to ensure there are no bugs and that the output matches what is expected. If there are many similar scripts, only a representative sample needs to be tested to ensure confidence that they all work while balancing time to completion.
 
-If you used `--examples`, delete any placeholder files that are not needed for the skill. Only create resource directories that are actually required.
+Only create resource files that are actually required.
 
 #### Update SKILL.md
 
@@ -369,17 +351,8 @@ bash "<base_dir>/scripts/my_script.sh" <args>
 
 ### Step 5: Validate (Optional)
 
-Validate skill format:
-
-```bash
-scripts/quick_validate.py <path/to/skill-folder>
-```
-
-Example:
-
-```bash
-scripts/quick_validate.py <workspace>/skills/weather-api
-```
+The `skill` tool validates the name and required frontmatter. Read the saved
+SKILL.md to review the final content, then check the skill in the Skills page.
 
 Validation checks:
 - YAML frontmatter format and required fields
