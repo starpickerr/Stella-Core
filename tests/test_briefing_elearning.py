@@ -479,6 +479,29 @@ def test_briefing_source_reads_assignments_without_scanning_files(config_path):
     assert [path.rsplit("/", 1)[-1] for path, _ in canvas.calls] == ["courses", "assignments"]
 
 
+def test_briefing_ignores_previously_catalogued_course_files(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+    from agent.briefing.sources.base import FetchedItem
+
+    settings.save_settings(config())
+    source = settings.elearning_sources()[0]
+    source.client_factory = lambda _: FakeCanvas()
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    service.upsert_source_item(FetchedItem(source="elearning", account_id=source.account_id,
+        source_id="42:file:4", title="旧课件", occurred_at="2026-09-08T23:00:00Z",
+        payload={"resource_type": "file", "body": "旧课件"}).to_catalog_payload())
+
+    detail = BriefingPipeline(service, [source],
+        clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc)).run()
+
+    assert detail["briefing"].status == "completed"
+    assert {row["source_id"] for row in detail["mail"]} == {"42:assignment:2", "42:grade:2"}
+
+
 def test_new_pending_task_and_changes_without_server_dates_are_observed_once(config_path):
     canvas = FakeCanvas()
     canvas.rows["assignments"] = [{"id": 2, "name": "旧发布待完成作业", "created_at": "2026-01-01T00:00:00Z", "description": "要求",
