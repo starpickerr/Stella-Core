@@ -720,4 +720,5 @@ def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, 
     canvas.open.assert_not_called()
     result = ElearningSource(cfg, client_factory=lambda _: canvas, auto_sync_files=True).fetch({})
     assert result.errors == []
-    assert (root / "课程--42" / "讲义--4.pdf").read_bytes() == b"pdf"
+    assert (root / "课程" / "课件" / "讲义.pdf").read_bytes() == b"pdf"
+    assert not (root / "课程--42").exists()

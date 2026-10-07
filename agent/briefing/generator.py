@@ -234,6 +234,8 @@ class AgentBriefingGenerator:
                 "window_start": window_start, "window_end": window_end, "candidates": batch,
             }, ensure_ascii=False), rule_text, tool, [row for row in entries if row["id"] in ids])
             decisions.update({row["id"]: row for row in result["decisions"]})
+            if self.progress:
+                self.progress(f"Agent 已完成第 {number} 批筛选（{len(batch)} 条）")
 
         kept, mail = [], []
         for entry in entries:
@@ -267,6 +269,8 @@ class AgentBriefingGenerator:
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
                 }, ensure_ascii=False), rule_text, tool)
             parts.append(result["body"].strip())
+            if self.progress:
+                self.progress(f"Agent 已完成第 {number} 批简报正文")
         self._check_cancelled()
         return {"title": briefing_title(briefing_date, kind),
                 "body": "\n\n".join(parts),

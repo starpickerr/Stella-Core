@@ -7,8 +7,11 @@ are injected; IMAP lives in sources.email.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from contextlib import contextmanager
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import uuid
+import time
+import threading
 
 from common.log import logger
 from agent.protocol.cancel import AgentCancelledError
@@ -23,6 +26,25 @@ from agent.briefing.sources.registry import select_sources, source_key
 
 def _now():
     return datetime.now().astimezone()
+
+
+@contextmanager
+def _stage_heartbeat(briefing_id: str, stage: str):
+    stopped = threading.Event()
+    started = time.monotonic()
+
+    def report():
+        while not stopped.wait(30):
+            logger.info("[BriefingPipeline] still running id=%s stage=%s elapsed=%.0fs",
+                        briefing_id, stage, time.monotonic() - started)
+
+    worker = threading.Thread(target=report, name="briefing-progress", daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        worker.join(timeout=1)
 
 
 class BriefingPipeline:
@@ -60,8 +82,11 @@ class BriefingPipeline:
             raise ValueError("operation must be create or update")
         if trigger not in {"manual", "scheduled"}:
             raise ValueError("invalid briefing trigger")
-        # Serialize shared-store runs so two requests cannot race the same cursor.
-        with self.service.store.run_lock:
+        # A second request must report the active run instead of waiting behind
+        # an unbounded source or model call with no response to its caller.
+        if not self.service.store.run_lock.acquire(blocking=False):
+            raise ValueError("简报正在生成，请等待当前运行完成后刷新")
+        try:
             day = briefing_date or self.clock().date().isoformat()
             existing = self.service.store.get_briefing(briefing_id_for(day, kind))
             if operation == "create" and existing and existing.generated_at:
@@ -69,6 +94,8 @@ class BriefingPipeline:
             if operation == "update" and (not existing or not existing.generated_at):
                 raise ValueError("generate this day's briefing before updating it")
             return self._run(kind, day, trigger, selected)
+        finally:
+            self.service.store.run_lock.release()
 
     def _run(self, kind: str, day: str, trigger: str, selected) -> dict:
         local_now = self.clock()
@@ -99,6 +126,8 @@ class BriefingPipeline:
         if datetime.fromisoformat(start.replace("Z", "+00:00")) > end:
             raise ValueError("briefing end precedes the previous successful update")
         briefing = self.service.start_briefing(kind=kind, briefing_date=day)
+        run_started = time.monotonic()
+        logger.info("[BriefingPipeline] started id=%s trigger=%s sources=%d", briefing.id, trigger, len(selected))
         prior_detail = self.service.get_briefing(briefing.id)
         source_windows = {key: dict(value) for key, value in briefing.source_windows.items()}
         starts = {}
@@ -118,8 +147,11 @@ class BriefingPipeline:
         try:
             for source in selected:
                 self._check_cancelled()
+                source_started = time.monotonic()
+                logger.info("[BriefingPipeline] fetching id=%s source=%s", briefing.id, source.name)
                 try:
-                    result = self._fetch_source(source, starts[source_key(source)], finish)
+                    with _stage_heartbeat(briefing.id, f"fetch:{source.name}"):
+                        result = self._fetch_source(source, starts[source_key(source)], finish)
                     self._check_cancelled()
                 except (AgentCancelledError, SyncCancelled):
                     raise
@@ -133,6 +165,9 @@ class BriefingPipeline:
                         staged_run_id, source.name, source.account_id, [str(exc)])
                     continue
                 pending_cursors.append((source, result.cursors))
+                logger.info("[BriefingPipeline] fetched id=%s source=%s items=%d errors=%d elapsed=%.1fs",
+                            briefing.id, source.name, len(result.items), len(result.errors),
+                            time.monotonic() - source_started)
                 self._stage_fetched(staged_run_id, result.items)
                 refreshed.append(source)
                 errors.extend(result.errors)
@@ -183,9 +218,22 @@ class BriefingPipeline:
             drafted, mail = {}, []
             if status != "failed":
                 self._check_cancelled()
-                drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
-                    briefing_date=day, kind=kind, window_start=start, window_end=finish,
-                    preserved_decisions=preserved_decisions)
+                logger.info("[BriefingPipeline] drafting id=%s candidates=%d", briefing.id, fetched_count)
+                progress = getattr(self.generator, "progress", None)
+                if hasattr(self.generator, "progress"):
+                    def report(stage):
+                        logger.info("[BriefingPipeline] id=%s %s", briefing.id, stage)
+                        if progress:
+                            progress(stage)
+                    self.generator.progress = report
+                try:
+                    with _stage_heartbeat(briefing.id, "draft"):
+                        drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
+                            briefing_date=day, kind=kind, window_start=start, window_end=finish,
+                            preserved_decisions=preserved_decisions)
+                finally:
+                    if hasattr(self.generator, "progress"):
+                        self.generator.progress = progress
                 mail = drafted["mail"]
                 self._check_cancelled()
             filtered_count = sum(row["category"] == "filtered" for row in mail)
@@ -219,6 +267,8 @@ class BriefingPipeline:
             if status != "failed":
                 from agent.briefing.outbox import dispatch_pending
                 dispatch_pending(self.service.store)
+            logger.info("[BriefingPipeline] finished id=%s status=%s elapsed=%.1fs",
+                        briefing.id, status, time.monotonic() - run_started)
             return detail
         except Exception as exc:
             logger.error(f"[BriefingPipeline] run failed: {exc}")
