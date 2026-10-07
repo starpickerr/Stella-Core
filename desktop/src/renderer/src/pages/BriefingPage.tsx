@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingSource } from '../types'
+import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
+import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
 import { SettingsPanel } from './briefing/SettingsPanel'
@@ -35,6 +36,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const todayRow = briefings.find((row) => row.id === `brf-${today}-morning`)
   const todayBriefing = todayRow?.generated_at ? todayRow : undefined
   const [revision, setRevision] = useState(0)
+  const [runProgress, setRunProgress] = useState<BriefingRunProgress | null>(null)
   const listRequest = useRef(0)
   const sourceRequest = useRef(0)
 
@@ -78,6 +80,24 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }, [baseUrl, settingsOpen, loadSources])
 
   useEffect(() => {
+    if (!generating) { setRunProgress(null); return }
+    let active = true
+    let polling = false
+    const poll = async () => {
+      if (polling) return
+      polling = true
+      try {
+        const value = await apiClient.getBriefingRunProgress()
+        if (active) setRunProgress(value)
+      } catch { /* The generation request reports backend errors separately. */ }
+      finally { polling = false }
+    }
+    void poll()
+    const timer = window.setInterval(() => void poll(), 2000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [generating, baseUrl])
+
+  useEffect(() => {
     if (!selectedId) { setDetail(null); setDetailLoading(false); return }
     let cancelled = false
     setDetailLoading(true)
@@ -113,6 +133,8 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     void runBriefing(todayBriefing ? 'update' : 'create')
   }
 
+  const showDraft = generating && runProgress !== null
+
   const mark = async (id: string, status: BriefingItemStatus) => {
     setMarking(true)
     setError('')
@@ -140,12 +162,19 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     </header>
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
-      <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId ? 'hidden lg:block' : ''}`}>
+      <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
         {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setSelectedId(id) }} />}
       </aside>
-      <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId ? 'hidden lg:block' : ''}`}>
-        {detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
+      <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
+        {showDraft ? <section className="space-y-4" aria-label={t('briefing_draft')}>
+          <h2 className="text-lg font-semibold text-content">{t('briefing_draft')}</h2>
+          <p role="status" className="text-sm text-content-secondary">{t(runProgress.stage === 'finalizing' ? 'briefing_draft_finalizing' : 'briefing_draft_progress')
+            .replace('{done}', String(runProgress.completed_sources))
+            .replace('{total}', String(runProgress.total_sources))}</p>
+          {runProgress.body ? <div className="rounded-card border border-default bg-surface p-5"><Markdown content={runProgress.body} /></div>
+            : <p className="flex items-center gap-2 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_draft_waiting')}</p>}
+        </section> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>

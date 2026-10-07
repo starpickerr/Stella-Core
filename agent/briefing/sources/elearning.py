@@ -20,13 +20,15 @@ from agent.briefing.sources.base import FetchResult, FetchedItem
 class ElearningSource:
     name = "elearning"
 
-    def __init__(self, config, client_factory=None, auto_sync_files=False, cancel_event=None):
+    def __init__(self, config, client_factory=None, auto_sync_files=False, cancel_event=None,
+                 on_items_ready=None):
         self.config = dict(config)
         self.account_id = account_id(config)
         self.display_name = "eLearning · " + config["username"]
         self.client_factory = client_factory
         self.auto_sync_files = auto_sync_files
         self.cancel_event = cancel_event
+        self.on_items_ready = on_items_ready
 
     def _check_cancelled(self):
         if self.cancel_event is not None and self.cancel_event.is_set():
@@ -156,6 +158,10 @@ class ElearningSource:
             logger.info("[Briefing] quizzes endpoint unavailable for %s courses", len(quiz_not_found))
         if not reads and errors:
             raise SyncError("；".join(errors))
+        # File downloads can take minutes. Let the briefing Agent work with
+        # the fully read course metadata while the configured sync continues.
+        if self.on_items_ready is not None:
+            self.on_items_ready(list(items))
         if self.auto_sync_files and self.config.get("file_sync_enabled"):
             from agent.briefing.elearning.file_sync import sync_files
             # Briefing auto-sync shares the same human-readable courseware
