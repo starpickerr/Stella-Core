@@ -178,7 +178,8 @@ class TestSelectToolsForInjection(unittest.TestCase):
             tools[name] = _FakeBuiltinTool(name)
         for i in range(mcp_count):
             name = f"mcp_{i}"
-            tools[name] = _mcp_tool(name, f"tool number {i}")
+            tool = _mcp_tool(name, f"tool number {i}")
+            tools[tool.name] = tool
         return SimpleNamespace(
             tools=tools,
             messages=[{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
@@ -224,9 +225,10 @@ class TestSelectToolsForInjection(unittest.TestCase):
         """Maintainer scenario 3: multi-turn MCP set only grows; builtins stay."""
         fake = self._make_self(mcp_count=25)
         # Deterministic vectors: mcp_0 wins turn 1, mcp_1 wins turn 2.
-        tool_vectors = {f"mcp_{i}": [0.1, 0.1, 0.1] for i in range(25)}
-        tool_vectors["mcp_0"] = [1.0, 0.0, 0.0]
-        tool_vectors["mcp_1"] = [0.0, 1.0, 0.0]
+        tool_vectors = {name: [0.1, 0.1, 0.1] for name in fake.tools if name not in ("read", "write", "bash")}
+        first_name, second_name = _mcp_tool("mcp_0").name, _mcp_tool("mcp_1").name
+        tool_vectors[first_name] = [1.0, 0.0, 0.0]
+        tool_vectors[second_name] = [0.0, 1.0, 0.0]
         fake_tm = _FakeToolManager(
             tool_vectors=tool_vectors,
             query_vectors=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
@@ -243,10 +245,10 @@ class TestSelectToolsForInjection(unittest.TestCase):
             self.assertIn(b, names1)
             self.assertIn(b, names2)
         # Turn 1 selected mcp_0; turn 2 must still contain it (only-grows).
-        self.assertIn("mcp_0", names1)
-        self.assertIn("mcp_0", names2)
-        self.assertIn("mcp_1", names2)
-        self.assertTrue(fake._retrieved_mcp_names >= {"mcp_0", "mcp_1"})
+        self.assertIn(first_name, names1)
+        self.assertIn(first_name, names2)
+        self.assertIn(second_name, names2)
+        self.assertTrue(fake._retrieved_mcp_names >= {first_name, second_name})
 
 
 if __name__ == "__main__":

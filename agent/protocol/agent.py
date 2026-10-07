@@ -114,7 +114,10 @@ class Agent:
 
     def effective_cwd(self) -> str:
         """The working directory in force: the project override, else workspace."""
-        return self.project_dir or self.workspace_dir or os.getcwd()
+        if self.project_dir:
+            return self.project_dir
+        from common.state_dir import personal_work_dir
+        return str(personal_work_dir(base=self.workspace_dir)) if self.workspace_dir else os.getcwd()
 
     def apply_project_dir(self, project_dir):
         """Point the working directory at ``project_dir`` (None resets to workspace).
@@ -166,10 +169,7 @@ class Agent:
         A project chat can write only in its active project. Ordinary chats use
         the Agent workspace. Internal state writes are handled by services.
         """
-        roots = [self.effective_cwd()]
-        if not self.project_dir and self.workspace_dir:
-            roots.append(self.workspace_dir)
-        return roots
+        return [self.effective_cwd()]
 
     def get_skills_prompt(self, skill_filter=None) -> str:
         """

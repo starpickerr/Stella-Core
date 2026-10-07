@@ -95,15 +95,19 @@ _claims: dict[str, tuple[str, float]] = {}
 _claim_assigned: set[str] = set()
 _registered: dict[str, Capability] = {}
 _connections: dict[str, str] = {}
+_mcp_readonly: dict[str, bool] = {}
 
 
-def register_tool(tool_name: str, capability: Capability, *, connection: str | None = None) -> None:
+def register_tool(tool_name: str, capability: Capability, *, connection: str | None = None,
+                  read_only: bool = False) -> None:
     if not _SAFE_NAME.fullmatch(tool_name) or not isinstance(capability, Capability):
         raise ValueError("invalid tool declaration")
     with _lock:
         _registered[tool_name] = capability
         if connection:
             _connections[tool_name] = connection
+            if connection.startswith("mcp:"):
+                _mcp_readonly[tool_name] = read_only
 
 
 def declared_capability(tool_name: str) -> Optional[Capability]:
@@ -129,11 +133,12 @@ def _path(path: str, cwd: str | None) -> str:
     return os.path.realpath(os.path.join(cwd or os.getcwd(), os.path.expanduser(path)))
 
 
-def _shell_boundary(command: str, roots: tuple[str, ...], cwd: str | None) -> str | None:
-    """Inspect explicit shell write targets. This is a tool gate, not an OS sandbox."""
+def _shell_write_targets(command: str, cwd: str | None) -> list[str] | None:
+    """Extract explicit targets; the process sandbox covers dynamic effects."""
     segments = _parse_segments(command)
     if segments is None:
-        return "Shell command could not be parsed for workspace boundaries."
+        return None
+    output = []
     for tokens in segments:
         targets = [p for p in _redirect_targets(tokens) if p not in ("/dev/null", "/dev/stdout", "/dev/stderr", "nul")]
         name, rest = _command_name(tokens)
@@ -147,9 +152,17 @@ def _shell_boundary(command: str, roots: tuple[str, ...], cwd: str | None) -> st
                 paths = []
             targets.extend(paths)
         for target in targets:
-            if target and target not in ("/dev/null", "nul") and not any(_inside(_path(target, cwd), _path(root, cwd)) for root in roots):
-                return f"Shell write target is outside the authorized workspace: {target}."
-    return None
+            if target and target not in ("/dev/null", "nul"):
+                output.append(_path(target, cwd))
+    return output
+
+
+def _shell_boundary(command: str, roots: tuple[str, ...], cwd: str | None) -> str | None:
+    targets = _shell_write_targets(command, cwd)
+    if targets is None:
+        return "Shell command could not be parsed for workspace boundaries."
+    return next((target for target in targets if not any(
+        _inside(target, _path(root, cwd)) for root in roots)), None)
 
 
 def _skill_store(path: str) -> bool:
@@ -189,8 +202,13 @@ def _trusted_skill_init(command: str, cwd: str | None) -> bool:
         return False
 
 
-def _fingerprint(tool_name: str, arguments: Mapping[str, Any], session_id: Optional[str], project: str | None) -> str:
-    payload = json.dumps([session_id, project, tool_name, arguments], sort_keys=True, default=str)
+def _fingerprint(tool_name: str, arguments: Mapping[str, Any], session_id: Optional[str], project: str | None,
+                 agent_id: str | None, cwd: str | None, scope: Scope) -> str:
+    from common.runtime_identity import current_identity
+    identity = current_identity()
+    payload = json.dumps([identity.user_id, agent_id, session_id, identity.run_id, project,
+                          cwd, scope.write_roots, scope.extra_roots, tool_name, arguments],
+                         sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -216,6 +234,7 @@ class SecurityGateway:
         policy: Optional[dict] = None, agent_id: str | None = None, project_dir: str | None = None,
         approval_request_id: str | None = None,
         reserve_for_waiter: bool = False,
+        create_pending: bool = True,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -243,10 +262,11 @@ class SecurityGateway:
                 risk = "L0" if declared == Capability.READ else "L1"
                 if tool_name in ("write", "edit"):
                     event = ("skill_modify" if os.path.exists(real) else "skill_install") if _skill_store(real) else "agent_config_change"
+                    hard_reason = "Long-term instructions and executable skills require their dedicated settings flow."
             else:
                 resource = real
                 roots = tuple(scope.write_roots) + tuple(scope.extra_roots) + tuple(policy.get("extra_roots") or ())
-                if roots and not any(_inside(real, _path(root, cwd)) for root in roots):
+                if not any(_inside(real, _path(root, cwd)) for root in roots):
                     policy_key = "workspace_outside"
                 risk = "L0" if declared == Capability.READ else "L1"
                 if policy_key == "workspace_outside":
@@ -256,7 +276,8 @@ class SecurityGateway:
                 if tool_name == "send":
                     resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "send", "L3", "high_risk"
                     event = "external_access"
-                    if roots and not any(_inside(real, _path(root, cwd)) for root in roots):
+                    prerequisites.append("workspace_read")
+                    if not any(_inside(real, _path(root, cwd)) for root in roots):
                         prerequisites.append("workspace_outside")
         elif tool_name == "bash":
             command = str(args.get("command") or "")
@@ -265,8 +286,9 @@ class SecurityGateway:
             segments = _parse_segments(command)
             git_command = bool(segments and len(segments) == 1 and _command_name(segments[0])[0] == "git")
             if _trusted_skill_init(command, cwd):
-                resource_kind, resource, policy_key, risk = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed", "L1"
+                resource_kind, resource, policy_key, risk = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed", "L3"
                 event = "skill_install"
+                hard_reason = "Executable skill installation requires the dedicated skill settings flow."
             elif _SECRET_COMMAND.search(command):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 from agent.tools.utils.credentials import ELEARNING_DENIED_MESSAGE
@@ -291,11 +313,28 @@ class SecurityGateway:
             elif git_command:
                 policy_key = "git"
             if resource_kind != ResourceKind.AGENT_MANAGED:
-                prerequisite = "git" if git_command else "shell"
-                if prerequisite != policy_key:
-                    prerequisites.append(prerequisite)
-            if not hard_reason and resource_kind != ResourceKind.AGENT_MANAGED and rule(policy, "workspace_outside") == "deny":
-                hard_reason = _shell_boundary(command, scope.write_roots + scope.extra_roots + tuple(policy.get("extra_roots") or ()), cwd)
+                if policy_key != "shell":
+                    prerequisites.append("shell")
+                if git_command and policy_key != "git":
+                    prerequisites.append("git")
+                if _NETWORK.search(command) and policy_key != "network":
+                    prerequisites.append("network")
+                if _INSTALL.search(command) and policy_key != "install":
+                    prerequisites.append("install")
+                if args.get("run_in_background") and policy_key != "background":
+                    prerequisites.append("background")
+                if (_BULK_DELETE.search(command) or _PUBLISH.search(command)) and policy_key != "high_risk":
+                    prerequisites.append("high_risk")
+            if not hard_reason and resource_kind != ResourceKind.AGENT_MANAGED:
+                outside = _shell_boundary(command, scope.write_roots + scope.extra_roots +
+                                          tuple(policy.get("extra_roots") or ()), cwd)
+                if outside:
+                    if outside.startswith("Shell command could not"):
+                        hard_reason = outside
+                    else:
+                        resource_kind, resource, risk = ResourceKind.USER_WORKSPACE, outside, "L3"
+                        if policy_key != "workspace_outside":
+                            prerequisites.append("workspace_outside")
         elif tool_name == "env_config":
             resource_kind, resource = ResourceKind.CREDENTIAL, "Credential Store"
             event = "secret_use"
@@ -314,6 +353,38 @@ class SecurityGateway:
             event = "file_modify"
         elif tool_name == "subagent":
             resource_kind, resource, risk, policy_key = ResourceKind.AGENT_MANAGED, "Agent subagent", "L1", "managed"
+        elif tool_name == "browser":
+            resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "browser", "L2", "external"
+            event = "external_access"
+            url = str(args.get("url") or "")
+            if action == "navigate" and url.lower().startswith("file://"):
+                from urllib.parse import urlparse, unquote
+                from agent.tools.utils.credentials import is_credential_path, credential_denial_message
+                parsed = urlparse(url)
+                local = _path(unquote(parsed.path), cwd)
+                resource_kind, resource, risk, policy_key = ResourceKind.USER_WORKSPACE, local, "L0", "workspace_read"
+                if parsed.netloc not in ("", "localhost"):
+                    hard_reason = "Remote file URLs are not allowed."
+                elif is_credential_path(local):
+                    hard_reason = credential_denial_message(local)
+                elif not any(_inside(local, _path(root, cwd)) for root in (
+                        *scope.write_roots, *scope.extra_roots, *(policy.get("extra_roots") or ()))):
+                    policy_key, risk = "workspace_outside", "L2"
+            elif action in ("click", "fill", "select", "press", "evaluate"):
+                from agent.tools.browser.browser_tool import BrowserTool
+                service = BrowserTool._shared_service
+                resource = getattr(service, "_last_url", None) or "current browser page / signed-in profile"
+                risk, policy_key = "L3", "high_risk"
+                prerequisites.append("external")
+            elif action == "navigate" and url.split(":", 1)[0].lower() in ("data", "javascript", "blob"):
+                resource, risk, policy_key = "browser inline content", "L3", "high_risk"
+                prerequisites.append("external")
+            elif action in ("navigate", "back", "forward"):
+                resource = url or "current browser page"
+                prerequisites.append("network")
+            elif action not in ("snapshot", "get_text", "screenshot", "scroll", "wait"):
+                risk, policy_key = "L3", "high_risk"
+                prerequisites.append("external")
         elif declared == Capability.EXTERNAL or declared == Capability.ADMIN:
             resource_kind, resource = ResourceKind.EXTERNAL, _connections.get(tool_name, tool_name)
             event = "external_access"
@@ -321,6 +392,8 @@ class SecurityGateway:
             inferred = _EXTERNAL_VERB.search(tool_name)
             operation = action or (inferred.group(1).lower() if inferred else operation)
             if tool_name in ("send",) or operation in ("send", "publish", "delete", "remove", "revoke", "deploy", "evaluate") or declared == Capability.ADMIN:
+                risk, policy_key = "L3", "high_risk"
+            if _connections.get(tool_name, "").startswith("mcp:") and not _mcp_readonly.get(tool_name, False):
                 risk, policy_key = "L3", "high_risk"
         elif tool_name in ("web_fetch", "web_search"):
             resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "external_api", "L2", "network"
@@ -358,8 +431,10 @@ class SecurityGateway:
         elif "deny" in required.values():
             refused = next(name for name, value in required.items() if value == "deny")
             kind, reason = DecisionKind.DENY, f"Policy denied {operation} on {resource_kind.value} ({resource}); required rule {refused}."
+        elif not create_pending and (selected == "confirm" or "confirm" in required.values()):
+            kind, reason = DecisionKind.CONFIRM, "Authorization required. Adjust the policy and rerun this task manually; it will not resume automatically."
         elif selected == "confirm" or "confirm" in required.values():
-            key = _fingerprint(tool_name, args, session_id, project_dir)
+            key = _fingerprint(tool_name, args, session_id, project_dir, agent_id, cwd, scope)
             with _lock:
                 claim = _claims.get(approval_request_id) if approval_request_id else None
                 if claim and claim[0] == key and claim[1] >= time.time():
@@ -381,10 +456,15 @@ class SecurityGateway:
                                            if pending["key"] == key and pending["expires"] >= time.time()), None)
                         if request_id is None:
                             request_id = uuid.uuid4().hex
+                            from common.log import _redact
+                            from common.runtime_identity import current_identity
                             _pending[request_id] = {"key": key, "tool": tool_name, "session": session_id,
-                                                    "summary": _summary(tool_name, args), "resource": resource,
+                                                    "summary": _summary(tool_name, args), "resource": _redact(resource),
                                                     "risk": risk, "reason": f"Policy requires confirmation for {operation}.",
                                                     "agent": agent_id, "project": project_dir, "operation": operation,
+                                                    "user": current_identity().user_id,
+                                                    "expanded_scope": _redact(resource) if "workspace_outside" in required else "",
+                                                    "effect": "May change files or external state" if risk in ("L2", "L3", "L4") else "Read-only",
                                                     "interactive": reserve_for_waiter,
                                                     "expires": time.time() + 3600}
                         elif reserve_for_waiter:
@@ -392,13 +472,15 @@ class SecurityGateway:
                         kind, reason = DecisionKind.CONFIRM, f"Confirmation required for {tool_name}. Request {request_id} is waiting in Security."
         else:
             kind, reason = DecisionKind.ALLOW, f"Policy allowed {operation} on {resource_kind.value}; rule {policy_key}."
-        result = PolicyDecision(kind, reason, resource_kind, operation, risk, resource,
-                                trace + (f"Decision: {kind.value}",), locals().get("request_id"))
+        from common.log import _redact
+        safe_trace = tuple(_redact(value) for value in trace + (f"Decision: {kind.value}",))
+        result = PolicyDecision(kind, _redact(reason), resource_kind, operation, risk, resource,
+                                safe_trace, locals().get("request_id"))
         try:
             from agent.permission.audit import record
             record(agent=agent_id, conversation=session_id, project=project_dir, tool=tool_name,
-                   operation=operation, resource=resource, event=event, risk=risk, decision=kind.value,
-                   reason=reason, trace=result.trace)
+                   operation=operation, resource=_redact(resource), event=event, risk=risk, decision=kind.value,
+                   reason=_redact(reason), trace=result.trace)
         except Exception:
             if result.request_id:
                 with _lock:
@@ -425,7 +507,7 @@ class SecurityGateway:
             for request_id, (_, expires) in list(_claims.items()):
                 if expires < now:
                     del _claims[request_id]
-            return [{"id": request_id, **{k: request[k] for k in ("tool", "session", "summary", "resource", "risk", "reason")}}
+            return [{"id": request_id, **{k: request[k] for k in ("tool", "session", "summary", "resource", "risk", "reason", "expanded_scope", "effect")}}
                     for request_id, request in _pending.items()]
 
     @staticmethod
@@ -438,10 +520,12 @@ class SecurityGateway:
                        for request in _pending.values())
 
     @staticmethod
-    def approve(request_id: str) -> bool:
+    def approve(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
         with _lock:
             request = _pending.get(request_id)
-            if not request or request["expires"] < time.time():
+            if (not request or request["expires"] < time.time()
+                    or (session_id is not None and request["session"] != session_id)
+                    or (user_id is not None and request["user"] != user_id)):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],
@@ -462,10 +546,12 @@ class SecurityGateway:
             return True
 
     @staticmethod
-    def reject(request_id: str) -> bool:
+    def reject(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
         with _lock:
             request = _pending.get(request_id)
-            if not request or request["expires"] < time.time():
+            if (not request or request["expires"] < time.time()
+                    or (session_id is not None and request["session"] != session_id)
+                    or (user_id is not None and request["user"] != user_id)):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],

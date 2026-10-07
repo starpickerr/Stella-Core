@@ -109,8 +109,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
     setApprovalError('')
     try {
       const result = decision === 'approve'
-        ? await apiClient.approveSecurityConfirmation(approval.id)
-        : await apiClient.rejectSecurityConfirmation(approval.id)
+        ? await apiClient.approveSecurityConfirmation(approval.id, approval.session)
+        : await apiClient.rejectSecurityConfirmation(approval.id, approval.session)
       if (result.status !== 'success') throw new Error(getLang() === 'en' ? 'This request is no longer pending.' : '这条请求已不在等待审批。')
       setApproval(null)
     } catch (error) {
@@ -409,6 +409,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
               <div className="font-medium">{approval.tool}</div>
               <div className="mt-1 whitespace-pre-wrap">{approval.summary}</div>
               <div className="mt-2 text-xs text-content-tertiary">{approval.resource} · {approval.risk}</div>
+              <div className="mt-2 text-xs text-content-secondary">{approval.reason}</div>
+              {approval.expanded_scope && <div className="mt-1 text-xs text-content-secondary break-all">{getLang() === 'en' ? 'Expanded scope' : '扩大范围'}：{approval.expanded_scope}</div>}
+              <div className="mt-1 text-xs text-content-secondary">{getLang() === 'en' ? 'Possible effect' : '可能影响'}：{approval.effect}</div>
             </div>
             {approvalError && <p className="mt-3 text-sm text-danger">{approvalError}</p>}
             <div className="mt-5 flex justify-end gap-2">
@@ -419,7 +422,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                 {getLang() === 'en' ? 'Reject' : '拒绝'}
               </button>
               <button type="button" disabled={approvalBusy} onClick={() => void decideApproval('approve')} className="rounded-btn bg-accent px-3 py-2 text-sm text-accent-contrast disabled:opacity-50">
-                {approvalBusy ? <Loader2 size={16} className="animate-spin" /> : getLang() === 'en' ? 'Approve' : '批准'}
+                {approvalBusy ? <Loader2 size={16} className="animate-spin" /> : getLang() === 'en' ? 'Allow once' : '允许一次'}
               </button>
             </div>
           </div>

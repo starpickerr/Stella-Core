@@ -24,6 +24,56 @@ const action =
   'rounded-btn bg-accent text-accent-contrast px-3 py-2 text-sm disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
 const faded = 'text-sm text-content-secondary'
 
+const PolicyEditor: React.FC<{
+  policy: SecurityPolicy
+  definitions: SecurityCenterState['mode_definitions']
+  copy: ReturnType<typeof securityCopy>
+  busy: boolean
+  inherit: boolean
+  onSave: (patch: SecurityPolicy) => void
+  onCancel?: () => void
+}> = ({ policy, definitions, copy, busy, inherit, onSave, onCancel }) => {
+  const initialBase = policy.base_preset || (policy.preset === 'custom' ? 'project-full' : policy.preset) || 'project-full'
+  const [base, setBase] = useState(initialBase)
+  const [rules, setRules] = useState<Record<string, 'allow' | 'confirm' | 'deny'>>({ ...(policy.rules || {}) })
+  useEffect(() => {
+    setBase(policy.base_preset || (policy.preset === 'custom' ? 'project-full' : policy.preset) || 'project-full')
+    setRules({ ...(policy.rules || {}) })
+  }, [policy])
+  const baseRules = definitions.find(row => row.id === base)?.rules || {}
+  const differences = Object.keys(rules).filter(name => rules[name] !== baseRules[name]).length
+  return <div className="space-y-4">
+    <label className="block text-sm">{getLang() === 'en' ? 'Base mode' : '基础方案'}
+      <select className={`${input} block mt-1 w-full`} value={base}
+        onChange={event => setBase(event.target.value as typeof base)}>
+        {definitions.filter(row => row.id !== 'custom').map(row => <option key={row.id} value={row.id}>{row.name[getLang() === 'en' ? 'en' : 'zh']}</option>)}
+      </select></label>
+    <p className="text-xs text-content-secondary">{getLang() === 'en' ? `${differences} differences` : `${differences} 项差异`}</p>
+    {ruleGroups.map(group => <section key={group.id}>
+      <h3 className="text-xs font-semibold text-content-secondary mb-1">{copy.groups[group.id]}</h3>
+      <div className="divide-y divide-default">{group.rules.map(name => <label key={name} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <span><span className="block text-sm font-medium">{copy.rules[name].name}</span><span className="block text-xs text-content-secondary">{copy.rules[name].help}</span></span>
+        <select aria-label={copy.rules[name].name} disabled={busy} className={`${input} w-full sm:w-44`}
+          value={rules[name] || (inherit ? '' : baseRules[name])}
+          onChange={event => setRules(value => {
+            const next = { ...value }
+            if (event.target.value) next[name] = event.target.value as 'allow' | 'confirm' | 'deny'
+            else delete next[name]
+            return next
+          })}>
+          {inherit && <option value="">{copy.decisions.inherit}</option>}
+          <option value="allow">{copy.decisions.allow}</option><option value="confirm">{copy.decisions.confirm}</option><option value="deny">{copy.decisions.deny}</option>
+        </select>
+      </label>)}</div>
+    </section>)}
+    <div className="flex flex-wrap gap-3 text-sm">
+      <button type="button" className="text-accent" onClick={() => setRules({ ...baseRules })}>{getLang() === 'en' ? 'Restore base' : '恢复基础方案'}</button>
+      <button type="button" onClick={() => { setRules({ ...(policy.rules || {}) }); onCancel?.() }}>{getLang() === 'en' ? 'Cancel' : '取消'}</button>
+      <button type="button" disabled={busy} className={action} onClick={() => onSave({ preset: 'custom', base_preset: base, rules })}>{getLang() === 'en' ? 'Save custom' : '保存自定义'}</button>
+    </div>
+  </div>
+}
+
 const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const copy = securityCopy(getLang())
   const sid = useSessionStore((s) => s.activeId)
@@ -42,6 +92,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       resource: string
       risk: string
       reason: string
+      expanded_scope: string
+      effect: string
     }[]
   >([])
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -55,6 +107,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [customSecretName, setCustomSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
+  const [showGlobalEditor, setShowGlobalEditor] = useState(false)
+  const [pendingGlobalFull, setPendingGlobalFull] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -93,7 +147,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     setNotice('')
     try {
       const result = await fn()
-      if (result.status !== 'success') throw new Error(copy.saveFailed)
+      if (result.status !== 'success') throw new Error(result.message || copy.saveFailed)
       setNotice(success)
       await load()
       return true
@@ -105,8 +159,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
   }
   const saveGlobal = (patch: SecurityPolicy) => {
-    if (!center) return
-    void mutate(() => apiClient.saveSecurityPolicy('global', { ...center.global_policy, ...patch }))
+    if (!center) return Promise.resolve(false)
+    return mutate(() => apiClient.saveSecurityPolicy('global', { ...center.global_policy, ...patch }))
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
@@ -130,51 +184,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       ),
     )
   }
-  const selectRule = (
-    value: string,
-    current: SecurityPolicy,
-    onSave: (policy: SecurityPolicy) => void,
-    name: string,
-  ) => {
-    const rules = { ...(current.rules || {}) }
-    if (value === '') delete rules[name]
-    else rules[name] = value as 'allow' | 'confirm' | 'deny'
-    onSave({ rules })
-  }
-  const ruleTable = (policy: SecurityPolicy, onSave: (patch: SecurityPolicy) => void, inherit: boolean) => (
-    <div className="space-y-5">
-      {ruleGroups.map((group) => (
-        <section key={group.id}>
-          <h3 className="text-xs font-semibold text-content-secondary mb-1">{copy.groups[group.id]}</h3>
-          <div className="divide-y divide-default">
-            {group.rules.map((name) => (
-              <div
-                key={name}
-                className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{copy.rules[name].name}</p>
-                  <p className="text-xs text-content-secondary mt-0.5">{copy.rules[name].help}</p>
-                </div>
-                <select
-                  aria-label={copy.rules[name].name}
-                  disabled={busy}
-                  className={`${input} w-full sm:w-44 shrink-0`}
-                  value={policy.rules?.[name] || ''}
-                  onChange={(event) => selectRule(event.target.value, policy, onSave, name)}
-                >
-                  <option value="">{inherit ? copy.decisions.inherit : copy.decisions.preset}</option>
-                  <option value="allow">{copy.decisions.allow}</option>
-                  <option value="confirm">{copy.decisions.confirm}</option>
-                  <option value="deny">{copy.decisions.deny}</option>
-                </select>
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  )
   const overrideSummary = (policy: SecurityPolicy) => {
     const entries = Object.entries(policy.rules || {})
     return entries.length ? (
@@ -317,21 +326,25 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     />
                     <div className="min-w-0">
                       <h2 className="text-lg font-semibold">
-                        {center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
+                        {center.process_isolation.status === 'unavailable'
+                          ? (getLang() === 'en' ? 'Process isolation unavailable' : '不支持进程隔离')
+                          : center.process_isolation.status === 'full-access'
+                            ? (getLang() === 'en' ? 'Full access is active' : '当前完全访问')
+                            : center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
                       </h2>
                       <p className={faded}>
-                        {center.summary.status === 'normal'
-                          ? copy.statusNormalHelp
-                          : copy.statusAttentionHelp}
+                        {center.process_isolation.reason}
                       </p>
+                      {center.policy_error && <p role="alert" className="text-danger text-sm mt-2">{center.policy_error}</p>}
                     </div>
                   </div>
                   <div className="mt-5 pt-4 border-t border-default grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                     <div>
                       <span className="text-content-secondary">{copy.currentProtection}</span>
                       <p className="font-medium mt-1">
-                        {copy.presets[center.global_policy.preset || 'standard'].name}
+                        {center.mode_definitions.find(row => row.id === center.effective_mode)?.name[getLang() === 'en' ? 'en' : 'zh'] || center.effective_mode}
                       </p>
+                      <p className="text-xs text-content-secondary">{getLang() === 'en' ? 'Source' : '来源'}：{center.policy_source}</p>
                     </div>
                     <div>
                       <span className="text-content-secondary">{copy.connectionsCount}</span>
@@ -342,6 +355,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       <p className="font-medium mt-1">{center.summary.secret_count}</p>
                     </div>
                   </div>
+                  <div className="mt-3 text-xs text-content-secondary break-all">{getLang() === 'en' ? 'Authorized directories' : '授权目录'}：{center.authorized_roots.join(' · ')}</div>
                 </section>
                 {pending.length > 0 && (
                   <section className={card}>
@@ -372,13 +386,15 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                               {item.summary}
                             </code>
                           )}
+                          <p className="text-xs text-content-secondary mt-1">{item.reason} · {item.effect}</p>
+                          {item.expanded_scope && <p className="text-xs text-content-secondary break-all mt-1">{getLang() === 'en' ? 'Expanded scope' : '扩大范围'}：{item.expanded_scope}</p>}
                         </div>
                         <div className="flex gap-2 shrink-0">
                           <button
                             disabled={busy}
                             className={action}
                             onClick={() =>
-                              void mutate(() => apiClient.approveSecurityConfirmation(item.id), copy.approved)
+                              void mutate(() => apiClient.approveSecurityConfirmation(item.id, item.session), copy.approved)
                             }
                           >
                             {copy.allowOnce}
@@ -387,7 +403,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                             disabled={busy}
                             className={`${input} text-danger`}
                             onClick={() =>
-                              void mutate(() => apiClient.rejectSecurityConfirmation(item.id), copy.rejected)
+                              void mutate(() => apiClient.rejectSecurityConfirmation(item.id, item.session), copy.rejected)
                             }
                           >
                             {copy.deny}
@@ -415,35 +431,40 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <section className={card}>
                   <h2 className="font-semibold">{copy.presetsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
-                  <div className="mt-4 grid sm:grid-cols-3 gap-2">
-                    {(['strict', 'standard', 'custom'] as const).map((preset) => (
+                  <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                    {center.mode_definitions.map((entry) => (
                       <button
                         type="button"
-                        key={preset}
+                        key={entry.id}
                         disabled={busy}
-                        onClick={() => saveGlobal({ preset, rules: {} })}
-                        aria-pressed={center.global_policy.preset === preset}
-                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.global_policy.preset === preset ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
+                        onClick={() => entry.id === 'custom' ? setShowGlobalEditor(true) : entry.id === 'full-access' && center.global_policy.preset !== 'full-access'
+                          ? setPendingGlobalFull(true) : saveGlobal({ preset: entry.id, rules: {} })}
+                        aria-pressed={center.effective_mode === entry.id}
+                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.effective_mode === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
                       >
-                        <span className="font-semibold text-sm">{copy.presets[preset].name}</span>
-                        {preset === 'standard' && (
+                        <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
+                        {entry.id === 'project-full' && (
                           <span className="ml-2 text-xs text-accent">{copy.recommended}</span>
                         )}
                         <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
-                          {copy.presets[preset].description}
+                          {entry.description[getLang() === 'en' ? 'en' : 'zh']}
                         </span>
                       </button>
                     ))}
                   </div>
+                  {pendingGlobalFull && <div className="mt-3 rounded-btn border border-accent p-3 text-sm space-y-2">
+                    <p>{getLang() === 'en' ? 'Full access expands file access beyond the workspace. Important external and destructive actions still need approval.' : '完全访问将文件访问扩大到工作区外；重要外部操作和破坏性操作仍需审批。'}</p>
+                    <p className="text-xs break-all text-content-secondary">{center.authorized_roots.join(' · ')}</p>
+                    <div className="flex gap-3"><button type="button" onClick={() => setPendingGlobalFull(false)}>{getLang() === 'en' ? 'Cancel' : '取消'}</button>
+                      <button type="button" className="text-accent" onClick={() => { saveGlobal({ preset: 'full-access', rules: {} }); setPendingGlobalFull(false) }}>{getLang() === 'en' ? 'Enable full access' : '启用完全访问'}</button></div>
+                  </div>}
                 </section>
-                <details className={card}>
-                  <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-accent">
-                    {copy.advanced}
-                  </summary>
-                  <p className={`${faded} mt-2`}>{copy.advancedHelp}</p>
-                  <div className="mt-4">{ruleTable(center.global_policy, saveGlobal, false)}</div>
-                  <p className="text-xs text-content-tertiary mt-4">{copy.shellBoundaryNote}</p>
-                </details>
+                {showGlobalEditor && <section className={card}>
+                  <h3 className="font-semibold mb-3">{copy.advanced}</h3>
+                  <PolicyEditor policy={center.global_policy} definitions={center.mode_definitions} copy={copy}
+                    busy={busy} inherit={false} onSave={(patch) => { void saveGlobal(patch).then(ok => { if (ok) setShowGlobalEditor(false) }) }}
+                    onCancel={() => setShowGlobalEditor(false)} />
+                </section>}
               </div>
             )}
             {tab === 'projects' && (
@@ -471,7 +492,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         <summary className="cursor-pointer text-sm font-medium text-accent">
                           {copy.projectAdjust}
                         </summary>
-                        <div className="mt-4">{ruleTable(project.policy, saveProject, true)}</div>
+                        <div className="mt-4"><PolicyEditor policy={project.policy} definitions={center.mode_definitions}
+                          copy={copy} busy={busy} inherit onSave={saveProject} /></div>
                       </details>
                     </>
                   ) : (
@@ -491,7 +513,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         {copy.conversationAdjust}
                       </summary>
                       <div className="mt-4">
-                        {ruleTable(center.conversation_policy, saveConversation, true)}
+                        <PolicyEditor policy={center.conversation_policy} definitions={center.mode_definitions}
+                          copy={copy} busy={busy} inherit onSave={saveConversation} />
                       </div>
                     </details>
                     <label className="block text-sm mt-4">

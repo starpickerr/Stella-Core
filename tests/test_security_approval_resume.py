@@ -2,7 +2,7 @@
 import threading
 import time
 
-from agent.permission.gateway import DecisionKind, SecurityGateway
+from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
 from agent.permission.security_policy import legacy_policy
 from agent.runtime.tool_invocation import ApprovalRejectedError, permission_denial
 from common.runtime_identity import identity_scope
@@ -53,6 +53,7 @@ def test_approval_resumes_same_call_and_request_id_is_stable(tmp_path, monkeypat
     request = _wait_for_pending(session)
     assert worker.is_alive()
     second = SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path), session_id=session,
+                                   scope=Scope(write_roots=(str(tmp_path),)),
                                    policy=legacy_policy("full-access"))
     assert second.kind is DecisionKind.CONFIRM and second.request_id == request["id"]
     assert len(_pending(session)) == 1
@@ -87,6 +88,54 @@ def test_rejection_stops_waiting_run_without_executing(tmp_path, monkeypatch, se
     worker.join(2)
     assert not worker.is_alive() and outcome == ["rejected"]
     assert not _pending(session)
+
+
+def test_policy_change_while_waiting_invalidates_approval(tmp_path, monkeypatch, security_audit_path):
+    policy = legacy_policy("full-access")
+    monkeypatch.setattr("agent.permission.security_policy.resolve", lambda *args, **kwargs: policy)
+    session = "approval-policy-changed"
+    outcome = []
+
+    def run():
+        with identity_scope(session_id=session):
+            try:
+                permission_denial("bash", {"command": "rm -rf old"}, agent=_Agent(tmp_path),
+                                  wait_for_approval=True, cancel_event=threading.Event())
+            except ApprovalRejectedError as exc:
+                outcome.append(str(exc))
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    request = _wait_for_pending(session)
+    policy = {**policy, "rules": {**policy["rules"], "shell": "deny"}}
+    assert SecurityGateway.approve(request["id"])
+    worker.join(2)
+    assert not worker.is_alive() and len(outcome) == 1
+    assert "变化" in outcome[0]
+
+
+def test_workspace_change_while_waiting_invalidates_approval(tmp_path, monkeypatch, security_audit_path):
+    monkeypatch.setattr("agent.permission.security_policy.resolve", lambda *args, **kwargs: legacy_policy("full-access"))
+    session = "approval-workspace-changed"
+    agent = _Agent(tmp_path)
+    outcome = []
+
+    def run():
+        with identity_scope(session_id=session):
+            try:
+                permission_denial("bash", {"command": "rm -rf old"}, agent=agent,
+                                  wait_for_approval=True, cancel_event=threading.Event())
+            except ApprovalRejectedError as exc:
+                outcome.append(str(exc))
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    request = _wait_for_pending(session)
+    agent.cwd = str(tmp_path / "other")
+    assert SecurityGateway.approve(request["id"])
+    worker.join(2)
+    assert not worker.is_alive() and len(outcome) == 1
+    assert "变化" in outcome[0]
 
 
 def test_stopping_conversation_removes_pending_request(tmp_path, monkeypatch, security_audit_path):

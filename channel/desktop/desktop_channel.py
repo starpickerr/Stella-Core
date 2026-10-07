@@ -348,7 +348,7 @@ def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
 
     When a session has opened a project directory, that project is the working
     directory the file panel / preview / ``@`` picker operate in. Otherwise it
-    is the Agent's workspace (``state_root``, e.g. ``~/stella``). Memory and skills
+    is the user's personal work folder. Memory and skills
     always stay in ``state_root`` regardless; only the working root moves.
     """
     if session_id:
@@ -359,6 +359,12 @@ def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
                 return project_dir
         except Exception as e:
             logger.debug(f"[DesktopChannel] project_dir resolve failed: {e}")
+    from common.state_dir import personal_work_dir
+    from common.runtime_identity import current_identity
+    return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
+
+
+def _get_state_root() -> str:
     from common.state_dir import state_root_str
     return state_root_str()
 
@@ -5631,7 +5637,7 @@ class SkillsHandler:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
             from common import i18n
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_state_root()
             manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
             service = SkillService(manager)
             skills = service.query()
@@ -5657,7 +5663,7 @@ class SkillsHandler:
             name = body.get("name")
             if not action or not name:
                 return json.dumps({"status": "error", "message": "action and name are required"})
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_state_root()
             manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
             service = SkillService(manager)
             if action == "open":
@@ -5679,7 +5685,7 @@ class MemoryHandler:
         try:
             from agent.memory.service import MemoryService
             params = web.input(page='1', page_size='20', category='memory')
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_state_root()
             service = MemoryService(workspace_root)
             result = service.list_files(
                 page=int(params.page), page_size=int(params.page_size),
@@ -5700,7 +5706,7 @@ class MemoryContentHandler:
             params = web.input(filename='', category='memory')
             if not params.filename:
                 return json.dumps({"status": "error", "message": "filename required"})
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_state_root()
             service = MemoryService(workspace_root)
             result = service.get_content(params.filename, category=params.category)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
@@ -5715,7 +5721,7 @@ class MemoryContentHandler:
 
 def _scheduler_store():
     from agent.scheduler import TaskStore
-    workspace_root = _get_workspace_root()
+    workspace_root = _get_state_root()
     store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
     if os.environ.get("STELLA_DESKTOP") == "1":
         from agent.scheduler.automation_store import AutomationStore
@@ -5787,7 +5793,7 @@ class SecurityPolicyHandler:
                 raise ValueError("invalid policy target")
             return json.dumps({"status": "success", "policy": saved,
                                "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError) as error:
+        except (ValueError, FileNotFoundError, OSError) as error:
             return json.dumps({"status": "error", "message": str(error)})
 
 
@@ -5856,7 +5862,11 @@ class SecurityConfirmationsHandler:
         if action not in ("approve", "reject"):
             return json.dumps({"status": "error", "message": "invalid confirmation action"})
         try:
-            handled = (SecurityGateway.approve if action == "approve" else SecurityGateway.reject)(str(body.get("id") or ""))
+            if "session" not in body:
+                return json.dumps({"status": "error", "message": "session is required"})
+            from common.runtime_identity import current_identity
+            handled = (SecurityGateway.approve if action == "approve" else SecurityGateway.reject)(
+                str(body.get("id") or ""), session_id=body.get("session"), user_id=current_identity().user_id)
             return json.dumps({"status": "success" if handled else "error"})
         except OSError:
             return json.dumps({"status": "error", "message": "security audit is unavailable"})
@@ -6946,11 +6956,22 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
         global_provider = "linkai"
     global_model = local_config.get("model") or ""
     global_permission = permission_global_mode()
-    from agent.permission.security_policy import resolve
+    from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve
     from agent.workspace import project_store
     project_dir = project_store.get_project_dir(session_id, agent_id)
     effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
     global_policy = resolve(global_permission)
+    project_policy = project_store.get_security_policy(project_dir) if project_dir else {}
+    session_policy = prefs.get("security_policy") or {}
+    layers = [name for name, patch in (("project", project_policy), ("session", session_policy)) if patch]
+    source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
+    from common.state_dir import personal_work_dir
+    from agent.permission.process_sandbox import capability
+    isolation = capability()
+    if effective_mode(effective_policy) == "full-access":
+        isolation = {**isolation, "status": "full-access" if isolation["status"] == "enabled" else "unavailable",
+                     "reason": "Full access permits general filesystem writes; protected controls remain blocked."
+                     if isolation["status"] == "enabled" else isolation["reason"]}
 
     return {
         "model": {
@@ -6961,10 +6982,19 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "providers": _session_model_catalog(),
         },
         "permission": {
-            "source": "session" if prefs.get("security_policy") else "global",
+            "source": source,
             "preset": effective_policy["preset"],
             "global_preset": global_policy["preset"],
-            "presets": ["strict", "standard", "custom"],
+            "mode": effective_mode(effective_policy),
+            "base_preset": effective_policy.get("base_preset", "project-full" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
+            "rules": effective_rules(effective_policy),
+            "policy": effective_policy,
+            "mode_definitions": MODE_DEFINITIONS,
+            "authorized_roots": [project_dir or str(personal_work_dir()), *(effective_policy.get("extra_roots") or [])],
+            "project": project_dir,
+            "error": effective_policy.get("error"),
+            "process_isolation": isolation,
+            "presets": [row["id"] for row in MODE_DEFINITIONS],
         },
     }
 
@@ -7417,7 +7447,7 @@ class WorkspaceMetaHandler:
 def _project_state(session_id: str, agent_id: str = None) -> dict:
     """Assemble the project picker state: current selection + recents + root."""
     from agent.workspace import project_store
-    from common.state_dir import state_root_str
+    from common.state_dir import personal_work_dir
 
     current = project_store.get_project_dir(session_id, agent_id) if session_id else None
     return {
@@ -7425,7 +7455,7 @@ def _project_state(session_id: str, agent_id: str = None) -> dict:
             {"path": current, "name": project_store.display_name_for(current)}
             if current else None
         ),
-        "default_workspace": state_root_str(),
+        "default_workspace": str(personal_work_dir()),
         "projects_root": project_store.projects_root(),
         "recents": project_store.list_recents(),
     }
@@ -7677,7 +7707,7 @@ class KnowledgeListHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.knowledge.service import KnowledgeService
-            svc = KnowledgeService(_get_workspace_root())
+            svc = KnowledgeService(_get_state_root())
             result = svc.list_tree()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
@@ -7693,7 +7723,7 @@ class KnowledgeReadHandler:
             from pathlib import Path
             from agent.knowledge.service import KnowledgeService
             params = web.input(path='')
-            svc = KnowledgeService(_get_workspace_root())
+            svc = KnowledgeService(_get_state_root())
             result = svc.read_file(params.path)
             # Absolute directory of the doc (posix separators), so clients can
             # resolve image srcs that are relative to the doc into /api/file
@@ -7714,7 +7744,7 @@ class KnowledgeGraphHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.knowledge.service import KnowledgeService
-            svc = KnowledgeService(_get_workspace_root())
+            svc = KnowledgeService(_get_state_root())
             return json.dumps(svc.build_graph(), ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Knowledge graph error: {e}")
@@ -7730,7 +7760,7 @@ class KnowledgeActionHandler:
             action = body.get("action", "")
             payload = body.get("payload") or {}
             from agent.knowledge.service import KnowledgeService
-            result = KnowledgeService(_get_workspace_root()).dispatch(action, payload)
+            result = KnowledgeService(_get_state_root()).dispatch(action, payload)
             return json.dumps({
                 "status": "success" if result["code"] < 300 else "error",
                 **result,
@@ -7791,7 +7821,7 @@ class KnowledgeImportHandler:
                     "content": content,
                 })
 
-            result = KnowledgeService(_get_workspace_root()).dispatch("import_documents", {
+            result = KnowledgeService(_get_state_root()).dispatch("import_documents", {
                 "target_category": target_category,
                 "conflict_strategy": conflict_strategy,
                 "files": files,

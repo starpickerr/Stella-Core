@@ -41,7 +41,8 @@ interface ApiResult {
 }
 
 export interface SecurityPolicy {
-  preset?: 'strict' | 'standard' | 'custom'
+  preset?: 'approval' | 'project-full' | 'full-access' | 'custom'
+  base_preset?: 'approval' | 'project-full' | 'full-access'
   rules?: Record<string, 'allow' | 'confirm' | 'deny'>
   connections?: Record<string, { allowed: boolean; scopes: string[] }>
   extra_roots?: string[]
@@ -65,6 +66,13 @@ export interface SecurityRecord {
 export interface SecurityCenterState extends ApiResult {
   global_policy: SecurityPolicy
   effective_policy: SecurityPolicy
+  effective_mode: 'approval' | 'project-full' | 'full-access' | 'custom'
+  effective_rules: Record<string, 'allow' | 'confirm' | 'deny'>
+  policy_source: 'global' | 'project' | 'session' | 'mixed'
+  mode_definitions: SecurityModeDefinition[]
+  authorized_roots: string[]
+  policy_error?: string | null
+  process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
   project: string | null
   project_policy: SecurityPolicy
   projects: { path: string; name: string; policy: SecurityPolicy }[]
@@ -73,6 +81,13 @@ export interface SecurityCenterState extends ApiResult {
   secrets: { name: string; source: string; configured: boolean }[]
   summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
     recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[] }
+}
+
+export interface SecurityModeDefinition {
+  id: 'approval' | 'project-full' | 'full-access' | 'custom'
+  name: { zh: string; en: string }
+  description: { zh: string; en: string }
+  rules: Record<string, 'allow' | 'confirm' | 'deny'>
 }
 
 const AUTH_TOKEN_KEY = 'cow_auth_token'
@@ -391,7 +406,7 @@ class ApiClient {
   }
 
   /** This session's effective model + permission, with the catalog to switch. */
-  async getSessionSettings(sessionId: string): Promise<{ status: string } & SessionSettingsState> {
+  async getSessionSettings(sessionId: string): Promise<{ status: string; message?: string } & SessionSettingsState> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`)
   }
 
@@ -460,17 +475,17 @@ class ApiClient {
     return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
   }
 
-  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string }[]> {
-    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string }[] }>('/api/security/confirmations')
+  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[]> {
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/security/confirmations')
     return result.pending || []
   }
 
-  async approveSecurityConfirmation(id: string): Promise<{ status: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, action: 'approve' }) })
+  async approveSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
   }
 
-  async rejectSecurityConfirmation(id: string): Promise<{ status: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, action: 'reject' }) })
+  async rejectSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
   }
 
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {

@@ -512,17 +512,19 @@ class ToolManager:
                         if not tool_name:
                             continue
                         mcp_tool = McpTool(client, schema, server_name)
+                        public_name = mcp_tool.name
                         # Atomic dict assignment is GIL-safe; readers iterate
                         # over a list() snapshot to avoid concurrent mutation.
-                        self._mcp_tool_instances[tool_name] = mcp_tool
+                        self._mcp_tool_instances[public_name] = mcp_tool
                         from agent.permission.gateway import Capability, register_tool
                         try:
-                            register_tool(tool_name, Capability.EXTERNAL, connection=f"mcp:{server_name}")
+                            register_tool(public_name, Capability.EXTERNAL, connection=f"mcp:{server_name}",
+                                          read_only=mcp_tool.read_only)
                         except ValueError:
                             logger.warning("[MCP] Skipped a tool with an invalid security declaration")
-                            self._mcp_tool_instances.pop(tool_name, None)
+                            self._mcp_tool_instances.pop(public_name, None)
                             continue
-                        added.append(tool_name)
+                        added.append(public_name)
 
                     # Register client into the shared registry only after its
                     # tools are visible, so callers never see a half-loaded server.

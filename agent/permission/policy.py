@@ -12,7 +12,7 @@ READ_ONLY = "read-only"
 WORKSPACE_WRITE = "workspace-write"
 FULL_ACCESS = "full-access"
 MODES = (READ_ONLY, WORKSPACE_WRITE, FULL_ACCESS)
-DEFAULT_MODE = FULL_ACCESS
+DEFAULT_MODE = WORKSPACE_WRITE
 CONFIG_KEY = "agent_permission_mode"
 _ALIASES = {
     "readonly": READ_ONLY, "read_only": READ_ONLY, "ro": READ_ONLY,

@@ -1,12 +1,14 @@
 import json
+import pytest
 
 from agent.permission.audit import recent
 from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
-from agent.permission.security_policy import legacy_policy, resolve
+from agent.permission.security_policy import (PRESETS, copy_custom, default_policy, effective_mode,
+                                              effective_rules, legacy_policy, resolve, rule, validate_patch)
 from agent.workspace import project_store, session_prefs
 
 
-def test_managed_skills_are_not_workspace_writes(tmp_path, monkeypatch):
+def test_managed_skills_require_dedicated_settings_flow(tmp_path, monkeypatch):
     state = tmp_path / "state"
     skills = state / "skills"
     project = tmp_path / "project"
@@ -21,10 +23,10 @@ def test_managed_skills_are_not_workspace_writes(tmp_path, monkeypatch):
     scope = Scope(write_roots=(str(project),))
     result = SecurityGateway.check("read-only", "write", {"path": str(skills / "example" / "SKILL.md")},
                                    cwd=str(project), scope=scope, policy=policy, session_id="skill")
-    assert result.kind is DecisionKind.ALLOW
+    assert result.kind is DecisionKind.DENY
     assert result.resource_kind.value == "agent-managed"
-    assert SecurityGateway.check("read-only", "edit", {"path": str(skills / "example" / "SKILL.md")},
-                                 cwd=str(project), scope=scope, policy=policy).allowed
+    assert not SecurityGateway.check("read-only", "edit", {"path": str(skills / "example" / "SKILL.md")},
+                                     cwd=str(project), scope=scope, policy=policy).allowed
     assert not SecurityGateway.check("read-only", "write", {"path": str(project / "user.py")},
                                      cwd=str(project), scope=scope, policy=policy).allowed
     assert not SecurityGateway.check("workspace-write", "write", {"path": str(other / "user.py")},
@@ -39,7 +41,7 @@ def test_managed_skills_are_not_workspace_writes(tmp_path, monkeypatch):
     assert "workspace_outside" in denied_read.reason
     rows = recent(filters={"conversation": "skill"})
     assert rows[0]["resource"] == "Agent Skill Store"
-    assert rows[0]["trace"][-1] == "Decision: allow"
+    assert rows[0]["trace"][-1] == "Decision: deny"
 
 
 def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch, security_audit_path):
@@ -77,11 +79,31 @@ def test_policy_inheritance_and_restart_persistence(tmp_path, monkeypatch):
     session_prefs.set_prefs("conversation", security_policy={"rules": {"network": "allow"}, "extra_roots": [str(tmp_path / "extra")]})
     global_value = {"preset": "standard", "rules": {"shell": "confirm"}, "connections": {}}
     effective = resolve("workspace-write", project_dir=str(project), session_id="conversation", global_value=global_value)
-    assert effective["rules"] == {"shell": "confirm", "network": "allow"}
+    assert effective["preset"] == "custom"
+    assert rule(effective, "shell") == "confirm"
+    assert rule(effective, "network") == "allow"
+    assert rule(effective, "install") == "confirm"
     assert effective["extra_roots"] == [str(tmp_path / "extra")]
     assert project_store.get_security_policy(str(project))["rules"]["network"] == "deny"
     assert json.loads((state / "projects.json").read_text())["meta"][str(project)]["security_policy"]["rules"]["network"] == "deny"
     assert json.loads((state / "session_prefs.json").read_text())["sessions"]["default::conversation"]["security_policy"]["rules"]["network"] == "allow"
+
+
+def test_four_modes_and_legacy_snapshots_are_stable():
+    assert list(PRESETS) == ["approval", "project-full", "full-access", "custom"]
+    assert default_policy()["preset"] == "project-full"
+    assert rule({"preset": "approval"}, "workspace_write") == "confirm"
+    assert rule({"preset": "project-full"}, "workspace_write") == "allow"
+    assert rule({"preset": "project-full"}, "workspace_outside") == "confirm"
+    assert rule({"preset": "full-access"}, "workspace_outside") == "allow"
+    for old, expected in (("strict", "deny"), ("standard", "allow"), ("custom", "allow")):
+        migrated = validate_patch({"preset": old})
+        assert migrated["preset"] == "custom"
+        assert rule(migrated, "workspace_write") == expected
+        assert validate_patch(migrated) == migrated
+    copied = copy_custom({"preset": "project-full", "rules": {"network": "deny"}})
+    assert copied["rules"] == effective_rules(copied)
+    assert effective_mode(copied) == "custom"
 
 
 def test_legacy_conversation_permission_is_migrated_once(tmp_path, monkeypatch):
@@ -93,14 +115,15 @@ def test_legacy_conversation_permission_is_migrated_once(tmp_path, monkeypatch):
         "model": "existing-model", "permission": "read-only", "ts": 1,
     }}}))
     prefs = session_prefs.get_prefs("old")
-    assert prefs["security_policy"]["preset"] == "strict"
+    assert prefs["security_policy"]["preset"] == "custom"
+    assert rule(prefs["security_policy"], "workspace_write") == "deny"
     assert prefs["model"] == "existing-model"
     stored = json.loads(path.read_text())["sessions"]["default::old"]
     assert "permission" not in stored
-    assert stored["security_policy"]["preset"] == "strict"
+    assert stored["security_policy"]["preset"] == "custom"
 
 
-def test_trusted_skill_initializer_works_under_strict_policy(tmp_path, monkeypatch):
+def test_trusted_skill_initializer_requires_dedicated_flow(tmp_path, monkeypatch):
     from pathlib import Path
     state = tmp_path / "state"
     skills = state / "skills"
@@ -112,8 +135,8 @@ def test_trusted_skill_initializer_works_under_strict_policy(tmp_path, monkeypat
     monkeypatch.setattr("common.state_dir.skills_dir", lambda *args, **kwargs: skills)
     script = Path(__file__).parents[1] / "skills" / "skill-creator" / "scripts" / "init_skill.py"
     command = f"python3 {script} my-skill --path {skills}"
-    assert SecurityGateway.check("read-only", "bash", {"command": command}, cwd=str(project),
-                                 scope=Scope(write_roots=(str(project),)), policy=legacy_policy("read-only")).allowed
+    assert not SecurityGateway.check("read-only", "bash", {"command": command}, cwd=str(project),
+                                     scope=Scope(write_roots=(str(project),)), policy=legacy_policy("read-only")).allowed
     assert SecurityGateway.check("read-only", "bash", {"command": command + "; rm -rf /"}, cwd=str(project),
                                  scope=Scope(write_roots=(str(project),)), policy=legacy_policy("read-only")).kind is DecisionKind.DENY
 
@@ -140,7 +163,8 @@ def test_security_api_persists_real_policy_and_returns_no_secret(tmp_path, monke
     assert saved["status"] == "success"
     assert json.loads(config_file.read_text())["security_policy"]["rules"]["network"] == "deny"
     overview = json.loads(channel.SecurityCenterHandler().GET())
-    assert overview["global_policy"]["preset"] == "strict"
+    assert overview["global_policy"]["preset"] == "custom"
+    assert rule(overview["global_policy"], "workspace_write") == "deny"
     assert overview["summary"]["app_password_set"] is True
     assert "TOPSECRET" not in json.dumps(overview)
 
@@ -153,6 +177,18 @@ def test_shell_does_not_inherit_backend_secret(tmp_path, monkeypatch):
     assert result.status == "success"
     assert "missing" in str(result.result)
     assert "TOPSECRET" not in str(result.result)
+
+
+def test_global_policy_save_failure_keeps_live_state(tmp_path, monkeypatch):
+    from agent.permission import center as security_center
+    import config as config_module
+    live = {"security_policy": {"preset": "approval", "rules": {}, "connections": {}}}
+    monkeypatch.setattr(config_module, "conf", lambda: live)
+    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(security_center, "_write_config", lambda *_: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        security_center.save_global_policy({"preset": "project-full", "rules": {}})
+    assert live["security_policy"]["preset"] == "approval"
 
 
 def test_file_search_and_send_cannot_expose_config_secret(tmp_path, monkeypatch):
@@ -175,7 +211,7 @@ def test_file_search_and_send_cannot_expose_config_secret(tmp_path, monkeypatch)
         pass
 
 
-def test_skill_write_edit_and_registry_under_read_only_project(tmp_path, monkeypatch):
+def test_skill_write_and_edit_blocked_from_generic_file_tools(tmp_path, monkeypatch):
     from agent.skills.manager import SkillManager
     from agent.tools.write.write import Write
     from agent.tools.edit.edit import Edit
@@ -203,14 +239,16 @@ def test_skill_write_edit_and_registry_under_read_only_project(tmp_path, monkeyp
     writer = Write({"cwd": str(project), "restrict_to_workspace": True})
     writer.context = ProjectAgent()
     content = "---\nname: example\ndescription: Example skill\n---\n# Example\nFirst version.\n"
-    assert writer.execute_tool({"path": str(target), "content": content}).status == "success"
+    assert writer.execute_tool({"path": str(target), "content": content}).status == "error"
+    target.parent.mkdir(parents=True)
+    target.write_text(content)
     editor = Edit({"cwd": str(project)})
     editor.context = ProjectAgent()
-    assert editor.execute_tool({"path": str(target), "oldText": "First version.", "newText": "Second version."}).status == "success"
+    assert editor.execute_tool({"path": str(target), "oldText": "First version.", "newText": "Second version."}).status == "error"
     manager = SkillManager(builtin_dir=str(tmp_path / "builtin"), custom_dir=str(skills))
     manager.refresh_skills()
     assert manager.get_skill("example") is not None
-    assert "Second version." in target.read_text()
+    assert "First version." in target.read_text()
     assert not (project / "SKILL.md").exists()
 
 
@@ -221,14 +259,17 @@ def test_project_git_and_network_rules_reach_execution(tmp_path, monkeypatch):
     monkeypatch.setattr("common.state_dir.state_root", lambda *args, **kwargs: state)
     monkeypatch.setattr("common.state_dir.skills_dir", lambda *args, **kwargs: state / "skills")
     strict = legacy_policy("read-only")
-    strict["rules"] = {"git": "allow", "network": "deny"}
+    strict["rules"].update({"git": "allow", "network": "deny"})
     scope = Scope(write_roots=(str(tmp_path),))
+    assert SecurityGateway.check("read-only", "bash", {"command": "git status"}, cwd=str(tmp_path),
+                                 scope=scope, policy=strict).kind is DecisionKind.DENY
+    strict["rules"]["shell"] = "allow"
     assert SecurityGateway.check("read-only", "bash", {"command": "git status"}, cwd=str(tmp_path),
                                  scope=scope, policy=strict).allowed
     assert SecurityGateway.check("read-only", "bash", {"command": "git clone https://example.com/repo"},
                                  cwd=str(tmp_path), scope=scope, policy=strict).kind is DecisionKind.DENY
     assert SecurityGateway.check("read-only", "bash", {"command": "python3 -c 'print(1)'"},
-                                 cwd=str(tmp_path), scope=scope, policy=strict).kind is DecisionKind.DENY
+                                 cwd=str(tmp_path), scope=scope, policy=strict).allowed
     standard = legacy_policy("workspace-write")
     standard["connections"] = {"browser": {"allowed": False, "scopes": ["*"]}}
     assert SecurityGateway.check("workspace-write", "browser", {"action": "navigate"},
@@ -299,6 +340,9 @@ def test_mcp_connection_scope_controls_registered_tools(tmp_path, monkeypatch):
     assert denied.kind is DecisionKind.DENY
     assert "scope create" in denied.reason
     policy["connections"]["mcp:github"]["scopes"] = ["create"]
+    pending = SecurityGateway.check("workspace-write", "create_issue", {"title": "Example"}, policy=policy)
+    assert pending.kind is DecisionKind.CONFIRM
+    assert SecurityGateway.approve(pending.request_id)
     assert SecurityGateway.check("workspace-write", "create_issue", {"title": "Example"}, policy=policy).allowed
     policy["connections"]["mcp:github"]["allowed"] = False
     assert SecurityGateway.check("workspace-write", "create_issue", {"title": "Example"}, policy=policy).kind is DecisionKind.DENY

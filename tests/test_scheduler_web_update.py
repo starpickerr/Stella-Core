@@ -53,7 +53,7 @@ def _post_update(tmp_path, payload):
     with patch("channel.desktop.desktop_channel._require_auth"), \
          patch("channel.desktop.desktop_channel.web.header"), \
          patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.desktop.desktop_channel._get_workspace_root", return_value=str(tmp_path)):
+         patch("channel.desktop.desktop_channel._get_state_root", return_value=str(tmp_path)):
         return json.loads(SchedulerUpdateHandler().POST())
 
 
@@ -193,7 +193,7 @@ def _post_create(tmp_path, payload):
     with patch("channel.desktop.desktop_channel._require_auth"), \
          patch("channel.desktop.desktop_channel.web.header"), \
          patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.desktop.desktop_channel._get_workspace_root", return_value=str(tmp_path)):
+         patch("channel.desktop.desktop_channel._get_state_root", return_value=str(tmp_path)):
         return json.loads(SchedulerHandler().POST())
 
 

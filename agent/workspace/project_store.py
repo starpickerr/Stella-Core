@@ -88,6 +88,7 @@ def _save(data: Dict) -> None:
         os.replace(tmp, path)
     except Exception as e:
         logger.warning(f"[ProjectStore] Could not write {path}: {e}")
+        raise
 
 
 def _normalize(path: str) -> str:

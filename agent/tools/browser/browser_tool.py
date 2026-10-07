@@ -19,6 +19,7 @@ import ipaddress
 import json
 import os
 import socket
+import threading
 from contextlib import nullcontext
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
@@ -118,6 +119,7 @@ class BrowserTool(BaseTool):
     }
 
     _shared_service: Optional[BrowserService] = None
+    _access_lock = threading.RLock()
 
     def __init__(self, config: dict = None):
         self.config = config or {}
@@ -298,8 +300,18 @@ class BrowserTool(BaseTool):
         try:
             service = self._get_service()
             scope = service.cancel_scope(self.cancel_event) if hasattr(service, "cancel_scope") else nullcontext()
-            with scope:
-                result = handler(self, args)
+            with self._access_lock, scope:
+                if hasattr(service, "set_authorized_roots"):
+                    from agent.permission.process_sandbox import current_policy_and_roots
+                    from agent.runtime.tool_invocation import approved_browser_file
+                    _, roots = current_policy_and_roots(self.cwd)
+                    selected = approved_browser_file(str(args.get("url") or ""))
+                    service.set_authorized_roots(roots, [selected] if selected else [])
+                try:
+                    result = handler(self, args)
+                finally:
+                    if hasattr(service, "set_authorized_roots"):
+                        service.set_authorized_roots((), ())
             if self.is_cancelled():
                 return ToolResult.fail("Browser operation cancelled")
             return result

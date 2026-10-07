@@ -14,7 +14,7 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     monkeypatch.setattr('agent.workspace.project_store.get_project_dir',lambda session,agent: str(project) if session=='source' else None)
     monkeypatch.setattr('agent.workspace.session_prefs.get_prefs',lambda *_: {'permission':'workspace-write'})
     monkeypatch.setattr('agent.runtime.tool_invocation.global_mode',lambda:'workspace-write')
-    monkeypatch.setattr(integration,'_resolve_workspace',lambda **_:str(workspace))
+    monkeypatch.setattr(integration,'_resolve_working_dir',lambda **_:str(workspace))
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:Write()))
     task={'id':'write','action':{'execution_session_id':source}}
@@ -22,6 +22,19 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     assert (tmp_path/folder/'scheduled-probe.txt').read_text()=='saved'
     assert not (tmp_path/('workspace' if folder=='project' else 'project')/'scheduled-probe.txt').exists()
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
+
+
+def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, monkeypatch):
+    from agent.runtime.run_record import RunRecord
+    monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path/'runs.db'))
+    monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial',
+                        lambda *_args, **_kwargs: 'Authorization required. Adjust the policy and rerun manually.')
+    monkeypatch.setattr(integration, '_resolve_working_dir', lambda **_: str(tmp_path))
+    monkeypatch.setattr('agent.tools.tool_manager.ToolManager',
+                        lambda: SimpleNamespace(create_tool=lambda _: pytest.fail('tool must not run')))
+    result = integration._run_scheduled_tool({'id':'pending', 'action':{}}, 'bash', {'command':'echo hi'},
+                                             None, None, None)
+    assert result.status == 'pending_approval' and not result.retryable
 
 
 def test_destination_change_preserves_source_and_cleans_old_fields(monkeypatch):

@@ -14,27 +14,68 @@ RULES = (
 )
 VALUES = {"allow", "confirm", "deny"}
 PRESETS = {
-    "strict": {"managed": "allow", "workspace_read": "allow", "workspace_write": "deny",
-               "workspace_outside": "deny", "shell": "deny", "git": "deny", "network": "confirm",
-               "install": "deny", "background": "deny", "external": "confirm", "high_risk": "confirm"},
-    "standard": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
-                 "workspace_outside": "deny", "shell": "allow", "git": "allow", "network": "allow",
+    "approval": {"managed": "allow", "workspace_read": "allow", "workspace_write": "confirm",
+                 "workspace_outside": "confirm", "shell": "confirm", "git": "confirm", "network": "allow",
                  "install": "confirm", "background": "confirm", "external": "allow", "high_risk": "confirm"},
-    "custom": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
-               "workspace_outside": "allow", "shell": "allow", "git": "allow", "network": "allow",
-               "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm"},
+    "project-full": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
+                     "workspace_outside": "confirm", "shell": "allow", "git": "allow", "network": "allow",
+                     "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm"},
+    "full-access": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
+                    "workspace_outside": "allow", "shell": "allow", "git": "allow", "network": "allow",
+                    "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm"},
 }
+PRESETS["custom"] = dict(PRESETS["project-full"])
+MODE_DEFINITIONS = [
+    {"id": "approval", "name": {"zh": "审批模式", "en": "Approval mode"},
+     "description": {"zh": "日常读取直接执行，修改和命令逐次确认。",
+                     "en": "Read normally; confirm changes and commands one at a time."}},
+    {"id": "project-full", "name": {"zh": "项目内完全访问", "en": "Full project access"},
+     "description": {"zh": "在当前工作区自主开发，重要外部操作需确认。",
+                     "en": "Work freely in this workspace; confirm important external actions."}},
+    {"id": "full-access", "name": {"zh": "完全访问", "en": "Full access"},
+     "description": {"zh": "扩大到项目外目录，重要外部操作仍需确认。",
+                     "en": "Access outside this project; important external actions still need approval."}},
+    {"id": "custom", "name": {"zh": "自定义", "en": "Custom"},
+     "description": {"zh": "从当前规则复制并按需调整，保存后生效。",
+                     "en": "Copy the current rules, adjust them, and apply on save."}},
+]
+for _mode in MODE_DEFINITIONS:
+    _mode["rules"] = dict(PRESETS[_mode["id"]])
+
+LEGACY_PRESETS = {
+    "strict": {**PRESETS["approval"], "workspace_write": "deny", "workspace_outside": "deny",
+               "shell": "deny", "git": "deny", "network": "confirm", "install": "deny",
+               "background": "deny", "external": "confirm"},
+    "standard": {**PRESETS["project-full"], "workspace_outside": "deny",
+                 "install": "confirm", "background": "confirm"},
+    "custom": {**PRESETS["full-access"]},
+}
+
+
+def default_policy() -> dict:
+    return {"preset": "project-full", "rules": {}, "connections": {}}
 
 
 def legacy_policy(mode: str) -> dict:
     preset = {READ_ONLY: "strict", WORKSPACE_WRITE: "standard", FULL_ACCESS: "custom"}.get(mode, "strict")
-    return {"preset": preset, "rules": {}, "connections": {}}
+    return {"preset": "custom", "base_preset": "project-full",
+            "rules": dict(LEGACY_PRESETS[preset]), "connections": {}}
+
+
+def _migrate_legacy(value: dict) -> dict:
+    """Old preset names become exact snapshots, so upgrades never widen access."""
+    if value.get("preset") not in LEGACY_PRESETS:
+        return value
+    snapshot = dict(LEGACY_PRESETS[value["preset"]])
+    snapshot.update(value.get("rules") or {})
+    return {**value, "preset": "custom", "base_preset": "project-full", "rules": snapshot}
 
 
 def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ValueError("security policy must be an object")
-    unknown = set(value) - {"preset", "rules", "connections", "extra_roots"}
+    value = _migrate_legacy(value)
+    unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"}
     if unknown:
         raise ValueError(f"unknown security policy fields: {', '.join(sorted(unknown))}")
     result = {}
@@ -42,6 +83,10 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
         if value["preset"] not in PRESETS:
             raise ValueError("unknown security preset")
         result["preset"] = value["preset"]
+    if "base_preset" in value:
+        if value["base_preset"] not in PRESETS or value["base_preset"] == "custom":
+            raise ValueError("unknown custom base preset")
+        result["base_preset"] = value["base_preset"]
     if "rules" in value:
         rules = value["rules"]
         if not isinstance(rules, dict) or any(k not in RULES or v not in VALUES for k, v in rules.items()):
@@ -73,6 +118,8 @@ def merge(base: dict, patch: dict) -> dict:
         if patch["preset"] != result.get("preset"):
             result["rules"] = {}
         result["preset"] = patch["preset"]
+    if "base_preset" in patch:
+        result["base_preset"] = patch["base_preset"]
     for key in ("rules", "connections"):
         result.setdefault(key, {}).update(deepcopy(patch.get(key) or {}))
     if "extra_roots" in patch:
@@ -86,18 +133,20 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
     if global_value is None:
         from config import conf
         global_value = conf().get("security_policy")
-    base = legacy_policy(mode)
+    base = default_policy()
     if isinstance(global_value, dict):
         try:
             base = merge(base, validate_patch(global_value, global_policy=True))
         except ValueError:
-            return legacy_policy(READ_ONLY)
+            return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                    "connections": {}, "error": "Global security policy is invalid."}
     if project_dir:
         from agent.workspace import project_store
         try:
             base = merge(base, validate_patch(project_store.get_security_policy(project_dir)))
         except ValueError:
-            return legacy_policy(READ_ONLY)
+            return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                    "connections": {}, "error": "Project security policy is invalid."}
     if session_id:
         from agent.workspace import session_prefs
         pref = session_prefs.get_prefs(session_id, agent_id)
@@ -105,12 +154,54 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
             try:
                 base = merge(base, validate_patch(pref["security_policy"]))
             except ValueError:
-                return legacy_policy(READ_ONLY)
+                return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                        "connections": {}, "error": "Conversation security policy is invalid."}
     return base
 
 
 def rule(policy: dict, name: str) -> str:
-    return policy.get("rules", {}).get(name, PRESETS[policy.get("preset", "standard")][name])
+    preset = policy.get("preset", "project-full")
+    if preset == "custom":
+        preset = policy.get("base_preset", "project-full")
+    return policy.get("rules", {}).get(name, PRESETS.get(preset, PRESETS["approval"])[name])
+
+
+def effective_rules(policy: dict) -> dict:
+    return {name: rule(policy, name) for name in RULES}
+
+
+def effective_mode(policy: dict) -> str:
+    preset = policy.get("preset", "project-full")
+    if preset not in PRESETS or preset == "custom":
+        return "custom"
+    return "custom" if effective_rules(policy) != PRESETS[preset] else preset
+
+
+def copy_custom(policy: dict) -> dict:
+    base = policy.get("preset", "project-full")
+    if base == "custom":
+        base = policy.get("base_preset", "project-full")
+    return {"preset": "custom", "base_preset": base,
+            "rules": effective_rules(policy),
+            "connections": deepcopy(policy.get("connections") or {}),
+            **({"extra_roots": list(policy["extra_roots"])} if "extra_roots" in policy else {})}
+
+
+def intersect(current: dict, ceiling: dict) -> dict:
+    """A child run can only keep or reduce each parent permission."""
+    order = {"deny": 0, "confirm": 1, "allow": 2}
+    rules = {name: min((rule(current, name), rule(ceiling, name)), key=order.get) for name in RULES}
+    connections = deepcopy(current.get("connections") or {})
+    for name, parent in (ceiling.get("connections") or {}).items():
+        child = connections.get(name, {})
+        scopes = child.get("scopes") or []
+        parent_scopes = parent.get("scopes") or []
+        if parent_scopes and "*" not in parent_scopes:
+            scopes = parent_scopes if not scopes or "*" in scopes else [scope for scope in scopes if scope in parent_scopes]
+        connections[name] = {"allowed": parent.get("allowed", True) and child.get("allowed", True),
+                             "scopes": scopes}
+    return {"preset": "custom", "base_preset": "project-full", "rules": rules,
+            "connections": connections}
 
 
 def describe(policy: dict, language: str = "zh", workspace: str | None = None,

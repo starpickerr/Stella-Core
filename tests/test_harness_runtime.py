@@ -183,6 +183,9 @@ def test_business_commands_check_current_permissions_before_admission(tmp_path, 
     import pytest
     monkeypatch.setattr('application.operations.user_root', lambda: tmp_path)
     monkeypatch.setattr('agent.runtime.tool_invocation.global_mode', lambda: 'read-only')
+    from agent.permission.security_policy import legacy_policy
+    monkeypatch.setattr('agent.permission.security_policy.resolve',
+                        lambda *args, **kwargs: legacy_policy('read-only'))
     port = object()
     monkeypatch.setattr(Application, 'port', lambda *_: port)
     with pytest.raises(PermissionError):

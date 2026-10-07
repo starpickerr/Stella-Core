@@ -51,7 +51,7 @@ def credential_denial_message(absolute_path: str) -> str:
 
 def protected_credential_paths() -> set[str]:
     from config import get_data_root, get_weixin_credentials_path
-    from common.state_dir import mcp_config_file, shared_root
+    from common.state_dir import mcp_config_file, shared_root, state_root
     from agent.briefing import elearning_settings
     elearning_config = elearning_settings.settings_path()
     return {os.path.realpath(path) for path in (
@@ -60,6 +60,11 @@ def protected_credential_paths() -> set[str]:
         get_weixin_credentials_path(),
         str(mcp_config_file()),
         str(shared_root() / ".env"),
+        str(shared_root() / "session_prefs.json"),
+        str(shared_root() / "projects.json"),
+        str(state_root() / "AGENT.md"),
+        str(state_root() / "RULE.md"),
+        str(state_root() / "BOOTSTRAP.md"),
         str(elearning_config),
     )}
 
