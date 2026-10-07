@@ -304,7 +304,8 @@ def test_headless_auto_login_retries_transient_verification_without_connection_t
     page = context.new_page.return_value
     page.url = "https://id.fudan.edu.cn/login"
     page.is_closed.return_value = False
-    page.get_by_role.return_value.click.side_effect = lambda **kwargs: setattr(page, "url", BASE)
+    # Playwright only delivers the SSO redirect while its sync API is pumping events.
+    page.wait_for_timeout.side_effect = lambda _: setattr(page, "url", BASE)
     context.cookies.return_value = []
     playwright = MagicMock()
     playwright.__enter__.return_value.chromium.launch.return_value = browser
@@ -322,7 +323,29 @@ def test_headless_auto_login_retries_transient_verification_without_connection_t
 
     assert verified.get.call_count == 2
     save.assert_called_once()
+    page.wait_for_timeout.assert_called()
+    event.wait.assert_not_called()
     assert playwright.__enter__.return_value.chromium.launch.call_args.kwargs["headless"] is True
+    browser.close.assert_called_once()
+
+
+def test_headless_auto_login_can_cancel_during_browser_wait(config_path):
+    from agent.briefing.elearning import client as canvas_module
+
+    browser = Mock()
+    page = browser.new_context.return_value.new_page.return_value
+    page.url = "https://id.fudan.edu.cn/login"
+    page.is_closed.return_value = False
+    event = threading.Event()
+    page.wait_for_timeout.side_effect = lambda _: event.set()
+    playwright = MagicMock()
+    playwright.__enter__.return_value.chromium.launch.return_value = browser
+
+    with patch("playwright.sync_api.sync_playwright", return_value=playwright):
+        with pytest.raises(SyncCancelled):
+            canvas_module.login(config(), cancel_event=event)
+
+    page.wait_for_timeout.assert_called_once_with(250)
     browser.close.assert_called_once()
 
 
