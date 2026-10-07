@@ -109,6 +109,17 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         else:
             argv = [executable, "--die-with-parent", "--bind", "/", "/", "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev", "--chdir", cwd, "--", "/bin/sh", "-c", command]
+        # Hide control data inside the mount namespace even in full-access
+        # mode. The tool gate also rejects direct requests for these paths,
+        # but a script must not be able to read them indirectly.
+        sandbox_options = []
+        for path in files:
+            if os.path.isfile(path):
+                sandbox_options.extend(["--ro-bind", "/dev/null", os.path.realpath(path)])
+        for path in folders:
+            if os.path.isdir(path):
+                sandbox_options.extend(["--tmpfs", os.path.realpath(path)])
+        argv[argv.index("--"):argv.index("--")] = sandbox_options
     return ProcessPlan(argv, False, temp_dir, "enabled")
 
 

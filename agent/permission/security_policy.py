@@ -149,7 +149,11 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
                     "connections": {}, "error": "Project security policy is invalid."}
     if session_id:
         from agent.workspace import session_prefs
-        pref = session_prefs.get_prefs(session_id, agent_id)
+        try:
+            pref = session_prefs.get_prefs(session_id, agent_id)
+        except ValueError:
+            return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                    "connections": {}, "error": "Conversation security preferences are invalid."}
         if pref.get("security_policy"):
             try:
                 base = merge(base, validate_patch(pref["security_policy"]))

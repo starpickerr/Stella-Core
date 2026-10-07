@@ -54,11 +54,12 @@ def _load() -> Dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f) or {}
+        if not isinstance(data, dict) or not isinstance(data.get("sessions", {}), dict):
+            raise ValueError("invalid session preferences structure")
     except Exception as e:
         logger.warning(f"[SessionPrefs] Could not read {path}: {e}")
-        return {"sessions": {}}
-    if not isinstance(data.get("sessions"), dict):
-        data["sessions"] = {}
+        raise ValueError(f"Session preferences are invalid: {e}") from e
+    data.setdefault("sessions", {})
     from agent.permission.security_policy import legacy_policy
     changed = False
     for entry in data["sessions"].values():

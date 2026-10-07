@@ -191,6 +191,22 @@ def test_global_policy_save_failure_keeps_live_state(tmp_path, monkeypatch):
     assert live["security_policy"]["preset"] == "approval"
 
 
+def test_corrupt_scoped_stores_fail_closed_and_report_error(tmp_path, monkeypatch):
+    from agent.runtime.tool_invocation import permission_denial
+    from common.runtime_identity import identity_scope
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
+    (tmp_path / "projects.json").write_text("{broken", encoding="utf-8")
+    with identity_scope(session_id="corrupt-project"):
+        assert "Permission check failed" in permission_denial("write", {"path": "note.txt", "content": "x"})
+    with pytest.raises(ValueError, match="Project store is invalid"):
+        project_store.get_project_dir("corrupt-project")
+    (tmp_path / "projects.json").unlink()
+    (tmp_path / "session_prefs.json").write_text("{broken", encoding="utf-8")
+    policy = resolve("workspace-write", session_id="corrupt-session")
+    assert policy["error"] == "Conversation security preferences are invalid."
+    assert all(value == "deny" for value in effective_rules(policy).values())
+
+
 def test_file_search_and_send_cannot_expose_config_secret(tmp_path, monkeypatch):
     from agent.tools.search_files.search_files import SearchFiles
     from agent.tools.send.send import Send
