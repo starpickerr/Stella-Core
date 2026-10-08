@@ -499,6 +499,7 @@ export interface ModelProvider {
   is_custom: boolean
   custom_id?: string
   custom_name?: string
+  model?: string
   active?: boolean
   api_key_field?: string | null
   api_base_field?: string | null
@@ -581,7 +582,7 @@ export interface ModelsData {
 export type ModelsAction =
   | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string }
   | { action: 'delete_provider'; provider_id: string }
-  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; protocol_id?: string; make_active?: boolean }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; models?: string[]; protocol_id?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
   | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; protocol_id?: string; voice?: string; strategy?: string; provider?: string }
