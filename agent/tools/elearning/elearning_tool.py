@@ -27,7 +27,7 @@ class ElearningTool(BaseTool):
         "fetch 默认读取设置中已选课程，未选择时读取全部可访问课程；可用 course_ids 指定。"
         "默认窗口为本地昨日20点至现在，"
         "也可指定 since/until；offset/limit 分页。"
-        "action='sync_files' 将已选课程的文件批量保存到 eLearning 设置中明确授权的目录，"
+        "action='sync_files' 将已选课程的文件批量保存到 Agent 设置中明确授权的目录，"
         "可用 course_ids/file_ids/file_extensions 筛选，offset/limit 分批；"
         "layout='courseware' 保存到课程中文名/课件/原始文件名，默认 managed 兼容旧布局；"
         "需先开启文件同步并选择目录和课程。"
@@ -179,7 +179,7 @@ class ElearningTool(BaseTool):
         from agent.briefing.elearning.file_sync import sync_files
 
         if not cfg.get("file_sync_enabled") or not cfg.get("file_sync_root"):
-            raise ValueError("请先在 eLearning 设置中开启文件同步，并选择保存目录")
+            raise ValueError("请先在 Agent 设置中开启课件保存，并选择保存目录")
         if not cfg.get("courses"):
             raise ValueError("请先在 eLearning 设置中选择允许保存文件的课程")
         layout = params.get("layout", "managed")

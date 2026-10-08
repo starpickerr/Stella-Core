@@ -139,6 +139,37 @@ def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test
         assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
 
 
+def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path):
+    from agent.briefing import elearning_settings
+    root = tmp_path / "course-files"
+    root.mkdir()
+    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
+        created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
+            "base_url": "https://elearning.fudan.edu.cn", "username": "student",
+            "password": "campus-secret", "courses": ["42"]})
+        assert created["status"] == "success"
+        forbidden = call(web_channel.BriefingElearningHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        assert forbidden["status"] == "error"
+        assert elearning_settings.load_settings()["file_sync_enabled"] is False
+
+        granted = call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        assert granted["status"] == "success"
+        assert granted["settings"]["file_sync_root"] == str(root)
+        saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
+        assert saved["settings"]["file_sync_enabled"] is True
+        call(web_channel.BriefingElearningHandler, body={"enabled": False})
+        assert elearning_settings.load_settings()["file_sync_enabled"] is True
+        call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
+        assert elearning_settings.load_settings()["file_sync_enabled"] is False
+        call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        revoked = call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": False, "file_sync_root": str(root)})
+        assert revoked["settings"]["file_sync_enabled"] is False
+
+
 @pytest.mark.parametrize("handler,body", [
     (web_channel.BriefingRunHandler, {"briefing_date": "invalid"}),
     (web_channel.BriefingRulesHandler, {"match_value": ""}),
