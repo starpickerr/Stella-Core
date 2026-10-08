@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from datetime import datetime, timezone
 
 from common.log import logger
 
 from agent.briefing.elearning.client import ensure_login
-from agent.briefing.elearning.courses import course_list, select_courses, list_files
+from agent.briefing.elearning.courses import course_list, select_courses, list_files, list_recent_files
 from agent.briefing.elearning.documents import announcement, assignment_document, quiz, grade, course_grade
 from agent.briefing.elearning.errors import LoginRequired, SyncCancelled, SyncError
 from agent.briefing.elearning.utils import parse_date
@@ -26,7 +25,8 @@ class ElearningSource:
         self.account_id = account_id(config)
         self.display_name = "eLearning · " + config["username"]
         self.client_factory = client_factory
-        self.auto_sync_files = auto_sync_files
+        # Keep the constructor argument for older callers. File downloads are
+        # now exclusively initiated by the Agent's elearning sync_files tool.
         self.cancel_event = cancel_event
         self.on_items_ready = on_items_ready
         self.briefing_only = briefing_only
@@ -43,16 +43,14 @@ class ElearningSource:
                   else ensure_login(self.config, cancel_event=self.cancel_event))
         courses = select_courses(course_list(client), self.config["courses"])
         self._check_cancelled()
-        profile = None
-        if not self.briefing_only:
-            profile, _ = client.get("/api/v1/users/self/profile")
-            self._check_cancelled()
+        profile, _ = client.get("/api/v1/users/self/profile")
+        self._check_cancelled()
         old = json.loads(cursors.get("elearning_state") or "{}")
         state = dict(old)
         start, end = parse_date(cursors.get("since")), parse_date(cursors.get("until"))
         observed = end or datetime.now(timezone.utc)
         items, errors, quiz_not_found = [], [], []
-        course_files = []
+        assignments_by_course = {}
         reads = 0
 
         def add(course, kind, raw, title, body, url, sender="", actionable=False):
@@ -103,7 +101,8 @@ class ElearningSource:
             nonlocal reads
             self._check_cancelled()
             try:
-                rows, warnings = list_files(client, course["id"])
+                rows, warnings = (list_recent_files(client, course["id"], start) if self.briefing_only
+                                  else list_files(client, course["id"]))
                 reads += 1
                 errors.extend("{}：{}".format(course["name"], warning) for warning in warnings)
                 return [row for row in rows if not row.get("hidden_for_user")]
@@ -113,15 +112,13 @@ class ElearningSource:
                 errors.append("{} / files：{}".format(course["name"], exc))
                 return []
 
+        # Publish the small, actionable assignment set before scanning the
+        # potentially large announcement and file catalogs. The pipeline can
+        # update its draft while the remaining metadata is still loading.
         for course in courses:
             self._check_cancelled()
-            if not self.briefing_only:
-                for raw in read(course, "discussion_topics", {"only_announcements": "true"}):
-                    self._check_cancelled()
-                    document = announcement(client, course, raw)
-                    add(course, "announcement", raw, document.title, document.text, document.url,
-                        (raw.get("author") or {}).get("display_name", ""))
             assignments = read(course, "assignments", {"include[]": ["submission", "submission_comments"]})
+            assignments_by_course[str(course["id"])] = assignments
             for raw in assignments:
                 self._check_cancelled()
                 page = raw.get("html_url") or "{}/courses/{}/assignments/{}".format(client.base, course["id"], raw["id"])
@@ -135,27 +132,40 @@ class ElearningSource:
                 if raw.get("submission") and ((raw["submission"].get("graded_at")) or raw["submission"].get("submission_comments")):
                     document = grade(client, course, raw)
                     add(course, "grade", raw, document.title + " · 评分", document.text, document.url)
-            if not self.briefing_only:
-                known_quizzes = {str(row["quiz_id"]) for row in assignments if row.get("quiz_id")}
-                known_quiz_assignments = {str(row["id"]) for row in assignments if row.get("is_quiz_assignment") or row.get("quiz_id")}
-                for raw in read(course, "quizzes"):
-                    self._check_cancelled()
-                    if str(raw["id"]) in known_quizzes or str(raw.get("assignment_id")) in known_quiz_assignments:
-                        continue
-                    document = quiz(client, course, raw)
-                    add(course, "quiz", raw, document.title, document.text, document.url, actionable=True)
-                for raw in files(course):
-                    self._check_cancelled()
-                    title = raw.get("display_name") or raw.get("filename") or "课程文件"
-                    page = "{}/courses/{}/files/{}".format(client.base, course["id"], raw["id"])
-                    body = "课程：{}\n文件：{}\n大小：{} 字节\n更新时间：{}\n原页面：{}".format(
-                        course["name"], title, raw.get("size", "未提供"), raw.get("updated_at") or raw.get("modified_at") or "未提供", page)
-                    add(course, "file", raw, title, body, page)
-                    course_files.append((course, raw))
-                for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
-                    self._check_cancelled()
-                    document = course_grade(client, course, raw)
-                    add(course, "course_grade", raw, document.title, document.text, document.url)
+            logger.info("[Briefing] eLearning assignments read course=%s count=%d", course["id"], len(assignments))
+            if self.on_items_ready is not None:
+                self.on_items_ready(list(items))
+
+        for course in courses:
+            self._check_cancelled()
+            for raw in read(course, "discussion_topics", {"only_announcements": "true"}):
+                self._check_cancelled()
+                document = announcement(client, course, raw)
+                add(course, "announcement", raw, document.title, document.text, document.url,
+                    (raw.get("author") or {}).get("display_name", ""))
+            assignments = assignments_by_course[str(course["id"])]
+            known_quizzes = {str(row["quiz_id"]) for row in assignments if row.get("quiz_id")}
+            known_quiz_assignments = {str(row["id"]) for row in assignments if row.get("is_quiz_assignment") or row.get("quiz_id")}
+            for raw in read(course, "quizzes"):
+                self._check_cancelled()
+                if str(raw["id"]) in known_quizzes or str(raw.get("assignment_id")) in known_quiz_assignments:
+                    continue
+                document = quiz(client, course, raw)
+                add(course, "quiz", raw, document.title, document.text, document.url, actionable=True)
+            for raw in files(course):
+                self._check_cancelled()
+                title = raw.get("display_name") or raw.get("filename") or "课程文件"
+                page = "{}/courses/{}/files/{}".format(client.base, course["id"], raw["id"])
+                body = "课程：{}\n文件：{}\n大小：{} 字节\n更新时间：{}\n原页面：{}".format(
+                    course["name"], title, raw.get("size", "未提供"), raw.get("updated_at") or raw.get("modified_at") or "未提供", page)
+                add(course, "file", raw, title, body, page)
+            for raw in read(course, "enrollments", {"user_id": str(profile["id"]), "type[]": "StudentEnrollment"}):
+                self._check_cancelled()
+                document = course_grade(client, course, raw)
+                add(course, "course_grade", raw, document.title, document.text, document.url)
+            logger.info("[Briefing] eLearning metadata read course=%s candidates=%d", course["id"], len(items))
+            if self.on_items_ready is not None:
+                self.on_items_ready(list(items))
         if quiz_not_found:
             # Some courses do not expose a standalone quizzes endpoint. The
             # assignments endpoint can still contain quiz assignments, and
@@ -163,22 +173,6 @@ class ElearningSource:
             logger.info("[Briefing] quizzes endpoint unavailable for %s courses", len(quiz_not_found))
         if not reads and errors:
             raise SyncError("；".join(errors))
-        # File downloads can take minutes. Let the briefing Agent work with
-        # the fully read course metadata while the configured sync continues.
-        if self.on_items_ready is not None:
-            self.on_items_ready(list(items))
-        if not self.briefing_only and self.auto_sync_files and self.config.get("file_sync_enabled"):
-            from agent.briefing.elearning.file_sync import sync_files
-            # Briefing auto-sync shares the same human-readable courseware
-            # layout as the Agent's explicit sync, avoiding a second set of
-            # ID-suffixed course folders in the selected workspace.
-            sync_started = time.monotonic()
-            logger.info("[Briefing] courseware sync started files=%d", len(course_files))
-            sync_errors = sync_files(client, self.config, course_files,
-                                     cancel_event=self.cancel_event, layout="courseware")
-            logger.info("[Briefing] courseware sync finished files=%d errors=%d elapsed=%.1fs",
-                        len(course_files), len(sync_errors), time.monotonic() - sync_started)
-            errors.extend(sync_errors)
         # Partial reads do not advance source state, so inaccessible resources
         # remain eligible when permissions/network recover.
         return FetchResult(items, {} if errors else {"elearning_state": json.dumps(state, ensure_ascii=False)}, errors)
