@@ -153,6 +153,12 @@ def validate_body(payload, expected):
     if not isinstance(payload, dict) or not isinstance(payload.get("body"), str) or not payload["body"].strip():
         raise ValueError("请提交非空的 Markdown 简报正文")
     _ids_exact(payload.get("source_item_ids"), expected)
+    reports = payload.get("reports")
+    if not isinstance(reports, list) or any(not isinstance(row, dict) for row in reports):
+        raise ValueError("请逐条提交完整报告")
+    _ids_exact([row.get("id") for row in reports], expected)
+    if any(not isinstance(row.get("content"), str) or not row["content"].strip() for row in reports):
+        raise ValueError("每条报告必须包含具体内容")
 
 
 def _batches(entries):
@@ -237,7 +243,7 @@ class AgentBriefingGenerator:
                     }, "required": ["id", "selected", "reason"],
                 }}}, "required": ["decisions"],
             }, lambda payload, expected=ids: validate_decisions(payload, expected))
-            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。给出 category 和 information_type；只有会议/活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交、评分等同事务完成。\n" + json.dumps({
+            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。给出 category 和 information_type；reason 须说明保留原因，以及为什么需要处理、只需关注或等待。只有会议/活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交、评分等同事务完成。\n" + json.dumps({
                 "window_start": window_start, "window_end": window_end, "candidates": batch,
             }, ensure_ascii=False), rule_text, tool, [row for row in entries if row["id"] in ids])
             decisions.update({row["id"]: row for row in result["decisions"]})
@@ -254,18 +260,38 @@ class AgentBriefingGenerator:
                 kept.append(SelectedCandidate(replace(item, snippet=decision["summary"]),
                                               decision["section"], decision["score"]))
         ranked = sorted(_merge_threads(kept), key=_sort_key)
+        members_by_thread = {}
+        for row in kept:
+            member = row.item
+            key = (member.source, member.account_id, member.thread_id or member.source_id)
+            members_by_thread.setdefault(key, []).append({
+                "id": member.id,
+                "title": member.title, "sender": member.sender, "occurred_at": member.occurred_at,
+                "url": member.url, "summary": member.snippet,
+                "body": str(member.payload.get("body") or member.snippet),
+                "reason": decisions[member.id]["reason"],
+            })
+        for members in members_by_thread.values():
+            members.sort(key=lambda member: member["occurred_at"])
         cards = [{"source_item_id": row.item.id, "section": row.section, "score": row.score,
                   "snippet": row.item.snippet, "sort_order": index,
-                  **{key: getattr(row.item, key) for key in ("source", "account_id", "source_id", "thread_id", "sender", "title", "occurred_at", "url", "payload")}}
+                  **{key: getattr(row.item, key) for key in ("source", "account_id", "source_id", "thread_id", "sender", "title", "occurred_at", "url")},
+                  "payload": {**row.item.payload, "_briefing_reason": decisions[row.item.id]["reason"],
+                              "_briefing_members": members_by_thread[(row.item.source, row.item.account_id,
+                                                                        row.item.thread_id or row.item.source_id)]}}
                  for index, row in enumerate(ranked)]
         summaries = [{"id": row.item.id, "source": row.item.source, "sender": row.item.sender,
                       "title": row.item.title, "summary": row.item.snippet, "section": row.section,
                       "occurred_at": row.item.occurred_at,
                       "body_preview": entries_by_id[row.item.id]["body"][:2000],
                       "body_length": len(entries_by_id[row.item.id]["body"]),
+                      "members": [{**{key: value for key, value in member.items() if key != "body"},
+                                   "body_preview": member["body"][:2000], "body_length": len(member["body"])}
+                                  for member in members_by_thread[(row.item.source, row.item.account_id,
+                                                                   row.item.thread_id or row.item.source_id)]],
                       "metadata": {key: value for key, value in row.item.payload.items() if key != "body"}}
                      for row in ranked]
-        parts = []
+        parts, reports = [], {}
         for number, batch in enumerate(list(_batches(summaries)) or [[]], 1):
             if self.progress:
                 self.progress(f"Agent 正在撰写第 {number} 批简报内容")
@@ -273,18 +299,25 @@ class AgentBriefingGenerator:
             tool = ResultTool("briefing_body_result", {"type": "object", "properties": {
                 "body": {"type": "string", "description": "按规则文稿撰写的 Markdown 正文，覆盖本批所有事项"},
                 "source_item_ids": {"type": "array", "items": {"type": "string"}},
-            }, "required": ["body", "source_item_ids"]}, lambda payload, expected=ids: validate_body(payload, expected))
+                "reports": {"type": "array", "items": {"type": "object", "properties": {
+                    "id": {"type": "string"}, "content": {"type": "string", "description": "该条目的完整 AI 报告，包含事实、变化、截止时间和建议"},
+                }, "required": ["id", "content"]}},
+            }, "required": ["body", "source_item_ids", "reports"]}, lambda payload, expected=ids: validate_body(payload, expected))
             result = self._run_agent("依据规则撰写完整报告，调用 briefing_body_result；不要重复每日大标题。"
                 "覆盖本批每项精选信息，按主题组织来源事实、关键变化、时间与截止要求、用户需要决定或执行的事项，并明确区分事实和判断。"
+                "同时为每个条目提交 reports：逐条写出完整内容，合并线程须覆盖所有精选成员；不要只复制来源正文或一句摘要。"
                 "不要机械复制来源全文；材料不足时使用 read_briefing_source 查看原文，不得编造缺失信息。"
                 "不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
                     "date": briefing_date, "window_start": window_start, "window_end": window_end, "items": batch,
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
                 }, ensure_ascii=False), rule_text, tool, read_entries=entries)
             parts.append(result["body"].strip())
+            reports.update({row["id"]: row["content"].strip() for row in result["reports"]})
             if self.progress:
                 self.progress(f"Agent 已完成第 {number} 批简报正文")
         self._check_cancelled()
+        for card in cards:
+            card["payload"]["_briefing_report"] = reports[card["source_item_id"]]
         return {"title": briefing_title(briefing_date, kind),
                 "body": "\n\n".join(parts),
                 "items": cards, "mail": mail, "rule_text": rule_text}

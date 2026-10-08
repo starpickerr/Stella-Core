@@ -65,6 +65,7 @@ class DeterministicBriefingModel:
             arguments = {
                 "body": "## 需处理\n" + "\n".join(f"- {row['summary']}" for row in data["items"]) if data["items"] else "今日无要事。",
                 "source_item_ids": [row["id"] for row in data["items"]],
+                "reports": [{"id": row["id"], "content": row["summary"]} for row in data["items"]],
             }
             name = "briefing_body_result"
         yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "briefing-test-call",
