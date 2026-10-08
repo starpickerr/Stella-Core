@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -12,6 +12,10 @@ from agent.calendar import CalendarService
 from agent.permission.gateway import SecurityGateway
 check_tool_call = SecurityGateway.check
 from agent.todos import TodoService
+from agent.scheduler.store import TaskStore
+from agent.scheduler.automation_store import AutomationStore
+from application import Application, RequestContext
+from common.runtime_identity import identity_scope
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.tool_manager import ToolManager
 
@@ -142,6 +146,94 @@ def test_independent_reminder_can_be_rescheduled_and_cancelled(service):
     assert len(second) == 1 and second[0]["delivery_id"] != first[0]["delivery_id"]
     service.change_todo_status(todo["id"], "cancelled")
     assert service.claim_desktop_reminders(datetime.fromisoformat("2026-10-02T01:02:00+00:00")) == []
+
+
+def test_explicit_reminder_creates_and_updates_linked_scheduler_task(tmp_path):
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db", scheduler_store=store)
+    first = (datetime.now(timezone.utc) + timedelta(hours=2)).replace(microsecond=0).isoformat()
+    second = (datetime.now(timezone.utc) + timedelta(hours=3)).replace(microsecond=0).isoformat()
+    todo = service.create_todo({"title": "交作业", "remind_at": first})
+    linked = store.get_task(todo["scheduler_task_id"])
+    assert linked["linked_todo_id"] == todo["id"]
+    assert linked["schedule"] == {"type": "once", "run_at": first}
+    assert linked["action"]["params"] == [todo["id"], first]
+    assert not todo["reminder_sync_pending"]
+    assert not service.queue_scheduled_reminder(todo["id"], first)
+
+    updated = service.update_todo(todo["id"], {"title": "提交报告", "remind_at": second})
+    linked = store.get_task(updated["scheduler_task_id"])
+    assert linked["name"] == "事务提醒：提交报告"
+    assert linked["schedule"]["run_at"] == second
+    assert not service.queue_scheduled_reminder(todo["id"], first, now=datetime.now(timezone.utc) + timedelta(hours=4))
+    assert service.queue_scheduled_reminder(todo["id"], second, now=datetime.now(timezone.utc) + timedelta(hours=4))
+    assert service.queue_scheduled_reminder(todo["id"], second, now=datetime.now(timezone.utc) + timedelta(hours=4))
+    deliveries = service.claim_desktop_reminders(datetime.now(timezone.utc) + timedelta(hours=4))
+    assert len(deliveries) == 1 and deliveries[0]["todo_id"] == todo["id"]
+
+    service.change_todo_status(todo["id"], "completed")
+    assert store.get_task(linked["id"]) is None
+    assert service.get_todo(todo["id"])["scheduler_task_id"] is None
+    restored = service.change_todo_status(todo["id"], "todo")
+    assert restored["scheduler_task_id"] == linked["id"]
+    parent = service.create_todo({"title": "大事务"})
+    child = service.add_subtask(parent["id"], {"title": "子事务", "remind_at": first})
+    assert store.get_task(child["scheduler_task_id"])
+    service.delete_todo(parent["id"])
+    assert store.get_task(child["scheduler_task_id"]) is None
+
+
+def test_scheduler_link_retries_after_store_failure(tmp_path):
+    class FlakyStore(TaskStore):
+        fail = True
+
+        def add_task(self, task):
+            if self.fail:
+                raise OSError("scheduler unavailable")
+            return super().add_task(task)
+
+    store = FlakyStore(str(tmp_path / "scheduler" / "tasks.json"))
+    path = tmp_path / "todos.db"
+    service = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = service.create_todo({"title": "稍后提醒", "remind_at": reminder})
+    assert todo["reminder_sync_pending"]
+    assert store.get_task(todo["scheduler_task_id"]) is None
+    store.fail = False
+    reopened = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    assert store.get_task(todo["scheduler_task_id"])
+    assert not reopened.get_todo(todo["id"])["reminder_sync_pending"]
+
+
+def test_existing_explicit_reminder_is_linked_on_upgrade(tmp_path):
+    path = tmp_path / "todos.db"
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    original = TodoService(path, tmp_path / "calendar.db")
+    todo = original.create_todo({"title": "旧事务", "remind_at": reminder})
+    assert todo["scheduler_task_id"]
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    upgraded = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    assert store.get_task(todo["scheduler_task_id"])["schedule"]["run_at"] == reminder
+    assert not upgraded.get_todo(todo["id"])["reminder_sync_pending"]
+
+
+def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path):
+    with identity_scope(user_id="student-a"):
+        store = AutomationStore(tmp_path / "scheduler" / "tasks.json", "default")
+        service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db", scheduler_store=store)
+        reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        todo = service.create_todo({"title": "提交课程作业", "remind_at": reminder})
+        linked = store.get_task(todo["scheduler_task_id"])
+        assert linked["owner_user_id"] == "student-a"
+        with patch.object(Application, "port", return_value=service):
+            with pytest.raises(PermissionError, match="reserved for scheduler"):
+                Application.command("todos", "QueueTodoReminder", [todo["id"], reminder],
+                                    RequestContext(source="desktop", user_id="student-a"))
+            result = Application.command("todos", "QueueTodoReminder", [todo["id"], reminder],
+                                         RequestContext(source="scheduler", user_id="student-a"))
+            assert result["value"] is False  # The scheduler has not reached the time yet.
+    with identity_scope(user_id="student-b"):
+        assert store.get_task(todo["scheduler_task_id"]) is None
 
 
 def test_repeating_checklist_completion_and_plan_date_are_occurrence_scoped(service):

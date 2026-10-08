@@ -78,6 +78,21 @@ def test_desktop_can_edit_silent_tool_task_without_receiver(tmp_path):
     assert task["action"]["conversation_mode"] == "reuse"
 
 
+def test_linked_todo_reminder_cannot_be_edited_as_an_independent_scheduler_task(tmp_path):
+    store = _store_task(tmp_path, {"type": "application_command", "domain": "todos",
+                                   "command": "QueueTodoReminder", "params": ["todo-1", "time"]})
+    store.update_task("task-1", {"linked_todo_id": "todo-1"})
+    result = _post_update(tmp_path, {"task_id": "task-1", "name": "detached"})
+    assert result["status"] == "error" and store.get_task("task-1")["name"] == "maintenance"
+    with patch.object(web_channel, "_require_auth"), patch.object(web_channel.web, "header"), \
+         patch.object(web_channel.web, "data", return_value=b'{"task_id":"task-1","enabled":false}'), \
+         patch.object(web_channel, "_scheduler_store", return_value=store):
+        assert json.loads(web_channel.SchedulerToggleHandler().POST())["status"] == "error"
+        assert json.loads(web_channel.SchedulerDeleteHandler().POST())["status"] == "error"
+        assert json.loads(web_channel.SchedulerRunHandler().POST())["status"] == "error"
+    assert store.get_task("task-1")["enabled"]
+
+
 def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 

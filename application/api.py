@@ -39,7 +39,7 @@ _METHODS = {
         "change_todo_status", "add_subtask", "move_todo", "add_dependency", "remove_dependency",
         "list_todos", "list_todos_focus", "claim_due_todo_notifications", "claim_desktop_reminders",
         "acknowledge_desktop_reminder", "list_uncertain_reminders",
-        "retry_uncertain_reminder", "ingest_briefing_revision",
+        "retry_uncertain_reminder", "queue_scheduled_reminder", "ingest_briefing_revision",
     }),
     "bills": frozenset({
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",
@@ -131,7 +131,8 @@ class Application:
                       "CompleteTodo": "complete_todo", "DeleteTodo": "delete_todo",
                       "ChangeTodoStatus": "change_todo_status", "AddSubtask": "add_subtask",
                       "MoveTodo": "move_todo", "AddTodoDependency": "add_dependency",
-                      "RemoveTodoDependency": "remove_dependency"},
+                      "RemoveTodoDependency": "remove_dependency",
+                      "QueueTodoReminder": "queue_scheduled_reminder"},
             "bills": {"PostLedgerEntry": "create_ledger", "UpdateLedgerEntry": "update_ledger",
                       "DeleteLedgerEntry": "delete_ledger"},
         }
@@ -150,11 +151,15 @@ class Application:
                       "add_subtask": "create", "move_todo": "update",
                       "add_dependency": "update", "remove_dependency": "update",
                       "create_event": "create", "update_event": "update",
-                      "delete_event": "delete"}[method]
-            denial = permission_denial(domain, {"action": action}, agent_id=request.agent_id,
-                                       session_id=request.session_id)
-            if denial:
-                raise PermissionError(denial)
+                      "delete_event": "delete"}.get(method)
+            if method == "queue_scheduled_reminder":
+                if request.source != "scheduler":
+                    raise PermissionError("todo reminder handoff is reserved for scheduler")
+            else:
+                denial = permission_denial(domain, {"action": action}, agent_id=request.agent_id,
+                                           session_id=request.session_id)
+                if denial:
+                    raise PermissionError(denial)
             store = None
             if request.idempotency_key:
                 from application.operations import OperationStore
