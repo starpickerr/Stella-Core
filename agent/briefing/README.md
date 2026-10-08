@@ -93,7 +93,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 - `settings.py`：用户级邮箱配置，不依赖 Agent 模型。
 - `sources/email.py`：IMAP 增量拉取与 MIME 解析。
 - `elearning_settings.py` / `elearning/`：eLearning 来源设置、账号登录和 Canvas 资源读取。
-- `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择；简报来源只拉作业及其提交/评分信息，课程文件由 Agent 的 `elearning` 工具单独列出和下载。
+- `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择；简报先读取作业及评分，随后读取公告、测验、课程文件元数据和课程成绩并逐步更新草稿。文件元数据按更新时间倒序分页，到上次简报时间窗口即停止；简报不下载课程文件，完整文件清单和下载由 Agent 的 `elearning` 工具单独执行。
 - `instructions.py`：默认 Markdown 文稿和旧规则转文字。
 - `generator.py`：唯一的筛选、评分、Action/FYI 分类、线程排序与正文生成实现。
 - `sources/base.py`：来源归一化模型与候选目录写入格式。
