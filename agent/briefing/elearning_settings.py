@@ -109,6 +109,10 @@ def resolve_settings(payload):
     if not isinstance(cfg["courses"], list) or any(not isinstance(value, str) or not value.strip() for value in cfg["courses"]):
         raise ValueError("课程必须是非空课程 ID 或课程名称的列表")
     cfg["courses"] = list(dict.fromkeys(value.strip() for value in cfg["courses"]))
+    # Changing the briefing course selection must not silently expand an
+    # existing Agent file-save grant. It can be re-enabled in Agent settings.
+    if cfg["courses"] != old["courses"] and "file_sync_enabled" not in payload:
+        cfg["file_sync_enabled"] = False
     if account_id(cfg) != account_id(old):
         cfg["password"] = cfg["token"] = ""
         # Never transfer an earlier account's folder grant implicitly.
@@ -120,10 +124,11 @@ def resolve_settings(payload):
     if cfg["file_sync_enabled"]:
         if not cfg["courses"]:
             raise ValueError("请先选择允许保存文件的课程，再开启文件同步")
-        root = Path(cfg["file_sync_root"]).expanduser()
-        if not root.is_dir():
-            raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
-        cfg["file_sync_root"] = str(root.resolve(strict=True))
+        if "file_sync_enabled" in payload or "file_sync_root" in payload:
+            root = Path(cfg["file_sync_root"]).expanduser()
+            if not root.is_dir():
+                raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
+            cfg["file_sync_root"] = str(root.resolve(strict=True))
     password = payload.get("password", "")
     if not isinstance(password, str):
         raise ValueError("eLearning 密码格式无效")
@@ -146,6 +151,33 @@ def save_settings(payload):
         from agent.permission.audit import record
         if (previous.get("file_sync_enabled"), previous.get("file_sync_root")) != (cfg["file_sync_enabled"], cfg["file_sync_root"]):
             record(tool="elearning", operation="configure", resource=cfg["file_sync_root"] or "course files",
+                   event="file_modify", risk="L1", decision="policy_change",
+                   reason="eLearning file sync folder grant changed.")
+        return public_settings(cfg)
+
+
+def save_file_sync_settings(enabled, root):
+    """Manage the Agent's file-save grant without changing briefing sources."""
+    if not isinstance(enabled, bool) or not isinstance(root, str):
+        raise ValueError("课程文件同步设置无效")
+    with _lock:
+        cfg = load_settings()
+        previous = (cfg["file_sync_enabled"], cfg["file_sync_root"])
+        if enabled:
+            if not cfg["username"] or not cfg["courses"] or not (
+                cfg["password"] or cfg["token"] or session_path(cfg).is_file()
+            ):
+                raise ValueError("请先连接 eLearning 账号并选择课程")
+            directory = Path(root).expanduser()
+            if not directory.is_dir():
+                raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
+            root = str(directory.resolve(strict=True))
+        cfg["file_sync_enabled"] = enabled
+        cfg["file_sync_root"] = root
+        _write(settings_path(), cfg)
+        if previous != (enabled, root):
+            from agent.permission.audit import record
+            record(tool="elearning", operation="configure", resource=root or "course files",
                    event="file_modify", risk="L1", decision="policy_change",
                    reason="eLearning file sync folder grant changed.")
         return public_settings(cfg)

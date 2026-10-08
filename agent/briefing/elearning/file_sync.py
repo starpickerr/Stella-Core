@@ -207,7 +207,7 @@ def _current_grant(config, course_id):
             or elearning_settings.account_id(current) != elearning_settings.account_id(config)
             or current.get("file_sync_root") != config.get("file_sync_root")
             or course_id not in current.get("courses", [])):
-        raise SyncError("课程文件同步授权已变更，请检查 eLearning 设置")
+        raise SyncError("课程文件同步授权已变更，请检查 Agent 设置")
 
 
 def sync_files(client, config, rows, cancel_event=None, layout="managed"):

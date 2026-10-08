@@ -273,9 +273,9 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
             lines.append(("eLearning file sync may write only to the selected folder: " if english else
                           "eLearning 文件同步仅可写入已选目录：") + root + ".")
         else:
-            lines.append("eLearning file sync is not ready; the user must configure the account, "
-                         "authorize courses and a save folder, and enable file sync in eLearning settings."
-                         if english else "eLearning 文件同步未就绪；需要用户在 eLearning 设置中配置账号、授权课程和保存目录，并开启文件同步。")
+            lines.append("eLearning file sync is not ready; the user must connect the account and select courses "
+                         "in briefing sources, then authorize a save folder in Agent settings."
+                         if english else "eLearning 文件同步未就绪；需要先在简报来源中连接账号并选择课程，再在 Agent 设置中授权保存目录。")
     lines.extend([
         ("Create or update custom skills with the skill tool. Full access permits this managed operation; "
          "project access may require confirmation for the system skill store."

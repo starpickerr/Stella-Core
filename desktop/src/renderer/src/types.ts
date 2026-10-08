@@ -1015,4 +1015,4 @@ export interface ElearningSettings {
   password_masked: string
 }
 
-export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses' | 'file_sync_enabled' | 'file_sync_root'> & { password?: string }
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
