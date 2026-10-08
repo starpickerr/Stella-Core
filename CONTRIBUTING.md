@@ -74,3 +74,4 @@ Install development checks into the project virtual environment with `.venv/bin/
 During development, run `.venv/bin/python scripts/quality_check.py incremental`. It selects checks from changed files, isolates Stella state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths.
 
 Say `Full Audit` or `全项目体检` to Codex for an evidence-based report without automatic business-code changes. The repeatable automated portion is `.venv/bin/python scripts/quality_check.py full`; its report is written to `audit-reports/` and requires the manual review described in `.agents/skills/software-audit/SKILL.md`.
+An existing report is preserved; pass `--report` with a new path when rerunning checks on the same day.

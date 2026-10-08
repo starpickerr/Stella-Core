@@ -167,7 +167,8 @@ def markdown_report(results, output_path):
         for name, _, command, output in failures:
             lines.extend([f"### {name}", "", f"命令：`{command}`", "", "```text", *output.splitlines()[-35:], "```", ""])
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    with output_path.open("x", encoding="utf-8") as report:
+        report.write("\n".join(lines))
     print(f"REPORT {output_path}")
 
 
@@ -177,6 +178,8 @@ def main():
     parser.add_argument("--files", nargs="*", help="Explicit changed paths for incremental checks")
     parser.add_argument("--report", type=Path, default=ROOT / "audit-reports" / f"Full-Audit-{date.today().isoformat()}.md")
     args = parser.parse_args()
+    if args.mode == "full" and args.report.exists():
+        parser.error(f"report already exists: {args.report}; choose a different --report path")
     if not PYTHON.is_file():
         parser.error(".venv/bin/python is required; create the project virtual environment first")
     selected = affected_checks(args.files if args.files is not None else changed_files())
