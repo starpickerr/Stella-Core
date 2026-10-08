@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BellRing,
@@ -8,9 +8,12 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  CornerUpLeft,
+  ExternalLink,
   Flag,
   GripVertical,
   MoreHorizontal,
+  Pencil,
   Plus,
   Repeat2,
   Search,
@@ -25,6 +28,7 @@ import type {
   TodoInput,
   UncertainReminder,
 } from "../types";
+import { breadcrumbParts, survivingFocus, todoPath } from "./todoFocus";
 
 const pad = (value: number) => String(value).padStart(2, "0");
 const dateKey = (value: Date) =>
@@ -136,6 +140,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           "The task changed or was completed, so that reminder was cancelled.",
         moveUp: "Move up",
         moveDown: "Move down",
+        focus: "Focus on task",
+        backToTree: "Back to task tree",
+        breadcrumb: "Task path",
+        focusHint: "Work through one level at a time",
+        childEmpty: "No subtasks yet. Add the first step below.",
+        edit: "Edit details",
+        moveTo: "Move to",
+        taskActions: "Task actions",
       }
     : {
         title: "事务",
@@ -212,6 +224,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         reminderInvalid: "事务已修改或完成，原提醒已取消。",
         moveUp: "上移",
         moveDown: "下移",
+        focus: "聚焦此事务",
+        backToTree: "返回事务树",
+        breadcrumb: "事务路径",
+        focusHint: "逐层处理，专注当前事务",
+        childEmpty: "还没有子事务，在下方添加第一步。",
+        edit: "编辑详情",
+        moveTo: "移动到",
+        taskActions: "事务操作",
       };
   const [rows, setRows] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<Todo[]>([]);
@@ -237,7 +257,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [dependencyChoice, setDependencyChoice] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [compactBreadcrumb, setCompactBreadcrumb] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const pathRef = useRef<string[]>([]);
+  const treeRef = useRef<{ scrollTop: number; selectedId: string | null }>({ scrollTop: 0, selectedId: null });
   const today = dateKey(new Date());
   const soon = dateKey(new Date(Date.now() + 7 * 86400000));
   const refresh = useCallback(async () => {
@@ -253,6 +279,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
     }
   }, []);
   useEffect(() => {
@@ -267,6 +295,23 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     [rows],
   );
   const selected = selectedId ? byId.get(selectedId) || null : null;
+  const focused = focusedId ? byId.get(focusedId) || null : null;
+  const focusPath = focusedId ? todoPath(focusedId, byId) : [];
+  if (focused) pathRef.current = focusPath.map((item) => item.id);
+  useEffect(() => {
+    if (!focusedId || loading || byId.has(focusedId)) return;
+    const ancestor = survivingFocus(focusedId, pathRef.current, byId);
+    setFocusedId(ancestor);
+    if (!ancestor) requestAnimationFrame(() => {
+      if (pageRef.current) pageRef.current.scrollTop = treeRef.current.scrollTop;
+    });
+  }, [byId, focusedId, loading]);
+  useEffect(() => {
+    const resize = () => setCompactBreadcrumb(window.innerWidth < 700);
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   const children = useCallback(
     (parentId: string | null) =>
       rows.filter((todo) => todo.parent_id === parentId && !todo.series_id),
@@ -427,6 +472,23 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     setDraft(null);
     setError("");
   };
+  const enterFocus = (todo: Todo) => {
+    if (!focusedId) {
+      treeRef.current = { scrollTop: pageRef.current?.scrollTop || 0, selectedId };
+    }
+    close();
+    setChildTitle("");
+    setFocusedId(todo.id);
+    if (pageRef.current) pageRef.current.scrollTop = 0;
+  };
+  const exitFocus = () => {
+    setFocusedId(null);
+    const previous = treeRef.current.selectedId;
+    if (previous && byId.has(previous)) open(byId.get(previous)!);
+    requestAnimationFrame(() => {
+      if (pageRef.current) pageRef.current.scrollTop = treeRef.current.scrollTop;
+    });
+  };
   const create = () => {
     if (!quickTitle.trim()) return;
     void run(async () => {
@@ -489,6 +551,17 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   };
   const move = (id: string, parentId: string | null, position?: number) =>
     void run(() => apiClient.moveTodo(id, parentId, position));
+  const addFocusedChild = () => {
+    if (!focused || !childTitle.trim()) return;
+    void run(async () => {
+      await apiClient.addSubtask(focused.id, { title: childTitle.trim() });
+      setChildTitle("");
+    });
+  };
+  const deleteFocusedChild = (todo: Todo) => {
+    if (!window.confirm(copy.deleteConfirm)) return;
+    void run(() => apiClient.deleteTodo(todo.id));
+  };
   const remove = () => {
     if (!selected || !window.confirm(copy.deleteConfirm)) return;
     void run(async () => {
@@ -633,6 +706,15 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )}
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => enterFocus(todo)}
+            aria-label={`${copy.focus} ${todo.title}`}
+            title={copy.focus}
+            className="rounded-btn p-1 text-content-tertiary hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <ExternalLink size={16} />
+          </button>
           {sub.length > 0 && (
             <button
               type="button"
@@ -677,35 +759,75 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   );
   const isDescendant = (candidate: Todo) => {
     let parent = candidate.parent_id ? byId.get(candidate.parent_id) : null;
-    while (parent) {
+    const visited = new Set<string>();
+    while (parent && !visited.has(parent.id)) {
+      visited.add(parent.id);
       if (parent.id === selected?.id) return true;
       parent = parent.parent_id ? byId.get(parent.parent_id) : null;
     }
     return false;
   };
   return (
-    <div className="h-full overflow-y-auto bg-surface-0 text-content-primary">
+    <div ref={pageRef} className="h-full overflow-y-auto bg-surface-0 text-content-primary">
       <div
         className={`mx-auto px-4 py-6 md:px-8 transition-[max-width] ${selected ? "max-w-6xl xl:pr-[400px]" : "max-w-5xl"}`}
       >
+        {focused && (
+          <nav aria-label={copy.breadcrumb} className="mb-5 flex items-center gap-1.5 text-xs text-content-tertiary min-w-0">
+            {(() => {
+              const items = [
+                { id: "stella", title: "Stella" },
+                { id: "tasks", title: copy.title },
+                ...focusPath.map((item) => ({ id: item.id, title: item.title })),
+              ];
+              const { hidden } = breadcrumbParts(items, compactBreadcrumb);
+              const visibleIds = new Set(breadcrumbParts(items, compactBreadcrumb).visible.map((item) => item.id));
+              return items.map((item, index) => {
+                if (hidden.length && index === items.findIndex((entry) => entry.id === hidden[0].id)) {
+                  return <React.Fragment key="hidden">
+                    <ChevronRight size={13} className="shrink-0" />
+                    <details className="relative group">
+                      <summary className="list-none cursor-pointer rounded-btn px-1.5 py-1 hover:bg-surface-2 hover:text-accent" aria-label={en ? "Hidden path levels" : "隐藏的路径层级"}>…</summary>
+                      <div className="absolute left-0 top-full z-30 mt-1 min-w-44 max-w-72 rounded-card border border-default bg-surface p-1 shadow-lg">
+                        {hidden.map((entry) => <button key={entry.id} type="button" onClick={() => entry.id === "tasks" || entry.id === "stella" ? exitFocus() : enterFocus(byId.get(entry.id)!)} className="block w-full truncate rounded-btn px-2 py-1.5 text-left text-content-secondary hover:bg-surface-2 hover:text-accent" title={entry.title}>{entry.title}</button>)}
+                      </div>
+                    </details>
+                  </React.Fragment>;
+                }
+                if (!visibleIds.has(item.id)) return null;
+                return <React.Fragment key={item.id}>
+                  {index > 0 && <ChevronRight size={13} className="shrink-0" />}
+                  {index === items.length - 1 ? (
+                    <span aria-current="page" className="max-w-40 truncate font-medium text-content-primary" title={item.title}>{item.title}</span>
+                  ) : (
+                    <button type="button" onClick={() => item.id === "stella" || item.id === "tasks" ? exitFocus() : enterFocus(byId.get(item.id)!)} className="max-w-32 truncate rounded-btn px-1 py-1 hover:bg-surface-2 hover:text-accent" title={item.title}>{item.title}</button>
+                  )}
+                </React.Fragment>;
+              });
+            })()}
+          </nav>
+        )}
         <header className="flex items-start justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {copy.title}
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-semibold tracking-tight">
+              {focused ? focused.title : copy.title}
             </h1>
             <p className="text-sm text-content-tertiary mt-1">
-              {copy.subtitle}
+              {focused ? copy.focusHint : copy.subtitle}
             </p>
           </div>
-          <button
+          {focused ? <button type="button" onClick={exitFocus} className="shrink-0 inline-flex items-center gap-1.5 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content-secondary hover:text-accent"><CornerUpLeft size={15} />{copy.backToTree}</button> : <button
             type="button"
             onClick={() => document.getElementById("todo-quick-title")?.focus()}
             className="inline-flex items-center gap-1.5 rounded-btn bg-accent text-accent-contrast px-3.5 py-2 text-sm font-medium"
           >
             <Plus size={16} />
             {copy.newTask}
-          </button>
+          </button>}
         </header>
+        {error && <p role="alert" className="mb-4 rounded-card border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
+        {loading && <p role="status" className="mb-4 text-sm text-content-tertiary">{en ? "Loading tasks…" : "正在加载事务…"}</p>}
+        {!focusedId && <div>
         <nav
           aria-label={copy.title}
           className="flex gap-1 border-b border-default mb-5 overflow-x-auto"
@@ -904,12 +1026,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             <option value="manual">{copy.manualSort}</option>
           </select>
         </div>
-        {error && (
-          <p role="alert" className="text-sm text-danger mb-4">
-            {error}
-          </p>
-        )}
-        {roots.length === 0 ? (
+        {loading ? null : roots.length === 0 ? (
           <div className="rounded-card border border-default bg-surface py-16 text-center text-content-tertiary text-sm">
             {copy.empty}
           </div>
@@ -938,6 +1055,64 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
           </div>
         )}
+        </div>}
+        {focused && (
+          <div className="space-y-6">
+            <section className="rounded-card border border-default bg-surface p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-content-secondary">
+                    <span className={statusColors[focused.status]}>{copy.statusNames[focused.status]}</span>
+                    {focused.priority > 0 && <span className="text-amber-500"><Flag size={12} className="inline mr-1" />{copy.priorities[focused.priority]}</span>}
+                    {focused.due_on && <span><Clock3 size={12} className="inline mr-1" />{focused.due_on}</span>}
+                    {focused.planned_on && <span><CalendarDays size={12} className="inline mr-1" />{focused.planned_on}</span>}
+                    {focused.list_name && <span>{focused.list_name}</span>}
+                    {tagsOf(focused).map((tag) => <span key={tag}>#{tag}</span>)}
+                  </div>
+                  {focused.notes && <p className="mt-3 whitespace-pre-wrap text-sm text-content-secondary">{focused.notes}</p>}
+                  {focused.subtask_count > 0 && <div className="mt-4 max-w-lg">
+                    <div className="flex justify-between text-xs text-content-tertiary mb-1"><span>{copy.subtask}</span><span>{copy.progress(focused.progress_completed, focused.progress_total)}</span></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-accent" style={{ width: `${focused.progress_percent}%` }} /></div>
+                  </div>}
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={busy} onClick={() => toggle(focused)} className="rounded-btn border border-default px-3 py-1.5 text-xs hover:text-accent">{focused.status === "completed" ? copy.statusNames.todo : copy.statusNames.completed}</button>
+                  <button type="button" onClick={() => open(focused)} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-1.5 text-xs hover:text-accent"><Pencil size={13} />{copy.edit}</button>
+                </div>
+              </div>
+            </section>
+            <section aria-label={copy.subtask}>
+              <div className="flex items-center justify-between mb-3"><h2 className="text-sm font-semibold">{copy.subtask} <span className="font-normal text-content-tertiary">{focused.subtask_count}</span></h2><span className="text-xs text-content-tertiary">{copy.focusHint}</span></div>
+              <div className="rounded-card border border-default bg-surface divide-y divide-default/70">
+                {children(focused.id).sort((a, b) => a.sort_order - b.sort_order).map((child, index, siblings) => (
+                  <div key={child.id} className="flex items-center gap-2 px-3 py-3 sm:px-4 hover:bg-surface-2/50">
+                    <button type="button" disabled={busy} onClick={() => toggle(child)} aria-label={`${copy.statusNames[child.status]} ${child.title}`} className={`w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${child.status === "completed" ? "border-accent bg-accent text-accent-contrast" : "border-content-tertiary hover:border-accent"}`}>{child.status === "completed" && <Check size={12} />}</button>
+                    <div className="min-w-0 flex-1">
+                      <button type="button" onClick={() => open(child)} className={`block w-full truncate text-left text-sm font-medium hover:text-accent ${isDone(child) ? "line-through text-content-tertiary" : ""}`}>{child.title}</button>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-content-tertiary">
+                        <span className={statusColors[child.status]}>{copy.statusNames[child.status]}</span>
+                        {child.priority > 0 && <span className="text-amber-500">{copy.priority}: {copy.priorities[child.priority]}</span>}
+                        {child.subtask_count > 0 && <span className="text-accent">{copy.progress(child.progress_completed, child.progress_total)}</span>}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => open(child)} title={copy.edit} aria-label={`${copy.edit} ${child.title}`} className="shrink-0 rounded-btn p-1.5 text-content-tertiary hover:text-accent"><Pencil size={15} /></button>
+                    <details className="relative shrink-0"><summary aria-label={`${copy.taskActions} ${child.title}`} className="list-none cursor-pointer rounded-btn p-1.5 text-content-tertiary hover:text-accent"><MoreHorizontal size={17} /></summary>
+                      <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded-card border border-default bg-surface p-2 shadow-lg space-y-1 text-xs">
+                        <button type="button" disabled={busy || index === 0} onClick={() => move(child.id, focused.id, index - 1)} className="block w-full rounded-btn px-2 py-1 text-left hover:bg-surface-2 disabled:opacity-40">{copy.moveUp}</button>
+                        <button type="button" disabled={busy || index === siblings.length - 1} onClick={() => move(child.id, focused.id, index + 1)} className="block w-full rounded-btn px-2 py-1 text-left hover:bg-surface-2 disabled:opacity-40">{copy.moveDown}</button>
+                        <label className="block px-2">{copy.moveTo}<select aria-label={`${copy.moveTo} ${child.title}`} value={child.parent_id || ""} disabled={busy} onChange={(event) => move(child.id, event.target.value || null)} className={`${input} mt-1`}><option value="">{copy.topLevel}</option>{rows.filter((candidate) => !candidate.series_id && candidate.repeat_frequency === "none" && candidate.id !== child.id && !todoPath(candidate.id, byId).some((node) => node.id === child.id)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select></label>
+                        <button type="button" disabled={busy} onClick={() => deleteFocusedChild(child)} className="block w-full rounded-btn px-2 py-1 text-left text-danger hover:bg-surface-2">{copy.delete}</button>
+                      </div>
+                    </details>
+                    <button type="button" onClick={() => enterFocus(child)} title={copy.focus} aria-label={`${copy.focus} ${child.title}`} className="shrink-0 inline-flex items-center gap-1 rounded-btn px-2 py-1.5 text-xs font-medium text-accent hover:bg-accent/10"><span className="hidden sm:inline">{copy.focus}</span><ExternalLink size={14} /></button>
+                  </div>
+                ))}
+                {focused.subtask_count === 0 && <p className="px-4 py-8 text-center text-sm text-content-tertiary">{copy.childEmpty}</p>}
+                {focused.repeat_frequency === "none" ? <form onSubmit={(event) => { event.preventDefault(); addFocusedChild(); }} className="flex gap-2 p-3 sm:p-4"><input value={childTitle} onChange={(event) => setChildTitle(event.target.value)} placeholder={copy.subtaskHint} aria-label={copy.addSubtask} className={`${input} flex-1 min-w-0`} /><button type="submit" disabled={busy || !childTitle.trim()} className="inline-flex items-center gap-1 rounded-btn bg-accent px-3 text-sm text-accent-contrast disabled:opacity-40"><Plus size={15} />{copy.addSubtask}</button></form> : <p className="p-4 text-xs text-content-tertiary">{copy.recurrenceHint}</p>}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
       {selected && draft && (
         <div
@@ -956,6 +1131,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               <span className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
                 {copy.details}
               </span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => enterFocus(selected)} className="inline-flex items-center gap-1 rounded-btn px-2 py-1 text-xs text-accent hover:bg-accent/10"><ExternalLink size={13} />{copy.focus}</button>
               <button
                 type="button"
                 onClick={close}
@@ -964,6 +1141,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               >
                 <X size={18} />
               </button>
+              </div>
             </div>
             <div>
               <input
