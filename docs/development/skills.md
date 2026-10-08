@@ -1,6 +1,6 @@
 # 项目级 Skill 清单与维护
 
-Skill 仅存于 `.agents/skills/`。上游仓库、固定 commit、原始 `SKILL.md` SHA-256 与本地适配记录在 [`sources.json`](../../.agents/skills/sources.json)。项目原有 Skill 不被覆盖。`scripts/check_dev_policy.py` 检查每个 Skill 的前置元数据、目录名称与清单一致性。
+Skill 仅存于 `.agents/skills/`。任务中的选择与配合见 [Skill 协作规则](../../.agents/rules/skill-coordination.md)。上游仓库、固定 commit、原始 `SKILL.md` SHA-256 与本地适配记录在 [`sources.json`](../../.agents/skills/sources.json)。项目原有 Skill 不被覆盖。`scripts/check_dev_policy.py` 检查每个 Skill 的前置元数据、目录名称与清单一致性。
 
 | 来源 | 已安装/保留 | 许可证与说明 |
 | --- | --- | --- |

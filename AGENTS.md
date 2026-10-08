@@ -1,6 +1,6 @@
 # Stella 开发入口
 
-先阅读 [.agents/AGENTS.md](.agents/AGENTS.md)，再按任务需要阅读 `.agents/rules/` 和 `.agents/skills/` 中的相关文件；不要假设嵌套目录的 `AGENTS.md` 会自动加载。
+先阅读 [.agents/AGENTS.md](.agents/AGENTS.md)，按 [Skill 协作规则](.agents/rules/skill-coordination.md) 为任务选择流程，再按需阅读 `.agents/rules/` 和 `.agents/skills/` 中的相关文件；不要假设嵌套目录的 `AGENTS.md` 会自动加载。
 
 - `main` 是正式分支，`develop` 是开发基线。代码和配置修改先从当前 `develop` 创建专用分支，在分支提交并验证；用户已要求功能完成后及时合并回 `develop`。`develop → main` 仍须单独获得用户授权，禁止擅自推送或改写共享历史。
 - 提交遵循 [.agents/rules/git.md](.agents/rules/git.md)，不添加 `Co-authored-by`、`co-worker` 或 AI 自动署名。
