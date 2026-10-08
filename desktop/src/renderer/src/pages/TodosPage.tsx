@@ -55,7 +55,7 @@ const statusColors: Record<Todo["status"], string> = {
   cancelled: "text-content-tertiary",
 };
 
-type View = "inbox" | "today" | "upcoming" | "planned" | "all" | "completed";
+type View = "today" | "upcoming" | "planned" | "all" | "completed";
 type Sort = "date" | "priority" | "manual";
 
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
@@ -66,7 +66,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         title: "Tasks",
         subtitle: "One place for what needs attention.",
         newTask: "New task",
-        inbox: "Inbox",
         today: "Today",
         upcoming: "Due soon",
         planned: "Planned",
@@ -152,7 +151,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         title: "事务",
         subtitle: "把需要完成的事安排清楚。",
         newTask: "新建事务",
-        inbox: "收件箱",
         today: "今天",
         upcoming: "即将到期",
         planned: "计划",
@@ -235,7 +233,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [rows, setRows] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<Todo[]>([]);
   const [uncertain, setUncertain] = useState<UncertainReminder[]>([]);
-  const [view, setView] = useState<View>("inbox");
+  const [view, setView] = useState<View>("all");
   const [query, setQuery] = useState("");
   const [listFilter, setListFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -329,7 +327,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   );
   const matchesView = (todo: Todo, target: View) => {
     if (target === "completed") return isDone(todo);
-    if (target === "all") return true;
+    if (target === "all") return !isDone(todo);
     if (isDone(todo)) return false;
     if (target === "today")
       return (
@@ -343,14 +341,12 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         (!!todo.planned_on && todo.planned_on > today) ||
         (!!todo.due_on && todo.due_on > soon)
       );
-    return !todo.planned_on && !todo.due_on;
+    return false;
   };
   const subtreeMatchesView = (todo: Todo, target: View): boolean =>
     matchesView(todo, target) ||
-    (target !== "inbox" &&
-      children(todo.id).some((child) => subtreeMatchesView(child, target)));
+    children(todo.id).some((child) => subtreeMatchesView(child, target));
   const views: View[] = [
-    "inbox",
     "today",
     "upcoming",
     "planned",
