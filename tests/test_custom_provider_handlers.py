@@ -175,6 +175,26 @@ class TestSetCustomProvider(unittest.TestCase):
                     api_base="https://a/v1", model="")
         self.assertNotIn("model", config_module.conf().get("custom_providers")[0])
 
+    def test_multiple_models_and_default_are_saved_and_updated(self):
+        result = self.h.call(action="set_custom_provider", name="a",
+                             api_base="https://a/v1", api_key="ak",
+                             models=["m1", "m2", "m1"], model="m2", make_active=True)
+        self.assertEqual(result["status"], "success")
+        provider = config_module.conf()["custom_providers"][0]
+        self.assertEqual(provider["models"], ["m1", "m2"])
+        self.assertEqual(provider["model"], "m2")
+        self.assertEqual(config_module.conf()["model"], "m2")
+        self.h.call(action="set_custom_provider", id=result["id"], name="a",
+                    api_base="https://a/v1", models=["m3", "m4"])
+        provider = config_module.conf()["custom_providers"][0]
+        self.assertEqual(provider["model"], "m3")
+        self.assertEqual(config_module.conf()["model"], "m3")
+
+    def test_default_must_belong_to_model_list(self):
+        result = self.h.call(action="set_custom_provider", name="a",
+                             api_base="https://a/v1", models=["m1"], model="m2")
+        self.assertEqual(result["status"], "error")
+
 
 class TestDeleteCustomProvider(unittest.TestCase):
     def setUp(self):
