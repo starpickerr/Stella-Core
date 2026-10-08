@@ -215,6 +215,7 @@ class AgentBriefingGenerator:
                 "body": str(item.payload.get("body") or item.snippet),
                 "metadata": {key: value for key, value in item.payload.items() if key != "body"},
                 "body_available": "body" in item.payload})
+        entries_by_id = {row["id"]: row for row in entries}
         decisions = dict(preserved_decisions or {})
         previews = [{**row, "body": row["body"][:2000], "body_length": len(row["body"])} for row in entries if row["id"] not in decisions]
         for number, batch in enumerate(_batches(previews), 1):
@@ -259,7 +260,11 @@ class AgentBriefingGenerator:
                  for index, row in enumerate(ranked)]
         summaries = [{"id": row.item.id, "source": row.item.source, "sender": row.item.sender,
                       "title": row.item.title, "summary": row.item.snippet, "section": row.section,
-                      "occurred_at": row.item.occurred_at} for row in ranked]
+                      "occurred_at": row.item.occurred_at,
+                      "body_preview": entries_by_id[row.item.id]["body"][:2000],
+                      "body_length": len(entries_by_id[row.item.id]["body"]),
+                      "metadata": {key: value for key, value in row.item.payload.items() if key != "body"}}
+                     for row in ranked]
         parts = []
         for number, batch in enumerate(list(_batches(summaries)) or [[]], 1):
             if self.progress:
@@ -269,11 +274,13 @@ class AgentBriefingGenerator:
                 "body": {"type": "string", "description": "按规则文稿撰写的 Markdown 正文，覆盖本批所有事项"},
                 "source_item_ids": {"type": "array", "items": {"type": "string"}},
             }, "required": ["body", "source_item_ids"]}, lambda payload, expected=ids: validate_body(payload, expected))
-            result = self._run_agent("依据规则撰写3至5行精简概览，调用 briefing_body_result；不要重复每日大标题，"
-                "概括发生了什么和用户需要决定什么，卡片已有逐项摘要，不要重复卡片全文。不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
+            result = self._run_agent("依据规则撰写完整报告，调用 briefing_body_result；不要重复每日大标题。"
+                "覆盖本批每项精选信息，按主题组织来源事实、关键变化、时间与截止要求、用户需要决定或执行的事项，并明确区分事实和判断。"
+                "不要机械复制来源全文；材料不足时使用 read_briefing_source 查看原文，不得编造缺失信息。"
+                "不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
                     "date": briefing_date, "window_start": window_start, "window_end": window_end, "items": batch,
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
-                }, ensure_ascii=False), rule_text, tool)
+                }, ensure_ascii=False), rule_text, tool, read_entries=entries)
             parts.append(result["body"].strip())
             if self.progress:
                 self.progress(f"Agent 已完成第 {number} 批简报正文")

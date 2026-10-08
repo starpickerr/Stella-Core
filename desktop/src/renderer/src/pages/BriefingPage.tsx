@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
+import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingRunProgress, BriefingSource } from '../types'
 import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
@@ -145,23 +145,24 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
 
   const showDraft = generating && draftSelected
 
-  const mark = async (id: string, status: BriefingItemStatus) => {
-    setMarking(true)
-    setError('')
-    try {
-      const item = await apiClient.updateBriefingItem(id, status)
-      setDetail((value) => value ? { ...value, items: value.items.map((row) => row.id === id ? item : row) } : value)
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err))
-    } finally { setMarking(false) }
-  }
-
   const decide = async (id: string, decision: BriefingDecision) => {
     setMarking(true); setError('')
     try {
-      await apiClient.decideBriefing(id, decision)
-      if (selectedId) setDetail(await apiClient.getBriefing(selectedId))
-    } catch (err) { setError(String(err instanceof Error ? err.message : err)) }
+      const receipt = await apiClient.decideBriefing(id, decision)
+      setDetail((current) => {
+        const view = current?.actions?.[id]
+        if (!current || !view) return current
+        return { ...current, actions: { ...current.actions, [id]: { ...view, [decision.kind]: receipt } } }
+      })
+      if (selectedId) {
+        try { setDetail(await apiClient.getBriefing(selectedId)) }
+        catch (refreshError) { setError(String(refreshError instanceof Error ? refreshError.message : refreshError)) }
+      }
+      if (receipt.state === 'failed') throw new Error(receipt.error || 'Action failed')
+      if (decision.operation === 'create' && decision.kind === 'todo' && receipt.state !== 'succeeded') {
+        throw new Error(receipt.error || (t('briefing_action_needs_review')))
+      }
+    } catch (err) { setError(String(err instanceof Error ? err.message : err)); throw err }
     finally { setMarking(false) }
   }
 
@@ -205,7 +206,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </section>
           <RevisionGraph revisions={detail?.revisions || []} version={-1} busy={false}
             onVersion={(nextVersion) => { setDraftSelected(false); setVersion(nextVersion) }} />
-        </div> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} onDecision={decide} />
+        </div> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking} onBack={() => setSelectedId(null)} onDecision={decide} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>

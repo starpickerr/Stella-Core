@@ -367,7 +367,7 @@ class BriefingActions:
                 self._write(db, key, kind, options=options, operation='remind' if kind == 'reminder' else 'create', authorization='user_confirmation')
                 self._execute(db, entity, kind, force=operation == 'confirm_update')
             receipt = self._receipt(db, key, kind)
-        if payload.get('remember') is True and receipt['state'] == 'succeeded':
+        if kind != 'todo' and payload.get('remember') is True and receipt['state'] == 'succeeded':
             self.save_rule(dict(source=entity['source'],account_id=entity['account_id'],information_type=entity['information_type'],course_id=entity['course_id'],kind=kind,mode='auto'))
         return receipt
 
@@ -457,7 +457,7 @@ class BriefingActions:
                         self._execute(db,entity,consumer)
                     elif sync_rule['mode'] == 'suggest' and action['result'].get('source_facts') != json.loads(entity['facts']):
                         self._write(db, key, consumer, state='conflict', error='Your source rule requires confirmation before synchronizing new facts', result={'operation': 'confirmation_required'})
-                elif rule and rule['mode']=='auto':
+                elif rule and rule['mode']=='auto' and consumer != 'todo':
                     facts = json.loads(entity['facts'])
                     if consumer == 'calendar' and facts.get('time_origin') != 'source':
                         continue

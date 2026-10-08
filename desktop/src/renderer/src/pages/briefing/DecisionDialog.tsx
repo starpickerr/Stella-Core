@@ -92,7 +92,7 @@ export const DecisionDialog: React.FC<{
           {view?.facts.time_origin === 'ai_inference' && <p className="text-sm text-content-secondary">{label('inference')}</p>}
         </>}
         {(kind === 'todo' || kind === 'reminder') && <label className="block text-sm text-content-secondary">{label('remind')}<input required={kind === 'reminder'} type="datetime-local" className={input} value={remind} onChange={(event) => setRemind(event.target.value)} /></label>}
-        {mode === 'create' && <label className="flex items-start gap-2 text-xs text-content-secondary"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{label('remember')}</label>}
+        {mode === 'create' && kind !== 'todo' && <label className="flex items-start gap-2 text-xs text-content-secondary"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{label('remember')}</label>}
         <div className="flex justify-end gap-2 pt-2"><button type="button" disabled={busy} onClick={onClose} className={button}>{label('cancel')}</button><button type="submit" disabled={busy} className={`${button} bg-accent text-accent-contrast`}>{busy ? <Loader2 size={14} className="animate-spin" /> : label('confirm')}</button></div>
       </form>}
     </section>

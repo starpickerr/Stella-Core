@@ -15,11 +15,12 @@ from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
 from agent.permission.gateway import SecurityGateway
-check_tool_call = SecurityGateway.check
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.tool_manager import ToolManager
 from application import Application
+
+check_tool_call = SecurityGateway.check
 
 
 class ScriptedModel:
@@ -93,6 +94,14 @@ def test_agent_reads_markdown_rules_and_writes_all_batches(service):
     assert detail["briefing"].body.count("Agent 摘要") == 47
     assert "@promo.example" in detail["briefing"].rule_text
     assert all(text in request.system for request in model.requests)
+    report_requests = [request for request in model.requests if any(tool['name'] == 'briefing_body_result' for tool in request.tools)]
+    assert report_requests
+    for request in report_requests:
+        prompt = next(block['text'] for message in request.messages for block in message['content']
+                      if block['type'] == 'text' and '依据规则撰写' in block['text'])
+        assert '完整报告' in prompt and '3至5行精简概览' not in prompt
+        assert any(tool['name'] == 'read_briefing_source' for tool in request.tools)
+        assert all(row['body_preview'] == '课程作业通知' for row in json.loads(prompt[prompt.index('{'):])['items'])
     assert any(row["filter_reason"] == "发件地址匹配排除后缀" for row in detail["mail"])
     assert service.get_revision(detail["briefing"].id, 1)["briefing"]["rule_text"] == detail["briefing"].rule_text
     assert service.get_cursor("email", "default", "imap_uid").cursor_value == "9"
@@ -175,7 +184,8 @@ def test_full_source_read_is_paged_and_confined_to_this_batch():
 
 
 def test_cancelled_generation_does_not_call_model():
-    event = threading.Event(); event.set()
+    event = threading.Event()
+    event.set()
     generator = AgentBriefingGenerator(model=ScriptedModel(), cancel_event=event)
     with pytest.raises(AgentCancelledError):
         generator.generate([], [], briefing_date="2026-09-09", kind="morning", window_start="a", window_end="b")
@@ -196,7 +206,8 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
         occurred_at="2026-09-08T23:00:00Z", payload={"body": "原课程公告正文"})
     canvas = StaticSource([original], name="elearning")
     first_model = ScriptedModel()
-    at = lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")
+    def at():
+        return datetime.fromisoformat("2026-09-09T08:00:00+08:00")
     first = BriefingPipeline(service, [email, canvas], clock=at,
         generator=AgentBriefingGenerator(model=first_model)).run()
     old_snapshot = next(row for row in first["mail"] if row["source"] == "elearning")
@@ -255,7 +266,8 @@ def test_markdown_rules_crud_and_legacy_migration(tmp_path):
     conn.executescript(sql)
     conn.execute("INSERT INTO filter_rules (id,source,action,match_field,match_op,match_value,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
         ("old", "email", "exclude", "sender_domain", "eq", "spam.example", "old rule", "a", "a"))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     service = BriefingService(BriefingStore(path))
     assert "排除发件域名等于“spam.example”" in service.get_rule("old").text
     saved = service.create_rule({"text": DEFAULT_RULE_TEXT})

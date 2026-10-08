@@ -110,9 +110,21 @@ class TodoService:
             db.execute("CREATE INDEX IF NOT EXISTS todos_parent_order ON todos(parent_id,sort_order,created_at)")
             if "status" not in columns:
                 db.execute("UPDATE todos SET status='completed' WHERE completed_at IS NOT NULL")
-        self._migrate_calendar_records()
-        if os.environ.get("STELLA_DESKTOP") == "1":
-            self._record_legacy_claims()
+        migration_deferred = False
+        try:
+            self._migrate_calendar_records()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            logger.warning("[Todos] Calendar migration deferred: %s", exc)
+            migration_deferred = True
+        if os.environ.get("STELLA_DESKTOP") == "1" and not migration_deferred:
+            try:
+                self._record_legacy_claims()
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower():
+                    raise
+                logger.warning("[Todos] Legacy reminder claims deferred: %s", exc)
         self.scheduler_store = scheduler_store
         if self.scheduler_store is None and db_path is None:
             try:
@@ -120,8 +132,18 @@ class TodoService:
                 self.scheduler_store = default_scheduler_store()
             except Exception as exc:
                 logger.warning("[Todos] Scheduler store unavailable: %s", exc)
-        self._backfill_scheduler_links()
-        self._sync_scheduler_links()
+        try:
+            self._backfill_scheduler_links()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            logger.warning("[Todos] Reminder link backfill deferred: %s", exc)
+        try:
+            self._sync_scheduler_links()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            logger.warning("[Todos] Reminder scheduler sync deferred: %s", exc)
 
     @staticmethod
     def _active_reminder(remind_at, status):
@@ -140,8 +162,11 @@ class TodoService:
 
     def _backfill_scheduler_links(self):
         with self._connect() as db:
-            for row in db.execute("""SELECT id,remind_at,status FROM todos WHERE remind_at IS NOT NULL
-                AND status NOT IN ('completed','cancelled')"""):
+            db.execute("PRAGMA busy_timeout=250")
+            for row in db.execute("""SELECT t.id,t.remind_at,t.status FROM todos AS t
+                LEFT JOIN todo_scheduler_links AS l ON l.todo_id=t.id
+                WHERE t.remind_at IS NOT NULL AND t.status NOT IN ('completed','cancelled')
+                AND l.todo_id IS NULL"""):
                 if self._active_reminder(row["remind_at"], row["status"]):
                     db.execute("""INSERT OR IGNORE INTO todo_scheduler_links
                         (todo_id,task_id,desired_at,state,updated_at) VALUES (?,?,?,'pending',?)""",
@@ -151,6 +176,7 @@ class TodoService:
         if self.scheduler_store is None:
             return
         with self._connect() as db:
+            db.execute("PRAGMA busy_timeout=250")
             pending = [dict(row) for row in db.execute(
                 "SELECT * FROM todo_scheduler_links WHERE state='pending'")]
         for link in pending:
@@ -163,6 +189,7 @@ class TodoService:
                            self._active_reminder(todo["remind_at"], todo["status"]) else None)
                 sync_task(self.scheduler_store, link["todo_id"], todo["title"] if todo else "", desired)
                 with self._connect() as db:
+                    db.execute("PRAGMA busy_timeout=250")
                     if desired:
                         db.execute("""UPDATE todo_scheduler_links SET state='synced',error='',updated_at=?
                             WHERE todo_id=? AND desired_at=?""", (_now(), link["todo_id"], desired))
@@ -171,9 +198,18 @@ class TodoService:
                                    (link["todo_id"], link["desired_at"]))
             except Exception as exc:
                 logger.warning("[Todos] Reminder scheduler sync pending todo=%s: %s", link["todo_id"], exc)
-                with self._connect() as db:
-                    db.execute("UPDATE todo_scheduler_links SET error=?,updated_at=? WHERE todo_id=?",
-                               (str(exc), _now(), link["todo_id"]))
+                if isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower():
+                    return
+                try:
+                    with self._connect() as db:
+                        db.execute("PRAGMA busy_timeout=250")
+                        db.execute("UPDATE todo_scheduler_links SET error=?,updated_at=? WHERE todo_id=?",
+                                   (str(exc), _now(), link["todo_id"]))
+                except sqlite3.OperationalError as write_exc:
+                    if "locked" not in str(write_exc).lower():
+                        raise
+                    logger.warning("[Todos] Reminder sync error recording deferred: %s", write_exc)
+                    return
 
     @contextmanager
     def _connect(self):
@@ -195,6 +231,9 @@ class TodoService:
         if not self.legacy_calendar_db_path.exists():
             return
         with self._connect() as db:
+            if db.execute("SELECT 1 FROM todo_migrations WHERE name='calendar_affairs_v1'").fetchone():
+                return
+            db.execute("PRAGMA busy_timeout=250")
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM todo_migrations WHERE name='calendar_affairs_v1'").fetchone():
                 return
@@ -245,6 +284,9 @@ class TodoService:
     def _record_legacy_claims(self):
         """Keep old destructive claims visible without assuming they were shown."""
         with self._connect() as db:
+            if db.execute("SELECT 1 FROM todo_migrations WHERE name='desktop_reminders_v1'").fetchone():
+                return
+            db.execute("PRAGMA busy_timeout=250")
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM todo_migrations WHERE name='desktop_reminders_v1'").fetchone():
                 return

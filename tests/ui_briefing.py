@@ -11,7 +11,7 @@ test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 briefing = dict(id='brf-2026-10-08-morning', title='今日简报', status='completed', kind='morning',
                 generated_at='2026-10-08T08:00:00Z', updated_at='2026-10-08T08:00:00Z',
                 body='AI 精简概览', fetched_count=1, kept_count=1, filtered_count=0,
-                source_windows={}, mail_snapshot_available=True, error_message='')
+                source_windows={'elearning:campus': {'source':'elearning','account_id':'campus','name':'课程账号','start':'2026-10-07T08:00:00Z','end':'2026-10-08T08:00:00Z'}}, mail_snapshot_available=True, error_message='')
 item = dict(id='item-1', briefing_id=briefing['id'], title='算法设计大作业4', section='action',
             status='undo', source='elearning', account_id='campus', source_id='12:assignment:4',
             occurred_at='2026-10-08T08:00:00Z', score=80, sender='课程', snippet='10月29日截止',
@@ -20,16 +20,24 @@ receipt = dict(state='pending', kind='todo', target_id=None, business=None, erro
 action = dict(category='needs_action', change_type='new', information_type='assignment',
               facts={'course_id':'12', 'due_at':'2026-10-29T15:59:00Z', 'time_origin':'source'},
               todo=receipt, calendar=None, reminder=None)
+items = [item]
+actions = {item['id']: action}
 preferences = dict(show_low_priority=True, show_ongoing=True, important_types=[],
                    reminder_frequency='daily', summary_detail='brief')
 decisions = []
 rules = []
+fail_next_detail = [False]
 calendar_event = dict(id='future-event',title='未来课程会议',start_at='2099-12-10T01:00:00+00:00',end_at='2099-12-10T02:00:00+00:00',
     description='已关联日程详情',all_day=False,category_id=None,repeat_frequency='none',repeat_days=[],location='',repeat_until=None)
 
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/briefings/' + briefing['id'] and fail_next_detail[0]:
+        fail_next_detail[0] = False
+        route.fulfill(status=503, content_type='application/json', body=json.dumps({'status':'error','message':'刷新暂时失败'}),
+                      headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+        return
     body = route.request.post_data_json if route.request.method == 'POST' else None
     data = {'status':'success'}
     if path == '/api/health':
@@ -41,9 +49,9 @@ def backend(route):
     elif path == '/api/briefings':
         data['briefings'] = [briefing]
     elif path == '/api/briefings/' + briefing['id']:
-        data.update(briefing=briefing, items=[item], mail=[], revisions=[], actions={item['id']:action}, preferences=preferences)
+        data.update(briefing=briefing, items=items, mail=[], revisions=[], actions=actions, preferences=preferences)
     elif path == '/api/briefings/overview':
-        data.update(items=[item],actions={item['id']:action},preferences=preferences)
+        data.update(items=items,actions=actions,preferences=preferences)
     elif path == '/api/calendar/events':
         data['events'] = [calendar_event]
     elif path == '/api/calendar/categories':
@@ -52,6 +60,7 @@ def backend(route):
         data['targets'] = [{'id':'existing','title':'已有学习事务','status':'todo'}]
     elif path == '/api/briefings/actions':
         decision = body['decision']
+        target_receipt = actions[body['id']]['todo'] if decision.get('kind') == 'todo' else receipt
         decisions.append(decision)
         operation = decision['operation']
         if decision.get('kind') == 'reminder' and operation == 'retry':
@@ -61,14 +70,17 @@ def backend(route):
             action['calendar'].update(state='succeeded',error='',result={'operation':'synced'})
             data['receipt'] = action['calendar']
         elif operation in {'create','retry','link'}:
-            receipt.update(state='failed' if len(decisions) == 1 else 'succeeded',
+            awaiting_match = body['id'] == 'item-4'
+            target_receipt.update(state='pending' if awaiting_match else 'failed' if len(decisions) == 1 else 'succeeded',
                            error='临时写入失败' if len(decisions) == 1 else '',
-                           target_id=None if len(decisions) == 1 else 'existing',
-                           business=None if len(decisions) == 1 else {'id':'existing','title':'已有学习事务','status':'todo'},
+                           target_id=None if awaiting_match or len(decisions) == 1 else 'existing',
+                           business=None if awaiting_match or len(decisions) == 1 else {'id':'existing','title':'已有学习事务','status':'todo'},
                            result={'operation':'created' if operation != 'link' else 'linked'})
+            if body['id'] == 'item-5':
+                fail_next_detail[0] = True
         elif operation == 'unlink':
-            receipt.update(state='detached', target_id=None, business=None)
-        data.setdefault('receipt', receipt)
+            target_receipt.update(state='detached', target_id=None, business=None)
+        data.setdefault('receipt', target_receipt)
     elif path == '/api/briefings/authorizations':
         if body:
             rules.append({**body,'id':'rule-1'})
@@ -107,20 +119,21 @@ with sync_playwright() as playwright:
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/briefing', wait_until='networkidle')
         page.get_by_text('今日简报', exact=True).first.click()
-        page.get_by_role('button', name='创建事务', exact=True).click()
-        dialog = page.get_by_role('dialog')
-        expect(dialog.get_by_label('标题', exact=True)).to_have_value(item['title'])
-        expect(dialog.get_by_label('标题', exact=True)).to_be_focused()
-        page.keyboard.press('Shift+Tab')
-        expect(dialog.get_by_role('button', name='确认', exact=True)).to_be_focused()
-        page.keyboard.press('Tab')
-        expect(dialog.get_by_label('标题', exact=True)).to_be_focused()
-        dialog.get_by_role('button', name='取消', exact=True).click()
-        expect(page.get_by_role('button', name='创建事务', exact=True)).to_be_focused()
+        expect(page.get_by_text('AI 报告', exact=True)).to_be_visible()
+        expect(page.get_by_text('事实、判断与执行结果', exact=True)).to_be_visible()
+        expect(page.get_by_label(item['title'] + ': 信息阅读状态')).to_have_count(0)
+        expect(page.get_by_role('button', name='创建事务', exact=True)).to_have_count(0)
+        expect(page.get_by_text('来源与时间窗口', exact=True)).to_be_visible()
+        page.get_by_text('来源与时间窗口', exact=True).click()
+        expect(page.get_by_text('课程账号：', exact=False)).to_be_visible()
+        expect(page.get_by_role('link', name='打开来源', exact=True)).to_be_visible()
+        item_checkbox = page.get_by_role('checkbox', name='选择 算法设计大作业4')
+        expect(item_checkbox).not_to_be_checked()
         assert decisions == []
-        page.get_by_role('button', name='创建事务', exact=True).click()
-        page.get_by_role('dialog').get_by_role('button', name='确认', exact=True).click()
-        expect(page.get_by_text('临时写入失败', exact=False)).to_be_visible()
+        page.get_by_role('checkbox', name='全选可生成事务的信息').check()
+        expect(item_checkbox).to_be_checked()
+        page.get_by_role('button', name='生成事务', exact=False).click()
+        expect(page.get_by_role('article').get_by_text('临时写入失败', exact=False)).to_be_visible()
         page.get_by_role('button', name='重试', exact=True).last.click()
         expect(page.get_by_role('link', name='查看事务', exact=True)).to_be_visible()
         assert decisions[-1]['operation'] == 'retry'
@@ -174,7 +187,51 @@ with sync_playwright() as playwright:
         page.get_by_role('link', name='查看日程', exact=True).click()
         expect(page.locator('button[aria-expanded]').filter(has_text='未来课程会议')).to_have_attribute('aria-expanded','true')
         expect(page.get_by_text('已关联日程详情', exact=True)).to_be_visible()
+        for number in (2, 3):
+            extra = {**item, 'id':f'item-{number}', 'title':f'待生成事务{number}', 'source_id':f'12:assignment:{number}'}
+            items.append(extra)
+            actions[extra['id']] = {**action, 'todo':dict(kind='todo',state='pending',target_id=None,business=None,error='',result={}), 'calendar':None, 'reminder':None}
+        informational = {**item, 'id':'item-info', 'title':'课程资料通知', 'section':'fyi', 'source_id':'12:material:1'}
+        items.append(informational)
+        actions[informational['id']] = {**action, 'category':'attention', 'information_type':'material', 'todo':None, 'calendar':None, 'reminder':None}
+        page.goto(test_url + '/#/briefing', wait_until='networkidle')
+        page.get_by_text('今日简报', exact=True).first.click()
+        expect(page.get_by_role('checkbox', name='选择 待生成事务2')).to_be_visible()
+        expect(page.get_by_role('checkbox', name='选择 课程资料通知')).to_be_disabled()
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        mobile_batch_screenshot = Path(os.environ.get('STELLA_SCREENSHOT_DIR', os.environ.get('TMPDIR', '/tmp'))) / 'stella-briefing-mobile-batch.png'
+        page.screenshot(path=str(mobile_batch_screenshot), full_page=True)
+        before = len(decisions)
+        page.get_by_role('checkbox', name='全选可生成事务的信息').check()
+        expect(page.get_by_role('checkbox', name='选择 待生成事务3')).to_be_checked()
+        assert len(decisions) == before
+        page.get_by_role('button', name='生成事务', exact=False).click()
+        expect(page.get_by_role('link', name='查看事务', exact=True)).to_have_count(3)
+        assert len(decisions) == before + 2
+        assert all(row['operation'] == 'create' for row in decisions[-2:])
+        page.set_viewport_size({'width':1440,'height':1000})
+        extra = {**item, 'id':'item-4', 'title':'需匹配已有事务', 'source_id':'12:assignment:4b'}
+        items.append(extra)
+        actions[extra['id']] = {**action, 'todo':dict(kind='todo',state='pending',target_id=None,business=None,error='',result={}), 'calendar':None, 'reminder':None}
+        page.get_by_role('button', name='刷新', exact=True).click()
+        page.get_by_role('checkbox', name='选择 需匹配已有事务').check()
+        page.get_by_role('button', name='生成事务', exact=False).click()
+        expect(page.get_by_role('checkbox', name='选择 需匹配已有事务')).to_be_checked()
+        expect(page.get_by_text('1 项事务生成失败', exact=False)).to_be_visible()
+        page.get_by_role('checkbox', name='选择 需匹配已有事务').uncheck()
+        extra = {**item, 'id':'item-5', 'title':'刷新失败后仍已创建', 'source_id':'12:assignment:5'}
+        items.append(extra)
+        actions[extra['id']] = {**action, 'todo':dict(kind='todo',state='pending',target_id=None,business=None,error='',result={}), 'calendar':None, 'reminder':None}
+        page.get_by_role('button', name='刷新', exact=True).click()
+        page.get_by_role('checkbox', name='选择 刷新失败后仍已创建').check()
+        before = len(decisions)
+        page.get_by_role('button', name='生成事务', exact=False).click()
+        expect(page.get_by_text('HTTP 503', exact=False)).to_be_visible()
+        expect(page.get_by_role('checkbox', name='选择 刷新失败后仍已创建')).to_be_disabled()
+        expect(page.get_by_text('1 项事务生成失败', exact=False)).to_have_count(0)
+        assert len(decisions) == before + 1
         assert errors == [], errors
-        print('UI briefing: decisions/reminder retry/keyboard/preferences/scoped authorization/full overview/calendar target/narrow desktop PASS; 390px geometry only')
+        print('UI briefing: manual batch creation/retry/preferences/scoped authorization/full overview/calendar target/narrow desktop PASS; 390px geometry only')
     finally:
         browser.close()
