@@ -6,6 +6,7 @@ import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { useUIStore } from '../../store/uiStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
+import AgentElearningFileSettings from './AgentElearningFileSettings'
 
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
@@ -526,6 +527,8 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
           <SaveRow status={agentStatus} onSave={saveAgentConfig} />
         </div>
       </Card>
+
+      <AgentElearningFileSettings />
 
       {/* Security */}
       <Card icon={<ShieldCheck size={16} />} title={t('config_security')}>
