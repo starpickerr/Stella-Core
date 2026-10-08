@@ -121,8 +121,13 @@ class TodoService:
                 self.scheduler_store = default_scheduler_store()
             except Exception as exc:
                 logger.warning("[Todos] Scheduler store unavailable: %s", exc)
-        self._backfill_scheduler_links()
-        self._sync_scheduler_links()
+        try:
+            self._backfill_scheduler_links()
+            self._sync_scheduler_links()
+        except sqlite3.OperationalError as exc:
+            if "database is locked" not in str(exc).lower():
+                raise
+            logger.warning("[Todos] Reminder scheduler maintenance deferred: %s", exc)
 
     @staticmethod
     def _active_reminder(remind_at, status):
@@ -140,9 +145,15 @@ class TodoService:
                 (todo_id, task_id_for(todo_id), desired, _now()))
 
     def _backfill_scheduler_links(self):
+        missing_sql = """SELECT todos.id,todos.remind_at,todos.status FROM todos
+            LEFT JOIN todo_scheduler_links AS links ON links.todo_id=todos.id
+            WHERE todos.remind_at IS NOT NULL AND todos.status NOT IN ('completed','cancelled')
+              AND links.todo_id IS NULL"""
         with self._connect() as db:
-            for row in db.execute("""SELECT id,remind_at,status FROM todos WHERE remind_at IS NOT NULL
-                AND status NOT IN ('completed','cancelled')"""):
+            if not db.execute(missing_sql).fetchone():
+                return
+            db.execute("BEGIN IMMEDIATE")
+            for row in db.execute(missing_sql).fetchall():
                 if self._active_reminder(row["remind_at"], row["status"]):
                     db.execute("""INSERT OR IGNORE INTO todo_scheduler_links
                         (todo_id,task_id,desired_at,state,updated_at) VALUES (?,?,?,'pending',?)""",

@@ -299,8 +299,10 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
             import traceback
             logger.error(traceback.format_exc())
 
+            error_message = str(e)
+
             def error_generator():
-                yield {"error": True, "message": str(e), "status_code": 500}
+                yield {"error": True, "message": error_message, "status_code": 500}
             return error_generator()
 
     # -------------------- streaming --------------------

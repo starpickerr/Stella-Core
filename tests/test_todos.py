@@ -10,7 +10,6 @@ import pytest
 
 from agent.calendar import CalendarService
 from agent.permission.gateway import SecurityGateway
-check_tool_call = SecurityGateway.check
 from agent.todos import TodoService
 from agent.scheduler.store import TaskStore
 from agent.scheduler.automation_store import AutomationStore
@@ -18,6 +17,8 @@ from application import Application, RequestContext
 from common.runtime_identity import identity_scope
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.tool_manager import ToolManager
+
+check_tool_call = SecurityGateway.check
 
 
 @pytest.fixture
@@ -245,6 +246,66 @@ def test_existing_explicit_reminder_is_linked_on_upgrade(tmp_path):
     upgraded = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
     assert store.get_task(todo["scheduler_task_id"])["schedule"]["run_at"] == reminder
     assert not upgraded.get_todo(todo["id"])["reminder_sync_pending"]
+
+
+def test_scheduler_backfill_defers_busy_write_and_recovers(tmp_path, monkeypatch):
+    path = tmp_path / "todos.db"
+    service = TodoService(path, tmp_path / "calendar.db")
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = service.create_todo({"title": "旧提醒", "remind_at": reminder})
+    with sqlite3.connect(path) as db:
+        db.execute("DELETE FROM todo_scheduler_links WHERE todo_id=?", (todo["id"],))
+
+    real_connect = sqlite3.connect
+
+    class BusyBackfill(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if "INSERT OR IGNORE INTO todo_scheduler_links" in sql:
+                raise sqlite3.OperationalError("database is locked")
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_busy(*args, **kwargs):
+        kwargs["factory"] = BusyBackfill
+        return real_connect(*args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(sqlite3, "connect", connect_busy)
+        reopened = TodoService(path, tmp_path / "calendar.db")
+        assert reopened.list_todos()[0]["id"] == todo["id"]
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT 1 FROM todo_scheduler_links WHERE todo_id=?",
+                          (todo["id"],)).fetchone() is None
+    TodoService(path, tmp_path / "calendar.db")
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT desired_at FROM todo_scheduler_links WHERE todo_id=?",
+                          (todo["id"],)).fetchone() == (reminder,)
+
+
+def test_scheduler_backfill_does_not_write_existing_link(tmp_path, monkeypatch):
+    path = tmp_path / "todos.db"
+    service = TodoService(path, tmp_path / "calendar.db")
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = service.create_todo({"title": "现有提醒", "remind_at": reminder})
+    real_connect = sqlite3.connect
+    attempted = []
+
+    class RejectRedundantInsert(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if "INSERT OR IGNORE INTO todo_scheduler_links" in sql:
+                attempted.append(sql)
+                raise sqlite3.OperationalError("database is locked")
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_checked(*args, **kwargs):
+        kwargs["factory"] = RejectRedundantInsert
+        return real_connect(*args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(sqlite3, "connect", connect_checked)
+        assert TodoService(path, tmp_path / "calendar.db").list_todos()[0]["id"] == todo["id"]
+    assert attempted == []
 
 
 def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path):
