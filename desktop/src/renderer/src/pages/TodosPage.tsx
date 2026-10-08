@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   BellRing,
   CalendarDays,
@@ -52,18 +52,18 @@ const statusColors: Record<Todo["status"], string> = {
   cancelled: "text-content-tertiary",
 };
 
-type View = "inbox" | "today" | "upcoming" | "planned" | "all" | "completed";
+type View = "today" | "upcoming" | "planned" | "all" | "completed";
 type Sort = "date" | "priority" | "manual";
 
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const en = getLang() === "en";
   const copy = en
     ? {
         title: "Tasks",
         subtitle: "One place for what needs attention.",
         newTask: "New task",
-        inbox: "Inbox",
         today: "Today",
         upcoming: "Due soon",
         planned: "Planned",
@@ -134,6 +134,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         retry: "Send again",
         reminderInvalid:
           "The task changed or was completed, so that reminder was cancelled.",
+        schedulerLinked: "Linked scheduler task",
+        schedulerPending: "Reminder schedule is pending; it will retry automatically.",
         moveUp: "Move up",
         moveDown: "Move down",
       }
@@ -141,7 +143,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         title: "事务",
         subtitle: "把需要完成的事安排清楚。",
         newTask: "新建事务",
-        inbox: "收件箱",
         today: "今天",
         upcoming: "即将到期",
         planned: "计划",
@@ -210,20 +211,24 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         uncertain: "以下提醒可能未在设备上显示。",
         retry: "重新发送",
         reminderInvalid: "事务已修改或完成，原提醒已取消。",
+        schedulerLinked: "已关联定时任务",
+        schedulerPending: "提醒排程暂未同步成功，系统会自动重试。",
         moveUp: "上移",
         moveDown: "下移",
       };
   const [rows, setRows] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<Todo[]>([]);
   const [uncertain, setUncertain] = useState<UncertainReminder[]>([]);
-  const [view, setView] = useState<View>("inbox");
+  const [view, setView] = useState<View>("all");
   const [query, setQuery] = useState("");
   const [listFilter, setListFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [flagFilter, setFlagFilter] = useState(false);
   const [statusFilter, setStatusFilter] = useState<Todo["status"] | "">("");
   const [sort, setSort] = useState<Sort>("date");
-  const [expanded, setExpanded] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [inlineChildParent, setInlineChildParent] = useState<string | null>(null);
+  const [inlineChildTitle, setInlineChildTitle] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TodoInput | null>(null);
   const [draftTags, setDraftTags] = useState("");
@@ -267,6 +272,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     [rows],
   );
   const selected = selectedId ? byId.get(selectedId) || null : null;
+  const selectedParent = selected?.parent_id ? byId.get(selected.parent_id) : null;
   const children = useCallback(
     (parentId: string | null) =>
       rows.filter((todo) => todo.parent_id === parentId && !todo.series_id),
@@ -289,7 +295,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   );
   const matchesView = (todo: Todo, target: View) => {
     if (target === "completed") return isDone(todo);
-    if (target === "all") return true;
+    if (target === "all") return !isDone(todo);
     if (isDone(todo)) return false;
     if (target === "today")
       return (
@@ -303,14 +309,12 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         (!!todo.planned_on && todo.planned_on > today) ||
         (!!todo.due_on && todo.due_on > soon)
       );
-    return !todo.planned_on && !todo.due_on;
+    return true;
   };
   const subtreeMatchesView = (todo: Todo, target: View): boolean =>
     matchesView(todo, target) ||
-    (target !== "inbox" &&
-      children(todo.id).some((child) => subtreeMatchesView(child, target)));
+    children(todo.id).some((child) => subtreeMatchesView(child, target));
   const views: View[] = [
-    "inbox",
     "today",
     "upcoming",
     "planned",
@@ -422,6 +426,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     setMore(false);
     setError("");
   };
+  useEffect(() => {
+    const todoId = (location.state as { todoId?: string } | null)?.todoId;
+    const target = todoId ? byId.get(todoId) : null;
+    if (!target) return;
+    open(target);
+    navigate("/todos", { replace: true, state: null });
+  }, [rows, location.state, navigate]);
   const close = () => {
     setSelectedId(null);
     setDraft(null);
@@ -484,7 +495,16 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         title: childTitle.trim(),
       });
       setChildTitle("");
-      setExpanded((value) => [...new Set([...value, taskKey(selected)])]);
+      setCollapsed((value) => value.filter((id) => id !== taskKey(selected)));
+    });
+  };
+  const addInlineChild = (parentId: string) => {
+    if (!inlineChildTitle.trim()) return;
+    void run(async () => {
+      await apiClient.addSubtask(parentId, { title: inlineChildTitle.trim() });
+      setInlineChildTitle("");
+      setInlineChildParent(null);
+      setCollapsed((value) => value.filter((id) => id !== parentId));
     });
   };
   const move = (id: string, parentId: string | null, position?: number) =>
@@ -514,7 +534,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const row = (todo: Todo, depth = 0): React.ReactNode => {
     const sub = children(todo.id).sort(compare);
     const isExpanded =
-      expanded.includes(todo.id) ||
+      !collapsed.includes(todo.id) ||
       !!query ||
       (!matchesView(todo, view) &&
         sub.some((child) => subtreeMatchesView(child, view)));
@@ -572,7 +592,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 todo.flagged ||
                 todo.blocked_by.length > 0 ||
                 todo.priority > 0 ||
-                todo.repeat_frequency !== "none") && (
+                todo.repeat_frequency !== "none" ||
+                todo.remind_at) && (
                 <span className="flex flex-wrap gap-x-3 gap-y-0.5 items-center text-xs text-content-tertiary mt-0.5">
                   {todo.subtask_count > 0 && (
                     <span className="text-accent">
@@ -621,6 +642,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     </span>
                   )}
                   {todo.repeat_frequency !== "none" && <Repeat2 size={11} />}
+                  {todo.remind_at && <span title={copy.remindAt}><BellRing size={11} className="inline mr-1" />{toLocalTime(todo.remind_at).replace("T", " ")}</span>}
                 </span>
               )}
               {todo.subtask_count > 0 && (
@@ -633,14 +655,22 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )}
             </button>
           </div>
+          {!todo.series_id && todo.repeat_frequency === "none" && (
+            <button type="button" disabled={busy} onClick={() => {
+              setInlineChildParent(todo.id);
+              setInlineChildTitle("");
+              setCollapsed((value) => value.filter((id) => id !== todo.id));
+            }} aria-label={`${copy.addSubtask} ${todo.title}`}
+              className="p-1 text-content-tertiary hover:text-accent disabled:opacity-40"><Plus size={16} /></button>
+          )}
           {sub.length > 0 && (
             <button
               type="button"
               onClick={() =>
-                setExpanded((value) =>
+                setCollapsed((value) =>
                   isExpanded
-                    ? value.filter((id) => id !== todo.id)
-                    : [...value, todo.id],
+                    ? [...value, todo.id]
+                    : value.filter((id) => id !== todo.id),
                 )
               }
               aria-label={`${copy.subtask} ${todo.title}`}
@@ -656,6 +686,17 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           )}
         </div>
         {isExpanded && visibleChildren.map((child) => row(child, depth + 1))}
+        {inlineChildParent === todo.id && (
+          <form onSubmit={(event) => { event.preventDefault(); addInlineChild(todo.id); }}
+            className="flex items-center gap-2 border-b border-default/70 py-2 pr-3"
+            style={{ paddingLeft: `${34 + Math.min(depth, 5) * 21}px` }}>
+            <input autoFocus value={inlineChildTitle} onChange={(event) => setInlineChildTitle(event.target.value)}
+              placeholder={copy.subtaskHint} aria-label={`${copy.addSubtask} ${todo.title}`}
+              className="min-w-0 flex-1 rounded-btn border border-default bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent" />
+            <button type="submit" disabled={busy || !inlineChildTitle.trim()} className="text-accent disabled:opacity-40"><Plus size={17} /></button>
+            <button type="button" onClick={() => setInlineChildParent(null)} className="text-content-tertiary"><X size={16} /></button>
+          </form>
+        )}
       </React.Fragment>
     );
   };
@@ -684,10 +725,11 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     return false;
   };
   return (
-    <div className="h-full overflow-y-auto bg-surface-0 text-content-primary">
+    <div className="h-full min-h-0 flex bg-surface-0 text-content-primary">
       <div
-        className={`mx-auto px-4 py-6 md:px-8 transition-[max-width] ${selected ? "max-w-6xl xl:pr-[400px]" : "max-w-5xl"}`}
+        className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-8"
       >
+        <div className="mx-auto max-w-5xl">
         <header className="flex items-start justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -938,19 +980,19 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
           </div>
         )}
+        </div>
       </div>
       {selected && draft && (
         <div
-          className="fixed inset-0 z-40 flex justify-end bg-black/30 xl:bg-transparent xl:pointer-events-none"
+          className="fixed inset-0 z-40 flex justify-end bg-black/30 xl:static xl:inset-auto xl:z-auto xl:w-[400px] xl:shrink-0 xl:bg-transparent"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) close();
           }}
         >
           <aside
             role="dialog"
-            aria-modal="true"
             aria-label={copy.details}
-            className="pointer-events-auto w-full sm:max-w-[440px] h-full overflow-y-auto bg-surface border-l border-default shadow-xl xl:shadow-none px-5 py-5 space-y-5"
+            className="pointer-events-auto w-full sm:max-w-[440px] xl:max-w-none h-full overflow-y-auto bg-surface border-l border-default shadow-xl xl:shadow-none px-5 py-5 space-y-5"
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
@@ -965,6 +1007,10 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <X size={18} />
               </button>
             </div>
+            {selectedParent && <button type="button"
+              onClick={() => open(selectedParent)} className="flex items-center gap-1 text-sm text-accent">
+              <ChevronRight size={15} className="rotate-180" />{selectedParent.title}
+            </button>}
             <div>
               <input
                 aria-label={copy.title}
@@ -1174,6 +1220,9 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 />
               </label>
             </section>
+            {selected.reminder_sync_pending ? <p role="status" className="text-xs text-amber-500">{copy.schedulerPending}</p>
+              : selected.scheduler_task_id && <button type="button" onClick={() => navigate("/tasks")}
+                className="text-xs text-accent text-left">{copy.schedulerLinked} · {selected.scheduler_task_id}</button>}
             <button
               type="button"
               onClick={() => setMore(!more)}

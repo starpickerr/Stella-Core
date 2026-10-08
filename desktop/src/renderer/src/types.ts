@@ -730,7 +730,7 @@ export interface TaskAction {
   skill_params?: Record<string, unknown>
   domain?: string
   command?: string
-  params?: Record<string, unknown>
+  params?: Record<string, unknown> | unknown[]
   execution_session_id?: string
   notify_session_id?: string
   conversation_mode?: 'source' | 'reuse' | 'new'
@@ -742,6 +742,7 @@ export interface TaskAction {
 
 export interface SchedulerTask {
   id: string
+  linked_todo_id?: string
   name: string
   enabled: boolean
   created_at: string
@@ -841,6 +842,7 @@ export interface Todo {
   id: string; series_id?: string; title: string; notes: string
   status: 'todo' | 'in_progress' | 'waiting' | 'blocked' | 'completed' | 'cancelled'
   parent_id: string | null; sort_order: number; remind_at: string | null
+  scheduler_task_id: string | null; reminder_sync_pending: boolean; reminder_sync_error: string
   subtask_count: number; progress_completed: number; progress_total: number; progress_percent: number
   dependency_ids: string[]; blocked_by: string[]
   due_on: string | null; due_time: string | null; timezone: string; priority: number
