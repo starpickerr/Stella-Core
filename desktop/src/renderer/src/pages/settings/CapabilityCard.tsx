@@ -123,12 +123,19 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
         {!isAuto && (
           <Field label={t('models_model')}>
             {isCustomProvider ? (
-              <TextInput
-                className="font-mono"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={t('config_custom_model_hint')}
-              />
+              <>
+                {modelOptions.length > 0 && <Dropdown
+                  value={modelOptions.some((option) => option.value === customModel) ? customModel : CUSTOM_OPTION}
+                  options={[...modelOptions, { value: CUSTOM_OPTION, label: t('config_custom_option') }]}
+                  onChange={(value) => setCustomModel(value === CUSTOM_OPTION ? '' : value)}
+                />}
+                {(!modelOptions.length || !modelOptions.some((option) => option.value === customModel)) && <TextInput
+                  className="mt-2 font-mono"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder={t('config_custom_model_hint')}
+                />}
+              </>
             ) : (
               <>
                 <Dropdown

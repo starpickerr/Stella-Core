@@ -17,7 +17,8 @@ Config model
           "name": "my-provider",           # user-facing display label (not a key)
           "api_key": "sk-...",             # required
           "api_base": "https://...",       # required, must be OpenAI-compatible
-          "model": "model-name"           # optional default model
+          "model": "model-name",          # optional default model
+          "models": ["model-name"]        # selectable models
       }
 
 Routing
@@ -50,6 +51,17 @@ def get_custom_providers():
         return []
     # Keep only well-formed entries with an id.
     return [p for p in providers if isinstance(p, dict) and p.get("id")]
+
+
+def get_provider_models(provider):
+    """Return configured models, including the default from older configs."""
+    models = []
+    default = provider.get("model")
+    configured = provider.get("models")
+    for value in [default, *(configured if isinstance(configured, list) else [])]:
+        if isinstance(value, str) and value.strip() and value.strip() not in models:
+            models.append(value.strip())
+    return models
 
 
 def _find_provider_by_id(providers, provider_id):
