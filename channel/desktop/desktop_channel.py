@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import web
 
-from bridge.context import *
+from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
@@ -988,7 +988,8 @@ class DesktopChannel(ChatChannel):
         def on_event(event: dict):
             if request_id not in self.sse_streams:
                 return
-            publish = lambda item: self._publish_sse_event(request_id, item)
+            def publish(item):
+                self._publish_sse_event(request_id, item)
             event_type = event.get("type")
             data = event.get("data", {})
 
@@ -1354,7 +1355,6 @@ class DesktopChannel(ChatChannel):
             params = _raw_web_input()
             file_obj = params.get("file")
             file_objs = params.get("files")
-            session_id = params.get("session_id", "")
             relative_path = params.get("relative_path", "")
             relative_paths = params.get("relative_paths")
             upload_id = params.get("upload_id", "")
@@ -2040,6 +2040,12 @@ class DesktopChannel(ChatChannel):
             '/api/briefings/sources', 'BriefingSourcesHandler',
             '/api/briefings/elearning', 'BriefingElearningHandler',
             '/api/briefings/elearning/test', 'BriefingElearningTestHandler',
+            '/api/briefings/actions', 'BriefingActionsHandler',
+            '/api/briefings/overview', 'BriefingOverviewHandler',
+            '/api/briefings/actions/targets', 'BriefingActionTargetsHandler',
+            '/api/briefings/authorizations', 'BriefingAuthorizationsHandler',
+            '/api/briefings/authorizations/delete', 'BriefingAuthorizationDeleteHandler',
+            '/api/briefings/preferences', 'BriefingPreferencesHandler',
             '/api/briefings/items/status', 'BriefingItemStatusHandler',
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
@@ -2773,7 +2779,7 @@ class ConfigHandler:
             # legacy "custom" entry is hidden — unless the flat single-provider
             # custom config is still active or filled in.
             try:
-                from models.custom_provider import get_custom_providers
+                from models.custom_provider import get_custom_providers, get_provider_models
                 custom_list = get_custom_providers()
                 legacy_custom_in_use = ModelsHandler._legacy_custom_in_use(local_config)
                 if custom_list and not legacy_custom_in_use:
@@ -2783,16 +2789,16 @@ class ConfigHandler:
                     cname = cp.get("name") or cp.get("id")
                     providers[cid] = {
                         "label": {"zh": cname, "en": cname},
-                        "models": [cp["model"]] if cp.get("model") else [],
+                        "models": get_provider_models(cp),
                         "api_base_key": None,
                         "api_base_default": None,
                         "api_base_placeholder": "",
                         "api_key_field": None,
                         "reasoning": provider_reasoning_metadata(cid, cp.get("model") or ""),
-                        "reasoning_by_model": (
-                            {cp["model"]: provider_reasoning_metadata(cid, cp["model"])}
-                            if cp.get("model") else {}
-                        ),
+                        "reasoning_by_model": {
+                            model: provider_reasoning_metadata(cid, model)
+                            for model in get_provider_models(cp)
+                        },
                     }
             except Exception as cp_err:
                 logger.warning(f"[ConfigHandler] failed to expand custom providers: {cp_err}")
@@ -3362,7 +3368,7 @@ class ModelsHandler:
         ``custom_api_key`` / ``custom_api_base`` config.
         """
         try:
-            from models.custom_provider import get_custom_providers, parse_custom_bot_type
+            from models.custom_provider import get_custom_providers, get_provider_models, parse_custom_bot_type
             providers = get_custom_providers()
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"[ModelsHandler] failed to load custom_providers: {e}")
@@ -3401,7 +3407,7 @@ class ModelsHandler:
                 "protocol_id": p.get("protocol_id") or "openai_chat",
                 "api_base_default": "",
                 "api_base_placeholder": meta.get("api_base_placeholder") or "",
-                "models": [p.get("model")] if p.get("model") else [],
+                "models": get_provider_models(p),
             })
         return cards
 
@@ -4287,10 +4293,11 @@ class ModelsHandler:
               "api_base": "https://...",     # required when creating
               "api_key": "sk-...",           # optional on edit (keep existing)
               "model": "model-name",         # optional default model
+              "models": ["model-name"],      # optional selectable models
               "make_active": true            # optional, also activate it
             }
         """
-        from models.custom_provider import generate_provider_id, parse_custom_bot_type
+        from models.custom_provider import generate_provider_id, get_provider_models
 
         name = (data.get("name") or "").strip()
         if not name:
@@ -4302,6 +4309,18 @@ class ModelsHandler:
         api_key_raw = data.get("api_key")
         api_key = api_key_raw.strip() if isinstance(api_key_raw, str) else ""
         model = (data.get("model") or "").strip()
+        if "models" in data:
+            if not isinstance(data["models"], list) or any(
+                not isinstance(value, str) for value in data["models"]
+            ):
+                return json.dumps({"status": "error", "message": "models must be a list of strings"})
+            models = list(dict.fromkeys(
+                value.strip() for value in data["models"] if value.strip()
+            ))
+            if not models:
+                return json.dumps({"status": "error", "message": "at least one model is required"})
+        else:
+            models = None
         make_active = bool(data.get("make_active"))
         from models.provider_config import PROTOCOLS
         protocol_id = (data.get("protocol_id") or "openai_chat").strip()
@@ -4312,6 +4331,12 @@ class ModelsHandler:
         providers = self._normalize_custom_providers(local_config.get("custom_providers"))
 
         existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
+        if models is not None:
+            if "model" in data and model and model not in models:
+                return json.dumps({"status": "error", "message": "default model must be in models"})
+            previous_default = (existing or {}).get("model") or ""
+            if not model:
+                model = previous_default if previous_default in models else (models[0] if models else "")
         if "protocol_id" in data:
             from models.provider_config import validate_endpoint
             try:
@@ -4328,6 +4353,10 @@ class ModelsHandler:
             entry["protocol_id"] = protocol_id
             if model:
                 entry["model"] = model
+            if models is not None:
+                entry["models"] = models
+            elif model:
+                entry["models"] = [model]
             providers.append(entry)
             created = True
         else:
@@ -4339,11 +4368,15 @@ class ModelsHandler:
             # Only touch model when explicitly provided in the payload; an
             # explicit empty string clears it, a missing key keeps it (the
             # UI modal no longer sends model, so manual config survives edits).
-            if "model" in data:
+            if "model" in data or models is not None:
                 if model:
                     existing["model"] = model
                 else:
                     existing.pop("model", None)
+            if models is not None:
+                existing["models"] = models
+            elif "model" in data:
+                existing["models"] = get_provider_models(existing)
             if "protocol_id" in data:
                 existing["protocol_id"] = protocol_id
             created = False
@@ -4351,6 +4384,8 @@ class ModelsHandler:
         # Decide bot_type — only switch when explicitly requested.
         new_bot_type = None
         if make_active:
+            new_bot_type = f"custom:{provider_id}"
+        elif existing and local_config.get("bot_type") == f"custom:{provider_id}" and models is not None:
             new_bot_type = f"custom:{provider_id}"
 
         self._persist_custom_providers(providers, new_bot_type)
@@ -6942,7 +6977,7 @@ def _session_model_catalog() -> List[dict]:
     # model when this custom provider is the one in use — otherwise a custom
     # provider added without a preset model would be unselectable in chat.
     try:
-        from models.custom_provider import get_custom_providers
+        from models.custom_provider import get_custom_providers, get_provider_models
         for cp in get_custom_providers():
             cid = cp.get("id")
             if not cid:
@@ -6952,10 +6987,7 @@ def _session_model_catalog() -> List[dict]:
             has_key = bool(str(cp.get("api_key") or "").strip())
             if not has_key and not is_active:
                 continue
-            models = []
-            cp_model = str(cp.get("model") or "").strip()
-            if cp_model:
-                models.append(cp_model)
+            models = get_provider_models(cp)
             if is_active and active_model and active_model not in models:
                 models.insert(0, active_model)
             if not models:
@@ -7908,3 +7940,48 @@ class PendingRunsHandler:
         rows = store.list_run_admissions(web.input(session_id=None).session_id)
         web.header('Content-Type', 'application/json; charset=utf-8')
         return json.dumps({"status": "success", "admissions": _pending_admissions(rows)}, ensure_ascii=False)
+
+
+class BriefingActionsHandler:
+    def POST(self):
+        def operation():
+            body = _briefing_body()
+            return {"receipt": _briefing_service().update_action(_briefing_id(body), body.get("decision"))}
+        return _briefing_response(operation)
+
+
+class BriefingOverviewHandler:
+    def GET(self):
+        return _briefing_response(lambda: _briefing_service().get_overview())
+
+
+class BriefingActionTargetsHandler:
+    def GET(self):
+        def operation():
+            params = web.input(kind='todo', query='')
+            return {"targets": _briefing_service().get_action_targets(params.kind, params.query)}
+        return _briefing_response(operation)
+
+
+class BriefingAuthorizationsHandler:
+    def GET(self):
+        return _briefing_response(lambda: {"rules": _briefing_service().list_action_rules()})
+
+    def POST(self):
+        return _briefing_response(lambda: {"rule": _briefing_service().create_action_rule(_briefing_body())})
+
+
+class BriefingAuthorizationDeleteHandler:
+    def POST(self):
+        def operation():
+            _briefing_service().delete_action_rule(_briefing_id(_briefing_body()))
+            return {"deleted": True}
+        return _briefing_response(operation)
+
+
+class BriefingPreferencesHandler:
+    def GET(self):
+        return _briefing_response(lambda: {"preferences": _briefing_service().get_preferences()})
+
+    def POST(self):
+        return _briefing_response(lambda: {"preferences": _briefing_service().update_preferences(_briefing_body())})

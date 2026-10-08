@@ -28,6 +28,7 @@ import type {
   PeriodStatementItem,
   PeriodType,
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
+  BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
   CalendarCategory, CalendarEvent, CalendarEventInput,
@@ -825,6 +826,38 @@ class ApiClient {
 
   async getBriefing(id: string): Promise<BriefingDetail> {
     return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}`)
+  }
+
+  async getBriefingOverview(): Promise<Pick<BriefingDetail, 'items' | 'actions' | 'preferences'>> {
+    return this.briefingRequest('/api/briefings/overview')
+  }
+
+  async decideBriefing(id: string, decision: BriefingDecision): Promise<BriefingActionReceipt> {
+    return (await this.briefingRequest<{ receipt: BriefingActionReceipt }>('/api/briefings/actions', { id, decision })).receipt
+  }
+
+  async getBriefingTargets(kind: 'todo' | 'calendar', query = ''): Promise<(Todo | CalendarEvent)[]> {
+    return (await this.briefingRequest<{ targets: (Todo | CalendarEvent)[] }>(`/api/briefings/actions/targets?${new URLSearchParams({ kind, query })}`)).targets
+  }
+
+  async getBriefingAuthorizations(): Promise<BriefingAuthorization[]> {
+    return (await this.briefingRequest<{ rules: BriefingAuthorization[] }>('/api/briefings/authorizations')).rules
+  }
+
+  async saveBriefingAuthorization(rule: Omit<BriefingAuthorization, 'id'>): Promise<BriefingAuthorization> {
+    return (await this.briefingRequest<{ rule: BriefingAuthorization }>('/api/briefings/authorizations', rule)).rule
+  }
+
+  async deleteBriefingAuthorization(id: string): Promise<void> {
+    await this.briefingRequest('/api/briefings/authorizations/delete', { id })
+  }
+
+  async getBriefingPreferences(): Promise<BriefingPreferences> {
+    return (await this.briefingRequest<{ preferences: BriefingPreferences }>('/api/briefings/preferences')).preferences
+  }
+
+  async saveBriefingPreferences(preferences: BriefingPreferences): Promise<BriefingPreferences> {
+    return (await this.briefingRequest<{ preferences: BriefingPreferences }>('/api/briefings/preferences', preferences)).preferences
   }
 
   async getBriefingRevision(id: string, number: number): Promise<BriefingDetail> {

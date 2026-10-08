@@ -13,6 +13,7 @@ import {
   Pencil,
   Eye as EyeIcon,
   EyeOff,
+  X,
   ExternalLink,
 } from 'lucide-react'
 import { t, localizedLabel } from '../../i18n'
@@ -521,6 +522,8 @@ const CustomProviderModal: React.FC<{
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [protocolId, setProtocolId] = useState('openai_chat')
+  const [modelRows, setModelRows] = useState<string[]>([''])
+  const [defaultIndex, setDefaultIndex] = useState(0)
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -532,11 +535,16 @@ const CustomProviderModal: React.FC<{
       setApiBase(editing.api_base || '')
       setApiKey(editing.api_key_masked || '')
       setProtocolId(editing.protocol_id || 'openai_chat')
+      const models = normEntries(editing.models).map((entry) => entry.value)
+      setModelRows(models.length ? models : [''])
+      setDefaultIndex(Math.max(0, models.indexOf(editing.model || '')))
     } else {
       setName('')
       setApiBase('')
       setApiKey('')
       setProtocolId('openai_chat')
+      setModelRows([''])
+      setDefaultIndex(0)
     }
     setKeyDirty(false)
     setSaveError('')
@@ -546,6 +554,8 @@ const CustomProviderModal: React.FC<{
 
   const save = async () => {
     if (!name.trim()) return
+    const models = [...new Set(modelRows.map((row) => row.trim()).filter(Boolean))]
+    if (!models.length) { setSaveError(t('models_custom_models_required')); return }
     setSaving(true)
     setSaveError('')
     try {
@@ -556,11 +566,15 @@ const CustomProviderModal: React.FC<{
         api_base: string
         api_key?: string
         protocol_id: string
+        model: string
+        models: string[]
       } = {
         action: 'set_custom_provider',
         name: name.trim(),
         api_base: apiBase.trim(),
         protocol_id: protocolId,
+        model: models.includes(modelRows[defaultIndex]?.trim()) ? modelRows[defaultIndex].trim() : models[0],
+        models,
       }
       if (editing) payload.id = editing.custom_id
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
@@ -640,6 +654,23 @@ const CustomProviderModal: React.FC<{
             setKeyDirty(true)
           }}
         />
+      </Field>
+      <Field label={t('models_custom_models')} hint={t('models_custom_models_hint')}>
+        <div className="space-y-2">
+          {modelRows.map((value, index) => <div key={index} className="flex items-center gap-2">
+            <input type="radio" name="custom-default-model" checked={defaultIndex === index}
+              onChange={() => setDefaultIndex(index)} aria-label={`${t('models_default_model')} ${value || index + 1}`}
+              className="accent-accent shrink-0" />
+            <TextInput className="font-mono flex-1 min-w-0" value={value}
+              onChange={(event) => setModelRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? event.target.value : row))}
+              placeholder={t('config_custom_model_hint')} />
+            <button type="button" disabled={modelRows.length === 1} aria-label={t('models_delete')}
+              onClick={() => { setModelRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index)); setDefaultIndex((current) => current > index ? current - 1 : current === index ? 0 : current) }}
+              className="p-2 text-content-tertiary hover:text-danger disabled:opacity-30"><X size={15} /></button>
+          </div>)}
+          <button type="button" onClick={() => setModelRows((rows) => [...rows, ''])}
+            className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-hover"><Plus size={13} />{t('models_add_model')}</button>
+        </div>
       </Field>
       {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>

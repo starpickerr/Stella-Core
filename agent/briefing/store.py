@@ -386,8 +386,16 @@ class BriefingStore:
                 continue
             result.pop(key, None)
             occurred = datetime.fromisoformat(item.occurred_at.replace("Z", "+00:00"))
-            if not start_at < occurred <= end_at:
+            if occurred > end_at:
                 continue
+            if occurred <= start_at:
+                previous = self.get_source_item_by_key(item.source, item.account_id, item.source_id)
+                if previous:
+                    prior, _ = previous
+                    keys = ("due_at", "start_at", "end_at", "submission_status", "score", "grade", "workflow_state")
+                    if prior.title == item.title and all(prior.payload.get(key)==item.payload.get(key) for key in keys):
+                        continue
+
             email = EmailMessage(**snapshot["email"]) if snapshot["email"] else None
             result[key] = item, email
         return sorted(result.values(), key=lambda row: (
@@ -563,6 +571,19 @@ class BriefingStore:
         with self._conn() as conn:
             rows = conn.execute("SELECT snapshot FROM briefing_mail WHERE briefing_id=? ORDER BY source_item_id", (briefing_id,)).fetchall()
             return [json.loads(row[0]) for row in rows]
+
+    def latest_tracked_items(self):
+        with self._conn() as conn:
+            rows = conn.execute('''SELECT b.*,i.entity_key FROM briefing_items b
+                JOIN briefing_entity_items i ON i.item_id=b.id
+                ORDER BY julianday(b.occurred_at) DESC,b.updated_at DESC,b.id''')
+            seen = set()
+            result = []
+            for row in rows:
+                if row['entity_key'] not in seen:
+                    seen.add(row['entity_key'])
+                    result.append(_item_from_row(row))
+            return result
 
     def list_revisions(self, briefing_id):
         with self._conn() as conn:

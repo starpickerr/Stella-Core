@@ -326,7 +326,9 @@ class BriefingPipeline:
                             for item, _email in catalog_rows}
             for snapshot in prior_detail.get("mail", []):
                 key = snapshot["source"] + ":" + snapshot["account_id"]
-                if key in refreshed_keys:
+                occurred = datetime.fromisoformat(snapshot['occurred_at'].replace('Z', '+00:00'))
+                lower = datetime.fromisoformat(starts[key].replace('Z', '+00:00')) if key in refreshed_keys else None
+                if key in refreshed_keys and occurred > lower:
                     continue
                 item, email = self._restore_candidate(snapshot)
                 item_key = (item.source, item.account_id, item.source_id)
@@ -380,7 +382,7 @@ class BriefingPipeline:
                 self._check_cancelled()
             filtered_count = sum(row["category"] == "filtered" for row in mail)
 
-            detail = self.service.complete_briefing(
+            self.service.complete_briefing(
                 briefing.id,
                 {
                     "status": status,
@@ -411,7 +413,7 @@ class BriefingPipeline:
                 dispatch_pending(self.service.store)
             logger.info("[BriefingPipeline] finished id=%s status=%s elapsed=%.1fs",
                         briefing.id, status, time.monotonic() - run_started)
-            return detail
+            return self.service.get_briefing(briefing.id)
         except Exception as exc:
             logger.error(f"[BriefingPipeline] run failed: {exc}")
             self.service.complete_briefing(

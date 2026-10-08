@@ -1,0 +1,38 @@
+import { getLang } from '../../i18n'
+
+const labels: Record<string, [string, string]> = {
+  needs_action: ['需要行动', 'Needs action'], attention: ['值得关注', 'Worth attention'],
+  status_update: ['状态更新', 'Status updates'], other: ['其他动态', 'Other updates'],
+  new: ['新事项', 'New'], changed: ['重要变化', 'Changed'], unchanged: ['持续关注', 'Ongoing'],
+  pending: ['待确认', 'Awaiting confirmation'], succeeded: ['已执行', 'Executed'], failed: ['执行失败', 'Failed'],
+  conflict: ['等待确认冲突', 'Conflict needs confirmation'], deleted: ['关联对象已删除', 'Linked object deleted'],
+  detached: ['已解除关联', 'Detached'], ignored: ['已忽略建议', 'Suggestion ignored'],
+  deferred: ['暂不处理', 'Deferred'], briefing_only: ['仅保留简报', 'Briefing only'],
+  create_todo: ['创建事务', 'Create task'], create_calendar: ['创建日程', 'Create event'],
+  view_todo: ['查看事务', 'View task'], view_calendar: ['查看日程', 'View event'],
+  link: ['关联已有', 'Link existing'], reminder: ['设置提醒', 'Set reminder'], more: ['更多', 'More'],
+  unlink: ['解除关联', 'Unlink'], retry: ['重试', 'Retry'], confirm_update: ['确认更新', 'Confirm update'],
+  keep_current: ['保留当前', 'Keep current'], keep: ['仅保留简报', 'Briefing only'], ignore: ['忽略建议', 'Ignore suggestion'],
+  defer: ['暂不处理', 'Defer'], confirm: ['确认', 'Confirm'], cancel: ['取消', 'Cancel'],
+  title: ['标题', 'Title'], due: ['截止时间', 'Deadline'], planned: ['计划日期', 'Planned date'],
+  parent: ['父事务', 'Parent task'], none: ['无', 'None'], remind: ['提醒时间', 'Reminder time'],
+  start: ['开始时间', 'Start time'], end: ['结束时间', 'End time'],
+  remember: ['以后此来源、账号及课程的同类信息自动处理', 'Automatically handle this type for this source, account and course'],
+  search_todo: ['搜索事务', 'Search tasks'], search_calendar: ['搜索日程', 'Search events'],
+  no_targets: ['没有匹配对象', 'No matching objects'], details: ['事实、判断与执行结果', 'Facts, assessment and results'],
+  source_facts: ['来源事实', 'Source facts'], inference: ['AI 推断 · 请核对时间', 'AI inference · verify times'],
+  judgment: ['AI 判断', 'AI assessment'], business: ['关联业务', 'Linked business'],
+  info: ['信息阅读状态', 'Reading state'], undo: ['未读', 'Unread'], done: ['已读', 'Read'],
+  follow_up: ['关注', 'Following'], information_ignored: ['已归档', 'Archived'],
+  submitted: ['已提交', 'Submitted'], graded: ['已评分', 'Graded'], completed: ['已完成', 'Completed'],
+  todo: ['待办', 'To do'], in_progress: ['进行中', 'In progress'], waiting: ['等待', 'Waiting'],
+  blocked: ['受阻', 'Blocked'], cancelled: ['已取消', 'Cancelled'],
+  overview: ['完整概览', 'Full overview'], incremental: ['增量变化', 'Changes'],
+  no_changes: ['本次没有新变化，可切换完整概览查看持续关注事项。', 'No new changes. Open the full overview to see ongoing items.'],
+  summary: ['AI 精简摘要', 'AI overview'], full_summary: ['展开完整摘要', 'Expand summary'],
+  source_details: ['来源与筛选详情', 'Sources and filtering'],
+  creation_help: ['确认后只创建所选业务对象；截止时间不会创建日程。', 'Confirmation creates only the selected object. A deadline does not create an event.'],
+  preference_help: ['仅影响简报展示；授权规则控制业务写入，可随时撤销。', 'Display preferences affect the briefing. Authorization rules control business writes and can be revoked.'],
+}
+
+export const actionLabel = (key: string) => labels[key]?.[getLang() === 'zh' ? 0 : 1] ?? key

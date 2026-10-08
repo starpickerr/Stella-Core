@@ -75,7 +75,7 @@ _LOCAL_ACTIONS = {
     "calendar": {"create", "update", "delete", "create_category", "update_category", "delete_category"},
     "todos": {"create", "update", "complete", "delete", "status", "add_subtask", "move", "add_dependency", "remove_dependency"},
     "bills": {"add", "update", "delete"},
-    "briefing": {"run", "item_status", "add_rule", "update_rule", "delete_rule"},
+    "briefing": {"run", "item_status", "add_rule", "update_rule", "delete_rule", "decide", "authorize", "revoke_authorization", "set_preferences"},
     "scheduler": {"create", "delete", "enable", "disable"},
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")

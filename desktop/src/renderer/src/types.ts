@@ -499,6 +499,7 @@ export interface ModelProvider {
   is_custom: boolean
   custom_id?: string
   custom_name?: string
+  model?: string
   active?: boolean
   api_key_field?: string | null
   api_base_field?: string | null
@@ -581,7 +582,7 @@ export interface ModelsData {
 export type ModelsAction =
   | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string }
   | { action: 'delete_provider'; provider_id: string }
-  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; protocol_id?: string; make_active?: boolean }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; models?: string[]; protocol_id?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
   | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; protocol_id?: string; voice?: string; strategy?: string; provider?: string }
@@ -934,6 +935,58 @@ export interface BriefingDetail {
   items: BriefingItem[]
   mail: BriefingMail[]
   revisions: { number: number; trigger: string; created_at: string; status: BriefingStatus }[]
+  actions?: Record<string, BriefingActionView>
+  preferences?: BriefingPreferences
+}
+
+export type BriefingActionKind = 'todo' | 'calendar' | 'reminder'
+export interface BriefingDecision {
+  operation: 'create' | 'link' | 'unlink' | 'ignore' | 'defer' | 'keep' | 'retry' | 'confirm_update' | 'keep_current' | 'remind'
+  kind: BriefingActionKind
+  target_id?: string
+  title?: string
+  due_at?: string | null
+  planned_on?: string | null
+  parent_id?: string | null
+  remind_at?: string | null
+  start_at?: string
+  end_at?: string
+  remember?: boolean
+}
+export interface BriefingActionReceipt {
+  kind: BriefingActionKind
+  state: 'pending' | 'succeeded' | 'failed' | 'conflict' | 'deleted' | 'detached' | 'ignored' | 'deferred' | 'briefing_only'
+  target_id: string | null
+  business: Todo | CalendarEvent | null
+  error: string
+  result: { operation?: string; changes?: Record<string, { current: unknown; source: unknown }>; remind_at?: string }
+}
+export interface BriefingActionView {
+  entity_key: string
+  category: 'needs_action' | 'attention' | 'status_update' | 'other'
+  information_type: string
+  change_type: 'new' | 'changed' | 'unchanged'
+  facts: Record<string, unknown>
+  todo: BriefingActionReceipt | null
+  calendar: BriefingActionReceipt | null
+  reminder: BriefingActionReceipt | null
+}
+export interface BriefingAuthorization {
+  id: string
+  source: string
+  account_id: string
+  information_type: string
+  course_id: string
+  kind: BriefingActionKind | 'sync'
+  mode: 'auto' | 'suggest' | 'briefing_only'
+  reminder_minutes?: number
+}
+export interface BriefingPreferences {
+  show_low_priority: boolean
+  show_ongoing: boolean
+  important_types: string[]
+  reminder_frequency: 'daily' | 'changes' | 'deadline'
+  summary_detail: 'brief' | 'full'
 }
 
 export interface BriefingRunProgress {
