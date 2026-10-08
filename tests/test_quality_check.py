@@ -1,6 +1,8 @@
 import sys
 
-from scripts.quality_check import affected_checks, isolated_env, run_check
+import pytest
+
+from scripts.quality_check import affected_checks, isolated_env, markdown_report, run_check
 
 
 def test_python_change_selects_related_tests_without_full_suite():
@@ -95,3 +97,13 @@ def test_failed_quality_check_prints_actionable_failure(capsys, tmp_path):
 
     assert result[1] == "FAIL"
     assert "specific failure" in capsys.readouterr().out
+
+
+def test_full_audit_report_does_not_overwrite_manual_review(tmp_path):
+    report = tmp_path / "Full-Audit-2026-10-08.md"
+    report.write_text("reviewed findings\n")
+
+    with pytest.raises(FileExistsError):
+        markdown_report([], report)
+
+    assert report.read_text() == "reviewed findings\n"
