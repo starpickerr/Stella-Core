@@ -426,7 +426,7 @@ class TodoService:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             descendants = db.execute("""WITH RECURSIVE subtree(id) AS (
-                SELECT id FROM todos WHERE id=? UNION ALL
+                SELECT id FROM todos WHERE id=? UNION
                 SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
                 SELECT t.id,t.source_type,t.source_key FROM todos t JOIN subtree s ON t.id=s.id""",
                 (old["id"],)).fetchall()
@@ -473,9 +473,11 @@ class TodoService:
         if frequency != "none" or parent["repeat_frequency"] != "none":
             raise ValueError("recurring tasks cannot have subtasks")
         ancestor = parent
+        visited = set()
         while ancestor:
-            if ancestor["id"] == todo_id:
+            if ancestor["id"] == todo_id or ancestor["id"] in visited:
                 raise ValueError("task hierarchy cannot contain a cycle")
+            visited.add(ancestor["id"])
             ancestor = db.execute("SELECT id,parent_id FROM todos WHERE id=?", (ancestor["parent_id"],)).fetchone() if ancestor["parent_id"] else None
 
     def add_subtask(self, parent_id, payload):

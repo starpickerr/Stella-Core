@@ -101,6 +101,36 @@ def test_move_reorder_promote_and_cycle_rejection(service):
     assert service.get_todo(first["id"])["progress_total"] == 1
 
 
+def test_deep_subtasks_move_and_delete_share_one_tree(service):
+    root = service.create_todo({"title": "Root"})
+    parent = root
+    for level in range(16):
+        parent = service.add_subtask(parent["id"], {"title": f"Level {level}"})
+    leaf = parent
+    sibling = service.add_subtask(root["id"], {"title": "Sibling"})
+    assert leaf["id"] in {row["id"] for row in service.list_todos_focus()}
+    with pytest.raises(ValueError, match="cycle"):
+        service.move_todo(root["id"], leaf["id"])
+    service.move_todo(leaf["id"], sibling["id"], 0)
+    assert service.get_todo(leaf["id"])["parent_id"] == sibling["id"]
+    assert service.get_todo(sibling["id"])["progress_total"] == 1
+    service.delete_todo(root["id"])
+    assert service.list_todos() == []
+
+
+def test_corrupt_parent_cycle_does_not_hang_move_or_delete(service):
+    first = service.create_todo({"title": "First"})
+    second = service.create_todo({"title": "Second"})
+    other = service.create_todo({"title": "Other"})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("UPDATE todos SET parent_id=? WHERE id=?", (second["id"], first["id"]))
+        db.execute("UPDATE todos SET parent_id=? WHERE id=?", (first["id"], second["id"]))
+    with pytest.raises(ValueError, match="cycle"):
+        service.move_todo(other["id"], first["id"])
+    service.delete_todo(first["id"])
+    assert [row["id"] for row in service.list_todos()] == [other["id"]]
+
+
 def test_recurring_task_cannot_be_parent_or_child(service):
     recurring = service.create_todo({"title": "Daily", "due_on": "2026-10-02", "repeat_frequency": "daily"})
     with pytest.raises(ValueError, match="recurring"):
