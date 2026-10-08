@@ -98,6 +98,8 @@ def affected_checks(files):
         "ui": renderer,
         "eslint": desktop,
         "build": desktop,
+        "policy": any(path in {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml"}
+                      or path.startswith((".agents/rules/", ".agents/skills/")) for path in changed),
     }
 
 
@@ -108,6 +110,11 @@ def isolated_env(root):
            if key in {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "SYSTEMROOT", "WINDIR"}}
     browser_cache = (Path(os.environ.get('LOCALAPPDATA', str(Path.home() / 'AppData/Local'))) / 'ms-playwright'
                      if os.name == 'nt' else Path.home() / ('Library/Caches/ms-playwright' if sys.platform == 'darwin' else '.cache/ms-playwright'))
+    inherited_browser_cache = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if inherited_browser_cache:
+        candidate = Path(inherited_browser_cache)
+        if candidate.name == "ms-playwright" and candidate.is_dir():
+            browser_cache = candidate
     env.update({
         "HOME": str(root),
         "USERPROFILE": str(root),
@@ -131,8 +138,9 @@ def isolated_env(root):
 
 
 def changed_files():
+    base = os.environ.get("STELLA_CHECK_BASE", "develop")
     commands = [
-        ["git", "diff", "--name-only", "develop...HEAD"],
+        ["git", "diff", "--name-only", f"{base}...HEAD"],
         ["git", "diff", "--name-only"],
         ["git", "diff", "--cached", "--name-only"],
         ["git", "ls-files", "--others", "--exclude-standard"],
@@ -207,17 +215,18 @@ def main():
     args = parser.parse_args()
     if not PYTHON.is_file():
         parser.error(".venv/bin/python is required; create the project virtual environment first")
-    selected = affected_checks(args.files if args.files is not None else changed_files())
+    selected = affected_checks(args.files if args.files is not None else changed_files()) if args.mode == "incremental" else None
     commands = []
     if args.mode == "full":
         commands = [
-            ("ruff", [str(PYTHON), "-m", "ruff", "check", "--select", "E4,E7,E9,F", "agent", "application", "bridge", "channel", "cli", "common", "models", "scripts", "tests", "translate", "voice", "app.py", "config.py"], 120),
+            ("ruff", [str(PYTHON), "-m", "ruff", "check", "--select", "E4,E7,E9,F", "agent", "application", "bridge", "channel", "cli", "common", "models", "scripts", "tests", "evals", "translate", "voice", "app.py", "config.py"], 120),
             ("pytest", [str(PYTHON), "-m", "pytest", "tests", "-q"], 900),
             ("eslint", ["npm", "--prefix", "desktop", "run", "lint"], 180),
             ("build", ["npm", "--prefix", "desktop", "run", "build"], 180),
             ("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180),
             ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs"], 60),
             ("ui", [str(PYTHON), "scripts/ui_check.py"], 120),
+            ("policy", [str(PYTHON), "scripts/check_dev_policy.py"], 60),
         ]
     else:
         if selected["ruff"]:
@@ -234,12 +243,14 @@ def main():
             commands.append(("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs"], 60))
         if selected["ui"]:
             commands.append(("ui", [str(PYTHON), "scripts/ui_check.py"], 120))
+        if selected["policy"]:
+            commands.append(("policy", [str(PYTHON), "scripts/check_dev_policy.py"], 60))
     with tempfile.TemporaryDirectory(prefix="stella-quality-") as directory:
         env = isolated_env(Path(directory))
         results = [run_check(name, command, env, timeout) for name, command, timeout in commands]
     if args.mode == "full":
         markdown_report(results, args.report)
-    for name in ("ruff", "pytest", "eslint", "typecheck", "build", "node", "ui"):
+    for name in ("ruff", "pytest", "eslint", "typecheck", "build", "node", "ui", "policy"):
         if name not in {item[0] for item in results}:
             print(f"SKIP {name}: no relevant changes")
     return int(any(item[1] == "FAIL" for item in results))

@@ -1,0 +1,56 @@
+name: Project quality
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  full-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install project dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+          npm --prefix desktop ci
+          .venv/bin/python -m playwright install --with-deps chromium
+      - name: Select the changed-file baseline
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+          echo "STELLA_CHECK_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+      - name: Run the shared incremental gate
+        run: make check
+      - name: Run deterministic agent and policy evals
+        run: make eval
+      - name: Generate a full audit report on manual request
+        if: github.event_name == 'workflow_dispatch'
+        run: make audit
+      - name: Preserve quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stella-quality-report
+          path: |
+            audit-reports/Full-Audit-*.md
+            evals/reports/latest.json
+          if-no-files-found: ignore

@@ -1,0 +1,12 @@
+[
+  {"id":"tool_selection_and_arguments","area":"工具选择与参数","test":"tests/test_briefing_agent.py::test_agent_reads_markdown_rules_and_writes_all_batches"},
+  {"id":"multistep_thread_report","area":"多步骤与多来源协作","test":"tests/test_briefing_agent.py::test_thread_card_keeps_each_agents_summary"},
+  {"id":"read_only_permission","area":"权限边界","test":"tests/test_harness_runtime.py::test_bills_writes_are_refused_in_read_only"},
+  {"id":"approval_rejection","area":"拒绝后停止执行","test":"tests/test_security_approval_resume.py::test_rejection_stops_waiting_run_without_executing"},
+  {"id":"write_idempotency","area":"写入一致性与幂等","test":"tests/test_harness_runtime.py::test_application_command_idempotency_and_unknown_outcome"},
+  {"id":"delivery_recovery","area":"工具失败后的恢复","test":"tests/test_scheduler_delivery.py::test_delivery_retry_reuses_completed_tool_output"},
+  {"id":"parallel_tool_failure","area":"并行工具隔离","test":"tests/test_parallel_tool_calls.py::test_a_failing_call_does_not_take_its_siblings_down"},
+  {"id":"untrusted_tool_boundary","area":"提示注入结构边界","test":"tests/test_briefing_agent.py::test_fixed_agent_tools_are_not_replaced_by_mcp"},
+  {"id":"paged_source_boundary","area":"来源数据边界","test":"tests/test_briefing_agent.py::test_full_source_read_is_paged_and_confined_to_this_batch"},
+  {"id":"truthful_execution_result","area":"输出与真实执行结果一致","test":"tests/test_harness_runtime.py::test_scheduled_tool_records_failure_and_unknown_without_replay"}
+]
