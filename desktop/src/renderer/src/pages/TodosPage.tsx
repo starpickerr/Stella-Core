@@ -55,7 +55,7 @@ const statusColors: Record<Todo["status"], string> = {
   cancelled: "text-content-tertiary",
 };
 
-type View = "today" | "upcoming" | "planned" | "all" | "completed";
+type View = "all" | "upcoming" | "incomplete" | "completed";
 type Sort = "date" | "priority" | "manual";
 
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
@@ -68,8 +68,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         newTask: "New task",
         today: "Today",
         upcoming: "Due soon",
-        planned: "Planned",
         all: "All tasks",
+        incomplete: "Incomplete",
         completed: "Completed",
         search: "Search tasks",
         list: "List / project",
@@ -153,8 +153,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         newTask: "新建事务",
         today: "今天",
         upcoming: "即将到期",
-        planned: "计划",
         all: "全部事务",
+        incomplete: "未完成",
         completed: "已完成",
         search: "搜索事务",
         list: "清单 / 项目",
@@ -326,31 +326,18 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     [templates],
   );
   const matchesView = (todo: Todo, target: View) => {
-    if (target === "completed") return isDone(todo);
-    if (target === "all") return !isDone(todo);
-    if (isDone(todo)) return false;
-    if (target === "today")
-      return (
-        (!!todo.planned_on && todo.planned_on <= today) ||
-        (!!todo.due_on && todo.due_on <= today)
-      );
-    if (target === "upcoming")
-      return !!todo.due_on && todo.due_on >= today && todo.due_on <= soon;
-    if (target === "planned")
-      return (
-        (!!todo.planned_on && todo.planned_on > today) ||
-        (!!todo.due_on && todo.due_on > soon)
-      );
-    return false;
+    if (target === "all") return true;
+    if (target === "completed") return todo.status === "completed";
+    if (target === "incomplete") return !isDone(todo);
+    return !isDone(todo) && !!todo.due_on && todo.due_on >= today && todo.due_on <= soon;
   };
   const subtreeMatchesView = (todo: Todo, target: View): boolean =>
     matchesView(todo, target) ||
     children(todo.id).some((child) => subtreeMatchesView(child, target));
   const views: View[] = [
-    "today",
-    "upcoming",
-    "planned",
     "all",
+    "upcoming",
+    "incomplete",
     "completed",
   ];
   const counts = Object.fromEntries(
