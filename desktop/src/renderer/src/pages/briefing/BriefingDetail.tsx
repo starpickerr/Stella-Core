@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import Markdown from '../../components/Markdown'
 import apiClient from '../../api/client'
 import { MailList } from './MailList'
 import { ItemList } from './ItemList'
@@ -103,12 +102,13 @@ export const BriefingDetail: React.FC<{
           {briefing.mail_snapshot_available ? <MailList key={`${briefing.id}:${version ?? 'current'}:${briefing.updated_at}`} mail={visibleMail} source={sourceFilter} />
             : <p className="text-sm text-content-tertiary rounded-card bg-surface-2 p-4">{t('briefing_mail_legacy')}</p>}
         </div> : <>
-          {briefing.body && <div className="border-b border-default pb-5"><h3 className="mb-2 text-sm font-semibold text-content">{label('summary')}</h3><Markdown content={briefing.body} /></div>}
           <div className="flex flex-wrap gap-2" role="group" aria-label={label('overview')}><button type="button" aria-pressed={!overview} onClick={() => setOverview(false)} className={`rounded-btn px-3 py-1.5 text-xs ${!overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('incremental')}</button><button type="button" aria-pressed={overview} onClick={() => setOverview(true)} className={`rounded-btn px-3 py-1.5 text-xs ${overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('overview')}</button></div>
           {!visibleItems.length && detail.items.length > 0 && <p role="status" className="text-sm text-content-tertiary">{label('no_changes')}</p>}
           {overviewError && <p role="alert" className="text-sm text-danger">{overviewError}</p>}
           {overviewLoading && <p role="status" className="text-sm text-content-tertiary">{t('briefing_loading')}</p>}
-          <ItemList items={visibleItems} actions={display.actions} busy={busy || version !== null || overviewLoading} onDecision={onDecision} />
+          <ItemList items={visibleItems} actions={display.actions} mail={detail.mail}
+            legacyBody={overview && version === null ? '' : briefing.body}
+            busy={busy || version !== null || overviewLoading} onDecision={onDecision} />
         </>}
       </>}
     </section>

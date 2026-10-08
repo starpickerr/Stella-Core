@@ -52,7 +52,8 @@ class ScriptedModel:
             name = "briefing_decisions_result"
         else:
             arguments = {"body": "## Agent 撰写的课程简报\n" + "\n".join(f"- {row['summary']}" for row in data["items"]),
-                         "source_item_ids": [row["id"] for row in data["items"]]}
+                         "source_item_ids": [row["id"] for row in data["items"]],
+                         "reports": [{"id": row["id"], "content": f"完整分析：{row['summary']}"} for row in data["items"]]}
             name = "briefing_body_result"
         yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": f"call-{len(self.requests)}",
             "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}}]}, "finish_reason": "tool_calls"}]}
@@ -91,6 +92,8 @@ def test_agent_reads_markdown_rules_and_writes_all_batches(service):
     assert detail["briefing"].kept_count == len(detail["items"]) == 47
     assert detail["briefing"].filtered_count == 1
     assert all("Agent 摘要" in row.snippet for row in detail["items"])
+    assert all(row.payload.get("_briefing_reason") == "课程通知需要关注" for row in detail["items"])
+    assert all("完整分析" in row.payload.get("_briefing_report", "") for row in detail["items"])
     assert detail["briefing"].body.count("Agent 摘要") == 47
     assert "@promo.example" in detail["briefing"].rule_text
     assert all(text in request.system for request in model.requests)
@@ -122,12 +125,22 @@ def test_incomplete_agent_result_keeps_previous_snapshot_and_cursor(service):
 
 
 def test_thread_card_keeps_each_agents_summary(service):
-    detail = pipeline(service, ScriptedModel(), [item("原通知"), item("修订通知", thread_id="原通知")]).run()
+    model = ScriptedModel()
+    detail = pipeline(service, model, [item("原通知"), item("修订通知", thread_id="原通知")]).run()
     assert detail["briefing"].kept_count == 2
     assert len(detail["items"]) == 1
     assert "原通知" in detail["items"][0].snippet
     assert "修订通知" in detail["items"][0].snippet
     assert "原通知" in detail["briefing"].body and "修订通知" in detail["briefing"].body
+    members = detail["items"][0].payload["_briefing_members"]
+    assert {row["title"] for row in members} == {"原通知", "修订通知"}
+    assert all(row["body"] == "课程作业通知" for row in members)
+    assert all(row["reason"] == "课程通知需要关注" for row in members)
+    report_request = next(request for request in model.requests if any(tool["name"] == "briefing_body_result" for tool in request.tools))
+    report_prompt = next(block["text"] for message in report_request.messages for block in message["content"]
+                         if block["type"] == "text" and "依据规则撰写" in block["text"])
+    prompt_members = json.loads(report_prompt[report_prompt.index("{"):])["items"][0]["members"]
+    assert {row["id"] for row in prompt_members} == {row["id"] for row in members}
 
 
 @pytest.mark.parametrize("items", [[], [item("广告", "bot@promo.example")]])
@@ -171,6 +184,11 @@ def test_result_tools_reject_unknown_missing_duplicate_and_bad_values():
     assert tool.execute(valid).status == "success"
     with pytest.raises(ValueError):
         validate_body({"body": "draft", "source_item_ids": []}, ["a"])
+    with pytest.raises(ValueError, match="逐条"):
+        validate_body({"body": "draft", "source_item_ids": ["a"]}, ["a"])
+    with pytest.raises(ValueError, match="具体内容"):
+        validate_body({"body": "draft", "source_item_ids": ["a"],
+                       "reports": [{"id": "a", "content": " "}]}, ["a"])
 
 
 def test_full_source_read_is_paged_and_confined_to_this_batch():
