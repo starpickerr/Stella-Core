@@ -195,6 +195,10 @@ class AgentBriefingGenerator:
             raise ValueError("简报 Agent 未提交完整结果，请检查模型配置或重试")
         return tool.submission
 
+    def preview(self, rows, rules, **kwargs):
+        """Draft from the candidates currently available, without persistence."""
+        return self.generate(rows, rules, **kwargs)
+
     def generate(self, rows, rules, *, briefing_date, kind, window_start, window_end, preserved_decisions=None):
         self._check_cancelled()
         documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]

@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingSource } from '../types'
+import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
+import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
 import { SettingsPanel } from './briefing/SettingsPanel'
+import { useBriefingRunStore } from '../store/briefingRunStore'
 
 const localDay = () => {
   const now = new Date()
@@ -18,7 +20,12 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const generating = useBriefingRunStore((state) => state.running)
+  const pendingResultId = useBriefingRunStore((state) => state.pendingResultId)
+  const runError = useBriefingRunStore((state) => state.error)
+  const runBriefing = useBriefingRunStore((state) => state.run)
+  const takeRunResult = useBriefingRunStore((state) => state.takeResult)
+  const clearRunError = useBriefingRunStore((state) => state.clearError)
   const [marking, setMarking] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sources, setSources] = useState<BriefingSource[]>([])
@@ -29,6 +36,8 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const todayRow = briefings.find((row) => row.id === `brf-${today}-morning`)
   const todayBriefing = todayRow?.generated_at ? todayRow : undefined
   const [revision, setRevision] = useState(0)
+  const [runProgress, setRunProgress] = useState<BriefingRunProgress | null>(null)
+  const [draftSelected, setDraftSelected] = useState(true)
   const listRequest = useRef(0)
   const sourceRequest = useRef(0)
 
@@ -72,6 +81,24 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }, [baseUrl, settingsOpen, loadSources])
 
   useEffect(() => {
+    if (!generating) { setRunProgress(null); return }
+    let active = true
+    let polling = false
+    const poll = async () => {
+      if (polling) return
+      polling = true
+      try {
+        const value = await apiClient.getBriefingRunProgress()
+        if (active) setRunProgress(value)
+      } catch { /* The generation request reports backend errors separately. */ }
+      finally { polling = false }
+    }
+    void poll()
+    const timer = window.setInterval(() => void poll(), 2000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [generating, baseUrl])
+
+  useEffect(() => {
     if (!selectedId) { setDetail(null); setDetailLoading(false); return }
     let cancelled = false
     setDetailLoading(true)
@@ -92,19 +119,25 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
   }, [briefings])
 
-  const generate = async () => {
-    setGenerating(true)
+  useEffect(() => {
+    if (!pendingResultId) return
+    const id = takeRunResult()
+    if (!id) return
+    setVersion(null)
+    setDraftSelected(false)
+    setSelectedId(id)
+    setRevision((n) => n + 1)
+    void load()
+  }, [pendingResultId, takeRunResult, load])
+
+  const generate = () => {
     setError('')
-    try {
-      const value = await apiClient.runBriefing(todayBriefing ? 'update' : 'create')
-      setVersion(null)
-      setSelectedId(value.briefing.id)
-      setRevision((n) => n + 1)
-      await load()
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err))
-    } finally { setGenerating(false) }
+    setSelectedId(null)
+    setDraftSelected(true)
+    void runBriefing(todayBriefing ? 'update' : 'create')
   }
+
+  const showDraft = generating && draftSelected
 
   const mark = async (id: string, status: BriefingItemStatus) => {
     setMarking(true)
@@ -121,7 +154,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-bold text-content">{t('menu_briefing')}</h1><p className="text-xs text-content-tertiary mt-1">{t('briefing_desc')}</p></div>
       <div className="flex gap-2">
-        <button type="button" disabled={generating || marking} onClick={() => { void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
+        <button type="button" disabled={generating || marking} onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 disabled:opacity-50"><RefreshCw size={15} /></button>
         <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label={t('briefing_settings')} aria-expanded={settingsOpen}
           className={`h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 ${settingsOpen ? 'bg-surface-2' : ''}`}><Settings size={15} /></button>
@@ -131,14 +164,28 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         </button>
       </div>
     </header>
-    {error && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error}</span><button type="button" onClick={() => { void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
+    {generating && !showDraft && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
+      className="mx-6 mt-3 self-start text-sm text-accent">{t('briefing_view_draft')}</button>}
+    {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
-      <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId ? 'hidden lg:block' : ''}`}>
+      <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
+        {generating && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
+          className={`w-full text-left rounded-btn px-3 py-2 mb-4 text-sm ${showDraft ? 'bg-accent/10 text-accent font-medium' : 'text-content-secondary hover:bg-surface-2'}`}>
+          {t('briefing_view_draft')}{runProgress && <span className="ml-2 text-xs">{runProgress.completed_sources}/{runProgress.total_sources}</span>}
+        </button>}
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
-        {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setSelectedId(id) }} />}
+        {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setDraftSelected(false); setSelectedId(id) }} />}
       </aside>
-      <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId ? 'hidden lg:block' : ''}`}>
-        {detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
+      <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
+        {showDraft ? <section className="space-y-4" aria-label={t('briefing_draft')}>
+          <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-content">{t('briefing_draft')}</h2>
+            <button type="button" onClick={() => { setDraftSelected(false); setSelectedId(null) }} className="lg:hidden text-sm text-accent">{t('briefing_view_history')}</button></div>
+          {runProgress && <p role="status" className="text-sm text-content-secondary">{t(runProgress.stage === 'finalizing' ? 'briefing_draft_finalizing' : 'briefing_draft_progress')
+            .replace('{done}', String(runProgress.completed_sources))
+            .replace('{total}', String(runProgress.total_sources))}</p>}
+          {runProgress?.body ? <div className="rounded-card border border-default bg-surface p-5"><Markdown content={runProgress.body} /></div>
+            : <p className="flex items-center gap-2 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_draft_waiting')}</p>}
+        </section> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>

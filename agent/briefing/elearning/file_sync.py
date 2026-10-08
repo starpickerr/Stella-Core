@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from agent.briefing import elearning_settings
 from agent.briefing.elearning.errors import SyncCancelled, SyncError
 from agent.permission.audit import record
+from common.log import logger
 
 _lock = threading.RLock()
 _MAX_FILE_SIZE = 512 * 1024 * 1024
@@ -236,13 +237,17 @@ def sync_files(client, config, rows, cancel_event=None, layout="managed"):
         except OSError:
             return ["课程文件保存目录不可用，请重新选择目录"]
         try:
-            for course, raw in rows:
+            for index, (course, raw) in enumerate(rows, start=1):
                 _check_cancelled(cancel_event)
+                logger.info("[eLearningFileSync] processing %d/%d course=%s file=%s",
+                            index, len(rows), course.get("id"), raw.get("id"))
                 try:
                     _sync_one(client, config, root, root_fd, manifest, course, raw, cancel_event, layout)
                 except SyncCancelled:
                     raise
                 except Exception as exc:
+                    logger.warning("[eLearningFileSync] failed %d/%d course=%s file=%s: %s",
+                                   index, len(rows), course.get("id"), raw.get("id"), exc)
                     errors.append(f"{course.get('name', '课程')} / {raw.get('display_name') or raw.get('filename') or '文件'}：{exc}")
         except SyncCancelled:
             raise
@@ -298,7 +303,9 @@ def _sync_one(client, config, root, materials_fd, manifest, course, raw, cancel_
         url = raw.get("url")
         if not isinstance(url, str) or not url:
             raise SyncError("课程文件没有可用的下载地址")
+        logger.info("[eLearningFileSync] downloading course=%s file=%s", course_id, file_id)
         temporary, downloaded_digest = _download(client, url, directory_fd, cancel_event)
+        logger.info("[eLearningFileSync] downloaded course=%s file=%s", course_id, file_id)
         try:
             _check_cancelled(cancel_event)
             _current_grant(config, course_id)

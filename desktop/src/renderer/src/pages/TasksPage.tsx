@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Loader2, Clock, CalendarClock, Play, Plus } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
@@ -43,6 +44,7 @@ const taskContent = (action: TaskAction): string => {
 }
 
 const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
+  const navigate = useNavigate()
   const activeSessionId = useSessionStore((s) => s.activeId)
   const [tasks, setTasks] = useState<SchedulerTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -114,11 +116,13 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
           ) : (
             <div className="grid gap-3">
               {tasks.map((task) => {
-                const content = taskContent(task.action)
+                const content = task.linked_todo_id ? '' : taskContent(task.action)
                 return (
                   <div
                     key={task.id}
-                    onClick={() => setEditing(task)}
+                    onClick={() => task.linked_todo_id
+                      ? navigate('/todos', { state: { todoId: task.linked_todo_id } })
+                      : setEditing(task)}
                     className={`rounded-card border border-default bg-surface p-4 cursor-pointer hover:border-strong transition-colors ${
                       task.enabled ? '' : 'opacity-60'
                     }`}
@@ -130,6 +134,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
+                    {task.linked_todo_id && <p className="text-xs text-accent mb-2">{t('task_linked_todo')}</p>}
                     {task.last_run_status && <p className="text-xs text-content-tertiary mb-2">{t(('task_status_'+task.last_run_status) as Parameters<typeof t>[0])}{task.last_error ? ` · ${task.last_error}` : ''}</p>}
                     <div
                       className="flex items-center gap-2 text-xs text-content-tertiary"
@@ -140,7 +145,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                         {t('tasks_next_run')}: {formatNextRun(task.next_run_at)}
                       </span>
                       <div className="flex-1" />
-                      <Toggle checked={task.enabled} onChange={(v) => toggle(task, v)} />
+                      {!task.linked_todo_id && <Toggle checked={task.enabled} onChange={(v) => toggle(task, v)} />}
                     </div>
                   </div>
                 )

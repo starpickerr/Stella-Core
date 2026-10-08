@@ -2034,6 +2034,7 @@ class DesktopChannel(ChatChannel):
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/briefings', 'BriefingsHandler',
+            '/api/briefings/run/progress', 'BriefingRunProgressHandler',
             '/api/briefings/run', 'BriefingRunHandler',
             '/api/briefings/sources', 'BriefingSourcesHandler',
             '/api/briefings/elearning', 'BriefingElearningHandler',
@@ -5997,6 +5998,8 @@ class SchedulerRunHandler:
             task_id = body.get("task_id")
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
+            if (_scheduler_store().get_task(task_id) or {}).get("linked_todo_id"):
+                return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
 
             from agent.scheduler import get_scheduler_service
             service = get_scheduler_service()
@@ -6027,6 +6030,8 @@ class SchedulerToggleHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
             store = _scheduler_store()
+            if (store.get_task(task_id) or {}).get("linked_todo_id"):
+                return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
             store.enable_task(task_id, enabled)
             task = store.get_task(task_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
@@ -6053,6 +6058,8 @@ class SchedulerUpdateHandler:
             original_task = store.get_task(task_id)
             if not original_task:
                 return json.dumps({"status": "error", "message": f"Task '{task_id}' not found"})
+            if original_task.get("linked_todo_id"):
+                return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
             
             # Build updates dict
             updates = {}
@@ -6145,6 +6152,8 @@ class SchedulerDeleteHandler:
                 return json.dumps({"status": "error", "message": "task_id required"})
             
             store = _scheduler_store()
+            if (store.get_task(task_id) or {}).get("linked_todo_id"):
+                return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
             store.delete_task(task_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
@@ -6490,6 +6499,12 @@ class BriefingRunHandler:
                 sources=body.get("sources"),
             )
         return _briefing_response(operation)
+
+
+class BriefingRunProgressHandler:
+    def GET(self):
+        from agent.briefing.progress import snapshot
+        return _briefing_response(lambda: {"progress": snapshot()})
 
 
 class BriefingItemStatusHandler:
