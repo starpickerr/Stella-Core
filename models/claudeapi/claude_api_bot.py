@@ -1,6 +1,5 @@
 # encoding:utf-8
 
-import base64
 import json
 import re
 import time
@@ -432,10 +431,12 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             logger.error(f"Claude API call error: {e}")
             if stream:
                 # Return error generator for stream
+                error_message = str(e)
+
                 def error_generator():
                     yield {
                         "error": True,
-                        "message": str(e),
+                        "message": error_message,
                         "status_code": 500
                     }
 
