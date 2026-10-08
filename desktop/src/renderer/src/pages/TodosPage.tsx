@@ -9,7 +9,6 @@ import {
   Circle,
   Clock3,
   CornerUpLeft,
-  ExternalLink,
   Flag,
   GripVertical,
   MoreHorizontal,
@@ -317,10 +316,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       rows.filter((todo) => todo.parent_id === parentId && !todo.series_id),
     [rows],
   );
-  const hasOpenDescendant = (parentId: string): boolean =>
-    children(parentId).some(
-      (child) => !isDone(child) || hasOpenDescendant(child.id),
-    );
   const lists = useMemo(
     () =>
       [
@@ -484,7 +479,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const exitFocus = () => {
     setFocusedId(null);
     const previous = treeRef.current.selectedId;
-    if (previous && byId.has(previous)) open(byId.get(previous)!);
+    setSelectedId(previous && byId.has(previous) ? previous : null);
+    setDraft(null);
     requestAnimationFrame(() => {
       if (pageRef.current) pageRef.current.scrollTop = treeRef.current.scrollTop;
     });
@@ -539,16 +535,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     });
   const toggle = (todo: Todo) =>
     changeStatus(todo, todo.status === "completed" ? "todo" : "completed");
-  const addChild = () => {
-    if (!selected || !childTitle.trim()) return;
-    void run(async () => {
-      await apiClient.addSubtask(taskKey(selected), {
-        title: childTitle.trim(),
-      });
-      setChildTitle("");
-      setExpanded((value) => [...new Set([...value, taskKey(selected)])]);
-    });
-  };
   const move = (id: string, parentId: string | null, position?: number) =>
     void run(() => apiClient.moveTodo(id, parentId, position));
   const addFocusedChild = () => {
@@ -630,7 +616,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           <div className="flex-1 min-w-0">
             <button
               type="button"
-              onClick={() => open(todo)}
+              onClick={() => enterFocus(todo)}
+              title={copy.focus}
               className="block w-full text-left"
             >
               <span
@@ -706,15 +693,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => enterFocus(todo)}
-            aria-label={`${copy.focus} ${todo.title}`}
-            title={copy.focus}
-            className="rounded-btn p-1 text-content-tertiary hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            <ExternalLink size={16} />
-          </button>
           {sub.length > 0 && (
             <button
               type="button"
@@ -769,9 +747,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   };
   return (
     <div ref={pageRef} className="h-full overflow-y-auto bg-surface-0 text-content-primary">
-      <div
-        className={`mx-auto px-4 py-6 md:px-8 transition-[max-width] ${selected ? "max-w-6xl xl:pr-[400px]" : "max-w-5xl"}`}
-      >
+      <div className="mx-auto max-w-5xl px-4 py-6 md:px-8">
         {focused && (
           <nav aria-label={copy.breadcrumb} className="mb-5 flex items-center gap-1.5 text-xs text-content-tertiary min-w-0">
             {(() => {
@@ -1081,6 +1057,497 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </div>
               </div>
             </section>
+            {selected && draft && selected.id === focused.id && (
+            <section aria-label={copy.details} className="rounded-card border border-default bg-surface px-4 py-5 sm:px-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {copy.details}
+                </span>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label={en ? "Close editor" : "关闭编辑"}
+                  className="p-1.5 rounded-btn hover:bg-surface-2"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div>
+                <input
+                  aria-label={copy.title}
+                  value={draft.title}
+                  onChange={(event) =>
+                    setDraft({ ...draft, title: event.target.value })
+                  }
+                  className="w-full text-xl font-semibold bg-transparent outline-none border-b border-transparent focus:border-accent pb-1"
+                />
+                <textarea
+                  aria-label={copy.notes}
+                  value={draft.notes || ""}
+                  onChange={(event) =>
+                    setDraft({ ...draft, notes: event.target.value })
+                  }
+                  placeholder={copy.notes}
+                  rows={3}
+                  className="mt-3 w-full resize-y rounded-btn border border-default bg-surface-2 p-3 text-sm"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(["todo", "in_progress", "completed"] as const).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => changeStatus(selected, status)}
+                    className={`rounded-btn border px-3 py-1.5 text-xs ${selected.status === status ? "border-accent bg-accent/10 text-accent font-medium" : "border-default text-content-secondary"}`}
+                  >
+                    {copy.statusNames[status]}
+                  </button>
+                ))}
+                <select
+                  aria-label={copy.status}
+                  value={
+                    ["waiting", "blocked", "cancelled"].includes(selected.status)
+                      ? selected.status
+                      : ""
+                  }
+                  onChange={(event) => {
+                    if (event.target.value)
+                      changeStatus(
+                        selected,
+                        event.target.value as Todo["status"],
+                      );
+                  }}
+                  className="rounded-btn border border-default bg-surface px-2 py-1.5 text-xs text-content-secondary"
+                >
+                  <option value="">{copy.advanced}</option>
+                  {(["waiting", "blocked", "cancelled"] as const).map(
+                    (status) => (
+                      <option key={status} value={status}>
+                        {copy.statusNames[status]}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+              <section className="grid grid-cols-2 gap-3 text-xs">
+                <label>
+                  {copy.planDate}
+                  <input
+                    type="date"
+                    value={draft.planned_on || ""}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        planned_on: event.target.value || null,
+                      })
+                    }
+                    className={`${input} mt-1`}
+                  />
+                </label>
+                <label>
+                  {copy.dueDate}
+                  <input
+                    type="date"
+                    value={draft.due_on || ""}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        due_on: event.target.value || null,
+                        due_time: event.target.value ? draft.due_time : null,
+                        repeat_frequency: event.target.value
+                          ? draft.repeat_frequency
+                          : "none",
+                      })
+                    }
+                    className={`${input} mt-1`}
+                  />
+                </label>
+                <label>
+                  {copy.dueTime}
+                  <input
+                    type="time"
+                    value={draft.due_time || ""}
+                    disabled={!draft.due_on}
+                    onChange={(event) =>
+                      setDraft({ ...draft, due_time: event.target.value || null })
+                    }
+                    className={`${input} mt-1 disabled:opacity-40`}
+                  />
+                </label>
+                <label>
+                  {copy.remindAt}
+                  <input
+                    type="datetime-local"
+                    value={toLocalTime(draft.remind_at || null)}
+                    disabled={draft.repeat_frequency !== "none"}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        remind_at: fromLocalTime(event.target.value),
+                      })
+                    }
+                    className={`${input} mt-1 disabled:opacity-40`}
+                  />
+                </label>
+              </section>
+              <button
+                type="button"
+                onClick={() => setMore(!more)}
+                aria-expanded={more}
+                className="flex items-center gap-1 text-sm text-content-secondary hover:text-accent"
+              >
+                {more ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                {copy.more}
+              </button>
+              {more && (
+                <section className="space-y-3 text-xs">
+                  <label className="block">
+                    {copy.priority}
+                    <select
+                      value={draft.priority || 0}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          priority: Number(event.target.value),
+                        })
+                      }
+                      className={`${input} mt-1`}
+                    >
+                      {copy.priorities.map((name, value) => (
+                        <option key={name} value={value}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    {copy.list}
+                    <input
+                      list="todo-lists"
+                      value={draft.list_name || ""}
+                      onChange={(event) =>
+                        setDraft({ ...draft, list_name: event.target.value })
+                      }
+                      className={`${input} mt-1`}
+                    />
+                    <datalist id="todo-lists">
+                      {lists.map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  </label>
+                  <label className="block">
+                    {copy.tags}
+                    <input
+                      value={draftTags}
+                      onChange={(event) => setDraftTags(event.target.value)}
+                      className={`${input} mt-1`}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!draft.flagged}
+                      onChange={(event) =>
+                        setDraft({ ...draft, flagged: event.target.checked })
+                      }
+                    />
+                    {copy.flagged}
+                  </label>
+                  <label className="block">
+                    {copy.parent}
+                    <select
+                      value={selected.parent_id || ""}
+                      onChange={(event) =>
+                        move(taskKey(selected), event.target.value || null)
+                      }
+                      disabled={selected.repeat_frequency !== "none"}
+                      className={`${input} mt-1`}
+                    >
+                      <option value="">{copy.topLevel}</option>
+                      {parentChoices
+                        .filter((candidate) => !isDescendant(candidate))
+                        .map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  {selected.repeat_frequency === "none" && (
+                    <div className="space-y-2">
+                      <div className="font-medium">{copy.dependencies}</div>
+                      {selected.dependency_ids.map((id) => (
+                        <div key={id} className="flex items-center gap-2">
+                          <span
+                            className={`flex-1 truncate ${selected.blocked_by.includes(id) ? "text-amber-500" : "text-content-secondary"}`}
+                          >
+                            {byId.get(id)?.title || id}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={copy.delete}
+                            onClick={() =>
+                              void run(() =>
+                                apiClient.removeTodoDependency(selected.id, id),
+                              )
+                            }
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <select
+                          aria-label={copy.addDependency}
+                          value={dependencyChoice}
+                          onChange={(event) =>
+                            setDependencyChoice(event.target.value)
+                          }
+                          className={`${input} flex-1`}
+                        >
+                          <option value="">{copy.addDependency}</option>
+                          {parentChoices
+                            .filter(
+                              (item) =>
+                                !selected.dependency_ids.includes(item.id),
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.title}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!dependencyChoice || busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await apiClient.addTodoDependency(
+                                selected.id,
+                                dependencyChoice,
+                              );
+                              setDependencyChoice("");
+                            })
+                          }
+                          className="text-accent disabled:opacity-40"
+                          aria-label={copy.addDependency}
+                        >
+                          <Plus size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const siblings = children(selected.parent_id).sort(
+                          (a, b) => a.sort_order - b.sort_order,
+                        );
+                        const index = siblings.findIndex(
+                          (item) => item.id === selected.id,
+                        );
+                        if (index > 0)
+                          move(selected.id, selected.parent_id, index - 1);
+                      }}
+                      className="rounded-btn border border-default px-2 py-1.5"
+                    >
+                      ↑ {copy.moveUp}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const siblings = children(selected.parent_id).sort(
+                          (a, b) => a.sort_order - b.sort_order,
+                        );
+                        const index = siblings.findIndex(
+                          (item) => item.id === selected.id,
+                        );
+                        if (index < siblings.length - 1)
+                          move(selected.id, selected.parent_id, index + 1);
+                      }}
+                      className="rounded-btn border border-default px-2 py-1.5"
+                    >
+                      ↓ {copy.moveDown}
+                    </button>
+                  </div>
+                  <label className="block">
+                    {copy.repeat}
+                    <select
+                      value={draft.repeat_frequency || "none"}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          repeat_frequency: event.target
+                            .value as Todo["repeat_frequency"],
+                          remind_at:
+                            event.target.value === "none"
+                              ? draft.remind_at
+                              : null,
+                        })
+                      }
+                      disabled={
+                        !draft.due_on ||
+                        selected.subtask_count > 0 ||
+                        !!selected.parent_id
+                      }
+                      className={`${input} mt-1`}
+                    >
+                      {(
+                        ["none", "daily", "weekly", "monthly", "yearly"] as const
+                      ).map((value, index) => (
+                        <option key={value} value={value}>
+                          {copy.repeats[index]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {draft.repeat_frequency !== "none" && (
+                    <label className="block">
+                      {copy.repeatUntil}
+                      <input
+                        type="date"
+                        value={draft.repeat_until || ""}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            repeat_until: event.target.value || null,
+                          })
+                        }
+                        className={`${input} mt-1`}
+                      />
+                    </label>
+                  )}
+                  {((draft.checklist?.length || 0) > 0 ||
+                    selected.checklist !== "[]") && (
+                    <div className="space-y-1">
+                      <div className="font-medium">{copy.legacyChecklist}</div>
+                      {(draft.checklist || []).map((step, index) => (
+                        <div key={step.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={
+                              selected.repeat_frequency !== "none"
+                                ? checklistOf(selected).find(
+                                    (item) => item.id === step.id,
+                                  )?.completed || false
+                                : step.completed
+                            }
+                            onChange={() =>
+                              selected.repeat_frequency !== "none"
+                                ? void run(() =>
+                                    apiClient.completeTodoChecklist(
+                                      selected.id,
+                                      step.id,
+                                      !checklistOf(selected).find(
+                                        (item) => item.id === step.id,
+                                      )?.completed,
+                                    ),
+                                  )
+                                : setDraft({
+                                    ...draft,
+                                    checklist: draft.checklist?.map((item) =>
+                                      item.id === step.id
+                                        ? { ...item, completed: !item.completed }
+                                        : item,
+                                    ),
+                                  })
+                            }
+                          />
+                          <input
+                            aria-label={`${copy.legacyChecklist} ${index + 1}`}
+                            value={step.title}
+                            onChange={(event) =>
+                              setDraft({
+                                ...draft,
+                                checklist: draft.checklist?.map((item) =>
+                                  item.id === step.id
+                                    ? { ...item, title: event.target.value }
+                                    : item,
+                                ),
+                              })
+                            }
+                            className={`${input} flex-1`}
+                          />
+                          <button
+                            type="button"
+                            aria-label={copy.delete}
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                checklist: draft.checklist?.filter(
+                                  (item) => item.id !== step.id,
+                                ),
+                              })
+                            }
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="text-accent"
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        checklist: [
+                          ...(draft.checklist || []),
+                          {
+                            id: crypto.randomUUID(),
+                            title: "",
+                            completed: false,
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    + {copy.addStep}
+                  </button>
+                </section>
+              )}
+              <div className="text-xs text-content-tertiary space-y-1">
+                <div>
+                  {copy.created}: {new Date(selected.created_at).toLocaleString()}
+                </div>
+                {selected.completed_at && (
+                  <div>
+                    {copy.finished}:{" "}
+                    {new Date(selected.completed_at).toLocaleString()}
+                  </div>
+                )}
+              </div>
+              {error && (
+                <p role="alert" className="text-sm text-danger">
+                  {error}
+                </p>
+              )}
+              <div className="border-t border-default pt-4 flex justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={remove}
+                  className="text-danger text-sm inline-flex items-center gap-1"
+                >
+                  <Trash2 size={15} />
+                  {copy.delete}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !draft.title?.trim()}
+                  onClick={save}
+                  className="rounded-btn bg-accent px-4 py-2 text-accent-contrast text-sm disabled:opacity-40"
+                >
+                  {copy.save}
+                </button>
+              </div>
+            </section>
+            )}
+
             <section aria-label={copy.subtask}>
               <div className="flex items-center justify-between mb-3"><h2 className="text-sm font-semibold">{copy.subtask} <span className="font-normal text-content-tertiary">{focused.subtask_count}</span></h2><span className="text-xs text-content-tertiary">{copy.focusHint}</span></div>
               <div className="rounded-card border border-default bg-surface divide-y divide-default/70">
@@ -1088,14 +1555,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <div key={child.id} className="flex items-center gap-2 px-3 py-3 sm:px-4 hover:bg-surface-2/50">
                     <button type="button" disabled={busy} onClick={() => toggle(child)} aria-label={`${copy.statusNames[child.status]} ${child.title}`} className={`w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${child.status === "completed" ? "border-accent bg-accent text-accent-contrast" : "border-content-tertiary hover:border-accent"}`}>{child.status === "completed" && <Check size={12} />}</button>
                     <div className="min-w-0 flex-1">
-                      <button type="button" onClick={() => open(child)} className={`block w-full truncate text-left text-sm font-medium hover:text-accent ${isDone(child) ? "line-through text-content-tertiary" : ""}`}>{child.title}</button>
+                      <button type="button" onClick={() => enterFocus(child)} title={copy.focus} className={`block w-full truncate text-left text-sm font-medium hover:text-accent ${isDone(child) ? "line-through text-content-tertiary" : ""}`}>{child.title}</button>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-content-tertiary">
                         <span className={statusColors[child.status]}>{copy.statusNames[child.status]}</span>
                         {child.priority > 0 && <span className="text-amber-500">{copy.priority}: {copy.priorities[child.priority]}</span>}
                         {child.subtask_count > 0 && <span className="text-accent">{copy.progress(child.progress_completed, child.progress_total)}</span>}
                       </div>
                     </div>
-                    <button type="button" onClick={() => open(child)} title={copy.edit} aria-label={`${copy.edit} ${child.title}`} className="shrink-0 rounded-btn p-1.5 text-content-tertiary hover:text-accent"><Pencil size={15} /></button>
+                    <button type="button" onClick={() => { enterFocus(child); open(child); }} title={copy.edit} aria-label={`${copy.edit} ${child.title}`} className="shrink-0 rounded-btn p-1.5 text-content-tertiary hover:text-accent"><Pencil size={15} /></button>
                     <details className="relative shrink-0"><summary aria-label={`${copy.taskActions} ${child.title}`} className="list-none cursor-pointer rounded-btn p-1.5 text-content-tertiary hover:text-accent"><MoreHorizontal size={17} /></summary>
                       <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded-card border border-default bg-surface p-2 shadow-lg space-y-1 text-xs">
                         <button type="button" disabled={busy || index === 0} onClick={() => move(child.id, focused.id, index - 1)} className="block w-full rounded-btn px-2 py-1 text-left hover:bg-surface-2 disabled:opacity-40">{copy.moveUp}</button>
@@ -1104,7 +1571,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         <button type="button" disabled={busy} onClick={() => deleteFocusedChild(child)} className="block w-full rounded-btn px-2 py-1 text-left text-danger hover:bg-surface-2">{copy.delete}</button>
                       </div>
                     </details>
-                    <button type="button" onClick={() => enterFocus(child)} title={copy.focus} aria-label={`${copy.focus} ${child.title}`} className="shrink-0 inline-flex items-center gap-1 rounded-btn px-2 py-1.5 text-xs font-medium text-accent hover:bg-accent/10"><span className="hidden sm:inline">{copy.focus}</span><ExternalLink size={14} /></button>
                   </div>
                 ))}
                 {focused.subtask_count === 0 && <p className="px-4 py-8 text-center text-sm text-content-tertiary">{copy.childEmpty}</p>}
@@ -1114,601 +1580,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </div>
         )}
       </div>
-      {selected && draft && (
-        <div
-          className="fixed inset-0 z-40 flex justify-end bg-black/30 xl:bg-transparent xl:pointer-events-none"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
-        >
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label={copy.details}
-            className="pointer-events-auto w-full sm:max-w-[440px] h-full overflow-y-auto bg-surface border-l border-default shadow-xl xl:shadow-none px-5 py-5 space-y-5"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
-                {copy.details}
-              </span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => enterFocus(selected)} className="inline-flex items-center gap-1 rounded-btn px-2 py-1 text-xs text-accent hover:bg-accent/10"><ExternalLink size={13} />{copy.focus}</button>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="Close"
-                className="p-1.5 rounded-btn hover:bg-surface-2"
-              >
-                <X size={18} />
-              </button>
-              </div>
-            </div>
-            <div>
-              <input
-                aria-label={copy.title}
-                value={draft.title}
-                onChange={(event) =>
-                  setDraft({ ...draft, title: event.target.value })
-                }
-                className="w-full text-xl font-semibold bg-transparent outline-none border-b border-transparent focus:border-accent pb-1"
-              />
-              <textarea
-                aria-label={copy.notes}
-                value={draft.notes || ""}
-                onChange={(event) =>
-                  setDraft({ ...draft, notes: event.target.value })
-                }
-                placeholder={copy.notes}
-                rows={3}
-                className="mt-3 w-full resize-y rounded-btn border border-default bg-surface-2 p-3 text-sm"
-              />
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(["todo", "in_progress", "completed"] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => changeStatus(selected, status)}
-                  className={`rounded-btn border px-3 py-1.5 text-xs ${selected.status === status ? "border-accent bg-accent/10 text-accent font-medium" : "border-default text-content-secondary"}`}
-                >
-                  {copy.statusNames[status]}
-                </button>
-              ))}
-              <select
-                aria-label={copy.status}
-                value={
-                  ["waiting", "blocked", "cancelled"].includes(selected.status)
-                    ? selected.status
-                    : ""
-                }
-                onChange={(event) => {
-                  if (event.target.value)
-                    changeStatus(
-                      selected,
-                      event.target.value as Todo["status"],
-                    );
-                }}
-                className="rounded-btn border border-default bg-surface px-2 py-1.5 text-xs text-content-secondary"
-              >
-                <option value="">{copy.advanced}</option>
-                {(["waiting", "blocked", "cancelled"] as const).map(
-                  (status) => (
-                    <option key={status} value={status}>
-                      {copy.statusNames[status]}
-                    </option>
-                  ),
-                )}
-              </select>
-            </div>
-            <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">
-                  {copy.subtask}{" "}
-                  {selected.subtask_count > 0 && (
-                    <span className="text-content-tertiary font-normal">
-                      {copy.progress(
-                        selected.progress_completed,
-                        selected.progress_total,
-                      )}
-                    </span>
-                  )}
-                </h3>
-              </div>
-              {selected.subtask_count > 0 && (
-                <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
-                  <div
-                    className="h-full bg-accent"
-                    style={{ width: `${selected.progress_percent}%` }}
-                  />
-                </div>
-              )}
-              {children(taskKey(selected))
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .map((child) => (
-                  <div
-                    key={child.id}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggle(child)}
-                      className="w-4 h-4 border border-content-tertiary rounded-full shrink-0 flex items-center justify-center"
-                    >
-                      {child.status === "completed" && <Check size={12} />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => open(child)}
-                      className={`text-left flex-1 truncate ${isDone(child) ? "line-through text-content-tertiary" : ""}`}
-                    >
-                      {child.title}
-                    </button>
-                  </div>
-                ))}
-              {selected.repeat_frequency === "none" ? (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    addChild();
-                  }}
-                  className="flex gap-2"
-                >
-                  <input
-                    value={childTitle}
-                    onChange={(event) => setChildTitle(event.target.value)}
-                    placeholder={copy.subtaskHint}
-                    aria-label={copy.addSubtask}
-                    className={`${input} flex-1`}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!childTitle.trim() || busy}
-                    className="px-2 text-accent disabled:opacity-40"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </form>
-              ) : (
-                <p className="text-xs text-content-tertiary">
-                  {copy.recurrenceHint}
-                </p>
-              )}
-              {selected.subtask_count > 0 &&
-                selected.progress_total > 0 &&
-                selected.progress_completed === selected.progress_total &&
-                !hasOpenDescendant(selected.id) &&
-                selected.status !== "completed" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(copy.finishParent))
-                        changeStatus(selected, "completed");
-                    }}
-                    className="text-xs text-accent"
-                  >
-                    {copy.finishParent}
-                  </button>
-                )}
-            </section>
-            <section className="grid grid-cols-2 gap-3 text-xs">
-              <label>
-                {copy.planDate}
-                <input
-                  type="date"
-                  value={draft.planned_on || ""}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      planned_on: event.target.value || null,
-                    })
-                  }
-                  className={`${input} mt-1`}
-                />
-              </label>
-              <label>
-                {copy.dueDate}
-                <input
-                  type="date"
-                  value={draft.due_on || ""}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      due_on: event.target.value || null,
-                      due_time: event.target.value ? draft.due_time : null,
-                      repeat_frequency: event.target.value
-                        ? draft.repeat_frequency
-                        : "none",
-                    })
-                  }
-                  className={`${input} mt-1`}
-                />
-              </label>
-              <label>
-                {copy.dueTime}
-                <input
-                  type="time"
-                  value={draft.due_time || ""}
-                  disabled={!draft.due_on}
-                  onChange={(event) =>
-                    setDraft({ ...draft, due_time: event.target.value || null })
-                  }
-                  className={`${input} mt-1 disabled:opacity-40`}
-                />
-              </label>
-              <label>
-                {copy.remindAt}
-                <input
-                  type="datetime-local"
-                  value={toLocalTime(draft.remind_at || null)}
-                  disabled={draft.repeat_frequency !== "none"}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      remind_at: fromLocalTime(event.target.value),
-                    })
-                  }
-                  className={`${input} mt-1 disabled:opacity-40`}
-                />
-              </label>
-            </section>
-            <button
-              type="button"
-              onClick={() => setMore(!more)}
-              aria-expanded={more}
-              className="flex items-center gap-1 text-sm text-content-secondary hover:text-accent"
-            >
-              {more ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              {copy.more}
-            </button>
-            {more && (
-              <section className="space-y-3 text-xs">
-                <label className="block">
-                  {copy.priority}
-                  <select
-                    value={draft.priority || 0}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        priority: Number(event.target.value),
-                      })
-                    }
-                    className={`${input} mt-1`}
-                  >
-                    {copy.priorities.map((name, value) => (
-                      <option key={name} value={value}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  {copy.list}
-                  <input
-                    list="todo-lists"
-                    value={draft.list_name || ""}
-                    onChange={(event) =>
-                      setDraft({ ...draft, list_name: event.target.value })
-                    }
-                    className={`${input} mt-1`}
-                  />
-                  <datalist id="todo-lists">
-                    {lists.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </label>
-                <label className="block">
-                  {copy.tags}
-                  <input
-                    value={draftTags}
-                    onChange={(event) => setDraftTags(event.target.value)}
-                    className={`${input} mt-1`}
-                  />
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={!!draft.flagged}
-                    onChange={(event) =>
-                      setDraft({ ...draft, flagged: event.target.checked })
-                    }
-                  />
-                  {copy.flagged}
-                </label>
-                <label className="block">
-                  {copy.parent}
-                  <select
-                    value={selected.parent_id || ""}
-                    onChange={(event) =>
-                      move(taskKey(selected), event.target.value || null)
-                    }
-                    disabled={selected.repeat_frequency !== "none"}
-                    className={`${input} mt-1`}
-                  >
-                    <option value="">{copy.topLevel}</option>
-                    {parentChoices
-                      .filter((candidate) => !isDescendant(candidate))
-                      .map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {candidate.title}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                {selected.repeat_frequency === "none" && (
-                  <div className="space-y-2">
-                    <div className="font-medium">{copy.dependencies}</div>
-                    {selected.dependency_ids.map((id) => (
-                      <div key={id} className="flex items-center gap-2">
-                        <span
-                          className={`flex-1 truncate ${selected.blocked_by.includes(id) ? "text-amber-500" : "text-content-secondary"}`}
-                        >
-                          {byId.get(id)?.title || id}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={copy.delete}
-                          onClick={() =>
-                            void run(() =>
-                              apiClient.removeTodoDependency(selected.id, id),
-                            )
-                          }
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                    <div className="flex gap-2">
-                      <select
-                        aria-label={copy.addDependency}
-                        value={dependencyChoice}
-                        onChange={(event) =>
-                          setDependencyChoice(event.target.value)
-                        }
-                        className={`${input} flex-1`}
-                      >
-                        <option value="">{copy.addDependency}</option>
-                        {parentChoices
-                          .filter(
-                            (item) =>
-                              !selected.dependency_ids.includes(item.id),
-                          )
-                          .map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.title}
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={!dependencyChoice || busy}
-                        onClick={() =>
-                          void run(async () => {
-                            await apiClient.addTodoDependency(
-                              selected.id,
-                              dependencyChoice,
-                            );
-                            setDependencyChoice("");
-                          })
-                        }
-                        className="text-accent disabled:opacity-40"
-                        aria-label={copy.addDependency}
-                      >
-                        <Plus size={18} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const siblings = children(selected.parent_id).sort(
-                        (a, b) => a.sort_order - b.sort_order,
-                      );
-                      const index = siblings.findIndex(
-                        (item) => item.id === selected.id,
-                      );
-                      if (index > 0)
-                        move(selected.id, selected.parent_id, index - 1);
-                    }}
-                    className="rounded-btn border border-default px-2 py-1.5"
-                  >
-                    ↑ {copy.moveUp}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const siblings = children(selected.parent_id).sort(
-                        (a, b) => a.sort_order - b.sort_order,
-                      );
-                      const index = siblings.findIndex(
-                        (item) => item.id === selected.id,
-                      );
-                      if (index < siblings.length - 1)
-                        move(selected.id, selected.parent_id, index + 1);
-                    }}
-                    className="rounded-btn border border-default px-2 py-1.5"
-                  >
-                    ↓ {copy.moveDown}
-                  </button>
-                </div>
-                <label className="block">
-                  {copy.repeat}
-                  <select
-                    value={draft.repeat_frequency || "none"}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        repeat_frequency: event.target
-                          .value as Todo["repeat_frequency"],
-                        remind_at:
-                          event.target.value === "none"
-                            ? draft.remind_at
-                            : null,
-                      })
-                    }
-                    disabled={
-                      !draft.due_on ||
-                      selected.subtask_count > 0 ||
-                      !!selected.parent_id
-                    }
-                    className={`${input} mt-1`}
-                  >
-                    {(
-                      ["none", "daily", "weekly", "monthly", "yearly"] as const
-                    ).map((value, index) => (
-                      <option key={value} value={value}>
-                        {copy.repeats[index]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {draft.repeat_frequency !== "none" && (
-                  <label className="block">
-                    {copy.repeatUntil}
-                    <input
-                      type="date"
-                      value={draft.repeat_until || ""}
-                      onChange={(event) =>
-                        setDraft({
-                          ...draft,
-                          repeat_until: event.target.value || null,
-                        })
-                      }
-                      className={`${input} mt-1`}
-                    />
-                  </label>
-                )}
-                {((draft.checklist?.length || 0) > 0 ||
-                  selected.checklist !== "[]") && (
-                  <div className="space-y-1">
-                    <div className="font-medium">{copy.legacyChecklist}</div>
-                    {(draft.checklist || []).map((step, index) => (
-                      <div key={step.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={
-                            selected.repeat_frequency !== "none"
-                              ? checklistOf(selected).find(
-                                  (item) => item.id === step.id,
-                                )?.completed || false
-                              : step.completed
-                          }
-                          onChange={() =>
-                            selected.repeat_frequency !== "none"
-                              ? void run(() =>
-                                  apiClient.completeTodoChecklist(
-                                    selected.id,
-                                    step.id,
-                                    !checklistOf(selected).find(
-                                      (item) => item.id === step.id,
-                                    )?.completed,
-                                  ),
-                                )
-                              : setDraft({
-                                  ...draft,
-                                  checklist: draft.checklist?.map((item) =>
-                                    item.id === step.id
-                                      ? { ...item, completed: !item.completed }
-                                      : item,
-                                  ),
-                                })
-                          }
-                        />
-                        <input
-                          aria-label={`${copy.legacyChecklist} ${index + 1}`}
-                          value={step.title}
-                          onChange={(event) =>
-                            setDraft({
-                              ...draft,
-                              checklist: draft.checklist?.map((item) =>
-                                item.id === step.id
-                                  ? { ...item, title: event.target.value }
-                                  : item,
-                              ),
-                            })
-                          }
-                          className={`${input} flex-1`}
-                        />
-                        <button
-                          type="button"
-                          aria-label={copy.delete}
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              checklist: draft.checklist?.filter(
-                                (item) => item.id !== step.id,
-                              ),
-                            })
-                          }
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="text-accent"
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      checklist: [
-                        ...(draft.checklist || []),
-                        {
-                          id: crypto.randomUUID(),
-                          title: "",
-                          completed: false,
-                        },
-                      ],
-                    })
-                  }
-                >
-                  + {copy.addStep}
-                </button>
-              </section>
-            )}
-            <div className="text-xs text-content-tertiary space-y-1">
-              <div>
-                {copy.created}: {new Date(selected.created_at).toLocaleString()}
-              </div>
-              {selected.completed_at && (
-                <div>
-                  {copy.finished}:{" "}
-                  {new Date(selected.completed_at).toLocaleString()}
-                </div>
-              )}
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-danger">
-                {error}
-              </p>
-            )}
-            <div className="sticky bottom-0 bg-surface border-t border-default py-3 flex justify-between gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={remove}
-                className="text-danger text-sm inline-flex items-center gap-1"
-              >
-                <Trash2 size={15} />
-                {copy.delete}
-              </button>
-              <button
-                type="button"
-                disabled={busy || !draft.title?.trim()}
-                onClick={save}
-                className="rounded-btn bg-accent px-4 py-2 text-accent-contrast text-sm disabled:opacity-40"
-              >
-                {copy.save}
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
     </div>
   );
 };
