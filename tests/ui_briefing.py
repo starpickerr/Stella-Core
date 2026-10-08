@@ -158,6 +158,11 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='返回简报', exact=True).click()
         page.get_by_role('button', name='完整概览', exact=True).click()
         expect(page.get_by_role('link', name='查看事务', exact=True)).to_be_visible()
+        page.set_viewport_size({'width':900,'height':900})
+        expect(page.get_by_role('link', name='查看事务', exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        narrow_screenshot = Path(os.environ.get('STELLA_SCREENSHOT_DIR', os.environ.get('TMPDIR', '/tmp'))) / 'stella-briefing-narrow-desktop.png'
+        page.screenshot(path=str(narrow_screenshot), full_page=True)
         page.set_viewport_size({'width':390,'height':844})
         expect(page.get_by_role('link', name='查看事务', exact=True)).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
@@ -170,6 +175,6 @@ with sync_playwright() as playwright:
         expect(page.locator('button[aria-expanded]').filter(has_text='未来课程会议')).to_have_attribute('aria-expanded','true')
         expect(page.get_by_text('已关联日程详情', exact=True)).to_be_visible()
         assert errors == [], errors
-        print('UI briefing: cancel/create/failure/retry/link/unlink/preferences/scoped authorization/revoke/full overview/calendar target and mobile layout PASS')
+        print('UI briefing: decisions/reminder retry/keyboard/preferences/scoped authorization/full overview/calendar target/narrow desktop PASS; 390px geometry only')
     finally:
         browser.close()
