@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Settings2, X, Pencil, Trash2, MapPin, ExternalLink, Repeat2, Star, Download, Upload, List } from 'lucide-react'
 import apiClient from '../api/client'
 import { getLang } from '../i18n'
@@ -19,6 +20,8 @@ const emptyForm = (): CalendarEventInput => {
 const colors = ['#6B8AF7', '#55B89A', '#E5A755', '#A48BCD', '#E67878', '#4CA7C8']
 
 const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
+  const location = useLocation()
+  const navigate = useNavigate()
   const en = getLang() === 'en'
   const labels = en ? {
     subtitle: 'Your events, in one place', day: 'Day', week: 'Week', month: 'Month', year: 'Year', list: 'List', today: 'Today', all: 'All', add: 'New event',
@@ -72,6 +75,13 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [railRange, setRailRange] = useState<{ view: View; start: string; end: string } | null>(null)
   const [navigationToken, setNavigationToken] = useState(0)
   const requestId = useRef(0)
+  useEffect(() => {
+    const eventId = (location.state as { eventId?: string } | null)?.eventId
+    const target = eventId ? allEvents.find((event) => event.id === eventId) : undefined
+    if (!target) return
+    setFilter(''); setRailRange(null); setSelectedDay(dayKey(new Date(target.start_at))); setView('day'); setExpanded(target.id)
+    navigate('/calendar', { replace: true, state: null })
+  }, [allEvents, location.state, navigate])
 
   const rangeStart = railRange?.view === view ? railRange.start : selectedDay
   const rangeEnd = railRange?.view === view ? railRange.end : ''

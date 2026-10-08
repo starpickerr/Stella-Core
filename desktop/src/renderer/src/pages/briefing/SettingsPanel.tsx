@@ -5,6 +5,7 @@ import { t } from '../../i18n'
 import type { BriefingRule, BriefingRuleInput } from '../../types'
 import { MailboxSettings } from './MailboxSettings'
 import { ElearningSettings } from './ElearningSettings'
+import { ActionSettings } from './ActionSettings'
 
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
 const emptyRule: BriefingRuleInput = { text: '', source: '*' }
@@ -55,6 +56,7 @@ export const SettingsPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <MailboxSettings />
       <ElearningSettings />
     </section>
+    <ActionSettings />
     <section className="rounded-card border border-default bg-surface p-5 space-y-4">
       <div><h3 className="flex items-center gap-2 font-semibold text-sm text-content"><Filter size={16} />{t('briefing_rules')}</h3><p className="text-xs text-content-tertiary mt-2">{t('briefing_rules_help')}</p></div>
       <form className="space-y-3" onSubmit={(e) => {

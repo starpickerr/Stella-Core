@@ -9,7 +9,6 @@ import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from common.log import logger
@@ -433,7 +432,7 @@ class TodoService:
             row[field] = json.dumps(values, ensure_ascii=False)
         return row
 
-    def create_todo(self, payload):
+    def create_todo(self, payload, *, _briefing_key=None):
         row = self._validate_todo(payload)
         status = self._status(payload.get("status", "todo"))
         if row["repeat_frequency"] != "none" and status != "todo":
@@ -442,6 +441,12 @@ class TodoService:
         todo_id, now = str(uuid.uuid4()), _now()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if _briefing_key:
+                existing = db.execute("SELECT id FROM todos WHERE source_type='briefing' AND source_key=?", (_briefing_key,)).fetchone()
+                if existing:
+                    return self.get_todo(existing[0])
+                if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (_briefing_key,)).fetchone():
+                    raise ValueError("source task was deleted")
             self._validate_parent(db, todo_id, parent_id, row["repeat_frequency"])
             order = self._next_order(db, parent_id)
             db.execute("""INSERT INTO todos
@@ -452,7 +457,7 @@ class TodoService:
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], now if status == "completed" else None,
                  row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
-                 None, None, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
+                 "briefing" if _briefing_key else None, _briefing_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"]))
             self._queue_scheduler_link(db, todo_id, row["remind_at"], status)
         self._sync_scheduler_links()
@@ -1104,39 +1109,30 @@ class TodoService:
                 (briefing_id, revision))
 
     def ingest_briefing(self, detail, db=None):
-        """Sync action items from a briefing without creating calendar events."""
-        if db is None:
-            with self._connect() as connection:
-                return self.ingest_briefing(detail, db=connection)
-        briefing = detail["briefing"]
-        decisions = {row["id"]: row.get("decision") or {} for row in detail.get("mail", [])}
-        items = list(detail.get("items", []))
-        covered = {item.source_item_id for item in items}
-        for row in detail.get("mail", []):
-            if row.get("category") != "selected" or row.get("id") in covered:
-                continue
-            decision = row.get("decision") or {}
-            card = next((item for item in items if getattr(item, "thread_id", "") and item.thread_id == row.get("thread_id")), None)
-            items.append(SimpleNamespace(
-                source=row["source"], account_id=row["account_id"], source_id=row["source_id"],
-                source_item_id=row["id"], section=decision.get("section", "fyi"),
-                title=row["title"], snippet=decision.get("summary") or row.get("snippet", ""),
-                payload=row.get("metadata") or {}, url=row.get("url", ""),
-                id=card.id if card else row["id"],
-            ))
-        current_keys = set()
-        for item in items:
-            source_key = json.dumps([item.source, item.account_id, item.source_id], ensure_ascii=False, separators=(",", ":"))
-            current_keys.add(source_key)
-            decision = decisions.get(item.source_item_id, {})
-            calendar = decision.get("calendar") if isinstance(decision.get("calendar"), dict) else {}
-            due_at = item.payload.get("due_at") if isinstance(item.payload, dict) else None
-            if item.section == "action":
-                self._upsert_sourced_todo(source_key, item, due_at or calendar.get("start_at"), briefing.id, db=db)
-            else:
-                db.execute("DELETE FROM todos WHERE source_type='briefing' AND source_key=? AND user_modified=0",
-                           (source_key,))
-        for row in db.execute("SELECT id,source_key FROM todos WHERE source_type='briefing' AND briefing_id=?",
-                                  (briefing.id,)).fetchall():
-            if row["source_key"] not in current_keys:
-                db.execute("DELETE FROM todos WHERE id=? AND user_modified=0", (row["id"],))
+        """Legacy entry point is read-only; decisions execute via BriefingActions.
+
+        Reclassification is never permission to delete user business records.
+        Existing source links are adopted by the durable decision service.
+        """
+        return 0
+
+    def sync_briefing_facts(self, todo_id, changes, baseline, force=False):
+        """Only source-owned deadlines change; edits to plans and status survive."""
+        allowed = {"due_on", "due_time", "timezone"}
+        changes = {key:value for key,value in changes.items() if key in allowed}
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            current = db.execute("SELECT * FROM todos WHERE id=?", (todo_id,)).fetchone()
+            if current is None:
+                raise KeyError("todo not found")
+            current = dict(current)
+            conflicts = {key:{"current":current[key],"source":value} for key,value in changes.items()
+                         if current[key] != value and current[key] != baseline.get(key)}
+            if conflicts and not force:
+                return self._with_progress(db,current), conflicts
+            if changes:
+                validated = self._validate_todo(changes,current)
+                db.execute("UPDATE todos SET due_on=?,due_time=?,timezone=?,updated_at=? WHERE id=?",
+                           (validated["due_on"],validated["due_time"],validated["timezone"],_now(),todo_id))
+            updated = db.execute("SELECT * FROM todos WHERE id=?", (todo_id,)).fetchone()
+            return self._with_progress(db,dict(updated)), {}

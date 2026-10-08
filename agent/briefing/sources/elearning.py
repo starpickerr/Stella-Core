@@ -79,7 +79,10 @@ class ElearningSource:
                 sender=sender or course["name"], title=course["name"] + " · " + title,
                 snippet=body[:1000], occurred_at=occurred.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
                 url=url, payload={"body": body, "resource_type": kind, "course_id": str(course["id"]),
-                                  "course_name": course["name"], "due_at": raw.get("due_at"), "fingerprint": fingerprint}))
+                                  "course_name": course["name"], "due_at": raw.get("due_at"), "fingerprint": fingerprint,
+                                  "entity_id": "{}:assignment:{}".format(course["id"], raw["id"]) if kind in {"assignment", "grade"} else key,
+                                  "submission_status": submission.get("workflow_state"), "score": submission.get("score"),
+                                  "grade": submission.get("grade")}))
 
         def read(course, resource, params=None):
             nonlocal reads
