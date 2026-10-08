@@ -16,7 +16,8 @@
     "build:renderer": "vite build",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "npm run build && electron-builder --win",
+    "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
     "highlight.js": "^11.11.1",
@@ -37,9 +38,12 @@
     "concurrently": "^9.1.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.46.1",
     "vite": "^6.0.3"
   },
   "build": {
