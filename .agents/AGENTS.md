@@ -18,6 +18,6 @@ Bug 先复现并定位根因。重要行为先写能失败的测试，再实施�
 
 ## Skills
 
-按任务调用项目级 Skill，不机械执行全部：Bug 用 `systematic-debugging`；重要逻辑用 `test-driven-development`；交付前用 `verification-before-completion`；重大修改用 `requesting-code-review`；复杂任务用 `writing-plans`、`executing-plans`；UI 用 `frontend-design`、`webapp-testing`、`web-design-guidelines` 和适用的 React 指南；安全敏感 diff 用 `differential-review`。创建项目 Skill 用 Codex 内建 `skill-creator`，产物只放本项目。Skill 不存在或不兼容时使用常规工程流程并如实说明。维护细节见 [Skill 清单](../docs/development/skills.md)。
+按 [Skill 协作规则](rules/skill-coordination.md) 选择规划、工作步骤和辅助 Skill；不要机械执行全部，也不要重复请求已有授权。创建项目 Skill 用 Codex 内建 `skill-creator`，产物只放本项目。Skill 不存在或不兼容时使用常规工程流程并如实说明。来源和维护细节见 [Skill 清单](../docs/development/skills.md)。
 
 默认中文沟通。阶段性说明实质进展，最终说明改动、验证证据和剩余问题。

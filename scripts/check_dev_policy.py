@@ -20,10 +20,11 @@ def main():
     failures = []
     root_guide = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     core_guide = (ROOT / ".agents/AGENTS.md").read_text(encoding="utf-8")
-    for target in (".agents/AGENTS.md", ".agents/rules/git.md", "develop", "main"):
+    for target in (".agents/AGENTS.md", ".agents/rules/git.md",
+                   ".agents/rules/skill-coordination.md", "develop", "main"):
         if target not in root_guide:
             failures.append(f"AGENTS.md missing {target}")
-    for name in ("architecture", "testing", "security", "git", "ui-design"):
+    for name in ("architecture", "testing", "security", "git", "ui-design", "skill-coordination"):
         path = ROOT / ".agents/rules" / f"{name}.md"
         if not path.is_file() or path.stat().st_size == 0:
             failures.append(f"missing rule {name}")
@@ -48,7 +49,7 @@ def main():
     for failure in failures:
         print(f"FAIL policy: {failure}")
     if not failures:
-        print(f"PASS policy: root/core guides, TOML, five rule files, {len(installed)} project skills and plan directory")
+        print(f"PASS policy: root/core guides, TOML, six rule files, {len(installed)} project skills and plan directory")
     return int(bool(failures))
 
 
