@@ -1,0 +1,3 @@
+# Trusted-project Codex settings only. AGENTS.md links to .agents/AGENTS.md;
+# fallback filenames are basenames, so a nested path is not configured here.
+project_doc_max_bytes = 32768

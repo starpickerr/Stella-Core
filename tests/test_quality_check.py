@@ -54,6 +54,28 @@ def test_skill_reference_change_validates_skills_without_linting_vendored_exampl
 
     assert checks["ruff"] == []
     assert "tests/test_quality_check.py" in checks["pytest"]
+    assert checks["policy"]
+
+
+def test_project_policy_change_selects_policy_preflight():
+    for path in ("AGENTS.md", ".agents/AGENTS.md", ".agents/rules/git.md",
+                 ".codex/config.toml", ".agents/skills/sources.json"):
+        assert affected_checks([path])["policy"], path
+
+
+def test_changed_files_uses_explicit_ci_base(monkeypatch):
+    from scripts import quality_check
+
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return type("Result", (), {"stdout": "AGENTS.md\n"})()
+
+    monkeypatch.setenv("STELLA_CHECK_BASE", "abc123")
+    monkeypatch.setattr(quality_check.subprocess, "run", fake_run)
+    assert "AGENTS.md" in quality_check.changed_files()
+    assert commands[0] == ["git", "diff", "--name-only", "abc123...HEAD"]
 
 
 def test_project_skills_have_codex_metadata():
@@ -82,6 +104,17 @@ def test_isolated_env_drops_provider_credentials(tmp_path, monkeypatch):
 
     assert "OPENAI_API_KEY" not in env
     assert "GITHUB_TOKEN" not in env
+
+
+def test_nested_isolation_preserves_installed_browser_cache(tmp_path, monkeypatch):
+    browser_cache = tmp_path / "ms-playwright"
+    browser_cache.mkdir()
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(browser_cache))
+    monkeypatch.setenv("HOME", str(tmp_path / "outer-home"))
+
+    env = isolated_env(tmp_path / "inner-home")
+
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(browser_cache)
 
 
 def test_removed_backend_and_dependency_changes_expand_checks():

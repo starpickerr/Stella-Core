@@ -33,5 +33,60 @@
     "commit": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
     "sha256": "51b7349e77ec63b7744a6f63647e7566a0b4d2e301121cc10e8c2113af6556a2",
     "local_changes": "Project references use available skill names; Stella AGENTS.md controls incremental test scope."
+  },
+  {
+    "skill": "writing-plans",
+    "repository": "https://github.com/obra/superpowers",
+    "commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+    "sha256": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a",
+    "license": "MIT",
+    "local_changes": "Uses docs/plans/active, project Skills and isolated test commands; continues already authorized work without an extra approval."
+  },
+  {
+    "skill": "executing-plans",
+    "repository": "https://github.com/obra/superpowers",
+    "commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+    "sha256": "f38e8f2ddcf079f65493adc713c1fed78421dfaf5f4dbf6b3a6b2b1d95466e71",
+    "license": "MIT",
+    "local_changes": "Bundled three plan-workspace helpers, redirected local scripts, removed unavailable Skill references, and isolated task-done test state and credentials."
+  },
+  {
+    "skill": "frontend-design",
+    "repository": "https://github.com/anthropics/skills",
+    "commit": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+    "license": "Apache-2.0",
+    "local_changes": "None."
+  },
+  {
+    "skill": "web-design-guidelines",
+    "repository": "https://github.com/vercel-labs/agent-skills",
+    "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "sha256": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f",
+    "license": "MIT (repository README)",
+    "local_changes": "Replaced unavailable WebFetch tool reference with the available web browsing tool."
+  },
+  {
+    "skill": "vercel-react-best-practices",
+    "repository": "https://github.com/vercel-labs/agent-skills",
+    "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "sha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355",
+    "license": "MIT (repository README and skill metadata)",
+    "local_changes": "Installed under the SKILL.md name to keep Codex discovery unambiguous; normalized upstream Markdown trailing whitespace for repository checks."
+  },
+  {
+    "skill": "differential-review",
+    "repository": "https://github.com/trailofbits/skills",
+    "commit": "82fe8226252622fa807643bdca1710901198553a",
+    "sha256": "f9af6a8193fc1a9f8ca3c54bb8d19095a5f20c9472ca6d014488bbde50b67da0",
+    "license": "CC-BY-SA-4.0",
+    "local_changes": "None; optional plugin subagent references are not needed for local use."
+  },
+  {
+    "skill": "software-audit",
+    "repository": "Stella project",
+    "commit": "local",
+    "license": "Project-owned",
+    "local_changes": "Existing Stella-specific read-only audit workflow; preserved."
   }
 ]

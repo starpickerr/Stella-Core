@@ -67,3 +67,5 @@ desktop/resources/.icon-work/
 desktop/resources/bin/
 
 .wrangler/
+evals/reports/
+audit-reports/Full-Audit-*.md
