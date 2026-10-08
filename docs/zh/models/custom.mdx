@@ -11,7 +11,7 @@ description: 自定义厂商配置，用于第三方 API 代理与本地模型
 
 ## 桌面客户端配置
 
-推荐方式。在桌面客户端「模型」页面点击「添加厂商」，选择「自定义」，填写名称、API Base 和 API Key 即可。支持添加多个自定义厂商，添加后在「主模型」中选择对应厂商和模型即可启用。
+推荐方式。在桌面客户端「模型」页面点击「添加厂商」，选择「自定义」，填写名称、API Base、API Key 和模型 ID。每个厂商可添加多个模型，并指定默认模型；保存后可在「主模型」或对话模型选择器中选择。
 
 <img width="900" src="/images/placeholder-image.svg" />
 
@@ -36,7 +36,8 @@ description: 自定义厂商配置，用于第三方 API 代理与本地模型
       "name": "厂商A",
       "api_key": "YOUR_API_KEY_A",
       "api_base": "https://api.a.com/v1",
-      "model": "deepseek-v3"
+      "model": "deepseek-v3",
+      "models": ["deepseek-v3", "deepseek-r1"]
     },
     {
       "id": "a1b2c3d4",
@@ -55,7 +56,8 @@ description: 自定义厂商配置，用于第三方 API 代理与本地模型
 | `bot_type` | 设置为 `"custom:<id>"` 激活对应厂商 |
 | `id` | 厂商唯一标识（8 位十六进制），在桌面客户端添加时自动生成，手动配置时填写任意不重复的标识即可 |
 | `name` | 展示名称，可随意修改 |
-| `model` | 该厂商使用的模型，激活时生效 |
+| `model` | 该厂商的默认模型，激活时生效 |
+| `models` | 可选模型 ID 列表；旧配置只有 `model` 时仍可正常使用 |
 
 <Note>
   历史的单厂商配置（`bot_type` 为 `"custom"`，配合 `custom_api_key` / `custom_api_base`）仍然兼容，无需改动即可继续使用。
