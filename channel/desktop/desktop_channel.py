@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import web
 
-from bridge.context import *
+from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
@@ -988,7 +988,8 @@ class DesktopChannel(ChatChannel):
         def on_event(event: dict):
             if request_id not in self.sse_streams:
                 return
-            publish = lambda item: self._publish_sse_event(request_id, item)
+            def publish(item):
+                self._publish_sse_event(request_id, item)
             event_type = event.get("type")
             data = event.get("data", {})
 
@@ -1354,7 +1355,6 @@ class DesktopChannel(ChatChannel):
             params = _raw_web_input()
             file_obj = params.get("file")
             file_objs = params.get("files")
-            session_id = params.get("session_id", "")
             relative_path = params.get("relative_path", "")
             relative_paths = params.get("relative_paths")
             upload_id = params.get("upload_id", "")
@@ -2040,6 +2040,12 @@ class DesktopChannel(ChatChannel):
             '/api/briefings/sources', 'BriefingSourcesHandler',
             '/api/briefings/elearning', 'BriefingElearningHandler',
             '/api/briefings/elearning/test', 'BriefingElearningTestHandler',
+            '/api/briefings/actions', 'BriefingActionsHandler',
+            '/api/briefings/overview', 'BriefingOverviewHandler',
+            '/api/briefings/actions/targets', 'BriefingActionTargetsHandler',
+            '/api/briefings/authorizations', 'BriefingAuthorizationsHandler',
+            '/api/briefings/authorizations/delete', 'BriefingAuthorizationDeleteHandler',
+            '/api/briefings/preferences', 'BriefingPreferencesHandler',
             '/api/briefings/items/status', 'BriefingItemStatusHandler',
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
@@ -7934,3 +7940,48 @@ class PendingRunsHandler:
         rows = store.list_run_admissions(web.input(session_id=None).session_id)
         web.header('Content-Type', 'application/json; charset=utf-8')
         return json.dumps({"status": "success", "admissions": _pending_admissions(rows)}, ensure_ascii=False)
+
+
+class BriefingActionsHandler:
+    def POST(self):
+        def operation():
+            body = _briefing_body()
+            return {"receipt": _briefing_service().update_action(_briefing_id(body), body.get("decision"))}
+        return _briefing_response(operation)
+
+
+class BriefingOverviewHandler:
+    def GET(self):
+        return _briefing_response(lambda: _briefing_service().get_overview())
+
+
+class BriefingActionTargetsHandler:
+    def GET(self):
+        def operation():
+            params = web.input(kind='todo', query='')
+            return {"targets": _briefing_service().get_action_targets(params.kind, params.query)}
+        return _briefing_response(operation)
+
+
+class BriefingAuthorizationsHandler:
+    def GET(self):
+        return _briefing_response(lambda: {"rules": _briefing_service().list_action_rules()})
+
+    def POST(self):
+        return _briefing_response(lambda: {"rule": _briefing_service().create_action_rule(_briefing_body())})
+
+
+class BriefingAuthorizationDeleteHandler:
+    def POST(self):
+        def operation():
+            _briefing_service().delete_action_rule(_briefing_id(_briefing_body()))
+            return {"deleted": True}
+        return _briefing_response(operation)
+
+
+class BriefingPreferencesHandler:
+    def GET(self):
+        return _briefing_response(lambda: {"preferences": _briefing_service().get_preferences()})
+
+    def POST(self):
+        return _briefing_response(lambda: {"preferences": _briefing_service().update_preferences(_briefing_body())})

@@ -10,7 +10,6 @@ import pytest
 
 from agent.calendar import CalendarService
 from agent.permission.gateway import SecurityGateway
-check_tool_call = SecurityGateway.check
 from agent.todos import TodoService
 from agent.scheduler.store import TaskStore
 from agent.scheduler.automation_store import AutomationStore
@@ -18,6 +17,8 @@ from application import Application, RequestContext
 from common.runtime_identity import identity_scope
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.tool_manager import ToolManager
+
+check_tool_call = SecurityGateway.check
 
 
 @pytest.fixture
@@ -324,11 +325,16 @@ def test_briefing_actions_create_todos_and_preserve_user_edits(service):
     detail = {"briefing": SimpleNamespace(id="briefing-1"), "items": [item], "mail": []}
     service.ingest_briefing(detail)
     service.ingest_briefing(detail)
+    assert service.list_todos() == []
+    key = json.dumps([item.source, item.account_id, item.source_id], separators=(',', ':'))
+    service._upsert_sourced_todo(key, item, item.payload['due_at'], 'briefing-1')
+    service._upsert_sourced_todo(key, item, item.payload['due_at'], 'briefing-1')
     rows = service.list_todos()
     assert len(rows) == 1 and rows[0]["due_on"] == "2026-10-02" and rows[0]["due_time"] == "20:00"
     service.complete_todo(rows[0]["id"], True)
     item.section = "fyi"
     service.ingest_briefing(detail)
+    service._upsert_sourced_todo(key, item, item.payload['due_at'], 'briefing-1')
     assert len(service.list_todos()) == 1 and service.list_todos()[0]["completed_at"]
 
 

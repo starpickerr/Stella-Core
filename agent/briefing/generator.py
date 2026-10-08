@@ -226,15 +226,17 @@ class AgentBriefingGenerator:
                     "type": "object", "properties": {
                         "id": {"type": "string"}, "selected": {"type": "boolean"},
                         "reason": {"type": "string"}, "section": {"type": "string", "enum": ["action", "fyi"]},
+                        "category": {"type": "string", "enum": ["needs_action", "attention", "status_update", "other"]},
+                        "information_type": {"type": "string", "enum": ["assignment", "grade", "meeting", "material", "competition", "announcement", "action", "information"]},
                         "score": {"type": "integer", "minimum": 0, "maximum": 100}, "summary": {"type": "string"},
-                        "calendar": {"type": "object", "description": "仅在原文明确给出日程时间时填写；截止时间可作为日程起点，不能猜测日期。时间须带时区。", "properties": {
+                        "calendar": {"type": "object", "description": "仅会议或活动明确给出实际开始与结束时间时填写。截止时间不是日程时间。时间须带时区，仅提出待确认建议。", "properties": {
                             "start_at": {"type": "string", "description": "ISO 8601 含时区"},
                             "end_at": {"type": "string", "description": "可选，ISO 8601 含时区"},
                             "all_day": {"type": "boolean"}}},
                     }, "required": ["id", "selected", "reason"],
                 }}}, "required": ["decisions"],
             }, lambda payload, expected=ids: validate_decisions(payload, expected))
-            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。有明确会议、活动或截止时间时在 calendar 填写时间；没有明确时间则省略。\n" + json.dumps({
+            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。给出 category 和 information_type；只有会议/活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交、评分等同事务完成。\n" + json.dumps({
                 "window_start": window_start, "window_end": window_end, "candidates": batch,
             }, ensure_ascii=False), rule_text, tool, [row for row in entries if row["id"] in ids])
             decisions.update({row["id"]: row for row in result["decisions"]})
@@ -267,8 +269,8 @@ class AgentBriefingGenerator:
                 "body": {"type": "string", "description": "按规则文稿撰写的 Markdown 正文，覆盖本批所有事项"},
                 "source_item_ids": {"type": "array", "items": {"type": "string"}},
             }, "required": ["body", "source_item_ids"]}, lambda payload, expected=ids: validate_body(payload, expected))
-            result = self._run_agent("依据规则撰写本批简报正文，调用 briefing_body_result；不要重复每日大标题，"
-                "正文将按批次顺序合并，不得省略低优先级条目。没有精选事项时给出简短状态说明，不逐项解释过滤内容或复述排除规则。\n" + json.dumps({
+            result = self._run_agent("依据规则撰写3至5行精简概览，调用 briefing_body_result；不要重复每日大标题，"
+                "概括发生了什么和用户需要决定什么，卡片已有逐项摘要，不要重复卡片全文。不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
                     "date": briefing_date, "window_start": window_start, "window_end": window_end, "items": batch,
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
                 }, ensure_ascii=False), rule_text, tool)

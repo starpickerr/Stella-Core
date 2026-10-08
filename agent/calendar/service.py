@@ -9,7 +9,6 @@ import hashlib
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .imports import HOLIDAY_SCHEDULES, parse_special_dates
@@ -300,15 +299,22 @@ class CalendarService:
             candidate += timedelta(days=1)
         return results
 
-    def create_event(self, payload):
+    def create_event(self, payload, *, _briefing_key=None):
         row = self._validate_event(payload)
         event_id, now = str(uuid.uuid4()), _now()
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if _briefing_key:
+                existing = db.execute("SELECT id FROM calendar_events WHERE source_type='briefing' AND source_key=?", (_briefing_key,)).fetchone()
+                if existing:
+                    return self.get_event(existing[0])
+                if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (_briefing_key,)).fetchone():
+                    raise ValueError("source event was deleted")
             db.execute("""INSERT INTO calendar_events
                 (id,title,description,start_at,end_at,all_day,location,category_id,source_type,source_key,source_url,user_modified,repeat_frequency,repeat_days,repeat_until,repeat_timezone,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (event_id, row["title"], row["description"], row["start_at"], row["end_at"], row["all_day"],
-                 row["location"], row.get("category_id"), None, None, "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], now, now))
+                 row["location"], row.get("category_id"), "briefing" if _briefing_key else None, _briefing_key, "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], now, now))
         return self.get_event(event_id)
 
     def update_event(self, event_id, payload):
@@ -431,75 +437,12 @@ class CalendarService:
             return count
 
     def ingest_briefing(self, detail, db=None):
-        """Record routing decisions and sync explicit dates, keyed by source identity."""
-        if db is None:
-            with self._connect() as connection:
-                return self.ingest_briefing(detail, db=connection)
-        briefing = detail["briefing"]
-        decisions = {row["id"]: row.get("decision") or {} for row in detail.get("mail", [])}
-        count = 0
-        current_keys = set()
-        items = list(detail.get("items", []))
-        covered = {item.source_item_id for item in items}
-        for row in detail.get("mail", []):
-            if row.get("category") != "selected" or row.get("id") in covered:
-                continue
-            decision = row.get("decision") or {}
-            card = next((item for item in items if item.thread_id and item.thread_id == row.get("thread_id")), None)
-            items.append(SimpleNamespace(
-                source=row["source"], account_id=row["account_id"], source_id=row["source_id"],
-                source_item_id=row["id"], thread_id=row.get("thread_id", ""),
-                section=decision.get("section", "fyi"), title=row["title"],
-                snippet=decision.get("summary") or row.get("snippet", ""),
-                payload=row.get("metadata") or {}, url=row.get("url", ""),
-                id=card.id if card else row["id"],
-            ))
-        for item in items:
-            source_key = json.dumps([item.source, item.account_id, item.source_id], ensure_ascii=False, separators=(",", ":"))
-            current_keys.add(source_key)
-            decision = decisions.get(item.source_item_id, {})
-            calendar = decision.get("calendar") if isinstance(decision.get("calendar"), dict) else {}
-            due_at = item.payload.get("due_at") if isinstance(item.payload, dict) else None
-            start = calendar.get("start_at") or (due_at if item.section != "action" else None)
-            event_id = None
-            if start:
-                try:
-                    start = _instant(start, "start_at")
-                    end = _instant(calendar.get("end_at"), "end_at") if calendar.get("end_at") else None
-                    if end is None:
-                        from datetime import timedelta
-                        end = (datetime.fromisoformat(start) + timedelta(hours=1)).isoformat()
-                    event = self._upsert_sourced_event(source_key, item, start, end,
-                                                        bool(calendar.get("all_day", False)), db=db)
-                    if event:
-                        event_id = event["id"]
-                        count += 1
-                except (ValueError, TypeError):
-                    pass
-            if event_id:
-                db.execute("""INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT(source_type,source_key,destination) DO UPDATE SET
-                    title=excluded.title,summary=excluded.summary,briefing_id=excluded.briefing_id,
-                    briefing_item_id=excluded.briefing_item_id,calendar_event_id=excluded.calendar_event_id,updated_at=excluded.updated_at""",
-                    ("briefing", source_key, "calendar", item.title, item.snippet, briefing.id, item.id, event_id, _now()))
-            else:
-                old = db.execute("SELECT calendar_event_id FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
-                                 (source_key,)).fetchone()
-                if old and old["calendar_event_id"]:
-                    db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0", (old["calendar_event_id"],))
-                db.execute("DELETE FROM agenda_handoffs WHERE source_type='briefing' AND source_key=? AND destination='calendar'",
-                           (source_key,))
-        stale = db.execute("SELECT source_key, calendar_event_id FROM agenda_handoffs WHERE briefing_id=?",
-                           (briefing.id,)).fetchall()
-        for row in stale:
-            if row["source_key"] in current_keys:
-                continue
-            if row["calendar_event_id"]:
-                db.execute("DELETE FROM calendar_events WHERE id=? AND user_modified=0",
-                           (row["calendar_event_id"],))
-            db.execute("DELETE FROM agenda_handoffs WHERE briefing_id=? AND source_key=?",
-                       (briefing.id, row["source_key"]))
-        return count
+        """Legacy entry point is read-only; decisions execute via BriefingActions.
+
+        Reclassification is never permission to delete user business records.
+        Existing source links are adopted by the durable decision service.
+        """
+        return 0
 
     def _upsert_sourced_event(self, source_key, item, start, end, all_day, db=None):
         if db is None:
@@ -526,3 +469,23 @@ class CalendarService:
                 (event_id, row["title"], row["description"], row["start_at"], row["end_at"], row["all_day"],
                  row["location"], row["category_id"], "briefing", source_key, item.url, 0, now, now))
         return dict(db.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone())
+
+
+    def sync_briefing_facts(self, event_id, changes, baseline, force=False):
+        """Update actual source times atomically without replacing user fields."""
+        changes = {key:value for key,value in changes.items() if key in {"start_at","end_at"}}
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            current = db.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
+            if current is None:
+                raise KeyError("event not found")
+            current = dict(current)
+            normalized = self._validate_event(changes,current)
+            conflicts = {key:{"current":current[key],"source":normalized[key]} for key in changes
+                         if current[key] != normalized[key] and current[key] != baseline.get(key)}
+            if conflicts and not force:
+                return current, conflicts
+            if changes:
+                db.execute("UPDATE calendar_events SET start_at=?,end_at=?,updated_at=? WHERE id=?",
+                           (normalized["start_at"],normalized["end_at"],_now(),event_id))
+            return dict(db.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()), {}

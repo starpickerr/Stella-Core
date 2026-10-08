@@ -8,6 +8,9 @@ import tempfile
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_runtime import npm_path, python_path
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -39,19 +42,23 @@ def run_server(server, client, port=None):
                 raise RuntimeError('renderer exited before browser check')
             return subprocess.run(client, cwd=ROOT, env=env, timeout=90).returncode
         finally:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
                 process.wait(timeout=5)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+            else:
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+                    os.killpg(process.pid, signal.SIGTERM)
+                    process.wait(timeout=5)
+                except (ProcessLookupError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
 
 
 if __name__ == '__main__':
-    checks = [str(ROOT / '.venv/bin/python'), 'tests/ui_smoke.py']
-    if (ROOT / 'tests/ui_briefing.py').is_file():
-        checks = [str(ROOT / '.venv/bin/python'), 'tests/ui_briefing.py']
-    sys.exit(run_server(['npm', '--prefix', 'desktop', 'run', 'dev:renderer', '--', '--host', '127.0.0.1', '--port', '{port}'], checks))
+    checks = [str(python_path(ROOT)), '-c', "import runpy; runpy.run_path('tests/ui_smoke.py'); runpy.run_path('tests/ui_briefing.py')"]
+    if not (ROOT / 'tests/ui_briefing.py').is_file():
+        checks = [str(python_path(ROOT)), 'tests/ui_smoke.py']
+    sys.exit(run_server([npm_path(), '--prefix', 'desktop', 'run', 'dev:renderer', '--', '--host', '127.0.0.1', '--port', '{port}'], checks))

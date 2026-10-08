@@ -107,3 +107,18 @@ def test_audit_report_does_not_overwrite_history(tmp_path):
     markdown_report([], report)
     assert report.read_text() == "existing review"
     assert len(list(tmp_path.glob("audit*.md"))) == 2
+
+
+def test_isolation_redirects_windows_profile_and_temp_state(tmp_path):
+    env = isolated_env(tmp_path)
+    assert env['USERPROFILE'] == str(tmp_path)
+    assert env['APPDATA'] == str(tmp_path / 'config')
+    assert env['LOCALAPPDATA'] == str(tmp_path / 'cache')
+    assert env['TEMP'] == str(tmp_path / 'tmp')
+    assert env['TMP'] == str(tmp_path / 'tmp')
+
+
+def test_quality_tools_select_native_virtualenv(tmp_path):
+    from scripts.check_runtime import python_path
+    assert python_path(tmp_path, 'nt') == tmp_path / '.venv/Scripts/python.exe'
+    assert python_path(tmp_path, 'posix') == tmp_path / '.venv/bin/python'

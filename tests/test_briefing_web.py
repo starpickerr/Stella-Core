@@ -7,13 +7,14 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
 from channel.desktop import desktop_channel as web_channel
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 @pytest.fixture(autouse=True)
@@ -61,6 +62,40 @@ def test_run_list_detail_and_mark(api):
     assert detail == ran
     marked = call(web_channel.BriefingItemStatusHandler, body={"id": ran["items"][0]["id"], "status": "done"})
     assert marked["item"]["status"] == "done"
+    assert auth.call_count == 4
+
+
+def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path):
+    service, auth = api
+    from agent.briefing.actions import BriefingActions
+    from agent.todos.service import TodoService
+    from agent.calendar.service import CalendarService
+    service._actions = BriefingActions(service.store, TodoService(tmp_path/'todos.db',tmp_path/'calendar.db'), CalendarService(tmp_path/'calendar.db'))
+    ran = call(web_channel.BriefingRunHandler, body={'briefing_date':'2026-09-09'})
+    item_id = ran['items'][0]['id']
+    receipt = call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'create','kind':'todo'}})['receipt']
+    assert receipt['state'] == 'succeeded'
+    targets = call(web_channel.BriefingActionTargetsHandler,'GET',params={'kind':'todo','query':'合同'})
+    assert targets['targets'][0]['id'] == receipt['target_id']
+    overview = call(web_channel.BriefingOverviewHandler,'GET')
+    assert overview['actions'][item_id]['todo']['target_id'] == receipt['target_id']
+    rule = call(web_channel.BriefingAuthorizationsHandler,body={'source':'email','account_id':'default','information_type':'action','course_id':'','kind':'todo','mode':'auto'})['rule']
+    assert call(web_channel.BriefingAuthorizationsHandler,'GET')['rules'][0]['id'] == rule['id']
+    assert call(web_channel.BriefingAuthorizationDeleteHandler,body={'id':rule['id']})['deleted'] is True
+    preferences = call(web_channel.BriefingPreferencesHandler,body={'show_low_priority':False})['preferences']
+    assert preferences['show_low_priority'] is False
+    assert call(web_channel.BriefingPreferencesHandler,'GET')['preferences'] == preferences
+    assert call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'link','kind':'todo','target_id':'missing'}})['status'] == 'error'
+    assert auth.call_count == 10
+
+
+def test_briefing_decision_routes_cannot_bypass_authentication(api):
+    _, auth = api
+    auth.side_effect = RuntimeError('unauthorized')
+    for handler, method in [(web_channel.BriefingActionsHandler,'POST'),(web_channel.BriefingAuthorizationsHandler,'POST'),
+                            (web_channel.BriefingOverviewHandler,'GET'),(web_channel.BriefingPreferencesHandler,'POST')]:
+        with pytest.raises(RuntimeError, match='unauthorized'):
+            call(handler, method)
     assert auth.call_count == 4
 
 

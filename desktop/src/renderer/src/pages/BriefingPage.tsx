@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
+import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
 import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
@@ -75,7 +75,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     apiClient.setBaseUrl(baseUrl)
     void load()
     const timer = window.setInterval(() => void load(true), 30000)
-    const onFocus = () => void load(true)
+    const onFocus = () => { void load(true); setRevision((value) => value + 1) }
     window.addEventListener('focus', onFocus)
     return () => { listRequest.current++; clearInterval(timer); window.removeEventListener('focus', onFocus) }
   }, [baseUrl, load])
@@ -156,6 +156,15 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     } finally { setMarking(false) }
   }
 
+  const decide = async (id: string, decision: BriefingDecision) => {
+    setMarking(true); setError('')
+    try {
+      await apiClient.decideBriefing(id, decision)
+      if (selectedId) setDetail(await apiClient.getBriefing(selectedId))
+    } catch (err) { setError(String(err instanceof Error ? err.message : err)) }
+    finally { setMarking(false) }
+  }
+
   return <div className="flex-1 flex flex-col min-h-0">
     <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-bold text-content">{t('menu_briefing')}</h1><p className="text-xs text-content-tertiary mt-1">{t('briefing_desc')}</p></div>
@@ -196,7 +205,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </section>
           <RevisionGraph revisions={detail?.revisions || []} version={-1} busy={false}
             onVersion={(nextVersion) => { setDraftSelected(false); setVersion(nextVersion) }} />
-        </div> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
+        </div> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} onDecision={decide} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>

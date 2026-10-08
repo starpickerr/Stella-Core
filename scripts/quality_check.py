@@ -9,10 +9,12 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_runtime import npm_path, python_path
+
 
 ROOT = Path(__file__).resolve().parent.parent
-PYTHON = ROOT / ".venv" / "bin" / "python"
-RUFF = ROOT / ".venv" / "bin" / "ruff"
+PYTHON = python_path(ROOT)
 SKILL_SERVER = ROOT / ".agents/skills/webapp-testing/scripts/with_server.py"
 DOMAIN_TESTS = {
     "agent/todos/": ("tests/test_todos.py",),
@@ -104,9 +106,15 @@ def isolated_env(root):
     # cloud profiles and proxies must not reach tests by accident.
     env = {key: value for key, value in os.environ.items()
            if key in {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "SYSTEMROOT", "WINDIR"}}
-    browser_cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+    browser_cache = (Path(os.environ.get('LOCALAPPDATA', str(Path.home() / 'AppData/Local'))) / 'ms-playwright'
+                     if os.name == 'nt' else Path.home() / ('Library/Caches/ms-playwright' if sys.platform == 'darwin' else '.cache/ms-playwright'))
     env.update({
         "HOME": str(root),
+        "USERPROFILE": str(root),
+        "APPDATA": str(root / "config"),
+        "LOCALAPPDATA": str(root / "cache"),
+        "TEMP": str(root / "tmp"),
+        "TMP": str(root / "tmp"),
         "STELLA_DATA_DIR": str(root / "data"),
         "TMPDIR": str(root / "tmp"),
         "XDG_CACHE_HOME": str(root / "cache"),
@@ -137,6 +145,8 @@ def changed_files():
 
 
 def run_check(name, command, env, timeout):
+    if command[0] == 'npm':
+        command = [npm_path(), *command[1:]]
     print(f"RUN  {name}: {' '.join(command)}", flush=True)
     try:
         result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout)
