@@ -12,6 +12,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from common.log import logger
+from agent.todos.scheduler_link import task_id_for, sync_task
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -28,7 +31,7 @@ TERMINAL_STATUSES = frozenset({"completed", "cancelled"})
 
 
 class TodoService:
-    def __init__(self, db_path=None, legacy_calendar_db_path=None):
+    def __init__(self, db_path=None, legacy_calendar_db_path=None, scheduler_store=None):
         from common.state_dir import calendar_db, todos_db
         self.db_path = Path(db_path) if db_path else todos_db()
         self.legacy_calendar_db_path = (Path(legacy_calendar_db_path) if legacy_calendar_db_path else
@@ -89,6 +92,11 @@ class TodoService:
                 CREATE TABLE IF NOT EXISTS source_tombstones (
                     source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS todo_scheduler_links (
+                    todo_id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+                    desired_at TEXT, state TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
+                );
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(todos)")}
             for name, definition in (
@@ -106,6 +114,67 @@ class TodoService:
         self._migrate_calendar_records()
         if os.environ.get("STELLA_DESKTOP") == "1":
             self._record_legacy_claims()
+        self.scheduler_store = scheduler_store
+        if self.scheduler_store is None and db_path is None:
+            try:
+                from agent.todos.scheduler_link import default_scheduler_store
+                self.scheduler_store = default_scheduler_store()
+            except Exception as exc:
+                logger.warning("[Todos] Scheduler store unavailable: %s", exc)
+        self._backfill_scheduler_links()
+        self._sync_scheduler_links()
+
+    @staticmethod
+    def _active_reminder(remind_at, status):
+        if not remind_at or status in TERMINAL_STATUSES:
+            return None
+        return remind_at if datetime.fromisoformat(remind_at) > datetime.now(timezone.utc) else None
+
+    def _queue_scheduler_link(self, db, todo_id, remind_at, status):
+        desired = self._active_reminder(remind_at, status)
+        old = db.execute("SELECT 1 FROM todo_scheduler_links WHERE todo_id=?", (todo_id,)).fetchone()
+        if desired or old:
+            db.execute("""INSERT INTO todo_scheduler_links(todo_id,task_id,desired_at,state,error,updated_at)
+                VALUES (?,?,?,'pending','',?) ON CONFLICT(todo_id) DO UPDATE SET
+                desired_at=excluded.desired_at,state='pending',error='',updated_at=excluded.updated_at""",
+                (todo_id, task_id_for(todo_id), desired, _now()))
+
+    def _backfill_scheduler_links(self):
+        with self._connect() as db:
+            for row in db.execute("""SELECT id,remind_at,status FROM todos WHERE remind_at IS NOT NULL
+                AND status NOT IN ('completed','cancelled')"""):
+                if self._active_reminder(row["remind_at"], row["status"]):
+                    db.execute("""INSERT OR IGNORE INTO todo_scheduler_links
+                        (todo_id,task_id,desired_at,state,updated_at) VALUES (?,?,?,'pending',?)""",
+                        (row["id"], task_id_for(row["id"]), row["remind_at"], _now()))
+
+    def _sync_scheduler_links(self):
+        if self.scheduler_store is None:
+            return
+        with self._connect() as db:
+            pending = [dict(row) for row in db.execute(
+                "SELECT * FROM todo_scheduler_links WHERE state='pending'")]
+        for link in pending:
+            try:
+                with self._connect() as db:
+                    todo = db.execute("SELECT title,remind_at,status FROM todos WHERE id=?",
+                                      (link["todo_id"],)).fetchone()
+                desired = (link["desired_at"] if todo and
+                           todo["remind_at"] == link["desired_at"] and
+                           self._active_reminder(todo["remind_at"], todo["status"]) else None)
+                sync_task(self.scheduler_store, link["todo_id"], todo["title"] if todo else "", desired)
+                with self._connect() as db:
+                    if desired:
+                        db.execute("""UPDATE todo_scheduler_links SET state='synced',error='',updated_at=?
+                            WHERE todo_id=? AND desired_at=?""", (_now(), link["todo_id"], desired))
+                    else:
+                        db.execute("DELETE FROM todo_scheduler_links WHERE todo_id=? AND desired_at IS ?",
+                                   (link["todo_id"], link["desired_at"]))
+            except Exception as exc:
+                logger.warning("[Todos] Reminder scheduler sync pending todo=%s: %s", link["todo_id"], exc)
+                with self._connect() as db:
+                    db.execute("UPDATE todo_scheduler_links SET error=?,updated_at=? WHERE todo_id=?",
+                               (str(exc), _now(), link["todo_id"]))
 
     @contextmanager
     def _connect(self):
@@ -385,6 +454,8 @@ class TodoService:
                  row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
                  None, None, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"]))
+            self._queue_scheduler_link(db, todo_id, row["remind_at"], status)
+        self._sync_scheduler_links()
         return self.get_todo(todo_id)
 
     def get_todo(self, todo_id):
@@ -419,6 +490,8 @@ class TodoService:
                 row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
                 row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
                 row["remind_at"], old["id"]))
+            self._queue_scheduler_link(db, old["id"], row["remind_at"], old["status"])
+        self._sync_scheduler_links()
         return self.get_todo(old["id"])
 
     def delete_todo(self, todo_id):
@@ -435,7 +508,9 @@ class TodoService:
                     db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
                                (item["source_key"], _now()))
                 self._cancel_pending_reminders(db, item["id"])
+                self._queue_scheduler_link(db, item["id"], None, "cancelled")
                 db.execute("DELETE FROM todos WHERE id=?", (item["id"],))
+        self._sync_scheduler_links()
 
     @staticmethod
     def _status(value):
@@ -459,6 +534,11 @@ class TodoService:
             JOIN todos t ON t.id=d.prerequisite_id WHERE d.task_id=?""", (row["id"],)).fetchall()
         row["dependency_ids"] = [item["prerequisite_id"] for item in dependencies]
         row["blocked_by"] = [item["prerequisite_id"] for item in dependencies if item["status"] != "completed"]
+        link = db.execute("SELECT task_id,state,error FROM todo_scheduler_links WHERE todo_id=?",
+                          (row["id"],)).fetchone()
+        row["scheduler_task_id"] = link["task_id"] if link and row.get("remind_at") else None
+        row["reminder_sync_pending"] = bool(link and link["state"] == "pending")
+        row["reminder_sync_error"] = link["error"] if link else ""
         return row
 
     @staticmethod
@@ -571,6 +651,8 @@ class TodoService:
             now = _now()
             db.execute("UPDATE todos SET status=?,completed_at=?,user_modified=1,updated_at=? WHERE id=?",
                        (status, now if status == "completed" else None, now, old["id"]))
+            self._queue_scheduler_link(db, old["id"], old["remind_at"], status)
+        self._sync_scheduler_links()
         return self.get_todo(old["id"])
 
     def complete_todo(self, todo_id, completed, force=False):
@@ -662,6 +744,46 @@ class TodoService:
             db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?", (occurrence_id,))
             db.execute("""UPDATE reminder_deliveries SET status='cancelled',claim_id=NULL,lease_until=NULL
                 WHERE occurrence_id=? AND status!='shown'""", (occurrence_id,))
+
+    def queue_scheduled_reminder(self, todo_id, expected_at, now=None):
+        """Scheduler handoff: queue the desktop notification only if the link still matches."""
+        if not isinstance(todo_id, str) or not isinstance(expected_at, str):
+            raise ValueError("todo id and reminder time are required")
+        try:
+            expected = datetime.fromisoformat(expected_at.replace("Z", "+00:00"))
+            if expected.tzinfo is None:
+                raise ValueError("timezone required")
+            expected_at = expected.astimezone(timezone.utc).isoformat()
+        except ValueError as exc:
+            raise ValueError("invalid reminder time") from exc
+        instant = now or datetime.now(timezone.utc)
+        if instant.tzinfo is None:
+            raise ValueError("now must include a timezone")
+        if expected > instant.astimezone(timezone.utc):
+            return False
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            todo = db.execute("SELECT remind_at,status FROM todos WHERE id=?", (todo_id,)).fetchone()
+            if not todo or todo["remind_at"] != expected_at or todo["status"] in TERMINAL_STATUSES:
+                return False
+            occurrence_id = str(uuid.uuid4())
+            inserted = db.execute("""INSERT OR IGNORE INTO reminder_occurrences
+                (occurrence_id,todo_id,occurrence_on,reminder_kind,due_at)
+                VALUES (?,?,?,'custom',?)""",
+                (occurrence_id, todo_id, expected_at, expected_at))
+            if inserted.rowcount:
+                db.execute("INSERT INTO reminder_deliveries(delivery_id,occurrence_id) VALUES (?,?)",
+                           (str(uuid.uuid4()), occurrence_id))
+            else:
+                cancelled = db.execute("""SELECT occurrence_id FROM reminder_occurrences
+                    WHERE todo_id=? AND occurrence_on=? AND reminder_kind='custom' AND state='cancelled'""",
+                    (todo_id, expected_at)).fetchone()
+                if cancelled:
+                    db.execute("UPDATE reminder_occurrences SET state='pending',due_at=? WHERE occurrence_id=?",
+                               (expected_at, cancelled[0]))
+                    db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
+                        lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
+            return True
 
     def claim_desktop_reminders(self, now=None, limit=20):
         """Lease due reminders; repeated claims after a crash may show twice."""
@@ -828,17 +950,23 @@ class TodoService:
             for item in db.execute("""SELECT d.task_id,d.prerequisite_id,t.status FROM todo_dependencies d
                 JOIN todos t ON t.id=d.prerequisite_id"""):
                 dependencies.setdefault(item["task_id"], []).append((item["prerequisite_id"], item["status"]))
+            links = {item["todo_id"]: item for item in db.execute(
+                "SELECT todo_id,task_id,state,error FROM todo_scheduler_links")}
         result = []
         for row in rows:
             if not include_completed and row["status"] in TERMINAL_STATUSES:
                 continue
             progress = counts.get(row["id"], {"count": 0, "total": 0, "done": 0})
+            link = links.get(row.get("series_id", row["id"]))
             result.append({**row, "subtask_count": progress["count"],
                            "progress_completed": progress["done"], "progress_total": progress["total"],
                            "progress_percent": round(100 * progress["done"] / progress["total"]) if progress["total"] else 0,
                            "dependency_ids": [item[0] for item in dependencies.get(row.get("series_id", row["id"]), [])],
                            "blocked_by": [item[0] for item in dependencies.get(row.get("series_id", row["id"]), [])
-                                          if item[1] != "completed"]})
+                                          if item[1] != "completed"],
+                           "scheduler_task_id": link["task_id"] if link and row.get("remind_at") else None,
+                           "reminder_sync_pending": bool(link and link["state"] == "pending"),
+                           "reminder_sync_error": link["error"] if link else ""})
         return result
 
     def list_todos_focus(self, today=None):

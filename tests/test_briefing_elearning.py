@@ -162,7 +162,7 @@ def test_elearning_fetch_stops_after_current_resource_when_cancelled(config_path
     tool.cancel_event = event
     result = tool.execute({"action": "fetch"})
     assert result.status == "error" and "已取消" in result.result
-    assert [path.rsplit("/", 1)[-1] for path, _ in canvas.calls] == ["courses", "discussion_topics"]
+    assert [path.rsplit("/", 1)[-1] for path, _ in canvas.calls] == ["courses", "assignments", "discussion_topics"]
 
 
 def test_cancelled_elearning_tool_returns_so_next_session_work_can_run(config_path):
@@ -465,6 +465,71 @@ def test_canvas_resources_use_source_items_full_body_and_event_time(config_path)
     assert again.items == []
 
 
+def test_briefing_reads_broad_metadata_progressively_without_downloading(config_path):
+    settings.save_settings(config())
+    canvas = FakeCanvas()
+    canvas.open = Mock(side_effect=AssertionError("briefing must not download files"))
+    source = settings.elearning_sources()[0]
+    source.client_factory = lambda _: canvas
+    source.auto_sync_files = True
+    source.config["file_sync_enabled"] = True
+    previews = []
+    source.on_items_ready = lambda items: previews.append({item.payload["resource_type"] for item in items})
+
+    result = source.fetch({"since": "2026-09-08T12:00:00Z", "until": "2026-09-09T00:00:00Z"})
+
+    assert result.errors == []
+    assert {item.payload["resource_type"] for item in result.items} == {
+        "announcement", "assignment", "quiz", "grade", "course_grade", "file"}
+    assert previews[0] == {"assignment", "grade"}
+    assert previews[-1] == {item.payload["resource_type"] for item in result.items}
+    assert {path.rsplit("/", 1)[-1] for path, _ in canvas.calls} >= {
+        "courses", "assignments", "discussion_topics", "quizzes", "files", "enrollments"}
+    canvas.open.assert_not_called()
+
+
+def test_briefing_file_metadata_stops_at_previous_window(config_path):
+    from agent.briefing.elearning.courses import list_recent_files
+
+    canvas = FakeCanvas()
+    canvas.get = Mock(side_effect=[
+        ([{"id": 11, "updated_at": "2026-09-08T23:00:00Z"}], "page-2"),
+        ([{"id": 12, "updated_at": "2026-09-08T20:00:00Z"},
+          {"id": 13, "updated_at": "2026-09-01T00:00:00Z"}], "page-3"),
+    ])
+    rows, warnings = list_recent_files(canvas, 42, datetime(2026, 9, 8, 12, tzinfo=timezone.utc))
+
+    assert [row["id"] for row in rows] == [11, 12]
+    assert warnings == []
+    assert canvas.get.call_count == 2
+    assert canvas.get.call_args_list[0].args[0] == "/api/v1/courses/42/files"
+    assert canvas.get.call_args_list[0].args[1]["sort"] == "updated_at"
+
+
+def test_briefing_keeps_previously_catalogued_course_files(
+    config_path, tmp_path, deterministic_briefing_generator
+):
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.service import BriefingService
+    from agent.briefing.store import BriefingStore
+    from agent.briefing.sources.base import FetchedItem
+
+    settings.save_settings(config())
+    source = settings.elearning_sources()[0]
+    source.client_factory = lambda _: FakeCanvas()
+    service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
+    service.upsert_source_item(FetchedItem(source="elearning", account_id=source.account_id,
+        source_id="42:file:4", title="旧课件", occurred_at="2026-09-08T23:00:00Z",
+        payload={"resource_type": "file", "body": "旧课件"}).to_catalog_payload())
+
+    detail = BriefingPipeline(service, [source],
+        clock=lambda: datetime(2026, 9, 9, tzinfo=timezone.utc)).run()
+
+    assert detail["briefing"].status == "completed"
+    assert "42:file:4" in {row["source_id"] for row in detail["mail"]}
+    assert "42:assignment:2" in {row["source_id"] for row in detail["mail"]}
+
+
 def test_new_pending_task_and_changes_without_server_dates_are_observed_once(config_path):
     canvas = FakeCanvas()
     canvas.rows["assignments"] = [{"id": 2, "name": "旧发布待完成作业", "created_at": "2026-01-01T00:00:00Z", "description": "要求",
@@ -706,19 +771,19 @@ def test_file_sync_retries_incomplete_response_without_leaving_partial_file(conf
     assert client.open.call_count == 2
 
 
-def test_briefing_source_only_downloads_with_explicit_sync_setting(config_path, tmp_path, monkeypatch):
+def test_briefing_source_never_downloads_with_legacy_auto_sync_setting(config_path, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"][0]["filename"] = "讲义.pdf"
     canvas.rows["files"][0]["url"] = BASE + "/files/4/download"
-    canvas.open = Mock(return_value=io.BytesIO(b"pdf"))
+    canvas.open = Mock(side_effect=AssertionError("briefing must not download files"))
     cfg = settings.load_settings()
 
     assert ElearningSource(cfg, client_factory=lambda _: canvas).fetch({}).errors == []
     canvas.open.assert_not_called()
     result = ElearningSource(cfg, client_factory=lambda _: canvas, auto_sync_files=True).fetch({})
     assert result.errors == []
-    assert (root / "课程" / "课件" / "讲义.pdf").read_bytes() == b"pdf"
-    assert not (root / "课程--42").exists()
+    assert not list(root.iterdir())
+    canvas.open.assert_not_called()

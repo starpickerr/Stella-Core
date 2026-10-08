@@ -179,4 +179,4 @@ def elearning_sources():
     cfg = load_settings()
     # An enabled but incomplete source must fail in the actual run with a
     # useful diagnosis, rather than silently disappearing from the briefing.
-    return [ElearningSource(cfg, auto_sync_files=True)] if cfg["enabled"] else []
+    return [ElearningSource(cfg, briefing_only=True)] if cfg["enabled"] else []

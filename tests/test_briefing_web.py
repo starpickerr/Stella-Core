@@ -64,6 +64,22 @@ def test_run_list_detail_and_mark(api):
     assert auth.call_count == 4
 
 
+def test_run_progress_is_authenticated_and_exposes_only_active_draft(api):
+    _, auth = api
+    from agent.briefing import progress
+    assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
+    progress.begin("brf-2026-09-09-morning", 2)
+    try:
+        progress.update("brf-2026-09-09-morning", body="## 已有信息", completed_sources=1)
+        result = call(web_channel.BriefingRunProgressHandler, "GET")
+        assert result["progress"]["body"] == "## 已有信息"
+        assert result["progress"]["completed_sources"] == 1
+    finally:
+        progress.finish("brf-2026-09-09-morning")
+    assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
+    assert auth.call_count == 3
+
+
 def test_rule_crud(api):
     _, auth = api
     created = call(web_channel.BriefingRulesHandler, body={"action": "exclude", "match_field": "sender", "match_value": "Ada"})

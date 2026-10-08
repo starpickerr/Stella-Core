@@ -326,6 +326,8 @@ class SchedulerTool(BaseTool):
         task = self.task_store.get_task(task_id)
         if not task:
             return f"错误: 任务 '{task_id}' 不存在"
+        if task.get("linked_todo_id"):
+            return "错误: 请在关联事务中修改或删除提醒时间"
         
         self.task_store.delete_task(task_id)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已删除"
@@ -339,6 +341,8 @@ class SchedulerTool(BaseTool):
         task = self.task_store.get_task(task_id)
         if not task:
             return f"错误: 任务 '{task_id}' 不存在"
+        if task.get("linked_todo_id"):
+            return "错误: 请在关联事务中修改提醒时间"
         
         self.task_store.enable_task(task_id, True)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已启用"
@@ -352,6 +356,8 @@ class SchedulerTool(BaseTool):
         task = self.task_store.get_task(task_id)
         if not task:
             return f"错误: 任务 '{task_id}' 不存在"
+        if task.get("linked_todo_id"):
+            return "错误: 请在关联事务中修改提醒时间"
         
         self.task_store.enable_task(task_id, False)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已禁用"
