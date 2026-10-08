@@ -265,7 +265,7 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
     page = json.loads(tool.execute({"action": "sync_files", "limit": 1}).result)
     assert page["total"] == 2 and page["next_offset"] == 1
     settings.save_settings({"file_sync_enabled": False})
-    assert "开启文件同步" in tool.execute({"action": "sync_files"}).result
+    assert "Agent 设置中开启课件保存" in tool.execute({"action": "sync_files"}).result
 
 
 def test_elearning_lists_live_files_and_filters_downloads_without_scripts(config_path, tmp_path, security_audit_path):

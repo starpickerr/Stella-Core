@@ -39,8 +39,7 @@ export const ElearningSettings: React.FC = () => {
   }, [])
 
   const payload = (): ElearningSettingsInput => ({ enabled: config.enabled, base_url: config.base_url,
-    username: config.username, courses: chosen, file_sync_enabled: config.file_sync_enabled,
-    file_sync_root: config.file_sync_root, ...(password && password !== '********' ? { password } : {}) })
+    username: config.username, courses: chosen, ...(password && password !== '********' ? { password } : {}) })
   const run = async (operation: () => Promise<void>) => {
     setBusy(true); setError(''); setSaved(false)
     try { await operation() }
@@ -49,9 +48,7 @@ export const ElearningSettings: React.FC = () => {
   }
   const edit = (changes: Partial<Config>) => {
     if (changes.username !== undefined || changes.base_url !== undefined) { setCourses([]); setChosen([]) }
-    setConfig((value) => ({ ...value, ...changes,
-      ...((changes.username !== undefined || changes.base_url !== undefined)
-        ? { file_sync_enabled: false, file_sync_root: '' } : {}) })); setSaved(false); setConnected(false)
+    setConfig((value) => ({ ...value, ...changes })); setSaved(false); setConnected(false)
   }
   const missingNames = chosen.filter((id) => !courses.some((row) => row.id === id && courseName(row.name))).length
 
@@ -86,27 +83,8 @@ export const ElearningSettings: React.FC = () => {
         </>}
         {missingNames > 0 && <p className="text-xs text-content-tertiary">{t('briefing_elearning_names_pending').replace('{count}', String(missingNames))}</p>}
       </fieldset>
-      <fieldset className="sm:col-span-2 rounded-card border border-default p-3 space-y-3">
-        <legend className="px-1 text-xs text-content-secondary">{t('briefing_elearning_file_sync')}</legend>
-        <label className="inline-flex items-center gap-2 text-sm text-content-secondary">
-          <input type="checkbox" disabled={busy || loading} checked={config.file_sync_enabled}
-            onChange={(event) => edit({ file_sync_enabled: event.target.checked })} />
-          {t('briefing_elearning_file_sync')}
-        </label>
-        <p className="text-xs text-content-tertiary leading-relaxed">{t('briefing_elearning_file_sync_help')}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-content-secondary">{t('briefing_elearning_file_root')}</span>
-          <span className="min-w-0 flex-1 text-xs text-content break-all">{config.file_sync_root || '—'}</span>
-          <button type="button" disabled={busy || loading} className={buttonClass} onClick={() => void (async () => {
-            const path = await window.electronAPI?.selectDirectory?.()
-            if (path) edit({ file_sync_root: path })
-          })()}>{t('briefing_elearning_file_choose')}</button>
-        </div>
-        {config.file_sync_enabled && !config.file_sync_root && <p className="text-xs text-danger">{t('briefing_elearning_file_root_required')}</p>}
-        {config.file_sync_enabled && !chosen.length && <p className="text-xs text-danger">{t('briefing_elearning_file_courses_required')}</p>}
-      </fieldset>
       <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-        <button type="submit" disabled={busy || loading || (config.enabled && !chosen.length) || (config.file_sync_enabled && (!config.file_sync_root || !chosen.length))} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
+        <button type="submit" disabled={busy || loading || (config.enabled && !chosen.length)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{t('briefing_save')}</button>
         <button type="button" disabled={busy || loading} className={`${buttonClass} inline-flex items-center gap-1.5`} onClick={() => void run(async () => {
           setConnected(false)
           const options = await apiClient.testElearningSettings(payload())
