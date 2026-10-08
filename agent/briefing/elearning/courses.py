@@ -1,6 +1,7 @@
 """Course selection adapted from elearning_crawler/src/service.py."""
 import re
 from .errors import LoginRequired, SyncCancelled, SyncError
+from .utils import parse_date
 
 def course_list(client):
     return client.list("/api/v1/courses", {"enrollment_type": "student", "enrollment_state": "active", "include[]": "term"})
@@ -48,3 +49,37 @@ def list_files(client, cid):
                 except SyncError as error:
                     errors.append("单元文件 {}：{}".format(fid, error))
     return list(files.values()), errors
+
+
+def list_recent_files(client, cid, since):
+    """Read recent file metadata; Canvas sorts file pages by update time."""
+    if since is None:
+        return list_files(client, cid)
+    path = "/api/v1/courses/{}/files".format(cid)
+    params = {"sort": "updated_at", "order": "desc", "per_page": 100}
+    seen, files = set(), []
+    try:
+        while path:
+            if path in seen:
+                raise SyncError("接口分页循环，已停止以防重复请求。")
+            seen.add(path)
+            page, path = client.get(path, params)
+            params = None
+            if not isinstance(page, list):
+                raise SyncError("接口未返回文件列表。")
+            reached_older = False
+            for raw in page:
+                updated = parse_date(raw.get("updated_at") or raw.get("modified_at") or raw.get("created_at"))
+                if updated is not None and updated <= since:
+                    reached_older = True
+                else:
+                    files.append(raw)
+            if reached_older:
+                break
+    except (LoginRequired, SyncCancelled):
+        raise
+    except SyncError as exc:
+        if files:
+            return files, ["文件元数据读取不完整：{}".format(exc)]
+        return list_files(client, cid)
+    return files, []
