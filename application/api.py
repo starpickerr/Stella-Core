@@ -49,7 +49,8 @@ _METHODS = {
         "list_briefings", "get_briefing", "get_revision", "start_briefing",
         "complete_briefing", "update_item_status", "upsert_source_item", "list_rules",
         "get_rule", "create_rule", "update_rule", "delete_rule", "get_cursor", "set_cursor",
-        "build_source_item",
+        "build_source_item", "update_action", "list_action_rules", "create_action_rule", "delete_action_rule",
+        "get_preferences", "update_preferences", "get_action_targets", "get_overview",
     }),
 }
 

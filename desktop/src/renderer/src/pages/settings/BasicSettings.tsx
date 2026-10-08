@@ -103,8 +103,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
 
   const providerMeta = (id: string): ProviderMeta | undefined => config?.providers?.[id] as ProviderMeta | undefined
 
-  // Custom providers (custom:<id> or legacy "custom") have no preset model
-  // catalog, so their model is always typed into a free-form input.
+  // Keep free-form entry available for legacy providers and unlisted models.
   const isCustomProviderId = (id: string) => id.startsWith('custom:') || id === 'custom'
 
   // Canonical per-model key shared with the backend resolve path: lowercased
@@ -376,13 +375,19 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             {CustomModelPicker ? (
               <CustomModelPicker value={model} onChange={setModel} />
             ) : isCustomProvider ? (
-              // Custom providers have no preset catalog: type the model directly.
-              <TextInput
-                className="font-mono"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={t('config_custom_model_hint')}
-              />
+              <>
+                {(currentMeta?.models?.length || 0) > 0 && <Dropdown
+                  value={currentMeta?.models?.includes(customModel) ? customModel : '__custom__'}
+                  options={modelOptions}
+                  onChange={(value) => setCustomModel(value === '__custom__' ? '' : value)}
+                />}
+                {(!(currentMeta?.models?.length) || !currentMeta?.models?.includes(customModel)) && <TextInput
+                  className="mt-2 font-mono"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder={t('config_custom_model_hint')}
+                />}
+              </>
             ) : (
               <>
                 <Dropdown

@@ -127,12 +127,15 @@ class BriefingService:
         briefing = self.store.get_briefing(briefing_id)
         if briefing is None:
             return None
-        return {
+        detail = {
             "briefing": briefing,
             "items": self.store.list_briefing_items(briefing_id),
             "revisions": self.store.list_revisions(briefing_id),
             "mail": self.store.list_mail(briefing_id),
         }
+        detail["actions"] = self.actions.view(detail["items"])
+        detail["preferences"] = self.actions.preferences()
+        return detail
 
     def get_revision(self, briefing_id: str, number: int) -> dict:
         snapshot = self.store.get_revision(briefing_id, number)
@@ -144,6 +147,8 @@ class BriefingService:
         snapshot["briefing"].setdefault("source_windows", {})
         snapshot["briefing"].setdefault("updated_sources", [])
         snapshot["revisions"] = self.store.list_revisions(briefing_id)
+        snapshot["actions"] = self.actions.view(snapshot["items"])
+        snapshot["preferences"] = self.actions.preferences()
         return snapshot
 
     def start_briefing(
@@ -273,6 +278,9 @@ class BriefingService:
                                  payload.get("cursor_updates"), staged_run_id)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
+        if status != "failed":
+            self.actions.prepare(detail)
+            detail["actions"] = self.actions.view(detail["items"])
         return detail
 
     def update_item_status(self, item_id: str, status: str) -> BriefingItem:
@@ -540,3 +548,45 @@ class BriefingService:
             created_at=existing.created_at if existing else now,
             updated_at=now,
         )
+
+
+    @property
+    def actions(self):
+        if not hasattr(self, "_actions"):
+            from agent.briefing.actions import BriefingActions
+            self._actions = BriefingActions(self.store)
+        return self._actions
+
+    def update_action(self, item_id, payload):
+        return self.actions.decide(item_id, payload)
+
+    def get_overview(self):
+        actions = self.actions
+        items = self.store.latest_tracked_items()
+        return {'items': items, 'actions': actions.view(items), 'preferences': actions.preferences()}
+
+    def list_action_rules(self):
+        return self.actions.list_rules()
+
+    def create_action_rule(self, payload):
+        return self.actions.save_rule(payload)
+
+    def delete_action_rule(self, rule_id):
+        return self.actions.delete_rule(rule_id)
+
+    def get_preferences(self):
+        return self.actions.preferences()
+
+    def update_preferences(self, payload):
+        return self.actions.preferences(payload)
+
+    def get_action_targets(self, kind, query=""):
+        if kind not in {"todo", "calendar"}:
+            raise ValueError("invalid target type")
+        if not isinstance(query, str) or len(query) > 300:
+            raise ValueError("invalid search query")
+        if kind == "todo":
+            rows = self.actions.todos.list_todos(include_completed=True)
+        else:
+            rows = self.actions.calendar.list_events()
+        return [row for row in rows if query.casefold() in row["title"].casefold()][:50]

@@ -20,6 +20,9 @@ class BriefingTool(BaseTool):
         "- 更新来源：action='sources' 查询可用 ID；run 的 sources 不填或 ['all'] 更新全部，也可 ['email']、['elearning'] 或指定来源 ID\n"
         "- 列表：action='list'（可选 kind='morning', status='completed'）\n"
         "- 详情：action='get', briefing_id='brf-2026-09-09-morning'\n"
+        "- 事务/日程决策：先 get 获取 item_id 和真实建议，再 decide，decision={operation:'create',kind:'todo'}；只创建指定类型。未授权的信息只能提出建议。\n"
+        "- 关联已有：targets 搜索，decide 的 operation='link'、target_id；解绑 operation='unlink'。设置提醒 kind='reminder',operation='remind',remind_at 含时区。\n"
+        "- 授权管理：action_rules 查看，authorize 保存严格来源/账户/类型范围，revoke_authorization 按 rule_id 撤销；必须获得明确持续授权。\n"
         "- 改条目状态：action='item_status', item_id='…', status='done'/'undo'/'ignored'/'follow_up'\n"
         "- 候选信息：action='mail', briefing_id='…'，source='email'/'elearning'/'*'，可选 category='candidate'/'selected'/'filtered'；source_item_id 查看正文\n"
         "- 规则文稿（普通文本或 Markdown）：text='排除地址以 @promo.example 结尾的邮件，保留作业通知'\n"
@@ -37,7 +40,7 @@ class BriefingTool(BaseTool):
                     "list",
                     "get",
                     "mail",
-                    "item_status",
+                    "item_status", "decide", "action_rules", "authorize", "revoke_authorization", "preferences", "set_preferences", "targets", "overview",
                     "add_rule",
                     "list_rules",
                     "update_rule",
@@ -66,6 +69,11 @@ class BriefingTool(BaseTool):
                 "type": "string",
                 "description": "list 过滤简报状态，或 item_status 的条目状态",
             },
+            "decision": {"type":"object","description":"decide: operation=create/link/unlink/ignore/defer/keep/retry/confirm_update/keep_current/remind; kind=todo/calendar/reminder; target_id 用于关联。可提供 title,parent_id,planned_on,due_at,remind_at,start_at,end_at,remember。单次确认不代表持久授权。"},
+            "authorization": {"type":"object","description":"authorize: explicit source,account_id,information_type,course_id,kind(todo/calendar/reminder/sync),mode(auto/suggest/briefing_only),reminder_minutes(1..43200; default 1440). Reminders need an existing linked todo and a source deadline."},
+            "preferences": {"type":"object","description":"set_preferences: show_low_priority,show_ongoing,important_types,reminder_frequency,summary_detail"},
+            "target_kind": {"type":"string","enum":["todo","calendar"]},
+            "query": {"type":"string","description":"Search existing business targets"},
             "item_id": {"type": "string", "description": "条目 ID（item_status）"},
             "rule_id": {"type": "string", "description": "规则 ID（update_rule / delete_rule）"},
             "text": {"type": "string", "description": "筛选和简报写作的规则文稿，支持自由文本或 Markdown（add_rule/update_rule）"},
@@ -117,6 +125,11 @@ class BriefingTool(BaseTool):
             "get": self._get,
             "mail": self._mail,
             "item_status": self._item_status,
+            "decide": self._decide, "action_rules": self._action_rules,
+            "authorize": self._authorize, "revoke_authorization": self._revoke,
+            "preferences": self._preferences, "set_preferences": self._set_preferences,
+            "targets": self._targets,
+            "overview": lambda service, params: ToolResult.success(json.dumps(service.get_overview(), ensure_ascii=False, default=lambda value: vars(value))),
             "add_rule": self._add_rule,
             "list_rules": self._list_rules,
             "update_rule": self._update_rule,
@@ -254,6 +267,30 @@ class BriefingTool(BaseTool):
         service.delete_rule(rule_id)
         return ToolResult.success(f"已删除规则 {rule_id}")
 
+    def _decide(self, service, params):
+        receipt = service.update_action(params.get("item_id"), params.get("decision"))
+        result = json.dumps(receipt, ensure_ascii=False)
+        return ToolResult.fail(result) if receipt["state"] in {"failed","conflict","deleted"} else ToolResult.success(result)
+
+    def _action_rules(self, service, params):
+        return ToolResult.success(json.dumps(service.list_action_rules(), ensure_ascii=False))
+
+    def _authorize(self, service, params):
+        return ToolResult.success(json.dumps(service.create_action_rule(params.get("authorization")), ensure_ascii=False))
+
+    def _revoke(self, service, params):
+        service.delete_action_rule(params.get("rule_id"))
+        return ToolResult.success("Authorization revoked")
+
+    def _preferences(self, service, params):
+        return ToolResult.success(json.dumps(service.get_preferences(), ensure_ascii=False))
+
+    def _set_preferences(self, service, params):
+        return ToolResult.success(json.dumps(service.update_preferences(params.get("preferences")), ensure_ascii=False))
+
+    def _targets(self, service, params):
+        return ToolResult.success(json.dumps(service.get_action_targets(params.get("target_kind", "todo"), params.get("query", "")), ensure_ascii=False))
+
     def _format_detail(self, detail: dict, briefing) -> str:
         lines = [
             f"{briefing.title or briefing.id}  [{briefing.status}]",
@@ -270,4 +307,6 @@ class BriefingTool(BaseTool):
                 lines.append(
                     f"- {item.id} [{item.section}/{item.status}] {item.sender}: {item.title}"
                 )
+        if detail.get("actions"):
+            lines.append("真实建议和业务状态：" + json.dumps(detail["actions"], ensure_ascii=False))
         return "\n".join(lines)

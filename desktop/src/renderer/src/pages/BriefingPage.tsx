@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { Briefing, BriefingDetail as Detail, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
+import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingItemStatus, BriefingRunProgress, BriefingSource } from '../types'
 import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
 import { SettingsPanel } from './briefing/SettingsPanel'
+import { RevisionGraph } from './briefing/RevisionGraph'
 import { useBriefingRunStore } from '../store/briefingRunStore'
 
 const localDay = () => {
@@ -41,6 +42,10 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const listRequest = useRef(0)
   const sourceRequest = useRef(0)
 
+  useEffect(() => {
+    if (generating && draftSelected && !selectedId && todayBriefing) setSelectedId(todayBriefing.id)
+  }, [generating, draftSelected, selectedId, todayBriefing])
+
   const loadSources = useCallback(async () => {
     const request = ++sourceRequest.current
     setSourcesLoading(true)
@@ -70,7 +75,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     apiClient.setBaseUrl(baseUrl)
     void load()
     const timer = window.setInterval(() => void load(true), 30000)
-    const onFocus = () => void load(true)
+    const onFocus = () => { void load(true); setRevision((value) => value + 1) }
     window.addEventListener('focus', onFocus)
     return () => { listRequest.current++; clearInterval(timer); window.removeEventListener('focus', onFocus) }
   }, [baseUrl, load])
@@ -132,7 +137,8 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
 
   const generate = () => {
     setError('')
-    setSelectedId(null)
+    setSelectedId(todayBriefing?.id || null)
+    setVersion(null)
     setDraftSelected(true)
     void runBriefing(todayBriefing ? 'update' : 'create')
   }
@@ -150,6 +156,15 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     } finally { setMarking(false) }
   }
 
+  const decide = async (id: string, decision: BriefingDecision) => {
+    setMarking(true); setError('')
+    try {
+      await apiClient.decideBriefing(id, decision)
+      if (selectedId) setDetail(await apiClient.getBriefing(selectedId))
+    } catch (err) { setError(String(err instanceof Error ? err.message : err)) }
+    finally { setMarking(false) }
+  }
+
   return <div className="flex-1 flex flex-col min-h-0">
     <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-bold text-content">{t('menu_briefing')}</h1><p className="text-xs text-content-tertiary mt-1">{t('briefing_desc')}</p></div>
@@ -164,28 +179,33 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         </button>
       </div>
     </header>
-    {generating && !showDraft && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
-      className="mx-6 mt-3 self-start text-sm text-accent">{t('briefing_view_draft')}</button>}
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
-        {generating && <button type="button" onClick={() => { setSelectedId(null); setDraftSelected(true) }}
-          className={`w-full text-left rounded-btn px-3 py-2 mb-4 text-sm ${showDraft ? 'bg-accent/10 text-accent font-medium' : 'text-content-secondary hover:bg-surface-2'}`}>
-          {t('briefing_view_draft')}{runProgress && <span className="ml-2 text-xs">{runProgress.completed_sources}/{runProgress.total_sources}</span>}
-        </button>}
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
         {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setDraftSelected(false); setSelectedId(id) }} />}
       </aside>
       <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
-        {showDraft ? <section className="space-y-4" aria-label={t('briefing_draft')}>
+        {generating && <div className="flex items-center gap-1 border-b border-default mb-5" role="tablist" aria-label={t('menu_briefing')}>
+          <button type="button" role="tab" aria-selected={showDraft} onClick={() => setDraftSelected(true)}
+            className={`px-3 py-2 text-sm border-b-2 ${showDraft ? 'border-accent text-accent font-medium' : 'border-transparent text-content-secondary hover:text-content'}`}>{t('briefing_draft')}</button>
+          {selectedId && <button type="button" role="tab" aria-selected={!showDraft} onClick={() => setDraftSelected(false)}
+            className={`px-3 py-2 text-sm border-b-2 ${!showDraft ? 'border-accent text-accent font-medium' : 'border-transparent text-content-secondary hover:text-content'}`}>{t('briefing_current')}</button>}
+        </div>}
+        {showDraft ? <div className="flex flex-col-reverse md:flex-row items-start gap-6">
+          <section className="min-w-0 w-full flex-1 space-y-4" aria-label={t('briefing_draft')}>
           <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-content">{t('briefing_draft')}</h2>
             <button type="button" onClick={() => { setDraftSelected(false); setSelectedId(null) }} className="lg:hidden text-sm text-accent">{t('briefing_view_history')}</button></div>
+          <p className="text-xs text-content-tertiary">{t('briefing_draft_unsaved')}</p>
           {runProgress && <p role="status" className="text-sm text-content-secondary">{t(runProgress.stage === 'finalizing' ? 'briefing_draft_finalizing' : 'briefing_draft_progress')
             .replace('{done}', String(runProgress.completed_sources))
             .replace('{total}', String(runProgress.total_sources))}</p>}
           {runProgress?.body ? <div className="rounded-card border border-default bg-surface p-5"><Markdown content={runProgress.body} /></div>
             : <p className="flex items-center gap-2 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_draft_waiting')}</p>}
-        </section> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking || generating} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} />
+          </section>
+          <RevisionGraph revisions={detail?.revisions || []} version={-1} busy={false}
+            onVersion={(nextVersion) => { setDraftSelected(false); setVersion(nextVersion) }} />
+        </div> : detail ? <BriefingDetail detail={detail} loading={detailLoading} version={version} onVersion={setVersion} busy={marking} onBack={() => setSelectedId(null)} onStatus={(id, status) => void mark(id, status)} onDecision={decide} />
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>

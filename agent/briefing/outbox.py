@@ -32,12 +32,8 @@ def dispatch_pending(store, limit=20):
                 if event[f"{consumer}_ack_at"]:
                     continue
                 try:
-                    if consumer == "calendar":
-                        from agent.calendar import CalendarService
-                        CalendarService().ingest_briefing_revision(detail, event["revision"])
-                    else:
-                        from agent.todos import TodoService
-                        TodoService().ingest_briefing_revision(detail, event["revision"])
+                    from agent.briefing.actions import BriefingActions
+                    BriefingActions(store).sync(detail, consumer)
                     store.ack_projection(event["briefing_id"], event["revision"], consumer)
                 except Exception as exc:
                     logger.exception(f"[BriefingOutbox] {consumer} projection failed")

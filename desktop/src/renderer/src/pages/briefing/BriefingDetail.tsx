@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Markdown from '../../components/Markdown'
+import apiClient from '../../api/client'
 import { MailList } from './MailList'
 import { ItemList } from './ItemList'
 import { RevisionGraph } from './RevisionGraph'
 import { t, getLang } from '../../i18n'
-import type { BriefingDetail as Detail, BriefingItemStatus } from '../../types'
+import type { BriefingDetail as Detail, BriefingDecision, BriefingItemStatus } from '../../types'
+import { actionLabel as label } from './actionLabels'
 
 export const BriefingDetail: React.FC<{
   detail: Detail
@@ -15,11 +17,39 @@ export const BriefingDetail: React.FC<{
   busy: boolean
   onBack: () => void
   onStatus: (id: string, status: BriefingItemStatus) => void
-}> = ({ detail, loading, version, onVersion, busy, onBack, onStatus }) => {
+  onDecision: (id: string, decision: BriefingDecision) => Promise<void>
+}> = ({ detail, loading, version, onVersion, busy, onBack, onStatus, onDecision }) => {
   const briefing = detail.briefing
   const [category, setCategory] = useState<'candidate' | 'selected' | 'filtered' | null>(null)
   useEffect(() => { setCategory(null) }, [briefing.id])
   const [sourceFilter, setSourceFilter] = useState('email')
+  const [overview, setOverview] = useState(false)
+  const [tracked, setTracked] = useState<Pick<Detail, 'items' | 'actions' | 'preferences'> | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [overviewError, setOverviewError] = useState('')
+  useEffect(() => {
+    if (!overview || version !== null) return
+    let active = true
+    setOverviewLoading(true); setOverviewError('')
+    apiClient.getBriefingOverview().then((value) => { if (active) setTracked(value) })
+      .catch((err) => { if (active) setOverviewError(String(err instanceof Error ? err.message : err)) })
+      .finally(() => { if (active) setOverviewLoading(false) })
+    return () => { active = false }
+  }, [overview, version, detail])
+  const display = overview && version === null && tracked ? tracked : detail
+  const preferences = detail.preferences
+  const visibleItems = display.items.filter((item) => {
+    const view = display.actions?.[item.id]
+    if (!view || overview || version !== null) return true
+    const important = preferences?.important_types.includes(view.information_type)
+    if (!important && preferences?.show_low_priority === false && view.category === 'other') return false
+    if (view.change_type !== 'unchanged') return true
+    if (['failed', 'conflict'].includes(view.todo?.state ?? '') || ['failed', 'conflict'].includes(view.calendar?.state ?? '')) return true
+    const deadline = view.facts.due_at ? Date.parse(String(view.facts.due_at)) : NaN
+    const completed = view.todo?.business && 'status' in view.todo.business && ['completed', 'cancelled'].includes(view.todo.business.status)
+    if (!completed && deadline < Date.now() + 3 * 86400000) return true
+    return preferences?.show_ongoing !== false && (!preferences || preferences.reminder_frequency === 'daily') && (item.status === 'follow_up' || (view.category === 'needs_action' && !completed))
+  })
   const snapshots = detail.mail ?? []
   const sourceTypes = [...new Set([...snapshots.map((row) => row.source), ...Object.values(briefing.source_windows ?? {}).map((window) => window.source)])]
   if (!sourceTypes.length) sourceTypes.push('email')
@@ -50,7 +80,7 @@ export const BriefingDetail: React.FC<{
           <p className="text-xs text-content-tertiary mt-1 leading-relaxed">{t('briefing_readonly')}</p>
         </div>}
         {briefing.error_message && <div role="alert" className="rounded-card border border-danger-border bg-danger-soft text-danger text-sm p-3 break-words">{briefing.error_message}</div>}
-        {sourceTypes.map((source) => {
+        <details className="rounded-card border border-default p-3"><summary className="cursor-pointer text-xs text-content-secondary">{label('source_details')}</summary><div className="mt-3 space-y-3">{sourceTypes.map((source) => {
           const rows = snapshots.filter((row) => row.source === source)
           const categories = [
             { key: 'candidate' as const, count: briefing.mail_snapshot_available ? rows.length : briefing.fetched_count },
@@ -69,7 +99,7 @@ export const BriefingDetail: React.FC<{
               </button>)}
             </div>
           </section>
-        })}
+        })}</div></details>
         {category ? <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-content">{sourceName(sourceFilter)} · {categoryLabel(category, sourceFilter)}</h3>
@@ -78,8 +108,12 @@ export const BriefingDetail: React.FC<{
           {briefing.mail_snapshot_available ? <MailList key={`${briefing.id}:${version ?? 'current'}:${briefing.updated_at}`} mail={visibleMail} source={sourceFilter} />
             : <p className="text-sm text-content-tertiary rounded-card bg-surface-2 p-4">{t('briefing_mail_legacy')}</p>}
         </div> : <>
-          {briefing.body && <div className="border-b border-default pb-5"><Markdown content={briefing.body} /></div>}
-          <ItemList items={detail.items} busy={busy || version !== null} onStatus={onStatus} />
+          {briefing.body && <div className="border-b border-default pb-5"><h3 className="mb-2 text-sm font-semibold text-content">{label('summary')}</h3>{preferences?.summary_detail === 'full' ? <Markdown content={briefing.body} /> : <><div className="line-clamp-4"><Markdown content={briefing.body} /></div><details className="mt-2 text-xs text-content-secondary"><summary className="cursor-pointer">{label('full_summary')}</summary><Markdown content={briefing.body} /></details></>}</div>}
+          <div className="flex flex-wrap gap-2" role="group" aria-label={label('overview')}><button type="button" aria-pressed={!overview} onClick={() => setOverview(false)} className={`rounded-btn px-3 py-1.5 text-xs ${!overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('incremental')}</button><button type="button" aria-pressed={overview} onClick={() => setOverview(true)} className={`rounded-btn px-3 py-1.5 text-xs ${overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('overview')}</button></div>
+          {!visibleItems.length && detail.items.length > 0 && <p role="status" className="text-sm text-content-tertiary">{label('no_changes')}</p>}
+          {overviewError && <p role="alert" className="text-sm text-danger">{overviewError}</p>}
+          {overviewLoading && <p role="status" className="text-sm text-content-tertiary">{t('briefing_loading')}</p>}
+          <ItemList items={visibleItems} actions={display.actions} busy={busy || version !== null || overviewLoading} onStatus={onStatus} onDecision={onDecision} />
         </>}
       </>}
     </section>
