@@ -93,11 +93,14 @@ def test_link_existing_unlink_and_delete_do_not_recreate(env):
     assert actions.view([item])[item.id]['todo']['state']=='deleted'
 
 
-def test_scoped_rule_automates_only_authorized_type_and_can_be_revoked(env):
+def test_todo_rule_never_creates_before_explicit_decision(env):
     detail,item=publish(env)
     _,actions,todos,_=env
     rule=actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto',course_id='12'))
     actions.sync(detail,'todo')
+    assert todos.list_todos()==[]
+    assert actions.view([item])[item.id]['todo']['state']=='pending'
+    actions.decide(item.id,dict(operation='create',kind='todo'))
     assert len(todos.list_todos())==1
     other,_=publish(env,source_id='13:assignment:4',payload={'resource_type':'assignment','course_id':'13'})
     actions.sync(other,'todo')
@@ -262,6 +265,7 @@ def test_deleted_legacy_source_is_not_recreated_under_new_identity(env):
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto'))
     actions.sync(detail, 'todo')
     assert todos.list_todos() == []
+    actions.decide(item.id,dict(operation='create',kind='todo'))
     assert actions.view([item])[item.id]['todo']['state'] == 'deleted'
 
 
@@ -320,6 +324,9 @@ def test_explicit_reminder_rule_creates_scheduler_task_without_calendar(env):
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto'))
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='reminder',mode='auto',reminder_minutes=60))
     actions.sync(detail,'todo')
+    assert todos.list_todos() == []
+    actions.decide(item.id,dict(operation='create',kind='todo'))
+    actions.sync(detail,'todo')
     task = todos.list_todos()[0]
     assert task['remind_at'] == '2099-10-29T14:59:00+00:00'
     assert actions.view([item])[item.id]['reminder']['state'] == 'succeeded'
@@ -372,7 +379,7 @@ def test_email_thread_uses_stable_entity_and_keeps_latest_source_facts(env):
     assert entity_key(first) == entity_key(second)
 
 
-def test_automatic_retry_recovers_business_commit_before_matching_guard(env, monkeypatch):
+def test_user_creation_retry_recovers_business_commit_before_matching_guard(env, monkeypatch):
     detail, item = publish(env)
     _, actions, todos, _ = env
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto'))
@@ -383,7 +390,7 @@ def test_automatic_retry_recovers_business_commit_before_matching_guard(env, mon
         return original(db,key,kind,**fields)
     monkeypatch.setattr(actions,'_write',crash)
     with pytest.raises(KeyboardInterrupt):
-        actions.sync(detail,'todo')
+        actions.decide(item.id,dict(operation='create',kind='todo'))
     monkeypatch.setattr(actions,'_write',original)
     actions.sync(detail,'todo')
     assert len(todos.list_todos()) == 1
@@ -391,7 +398,7 @@ def test_automatic_retry_recovers_business_commit_before_matching_guard(env, mon
 
 
 def test_crash_recovery_does_not_claim_new_source_deadline_was_applied(env, monkeypatch):
-    detail, _ = publish(env)
+    detail, item = publish(env)
     _, actions, todos, _ = env
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto'))
     original = actions._write
@@ -401,7 +408,7 @@ def test_crash_recovery_does_not_claim_new_source_deadline_was_applied(env, monk
         return original(db,key,kind,**fields)
     monkeypatch.setattr(actions,'_write',crash)
     with pytest.raises(KeyboardInterrupt):
-        actions.sync(detail,'todo')
+        actions.decide(item.id,dict(operation='create',kind='todo'))
     monkeypatch.setattr(actions,'_write',original)
     updated, new = publish(env,day='2026-10-09',payload={'resource_type':'assignment','course_id':'12','due_at':'2026-10-30T15:59:00Z'})
     actions.sync(updated,'todo')

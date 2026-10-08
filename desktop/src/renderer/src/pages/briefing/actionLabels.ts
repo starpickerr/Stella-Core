@@ -29,8 +29,10 @@ const labels: Record<string, [string, string]> = {
   blocked: ['受阻', 'Blocked'], cancelled: ['已取消', 'Cancelled'],
   overview: ['完整概览', 'Full overview'], incremental: ['增量变化', 'Changes'],
   no_changes: ['本次没有新变化，可切换完整概览查看持续关注事项。', 'No new changes. Open the full overview to see ongoing items.'],
-  summary: ['AI 精简摘要', 'AI overview'], full_summary: ['展开完整摘要', 'Expand summary'],
-  source_details: ['来源与筛选详情', 'Sources and filtering'],
+  summary: ['AI 报告', 'AI report'], full_summary: ['展开完整摘要', 'Expand summary'],
+  source_details: ['来源与时间窗口', 'Sources and time windows'],
+  select_all: ['全选可生成事务的信息', 'Select all task candidates'],
+  select_item: ['选择', 'Select'], generate_todos: ['生成事务', 'Generate tasks'],
   creation_help: ['确认后只创建所选业务对象；截止时间不会创建日程。', 'Confirmation creates only the selected object. A deadline does not create an event.'],
   preference_help: ['仅影响简报展示；授权规则控制业务写入，可随时撤销。', 'Display preferences affect the briefing. Authorization rules control business writes and can be revoked.'],
 }

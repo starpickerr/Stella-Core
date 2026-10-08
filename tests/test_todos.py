@@ -248,6 +248,131 @@ def test_existing_explicit_reminder_is_linked_on_upgrade(tmp_path):
     assert not upgraded.get_todo(todo["id"])["reminder_sync_pending"]
 
 
+def test_opening_todos_does_not_write_existing_scheduler_links_under_writer_lock(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = tmp_path / "todos.db"
+    calendar_path = tmp_path / "calendar.db"
+    sqlite3.connect(str(calendar_path)).close()
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    original = TodoService(path, calendar_path, scheduler_store=store)
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = original.create_todo({"title": "已有提醒", "remind_at": reminder})
+    real_connect = sqlite3.connect
+
+    def quick_connect(database, *args, **kwargs):
+        if str(database) == str(path):
+            kwargs["timeout"] = 0.05
+        return real_connect(database, *args, **kwargs)
+
+    with real_connect(str(path)) as writer:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE todos SET title=title WHERE id=?", (todo["id"],))
+        monkeypatch.setattr(sqlite3, "connect", quick_connect)
+        reopened = TodoService(path, calendar_path, scheduler_store=store)
+        assert reopened.list_todos()[0]["id"] == todo["id"]
+
+
+def test_opening_todos_defers_pending_scheduler_sync_until_lock_clears(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    path = tmp_path / "todos.db"
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    original = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = original.create_todo({"title": "待同步提醒", "remind_at": reminder})
+    with sqlite3.connect(str(path)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("UPDATE todo_scheduler_links SET state='pending' WHERE todo_id=?", (todo["id"],))
+
+    real_connect = TodoService._connect
+
+    @contextmanager
+    def quick_connect(self):
+        with real_connect(self) as db:
+            db.execute("PRAGMA busy_timeout=50")
+            yield db
+
+    with sqlite3.connect(str(path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE todos SET title=title WHERE id=?", (todo["id"],))
+        monkeypatch.setattr(TodoService, "_connect", quick_connect)
+        reopened = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+        assert reopened.list_todos()[0]["id"] == todo["id"]
+    TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    with sqlite3.connect(str(path)) as db:
+        assert db.execute("SELECT state FROM todo_scheduler_links WHERE todo_id=?", (todo["id"],)).fetchone()[0] == "synced"
+
+
+def test_missing_scheduler_link_backfill_recovers_after_writer_lock(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    path = tmp_path / "todos.db"
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    original = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    reminder = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    todo = original.create_todo({"title": "待回填提醒", "remind_at": reminder})
+    with sqlite3.connect(str(path)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("DELETE FROM todo_scheduler_links WHERE todo_id=?", (todo["id"],))
+
+    real_connect = TodoService._connect
+
+    @contextmanager
+    def quick_connect(self):
+        with real_connect(self) as db:
+            db.execute("PRAGMA busy_timeout=50")
+            yield db
+
+    with sqlite3.connect(str(path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE todos SET title=title WHERE id=?", (todo["id"],))
+        monkeypatch.setattr(TodoService, "_connect", quick_connect)
+        reopened = TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+        assert reopened.list_todos()[0]["id"] == todo["id"]
+    TodoService(path, tmp_path / "calendar.db", scheduler_store=store)
+    with sqlite3.connect(str(path)) as db:
+        assert db.execute("SELECT state FROM todo_scheduler_links WHERE todo_id=?", (todo["id"],)).fetchone()[0] == "synced"
+
+
+def test_desktop_migrations_defer_together_and_recover_after_writer_lock(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    path = tmp_path / "todos.db"
+    calendar_path = tmp_path / "calendar.db"
+    sqlite3.connect(str(calendar_path)).close()
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    TodoService(path, calendar_path, scheduler_store=store)
+    with sqlite3.connect(str(path)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("DELETE FROM todo_migrations WHERE name IN ('calendar_affairs_v1','desktop_reminders_v1')")
+
+    real_connect = TodoService._connect
+
+    @contextmanager
+    def quick_connect(self):
+        with real_connect(self) as db:
+            db.execute("PRAGMA busy_timeout=50")
+            yield db
+
+    with sqlite3.connect(str(path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE todo_migrations SET name=name")
+        monkeypatch.setattr(TodoService, "_connect", quick_connect)
+        assert TodoService(path, calendar_path, scheduler_store=store).list_todos() == []
+        with sqlite3.connect(str(path)) as reader:
+            assert reader.execute("SELECT count(*) FROM todo_migrations").fetchone()[0] == 0
+    TodoService(path, calendar_path, scheduler_store=store)
+    with sqlite3.connect(str(path)) as db:
+        assert {row[0] for row in db.execute("SELECT name FROM todo_migrations")} == {"calendar_affairs_v1", "desktop_reminders_v1"}
+
+
 def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path):
     with identity_scope(user_id="student-a"):
         store = AutomationStore(tmp_path / "scheduler" / "tasks.json", "default")

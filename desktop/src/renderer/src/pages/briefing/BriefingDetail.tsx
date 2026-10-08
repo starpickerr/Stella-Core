@@ -6,7 +6,7 @@ import { MailList } from './MailList'
 import { ItemList } from './ItemList'
 import { RevisionGraph } from './RevisionGraph'
 import { t, getLang } from '../../i18n'
-import type { BriefingDetail as Detail, BriefingDecision, BriefingItemStatus } from '../../types'
+import type { BriefingDetail as Detail, BriefingDecision } from '../../types'
 import { actionLabel as label } from './actionLabels'
 
 export const BriefingDetail: React.FC<{
@@ -16,9 +16,8 @@ export const BriefingDetail: React.FC<{
   onVersion: (number: number | null) => void
   busy: boolean
   onBack: () => void
-  onStatus: (id: string, status: BriefingItemStatus) => void
   onDecision: (id: string, decision: BriefingDecision) => Promise<void>
-}> = ({ detail, loading, version, onVersion, busy, onBack, onStatus, onDecision }) => {
+}> = ({ detail, loading, version, onVersion, busy, onBack, onDecision }) => {
   const briefing = detail.briefing
   const [category, setCategory] = useState<'candidate' | 'selected' | 'filtered' | null>(null)
   useEffect(() => { setCategory(null) }, [briefing.id])
@@ -68,19 +67,15 @@ export const BriefingDetail: React.FC<{
           <p className="text-sm text-content-secondary mt-2">{t('briefing_item_count')}：<span className="font-semibold text-content tabular-nums">{detail.items.length}</span></p>
           {briefing.generated_at && <p className="text-xs text-content-tertiary mt-1">{new Date(briefing.generated_at).toLocaleString()}</p>}
         </div>
-        {briefing.window_start && briefing.window_end && <p className="text-xs text-content-secondary leading-relaxed">{t('briefing_window')}：{new Date(briefing.window_start).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })} → {new Date(briefing.window_end).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })}</p>}
-        {Object.keys(briefing.source_windows ?? {}).length > 1 && <details className="text-xs text-content-tertiary">
-          <summary className="cursor-pointer">{t('briefing_source_windows')}</summary>
-          <div className="space-y-1 mt-2">{Object.entries(briefing.source_windows).map(([id, window]) => <p key={id}>
-            {window.name}：{new Date(window.start).toLocaleString()} → {new Date(window.end).toLocaleString()}
-          </p>)}</div>
-        </details>}
         {version !== null && <div className="rounded-card border border-default bg-surface-2 p-3">
           <p className="text-xs font-medium text-content-secondary">{t('briefing_version_snapshot')} #{version}</p>
           <p className="text-xs text-content-tertiary mt-1 leading-relaxed">{t('briefing_readonly')}</p>
         </div>}
         {briefing.error_message && <div role="alert" className="rounded-card border border-danger-border bg-danger-soft text-danger text-sm p-3 break-words">{briefing.error_message}</div>}
-        <details className="rounded-card border border-default p-3"><summary className="cursor-pointer text-xs text-content-secondary">{label('source_details')}</summary><div className="mt-3 space-y-3">{sourceTypes.map((source) => {
+        <details className="rounded-card border border-default p-3"><summary className="cursor-pointer text-sm font-medium text-content-secondary">{label('source_details')}</summary><div className="mt-3 space-y-4">
+          {briefing.window_start && briefing.window_end && <p className="text-xs text-content-secondary leading-relaxed">{t('briefing_window')}：{new Date(briefing.window_start).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })} → {new Date(briefing.window_end).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })}</p>}
+          {Object.keys(briefing.source_windows ?? {}).length > 0 && <div className="space-y-1 text-xs text-content-secondary">{Object.entries(briefing.source_windows).map(([id, window]) => <p key={id}>{window.name}：{new Date(window.start).toLocaleString()} → {new Date(window.end).toLocaleString()}</p>)}</div>}
+          {sourceTypes.map((source) => {
           const rows = snapshots.filter((row) => row.source === source)
           const categories = [
             { key: 'candidate' as const, count: briefing.mail_snapshot_available ? rows.length : briefing.fetched_count },
@@ -108,12 +103,12 @@ export const BriefingDetail: React.FC<{
           {briefing.mail_snapshot_available ? <MailList key={`${briefing.id}:${version ?? 'current'}:${briefing.updated_at}`} mail={visibleMail} source={sourceFilter} />
             : <p className="text-sm text-content-tertiary rounded-card bg-surface-2 p-4">{t('briefing_mail_legacy')}</p>}
         </div> : <>
-          {briefing.body && <div className="border-b border-default pb-5"><h3 className="mb-2 text-sm font-semibold text-content">{label('summary')}</h3>{preferences?.summary_detail === 'full' ? <Markdown content={briefing.body} /> : <><div className="line-clamp-4"><Markdown content={briefing.body} /></div><details className="mt-2 text-xs text-content-secondary"><summary className="cursor-pointer">{label('full_summary')}</summary><Markdown content={briefing.body} /></details></>}</div>}
+          {briefing.body && <div className="border-b border-default pb-5"><h3 className="mb-2 text-sm font-semibold text-content">{label('summary')}</h3><Markdown content={briefing.body} /></div>}
           <div className="flex flex-wrap gap-2" role="group" aria-label={label('overview')}><button type="button" aria-pressed={!overview} onClick={() => setOverview(false)} className={`rounded-btn px-3 py-1.5 text-xs ${!overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('incremental')}</button><button type="button" aria-pressed={overview} onClick={() => setOverview(true)} className={`rounded-btn px-3 py-1.5 text-xs ${overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('overview')}</button></div>
           {!visibleItems.length && detail.items.length > 0 && <p role="status" className="text-sm text-content-tertiary">{label('no_changes')}</p>}
           {overviewError && <p role="alert" className="text-sm text-danger">{overviewError}</p>}
           {overviewLoading && <p role="status" className="text-sm text-content-tertiary">{t('briefing_loading')}</p>}
-          <ItemList items={visibleItems} actions={display.actions} busy={busy || version !== null || overviewLoading} onStatus={onStatus} onDecision={onDecision} />
+          <ItemList items={visibleItems} actions={display.actions} busy={busy || version !== null || overviewLoading} onDecision={onDecision} />
         </>}
       </>}
     </section>
