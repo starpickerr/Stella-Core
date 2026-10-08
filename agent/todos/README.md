@@ -8,4 +8,6 @@
 
 数据保存在用户级 `todos/todos.db`。启动时只补充列和依赖表，并把旧的非空 `completed_at` 映射为 `completed`；旧记录仍是顶层事务。原有 `checklist` 保留为旧检查清单，新的拆解使用子事务。早期 `calendar_affairs` 与 `agenda_handoffs` 的迁移和来源墓碑保持原行为。简报行动条目仍同步进事务，用户修改后不被覆盖。
 
+未来的显式 `remind_at` 会建立一条 ID 为 `todo-reminder:<todo_id>` 的一次性 scheduler 任务。任务执行时通过 `QueueTodoReminder` 命令核对事务 ID 和提醒时间，再写入现有桌面通知交付队列；改期、完成、取消或删除事务会更新或移除对应任务。事务库中的 `todo_scheduler_links` 保存待同步状态，scheduler 存储暂时不可用时由后续服务初始化重试。旧提醒在迁移时补建任务；截止时间和重复事务的既有通知逻辑保持原样。
+
 `TodoService` 是 UI 和 Agent 共用的事务能力。旧的创建、编辑、完成、删除、列表接口仍可使用；新增 `change_todo_status`、`add_subtask`、`move_todo`、`add_dependency`、`remove_dependency`。HTTP `/api/todos` 路径与 Agent `todos` 工具都调用 Application Port 中同一个服务。自然语言任务可从事务页交给现有对话 Agent 解释，事务页不另建日期解析器。

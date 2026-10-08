@@ -27,7 +27,7 @@ import type {
   PeriodStatement,
   PeriodStatementItem,
   PeriodType,
-  Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
+  Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
   CalendarCategory, CalendarEvent, CalendarEventInput,
@@ -833,6 +833,11 @@ class ApiClient {
 
   async runBriefing(operation: 'create' | 'update', briefingDate?: string, sources?: string[]): Promise<BriefingDetail> {
     return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate, sources })
+  }
+
+  async getBriefingRunProgress(): Promise<BriefingRunProgress | null> {
+    return (await this.briefingRequest<{ progress: BriefingRunProgress | null }>(
+      '/api/briefings/run/progress')).progress
   }
 
   async getBriefingSources(): Promise<BriefingSource[]> {

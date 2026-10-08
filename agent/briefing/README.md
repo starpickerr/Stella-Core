@@ -15,7 +15,7 @@
 
 邮箱的「启用此来源」与 eLearning 的「纳入每日简报」分别控制是否参与生成、更新和定时任务，不控制 Agent 的 eLearning 读取工具。旧邮箱默认启用，停用保留凭据、同步身份和历史，重新启用继续原同步边界。主页只保留生成/更新按钮，使用全部已启用来源。Agent 仍可在已启用来源中指定部分更新；停用或未选来源的候选、筛选结论、条目内容和处理状态沿用当天当前版本，Agent 重新组织合并后的正文。详情按「邮件」「eLearning」分别展示候选、精选和过滤信息。
 
-eLearning 提供课程公告、作业与提交状态、测验、评分与评语、课程成绩、课程文件元数据和原页面链接。公告和作业保留纯文本正文；只有开启文件同步并选择保存目录后才下载课程文件，不提交作业、不修改课程内容。登录状态过期时尝试用保存的凭据重新登录；需要额外验证或浏览器不可用时显示失败原因。自动登录使用项目已有 Playwright 浏览器环境，优先系统 Chrome。源码运行需在后端使用的 Python 环境安装根目录 `requirements.txt`（包含 Playwright）；桌面构建环境由 `desktop/build/requirements-desktop.txt` 安装。资源变化使用服务器更新时间或首次观察时间，截止时间只作为信息字段，不充当事件时间；首次接入时也纳入窗口前尚未完成的作业。课程资源读取不完整时标记部分成功，并保留该来源同步边界等待重试。
+eLearning 提供课程公告、作业与提交状态、测验、评分与评语、课程成绩、课程文件元数据和原页面链接。公告和作业保留纯文本正文；只有开启文件同步并选择保存目录后才下载课程文件，不提交作业、不修改课程内容。设置页的连接测试仅验证登录和课程列表；简报生成会继续读取所选课程资源，并等待课件文件同步完成。同步逐文件记录课程 ID、文件 ID 和进度，下载地址不写入日志。登录状态过期时尝试用保存的凭据重新登录；需要额外验证或浏览器不可用时显示失败原因。自动登录使用项目已有 Playwright 浏览器环境，优先系统 Chrome。源码运行需在后端使用的 Python 环境安装根目录 `requirements.txt`（包含 Playwright）；桌面构建环境由 `desktop/build/requirements-desktop.txt` 安装。资源变化使用服务器更新时间或首次观察时间，截止时间只作为信息字段，不充当事件时间；首次接入时也纳入窗口前尚未完成的作业。课程资源读取不完整时标记部分成功，并保留该来源同步边界等待重试。
 
 若课程测验接口返回 HTTP 404，其测验不会成为候选，但已读取的公告、作业等仍会进入候选；简报标记为部分成功，来源同步边界不推进。同轮多门课程测验返回 404 时合并提示，不将缺失测验视为已读取。
 
@@ -93,7 +93,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 - `settings.py`：用户级邮箱配置，不依赖 Agent 模型。
 - `sources/email.py`：IMAP 增量拉取与 MIME 解析。
 - `elearning_settings.py` / `elearning/`：eLearning 来源设置、账号登录和 Canvas 资源读取。
-- `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择。
+- `sources/elearning.py` / `sources/registry.py`：课程资源归一化、来源发现与范围选择；简报先读取作业及评分，随后读取公告、测验、课程文件元数据和课程成绩并逐步更新草稿。文件元数据按更新时间倒序分页，到上次简报时间窗口即停止；简报不下载课程文件，完整文件清单和下载由 Agent 的 `elearning` 工具单独执行。
 - `instructions.py`：默认 Markdown 文稿和旧规则转文字。
 - `generator.py`：唯一的筛选、评分、Action/FYI 分类、线程排序与正文生成实现。
 - `sources/base.py`：来源归一化模型与候选目录写入格式。
@@ -102,7 +102,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 - `agent/tools/elearning/elearning_tool.py`：Agent 直接查询课程和读取课程变动的内置工具。
 - `desktop/src/renderer/src/pages/briefing/`：桌面历史、详情、条目和设置组件。
 
-桌面手动操作经 HTTP handler、聊天经 `briefing` 工具、每日任务经统一调度调用工具，最终都进入 `BriefingPipeline.run`。来源注册表选出已启用的 IMAP/eLearning 适配器；`Source.fetch` 返回 `FetchedItem`，统一写入 `source_items`（邮件扩展字段写入 `email_messages`）。Pipeline 按来源时间窗口读取候选，`AgentBriefingGenerator` 依据规则文稿逐项筛选、给出 Action/FYI 与评分、合并线程并撰写正文。`BriefingService.complete_briefing` 在一次事务中保存 `briefings`、`briefing_items`、分类快照 `briefing_mail` 和版本历史；成功后再推进来源游标。`briefing_candidates` 是既有数据库中的候选关联表，当前筛选不读取它；因已有数据库仍包含该表，本次不改 schema。
+桌面手动操作经 HTTP handler、聊天经 `briefing` 工具、每日任务经统一调度调用工具，最终都进入 `BriefingPipeline.run`。来源注册表选出已启用的 IMAP/eLearning 适配器；`Source.fetch` 返回 `FetchedItem`，统一写入 `source_items`（邮件扩展字段写入 `email_messages`）。Pipeline 获取首批候选后即在后台调用 `AgentBriefingGenerator` 筛选和撰写草稿，继续读取其他来源；eLearning 在课程元数据读取完成、文件同步开始前也会提交候选。桌面端轮询当前草稿并随新来源更新。草稿只保存在进程内，来源结束后重新核对候选并生成最终正文。`BriefingService.complete_briefing` 在一次事务中保存 `briefings`、`briefing_items`、分类快照 `briefing_mail` 和版本历史；成功后再推进来源游标。`briefing_candidates` 是既有数据库中的候选关联表，当前筛选不读取它；因已有数据库仍包含该表，本次不改 schema。
 
 桌面客户端通过既有 Python HTTP 服务调用以下接口，均使用现有认证机制。Web 页面不在维护范围。
 
@@ -110,6 +110,7 @@ eLearning 配置独立存放在用户级 `briefing/elearning.json`，账号登�
 | --- | --- | --- |
 | GET | `/api/briefings` | 历史，可按 `kind` / `status` 筛选 |
 | POST | `/api/briefings/run` | 生成/更新，支持 `operation=create/update/upsert`、`kind` / `briefing_date` / `sources` |
+| GET | `/api/briefings/run/progress` | 当前运行的临时草稿、已读取来源数量和阶段；结束后返回 `null` |
 | GET | `/api/briefings/sources` | 已配置来源的 ID、类型和显示名称，不发起网络请求 |
 | GET | `/api/briefings/{id}` | 当前正文、条目、分类邮件 `mail` 与更新历史摘要 |
 | GET | `/api/briefings/{id}/revisions/{number}` | 指定版本的完整快照 |
