@@ -188,7 +188,7 @@ class SchedulerService:
                 logger.info(f"[Scheduler] Manually executing task: {task_id} - {task.get('name', '')}")
                 job_run_id = (self.task_store.claim_occurrence(task_id, manual=True)
                               if hasattr(self.task_store, "claim_occurrence") else None)
-                run_task = dict(task, job_run_id=job_run_id) if job_run_id else task
+                run_task = dict(task, job_run_id=job_run_id, manual_run=True)
                 ok = self._execute_task(run_task)
                 if job_run_id:
                     self.task_store.finish_occurrence(job_run_id, ok)

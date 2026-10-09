@@ -117,7 +117,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         silent = (action_type == "application_command" or
                                   action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
                         persist_in_chat = channel_type == "web" and "conversation_mode" in action
-                        if not silent and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
+                        if not silent and not task.get("notification_route") and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "
@@ -321,6 +321,37 @@ def _channel_for_delivery(channel_type):
     return create_channel(channel_type)
 
 
+def _dispatch_explicit_route(task, content, agent_id=None, store=None):
+    """Send cached output through a persisted, user selected route."""
+    from datetime import datetime, timedelta
+    from agent.scheduler.dispatch import dispatch_notification
+    route = task.get("notification_route")
+    job_run_id = task.get("job_run_id")
+    store = store or get_task_store(agent_id=agent_id)
+    if not job_run_id or not store or not hasattr(store, "begin_delivery"):
+        return ExecutionOutcome("failed", "Durable notification delivery requires an active job run")
+    expires_at = None
+    scheduled_at = task.get("next_run_at")
+    if scheduled_at and not task.get("manual_run"):
+        due = datetime.fromisoformat(scheduled_at)
+        expires_at = due.astimezone() + timedelta(hours=24)
+    result = dispatch_notification(store, job_run_id, route, content, agent_id=agent_id,
+                                   expires_at=expires_at)
+    return _delivery_execution_outcome(result)
+
+
+def _delivery_execution_outcome(result):
+    if result is None:
+        return True
+    if result.status == "accepted":
+        return True
+    if result.status == "failed" and result.retryable:
+        return False
+    if result.status == "unknown":
+        return ExecutionOutcome("outcome_unknown", result.error)
+    return ExecutionOutcome("failed", result.error or result.status)
+
+
 def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """
     Execute an agent_task action - let Agent handle the task.
@@ -432,6 +463,13 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 )
                 return True
 
+            if task.get("notification_route"):
+                result = _dispatch_explicit_route(task, reply.content, agent_id, store)
+                if result is not True:
+                    return result
+                _remember_delivered_output(agent_bridge, task, channel_type, reply.content, agent_id)
+                return True
+
             channel = _channel_for_delivery(channel_type)
             if not channel:
                 logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
@@ -524,6 +562,12 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
 
         # Create reply
         reply = Reply(ReplyType.TEXT, content)
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
         
         # Get channel and send
         channel = _channel_for_delivery(channel_type)
@@ -576,6 +620,10 @@ def _execute_application_command(task, agent_id=None):
             result = Application.command(action.get("domain"), action.get("command"), action.get("params"), context)
             record.event(run_id, "tool_execution_end", operation_id=result["operation_id"])
             record.transition(run_id, "completed")
+            if action.get("domain") == "todos" and action.get("command") == "QueueTodoReminder":
+                todo_id, expected_at = action.get("params", [None, None])
+                delivery = Application.dispatch_todo_reminder(todo_id, expected_at, context)
+                return _delivery_execution_outcome(delivery)
             return True
     except Exception as exc:
         status = "failed" if isinstance(exc, (PermissionError, ValueError)) else "outcome_unknown"
@@ -692,6 +740,13 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             return True
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
+
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id, store)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
 
         context = Context(ContextType.TEXT, content)
         context["receiver"] = receiver
@@ -813,6 +868,13 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
 
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
+
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id, store)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
 
         channel = _channel_for_delivery(channel_type)
         if not channel:

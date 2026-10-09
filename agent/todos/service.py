@@ -85,6 +85,16 @@ class TodoService:
                     shown_at TEXT, error TEXT,
                     FOREIGN KEY(occurrence_id) REFERENCES reminder_occurrences(occurrence_id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS reminder_route_deliveries (
+                    delivery_id TEXT NOT NULL, leg TEXT NOT NULL,
+                    channel_type TEXT NOT NULL, receiver TEXT NOT NULL,
+                    status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                    retryable INTEGER NOT NULL DEFAULT 0,
+                    platform_response TEXT, error TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(delivery_id,leg),
+                    FOREIGN KEY(delivery_id) REFERENCES reminder_deliveries(delivery_id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS todo_migrations (name TEXT PRIMARY KEY);
                 CREATE TABLE IF NOT EXISTS briefing_applied (
                     briefing_id TEXT PRIMARY KEY, last_revision INTEGER NOT NULL
@@ -544,6 +554,14 @@ class TodoService:
                 (old["id"], old["id"])).fetchone():
                 raise ValueError("tasks with dependencies cannot repeat")
             self._cancel_pending_reminders(db, old["id"])
+            if (row["reminder_delivery"] and
+                    json.loads(row["reminder_delivery"]) != old["reminder_delivery"]):
+                # A known failed or expired context may be replaced by an
+                # explicit edit. Unknown outcomes keep their audit record.
+                db.execute("""DELETE FROM reminder_route_deliveries WHERE status IN ('waiting','failed')
+                    AND delivery_id IN (SELECT d.delivery_id FROM reminder_deliveries d
+                    JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                    WHERE o.todo_id=? AND o.state='cancelled')""", (old["id"],))
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
                 , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=?, reminder_delivery=? WHERE id=?""",
@@ -819,7 +837,8 @@ class TodoService:
         for occurrence_id in ids:
             db.execute("UPDATE reminder_occurrences SET state='cancelled' WHERE occurrence_id=?", (occurrence_id,))
             db.execute("""UPDATE reminder_deliveries SET status='cancelled',claim_id=NULL,lease_until=NULL
-                WHERE occurrence_id=? AND status!='shown'""", (occurrence_id,))
+                WHERE occurrence_id=? AND status NOT IN ('shown','accepted','unknown','sending')""",
+                (occurrence_id,))
 
     def queue_scheduled_reminder(self, todo_id, expected_at, now=None):
         """Scheduler handoff: queue the desktop notification only if the link still matches."""
@@ -851,8 +870,11 @@ class TodoService:
                 db.execute("INSERT INTO reminder_deliveries(delivery_id,occurrence_id) VALUES (?,?)",
                            (str(uuid.uuid4()), occurrence_id))
             else:
-                cancelled = db.execute("""SELECT occurrence_id FROM reminder_occurrences
-                    WHERE todo_id=? AND occurrence_on=? AND reminder_kind='custom' AND state='cancelled'""",
+                cancelled = db.execute("""SELECT o.occurrence_id FROM reminder_occurrences o
+                    WHERE o.todo_id=? AND o.occurrence_on=? AND o.reminder_kind='custom' AND o.state='cancelled'
+                    AND NOT EXISTS (SELECT 1 FROM reminder_deliveries d
+                        JOIN reminder_route_deliveries r ON r.delivery_id=d.delivery_id
+                        WHERE d.occurrence_id=o.occurrence_id AND r.status IN ('unknown','sending','accepted'))""",
                     (todo_id, expected_at)).fetchone()
                 if cancelled:
                     db.execute("UPDATE reminder_occurrences SET state='pending',due_at=? WHERE occurrence_id=?",
@@ -860,6 +882,105 @@ class TodoService:
                     db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
                         lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
             return True
+
+    def get_delivery(self, delivery_id, leg):
+        with self._connect() as db:
+            row = db.execute("""SELECT * FROM reminder_route_deliveries
+                WHERE delivery_id=? AND leg=?""", (delivery_id, leg)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["retryable"] = bool(result["retryable"])
+        result["platform_response"] = (json.loads(result["platform_response"])
+                                       if result["platform_response"] else None)
+        return result
+
+    def queue_delivery(self, delivery_id, leg, channel_type, receiver):
+        with self._connect() as db:
+            if not db.execute("SELECT 1 FROM reminder_deliveries WHERE delivery_id=?", (delivery_id,)).fetchone():
+                raise ValueError("reminder delivery not found")
+            db.execute("""INSERT OR IGNORE INTO reminder_route_deliveries
+                (delivery_id,leg,channel_type,receiver,status,updated_at)
+                VALUES (?,?,?,?,'pending',?)""", (delivery_id, leg, channel_type, receiver, _now()))
+
+    def begin_delivery(self, delivery_id, leg, channel_type, receiver, max_attempts=3):
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM reminder_deliveries WHERE delivery_id=?", (delivery_id,)).fetchone():
+                raise ValueError("reminder delivery not found")
+            row = db.execute("""SELECT status,attempts,retryable,updated_at FROM reminder_route_deliveries
+                WHERE delivery_id=? AND leg=?""", (delivery_id, leg)).fetchone()
+            if row:
+                if row["status"] == "sending":
+                    if datetime.fromisoformat(row["updated_at"]) > datetime.now(timezone.utc) - timedelta(minutes=2):
+                        return "sending"
+                    db.execute("""UPDATE reminder_route_deliveries SET status='unknown',retryable=0,
+                        error='Previous send outcome is unknown after restart',updated_at=?
+                        WHERE delivery_id=? AND leg=?""", (_now(), delivery_id, leg))
+                    db.execute("UPDATE reminder_deliveries SET status='unknown' WHERE delivery_id=?", (delivery_id,))
+                    return "unknown"
+                if row["status"] not in ("pending", "failed") or (
+                        row["status"] == "failed" and (not row["retryable"] or row["attempts"] >= max_attempts)):
+                    return row["status"]
+                db.execute("""UPDATE reminder_route_deliveries SET status='sending',attempts=attempts+1,
+                    retryable=0,error=NULL,updated_at=? WHERE delivery_id=? AND leg=?""",
+                    (_now(), delivery_id, leg))
+            else:
+                db.execute("""INSERT INTO reminder_route_deliveries
+                    (delivery_id,leg,channel_type,receiver,status,attempts,updated_at)
+                    VALUES (?,?,?,?,'sending',1,?)""", (delivery_id, leg, channel_type, receiver, _now()))
+            db.execute("UPDATE reminder_deliveries SET status='sending' WHERE delivery_id=?", (delivery_id,))
+            return "send"
+
+    def finish_delivery(self, delivery_id, leg, status, *, error=None, platform_response=None, retryable=False):
+        if status not in ("accepted", "failed", "waiting", "unknown", "expired"):
+            raise ValueError("invalid delivery status")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed = db.execute("""UPDATE reminder_route_deliveries SET status=?,error=?,platform_response=?,
+                retryable=?,updated_at=? WHERE delivery_id=? AND leg=? AND status='sending'""",
+                (status, error, json.dumps(platform_response) if platform_response else None,
+                 int(retryable), _now(), delivery_id, leg)).rowcount
+            if not changed:
+                raise ValueError("delivery is not sending")
+            db.execute("UPDATE reminder_deliveries SET status=?,error=? WHERE delivery_id=?",
+                       (status, error, delivery_id))
+            if status == "accepted":
+                db.execute("""UPDATE reminder_occurrences SET state='shown' WHERE occurrence_id=(
+                    SELECT occurrence_id FROM reminder_deliveries WHERE delivery_id=?)""", (delivery_id,))
+
+    def expire_delivery(self, delivery_id, leg, channel_type, receiver):
+        with self._connect() as db:
+            db.execute("""INSERT OR IGNORE INTO reminder_route_deliveries
+                (delivery_id,leg,channel_type,receiver,status,updated_at)
+                VALUES (?,?,?,?,'expired',?)""", (delivery_id, leg, channel_type, receiver, _now()))
+            db.execute("""UPDATE reminder_route_deliveries SET status='expired',retryable=0,updated_at=?
+                WHERE delivery_id=? AND leg=? AND status IN ('pending','failed','waiting')""",
+                (_now(), delivery_id, leg))
+            db.execute("UPDATE reminder_deliveries SET status='expired' WHERE delivery_id=?", (delivery_id,))
+            db.execute("""UPDATE reminder_occurrences SET state='expired' WHERE occurrence_id=(
+                SELECT occurrence_id FROM reminder_deliveries WHERE delivery_id=?)""", (delivery_id,))
+
+    def dispatch_scheduled_reminder(self, todo_id, expected_at):
+        """Send one queued custom reminder through its explicit saved route."""
+        from agent.scheduler.dispatch import dispatch_notification
+        try:
+            expected = datetime.fromisoformat(expected_at.replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (AttributeError, ValueError) as exc:
+            raise ValueError("invalid reminder time") from exc
+        with self._connect() as db:
+            row = db.execute("""SELECT t.title,t.reminder_delivery,t.status,o.due_at,d.delivery_id
+                FROM todos t JOIN reminder_occurrences o ON o.todo_id=t.id
+                JOIN reminder_deliveries d ON d.occurrence_id=o.occurrence_id
+                WHERE t.id=? AND t.remind_at=? AND o.reminder_kind='custom'
+                AND o.occurrence_on=?""", (todo_id, expected.isoformat(), expected.isoformat())).fetchone()
+        if not row or row["status"] in TERMINAL_STATUSES:
+            return None
+        route = json.loads(row["reminder_delivery"]) if row["reminder_delivery"] else None
+        if not route or not route.get("primary"):
+            return None
+        return dispatch_notification(self, row["delivery_id"], route, "事务提醒：" + row["title"],
+                                     expires_at=expected + timedelta(hours=1))
 
     def claim_desktop_reminders(self, now=None, limit=20):
         """Lease due reminders; repeated claims after a crash may show twice."""
@@ -931,13 +1052,17 @@ class TodoService:
                             db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
                                 lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
             candidates = db.execute("""SELECT d.delivery_id,o.occurrence_id,o.todo_id,o.occurrence_on,
-                t.title FROM reminder_deliveries d JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+                o.reminder_kind,t.title,t.reminder_delivery FROM reminder_deliveries d
+                JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
                 JOIN todos t ON t.id=o.todo_id
                 WHERE o.state='pending' AND (d.status IN ('pending','retry') OR
                     (d.status='leased' AND d.lease_until<=?))
                 ORDER BY o.due_at LIMIT ?""", (instant.isoformat(), limit)).fetchall()
             lease_until = (instant + timedelta(minutes=2)).isoformat()
             for row in candidates:
+                route = json.loads(row["reminder_delivery"]) if row["reminder_delivery"] else None
+                if row["reminder_kind"] == "custom" and route and route.get("primary"):
+                    continue
                 claim_id = str(uuid.uuid4())
                 db.execute("""UPDATE reminder_deliveries SET status='leased',claim_id=?,lease_until=?,
                     attempts=attempts+1 WHERE delivery_id=?""",

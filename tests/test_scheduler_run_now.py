@@ -31,6 +31,7 @@ def test_manual_run_executes_disabled_task_without_moving_schedule(tmp_path):
 
     def execute(received):
         assert received["id"] == "task-1"
+        assert received["manual_run"] is True
         completed.set()
         return True
 

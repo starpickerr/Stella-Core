@@ -43,6 +43,16 @@ class AutomationStore:
                     result_ref TEXT,
                     UNIQUE(task_id,scheduled_at,manual)
                 );
+                CREATE TABLE IF NOT EXISTS job_deliveries (
+                    job_run_id TEXT NOT NULL, leg TEXT NOT NULL,
+                    owner_user_id TEXT NOT NULL DEFAULT '',
+                    channel_type TEXT NOT NULL, receiver TEXT NOT NULL,
+                    status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                    retryable INTEGER NOT NULL DEFAULT 0,
+                    platform_response TEXT, error TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(job_run_id,leg)
+                );
                 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY,value TEXT NOT NULL);
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(job_runs)")}
@@ -198,7 +208,7 @@ class AutomationStore:
                     VALUES (?,?,?,NULL,1,'running',?,1,?)""",
                     (run_id, task_id, self._current_user(), until, now))
                 return run_id
-            row = db.execute("""SELECT job_run_id,status,lease_until,attempts,retryable FROM job_runs
+            row = db.execute("""SELECT job_run_id,status,lease_until,attempts,retryable,result_ref FROM job_runs
                 WHERE task_id=? AND owner_user_id=? AND scheduled_at=? AND manual=0""",
                 (task_id, self._current_user(), scheduled_at)).fetchone()
             if row:
@@ -207,6 +217,18 @@ class AutomationStore:
                 if row["status"] == "running":
                     if row["lease_until"] and row["lease_until"] > now:
                         return None
+                    delivery_states = {item[0] for item in db.execute(
+                        "SELECT status FROM job_deliveries WHERE job_run_id=?", (row["job_run_id"],))}
+                    if "accepted" in delivery_states:
+                        db.execute("""UPDATE job_runs SET status='completed',lease_until=NULL,
+                            finished_at=?,error=NULL WHERE job_run_id=?""", (now, row["job_run_id"]))
+                        return None
+                    if (row["result_ref"] or delivery_states == {"pending"}) and not delivery_states.intersection(
+                            ("sending", "unknown", "waiting")):
+                        db.execute("""UPDATE job_runs SET status='running',lease_until=?,
+                            attempts=attempts+1,started_at=?,finished_at=NULL,error=NULL
+                            WHERE job_run_id=?""", (until, now, row["job_run_id"]))
+                        return row["job_run_id"]
                     # The previous process may have performed the action before
                     # crashing. A lease timeout cannot prove it is safe to rerun.
                     db.execute("""UPDATE job_runs SET status='outcome_unknown',
@@ -253,3 +275,77 @@ class AutomationStore:
         with self.lock, self._connect() as db:
             db.execute("UPDATE job_runs SET result_ref=? WHERE job_run_id=? AND owner_user_id=?",
                        (str(path), job_run_id, self._current_user()))
+
+    def get_delivery(self, job_run_id, leg):
+        with self.lock, self._connect() as db:
+            row = db.execute("""SELECT * FROM job_deliveries WHERE job_run_id=? AND leg=?
+                AND owner_user_id=?""", (job_run_id, leg, self._current_user())).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["retryable"] = bool(result["retryable"])
+        result["platform_response"] = (json.loads(result["platform_response"])
+                                       if result["platform_response"] else None)
+        return result
+
+    def queue_delivery(self, job_run_id, leg, channel_type, receiver):
+        with self.lock, self._connect() as db:
+            if not db.execute("SELECT 1 FROM job_runs WHERE job_run_id=? AND owner_user_id=?",
+                              (job_run_id, self._current_user())).fetchone():
+                raise ValueError("job run not found")
+            db.execute("""INSERT OR IGNORE INTO job_deliveries
+                (job_run_id,leg,owner_user_id,channel_type,receiver,status,updated_at)
+                VALUES (?,?,?,?,?,'pending',?)""",
+                (job_run_id, leg, self._current_user(), channel_type, receiver, _stamp()))
+
+    def begin_delivery(self, job_run_id, leg, channel_type, receiver, max_attempts=3):
+        with self.lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM job_runs WHERE job_run_id=? AND owner_user_id=?",
+                              (job_run_id, self._current_user())).fetchone():
+                raise ValueError("job run not found")
+            row = db.execute("""SELECT status,attempts,retryable,updated_at FROM job_deliveries
+                WHERE job_run_id=? AND leg=? AND owner_user_id=?""",
+                (job_run_id, leg, self._current_user())).fetchone()
+            if row:
+                if row["status"] == "sending":
+                    if datetime.fromisoformat(row["updated_at"]) > datetime.now(timezone.utc) - timedelta(minutes=2):
+                        return "sending"
+                    db.execute("""UPDATE job_deliveries SET status='unknown',retryable=0,
+                        error='Previous send outcome is unknown after restart',updated_at=?
+                        WHERE job_run_id=? AND leg=?""", (_stamp(), job_run_id, leg))
+                    return "unknown"
+                if row["status"] not in ("pending", "failed") or (
+                        row["status"] == "failed" and (not row["retryable"] or row["attempts"] >= max_attempts)):
+                    return row["status"]
+                db.execute("""UPDATE job_deliveries SET status='sending',attempts=attempts+1,
+                    retryable=0,error=NULL,updated_at=? WHERE job_run_id=? AND leg=?""",
+                    (_stamp(), job_run_id, leg))
+            else:
+                db.execute("""INSERT INTO job_deliveries
+                    (job_run_id,leg,owner_user_id,channel_type,receiver,status,attempts,updated_at)
+                    VALUES (?,?,?,?,?,'sending',1,?)""",
+                    (job_run_id, leg, self._current_user(), channel_type, receiver, _stamp()))
+            return "send"
+
+    def finish_delivery(self, job_run_id, leg, status, *, error=None, platform_response=None, retryable=False):
+        if status not in ("accepted", "failed", "waiting", "unknown", "expired"):
+            raise ValueError("invalid delivery status")
+        with self.lock, self._connect() as db:
+            changed = db.execute("""UPDATE job_deliveries SET status=?,error=?,platform_response=?,
+                retryable=?,updated_at=? WHERE job_run_id=? AND leg=? AND owner_user_id=? AND status='sending'""",
+                (status, error, json.dumps(platform_response) if platform_response else None,
+                 int(retryable), _stamp(), job_run_id, leg, self._current_user())).rowcount
+            if not changed:
+                raise ValueError("delivery is not sending")
+
+    def expire_delivery(self, job_run_id, leg, channel_type, receiver):
+        with self.lock, self._connect() as db:
+            db.execute("""INSERT OR IGNORE INTO job_deliveries
+                (job_run_id,leg,owner_user_id,channel_type,receiver,status,updated_at)
+                VALUES (?,?,?,?,?,'expired',?)""",
+                (job_run_id, leg, self._current_user(), channel_type, receiver, _stamp()))
+            db.execute("""UPDATE job_deliveries SET status='expired',retryable=0,updated_at=?
+                WHERE job_run_id=? AND leg=? AND owner_user_id=?
+                AND status IN ('pending','failed','waiting')""",
+                (_stamp(), job_run_id, leg, self._current_user()))
