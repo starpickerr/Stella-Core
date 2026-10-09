@@ -201,6 +201,118 @@ class AppleCalendarSync:
         self._set("connected", False)
         return self.status()
 
+    def items(self, calendar_id, start=None, end=None):
+        if not start or not end:
+            raise ValueError("explicit calendar time window is required")
+        try:
+            first = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            last = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            if first.tzinfo is None or last.tzinfo is None or first >= last:
+                raise ValueError
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("invalid calendar time window") from exc
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        if calendar_id not in {row["id"] for row in self.bridge.call("calendars")["calendars"]}:
+            raise ValueError("selected calendar is unavailable")
+        inventory = self.bridge.call("events", calendar_ids=[calendar_id], start=start, end=end)
+        if calendar_id not in inventory["successful_calendar_ids"]:
+            raise ValueError("selected calendar could not be scanned")
+        return [row for row in inventory["events"] if row["calendar_id"] == calendar_id]
+
+    def _one_time_items(self, direction, calendar_id, item_ids):
+        if direction not in ("import", "export"):
+            raise ValueError("one-time direction must be import or export")
+        if not isinstance(item_ids, list) or not item_ids or any(
+                not isinstance(key, str) or not key.strip() for key in item_ids) or len(set(item_ids)) != len(item_ids):
+            raise ValueError("explicit distinct event_id or Stella event IDs are required")
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
+        if calendar_id not in available:
+            raise ValueError("selected calendar is unavailable")
+        if direction == "export" and not available[calendar_id]["writable"]:
+            raise ValueError("selected calendar is read only")
+        if direction == "export":
+            items = [self._local(key) for key in item_ids]
+            if any(row is None for row in items):
+                raise KeyError("Stella event not found")
+            maps = {row["stella_id"]: row for row in self._maps()}
+            if any((row["source_type"] is not None and row["id"] not in maps) or
+                   (row["id"] in maps and maps[row["id"]]["calendar_id"] != calendar_id)
+                   for row in items):
+                raise ValueError("event cannot be exported to the selected calendar")
+            return items
+        items = []
+        for key in item_ids:
+            remote = self.bridge.call("lookup", calendar_id=calendar_id, event_id=key).get("event")
+            if remote is None or remote["calendar_id"] != calendar_id or remote["event_id"] != key:
+                raise KeyError("Apple event_id not found or ambiguous")
+            items.append(remote)
+        return items
+
+    def preview_items(self, direction, calendar_id, item_ids):
+        with self._lock:
+            items = self._one_time_items(direction, calendar_id, item_ids)
+            maps = self._maps()
+            result = {"new": 0, "updated": 0, "skipped": 0, "conflicts": 0, "item_ids": item_ids}
+            for item in items:
+                if direction == "import":
+                    mapping = self._match(item, maps)
+                    if mapping is None:
+                        result["new"] += 1
+                    else:
+                        local = self._local(mapping["stella_id"])
+                        if local is None or mapping["state"] == "conflict" or _fingerprint(
+                                local, series=mapping["origin"] == "stella") != mapping["local_hash"]:
+                            result["conflicts"] += 1
+                        elif _fingerprint(item, series=mapping["origin"] == "stella",
+                                          remote=True) != mapping["remote_hash"]:
+                            result["updated"] += 1
+                        else:
+                            result["skipped"] += 1
+                else:
+                    mapping = next((row for row in maps if row["stella_id"] == item["id"]), None)
+                    if mapping is None:
+                        result["new"] += 1
+                    elif mapping["state"] == "conflict":
+                        result["conflicts"] += 1
+                    elif _fingerprint(item, series=mapping["origin"] == "stella") != mapping["local_hash"]:
+                        result["updated"] += 1
+                    else:
+                        result["skipped"] += 1
+            return result
+
+    def one_time(self, direction, calendar_id, item_ids, *, confirm=False):
+        if confirm is not True:
+            raise ValueError("explicit confirmation is required")
+        with self._lock:
+            items = self._one_time_items(direction, calendar_id, item_ids)
+            counts = {"status": "success", "imported": 0, "updated": 0,
+                      "exported": 0, "conflicts": 0, "item_ids": item_ids}
+            for item in items:
+                remote = item if direction == "import" else None
+                local = item if direction == "export" else None
+                mapping = next((row for row in self._maps() if row["stella_id"] == local["id"]), None) if local else None
+                if mapping and direction == "export":
+                    remote = self.bridge.call("lookup", calendar_id=calendar_id,
+                        event_id=mapping["event_id"], external_id=mapping["external_id"],
+                        occurrence_date=mapping["occurrence_date"]).get("event")
+                    if remote is None:
+                        raise ValueError("mapped Apple event is unavailable")
+                anchor = remote["start_at"] if remote else local["start_at"]
+                center = datetime.fromisoformat(anchor.replace("Z", "+00:00"))
+                window = ((center - timedelta(days=2)).isoformat(),
+                          (center + timedelta(days=2)).isoformat())
+                if direction == "import" or mapping:
+                    self._process_remote(remote, self._maps(), direction, window, counts)
+                else:
+                    remote = self.bridge.call("upsert", **self._write_payload(
+                        local, calendar_id=calendar_id, window=window))["event"]
+                    self._save_map(self._new_map(local, remote, "stella"))
+                    counts["exported"] += 1
+            return counts
+
     def is_connected(self):
         return bool(self._get("connected", False))
 
@@ -538,3 +650,8 @@ class AppleCalendarSync:
         self._runner = EventKitAutoRunner(self.bridge, lambda: self._get("connected", False),
                                           self.sync, interval=interval)
         self._runner.start()
+
+    def stop_auto(self):
+        if self._auto_started:
+            self._runner.stop()
+        self._auto_started = False

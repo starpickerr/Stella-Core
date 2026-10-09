@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import uuid
+import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
 from common.runtime_identity import RuntimeIdentity, current_identity, use_identity
+
+
+_apple_managers = {}
+_apple_managers_lock = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -121,6 +126,42 @@ class _Port:
 
 
 class Application:
+    @staticmethod
+    def _apple_manager(kind):
+        from common.state_dir import calendar_db, todos_db
+
+        if kind == "calendar":
+            from agent.calendar.apple_sync import AppleCalendarSync
+            manager_type = AppleCalendarSync
+            path = calendar_db().with_name("apple_sync.db")
+        elif kind == "reminders":
+            from agent.todos.apple_sync import AppleReminderSync
+            manager_type = AppleReminderSync
+            path = todos_db().with_name("apple_reminders.db")
+        else:
+            raise ValueError("unknown Apple integration")
+        key = (kind, str(path.resolve()))
+        with _apple_managers_lock:
+            if key not in _apple_managers:
+                _apple_managers[key] = manager_type(db_path=path)
+            return _apple_managers[key]
+
+    @staticmethod
+    def apple_calendar():
+        return Application._apple_manager("calendar")
+
+    @staticmethod
+    def apple_reminders():
+        return Application._apple_manager("reminders")
+
+    @staticmethod
+    def reset_apple_managers():
+        """Drop cached managers in isolated tests, stopping their watchers first."""
+        with _apple_managers_lock:
+            for manager in _apple_managers.values():
+                manager.stop_auto()
+            _apple_managers.clear()
+
     @staticmethod
     def dispatch_todo_reminder(todo_id, expected_at, context):
         """Resume the todo outbox only from a scheduler handoff."""
