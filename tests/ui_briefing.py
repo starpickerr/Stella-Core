@@ -40,6 +40,9 @@ mail = []
 preferences = dict(show_low_priority=True, show_ongoing=True, important_types=[],
                    reminder_frequency='daily', summary_detail='brief')
 decisions = []
+sent_messages = []
+created_todos = []
+fail_next_message = [False]
 fail_next_detail = [False]
 today = date.today()
 todo_rows = [
@@ -118,7 +121,17 @@ def backend(route):
             preferences.update(body)
         data['preferences'] = preferences
     elif path == '/api/todos':
+        if route.request.method == 'POST':
+            created_todos.append(body)
         data['todos'] = todo_rows
+    elif path == '/message':
+        sent_messages.append(body)
+        if fail_next_message[0]:
+            fail_next_message[0] = False
+            route.fulfill(status=503, content_type='application/json', body='{}',
+                          headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+            return
+        data.update(request_id='', stream=False, inline_reply='已接收事务要求')
     elif path == '/api/todos/reminders/uncertain':
         data['reminders'] = []
     else:
@@ -295,16 +308,38 @@ with sync_playwright() as playwright:
         task_mobile_screenshot = task_screenshot.with_name('stella-tasks-overdue-mobile.png')
         page.screenshot(path=str(task_mobile_screenshot), full_page=True)
         quick = page.locator('form').filter(has=page.locator('#todo-quick-title'))
-        add_box = quick.get_by_role('button', name='添加事务').bounding_box()
+        add_box = quick.get_by_role('button', name='让 Agent 建立事务').bounding_box()
         form_box = quick.bounding_box()
         assert add_box and form_box and add_box['x'] + add_box['width'] <= form_box['x'] + form_box['width']
         expect(quick.locator('svg.lucide-circle')).to_have_count(0)
-        agent = quick.get_by_role('button', name='交给 Agent')
+        expect(quick.get_by_role('button', name='添加事务')).to_have_count(0)
+        expect(quick.get_by_role('button', name='交给 Agent', exact=True)).to_have_count(0)
+        agent = quick.get_by_role('button', name='让 Agent 建立事务')
         expect(agent).to_be_disabled()
         quick.get_by_role('textbox', name='需要完成什么？').fill('整理课程资料')
         expect(agent).to_be_enabled()
+        quick.get_by_role('button', name='更多选项').click()
+        quick.get_by_label('截止日期').fill((today + timedelta(days=2)).isoformat())
         agent.click()
-        expect(page.locator('textarea').first).to_have_value('请完成以下事项：整理课程资料')
+        expect(page.get_by_text('已接收事务要求', exact=True)).to_be_visible()
+        assert len(sent_messages) == 1
+        assert sent_messages[0]['session_id']
+        assert '使用 todos 事务工具建立' in sent_messages[0]['message']
+        assert '整理课程资料' in sent_messages[0]['message']
+        assert (today + timedelta(days=2)).isoformat() in sent_messages[0]['message']
+        assert created_todos == []
+
+        page.goto(test_url + '/#/todos', wait_until='networkidle')
+        fail_next_message[0] = True
+        page.get_by_role('textbox', name='需要完成什么？').fill('失败后重试的事务')
+        page.get_by_role('button', name='让 Agent 建立事务').click()
+        expect(page.get_by_text('HTTP 503', exact=False)).to_be_visible()
+        page.goto(test_url + '/#/todos', wait_until='networkidle')
+        page.get_by_role('textbox', name='需要完成什么？').fill('失败后重试的事务')
+        page.get_by_role('button', name='让 Agent 建立事务').click()
+        expect(page.get_by_text('已接收事务要求', exact=True)).to_be_visible()
+        assert len(sent_messages) == 3
+        assert created_todos == []
 
         todo_rows.append({**todo_rows[0], 'id':'timed', 'title':'到点转逾期',
                           'due_on':today.isoformat(), 'due_time':'12:01'})
@@ -322,6 +357,6 @@ with sync_playwright() as playwright:
         expect(clock_tabs.get_by_role('button', name='逾期 4')).to_be_visible()
         clock_page.close()
         assert errors == [], errors
-        print('UI briefing and tasks: report, overdue views, ordering, Agent handoff PASS')
+        print('UI briefing and tasks: report, overdue views, ordering, Agent creation dispatch/retry PASS')
     finally:
         browser.close()

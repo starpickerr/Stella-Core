@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import apiClient from "../api/client";
 import { getLang } from "../i18n";
+import { useChatStore } from "../store/chatStore";
+import { useSessionStore } from "../store/sessionStore";
+import { useUIStore } from "../store/uiStore";
 import type {
   Todo,
   TodoChecklistItem,
@@ -88,9 +91,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         noDate: "No date",
         empty: "No tasks in this view",
         createHint: "What needs to be done?",
-        add: "Add task",
         advanced: "More options",
-        agentParse: "Give to Agent",
+        agentCreate: "Create with Agent",
         details: "Task details",
         notes: "Notes",
         planDate: "Plan date",
@@ -176,9 +178,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         noDate: "无日期",
         empty: "这个视图还没有事务",
         createHint: "需要完成什么？",
-        add: "添加事务",
         advanced: "更多选项",
-        agentParse: "交给 Agent",
+        agentCreate: "让 Agent 建立事务",
         details: "事务详情",
         notes: "备注",
         planDate: "计划日期",
@@ -267,6 +268,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<string[]>([]);
   const treeRef = useRef<{ scrollTop: number; selectedId: string | null }>({ scrollTop: 0, selectedId: null });
+  const handoffPending = useRef(false);
   const [now, setNow] = useState(() => new Date());
   const today = dateKey(now);
   useEffect(() => {
@@ -482,23 +484,38 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       if (pageRef.current) pageRef.current.scrollTop = treeRef.current.scrollTop;
     });
   };
-  const create = () => {
-    if (!quickTitle.trim()) return;
-    void run(async () => {
-      const payload: TodoInput = {
-        title: quickTitle.trim(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      };
-      if (quickDate) payload.planned_on = quickDate;
-      if (quickDue) payload.due_on = quickDue;
-      if (quickReminder) payload.remind_at = fromLocalTime(quickReminder);
-      await apiClient.createTodo(payload);
-      setQuickTitle("");
-      setQuickDate("");
-      setQuickDue("");
-      setQuickReminder("");
-      setQuickOptions(false);
+  const createWithAgent = () => {
+    const requirement = quickTitle.trim();
+    if (!requirement || busy || handoffPending.current) return;
+    handoffPending.current = true;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const details = [
+      requirement,
+      quickDate && `${en ? "Planned date" : "计划日期"}: ${quickDate}`,
+      quickDue && `${en ? "Due date" : "截止日期"}: ${quickDue}`,
+      quickReminder && `${en ? "Reminder" : "提醒时间"}: ${fromLocalTime(quickReminder)} (${zone})`,
+    ].filter(Boolean).join("\n");
+    const prompt = en
+      ? `Use the todos tool to create tasks from these requirements. Ask if essential details are missing; do not invent deadlines.\n\n${details}`
+      : `请使用 todos 事务工具建立事务。若缺少必要信息，先询问我；不要自行编造截止时间。\n\n${details}`;
+    const sessions = useSessionStore.getState();
+    const sid = sessions.newSession();
+    sessions.addOptimistic(sid, null);
+    const chat = useChatStore.getState();
+    chat.ensureSession(sid);
+    if (window.innerWidth < 700) {
+      useUIStore.getState().setNavCollapsed(true);
+      useUIStore.getState().setSessionsCollapsed(true);
+    }
+    void chat.send(sid, prompt, []).then(async () => {
+      try {
+        await apiClient.generateSessionTitle(sid, prompt);
+      } catch {
+        // The conversation remains available when title generation fails.
+      }
+      void useSessionStore.getState().loadSessions(1);
     });
+    navigate("/");
   };
   const save = () => {
     if (!selected || !draft?.title.trim()) return;
@@ -851,7 +868,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            create();
+            createWithAgent();
           }}
           className="rounded-card border border-default bg-surface mb-5 overflow-hidden"
         >
@@ -875,21 +892,11 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <MoreHorizontal size={18} />
               </button>
               <button
-                type="button"
-                disabled={!quickTitle.trim()}
-                onClick={() => navigate("/", { state: {
-                  taskDraft: `${en ? "Please complete this task: " : "请完成以下事项："}${quickTitle.trim()}`,
-                } })}
-                className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary hover:border-accent hover:text-accent disabled:opacity-40"
-              >
-                {copy.agentParse}
-              </button>
-              <button
                 type="submit"
                 disabled={!quickTitle.trim() || busy}
                 className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
               >
-                {copy.add}
+                {copy.agentCreate}
               </button>
             </div>
           </div>
