@@ -1,4 +1,9 @@
 import Foundation
+import EventKit
+
+func hasNonAbsoluteAlarm(_ alarms: [EKAlarm]) -> Bool {
+    alarms.contains { $0.absoluteDate == nil }
+}
 
 struct ReminderDateFields {
     let day: String?

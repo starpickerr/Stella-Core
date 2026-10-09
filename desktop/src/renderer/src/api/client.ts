@@ -742,8 +742,16 @@ class ApiClient {
     return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/access', {})).connection
   }
 
-  async configureAppleCalendar(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
-    return this.briefingRequest('/api/calendar/apple/configure', { calendar_ids: calendarIds, direction })
+  async previewAppleCalendarScope(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number; failed_calendar_ids: string[] }
+    preview_token: string
+  }> {
+    return this.briefingRequest('/api/calendar/apple/scope-preview', { calendar_ids: calendarIds, direction })
+  }
+
+  async configureAppleCalendar(calendarIds: string[], direction: AppleCalendarConnection['direction'], previewToken: string): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/configure', { calendar_ids: calendarIds, direction,
+      preview_token: previewToken, confirm: true })
   }
 
   async syncAppleCalendar(confirmDeletions = false, confirmLocalDeletions = false): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {

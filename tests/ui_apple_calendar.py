@@ -45,7 +45,15 @@ def backend(route):
             connection.update(supported=True, authorization='full_access',
                               calendars=[{'id':'a','title':'私人','source':'iCloud','writable':True},
                                          {'id':'b','title':'课程','source':'本机','writable':False}])
+        elif path.endswith('/scope-preview'):
+            data.update(preview={'new': 2, 'updated': 0, 'skipped': 0, 'conflicts': 0,
+                                 'failed_calendar_ids': [], 'window': []}, preview_token='reviewed-scope')
         elif path.endswith('/configure'):
+            if not body.get('confirm') or body.get('preview_token') != 'reviewed-scope':
+                data = {'status': 'error', 'message': 'Preview and confirmation required'}
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
+                              headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+                return
             connection.update(connected=True, calendar_ids=body['calendar_ids'], direction=body['direction'],
                               last_success='2026-10-10T08:00:00Z')
             data['result'] = dict(status='success', imported=2, updated=0, exported=0,
@@ -122,6 +130,8 @@ with sync_playwright() as playwright:
         panel.get_by_role('button', name='断开连接').click()
         expect(panel.get_by_text('未连接')).to_be_visible()
         assert errors == [], errors
+        assert any(path.endswith('/scope-preview') for path, _ in calls)
+        assert any(body.get('preview_token') == 'reviewed-scope' for path, body in calls if path.endswith('/configure'))
         print('Apple Calendar UI: unsupported, permission, connect, sync, conflict and disconnect passed')
     finally:
         browser.close()

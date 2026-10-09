@@ -13,7 +13,8 @@ from agent.calendar.apple_bridge import AppleCalendarBridge, BridgeError
 def test_native_marker_lookup_distinguishes_recurring_occurrences(tmp_path):
     root = Path(__file__).parents[1] / 'native/apple-calendar'
     binary = tmp_path / 'occurrence-identity'
-    subprocess.run(['/usr/bin/swiftc', str(root / 'OccurrenceIdentity.swift'),
+    subprocess.run(['/usr/bin/swiftc', '-framework', 'EventKit',
+                    str(root / 'OccurrenceIdentity.swift'), str(root / 'ReminderFields.swift'),
                     str(root / 'tests/main.swift'), '-o', str(binary)], check=True)
     result = subprocess.run([str(binary)], check=True, capture_output=True, text=True)
     assert 'Occurrence identity passed' in result.stdout

@@ -158,6 +158,57 @@ def test_partial_and_empty_scans_preserve_local_data_and_confirmed_delete(tmp_pa
     assert confirmed["deleted_local"] == 1 and len(todos.list_todos()) == 1
 
 
+def test_failed_scan_cannot_confirm_a_previously_staged_local_deletion(tmp_path):
+    sync, todos, bridge, current = manager(tmp_path, [reminder(), reminder("r2")])
+    sync.configure(["a"], "import")
+    sync.sync()
+    bridge.rows = [reminder("r2")]
+    sync.sync()
+    current[0] += timedelta(minutes=2)
+    assert sync.sync()["pending_local_deletions"] == 1
+    bridge.failed.add("a")
+    result = sync.sync(manual=True, confirm_local_deletions=True)
+    assert result["deleted_local"] == 0
+    assert len(todos.list_todos()) == 2
+
+
+def test_confirmed_remote_delete_with_local_child_reports_resolvable_conflict(tmp_path):
+    sync, todos, bridge, current = manager(tmp_path, [reminder(), reminder("r2")])
+    sync.configure(["a"], "import")
+    sync.sync()
+    parent = next(row for row in todos.list_todos() if row["title"] == "Homework")
+    child = todos.add_subtask(parent["id"], {"title": "Keep me"})
+    bridge.rows = [reminder("r2")]
+    sync.sync()
+    current[0] += timedelta(minutes=2)
+    sync.sync()
+    result = sync.sync(manual=True, confirm_local_deletions=True)
+    assert result["deleted_local"] == 0
+    assert "subtasks" in sync.status()["conflicts"][0]["reason"]
+    assert todos.get_todo(child["id"])["parent_id"] == parent["id"]
+
+
+def test_native_save_without_mapping_recovers_stella_marker(tmp_path):
+    sync, todos, bridge, _ = manager(tmp_path)
+    sync.configure(["a"], "bidirectional")
+    sync.sync()
+    own = todos.create_todo({"title": "A local task"})
+    bridge.rows.append(reminder("saved", stella_id=own["id"], title="A local task"))
+    result = sync.sync()
+    assert result["imported"] == 0
+    assert len(todos.list_todos()) == 1
+    assert sync._maps()[0]["todo_id"] == own["id"]
+
+
+def test_relative_alarm_is_not_imported_or_overwritten(tmp_path):
+    sync, todos, bridge, _ = manager(tmp_path, [reminder(remind_at=None, alarm_count=1)])
+    sync.configure(["a"], "bidirectional")
+    assert sync.sync()["conflicts"] == 1
+    assert todos.list_todos() == [] and bridge.writes == []
+    with pytest.raises(ValueError, match="unsupported"):
+        sync.one_time("import", "a", ["r1"], confirm=True)
+
+
 def test_preview_does_not_write_or_connect(tmp_path):
     sync, todos, bridge, _ = manager(tmp_path, [reminder()])
     preview = sync.preview(["a"], "import")

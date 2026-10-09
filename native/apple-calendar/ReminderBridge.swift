@@ -179,7 +179,15 @@ func runReminder(_ request: [String: Any]) throws -> [String: Any] {
         reminder.dueDateComponents = try reminderComponents(text(request, "due_on"), text(request, "due_time"), zone)
         reminder.startDateComponents = try reminderComponents(text(request, "planned_on"), nil, zone)
         if request.keys.contains("remind_at") {
-            reminder.alarms = date(text(request, "remind_at")).map { [EKAlarm(absoluteDate: $0)] } ?? []
+            if hasNonAbsoluteAlarm(reminder.alarms ?? []) {
+                throw BridgeFailure("Relative or location reminder alarm needs manual review")
+            }
+            if let requested = text(request, "remind_at"), !requested.isEmpty {
+                guard let value = date(requested) else { throw BridgeFailure("Invalid remind_at") }
+                reminder.alarms = [EKAlarm(absoluteDate: value)]
+            } else {
+                reminder.alarms = []
+            }
         }
         if let priority = request["priority"] as? Int { reminder.priority = priority }
         if let completed = request["completed"] as? Bool {

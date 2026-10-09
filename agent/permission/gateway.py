@@ -356,6 +356,18 @@ class SecurityGateway:
                 prerequisites.extend(("workspace_write", "workspace_outside"))
             else:
                 hard_reason = "Unknown skill action; the tool did not run."
+        elif tool_name == "apple":
+            resource_kind, resource, event = ResourceKind.EXTERNAL, "Apple EventKit", "external_access"
+            if action in {"status", "sources", "items", "lookup", "preview", "preview_scope"}:
+                risk, policy_key = "L0", "workspace_read"
+            elif action == "access":
+                risk, policy_key = "L2", "external"
+            elif action in {"one_time", "configure", "sync", "resolve"}:
+                risk, policy_key = "L3", "workspace_write"
+            elif action == "disconnect":
+                risk, policy_key = "L1", "workspace_write"
+            else:
+                hard_reason = "Unknown Apple action; the tool did not run."
         elif tool_name in _LOCAL_ACTIONS:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]

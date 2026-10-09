@@ -95,13 +95,16 @@ def test_apple_calendar_routes_use_authenticated_shared_sync(tmp_path, monkeypat
         status = call(web_channel.AppleCalendarStatusHandler, "GET")
         assert status["connection"]["connected"] is False
         assert call(web_channel.AppleCalendarAccessHandler)["connection"]["authorization"] == "full_access"
+        selection = {"calendar_ids": ["a"], "direction": "bidirectional"}
+        prepared = call(web_channel.AppleCalendarScopePreviewHandler, body=selection)
+        assert prepared["preview"]["new"] == 1
         configured = call(web_channel.AppleCalendarConfigureHandler,
-                          body={"calendar_ids": ["a"], "direction": "bidirectional"})
+                          body={**selection, "confirm": True, "preview_token": prepared["preview_token"]})
         assert configured["result"]["imported"] == 1
         assert configured["connection"]["connected"] is True
         assert call(web_channel.AppleCalendarSyncHandler, body={"confirm_deletions": False})["result"]["status"] == "success"
         assert call(web_channel.AppleCalendarDisconnectHandler)["connection"]["connected"] is False
-        assert auth.call_count == 5
+        assert auth.call_count == 6
 
 
 def test_local_calendar_delete_confirmation_reaches_sync_service(tmp_path, monkeypatch):

@@ -78,6 +78,16 @@ def test_source_key_and_confirmed_delete_prevent_silent_reimport(tmp_path, monke
         todos.upsert_external_todo("eventkit:delete", remote(remind_at=None))
 
 
+def test_external_parent_deletion_preserves_stella_subtasks(tmp_path, monkeypatch):
+    todos, _ = service(tmp_path, monkeypatch)
+    parent = todos.upsert_external_todo("eventkit:parent", remote(remind_at=None))
+    child = todos.add_subtask(parent["id"], {"title": "Stella-only child"})
+    with pytest.raises(ValueError, match="subtask"):
+        todos.delete_external_todo("eventkit:parent", confirm=True)
+    assert todos.get_todo(parent["id"])["id"] == parent["id"]
+    assert todos.get_todo(child["id"])["parent_id"] == parent["id"]
+
+
 def test_application_todo_port_uses_the_same_external_write_boundary(tmp_path, monkeypatch):
     from application import Application, RequestContext
     import agent.todos

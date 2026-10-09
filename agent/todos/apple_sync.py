@@ -65,7 +65,9 @@ def _source_key(remote):
 
 def _supported(remote):
     rule = remote.get("recurrence") or {}
-    return (remote.get("alarm_count", 0) <= 1 and rule.get("rule_count", 0) <= 1 and
+    return (remote.get("alarm_count", 0) <= 1 and
+            (not remote.get("alarm_count") or remote.get("remind_at") is not None) and
+            rule.get("rule_count", 0) <= 1 and
             rule.get("frequency", "none") in ("none", "daily", "weekly", "monthly", "yearly") and
             rule.get("interval", 1) == 1 and not rule.get("count") and
             (rule.get("frequency") == "weekly" or not rule.get("days")) and
@@ -154,6 +156,23 @@ class AppleReminderSync:
         mapping.update(state="conflict", conflict=reason, updated_at=self.clock())
         self._save_map(mapping)
 
+    def _recover_marked(self, remote, maps, counts):
+        """Reattach a native save that succeeded before its mapping committed."""
+        if not remote.get("stella_id"):
+            return False
+        local = self._local(remote["stella_id"])
+        if local is None or local["source_type"] is not None or any(
+                row["todo_id"] == remote["stella_id"] for row in maps):
+            counts["conflicts"] += 1
+            return True
+        mapping = self._new_map(local, remote, "stella")
+        if _hash(local) != _hash(remote, remote=True):
+            mapping.update(state="conflict", conflict="Stella and Apple differ after an interrupted export")
+            counts["conflicts"] += 1
+        self._save_map(mapping)
+        maps.append(mapping)
+        return True
+
     def status(self):
         native = self.bridge.call("reminder_status")
         lists = []
@@ -167,7 +186,7 @@ class AppleReminderSync:
                 "list_ids": self._get("list_ids", []), "direction": self._get("direction", "bidirectional"),
                 "lists": lists, "last_success": self._get("last_success"), "error": self._get("error", ""),
                 "conflicts": [{"todo_id": row["todo_id"], "reason": row["conflict"]}
-                              for row in maps if row["state"] == "conflict"],
+                              for row in maps if row["conflict"]],
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
                 "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps)}
 
@@ -212,6 +231,14 @@ class AppleReminderSync:
         if list_id not in inventory["successful_list_ids"]:
             raise ValueError("selected reminder list could not be scanned")
         return [row for row in inventory["reminders"] if row["list_id"] == list_id]
+
+    def lookup_item(self, list_id, reminder_id):
+        if not isinstance(reminder_id, str) or not reminder_id:
+            raise ValueError("reminder_id is required")
+        matches = [row for row in self.items(list_id) if row["reminder_id"] == reminder_id]
+        if len(matches) != 1:
+            raise KeyError("Apple reminder_id not found or ambiguous")
+        return matches[0]
 
     @staticmethod
     def _match(remote, maps, inventory):
@@ -322,7 +349,7 @@ class AppleReminderSync:
                     result["updated"] += 1
                 else:
                     result["skipped"] += 1
-        if direction in ("export", "bidirectional"):
+        if direction in ("export", "bidirectional") and self._get("ever_connected", False):
             with self._connect() as db:
                 baseline = {row[0] for row in db.execute("SELECT todo_id FROM baseline_local")}
             mapped = {row["todo_id"] for row in maps}
@@ -409,6 +436,8 @@ class AppleReminderSync:
                     mapping = self._match(remote, maps, inventory)
                     if mapping:
                         self._process_remote(remote, mapping, "import", counts)
+                    elif self._recover_marked(remote, maps, counts):
+                        continue
                     else:
                         key = _source_key(remote)
                         local = self.todos.upsert_external_todo(key, _payload(remote))
@@ -471,6 +500,9 @@ class AppleReminderSync:
                         if mapping:
                             seen.add(mapping["todo_id"])
                             self._process_remote(remote, mapping, direction, counts)
+                        elif self._recover_marked(remote, maps, counts):
+                            if remote.get("stella_id"):
+                                seen.add(remote["stella_id"])
                         elif direction in ("import", "bidirectional") and _supported(remote):
                             key = _source_key(remote)
                             local = self.todos.upsert_external_todo(key, _payload(remote))
@@ -530,13 +562,24 @@ class AppleReminderSync:
                 for mapping in self._maps():
                     if mapping["state"] == "pending_local_delete":
                         counts["pending_local_deletions"] += 1
-                        if manual and confirm_local_deletions:
+                        if (manual and confirm_local_deletions and mapping["list_id"] in successful and
+                                mapping["list_id"] not in empty_unsafe):
                             try:
+                                found = self.bridge.call("reminder_lookup", list_id=mapping["list_id"],
+                                    reminder_id=mapping["reminder_id"], external_id=mapping["external_id"])
+                                if found.get("reminder") is not None:
+                                    continue
                                 self.todos.delete_external_todo(mapping["source_key"], confirm=True)
                                 mapping["state"] = "remote_deleted"
+                                mapping["conflict"] = ""
                                 self._save_map(mapping)
                                 counts["deleted_local"] += 1
                                 counts["pending_local_deletions"] -= 1
+                            except ValueError as exc:
+                                mapping["conflict"] = str(exc)
+                                self._save_map(mapping)
+                                counts["conflicts"] += 1
+                                counts["status"] = "partial"
                             except Exception:
                                 counts["status"] = "error"
                     elif mapping["state"] == "pending_delete":
@@ -575,11 +618,11 @@ class AppleReminderSync:
             reminder_id=mapping["reminder_id"], external_id=mapping["external_id"]).get("reminder")
         if remote is None:
             raise ValueError("Apple reminder is unavailable")
+        if not _supported(remote):
+            raise ValueError("Apple reminder has unsupported fields")
         if choice == "keep_stella":
             remote = self.bridge.call("reminder_upsert", **self._write_payload(local, mapping))["reminder"]
         else:
-            if not _supported(remote):
-                raise ValueError("Apple reminder has unsupported fields")
             local = self._apply_remote(mapping, local, remote)
         self._refresh_map(mapping, local, remote)
         return self.status()
