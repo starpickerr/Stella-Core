@@ -136,6 +136,28 @@ def normalize_notification_route(route, agent_id=None):
     return {'primary': primary, 'backup_enabled': True, 'backup': backup}
 
 
+def same_notification_route(candidate, saved):
+    """Compare user choices while ignoring server-added recipient metadata."""
+    if not isinstance(candidate, dict) or not isinstance(saved, dict):
+        return False
+    if candidate.get('backup_enabled', False) is not saved.get('backup_enabled', False):
+        return False
+
+    def identity(destination):
+        if destination is None:
+            return None
+        if not isinstance(destination, dict):
+            return False
+        channel = destination.get('channel_type')
+        group = destination.get('is_group', False)
+        return (channel, destination.get('receiver'), group,
+                destination.get('receive_id_type') or ('chat_id' if group else 'open_id') if channel == 'feishu' else None)
+
+    return (identity(candidate.get('primary')) == identity(saved.get('primary')) and
+            (not saved.get('backup_enabled') or
+             identity(candidate.get('backup')) == identity(saved.get('backup'))))
+
+
 DESTINATION_FIELDS = ('channel_type', 'receiver', 'receiver_name', 'is_group',
                       'notify_session_id', 'receive_id_type', 'dingtalk_sender_staff_id',
                       'context_token')

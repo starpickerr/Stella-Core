@@ -89,16 +89,25 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
             return DeliveryOutcome("failed", error)
         store.finish_delivery(delivery_id, leg, "accepted", platform_response=details)
         return DeliveryOutcome("accepted")
-    except (requests.exceptions.Timeout, TimeoutError) as exc:
+    except requests.exceptions.ConnectTimeout as exc:
+        error = str(exc)[:500]
+        row = store.get_delivery(delivery_id, leg)
+        retryable = row["attempts"] < 3
+        store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=retryable)
+        return DeliveryOutcome("failed", error, retryable)
+    except (requests.exceptions.Timeout, TimeoutError, requests.exceptions.ConnectionError,
+            ConnectionError) as exc:
         error = str(exc)[:500]
         store.finish_delivery(delivery_id, leg, "unknown", error=error)
         return DeliveryOutcome("unknown", error)
     except Exception as exc:
         error = str(exc)[:500]
-        if channel_type == "weixin" and ("-14" in error or "context token expired" in error.lower()):
+        if getattr(exc, "delivery_uncertain", False):
+            status, retryable = "unknown", False
+        elif channel_type == "weixin" and ("-14" in error or "context token expired" in error.lower()):
             status, retryable = "waiting", False
         else:
-            status, retryable = "failed", isinstance(exc, (ConnectionError, requests.exceptions.ConnectionError))
+            status, retryable = "failed", False
         row = store.get_delivery(delivery_id, leg)
         retryable = retryable and row["attempts"] < 3
         store.finish_delivery(delivery_id, leg, status, error=error, retryable=retryable)

@@ -56,3 +56,15 @@ def test_weixin_transport_retry_reuses_client_id(monkeypatch):
     assert WeixinApi("https://example.invalid", "fake").send_text("user", "hello", "token") == {}
     assert len(payloads) == 2
     assert payloads[0] == payloads[1]
+
+
+def test_weixin_partial_text_send_reports_uncertain_outcome(monkeypatch):
+    channel = WeixinChannel()
+    chunks = []
+    monkeypatch.setattr(channel, "api", SimpleNamespace(send_text=lambda _to, text, _token:
+        chunks.append(text) or ({} if len(chunks) == 1 else (_ for _ in ()).throw(
+            requests.exceptions.ConnectTimeout("second chunk failed")))))
+    monkeypatch.setattr("channel.weixin.weixin_channel.time.sleep", lambda _: None)
+    with pytest.raises(Exception) as error:
+        channel._send_text("a" * 7000, "user", "token")
+    assert len(chunks) > 1 and getattr(error.value, "delivery_uncertain", False)

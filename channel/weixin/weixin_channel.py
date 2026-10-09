@@ -32,6 +32,10 @@ MAX_BACKOFF_DELAY = 300
 RETRY_DELAY = 2
 SESSION_EXPIRED_ERRCODE = -14
 TEXT_CHUNK_LIMIT = 4000
+
+
+class PartialDeliveryError(RuntimeError):
+    delivery_uncertain = True
 # How long a text message will wait for a concurrently-sent image/file to
 # finish downloading into the cache before being handled without it.
 PENDING_MEDIA_WAIT_S = 3.0
@@ -727,6 +731,8 @@ class WeixinChannel(ChatChannel):
                 logger.debug(f"[Weixin] Text chunk {i+1}/{len(chunks)} sent to {receiver}, len={len(chunk)}")
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text chunk {i+1}/{len(chunks)}: {e}")
+                if i > 0:
+                    raise PartialDeliveryError("Some Weixin text chunks may have been sent") from e
                 raise
             if i < len(chunks) - 1:
                 time.sleep(0.5)

@@ -68,6 +68,28 @@ def test_agent_creates_queries_and_changes_todo_reminder_without_duplicate_task(
     assert store.get_task(todo["scheduler_task_id"])["reminder_delivery"] == stored["reminder_delivery"]
 
 
+def test_unchanged_weixin_route_allows_other_edits_after_context_expires(tmp_path, channels):
+    from application import Application
+    tool, store = _todo_tool(tmp_path)
+    todo = json.loads(tool.execute({"action": "create", "title": "Before", "remind_at": _future(),
+                                    "reminder_delivery": _route("weixin", "wx_user")}).result)["todo"]
+    task = {"id": "independent", "name": "Before", "enabled": True,
+            "schedule": {"type": "once", "run_at": _future()}, "next_run_at": _future(),
+            "action": {"type": "send_message", "channel_type": "weixin", "receiver": "wx_user",
+                       "content": "Hello"}}
+    scheduler = Application.scheduler(store)
+    scheduler.create(task, notification_route=_route("weixin", "wx_user"))
+    channels["weixin"]._context_tokens.clear()
+    saved = tool.service.update_todo(todo["id"], {"title": "After", "reminder_delivery": todo["reminder_delivery"]})
+    assert saved["title"] == "After"
+    existing = scheduler.get("independent")
+    saved_task = scheduler.update("independent", {"name": "After", "enabled": False,
+        "action": existing["action"], "notification_route": {
+            "primary": {"channel_type": "weixin", "receiver": "wx_user"},
+            "backup_enabled": False, "backup": None}})
+    assert saved_task["name"] == "After" and saved_task["enabled"] is False
+
+
 def test_agent_rejects_unresolved_todo_recipient(tmp_path, channels):
     tool, store = _todo_tool(tmp_path)
     result = tool.execute({"action": "create", "title": "Submit", "remind_at": _future(),

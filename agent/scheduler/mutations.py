@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from agent.scheduler.conversation import validate_conversation_action
-from agent.scheduler.delivery import destination_catalog, normalize_notification_route, patch_destination
+from agent.scheduler.delivery import (DESTINATION_FIELDS, destination_catalog,
+                                      normalize_notification_route, patch_destination, same_notification_route)
 
 
 class SchedulerMutations:
@@ -68,15 +69,22 @@ class SchedulerMutations:
         allowed = {"name", "enabled", "schedule", "action", "notification_route"}
         if set(patch) - allowed:
             raise ValueError("unsupported scheduler update fields")
+        same_route = ("notification_route" in patch and
+                      same_notification_route(patch["notification_route"], original.get("notification_route")))
         updates = {key: patch[key] for key in ("name", "enabled", "schedule") if key in patch}
         if "action" in patch:
             if not isinstance(patch["action"], dict):
                 raise ValueError("Action must be an object")
-            action = patch_destination(original.get("action") or {}, patch["action"], agent_id)
+            action_patch = ({key: value for key, value in patch["action"].items() if key not in DESTINATION_FIELDS}
+                            if same_route else patch["action"])
+            action = patch_destination(original.get("action") or {}, action_patch, agent_id)
         else:
             action = dict(original.get("action") or {})
         if "notification_route" in patch:
-            action, route = self._route_action(action, patch["notification_route"], agent_id)
+            if same_route:
+                route = original["notification_route"]
+            else:
+                action, route = self._route_action(action, patch["notification_route"], agent_id)
             updates["notification_route"] = route
         elif "action" in patch and any(
                 field in patch["action"] and action.get(field) != (original.get("action") or {}).get(field)
