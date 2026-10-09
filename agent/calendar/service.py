@@ -317,6 +317,42 @@ class CalendarService:
                  row["location"], row.get("category_id"), "briefing" if _briefing_key else None, _briefing_key, "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], now, now))
         return self.get_event(event_id)
 
+    def upsert_external_event(self, provider, source_key, payload, event_id=None):
+        """Create or refresh a sourced event without overwriting a local edit."""
+        if provider != "apple_calendar":
+            raise ValueError("unsupported calendar provider")
+        source_key = _text(source_key, "source_key", 1000)
+        row = self._validate_event(payload)
+        now = _now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute("SELECT * FROM calendar_events WHERE source_type=? AND source_key=?",
+                             (provider, source_key)).fetchone()
+            if old:
+                if event_id and old["id"] != event_id:
+                    raise ValueError("source event mapping changed")
+                if old["user_modified"]:
+                    raise ValueError("source event was locally modified")
+                db.execute("""UPDATE calendar_events SET title=?,description=?,start_at=?,end_at=?,all_day=?,
+                    location=?,repeat_frequency=?,repeat_days=?,repeat_until=?,repeat_timezone=?,updated_at=?
+                    WHERE id=?""", (row["title"], row["description"], row["start_at"], row["end_at"],
+                    row["all_day"], row["location"], row["repeat_frequency"], row["repeat_days"],
+                    row["repeat_until"], row["repeat_timezone"], now, old["id"]))
+                return_id = old["id"]
+            else:
+                if event_id:
+                    raise KeyError("source event not found")
+                return_id = str(uuid.uuid4())
+                db.execute("""INSERT INTO calendar_events
+                    (id,title,description,start_at,end_at,all_day,location,category_id,source_type,source_key,
+                     source_url,user_modified,repeat_frequency,repeat_days,repeat_until,repeat_timezone,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (return_id, row["title"], row["description"], row["start_at"], row["end_at"],
+                     row["all_day"], row["location"], row.get("category_id"), provider, source_key,
+                     "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
+                     row["repeat_timezone"], now, now))
+        return self.get_event(return_id)
+
     def update_event(self, event_id, payload):
         old = self.get_event(event_id)
         if old["source_type"] == "china_holiday":
