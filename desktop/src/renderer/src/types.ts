@@ -865,6 +865,7 @@ export interface AppleCalendarConnection {
   supported: boolean
   authorization: 'unsupported' | 'helper_missing' | 'not_determined' | 'denied' | 'restricted' | 'write_only' | 'full_access' | 'unknown'
   connected: boolean
+  auto_enabled: boolean
   calendar_ids: string[]
   direction: 'import' | 'export' | 'bidirectional'
   calendars: { id: string; title: string; source: string; writable: boolean }[]
@@ -886,6 +887,12 @@ export interface AppleCalendarSyncResult {
   pending_deletions: number
   pending_local_deletions: number
   failed_calendar_ids: string[]
+}
+
+export interface AppleReminderConnection extends Omit<AppleCalendarConnection, 'calendar_ids' | 'calendars' | 'conflicts'> {
+  list_ids: string[]
+  lists: { id: string; title: string; source: string; writable: boolean }[]
+  conflicts: { todo_id: string; reason: string }[]
 }
 
 export interface Todo {

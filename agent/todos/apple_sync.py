@@ -183,6 +183,7 @@ class AppleReminderSync:
                 pass
         maps = self._maps()
         return {**native, "connected": bool(self._get("connected", False)),
+                "auto_enabled": bool(self._get("auto_enabled", True)),
                 "list_ids": self._get("list_ids", []), "direction": self._get("direction", "bidirectional"),
                 "lists": lists, "last_success": self._get("last_success"), "error": self._get("error", ""),
                 "conflicts": [{"todo_id": row["todo_id"], "reason": row["conflict"]}
@@ -223,7 +224,24 @@ class AppleReminderSync:
 
     def disconnect(self):
         self._set("connected", False)
+        self.stop_auto()
         return self.status()
+
+    def set_auto(self, enabled):
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        with self._lock:
+            self._set("auto_enabled", enabled)
+            if enabled:
+                self.resume_auto()
+            else:
+                self.stop_auto()
+        return self.status()
+
+    def resume_auto(self):
+        if (self._get("auto_enabled", True) and self._get("connected", False)
+                and self.bridge.call("reminder_status").get("authorization") == "full_access"):
+            self.start_auto()
 
     def items(self, list_id):
         self._validate_selection([list_id], "import")

@@ -2067,6 +2067,7 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/apple/status', 'AppleCalendarStatusHandler',
             '/api/calendar/apple/access', 'AppleCalendarAccessHandler',
             '/api/calendar/apple/configure', 'AppleCalendarConfigureHandler',
+            '/api/calendar/apple/auto', 'AppleCalendarAutoHandler',
             '/api/calendar/apple/sync', 'AppleCalendarSyncHandler',
             '/api/calendar/apple/disconnect', 'AppleCalendarDisconnectHandler',
             '/api/calendar/apple/resolve', 'AppleCalendarResolveHandler',
@@ -2077,6 +2078,7 @@ class DesktopChannel(ChatChannel):
             '/api/todos/apple/status', 'AppleReminderStatusHandler',
             '/api/todos/apple/access', 'AppleReminderAccessHandler',
             '/api/todos/apple/configure', 'AppleReminderConfigureHandler',
+            '/api/todos/apple/auto', 'AppleReminderAutoHandler',
             '/api/todos/apple/sync', 'AppleReminderSyncHandler',
             '/api/todos/apple/disconnect', 'AppleReminderDisconnectHandler',
             '/api/todos/apple/resolve', 'AppleReminderResolveHandler',
@@ -2166,11 +2168,13 @@ class DesktopChannel(ChatChannel):
         _log_startup_banner()
         if sys.platform == 'darwin':
             try:
-                calendar_sync = _apple_calendar_sync()
-                if calendar_sync.is_connected():
-                    calendar_sync.start_auto()
+                _apple_calendar_sync().resume_auto()
             except Exception:
                 logger.exception("[DesktopChannel] Apple Calendar sync could not start")
+            try:
+                _apple_reminder_sync().resume_auto()
+            except Exception:
+                logger.exception("[DesktopChannel] Apple Reminders sync could not start")
         try:
             server.serve()
         except (KeyboardInterrupt, SystemExit):
@@ -6278,9 +6282,15 @@ class AppleCalendarConfigureHandler:
             confirm_scope(manager, body.get("calendar_ids"), body.get("direction"), body.get("preview_token"))
             manager.configure(body.get("calendar_ids"), body.get("direction"))
             result = manager.sync(manual=True)
-            manager.start_auto()
+            manager.resume_auto()
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
+
+
+class AppleCalendarAutoHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_calendar_sync().set_auto(
+            _calendar_body().get("enabled"))})
 
 
 class AppleCalendarSyncHandler:
@@ -6378,9 +6388,15 @@ class AppleReminderConfigureHandler:
             confirm_scope(manager, body.get("list_ids"), body.get("direction"), body.get("preview_token"))
             manager.configure(body.get("list_ids"), body.get("direction"))
             result = manager.sync(manual=True)
-            manager.start_auto()
+            manager.resume_auto()
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
+
+
+class AppleReminderAutoHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_reminder_sync().set_auto(
+            _calendar_body().get("enabled"))})
 
 
 class AppleReminderSyncHandler:

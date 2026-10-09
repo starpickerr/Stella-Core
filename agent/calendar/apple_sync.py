@@ -162,7 +162,8 @@ class AppleCalendarSync:
             except Exception:
                 pass
         maps = self._maps()
-        return {**native, "connected": bool(self._get("connected", False)), "calendar_ids": selected,
+        return {**native, "connected": bool(self._get("connected", False)),
+                "auto_enabled": bool(self._get("auto_enabled", True)), "calendar_ids": selected,
                 "direction": self._get("direction", "bidirectional"), "calendars": calendars,
                 "last_success": self._get("last_success"), "error": self._get("error", ""),
                 "conflicts": [{"stella_id": row["stella_id"], "reason": row["conflict"]}
@@ -199,7 +200,24 @@ class AppleCalendarSync:
 
     def disconnect(self):
         self._set("connected", False)
+        self.stop_auto()
         return self.status()
+
+    def set_auto(self, enabled):
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        with self._lock:
+            self._set("auto_enabled", enabled)
+            if enabled:
+                self.resume_auto()
+            else:
+                self.stop_auto()
+        return self.status()
+
+    def resume_auto(self):
+        if (self._get("auto_enabled", True) and self._get("connected", False)
+                and self.bridge.call("status").get("authorization") == "full_access"):
+            self.start_auto()
 
     def items(self, calendar_id, start=None, end=None):
         if not start or not end:
