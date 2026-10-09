@@ -6,6 +6,7 @@ import { getLang } from '../i18n'
 import type { CalendarCategory, CalendarEvent, CalendarEventInput } from '../types'
 import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunday, WeekTimeline } from './calendar/CalendarViews'
 import type { ScrollPeriod } from './calendar/CalendarViews'
+import EmbeddedAgent, { type PresetRequest } from '../components/EmbeddedAgent'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -92,9 +93,15 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [categoryDraft, setCategoryDraft] = useState<{ id?: string; name: string; color: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [appleMenu, setAppleMenu] = useState(false)
+  const [agentPreset, setAgentPreset] = useState<PresetRequest | undefined>()
   const [railRange, setRailRange] = useState<{ view: View; start: string; end: string } | null>(null)
   const [navigationToken, setNavigationToken] = useState(0)
   const requestId = useRef(0)
+  const askAgent = (text: string) => {
+    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text })
+    setAppleMenu(false)
+  }
   useEffect(() => {
     const eventId = (location.state as { eventId?: string } | null)?.eventId
     const target = eventId ? allEvents.find((event) => event.id === eventId) : undefined
@@ -327,12 +334,20 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => void reload()} aria-label="Refresh" className="h-8 px-2 rounded-btn border border-default hover:bg-surface-2"><RefreshCw size={15} /></button>
-        <button type="button" onClick={() => navigate('/settings?tab=integrations&section=apple-calendar')} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
+        <div className="relative">
+          <button type="button" aria-expanded={appleMenu} onClick={() => setAppleMenu(value => !value)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
+          {appleMenu && <div role="menu" aria-label="Apple 日历操作" onKeyDown={event => { if (event.key === 'Escape') setAppleMenu(false) }} className="absolute right-0 top-full mt-1 z-30 min-w-52 rounded-btn border border-default bg-surface shadow-lg p-1">
+            <button type="button" role="menuitem" onClick={() => askAgent('请查看 Apple 日历权限和可用日历，帮我选择要导入的日程范围，先预览变更，并在获得我确认后导入 Stella。')} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
+            <button type="button" role="menuitem" onClick={() => askAgent('请查看 Apple 日历权限和可写日历，帮我选择要同步至 Apple 的 Stella 日程，先预览变更，并在获得我确认后执行。')} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
+            <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate('/settings?tab=integrations&section=apple-calendar') }} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">管理 Apple 日历</button>
+          </div>}
+        </div>
         <button type="button" onClick={() => { setImportPanel(true); setImportMessage(''); setError('') }} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Download size={14} />{labels.import}</button>
         <button type="button" onClick={() => setCategoryPanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Settings2 size={14} />{labels.categories}</button>
         <button type="button" onClick={() => openNew(selectedDay)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm inline-flex items-center gap-1"><Plus size={15} />{labels.add}</button>
       </div>
     </header>
+    <div className="px-6 py-3 border-b border-default"><EmbeddedAgent context="calendar" presetRequest={agentPreset} onRunDone={() => void reload()} /></div>
     {error && !editing && <div role="alert" className="mx-6 mt-3 p-3 rounded-card bg-danger-soft text-danger text-sm">{error}</div>}
     <div className="px-6 py-3 border-b border-default flex flex-wrap gap-2 items-center justify-between">
       <div className="flex gap-1.5 overflow-x-auto max-w-full">

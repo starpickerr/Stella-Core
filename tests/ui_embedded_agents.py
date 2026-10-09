@@ -9,6 +9,9 @@ from playwright.sync_api import expect, sync_playwright
 
 url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 sent = []
+created = []
+event_reads = []
+todo_reads = []
 pending = [None]
 approvals = []
 
@@ -41,9 +44,19 @@ def backend(route):
             approvals.append(body)
             pending[0] = None
     elif path == '/api/calendar/events':
+        event_reads.append(path)
         data['events'] = []
     elif path == '/api/calendar/categories':
         data['categories'] = []
+    elif path == '/api/todos':
+        if route.request.method == 'POST':
+            created.append(body)
+            data['todo'] = {'id': 'direct-1', **body}
+        else:
+            todo_reads.append(path)
+            data['todos'] = []
+    elif path == '/api/todos/reminders/uncertain':
+        data['reminders'] = []
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
 
@@ -65,7 +78,7 @@ with sync_playwright() as playwright:
           close() { this.closed = true }
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
-        page.goto(url + '/#/calendar', wait_until='networkidle')
+        page.goto(url + '/#/settings?tab=basic', wait_until='networkidle')
         page.evaluate("""async () => {
           await import('/src/__test__/EmbeddedAgentHarness.tsx')
           window.mountEmbedded('calendar', { id: 'preset-1', text: '请创建读书日程' })
@@ -107,7 +120,39 @@ with sync_playwright() as playwright:
         embedded.get_by_role('button', name='展开 Agent').click()
         expect(embedded.get_by_text('任务完成')).to_be_visible()
         assert sent[-1]['session_id'] == calendar_session
+        page.evaluate("window.detachEmbedded(); document.getElementById('embedded-test-root').remove()")
+        page.goto(url + '/#/calendar', wait_until='networkidle')
+        prior_calendar_reads = len(event_reads)
+        page.get_by_role('button', name='Apple 日历').click()
+        page.get_by_role('menuitem', name='从 Apple 导入（Agent）').click()
+        expect(page.get_by_role('region', name='日程 Agent')).to_be_visible()
+        expect(page.get_by_text('已处理：请查看 Apple 日历权限', exact=False)).to_be_visible()
+        expect(page).to_have_url(url + '/#/calendar')
+        assert 'Apple 日历' in sent[-1]['message']
+        assert len(event_reads) > prior_calendar_reads
+        page.get_by_role('button', name='Apple 日历').click()
+        page.get_by_role('menuitem', name='管理 Apple 日历').click()
+        expect(page).to_have_url(url + '/#/settings?tab=integrations&section=apple-calendar')
+        page.goto(url + '/#/todos', wait_until='networkidle')
+        quick = page.locator('form').filter(has=page.locator('#todo-quick-title'))
+        quick.get_by_role('textbox').fill('直接创建的事项')
+        quick.get_by_role('button', name='直接添加').click()
+        assert created[-1]['title'] == '直接创建的事项'
+        quick.get_by_role('textbox').fill('用 Agent 整理项目')
+        prior_todo_reads = len(todo_reads)
+        quick.get_by_role('button', name='Agent 管理').click()
+        expect(page).to_have_url(url + '/#/todos')
+        expect(page.get_by_role('region', name='事务 Agent')).to_be_visible()
+        expect(page.get_by_text('已处理：请使用 todos 事务工具', exact=False)).to_be_visible()
+        assert '用 Agent 整理项目' in sent[-1]['message']
+        assert len(todo_reads) > prior_todo_reads
+        quick.get_by_role('button', name='Apple 提醒事项').click()
+        quick.get_by_role('menuitem', name='从 Apple 导入（Agent）').click()
+        assert 'Apple 提醒事项' in sent[-1]['message']
+        quick.get_by_role('button', name='Apple 提醒事项').click()
+        quick.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
+        expect(page).to_have_url(url + '/#/settings?tab=integrations&section=apple-reminders')
         assert errors == [], errors
-        print('Embedded Agent UI: preset once, sessions, drafts, streaming, approval and return passed')
+        print('Embedded Agent UI: sessions, streams, approval and page actions passed')
     finally:
         browser.close()
