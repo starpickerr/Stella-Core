@@ -12,9 +12,10 @@ export const ItemList: React.FC<{
   items: BriefingItem[]
   actions?: Record<string, BriefingActionView>
   mail?: BriefingMail[]
+  emptyReportBody?: string
   busy: boolean
   onDecision: (id: string, decision: BriefingDecision) => Promise<void>
-}> = ({ items, actions = {}, mail = [], busy, onDecision }) => {
+}> = ({ items, actions = {}, mail = [], emptyReportBody = '', busy, onDecision }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -104,7 +105,9 @@ export const ItemList: React.FC<{
       {getLang() === 'zh' ? `${needsLink.length} 项需在建立事务时选择已有事务。` : `${needsLink.length} item(s) require choosing an existing task.`}
     </p>}
     {batchError && <p role="alert" className="text-sm text-danger">{batchError}</p>}
-    {!items.length && <p className="rounded-card border border-default bg-surface p-5 text-sm text-content-tertiary">{t('briefing_no_items')}</p>}
+    {!items.length && (emptyReportBody
+      ? <article className="rounded-card border border-default bg-surface p-5"><Markdown content={emptyReportBody} /></article>
+      : <p className="rounded-card border border-default bg-surface p-5 text-sm text-content-tertiary">{t('briefing_no_items')}</p>)}
     {focused ? (() => {
       const snapshot = snapshotFor(focused)
       const payload = focused.payload ?? {}

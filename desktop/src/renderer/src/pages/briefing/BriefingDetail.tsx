@@ -107,6 +107,7 @@ export const BriefingDetail: React.FC<{
           {overviewError && <p role="alert" className="text-sm text-danger">{overviewError}</p>}
           {overviewLoading && <p role="status" className="text-sm text-content-tertiary">{t('briefing_loading')}</p>}
           <ItemList items={visibleItems} actions={display.actions} mail={detail.mail}
+            emptyReportBody={overview && version === null ? '' : briefing.body}
             busy={busy || version !== null || overviewLoading} onDecision={onDecision} />
         </>}
       </>}
