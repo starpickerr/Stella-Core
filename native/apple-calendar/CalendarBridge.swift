@@ -185,6 +185,7 @@ func recurrenceRule(_ payload: [String: Any]) throws -> EKRecurrenceRule? {
 
 func run(_ request: [String: Any]) throws -> [String: Any] {
     let op = try required(request, "op")
+    if op.hasPrefix("reminder_") && op != "reminder_watch" { return try runReminder(request) }
     if op == "status" { return ["supported": true, "authorization": auth()] }
     let store = EKEventStore()
     if op == "request_access" {
@@ -256,16 +257,17 @@ guard let line = readLine(), let data = line.data(using: .utf8),
     emit(["ok": false, "error": "Invalid request"])
     exit(1)
 }
-if text(request, "op") == "watch" {
+if text(request, "op") == "watch" || text(request, "op") == "reminder_watch" {
     do {
-        try requireAccess()
+        if text(request, "op") == "reminder_watch" { try requireReminderAccess() }
+        else { try requireAccess() }
         let store = EKEventStore()
         let token = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: nil) { _ in
             emit(["changed": true])
         }
         withExtendedLifetime(token) { RunLoop.main.run() }
     } catch {
-        emit(["ok": false, "error": "Calendar full access is required"])
+        emit(["ok": false, "error": "EventKit full access is required"])
     }
 } else {
     do {

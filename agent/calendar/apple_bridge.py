@@ -28,19 +28,22 @@ class AppleCalendarBridge:
 
     def call(self, op, **payload):
         if self.platform != "darwin":
-            if op == "status":
+            if op in ("status", "reminder_status"):
                 return {"supported": False, "authorization": "unsupported"}
             raise BridgeError("EventKit is not supported on this platform")
         if not self.helper_path.is_file():
-            if op == "status":
+            if op in ("status", "reminder_status"):
                 return {"supported": False, "authorization": "helper_missing"}
             raise BridgeError("EventKit helper is not installed")
-        if op not in {"status", "request_access", "calendars", "events", "lookup", "upsert", "delete"}:
+        if op not in {"status", "request_access", "calendars", "events", "lookup", "upsert", "delete",
+                      "reminder_status", "reminder_request_access", "reminder_lists", "reminders",
+                      "reminder_lookup", "reminder_upsert", "reminder_delete"}:
             raise BridgeError("unknown EventKit operation")
         request = json.dumps({"op": op, **payload}, ensure_ascii=False) + "\n"
         try:
             result = subprocess.run([str(self.helper_path)], input=request, text=True,
-                                    capture_output=True, timeout=max(self.timeout, 150) if op == "request_access" else self.timeout,
+                                    capture_output=True, timeout=max(self.timeout, 150) if op in (
+                                        "request_access", "reminder_request_access") else self.timeout,
                                     check=False)
         except subprocess.TimeoutExpired as exc:
             raise BridgeError("EventKit helper timed out") from exc
@@ -56,7 +59,7 @@ class AppleCalendarBridge:
             raise BridgeError("EventKit helper returned an invalid response")
         return {key: value for key, value in response.items() if key != "ok"}
 
-    def watch(self, on_change, stop_event=None):
+    def watch(self, on_change, stop_event=None, kind="calendar"):
         """Block until stopped, forwarding EKEventStoreChanged notifications."""
         if self.platform != "darwin" or not self.helper_path.is_file():
             return
@@ -64,7 +67,8 @@ class AppleCalendarBridge:
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
                                    bufsize=1)
         try:
-            process.stdin.write('{"op":"watch"}\n')
+            op = "reminder_watch" if kind == "reminder" else "watch"
+            process.stdin.write(json.dumps({"op": op}) + "\n")
             process.stdin.flush()
             while process.poll() is None and (stop_event is None or not stop_event.is_set()):
                 ready, _, _ = select.select([process.stdout], [], [], 1)

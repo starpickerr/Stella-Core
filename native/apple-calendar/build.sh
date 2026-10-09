@@ -16,5 +16,6 @@ SWIFT_COMPILER=/usr/bin/swiftc
 cp "$SCRIPT_DIR/CalendarBridge.swift" "$OUT_DIR/main.swift"
 "$SWIFT_COMPILER" -O -target "$ARCH-apple-macos14.0" -framework EventKit \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$SCRIPT_DIR/Info.plist" \
-  "$OUT_DIR/main.swift" "$SCRIPT_DIR/OccurrenceIdentity.swift" -o "$OUT_DIR/StellaCalendarBridge"
+  "$OUT_DIR/main.swift" "$SCRIPT_DIR/OccurrenceIdentity.swift" \
+  "$SCRIPT_DIR/ReminderBridge.swift" "$SCRIPT_DIR/ReminderFields.swift" -o "$OUT_DIR/StellaCalendarBridge"
 codesign --force --sign - "$OUT_DIR/StellaCalendarBridge"
