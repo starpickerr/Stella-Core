@@ -8,11 +8,11 @@ import {
   BookOpen,
   Puzzle,
   Terminal,
-  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
+import ChatApprovalDialog from '../components/ChatApprovalDialog'
 import { product } from '@product'
 import { t, getLang } from '../i18n'
 import apiClient from '../api/client'
@@ -70,52 +70,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputResetRef = useRef<ChatInputHandle>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [approval, setApproval] = useState<Awaited<ReturnType<typeof apiClient.getSecurityConfirmations>>[number] | null>(null)
-  const [approvalBusy, setApprovalBusy] = useState(false)
-  const [approvalError, setApprovalError] = useState('')
   const titlePendingRef = useRef(false)
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
   }, [baseUrl])
-
-  useEffect(() => {
-    if (!isStreaming || !activeId) {
-      setApproval(null)
-      return
-    }
-    let active = true
-    let timer: number | undefined
-    const refresh = async () => {
-      try {
-        const rows = await apiClient.getSecurityConfirmations()
-        if (active) setApproval(rows.find((row) => row.session === activeId) || null)
-      } catch {
-        // The stream remains usable during a transient Security Center request failure.
-      } finally {
-        if (active) timer = window.setTimeout(() => void refresh(), 750)
-      }
-    }
-    void refresh()
-    return () => { active = false; if (timer !== undefined) window.clearTimeout(timer) }
-  }, [activeId, isStreaming])
-
-  const decideApproval = async (decision: 'approve' | 'reject') => {
-    if (!approval || approvalBusy) return
-    setApprovalBusy(true)
-    setApprovalError('')
-    try {
-      const result = decision === 'approve'
-        ? await apiClient.approveSecurityConfirmation(approval.id, approval.session)
-        : await apiClient.rejectSecurityConfirmation(approval.id, approval.session)
-      if (result.status !== 'success') throw new Error(getLang() === 'en' ? 'This request is no longer pending.' : '这条请求已不在等待审批。')
-      setApproval(null)
-    } catch (error) {
-      setApprovalError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setApprovalBusy(false)
-    }
-  }
 
   // Load history when switching to a session that hasn't been loaded yet.
   useEffect(() => {
@@ -384,39 +343,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         sessionId={activeId}
         ref={inputResetRef}
       />
-      {approval && isStreaming && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="dialog" aria-modal="true" aria-label={getLang() === 'en' ? 'Approve operation' : '审批操作'}>
-          <div className="w-full max-w-md rounded-2xl border border-default bg-surface p-6 shadow-2xl">
-            <div className="flex items-center gap-2 text-content font-semibold">
-              <ShieldCheck size={20} className="text-accent" />
-              {getLang() === 'en' ? 'Approve this operation?' : '确认这次操作？'}
-            </div>
-            <p className="mt-2 text-sm text-content-secondary">
-              {getLang() === 'en' ? 'The conversation is paused. It will continue after your decision.' : '对话已暂停。审批后会从当前步骤继续，无需重新发送消息。'}
-            </p>
-            <div className="mt-4 rounded-xl border border-default bg-surface-2 p-3 text-sm text-content break-words">
-              <div className="font-medium">{approval.tool}</div>
-              <div className="mt-1 whitespace-pre-wrap">{approval.summary}</div>
-              <div className="mt-2 text-xs text-content-tertiary">{approval.resource} · {approval.risk}</div>
-              <div className="mt-2 text-xs text-content-secondary">{approval.reason}</div>
-              {approval.expanded_scope && <div className="mt-1 text-xs text-content-secondary break-all">{getLang() === 'en' ? 'Expanded scope' : '扩大范围'}：{approval.expanded_scope}</div>}
-              <div className="mt-1 text-xs text-content-secondary">{getLang() === 'en' ? 'Possible effect' : '可能影响'}：{approval.effect}</div>
-            </div>
-            {approvalError && <p className="mt-3 text-sm text-danger">{approvalError}</p>}
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" disabled={approvalBusy} onClick={() => { handleStop(); setApproval(null) }} className="rounded-btn px-3 py-2 text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50">
-                {getLang() === 'en' ? 'Stop conversation' : '停止对话'}
-              </button>
-              <button type="button" disabled={approvalBusy} onClick={() => void decideApproval('reject')} className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">
-                {getLang() === 'en' ? 'Reject' : '拒绝'}
-              </button>
-              <button type="button" disabled={approvalBusy} onClick={() => void decideApproval('approve')} className="rounded-btn bg-accent px-3 py-2 text-sm text-accent-contrast disabled:opacity-50">
-                {approvalBusy ? <Loader2 size={16} className="animate-spin" /> : getLang() === 'en' ? 'Allow once' : '允许一次'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChatApprovalDialog sessionId={activeId} isStreaming={isStreaming} onStop={handleStop} />
     </div>
   )
 }

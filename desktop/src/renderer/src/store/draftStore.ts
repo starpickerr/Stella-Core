@@ -9,3 +9,10 @@ export const chatDraft: { text: string; attachments: Attachment[] } = {
   text: '',
   attachments: [],
 }
+
+const contextualDrafts: Record<string, { text: string; attachments: Attachment[] }> = {}
+
+export function getChatDraft(key = 'main'): { text: string; attachments: Attachment[] } {
+  if (key === 'main') return chatDraft
+  return contextualDrafts[key] ||= { text: '', attachments: [] }
+}
