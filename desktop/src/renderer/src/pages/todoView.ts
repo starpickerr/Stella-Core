@@ -46,7 +46,7 @@ export function matchesTodoView(todo: Task, view: TodoView, now: Date): boolean 
 
 export function todoGroup(todo: Task, day: string | null, now: Date,
   hasOverdueChild = false, view: TodoView = "all"): TodoGroup {
-  if (view === "overdue" && hasOverdueChild) return "overdue";
+  if ((view === "all" || view === "overdue") && hasOverdueChild) return "overdue";
   if (todo.status === "completed") return "completed";
   if (todo.status === "cancelled") return "cancelled";
   if (isOverdue(todo, now) || hasOverdueChild) return "overdue";

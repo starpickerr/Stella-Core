@@ -42,5 +42,6 @@ test('all-task groups put overdue first and finished tasks last', () => {
   assert.equal(todoGroup(task('completed', '2026-10-08'), '2026-10-08', now), 'completed');
   assert.equal(todoGroup(task('cancelled', null), null, now), 'cancelled');
   assert.equal(todoGroup(task('todo', null, null, '2026-10-08'), '2026-10-08', now), 'today');
+  assert.equal(todoGroup(task('completed', '2026-10-08'), '2026-10-08', now, true, 'all'), 'overdue');
   assert.equal(todoGroup(task('completed', '2026-10-08'), '2026-10-08', now, true, 'overdue'), 'overdue');
 });
