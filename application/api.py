@@ -121,6 +121,16 @@ class _Port:
 
 class Application:
     @staticmethod
+    def dispatch_todo_reminder(todo_id, expected_at, context):
+        """Resume the todo outbox only from a scheduler handoff."""
+        if context.source != "scheduler":
+            raise PermissionError("todo reminder dispatch is reserved for scheduler")
+        from agent.todos import TodoService
+        with use_identity(RuntimeIdentity(agent_id=context.agent_id, user_id=context.user_id,
+                                          session_id=context.session_id, run_id=current_identity().run_id)):
+            return TodoService().dispatch_scheduled_reminder(todo_id, expected_at)
+
+    @staticmethod
     def scheduler(store=None):
         """Use one scheduler mutation contract from desktop and Agent callers."""
         from agent.scheduler.mutations import SchedulerMutations

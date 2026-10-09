@@ -28,6 +28,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
+from channel.feishu import lark_install
 from channel.feishu.feishu_static_card import (
     build_text_delivery,
     resolve_markdown_images,
@@ -54,7 +55,6 @@ URL_VERIFICATION = "url_verification"
 # files and takes 4-10s, so we defer the actual import to where it is needed.
 # In desktop mode the SDK is not bundled; the first import downloads a trimmed
 # bundle into a writable per-user dir (see channel/feishu/lark_install.py).
-from channel.feishu import lark_install
 
 lark = None  # will be populated on first use via _ensure_lark_imported()
 
@@ -327,7 +327,6 @@ class FeiShuChanel(ChatChannel):
     def stop(self):
         import ctypes
         logger.info("[FeiShu] stop() called")
-        ws_client = self._ws_client
         self._ws_client = None
         ws_thread = self._ws_thread
         self._ws_thread = None
@@ -921,7 +920,7 @@ class FeiShuChanel(ChatChannel):
         res.raise_for_status()
         res = res.json()
         if res.get("code") == 0:
-            logger.info(f"[FeiShu] send message success")
+            logger.info("[FeiShu] send message success")
         elif msg_type == "interactive" and reply.type == ReplyType.TEXT:
             logger.warning(
                 "[FeiShu] Markdown card failed, falling back to text, "
@@ -951,6 +950,7 @@ class FeiShuChanel(ChatChannel):
             fallback_body = fallback_res.json()
             if fallback_body.get("code") == 0:
                 logger.info("[FeiShu] text fallback sent successfully")
+                res = fallback_body
             else:
                 logger.error(
                     "[FeiShu] text fallback failed, "
@@ -960,6 +960,8 @@ class FeiShuChanel(ChatChannel):
         else:
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
             raise RuntimeError(f"Feishu delivery failed: {res.get('code')}")
+        if context.get("scheduled_delivery"):
+            return res
 
     def _make_feishu_stream_callback(self, context, access_token):
         """Route to detailed or plain streaming callback based on config.

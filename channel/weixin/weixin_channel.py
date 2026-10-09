@@ -663,7 +663,9 @@ class WeixinChannel(ChatChannel):
             time.sleep(0.3)
 
         if reply.type == ReplyType.TEXT:
-            self._send_text(reply.content, receiver, context_token)
+            response = self._send_text(reply.content, receiver, context_token)
+            if context.get("scheduled_delivery"):
+                return response
         elif reply.type in (ReplyType.IMAGE_URL, ReplyType.IMAGE):
             self._send_image(reply.content, receiver, context_token)
         elif reply.type == ReplyType.FILE:
@@ -715,7 +717,7 @@ class WeixinChannel(ChatChannel):
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text: {e}")
                 raise
-            return
+            return resp
 
         chunks = self._split_text(text, TEXT_CHUNK_LIMIT)
         for i, chunk in enumerate(chunks):
@@ -728,6 +730,7 @@ class WeixinChannel(ChatChannel):
                 raise
             if i < len(chunks) - 1:
                 time.sleep(0.5)
+        return resp
 
     @staticmethod
     def _split_text(text: str, limit: int) -> list:
