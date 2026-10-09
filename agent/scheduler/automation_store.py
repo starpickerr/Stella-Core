@@ -288,6 +288,15 @@ class AutomationStore:
                                        if result["platform_response"] else None)
         return result
 
+    def latest_delivery(self, task_id):
+        with self.lock, self._connect() as db:
+            row = db.execute("""SELECT d.status,d.channel_type,d.receiver,d.error,d.updated_at
+                FROM job_deliveries d JOIN job_runs r ON r.job_run_id=d.job_run_id
+                WHERE r.task_id=? AND r.owner_user_id=?
+                ORDER BY d.updated_at DESC,d.rowid DESC LIMIT 1""",
+                (task_id, self._current_user())).fetchone()
+        return dict(row) if row else None
+
     def queue_delivery(self, job_run_id, leg, channel_type, receiver):
         with self.lock, self._connect() as db:
             if not db.execute("SELECT 1 FROM job_runs WHERE job_run_id=? AND owner_user_id=?",

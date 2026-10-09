@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Clock, CalendarClock, Play, Plus } from 'lucide-react'
-import { t } from '../i18n'
+import { getLang, t } from '../i18n'
 import apiClient from '../api/client'
 import { useSessionStore } from '../store/sessionStore'
-import type { SchedulerTask, TaskSchedule, TaskAction } from '../types'
+import type { SchedulerTask, TaskSchedule, TaskAction, NotificationRoute } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 
 interface TasksPageProps {
@@ -242,6 +242,7 @@ const TaskEditModal: React.FC<{
   const projects = useSessionStore((s) => s.projects)
   const isCreate = task == null
   const isToolCall = !!task && ['tool_call', 'skill_call', 'application_command'].includes(task.action.type)
+  const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
@@ -260,6 +261,12 @@ const TaskEditModal: React.FC<{
     task?.action.conversation_space || 'personal')
   const [projectDir, setProjectDir] = useState(task?.action.execution_project_dir || '')
   const [receiveIdType, setReceiveIdType] = useState(task?.action.receive_id_type || (task?.action.is_group ? 'chat_id' : 'open_id'))
+  const [backupEnabled, setBackupEnabled] = useState(task?.notification_route?.backup_enabled ?? false)
+  const [backupChannel, setBackupChannel] = useState(task?.notification_route?.backup?.channel_type || 'feishu')
+  const [backupReceiver, setBackupReceiver] = useState(task?.notification_route?.backup?.receiver || '')
+  const [backupReceiveType, setBackupReceiveType] = useState(task?.notification_route?.backup?.receive_id_type || 'open_id')
+  const [testStatus, setTestStatus] = useState('')
+  const [testing, setTesting] = useState(false)
   const [destinations, setDestinations] = useState<TaskDestination[]>([])
   const refreshDestinations = useCallback(() => {
     void apiClient.getTaskDestinations().then(setDestinations).catch(() => {})
@@ -313,6 +320,29 @@ const TaskEditModal: React.FC<{
     return a
   }
 
+  const buildRoute = (): NotificationRoute => ({
+    primary: { channel_type: channel as 'web' | 'feishu' | 'weixin',
+      receiver: receiver.trim(), ...(channel === 'feishu' ? { receive_id_type: receiveIdType, is_group: receiveIdType === 'chat_id' } : {}) },
+    backup_enabled: backupEnabled,
+    backup: backupEnabled ? { channel_type: backupChannel as 'web' | 'feishu' | 'weixin', receiver: backupReceiver.trim(),
+      ...(backupChannel === 'feishu' ? { receive_id_type: backupReceiveType, is_group: backupReceiveType === 'chat_id' } : {}) } : null,
+  })
+
+  const testSend = async () => {
+    setTesting(true)
+    setTestStatus('')
+    try {
+      const result = await apiClient.testNotificationRoute(buildRoute())
+      setTestStatus(result.status === 'success'
+        ? `${getLang() === 'en' ? 'Test send' : '测试发送'}: ${result.delivery_status === 'accepted' ? (getLang() === 'en' ? 'platform accepted' : '平台已接受') : result.delivery_status || result.error || ''}`
+        : result.message || '')
+    } catch (cause) {
+      setTestStatus(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const save = async () => {
     if (!name.trim()) {
       setError(t('task_save_error'))
@@ -340,6 +370,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           session_id: sessionId,
+          ...(hasNotification ? { notification_route: buildRoute() } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       } else if (task) {
@@ -348,6 +379,7 @@ const TaskEditModal: React.FC<{
           enabled,
           schedule: buildSchedule(),
           action: buildAction(),
+          ...(hasNotification ? { notification_route: buildRoute() } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       }
@@ -527,6 +559,33 @@ const TaskEditModal: React.FC<{
         </Field>}
         {channel === 'weixin' && <p className="text-xs text-content-tertiary">{t('task_weixin_condition')}</p>}
         {channel !== 'web' && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-content-secondary">{getLang() === 'en' ? 'Backup channel (optional)' : '备用渠道（可选）'}</span>
+          <Toggle checked={backupEnabled} onChange={setBackupEnabled} />
+        </div>
+        {backupEnabled && <>
+          <Field label={getLang() === 'en' ? 'Backup channel' : '备用渠道'}>
+            <Dropdown value={backupChannel} onChange={value => { setBackupChannel(value as 'web' | 'feishu' | 'weixin'); setBackupReceiver(''); setBackupReceiveType('open_id') }}
+              options={destinations.filter(d => d.configured || d.channel_type === backupChannel).map(d => ({
+                value: d.channel_type, label: t(('task_channel_' + d.channel_type) as Parameters<typeof t>[0]),
+                hint: d.ready ? undefined : t(('task_destination_' + d.status) as Parameters<typeof t>[0]),
+              }))} />
+          </Field>
+          {backupChannel === 'feishu' && <Field label={t('task_receive_type')}>
+            <Dropdown value={backupReceiveType} onChange={setBackupReceiveType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
+          </Field>}
+          <Field label={getLang() === 'en' ? 'Backup recipient' : '备用接收人'}>
+            <TextInput value={backupReceiver} onChange={event => setBackupReceiver(event.target.value)} list="task-backup-recipients" />
+            <datalist id="task-backup-recipients">{destinations.find(d => d.channel_type === backupChannel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
+          </Field>
+        </>}
+        <button type="button" className="text-xs text-accent hover:underline disabled:opacity-40" disabled={testing || !receiver.trim()}
+          onClick={() => void testSend()}>{testing ? (getLang() === 'en' ? 'Sending…' : '发送中…') : (getLang() === 'en' ? 'Send test to primary' : '测试发送至首选渠道')}</button>
+        {testStatus && <p role="status" className="text-xs text-content-secondary">{testStatus}</p>}
+        {task?.notification_delivery_status && <p role="status" className="text-xs text-content-secondary">
+          {getLang() === 'en' ? 'Latest delivery' : '最近投递'}: {task.notification_delivery_status.status}
+          {task.notification_delivery_status.error ? ` · ${task.notification_delivery_status.error}` : ''}
+        </p>}
       </>}
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}

@@ -15,14 +15,28 @@ class SchedulerMutations:
     def destinations(self, agent_id=None):
         return destination_catalog(agent_id)
 
+    def test_send(self, route, *, agent_id=None):
+        # A test targets only the primary. The optional backup may still be
+        # unfinished in the editor and must never receive a test message.
+        normalized = normalize_notification_route({"primary": route.get("primary")}, agent_id) if isinstance(
+            route, dict) else normalize_notification_route(route, agent_id)
+        if normalized["primary"] is None:
+            raise ValueError("A primary notification destination is required")
+        from agent.scheduler.dispatch import dispatch_test_notification
+        return dispatch_test_notification(normalized, agent_id=agent_id)
+
     def get(self, task_id):
         task = self.store.get_task(task_id)
         if not task:
             raise ValueError(f"Task '{task_id}' not found")
-        return task
+        return self._with_delivery_status(task)
 
     def list(self):
-        return self.store.list_tasks()
+        return [self._with_delivery_status(task) for task in self.store.list_tasks()]
+
+    def _with_delivery_status(self, task):
+        return {**task, "notification_delivery_status": self.store.latest_delivery(task["id"])} if hasattr(
+            self.store, "latest_delivery") else task
 
     @staticmethod
     def _route_action(action, route, agent_id=None):

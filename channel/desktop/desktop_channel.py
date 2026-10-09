@@ -2022,6 +2022,7 @@ class DesktopChannel(ChatChannel):
             '/api/knowledge/import', 'KnowledgeImportHandler',
             '/api/scheduler', 'SchedulerHandler',
             '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
+            '/api/scheduler/test-delivery', 'SchedulerTestDeliveryHandler',
             '/api/runs/pending', 'PendingRunsHandler',
             '/api/security/activity', 'SecurityActivityHandler',
             '/api/security/center', 'SecurityCenterHandler',
@@ -5930,7 +5931,8 @@ class SchedulerHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            tasks = _scheduler_store().list_tasks()
+            from application import Application
+            tasks = Application.scheduler(_scheduler_store()).list()
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler API error: {e}")
@@ -7920,6 +7922,20 @@ class SchedulerDestinationsHandler:
         from agent.scheduler.delivery import destination_catalog
         web.header('Content-Type', 'application/json; charset=utf-8')
         return json.dumps({"status": "success", "destinations": destination_catalog(current_identity().agent_id)})
+
+
+class SchedulerTestDeliveryHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b"{}")
+            from application import Application
+            result = Application.scheduler(_scheduler_store()).test_send(
+                body.get("notification_route"), agent_id=current_identity().agent_id)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, TypeError) as exc:
+            return json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False)
 
 
 def _pending_admissions(rows):
