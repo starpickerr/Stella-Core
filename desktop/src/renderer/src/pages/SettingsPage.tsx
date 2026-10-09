@@ -1,28 +1,31 @@
-import React, { useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import React from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { t } from '../i18n'
 import { product } from '@product'
 import BasicSettings from './settings/BasicSettings'
 import ModelsTab from './settings/ModelsTab'
+import AppleIntegrations from './settings/AppleIntegrations'
 
 interface SettingsPageProps {
   baseUrl: string
   onLangChange?: () => void
 }
 
-type Tab = 'basic' | 'models'
+type Tab = 'basic' | 'models' | 'integrations'
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) => {
   const location = useLocation()
+  const navigate = useNavigate()
   const modelsTabHidden = product.models?.hideModelsTab === true
-  // Allow deep-linking to the models tab via /settings?tab=models.
-  const initial: Tab =
-    !modelsTabHidden && new URLSearchParams(location.search).get('tab') === 'models' ? 'models' : 'basic'
-  const [tab, setTab] = useState<Tab>(initial)
+  const requested = new URLSearchParams(location.search).get('tab')
+  const tab: Tab = requested === 'integrations' ? 'integrations'
+    : requested === 'models' && !modelsTabHidden ? 'models' : 'basic'
+  const chooseTab = (next: Tab) => navigate(`/settings?tab=${next}`)
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'basic', label: t('settings_tab_basic') },
     ...(modelsTabHidden ? [] : [{ key: 'models' as Tab, label: t('settings_tab_models') }]),
+    { key: 'integrations', label: '集成与连接' },
   ]
 
   return (
@@ -38,7 +41,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
           {tabs.map((tb) => (
             <button
               key={tb.key}
-              onClick={() => setTab(tb.key)}
+              onClick={() => chooseTab(tb.key)}
               className={`relative px-4 py-2.5 text-sm font-medium cursor-pointer transition-colors -mb-px border-b-2 ${
                 tab === tb.key
                   ? 'text-accent border-accent'
@@ -50,14 +53,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
           ))}
         </div>
 
-        {tab === 'basic' || modelsTabHidden ? (
+        {tab === 'basic' ? (
           <BasicSettings
             baseUrl={baseUrl}
             onLangChange={onLangChange}
-            onOpenModels={modelsTabHidden ? undefined : () => setTab('models')}
+            onOpenModels={modelsTabHidden ? undefined : () => chooseTab('models')}
           />
-        ) : (
+        ) : tab === 'models' ? (
           <ModelsTab baseUrl={baseUrl} />
+        ) : (
+          <AppleIntegrations section={new URLSearchParams(location.search).get('section')} />
         )}
       </div>
     </div>

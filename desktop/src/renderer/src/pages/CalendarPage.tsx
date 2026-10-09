@@ -6,7 +6,6 @@ import { getLang } from '../i18n'
 import type { CalendarCategory, CalendarEvent, CalendarEventInput } from '../types'
 import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunday, WeekTimeline } from './calendar/CalendarViews'
 import type { ScrollPeriod } from './calendar/CalendarViews'
-import AppleCalendarPanel from './calendar/AppleCalendarPanel'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -86,7 +85,6 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null)
   const [form, setForm] = useState<CalendarEventInput>(emptyForm)
   const [categoryPanel, setCategoryPanel] = useState(false)
-  const [applePanel, setApplePanel] = useState(false)
   const [importPanel, setImportPanel] = useState(false)
   const [importYear, setImportYear] = useState(2026)
   const [specialDraft, setSpecialDraft] = useState({ title: '', date: dayKey(new Date()), annual: true, description: '' })
@@ -329,7 +327,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => void reload()} aria-label="Refresh" className="h-8 px-2 rounded-btn border border-default hover:bg-surface-2"><RefreshCw size={15} /></button>
-        <button type="button" onClick={() => setApplePanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
+        <button type="button" onClick={() => navigate('/settings?tab=integrations&section=apple-calendar')} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
         <button type="button" onClick={() => { setImportPanel(true); setImportMessage(''); setError('') }} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Download size={14} />{labels.import}</button>
         <button type="button" onClick={() => setCategoryPanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Settings2 size={14} />{labels.categories}</button>
         <button type="button" onClick={() => openNew(selectedDay)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm inline-flex items-center gap-1"><Plus size={15} />{labels.add}</button>
@@ -373,7 +371,6 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       {error && <p role="alert" className="text-danger text-sm">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="px-3 py-2 text-sm">{labels.cancel}</button><button type="button" disabled={busy} onClick={() => void saveEvent()} className="px-4 py-2 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{labels.save}</button></div></div></div>}
     {categoryPanel && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setCategoryPanel(false) }}><div role="dialog" aria-modal="true" className="bg-surface rounded-card border border-default w-full max-w-md shadow-xl p-5"><div className="flex items-center justify-between mb-4"><h2 className="font-semibold">{labels.categories}</h2><button type="button" onClick={() => setCategoryPanel(false)} aria-label="Close"><X size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto">{categories.map(c => <div key={c.id} className="flex items-center gap-2 text-sm p-2 rounded-btn hover:bg-surface-2"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color }} /><span className="flex-1">{c.name}</span><button type="button" onClick={() => setCategoryDraft({ id: c.id, name: c.name, color: c.color })} aria-label={`${labels.edit} ${c.name}`}><Pencil size={14} /></button>{c.id !== 'china_holidays' && <button type="button" onClick={() => void removeCategory(c)} aria-label={`${labels.delete} ${c.name}`}><Trash2 size={14} /></button>}</div>)}</div>{categoryDraft ? <div className="border-t border-default mt-4 pt-4 space-y-3"><label className="block text-sm">{labels.name}<input autoFocus value={categoryDraft.name} disabled={categoryDraft.id === 'china_holidays'} onChange={e => setCategoryDraft({ ...categoryDraft, name: e.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2 disabled:opacity-60" /></label><div className="flex gap-2">{colors.map(color => <button key={color} type="button" onClick={() => setCategoryDraft({ ...categoryDraft, color })} aria-label={color} className={`w-6 h-6 rounded-full ${categoryDraft.color === color ? 'ring-2 ring-offset-2 ring-accent' : ''}`} style={{ backgroundColor: color }} />)}<input type="color" value={categoryDraft.color} onChange={e => setCategoryDraft({ ...categoryDraft, color: e.target.value })} aria-label={labels.color} className="w-7 h-7" /></div><div className="flex justify-end gap-2"><button type="button" onClick={() => setCategoryDraft(null)} className="text-sm px-3">{labels.cancel}</button><button type="button" disabled={busy} onClick={() => void saveCategory()} className="text-sm px-3 py-1.5 rounded-btn bg-accent text-accent-contrast">{labels.save}</button></div></div> : <button type="button" onClick={() => setCategoryDraft({ name: '', color: colors[0] })} className="mt-4 inline-flex items-center gap-1 text-sm text-accent"><Plus size={14} />{labels.newCategory}</button>}{error && <p role="alert" className="text-danger text-sm mt-3">{error}</p>}</div></div>}
-    {applePanel && <AppleCalendarPanel en={en} onClose={() => setApplePanel(false)} onSynced={() => void reload()} />}
   </div>
 }
 

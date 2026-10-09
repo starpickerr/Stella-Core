@@ -754,6 +754,76 @@ class ApiClient {
     return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/auto', { enabled })).connection
   }
 
+  async requestAppleRemindersAccess(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/access', {})).connection
+  }
+
+  async previewAppleRemindersScope(listIds: string[], direction: AppleReminderConnection['direction']): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }
+    preview_token: string
+  }> {
+    return this.briefingRequest('/api/todos/apple/scope-preview', { list_ids: listIds, direction })
+  }
+
+  async configureAppleReminders(listIds: string[], direction: AppleReminderConnection['direction'], previewToken: string): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/configure', { list_ids: listIds, direction,
+      preview_token: previewToken, confirm: true })
+  }
+
+  async syncAppleReminders(confirmDeletions = false, confirmLocalDeletions = false): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/sync', {
+      confirm_deletions: confirmDeletions, confirm_local_deletions: confirmLocalDeletions,
+    })
+  }
+
+  async disconnectAppleReminders(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/disconnect', {})).connection
+  }
+
+  async resolveAppleRemindersConflict(todoId: string, choice: 'keep_stella' | 'keep_apple'): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/resolve', { todo_id: todoId, choice })).connection
+  }
+
+  async getAppleCalendarItems(calendarId: string, start: string, end: string): Promise<{ event_id: string; title: string }[]> {
+    return (await this.briefingRequest<{ items: { event_id: string; title: string }[] }>('/api/calendar/apple/items', {
+      calendar_id: calendarId, start, end,
+    })).items
+  }
+
+  async getAppleRemindersItems(listId: string): Promise<{ reminder_id: string; title: string }[]> {
+    return (await this.briefingRequest<{ items: { reminder_id: string; title: string }[] }>('/api/todos/apple/items', {
+      list_id: listId,
+    })).items
+  }
+
+  async previewAppleCalendarItems(direction: 'import' | 'export', calendarId: string, itemIds: string[]): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }; preview_token: string
+  }> {
+    return this.briefingRequest('/api/calendar/apple/preview', {
+      direction, calendar_id: calendarId, item_ids: itemIds,
+    })
+  }
+
+  async previewAppleRemindersItems(direction: 'import' | 'export', listId: string, itemIds: string[]): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }; preview_token: string
+  }> {
+    return this.briefingRequest('/api/todos/apple/preview', {
+      direction, list_id: listId, item_ids: itemIds,
+    })
+  }
+
+  async transferAppleCalendarItems(direction: 'import' | 'export', calendarId: string, itemIds: string[], previewToken: string): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/one-time', {
+      direction, calendar_id: calendarId, item_ids: itemIds, preview_token: previewToken, confirm: true,
+    })
+  }
+
+  async transferAppleRemindersItems(direction: 'import' | 'export', listId: string, itemIds: string[], previewToken: string): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/one-time', {
+      direction, list_id: listId, item_ids: itemIds, preview_token: previewToken, confirm: true,
+    })
+  }
+
   async previewAppleCalendarScope(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{
     preview: { new: number; updated: number; skipped: number; conflicts: number; failed_calendar_ids: string[] }
     preview_token: string

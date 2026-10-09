@@ -8,7 +8,7 @@ from playwright.sync_api import expect, sync_playwright
 
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
-connection = dict(supported=False, authorization='unsupported', connected=False, calendar_ids=[],
+connection = dict(supported=False, authorization='unsupported', connected=False, auto_enabled=True, calendar_ids=[],
                   direction='bidirectional', calendars=[], last_success=None, error='', conflicts=[],
                   pending_deletions=0, pending_local_deletions=0)
 calls = []
@@ -70,9 +70,16 @@ def backend(route):
                                   pending_local_deletions=connection['pending_local_deletions'], failed_calendar_ids=[])
         elif path.endswith('/resolve'):
             connection['conflicts'] = []
+        elif path.endswith('/auto'):
+            connection['auto_enabled'] = body['enabled']
         elif path.endswith('/disconnect'):
             connection['connected'] = False
         data['connection'] = connection
+    elif path.startswith('/api/todos/apple/'):
+        data['connection'] = dict(supported=False, authorization='unsupported', connected=False,
+                                  auto_enabled=True, list_ids=[], direction='bidirectional', lists=[],
+                                  last_success=None, error='', conflicts=[], pending_deletions=0,
+                                  pending_local_deletions=0)
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
 
@@ -88,32 +95,33 @@ with sync_playwright() as playwright:
             getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
-        page.goto(test_url + '/#/calendar', wait_until='networkidle')
-        page.get_by_role('button', name='Apple 日历').click()
-        panel = page.get_by_role('dialog', name='Apple 日历')
-        expect(panel.get_by_text('此平台不支持 Apple 日历')).to_be_visible()
+        page.goto(test_url + '/#/settings?tab=integrations&section=apple-calendar', wait_until='networkidle')
+        panel = page.get_by_role('region', name='Apple 日历')
+        expect(panel.get_by_text('此设备暂不支持 Apple 日历，或原生组件尚未安装。')).to_be_visible()
         connection.update(supported=True, authorization='denied')
         panel.get_by_role('button', name='重新检查').click()
-        expect(panel.get_by_text('系统日历权限已拒绝')).to_be_visible()
-        panel.get_by_role('button', name='请求日历权限').click()
+        expect(panel.get_by_text('请在系统设置中允许 Stella 访问日历，然后重新检查。')).to_be_visible()
+        panel.get_by_role('button', name='请求访问权限').click()
         panel.get_by_role('checkbox', name='私人').check()
         panel.get_by_role('checkbox', name='课程').check()
-        panel.get_by_label('同步方向').select_option('bidirectional')
-        panel.get_by_role('button', name='连接并同步').click()
-        expect(panel.get_by_text('已连接')).to_be_visible()
+        panel.get_by_label('Apple 日历同步方向').select_option('bidirectional')
+        panel.get_by_role('button', name='预览同步').click()
+        expect(panel.get_by_text('同步预览：新增 2', exact=False)).to_be_visible()
+        panel.get_by_role('button', name='确认连接并同步').click()
+        expect(panel.get_by_text('已连接', exact=False)).to_be_visible()
         assert next(body for path, body in calls if path.endswith('/configure'))['calendar_ids'] == ['a', 'b']
         panel.get_by_role('button', name='立即同步').click()
         connection['pending_deletions'] = 1
         connection['pending_local_deletions'] = 1
         connection['conflicts'] = [{'stella_id':'event-1','reason':'Both Stella and Apple changed this event'}]
         panel.get_by_role('button', name='重新检查').click()
-        panel.get_by_role('button', name='确认删除 Apple 事件').click()
+        panel.get_by_role('button', name='确认删除 Apple 条目').click()
         assert any(body.get('confirm_deletions') for path, body in calls if path.endswith('/sync'))
-        panel.get_by_role('button', name='确认删除 Stella 日程').click()
+        panel.get_by_role('button', name='确认删除 Stella 条目').click()
         assert any(body.get('confirm_local_deletions') for path, body in calls if path.endswith('/sync'))
-        panel.get_by_role('button', name='保留 Stella 版本').click()
+        panel.get_by_role('button', name='保留 Stella').click()
         assert any(path.endswith('/resolve') for path, _ in calls)
-        panel.get_by_role('button', name='关闭').click()
+        page.goto(test_url + '/#/calendar', wait_until='networkidle')
         page.get_by_role('button', name='列表', exact=True).click()
         page.get_by_role('button', name='Apple 课程', exact=False).click()
         expect(page.get_by_text('来自 Apple 日历')).to_be_visible()
@@ -126,9 +134,10 @@ with sync_playwright() as playwright:
         editor.get_by_role('button', name='保存').click()
         expect(editor.get_by_role('alert')).to_be_visible()
         editor.get_by_role('button', name='Close').click()
-        page.get_by_role('button', name='Apple 日历').click()
+        page.goto(test_url + '/#/settings?tab=integrations&section=apple-calendar', wait_until='networkidle')
+        panel = page.get_by_role('region', name='Apple 日历')
         panel.get_by_role('button', name='断开连接').click()
-        expect(panel.get_by_text('未连接')).to_be_visible()
+        expect(panel.get_by_text('未连接', exact=False)).to_be_visible()
         assert errors == [], errors
         assert any(path.endswith('/scope-preview') for path, _ in calls)
         assert any(body.get('preview_token') == 'reviewed-scope' for path, body in calls if path.endswith('/configure'))
