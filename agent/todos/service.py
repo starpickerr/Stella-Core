@@ -501,8 +501,12 @@ class TodoService:
             row[field] = json.dumps(values, ensure_ascii=False)
         return row
 
-    def create_todo(self, payload, *, _briefing_key=None):
+    def create_todo(self, payload, *, _briefing_key=None, _external_source_key=None):
         row = self._validate_todo(payload)
+        if _briefing_key and _external_source_key:
+            raise ValueError("one external source is required")
+        source_type = "briefing" if _briefing_key else "apple_reminder" if _external_source_key else None
+        source_key = _briefing_key or _external_source_key
         status = self._status(payload.get("status", "todo"))
         if row["repeat_frequency"] != "none" and status != "todo":
             raise ValueError("recurring task status is set per occurrence")
@@ -510,11 +514,12 @@ class TodoService:
         todo_id, now = str(uuid.uuid4()), _now()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            if _briefing_key:
-                existing = db.execute("SELECT id FROM todos WHERE source_type='briefing' AND source_key=?", (_briefing_key,)).fetchone()
+            if source_key:
+                existing = db.execute("SELECT id FROM todos WHERE source_type=? AND source_key=?",
+                                      (source_type, source_key)).fetchone()
                 if existing:
                     return self.get_todo(existing[0])
-                if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (_briefing_key,)).fetchone():
+                if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
                     raise ValueError("source task was deleted")
             self._validate_parent(db, todo_id, parent_id, row["repeat_frequency"])
             order = self._next_order(db, parent_id)
@@ -526,7 +531,7 @@ class TodoService:
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], now if status == "completed" else None,
                  row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
-                 "briefing" if _briefing_key else None, _briefing_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
+                 source_type, source_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"],
                  row["reminder_delivery"]))
             self._queue_scheduler_link(db, todo_id, row["remind_at"], status)
@@ -577,6 +582,65 @@ class TodoService:
         self._sync_scheduler_links()
         return self.get_todo(old["id"])
 
+    def upsert_external_todo(self, source_key, payload, *, todo_id=None, reconciled=False):
+        """Apply Apple-compatible fields through TodoService and retain Stella-only state."""
+        if not isinstance(source_key, str) or not source_key.startswith("eventkit:") or len(source_key) > 256:
+            raise ValueError("invalid Apple reminder source key")
+        if not isinstance(payload, dict) or not isinstance(payload.get("title"), str):
+            raise ValueError("Apple reminder needs a title")
+        completed = payload.get("completed", False)
+        if type(completed) is not bool:
+            raise ValueError("completed must be true or false")
+        allowed = ("title", "notes", "due_on", "due_time", "timezone", "planned_on", "remind_at",
+                   "priority", "repeat_frequency", "repeat_days", "repeat_until")
+        fields = {key: payload[key] for key in allowed if key in payload}
+        with self._connect() as db:
+            row = db.execute("SELECT id FROM todos WHERE source_type='apple_reminder' AND source_key=?",
+                             (source_key,)).fetchone()
+            tombstone = db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone()
+        if not row and tombstone:
+            raise ValueError("source task was deleted")
+        if row and todo_id and row["id"] != todo_id:
+            raise ValueError("Apple reminder source identity changed")
+        if todo_id and not row:
+            raise ValueError("Apple reminder source identity changed")
+        if row:
+            original = self.get_todo(row["id"])
+            if original["user_modified"] and not reconciled:
+                raise ValueError("locally modified Apple reminder needs reconciliation")
+            updated = self.update_todo(row["id"], fields)
+        else:
+            updated = self.create_todo({**fields, "status": "completed" if completed else "todo"},
+                                       _external_source_key=source_key)
+        status = updated["status"]
+        if status != "cancelled" and updated["repeat_frequency"] == "none":
+            status = "completed" if completed else "todo" if status == "completed" else status
+        completion_at = (payload.get("completed_at") or _now()) if status == "completed" else None
+        if completion_at is not None:
+            try:
+                completion_at = datetime.fromisoformat(completion_at.replace("Z", "+00:00")).astimezone(
+                    timezone.utc).isoformat()
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid Apple completion time") from exc
+        with self._connect() as db:
+            db.execute("""UPDATE todos SET status=?,completed_at=?,user_modified=0,
+                source_type='apple_reminder',source_key=? WHERE id=?""",
+                (status, completion_at, source_key, updated["id"]))
+            self._queue_scheduler_link(db, updated["id"], updated["remind_at"], status)
+        self._sync_scheduler_links()
+        return self.get_todo(updated["id"])
+
+    def delete_external_todo(self, source_key, *, confirm=False):
+        if confirm is not True:
+            raise ValueError("explicit confirmation is required to delete an Apple reminder")
+        with self._connect() as db:
+            row = db.execute("SELECT id FROM todos WHERE source_type='apple_reminder' AND source_key=?",
+                             (source_key,)).fetchone()
+        if not row:
+            raise KeyError("Apple reminder source not found")
+        self.delete_todo(row["id"])
+        return {"deleted": row["id"]}
+
     def delete_todo(self, todo_id):
         old = self.get_todo(todo_id)
         with self._connect() as db:
@@ -587,7 +651,7 @@ class TodoService:
                 SELECT t.id,t.source_type,t.source_key FROM todos t JOIN subtree s ON t.id=s.id""",
                 (old["id"],)).fetchall()
             for item in descendants:
-                if item["source_type"] == "briefing" and item["source_key"]:
+                if item["source_type"] in ("briefing", "apple_reminder") and item["source_key"]:
                     db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
                                (item["source_key"], _now()))
                 self._cancel_pending_reminders(db, item["id"])

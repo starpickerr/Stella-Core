@@ -42,6 +42,7 @@ _METHODS = {
         "list_todos", "list_todos_focus", "claim_due_todo_notifications", "claim_desktop_reminders",
         "acknowledge_desktop_reminder", "list_uncertain_reminders",
         "retry_uncertain_reminder", "queue_scheduled_reminder", "ingest_briefing_revision",
+        "upsert_external_todo", "delete_external_todo",
     }),
     "bills": frozenset({
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",
