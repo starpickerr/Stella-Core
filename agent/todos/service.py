@@ -12,6 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from common.log import logger
+from agent.scheduler.delivery import normalize_notification_route
 from agent.todos.scheduler_link import task_id_for, sync_task
 
 
@@ -104,6 +105,7 @@ class TodoService:
                 ("checklist", "TEXT NOT NULL DEFAULT '[]'"),
                 ("status", "TEXT NOT NULL DEFAULT 'todo'"), ("parent_id", "TEXT"),
                 ("sort_order", "INTEGER NOT NULL DEFAULT 0"), ("remind_at", "TEXT"),
+                ("reminder_delivery", "TEXT"),
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE todos ADD COLUMN {name} {definition}")
@@ -182,12 +184,13 @@ class TodoService:
         for link in pending:
             try:
                 with self._connect() as db:
-                    todo = db.execute("SELECT title,remind_at,status FROM todos WHERE id=?",
+                    todo = db.execute("SELECT title,remind_at,status,reminder_delivery FROM todos WHERE id=?",
                                       (link["todo_id"],)).fetchone()
                 desired = (link["desired_at"] if todo and
                            todo["remind_at"] == link["desired_at"] and
                            self._active_reminder(todo["remind_at"], todo["status"]) else None)
-                sync_task(self.scheduler_store, link["todo_id"], todo["title"] if todo else "", desired)
+                route = json.loads(todo["reminder_delivery"]) if todo and todo["reminder_delivery"] else None
+                sync_task(self.scheduler_store, link["todo_id"], todo["title"] if todo else "", desired, route)
                 with self._connect() as db:
                     db.execute("PRAGMA busy_timeout=250")
                     if desired:
@@ -437,6 +440,16 @@ class TodoService:
         row["remind_at"] = reminder
         if frequency != "none" and reminder:
             raise ValueError("recurring tasks use their due time for reminders")
+        if not reminder:
+            if payload.get("reminder_delivery") is not None:
+                raise ValueError("reminder_delivery requires remind_at")
+            row["reminder_delivery"] = None
+        elif "reminder_delivery" in payload or not existing:
+            row["reminder_delivery"] = json.dumps(
+                normalize_notification_route(payload.get("reminder_delivery")), ensure_ascii=False)
+        else:
+            route = row.get("reminder_delivery") or normalize_notification_route(None)
+            row["reminder_delivery"] = route if isinstance(route, str) else json.dumps(route, ensure_ascii=False)
         list_name = row.get("list_name") or ""
         if not isinstance(list_name, str) or len(list_name.strip()) > 80:
             raise ValueError("list_name must be at most 80 characters")
@@ -494,13 +507,14 @@ class TodoService:
             db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                  repeat_days,repeat_until,source_type,source_key,source_url,user_modified,created_at,updated_at,
-                 planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at,reminder_delivery)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], now if status == "completed" else None,
                  row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
                  "briefing" if _briefing_key else None, _briefing_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
-                 row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"]))
+                 row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"],
+                 row["reminder_delivery"]))
             self._queue_scheduler_link(db, todo_id, row["remind_at"], status)
         self._sync_scheduler_links()
         return self.get_todo(todo_id)
@@ -532,11 +546,11 @@ class TodoService:
             self._cancel_pending_reminders(db, old["id"])
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
-                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=? WHERE id=?""",
+                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=?, reminder_delivery=? WHERE id=?""",
                 (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                 row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
                 row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
-                row["remind_at"], old["id"]))
+                row["remind_at"], row["reminder_delivery"], old["id"]))
             self._queue_scheduler_link(db, old["id"], row["remind_at"], old["status"])
         self._sync_scheduler_links()
         return self.get_todo(old["id"])
@@ -571,7 +585,22 @@ class TodoService:
         return (row[0] or 0) + 1
 
     @staticmethod
+    def _delivery_summaries(db, todo_id=None):
+        clause = "WHERE o.todo_id=?" if todo_id else ""
+        rows = db.execute("""SELECT o.todo_id,o.due_at,d.status,d.attempts,d.error
+            FROM reminder_deliveries d JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
+            """ + clause + " ORDER BY o.due_at DESC,d.rowid DESC", (todo_id,) if todo_id else ())
+        summaries = {}
+        for item in rows:
+            summaries.setdefault(item["todo_id"], {"status": item["status"], "attempts": item["attempts"],
+                                                   "error": item["error"], "due_at": item["due_at"]})
+        return summaries
+
+    @staticmethod
     def _with_progress(db, row):
+        row["reminder_delivery"] = (json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else
+                                    normalize_notification_route(None))
+        row["reminder_delivery_status"] = TodoService._delivery_summaries(db, row["id"]).get(row["id"])
         children = db.execute("SELECT status FROM todos WHERE parent_id=?", (row["id"],)).fetchall()
         effective = [child for child in children if child["status"] != "cancelled"]
         done = sum(child["status"] == "completed" for child in effective)
@@ -999,13 +1028,17 @@ class TodoService:
                 dependencies.setdefault(item["task_id"], []).append((item["prerequisite_id"], item["status"]))
             links = {item["todo_id"]: item for item in db.execute(
                 "SELECT todo_id,task_id,state,error FROM todo_scheduler_links")}
+            delivery_summaries = self._delivery_summaries(db)
         result = []
         for row in rows:
             if not include_completed and row["status"] in TERMINAL_STATUSES:
                 continue
             progress = counts.get(row["id"], {"count": 0, "total": 0, "done": 0})
             link = links.get(row.get("series_id", row["id"]))
-            result.append({**row, "subtask_count": progress["count"],
+            route = json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else normalize_notification_route(None)
+            result.append({**row, "reminder_delivery": route,
+                           "reminder_delivery_status": delivery_summaries.get(row.get("series_id", row["id"])),
+                           "subtask_count": progress["count"],
                            "progress_completed": progress["done"], "progress_total": progress["total"],
                            "progress_percent": round(100 * progress["done"] / progress["total"]) if progress["total"] else 0,
                            "dependency_ids": [item[0] for item in dependencies.get(row.get("series_id", row["id"]), [])],
