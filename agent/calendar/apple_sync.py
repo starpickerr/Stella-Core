@@ -75,7 +75,6 @@ class AppleCalendarSync:
         self.clock = clock or (lambda: datetime.now(timezone.utc).isoformat())
         self._lock = threading.RLock()
         self._auto_started = False
-        self._stop = threading.Event()
         with self._connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -535,21 +534,7 @@ class AppleCalendarSync:
         if self._auto_started:
             return
         self._auto_started = True
-
-        def poll():
-            while not self._stop.is_set():
-                if self._get("connected", False):
-                    self.sync()
-                self._stop.wait(interval)
-
-        def watch():
-            while not self._stop.is_set():
-                if self._get("connected", False):
-                    try:
-                        self.bridge.watch(lambda: self.sync(), self._stop)
-                    except Exception:
-                        pass
-                self._stop.wait(interval)
-
-        threading.Thread(target=poll, name="apple-calendar-poll", daemon=True).start()
-        threading.Thread(target=watch, name="apple-calendar-watch", daemon=True).start()
+        from .apple_runtime import EventKitAutoRunner
+        self._runner = EventKitAutoRunner(self.bridge, lambda: self._get("connected", False),
+                                          self.sync, interval=interval)
+        self._runner.start()

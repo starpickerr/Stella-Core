@@ -32,7 +32,7 @@ def test_apple_import_is_idempotent_and_preserves_stella_only_fields(tmp_path, m
     assert first["source_type"] == "apple_reminder"
     assert (first["due_on"], first["due_time"], first["timezone"], first["planned_on"]) == (
         "2026-10-10", "14:00", "Asia/Shanghai", "2026-10-09")
-    assert first["scheduler_task_id"] and len(store.list_tasks()) == 1
+    assert first["scheduler_task_id"] is None and store.list_tasks() == []
 
     parent = todos.create_todo({"title": "Parent"})
     dependency = todos.create_todo({"title": "Prerequisite"})
@@ -41,6 +41,7 @@ def test_apple_import_is_idempotent_and_preserves_stella_only_fields(tmp_path, m
     route = {"primary": {"channel_type": "feishu", "receiver": "ou_user"},
              "backup_enabled": False, "backup": None}
     todos.update_todo(first["id"], {"reminder_delivery": route})
+    assert len(store.list_tasks()) == 1
     todos.change_todo_status(first["id"], "waiting")
     with pytest.raises(ValueError, match="modified"):
         todos.upsert_external_todo("eventkit:assignment", remote(title="Changed in Apple"))
@@ -86,3 +87,14 @@ def test_application_todo_port_uses_the_same_external_write_boundary(tmp_path, m
     item = port.upsert_external_todo("eventkit:port", remote(remind_at=None))
     assert port.get_todo(item["id"])["source_type"] == "apple_reminder"
     assert port.delete_external_todo("eventkit:port", confirm=True)["deleted"] == item["id"]
+
+
+def test_apple_import_does_not_create_a_second_default_notification(tmp_path, monkeypatch):
+    todos, store = service(tmp_path, monkeypatch)
+    due = datetime.now(timezone.utc) + timedelta(minutes=10)
+    imported = todos.upsert_external_todo("eventkit:alarm", remote(
+        due_on=due.date().isoformat(), due_time=due.strftime("%H:%M"), timezone="UTC",
+        remind_at=(due - timedelta(minutes=5)).isoformat()))
+    assert imported["remind_at"] is not None
+    assert store.list_tasks() == []
+    assert todos.claim_desktop_reminders(now=due + timedelta(minutes=2)) == []

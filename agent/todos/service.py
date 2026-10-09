@@ -163,6 +163,16 @@ class TodoService:
             return None
         return remind_at if datetime.fromisoformat(remind_at) > datetime.now(timezone.utc) else None
 
+    @staticmethod
+    def _apple_native_reminder(row):
+        """Apple already owns its default alarm; Stella only sends an explicit route."""
+        if row.get("source_type") != "apple_reminder":
+            return False
+        route = row.get("reminder_delivery")
+        if isinstance(route, str):
+            route = json.loads(route)
+        return not (route or {}).get("primary")
+
     def _queue_scheduler_link(self, db, todo_id, remind_at, status):
         desired = self._active_reminder(remind_at, status)
         old = db.execute("SELECT 1 FROM todo_scheduler_links WHERE todo_id=?", (todo_id,)).fetchone()
@@ -175,14 +185,20 @@ class TodoService:
     def _backfill_scheduler_links(self):
         with self._connect() as db:
             db.execute("PRAGMA busy_timeout=250")
-            for row in db.execute("""SELECT t.id,t.remind_at,t.status FROM todos AS t
+            for row in db.execute("""SELECT t.id,t.remind_at,t.status,t.source_type,t.reminder_delivery
+                FROM todos AS t
                 LEFT JOIN todo_scheduler_links AS l ON l.todo_id=t.id
                 WHERE t.remind_at IS NOT NULL AND t.status NOT IN ('completed','cancelled')
                 AND l.todo_id IS NULL"""):
-                if self._active_reminder(row["remind_at"], row["status"]):
+                if (not self._apple_native_reminder(dict(row)) and
+                        self._active_reminder(row["remind_at"], row["status"])):
                     db.execute("""INSERT OR IGNORE INTO todo_scheduler_links
                         (todo_id,task_id,desired_at,state,updated_at) VALUES (?,?,?,'pending',?)""",
                         (row["id"], task_id_for(row["id"]), row["remind_at"], _now()))
+            for row in db.execute("""SELECT t.*,l.desired_at FROM todos t JOIN todo_scheduler_links l
+                ON l.todo_id=t.id WHERE t.source_type='apple_reminder' AND l.desired_at IS NOT NULL"""):
+                if self._apple_native_reminder(dict(row)):
+                    self._queue_scheduler_link(db, row["id"], None, row["status"])
 
     def _sync_scheduler_links(self):
         if self.scheduler_store is None:
@@ -194,11 +210,12 @@ class TodoService:
         for link in pending:
             try:
                 with self._connect() as db:
-                    todo = db.execute("SELECT title,remind_at,status,reminder_delivery FROM todos WHERE id=?",
+                    todo = db.execute("SELECT title,remind_at,status,reminder_delivery,source_type FROM todos WHERE id=?",
                                       (link["todo_id"],)).fetchone()
                 desired = (link["desired_at"] if todo and
                            todo["remind_at"] == link["desired_at"] and
-                           self._active_reminder(todo["remind_at"], todo["status"]) else None)
+                           self._active_reminder(todo["remind_at"], todo["status"]) and
+                           not self._apple_native_reminder(dict(todo)) else None)
                 route = json.loads(todo["reminder_delivery"]) if todo and todo["reminder_delivery"] else None
                 sync_task(self.scheduler_store, link["todo_id"], todo["title"] if todo else "", desired, route)
                 with self._connect() as db:
@@ -534,7 +551,9 @@ class TodoService:
                  source_type, source_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"],
                  row["reminder_delivery"]))
-            self._queue_scheduler_link(db, todo_id, row["remind_at"], status)
+            self._queue_scheduler_link(db, todo_id, None if source_type == "apple_reminder" and
+                                       self._apple_native_reminder({**row, "source_type": source_type}) else
+                                       row["remind_at"], status)
         self._sync_scheduler_links()
         return self.get_todo(todo_id)
 
@@ -578,7 +597,8 @@ class TodoService:
                 row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
                 row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
                 row["remind_at"], row["reminder_delivery"], old["id"]))
-            self._queue_scheduler_link(db, old["id"], row["remind_at"], old["status"])
+            self._queue_scheduler_link(db, old["id"], None if self._apple_native_reminder({
+                **row, "source_type": old["source_type"]}) else row["remind_at"], old["status"])
         self._sync_scheduler_links()
         return self.get_todo(old["id"])
 
@@ -626,7 +646,8 @@ class TodoService:
             db.execute("""UPDATE todos SET status=?,completed_at=?,user_modified=0,
                 source_type='apple_reminder',source_key=? WHERE id=?""",
                 (status, completion_at, source_key, updated["id"]))
-            self._queue_scheduler_link(db, updated["id"], updated["remind_at"], status)
+            self._queue_scheduler_link(db, updated["id"], None if self._apple_native_reminder(updated)
+                                       else updated["remind_at"], status)
         self._sync_scheduler_links()
         return self.get_todo(updated["id"])
 
@@ -1063,6 +1084,8 @@ class TodoService:
             rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL AND status NOT IN ('completed','cancelled')").fetchall()
             for stored in rows:
                 row = dict(stored)
+                if self._apple_native_reminder(row):
+                    continue
                 zone = ZoneInfo(row["timezone"])
                 candidate = oldest.astimezone(zone).date()
                 last = instant.astimezone(zone).date()
@@ -1099,6 +1122,8 @@ class TodoService:
                                             lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
                     candidate += timedelta(days=1)
             for row in db.execute("SELECT * FROM todos WHERE remind_at IS NOT NULL AND status NOT IN ('completed','cancelled')"):
+                if self._apple_native_reminder(dict(row)):
+                    continue
                 remind_at = datetime.fromisoformat(row["remind_at"]).astimezone(timezone.utc)
                 if oldest <= remind_at <= instant:
                     reminder_key = remind_at.isoformat()
@@ -1120,7 +1145,7 @@ class TodoService:
                             db.execute("""UPDATE reminder_deliveries SET status='pending',claim_id=NULL,
                                 lease_until=NULL,error=NULL WHERE occurrence_id=?""", (cancelled[0],))
             candidates = db.execute("""SELECT d.delivery_id,o.occurrence_id,o.todo_id,o.occurrence_on,
-                o.reminder_kind,t.title,t.reminder_delivery FROM reminder_deliveries d
+                o.reminder_kind,t.title,t.reminder_delivery,t.source_type FROM reminder_deliveries d
                 JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
                 JOIN todos t ON t.id=o.todo_id
                 WHERE o.state='pending' AND (d.status IN ('pending','retry') OR
@@ -1128,6 +1153,8 @@ class TodoService:
                 ORDER BY o.due_at LIMIT ?""", (instant.isoformat(), limit)).fetchall()
             lease_until = (instant + timedelta(minutes=2)).isoformat()
             for row in candidates:
+                if self._apple_native_reminder(dict(row)):
+                    continue
                 route = json.loads(row["reminder_delivery"]) if row["reminder_delivery"] else None
                 if row["reminder_kind"] == "custom" and route and route.get("primary"):
                     continue
@@ -1300,6 +1327,8 @@ class TodoService:
             rows = db.execute("SELECT * FROM todos WHERE due_on IS NOT NULL AND due_time IS NOT NULL AND status NOT IN ('completed','cancelled')").fetchall()
             for stored in rows:
                 row = dict(stored)
+                if self._apple_native_reminder(row):
+                    continue
                 zone = ZoneInfo(row["timezone"])
                 candidate = oldest.astimezone(zone).date()
                 last = instant.astimezone(zone).date()
@@ -1323,6 +1352,8 @@ class TodoService:
                                 claimed.append(item)
                     candidate += timedelta(days=1)
             for row in db.execute("SELECT * FROM todos WHERE remind_at IS NOT NULL AND status NOT IN ('completed','cancelled')"):
+                if self._apple_native_reminder(dict(row)):
+                    continue
                 remind_at = datetime.fromisoformat(row["remind_at"]).astimezone(timezone.utc)
                 if oldest <= remind_at <= instant:
                     cursor = db.execute("INSERT OR IGNORE INTO todo_notifications VALUES (?,?,?)",

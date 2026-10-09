@@ -40,7 +40,8 @@ func fetchReminders(_ store: EKEventStore, _ list: EKCalendar) throws -> [EKRemi
 
 func reminderRecurrence(_ reminder: EKReminder) -> [String: Any] {
     guard let rule = reminder.recurrenceRules?.first else {
-        return ["frequency": "none", "days": [], "until": NSNull(), "rule_count": 0]
+        return ["frequency": "none", "days": [], "until": NSNull(), "rule_count": 0,
+                "month_days": [], "months": [], "week_numbers": [], "year_days": [], "set_positions": []]
     }
     let frequency: String
     switch rule.frequency {
@@ -54,7 +55,12 @@ func reminderRecurrence(_ reminder: EKReminder) -> [String: Any] {
             "days": (rule.daysOfTheWeek ?? []).map { ($0.dayOfTheWeek.rawValue + 5) % 7 },
             "until": iso(rule.recurrenceEnd?.endDate) ?? NSNull(),
             "interval": rule.interval, "count": rule.recurrenceEnd?.occurrenceCount ?? 0,
-            "rule_count": reminder.recurrenceRules?.count ?? 1]
+            "rule_count": reminder.recurrenceRules?.count ?? 1,
+            "month_days": (rule.daysOfTheMonth ?? []).map { $0.intValue },
+            "months": (rule.monthsOfTheYear ?? []).map { $0.intValue },
+            "week_numbers": (rule.weeksOfTheYear ?? []).map { $0.intValue },
+            "year_days": (rule.daysOfTheYear ?? []).map { $0.intValue },
+            "set_positions": (rule.setPositions ?? []).map { $0.intValue }]
 }
 
 func serializeReminder(_ reminder: EKReminder) -> [String: Any] {
