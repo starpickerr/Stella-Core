@@ -1,6 +1,7 @@
 """Exercise the briefing report, detail view and explicit batch task creation."""
 import json
 import os
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -39,6 +40,20 @@ preferences = dict(show_low_priority=True, show_ongoing=True, important_types=[]
                    reminder_frequency='daily', summary_detail='brief')
 decisions = []
 fail_next_detail = [False]
+today = date.today()
+todo_rows = [
+    dict(id='late', title='逾期作业', status='todo', due_on=(today - timedelta(days=2)).isoformat()),
+    dict(id='open', title='明天的任务', status='todo', due_on=(today + timedelta(days=1)).isoformat()),
+    dict(id='done', title='已完成旧任务', status='completed', due_on=(today - timedelta(days=3)).isoformat()),
+    dict(id='project', title='项目任务', status='todo', due_on=(today + timedelta(days=1)).isoformat()),
+    dict(id='middle', title='项目子任务', status='todo', due_on=(today + timedelta(days=1)).isoformat(), parent_id='project'),
+    dict(id='deep', title='深层逾期任务', status='todo', due_on=(today - timedelta(days=1)).isoformat(), parent_id='middle'),
+]
+todo_rows = [dict(dict(parent_id=None), **row, series_id=None, sort_order=index, planned_on=None, due_time=None,
+                  priority=0, created_at='2026-10-01T00:00:00Z', notes='', list_name='', tags='[]',
+                  flagged=0, blocked_by=[], subtask_count=0, progress_completed=0,
+                  progress_total=0, progress_percent=0, repeat_frequency='none', remind_at=None)
+             for index, row in enumerate(todo_rows)]
 
 
 def backend(route):
@@ -98,6 +113,10 @@ def backend(route):
         if body:
             preferences.update(body)
         data['preferences'] = preferences
+    elif path == '/api/todos':
+        data['todos'] = todo_rows
+    elif path == '/api/todos/reminders/uncertain':
+        data['reminders'] = []
     else:
         data.update(sessions=[], projects=[], messages=[], skills=[], tasks=[], agents=[], admissions=[])
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
@@ -138,10 +157,8 @@ with sync_playwright() as playwright:
         title_box = report.get_by_role('heading', name='AI 报告').bounding_box()
         create_box = create.bounding_box()
         assert title_box and create_box and create_box['x'] > title_box['x'] + title_box['width']
-        expect(page.get_by_text('旧版纯文本报告', exact=True)).not_to_be_visible()
-        report.get_by_text('查看报告全文', exact=True).click()
-        expect(page.get_by_text('旧版纯文本报告', exact=True)).to_be_visible()
-        report.get_by_text('查看报告全文', exact=True).click()
+        expect(report.get_by_text('查看报告全文', exact=True)).to_have_count(0)
+        expect(page.get_by_text('旧版纯文本报告', exact=True)).to_have_count(0)
         for removed in ('关联已有', '仅保留简报', '暂不处理', '忽略建议', '创建日程', '更多'):
             expect(report.get_by_role('button', name=removed, exact=True)).to_have_count(0)
         report.get_by_role('button', name='查看 算法设计大作业4').click()
@@ -239,7 +256,39 @@ with sync_playwright() as playwright:
         expect(report.get_by_text('原通知需要关注', exact=True)).to_be_visible()
         expect(report.get_by_text('新要求需要处理', exact=True)).to_be_visible()
         expect(report.get_by_role('link', name='打开来源', exact=True)).to_have_count(2)
+
+        page.goto(test_url + '/#/todos', wait_until='networkidle')
+        tabs = page.get_by_role('navigation', name='事务')
+        expect(tabs.get_by_role('button', name='逾期 2')).to_be_visible()
+        assert page.get_by_role('heading', name='逾期 2').bounding_box()['y'] < page.get_by_role('heading', name='已完成 1').bounding_box()['y']
+        expect(page.get_by_role('heading', name='逾期 2').locator('..').get_by_text('项目任务', exact=True)).to_be_visible()
+        tabs.get_by_role('button', name='逾期 2').click()
+        expect(page.get_by_text('逾期作业', exact=True)).to_be_visible()
+        expect(page.get_by_text('深层逾期任务', exact=True)).to_be_visible()
+        expect(page.get_by_text('明天的任务', exact=True)).to_have_count(0)
+        tabs.get_by_role('button', name='未完成 2').click()
+        expect(page.get_by_text('明天的任务', exact=True)).to_be_visible()
+        expect(page.get_by_text('逾期作业', exact=True)).to_have_count(0)
+        expect(page.get_by_text('深层逾期任务', exact=True)).to_have_count(0)
+        tabs.get_by_role('button', name='全部事务 4').click()
+        task_screenshot = Path(os.environ.get('STELLA_SCREENSHOT_DIR', os.environ.get('TMPDIR', '/tmp'))) / 'stella-tasks-overdue-desktop.png'
+        page.screenshot(path=str(task_screenshot), full_page=True)
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        task_mobile_screenshot = task_screenshot.with_name('stella-tasks-overdue-mobile.png')
+        page.screenshot(path=str(task_mobile_screenshot), full_page=True)
+        quick = page.locator('form').filter(has=page.locator('#todo-quick-title'))
+        add_box = quick.get_by_role('button', name='添加事务').bounding_box()
+        form_box = quick.bounding_box()
+        assert add_box and form_box and add_box['x'] + add_box['width'] <= form_box['x'] + form_box['width']
+        expect(quick.locator('svg.lucide-circle')).to_have_count(0)
+        agent = quick.get_by_role('button', name='交给 Agent')
+        expect(agent).to_be_disabled()
+        quick.get_by_role('textbox', name='需要完成什么？').fill('整理课程资料')
+        expect(agent).to_be_enabled()
+        agent.click()
+        expect(page.locator('textarea').first).to_have_value('请完成以下事项：整理课程资料')
         assert errors == [], errors
-        print('UI briefing: report entries/details/reasons/source/manual bulk creation/linked and pending cases/mobile PASS')
+        print('UI briefing and tasks: report, overdue views, ordering, Agent handoff PASS')
     finally:
         browser.close()

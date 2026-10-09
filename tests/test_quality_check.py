@@ -128,6 +128,7 @@ def test_removed_backend_and_dependency_changes_expand_checks():
 def test_frontend_checks_include_lint_build_and_new_node_tests():
     checks = affected_checks(["desktop/package.json"])
     assert checks["eslint"] and checks["typecheck"] and checks["build"]
+    assert affected_checks(["tests/todoViews.test.mjs"])["node"]
     checks = affected_checks(["agent/briefing/actions.py"])
     assert "tests/test_todos.py" in checks["pytest"]
     assert "tests/test_calendar.py" in checks["pytest"]
