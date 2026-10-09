@@ -68,13 +68,28 @@ def test_transient_error_retries_only_three_times_and_uses_saved_job(tmp_path):
     calls = []
     def transient(*_args):
         calls.append(1)
-        raise ConnectionError("temporary outage")
+        raise requests.exceptions.ConnectTimeout("could not connect")
     channel = SimpleNamespace(send=transient)
     results = [dispatch_notification(store, job_id, _route(), "Saved", channel_provider=lambda _: channel)
                for _ in range(4)]
     assert [item.status for item in results] == ["failed"] * 4
     assert [item.retryable for item in results] == [True, True, False, False]
     assert len(calls) == 3
+
+
+def test_connection_reset_after_server_acceptance_is_unknown_and_never_falls_back(tmp_path):
+    store = _store(tmp_path)
+    job_id = store.claim_occurrence("scheduled", manual=True)
+    calls = []
+    def lost_response(*_args):
+        calls.append("primary")
+        raise requests.exceptions.ConnectionError("connection reset after send")
+    result = dispatch_notification(store, job_id, _route(True), "Saved",
+                                   channel_provider=lambda name: SimpleNamespace(send=lost_response if name == "weixin"
+                                       else lambda *_args: calls.append("backup")))
+    assert result.status == "unknown" and calls == ["primary"]
+    assert store.get_delivery(job_id, "primary")["status"] == "unknown"
+    assert store.get_delivery(job_id, "backup") is None
 
 
 def test_unknown_timeout_never_blindly_retries_or_uses_backup(tmp_path):
@@ -234,7 +249,8 @@ def test_scheduled_agent_output_survives_delivery_retry(tmp_path, monkeypatch):
     calls = []
     bridge = SimpleNamespace(agent_reply=lambda *_args, **_kwargs: calls.append("agent") or
                              Reply(ReplyType.TEXT, "finished work"))
-    channel = SimpleNamespace(send=lambda *_args: (_ for _ in ()).throw(ConnectionError("offline")))
+    channel = SimpleNamespace(send=lambda *_args: (_ for _ in ()).throw(
+        requests.exceptions.ConnectTimeout("offline before connect")))
     monkeypatch.setattr(integration, "get_task_store", lambda **_kwargs: store)
     monkeypatch.setattr("agent.scheduler.result_cache.runs_dir", lambda **_kwargs: tmp_path)
     monkeypatch.setattr("agent.scheduler.dispatch._channel_for", lambda _: channel)

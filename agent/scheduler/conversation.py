@@ -99,8 +99,17 @@ def prepare_run(task, agent_id=None):
         project_store.set_project_dir(session_id, action["execution_project_dir"], agent_id)
     else:
         project_store.set_project_dir(session_id, None, agent_id)
+    old_receiver = action.get("receiver")
     action.update(receiver=session_id, notify_session_id=session_id, execution_session_id=session_id)
-    return {**task, "action": action}
+    prepared = {**task, "action": action}
+    route = task.get("notification_route")
+    primary = route.get("primary") if isinstance(route, dict) else None
+    if (isinstance(primary, dict) and primary.get("channel_type") == "web" and
+            primary.get("receiver") == old_receiver):
+        prepared["notification_route"] = {**route, "primary": {
+            **primary, "receiver": session_id, "notify_session_id": session_id,
+            "receiver_name": session_id}}
+    return prepared
 
 
 def agent_session_id(task):

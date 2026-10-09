@@ -68,6 +68,33 @@ def test_reuse_and_new_modes_keep_selected_project(scope):
         assert conversation.prepare_run({"id": "daily", "action": reuse["action"]}, "agent-a")["action"]["receiver"] == reuse["action"]["receiver"]
 
 
+def test_explicit_web_route_tracks_resolved_conversation_when_it_targets_execution(scope, tmp_path):
+    from agent.scheduler.automation_store import AutomationStore
+    from agent.scheduler.dispatch import dispatch_notification
+    _, _, project = scope
+    route = {"primary": {"channel_type": "web", "receiver": "original"},
+             "backup_enabled": False, "backup": None}
+    for mode in ("reuse", "new"):
+        task = {"id": "daily", "job_run_id": "run1", "notification_route": route,
+                "action": {"channel_type": "web", "receiver": "original", "conversation_mode": mode,
+                           "conversation_space": "project", "execution_project_dir": str(project)}}
+        with identity_scope(agent_id="agent-a"):
+            prepared = conversation.prepare_run(task, "agent-a")
+        assert prepared["notification_route"]["primary"]["receiver"] == prepared["action"]["receiver"]
+        assert route["primary"]["receiver"] == "original"
+        store = AutomationStore(tmp_path / mode / "tasks.json", "agent-a")
+        store.add_task(task)
+        sent = []
+        with identity_scope(agent_id="agent-a"):
+            job_id = store.claim_occurrence("daily", manual=True)
+            result = dispatch_notification(store, job_id, prepared["notification_route"], "hello",
+                                           channel_provider=lambda _: SimpleNamespace(send=lambda reply, context:
+                                               sent.append(context["receiver"]) or {"success": True}))
+            record = store.get_delivery(job_id, "primary")
+        assert result.status == "accepted"
+        assert sent == [prepared["action"]["receiver"]] == [record["receiver"]]
+
+
 def test_agent_created_task_defaults_to_source_even_before_chat_is_saved(scope):
     sessions, bindings, project = scope
     sessions.clear()  # The Agent can call the tool before its current turn is persisted.

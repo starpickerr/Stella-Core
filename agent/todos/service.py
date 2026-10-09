@@ -12,7 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from common.log import logger
-from agent.scheduler.delivery import normalize_notification_route
+from agent.scheduler.delivery import normalize_notification_route, same_notification_route
 from agent.todos.scheduler_link import task_id_for, sync_task
 
 
@@ -455,8 +455,12 @@ class TodoService:
                 raise ValueError("reminder_delivery requires remind_at")
             row["reminder_delivery"] = None
         elif "reminder_delivery" in payload or not existing:
-            row["reminder_delivery"] = json.dumps(
-                normalize_notification_route(payload.get("reminder_delivery")), ensure_ascii=False)
+            route = payload.get("reminder_delivery")
+            if existing and same_notification_route(route, existing.get("reminder_delivery")):
+                route = existing["reminder_delivery"]
+            else:
+                route = normalize_notification_route(route)
+            row["reminder_delivery"] = json.dumps(route, ensure_ascii=False)
         else:
             route = row.get("reminder_delivery") or normalize_notification_route(None)
             row["reminder_delivery"] = route if isinstance(route, str) else json.dumps(route, ensure_ascii=False)
