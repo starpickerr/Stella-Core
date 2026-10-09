@@ -24,6 +24,7 @@ interface SessionState {
   loadMore: () => Promise<void>
   setActive: (id: string) => void
   newSession: () => string
+  createDetachedSession: () => string
   /** The project the currently-active session is bound to, or null (default). */
   currentProject: () => { path: string; name: string } | null
   /**
@@ -118,6 +119,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const id = genId()
     localStorage.setItem(ACTIVE_KEY, id)
     set({ activeId: id })
+    return id
+  },
+
+  createDetachedSession: () => {
+    const id = genId()
+    get().addOptimistic(id)
     return id
   },
 
