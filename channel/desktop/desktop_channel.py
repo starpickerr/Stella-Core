@@ -6346,7 +6346,9 @@ class AppleCalendarSyncHandler:
         def operation():
             body = _calendar_body()
             manager = _apple_calendar_sync()
-            result = manager.sync(manual=True, confirm_deletions=body.get("confirm_deletions") is True)
+            result = manager.sync(manual=True,
+                                  confirm_deletions=body.get("confirm_deletions") is True,
+                                  confirm_local_deletions=body.get("confirm_local_deletions") is True)
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
 

@@ -850,6 +850,7 @@ export interface AppleCalendarConnection {
   error: string
   conflicts: { stella_id: string; reason: string }[]
   pending_deletions: number
+  pending_local_deletions: number
 }
 
 export interface AppleCalendarSyncResult {
@@ -861,6 +862,7 @@ export interface AppleCalendarSyncResult {
   deleted_remote: number
   conflicts: number
   pending_deletions: number
+  pending_local_deletions: number
   failed_calendar_ids: string[]
 }
 

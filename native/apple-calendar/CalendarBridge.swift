@@ -143,7 +143,11 @@ func findEvent(_ store: EKEventStore, _ request: [String: Any]) throws -> EKEven
     guard let inventory else { return nil }
     let rows = store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: [inventory]))
     return rows.first { event in
-        if !marker.isEmpty, event.url?.absoluteString == "stella://calendar/\(marker)" { return true }
+        if !marker.isEmpty, matchesMarkerOccurrence(
+            candidateMarker: event.url?.absoluteString,
+            candidateOccurrence: event.occurrenceDate ?? event.startDate,
+            requestedMarker: "stella://calendar/\(marker)",
+            requestedOccurrence: date(text(request, "occurrence_date"))) { return true }
         return !external.isEmpty && event.calendarItemExternalIdentifier == external && sameOccurrence(event, request)
     }
 }
@@ -231,8 +235,8 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
         if existing == nil, let marker = text(request, "stella_id"), !marker.isEmpty {
             event.url = URL(string: "stella://calendar/\(marker)")
         }
-        if text(request, "stella_id") != nil, let rule = try recurrenceRule(request) {
-            event.recurrenceRules = [rule]
+        if let marker = text(request, "stella_id"), !marker.isEmpty {
+            event.recurrenceRules = try recurrenceRule(request).map { [$0] }
         }
         let span: EKSpan = request["series"] as? Bool == true ? .futureEvents : .thisEvent
         try store.save(event, span: span, commit: true)

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Clock, CalendarClock, Play, Plus } from 'lucide-react'
 import { t } from '../i18n'
@@ -10,6 +10,8 @@ import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 interface TasksPageProps {
   baseUrl: string
 }
+
+type TaskDestination = { channel_type: string; configured: boolean; ready: boolean; status: string; recipients: { receiver: string; name: string }[] }
 
 const scheduleSummary = (s: TaskSchedule): string => {
   if (s.type === 'cron') return s.expression || 'cron'
@@ -83,6 +85,19 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
     }
   }
 
+  const openLinkedTodo = async (task: SchedulerTask) => {
+    try {
+      const todos = await apiClient.getTodos()
+      if (todos.some((todo) => todo.id === task.linked_todo_id)) {
+        navigate('/todos', { state: { todoId: task.linked_todo_id } })
+        return
+      }
+    } catch {
+      // The scheduled task remains inspectable when the todo cannot be read.
+    }
+    setEditing(task)
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="px-6 pt-5 pb-3 flex-shrink-0 flex items-start justify-between gap-4">
@@ -120,9 +135,16 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                 return (
                   <div
                     key={task.id}
-                    onClick={() => task.linked_todo_id
-                      ? navigate('/todos', { state: { todoId: task.linked_todo_id } })
-                      : setEditing(task)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={task.name || task.id}
+                    onClick={() => setEditing(task)}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault()
+                        setEditing(task)
+                      }
+                    }}
                     className={`rounded-card border border-default bg-surface p-4 cursor-pointer hover:border-strong transition-colors ${
                       task.enabled ? '' : 'opacity-60'
                     }`}
@@ -134,7 +156,10 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
-                    {task.linked_todo_id && <p className="text-xs text-accent mb-2">{t('task_linked_todo')}</p>}
+                    {task.linked_todo_id && <button type="button" className="text-xs text-accent mb-2 hover:underline"
+                      onClick={(event) => { event.stopPropagation(); void openLinkedTodo(task) }}>
+                      {t('task_linked_todo')}
+                    </button>}
                     {task.last_run_status && <p className="text-xs text-content-tertiary mb-2">{t(('task_status_'+task.last_run_status) as Parameters<typeof t>[0])}{task.last_error ? ` · ${task.last_error}` : ''}</p>}
                     <div
                       className="flex items-center gap-2 text-xs text-content-tertiary"
@@ -155,7 +180,10 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
         </div>
       </div>
 
-      {editing && (
+      {editing && editing !== 'new' && editing.linked_todo_id ? (
+        <LinkedTaskDetail task={editing} onClose={() => setEditing(null)}
+          onOpenTodo={() => { navigate('/todos', { state: { todoId: editing.linked_todo_id } }); setEditing(null) }} />
+      ) : editing && (
         <TaskEditModal
           key={editing === 'new' ? 'new' : editing.id}
           task={editing === 'new' ? null : editing}
@@ -173,6 +201,35 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
       )}
     </div>
   )
+}
+
+const LinkedTaskDetail: React.FC<{ task: SchedulerTask; onClose: () => void; onOpenTodo: () => void }> = ({ task, onClose, onOpenTodo }) => {
+  const [todoAvailable, setTodoAvailable] = useState<boolean | null>(null)
+  useEffect(() => {
+    let active = true
+    apiClient.getTodos().then((todos) => {
+      if (active) setTodoAvailable(todos.some((todo) => todo.id === task.linked_todo_id))
+    }).catch(() => { if (active) setTodoAvailable(false) })
+    return () => { active = false }
+  }, [task.linked_todo_id])
+
+  return <Modal open title={t('task_detail_title')} onClose={onClose} footer={<>
+    {todoAvailable && <Btn variant="ghost" onClick={onOpenTodo}>{t('task_linked_todo')}</Btn>}
+    <Btn variant="primary" onClick={onClose}>{t('task_cancel')}</Btn>
+  </>}>
+    <div className="space-y-3 text-sm text-content-secondary">
+      <p className="font-medium text-content">{task.name || task.id}</p>
+      <p>{t('task_schedule_type')}: {scheduleSummary(task.schedule)}</p>
+      <p>{t('task_enabled')}: {t(task.enabled ? 'tasks_active' : 'tasks_paused')}</p>
+      <p>{t('tasks_next_run')}: {formatNextRun(task.next_run_at)}</p>
+      {task.last_run_status && <p>{t(('task_status_' + task.last_run_status) as Parameters<typeof t>[0])}</p>}
+      {task.last_error && <p className="text-danger">{task.last_error}</p>}
+      {task.action.channel_type && <p>{t('task_channel')}: {t(('task_channel_' + task.action.channel_type) as Parameters<typeof t>[0])}</p>}
+      {task.action.receiver && <p>{t('task_receiver')}: {task.action.receiver_name || task.action.receiver}</p>}
+      {todoAvailable === false && <p className="text-danger">{t('task_linked_todo_unavailable')}</p>}
+      <p>{t('task_linked_readonly')}</p>
+    </div>
+  </Modal>
 }
 
 const TaskEditModal: React.FC<{
@@ -203,8 +260,11 @@ const TaskEditModal: React.FC<{
     task?.action.conversation_space || 'personal')
   const [projectDir, setProjectDir] = useState(task?.action.execution_project_dir || '')
   const [receiveIdType, setReceiveIdType] = useState(task?.action.receive_id_type || (task?.action.is_group ? 'chat_id' : 'open_id'))
-  const [destinations, setDestinations] = useState<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]>([])
-  useEffect(() => { apiClient.getTaskDestinations().then(setDestinations).catch(() => {}) }, [])
+  const [destinations, setDestinations] = useState<TaskDestination[]>([])
+  const refreshDestinations = useCallback(() => {
+    void apiClient.getTaskDestinations().then(setDestinations).catch(() => {})
+  }, [])
+  useEffect(() => { refreshDestinations() }, [refreshDestinations])
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -415,7 +475,15 @@ const TaskEditModal: React.FC<{
 
       {!task?.action.silent && task?.action.type !== 'application_command' && <>
         <Field label={t('task_channel')}>
-          <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }} options={destinations.filter(d => d.ready || d.channel_type === channel).map(d => ({value:d.channel_type,label:t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0])}))} />
+          <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }}
+            options={destinations.filter(d => d.configured || d.channel_type === channel).map(d => ({
+              value: d.channel_type, label: t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0]),
+              hint: d.ready ? undefined : t(('task_destination_'+d.status) as Parameters<typeof t>[0]),
+            }))} />
+          <button type="button" className="mt-1 text-xs text-accent hover:underline" onClick={refreshDestinations}>{t('task_destination_refresh')}</button>
+          {destinations.find(d => d.channel_type === channel && !d.ready) && <p className="text-xs text-content-tertiary mt-1">
+            {t(('task_destination_' + destinations.find(d => d.channel_type === channel)?.status) as Parameters<typeof t>[0])}
+          </p>}
         </Field>
       </>}
       {channel === 'web' && <>

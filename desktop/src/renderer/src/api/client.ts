@@ -644,8 +644,8 @@ class ApiClient {
   // Scheduler
   // ---------------------------------------------------------
 
-  async getTaskDestinations(): Promise<{channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]> {
-    const result = await this.request<{destinations: {channel_type: string; ready: boolean; recipients: {receiver: string; name: string}[]}[]}>('/api/scheduler/destinations')
+  async getTaskDestinations(): Promise<{channel_type: string; configured: boolean; ready: boolean; status: string; recipients: {receiver: string; name: string}[]}[]> {
+    const result = await this.request<{destinations: {channel_type: string; configured: boolean; ready: boolean; status: string; recipients: {receiver: string; name: string}[]}[]}>('/api/scheduler/destinations')
     return result.destinations
   }
 
@@ -739,8 +739,10 @@ class ApiClient {
     return this.briefingRequest('/api/calendar/apple/configure', { calendar_ids: calendarIds, direction })
   }
 
-  async syncAppleCalendar(confirmDeletions = false): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
-    return this.briefingRequest('/api/calendar/apple/sync', { confirm_deletions: confirmDeletions })
+  async syncAppleCalendar(confirmDeletions = false, confirmLocalDeletions = false): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/sync', {
+      confirm_deletions: confirmDeletions, confirm_local_deletions: confirmLocalDeletions,
+    })
   }
 
   async disconnectAppleCalendar(): Promise<AppleCalendarConnection> {

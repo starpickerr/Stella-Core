@@ -13,7 +13,8 @@ ARCH="$(uname -m)"
 # /usr/bin/swiftc is Apple's toolchain dispatcher. Calling the CLT swiftc
 # symlink directly can fail to find its standard library on some machines.
 SWIFT_COMPILER=/usr/bin/swiftc
+cp "$SCRIPT_DIR/CalendarBridge.swift" "$OUT_DIR/main.swift"
 "$SWIFT_COMPILER" -O -target "$ARCH-apple-macos14.0" -framework EventKit \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$SCRIPT_DIR/Info.plist" \
-  "$SCRIPT_DIR/CalendarBridge.swift" -o "$OUT_DIR/StellaCalendarBridge"
+  "$OUT_DIR/main.swift" "$SCRIPT_DIR/OccurrenceIdentity.swift" -o "$OUT_DIR/StellaCalendarBridge"
 codesign --force --sign - "$OUT_DIR/StellaCalendarBridge"

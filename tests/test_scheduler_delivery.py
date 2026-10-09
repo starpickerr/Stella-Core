@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from pathlib import Path
+import sys
 import pytest
 from agent.runtime.tool_invocation import permission_denial
 from agent.scheduler import delivery, integration
@@ -10,7 +11,10 @@ from agent.tools.base_tool import ToolResult
 def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder):
     from agent.tools.write.write import Write
     from agent.runtime.run_record import RunRecord
-    workspace=tmp_path/'workspace';project=tmp_path/'project';workspace.mkdir();project.mkdir()
+    workspace = tmp_path / 'workspace'
+    project = tmp_path / 'project'
+    workspace.mkdir()
+    project.mkdir()
     monkeypatch.setattr('agent.workspace.project_store.get_project_dir',lambda session,agent: str(project) if session=='source' else None)
     monkeypatch.setattr('agent.workspace.session_prefs.get_prefs',lambda *_: {'permission':'workspace-write'})
     monkeypatch.setattr('agent.runtime.tool_invocation.global_mode',lambda:'workspace-write')
@@ -18,7 +22,7 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:Write()))
     task={'id':'write','action':{'execution_session_id':source}}
-    result=integration._run_scheduled_tool(task,'write',{'path':'scheduled-probe.txt','content':'saved'},None,None,None)
+    integration._run_scheduled_tool(task,'write',{'path':'scheduled-probe.txt','content':'saved'},None,None,None)
     assert (tmp_path/folder/'scheduled-probe.txt').read_text()=='saved'
     assert not (tmp_path/('workspace' if folder=='project' else 'project')/'scheduled-probe.txt').exists()
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
@@ -47,9 +51,84 @@ def test_destination_change_preserves_source_and_cleans_old_fields(monkeypatch):
 
 
 def test_weixin_missing_token_is_explicit(monkeypatch):
-    monkeypatch.setattr(delivery,'runtime_channel',lambda _:SimpleNamespace(_context_tokens={}))
+    monkeypatch.setattr(delivery,'runtime_channel',lambda _:SimpleNamespace(_context_tokens={}, login_status='logged_in'))
     with pytest.raises(ValueError,match='conversation'):
         delivery.normalize_destination({'channel_type':'weixin','receiver':'u'})
+
+
+def test_runtime_channel_uses_running_main_module(monkeypatch):
+    channel = SimpleNamespace(_context_tokens={'user-1': 'private-token'}, login_status='logged_in')
+    manager = SimpleNamespace(get_channel=lambda name: channel if name == 'weixin' else None)
+    monkeypatch.setattr(sys.modules['__main__'], '_channel_mgr', manager, raising=False)
+    assert delivery.runtime_channel('weixin') is channel
+    catalog = next(row for row in delivery.destination_catalog() if row['channel_type'] == 'weixin')
+    assert catalog['ready'] is True
+    assert catalog['status'] == 'ready'
+    assert catalog['recipients'] == [{'receiver': 'user-1', 'name': 'user-1'}]
+    assert 'private-token' not in str(catalog)
+
+
+def test_weixin_catalog_distinguishes_login_and_recipient_states(monkeypatch):
+    channel = SimpleNamespace(_context_tokens={}, login_status='waiting_scan')
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['status'] == 'login_required' and not row['ready']
+    channel.login_status = 'logged_in'
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['status'] == 'no_recipient' and not row['ready']
+
+
+def test_configured_weixin_stays_visible_when_runtime_is_temporarily_absent(monkeypatch):
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda _: None)
+    monkeypatch.setattr('config.conf', lambda: {'channel_type': 'web,weixin'})
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['configured'] is True
+    assert row['status'] == 'unavailable'
+
+
+def test_weixin_readiness_checks_the_running_channel(monkeypatch):
+    running = SimpleNamespace(_context_tokens={'user-1': 'private-token'}, login_status='logged_in')
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda name: running if name == 'weixin' else None)
+    monkeypatch.setattr('channel.channel_factory.create_channel', lambda _: SimpleNamespace(_context_tokens={}))
+    assert integration._is_channel_ready('weixin', 'user-1') is True
+    assert integration._is_channel_ready('weixin', 'other-user') is False
+
+
+def test_weixin_scheduled_message_sends_on_running_channel(monkeypatch):
+    sent = []
+    running = SimpleNamespace(send=lambda reply, context: sent.append((reply.content, context['receiver'])) or True)
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda name: running if name == 'weixin' else None)
+    monkeypatch.setattr('channel.channel_factory.create_channel', lambda _: pytest.fail('must not construct a new Weixin channel'))
+    monkeypatch.setattr(integration, '_remember_delivered_output', lambda *_args, **_kwargs: True)
+    task = {'id': 'weixin-task', 'action': {'type': 'send_message', 'content': 'Hello',
+                                           'channel_type': 'weixin', 'receiver': 'user-1'}}
+    assert integration._execute_send_message(task, None) is True
+    assert sent == [('Hello', 'user-1')]
+
+
+def test_weixin_catalog_marks_known_expired_session_until_new_context(monkeypatch):
+    from channel.weixin.weixin_channel import WeixinChannel
+    channel = WeixinChannel()
+    channel.login_status = channel.LOGIN_STATUS_OK
+    channel._context_tokens = {'user-1': 'old-token'}
+    monkeypatch.setattr(channel, '_persist_context_tokens_locked', lambda: None)
+    with pytest.raises(RuntimeError, match='-14'):
+        channel._check_send_response({'ret': -14}, 'user-1')
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['status'] == 'session_expired'
+    channel._update_context_token('user-1', 'new-token')
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['status'] == 'ready'
+
+
+def test_weixin_unknown_login_state_cannot_be_scheduled(monkeypatch):
+    channel = SimpleNamespace(_context_tokens={'user-1': 'private-token'})
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
+    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
+    assert row['status'] == 'unknown' and not row['ready']
+    with pytest.raises(ValueError, match='login'):
+        delivery.normalize_destination({'channel_type': 'weixin', 'receiver': 'user-1'})
 
 
 def test_false_send_is_a_delivery_failure():
@@ -77,10 +156,16 @@ def test_delivery_retry_reuses_completed_tool_output(tmp_path,monkeypatch):
     store=AutomationStore(tmp_path/'scheduler'/'tasks.json',agent_id)
     task={'id':'cached','name':'cached','schedule':{'type':'once','run_at':'2026-10-02T00:00:00'},'action':{'type':'tool_call','call_name':'test','receiver':'recipient','channel_type':'feishu','receive_id_type':'email','call_params':{}}}
     store.add_task(task)
-    job=store.claim_occurrence('cached',manual=True);task['job_run_id']=job
-    calls=[]; sent=[]
-    def execute(_): calls.append('executed');return ToolResult.success('saved result')
-    def send(reply,context): sent.append(context['receive_id_type']);return len(sent)>1
+    job=store.claim_occurrence('cached',manual=True)
+    task['job_run_id']=job
+    calls=[]
+    sent=[]
+    def execute(_):
+        calls.append('executed')
+        return ToolResult.success('saved result')
+    def send(reply,context):
+        sent.append(context['receive_id_type'])
+        return len(sent)>1
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:SimpleNamespace(execute=execute)))
     monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial',lambda *_a,**_k:None)
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))

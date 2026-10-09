@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import re
+import sys
 
 SUPPORTED = ('web', 'feishu', 'weixin')
 
 
 def runtime_channel(channel_type):
-    from app import get_channel_manager
-    manager = get_channel_manager()
-    if manager is not None:
-        channel = manager.get_channel(channel_type)
-        if channel is not None:
-            return channel
+    # The packaged backend launches app.py as __main__. Importing "app" here
+    # creates a second module whose manager is never started.
+    for module_name in ('__main__', 'app'):
+        module = sys.modules.get(module_name)
+        manager = getattr(module, '_channel_mgr', None) if module else None
+        if manager is not None:
+            channel = manager.get_channel(channel_type)
+            if channel is not None:
+                return channel
     if channel_type == 'web':
         from channel.channel_factory import create_channel
         return create_channel('web')
@@ -30,9 +34,14 @@ def web_sessions(agent_id=None):
 
 
 def destination_catalog(agent_id=None):
+    from config import conf
+    active = conf().get('channel_type', '')
+    configured_channels = set(active if isinstance(active, list) else active.split(','))
+    configured_channels = {name.strip() for name in configured_channels}
     result = []
     for name in SUPPORTED:
         channel = runtime_channel(name)
+        configured = name == 'web' or channel is not None or name in configured_channels
         recipients = web_sessions(agent_id) if name == 'web' else []
         if name == 'weixin' and channel is not None:
             lock = getattr(channel, '_context_tokens_lock', None)
@@ -42,7 +51,19 @@ def destination_catalog(agent_id=None):
             else:
                 tokens = dict(getattr(channel, '_context_tokens', {}) or {})
             recipients = [{'receiver': key, 'name': key} for key, token in tokens.items() if token]
-        result.append({'channel_type': name, 'ready': channel is not None,
+        if channel is None:
+            status = 'unavailable' if configured else 'unconfigured'
+        elif name == 'weixin' and getattr(channel, 'login_status', None) is None:
+            status = 'unknown'
+        elif name == 'weixin' and getattr(channel, 'login_status') != 'logged_in':
+            status = 'login_required'
+        elif name == 'weixin' and not recipients and getattr(channel, '_expired_context_recipients', None):
+            status = 'session_expired'
+        elif name == 'weixin' and not recipients:
+            status = 'no_recipient'
+        else:
+            status = 'ready'
+        result.append({'channel_type': name, 'configured': configured, 'ready': status == 'ready', 'status': status,
                        'recipients': recipients, 'supports_groups': name == 'feishu'})
     return result
 
@@ -65,6 +86,8 @@ def normalize_destination(destination, agent_id=None):
     channel = runtime_channel(channel_type)
     if channel is None:
         raise ValueError(f'{channel_type} is not connected; connect it on the Channels page')
+    if channel_type == 'weixin' and getattr(channel, 'login_status', None) != 'logged_in':
+        raise ValueError('Weixin login is required before scheduled delivery')
     receive_id_type = destination.get('receive_id_type') or ('chat_id' if is_group else 'open_id')
     if channel_type == 'feishu':
         if receive_id_type not in ('chat_id', 'open_id', 'user_id', 'union_id', 'email'):
