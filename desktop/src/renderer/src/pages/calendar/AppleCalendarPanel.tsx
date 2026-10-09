@@ -48,6 +48,8 @@ const AppleCalendarPanel: React.FC<Props> = ({ en, onClose, onSynced }) => {
     disconnect: 'Disconnect', disconnectConfirm: 'Disconnect Apple Calendar? Synced schedules remain in Stella and Apple events are not deleted.',
     pending: 'Stella schedules were deleted. Apple events will remain until you confirm.', confirmDelete: 'Confirm Apple event deletion',
     deleteConfirm: 'Delete the pending linked events from Apple Calendar?', conflicts: 'Changes need your decision',
+    pendingLocal: 'Apple events are missing. Stella schedules remain until you confirm.', confirmLocal: 'Confirm Stella schedule deletion',
+    localDeleteConfirm: 'Delete the pending Stella schedules? Review your Apple calendar first.',
     keepStella: 'Keep Stella version', keepApple: 'Keep Apple version', close: 'Close',
     summary: (value: AppleCalendarSyncResult) => `Imported ${value.imported}, updated ${value.updated}, sent ${value.exported}.`,
   } : {
@@ -61,6 +63,8 @@ const AppleCalendarPanel: React.FC<Props> = ({ en, onClose, onSynced }) => {
     disconnect: '断开连接', disconnectConfirm: '断开 Apple 日历连接？已同步的日程会保留在 Stella，Apple 日历事件不会被删除。',
     pending: 'Stella 中有已删除的日程。关联的 Apple 事件将在你确认后删除。', confirmDelete: '确认删除 Apple 事件',
     deleteConfirm: '确认从 Apple 日历删除待处理的关联事件？', conflicts: '以下变更需要你选择保留哪一版',
+    pendingLocal: 'Apple 事件暂未找到。Stella 日程会保留，直到你核查并确认。', confirmLocal: '确认删除 Stella 日程',
+    localDeleteConfirm: '确认删除待处理的 Stella 日程？请先核查 Apple 日历。',
     keepStella: '保留 Stella 版本', keepApple: '保留 Apple 版本', close: '关闭',
     summary: (value: AppleCalendarSyncResult) => `导入 ${value.imported} 条，更新 ${value.updated} 条，发送 ${value.exported} 条。`,
   }
@@ -112,6 +116,11 @@ const AppleCalendarPanel: React.FC<Props> = ({ en, onClose, onSynced }) => {
             <p>{label.pending} <strong>{connection.pending_deletions}</strong></p>
             <button type="button" disabled={busy} onClick={() => { if (window.confirm(label.deleteConfirm)) void run(() => apiClient.syncAppleCalendar(true), true) }}
               className="text-danger font-medium disabled:opacity-50">{label.confirmDelete}</button>
+          </div>}
+          {connection.connected && connection.pending_local_deletions > 0 && <div className="rounded-btn border border-default p-3 space-y-2 text-sm">
+            <p>{label.pendingLocal} <strong>{connection.pending_local_deletions}</strong></p>
+            <button type="button" disabled={busy} onClick={() => { if (window.confirm(label.localDeleteConfirm)) void run(() => apiClient.syncAppleCalendar(false, true), true) }}
+              className="text-danger font-medium disabled:opacity-50">{label.confirmLocal}</button>
           </div>}
           {connection.conflicts.length > 0 && <section aria-label={label.conflicts} className="space-y-2">
             <h3 className="text-sm font-medium inline-flex items-center gap-1.5"><AlertCircle size={15} className="text-danger" />{label.conflicts}</h3>

@@ -9,7 +9,8 @@ from playwright.sync_api import expect, sync_playwright
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 connection = dict(supported=False, authorization='unsupported', connected=False, calendar_ids=[],
-                  direction='bidirectional', calendars=[], last_success=None, error='', conflicts=[], pending_deletions=0)
+                  direction='bidirectional', calendars=[], last_success=None, error='', conflicts=[],
+                  pending_deletions=0, pending_local_deletions=0)
 calls = []
 
 
@@ -52,9 +53,13 @@ def backend(route):
         elif path.endswith('/sync'):
             if body.get('confirm_deletions'):
                 connection['pending_deletions'] = 0
+            if body.get('confirm_local_deletions'):
+                connection['pending_local_deletions'] = 0
             data['result'] = dict(status='success', imported=0, updated=0, exported=0,
-                                  deleted_local=0, deleted_remote=int(bool(body.get('confirm_deletions'))),
-                                  conflicts=0, pending_deletions=connection['pending_deletions'], failed_calendar_ids=[])
+                                  deleted_local=int(bool(body.get('confirm_local_deletions'))),
+                                  deleted_remote=int(bool(body.get('confirm_deletions'))),
+                                  conflicts=0, pending_deletions=connection['pending_deletions'],
+                                  pending_local_deletions=connection['pending_local_deletions'], failed_calendar_ids=[])
         elif path.endswith('/resolve'):
             connection['conflicts'] = []
         elif path.endswith('/disconnect'):
@@ -91,10 +96,13 @@ with sync_playwright() as playwright:
         assert next(body for path, body in calls if path.endswith('/configure'))['calendar_ids'] == ['a', 'b']
         panel.get_by_role('button', name='立即同步').click()
         connection['pending_deletions'] = 1
+        connection['pending_local_deletions'] = 1
         connection['conflicts'] = [{'stella_id':'event-1','reason':'Both Stella and Apple changed this event'}]
         panel.get_by_role('button', name='重新检查').click()
         panel.get_by_role('button', name='确认删除 Apple 事件').click()
         assert any(body.get('confirm_deletions') for path, body in calls if path.endswith('/sync'))
+        panel.get_by_role('button', name='确认删除 Stella 日程').click()
+        assert any(body.get('confirm_local_deletions') for path, body in calls if path.endswith('/sync'))
         panel.get_by_role('button', name='保留 Stella 版本').click()
         assert any(path.endswith('/resolve') for path, _ in calls)
         panel.get_by_role('button', name='关闭').click()

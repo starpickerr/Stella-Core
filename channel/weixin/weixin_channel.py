@@ -95,6 +95,7 @@ class WeixinChannel(ChatChannel):
         # user_id -> context_token. Guarded by _context_tokens_lock for any
         # mutation that races with disk persistence.
         self._context_tokens = {}
+        self._expired_context_recipients = set()
         self._context_tokens_lock = threading.Lock()
         self._received_msgs = ExpiredDict(60 * 60 * 7.1)
         # session_id -> deadline(ts) until which an inbound image/file is
@@ -234,6 +235,7 @@ class WeixinChannel(ChatChannel):
         if not user_id or not token:
             return
         with self._context_tokens_lock:
+            self._expired_context_recipients.discard(user_id)
             if self._context_tokens.get(user_id) == token:
                 return
             self._context_tokens[user_id] = token
@@ -244,6 +246,7 @@ class WeixinChannel(ChatChannel):
         if not user_id:
             return
         with self._context_tokens_lock:
+            self._expired_context_recipients.add(user_id)
             if user_id not in self._context_tokens:
                 return
             del self._context_tokens[user_id]
@@ -270,7 +273,7 @@ class WeixinChannel(ChatChannel):
                 print(buf.getvalue())
             except UnicodeEncodeError:
                 # Windows GBK terminals cannot render Unicode block characters
-                print(f"\n  (终端不支持显示二维码，请使用链接扫码)")
+                print("\n  (终端不支持显示二维码，请使用链接扫码)")
                 print(f"  二维码链接: {qrcode_url}\n")
         except ImportError:
             print(f"\n  二维码链接: {qrcode_url}")

@@ -168,7 +168,8 @@ class AppleCalendarSync:
                 "last_success": self._get("last_success"), "error": self._get("error", ""),
                 "conflicts": [{"stella_id": row["stella_id"], "reason": row["conflict"]}
                               for row in maps if row["state"] == "conflict"],
-                "pending_deletions": sum(row["state"] == "pending_delete" for row in maps)}
+                "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
+                "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps)}
 
     def request_access(self):
         result = self.bridge.call("request_access")
@@ -234,10 +235,13 @@ class AppleCalendarSync:
                      "repeat_days": json.loads(local["repeat_days"]),
                      "repeat_until": local["repeat_until"],
                      "repeat_timezone": local["repeat_timezone"],
-                     "series": bool(local["repeat_frequency"] != "none" and local["source_type"] is None)})
+                     "series": bool(local["source_type"] is None and
+                                    (local["repeat_frequency"] != "none" or mapping is not None))})
         if mapping:
             data.update(event_id=mapping["event_id"], external_id=mapping["external_id"],
                         occurrence_date=mapping["occurrence_date"])
+        else:
+            data["occurrence_date"] = local["start_at"]
         if window and mapping is None:
             start = datetime.fromisoformat(local["start_at"])
             if not (datetime.fromisoformat(window[0]) <= start < datetime.fromisoformat(window[1])):
@@ -335,17 +339,19 @@ class AppleCalendarSync:
                 self._refresh_map(mapping, local, changed)
                 counts["exported"] += 1
         else:
+            mapping["state"] = "active"
             mapping["calendar_id"] = remote["calendar_id"]
             mapping["event_id"] = remote.get("event_id") or mapping["event_id"]
             mapping["missing_since"] = ""
             mapping["updated_at"] = self.clock()
             self._save_map(mapping)
 
-    def sync(self, manual=False, confirm_deletions=False):
+    def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
         with self._lock:
             counts = {"status": "success", "imported": 0, "updated": 0, "exported": 0,
                       "deleted_local": 0, "deleted_remote": 0, "conflicts": 0,
-                      "pending_deletions": 0, "failed_calendar_ids": []}
+                      "pending_deletions": 0, "pending_local_deletions": 0,
+                      "failed_calendar_ids": []}
             if not self._get("connected", False):
                 counts["status"] = "disconnected"
                 return counts
@@ -366,6 +372,18 @@ class AppleCalendarSync:
                         db.executemany("UPDATE mappings SET missing_since='' WHERE calendar_id=?",
                                        [(key,) for key in counts["failed_calendar_ids"]])
                 maps = self._maps()
+                scanned_counts = {key: 0 for key in successful}
+                for row in inventory["events"]:
+                    if row["calendar_id"] in scanned_counts:
+                        scanned_counts[row["calendar_id"]] += 1
+                # An empty scan after several linked imports may mean EventKit returned
+                # an incomplete snapshot. Require manual investigation before treating
+                # the whole calendar as a set of deletions.
+                bulk_missing = {key for key in successful if scanned_counts[key] == 0 and
+                    any(row["calendar_id"] == key and row["state"] in ("active", "pending_local_delete") and
+                        row["origin"] == "apple" for row in maps)}
+                if bulk_missing:
+                    counts["status"] = "partial"
                 seen = set()
                 identity_counts = {}
                 cross_counts = {}
@@ -404,6 +422,12 @@ class AppleCalendarSync:
                     if mapping["state"] in ("deleted", "remote_deleted", "locally_deleted", "conflict"):
                         continue
                     try:
+                        local = self._local(mapping["stella_id"])
+                        if local is not None:
+                            start = datetime.fromisoformat(local["start_at"].replace("Z", "+00:00"))
+                            end = datetime.fromisoformat(local["end_at"].replace("Z", "+00:00"))
+                            if end <= datetime.fromisoformat(window[0]) or start >= datetime.fromisoformat(window[1]):
+                                continue
                         found = self.bridge.call("lookup", **{key: mapping[key] for key in
                             ("calendar_id", "event_id", "external_id", "occurrence_date")},
                             scan_start=window[0], scan_end=window[1]).get("event")
@@ -417,13 +441,15 @@ class AppleCalendarSync:
                         first_missing = datetime.fromisoformat(mapping["missing_since"].replace("Z", "+00:00"))
                         if now - first_missing < timedelta(minutes=1):
                             continue
-                        local = self._local(mapping["stella_id"])
                         if local is None:
                             mapping["state"] = "deleted"
                         elif mapping["origin"] == "apple" and direction in ("import", "bidirectional") and _fingerprint(local) == mapping["local_hash"]:
-                            self.calendar.delete_event(local["id"])
-                            mapping["state"] = "remote_deleted"
-                            counts["deleted_local"] += 1
+                            if manual and confirm_local_deletions:
+                                self.calendar.delete_event(local["id"])
+                                mapping["state"] = "remote_deleted"
+                                counts["deleted_local"] += 1
+                            else:
+                                mapping["state"] = "pending_local_delete"
                         else:
                             self._conflict(mapping, "Apple event was removed or moved outside the scan window")
                             counts["conflicts"] += 1
@@ -462,6 +488,8 @@ class AppleCalendarSync:
                             counts["pending_deletions"] -= 1
                         except Exception:
                             counts["status"] = "error"
+                counts["pending_local_deletions"] = sum(
+                    row["state"] == "pending_local_delete" for row in self._maps())
                 if counts["failed_calendar_ids"]:
                     counts["status"] = "partial" if counts["status"] == "success" else counts["status"]
                 if counts["status"] == "success":

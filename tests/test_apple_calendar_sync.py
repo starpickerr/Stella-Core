@@ -77,6 +77,7 @@ class FakeBridge:
         self.authorization = "full_access"
         self.available = {"a", "b"}
         self.writes = []
+        self.upsert_requests = []
         self.fail_next_write = False
 
     def call(self, op, **payload):
@@ -99,12 +100,16 @@ class FakeBridge:
                     "successful_calendar_ids": sorted(success),
                     "failed_calendar_ids": sorted(set(payload["calendar_ids"]) - success)}
         if op == "lookup":
+            scan_start = datetime.fromisoformat(payload["scan_start"].replace("Z", "+00:00")) if payload.get("scan_start") else None
+            scan_end = datetime.fromisoformat(payload["scan_end"].replace("Z", "+00:00")) if payload.get("scan_end") else None
             matches = [row for row in self.rows if row["calendar_id"] == payload["calendar_id"] and
-                       (row["event_id"] == payload.get("event_id") or
-                        (row["external_id"] == payload.get("external_id") and
-                         row["occurrence_date"] == payload.get("occurrence_date")))]
+                               (row["event_id"] == payload.get("event_id") or
+                                (row["external_id"] == payload.get("external_id") and
+                                 row["occurrence_date"] == payload.get("occurrence_date"))) and
+                       (scan_start is None or scan_start <= datetime.fromisoformat(row["start_at"].replace("Z", "+00:00")) < scan_end)]
             return {"event": copy.deepcopy(matches[0]) if matches else None}
         if op == "upsert":
+            self.upsert_requests.append(copy.deepcopy(payload))
             if self.fail_next_write:
                 self.fail_next_write = False
                 raise RuntimeError("temporary EventKit failure")
@@ -191,6 +196,7 @@ def test_far_future_stella_event_recovers_without_duplicate_after_crash(sync_env
     own = port.create_event({"title": "2035 meeting", "start_at": "2035-01-01T09:00:00+08:00",
                              "end_at": "2035-01-01T10:00:00+08:00"})
     assert sync.sync()["exported"] == 1
+    assert bridge.upsert_requests[-1]["occurrence_date"] == own["start_at"]
     with sync._connect() as db:
         db.execute("DELETE FROM mappings WHERE stella_id=?", (own["id"],))
     restarted = AppleCalendarSync(bridge=bridge, db_path=tmp_path / "sync.db", calendar_port=port,
@@ -221,19 +227,23 @@ def test_move_between_selected_apple_calendars_keeps_stella_identity(sync_env):
     assert port.list_events()[0]["id"] == imported["id"]
 
 
-def test_remote_deletion_removes_unchanged_import_but_not_unavailable_calendar(sync_env):
+def test_remote_deletion_requires_confirmation_and_unavailable_calendar_is_safe(sync_env):
     sync, bridge, port, _ = sync_env
+    bridge.rows.append(remote_event(identifier="still-here", title="Still here"))
     connect(sync)
+    deleted = next(row for row in port.list_events() if row["title"] == "Lecture")
     bridge.available.remove("a")
-    bridge.rows.clear()
+    bridge.rows = [row for row in bridge.rows if row["event_id"] != "event-1"]
     sync.sync()
-    assert len(port.list_events()) == 1
+    assert len(port.list_events()) == 2
     bridge.available.add("a")
     assert sync.sync()["deleted_local"] == 0
-    assert len(port.list_events()) == 1
+    assert len(port.list_events()) == 2
     sync.clock = lambda: "2026-10-10T00:02:00+00:00"
-    assert sync.sync()["deleted_local"] == 1
-    assert port.list_events() == []
+    assert sync.sync()["pending_local_deletions"] == 1
+    assert port.get_event(deleted["id"])
+    assert sync.sync(manual=True, confirm_local_deletions=True)["deleted_local"] == 1
+    assert {row["title"] for row in port.list_events()} == {"Still here"}
 
 
 def test_unavailable_calendar_resets_pending_missing_confirmation(sync_env):
@@ -246,6 +256,42 @@ def test_unavailable_calendar_resets_pending_missing_confirmation(sync_env):
     sync.sync()
     bridge.available.add("a")
     assert sync.sync()["deleted_local"] == 0
+    assert len(port.list_events()) == 1
+
+
+def test_window_rollover_does_not_delete_historical_import(sync_env):
+    sync, bridge, port, _ = sync_env
+    connect(sync)
+    sync.clock = lambda: "2030-10-10T00:00:00+00:00"
+    sync.sync()
+    sync.clock = lambda: "2030-10-10T00:02:00+00:00"
+    assert sync.sync()["deleted_local"] == 0
+    assert sync.sync()["pending_local_deletions"] == 0
+    assert len(port.list_events()) == 1
+
+
+def test_empty_scan_never_mass_deletes_selected_calendar(sync_env):
+    sync, bridge, port, _ = sync_env
+    bridge.rows.extend(remote_event(identifier=f"event-{number}", title=f"Class {number}") for number in range(2, 6))
+    assert connect(sync)["imported"] == 5
+    bridge.rows.clear()
+    sync.sync()
+    sync.clock = lambda: "2026-10-10T00:02:00+00:00"
+    result = sync.sync()
+    assert result["deleted_local"] == 0
+    assert result["status"] == "partial"
+    assert len(port.list_events()) == 5
+
+
+def test_single_event_empty_scan_waits_for_explicit_local_delete(sync_env):
+    sync, bridge, port, _ = sync_env
+    connect(sync)
+    bridge.rows.clear()
+    sync.sync()
+    sync.clock = lambda: "2026-10-10T00:02:00+00:00"
+    result = sync.sync()
+    assert result["deleted_local"] == 0
+    assert result["pending_local_deletions"] == 1
     assert len(port.list_events()) == 1
 
 
@@ -417,3 +463,15 @@ def test_apple_recurrence_occurrence_count_change_is_not_silent(sync_env):
     remote = next(row for row in bridge.rows if row["stella_id"] == own["id"])
     remote["recurrence"]["count"] = 3
     assert sync.sync()["conflicts"] == 1
+
+
+def test_removing_stella_repeat_rule_removes_apple_repeat_rule(sync_env):
+    sync, bridge, port, _ = sync_env
+    connect(sync)
+    own = port.create_event({**event_payload("Weekly"), "repeat_frequency": "weekly", "repeat_days": [0],
+                             "repeat_timezone": "Asia/Shanghai"})
+    sync.sync()
+    port.update_event(own["id"], {"repeat_frequency": "none", "repeat_days": []})
+    assert sync.sync()["exported"] == 1
+    remote = next(row for row in bridge.rows if row["stella_id"] == own["id"])
+    assert remote["recurrence"]["frequency"] == "none"

@@ -2,7 +2,7 @@
 
 import os
 import threading
-from typing import Dict, Optional
+from typing import Dict
 from config import conf
 from common.log import logger
 from common.utils import expand_path
@@ -177,12 +177,18 @@ def _is_channel_ready(
     if not channel_type or channel_type == "unknown":
         return False
     try:
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        if channel_type == "weixin":
+            from agent.scheduler.delivery import runtime_channel
+            channel = runtime_channel(channel_type)
+        else:
+            from channel.channel_factory import create_channel
+            channel = create_channel(channel_type)
         if channel is None:
             return False
 
         if channel_type == "weixin":
+            if getattr(channel, "login_status", None) != "logged_in":
+                return False
             tokens = getattr(channel, "_context_tokens", None)
             if not tokens or receiver not in tokens:
                 return False
@@ -307,6 +313,14 @@ def _send_checked(channel, reply, context):
     return result
 
 
+def _channel_for_delivery(channel_type):
+    if channel_type == "weixin":
+        from agent.scheduler.delivery import runtime_channel
+        return runtime_channel(channel_type)
+    from channel.channel_factory import create_channel
+    return create_channel(channel_type)
+
+
 def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
     """
     Execute an agent_task action - let Agent handle the task.
@@ -418,8 +432,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 )
                 return True
 
-            from channel.channel_factory import create_channel
-            channel = create_channel(channel_type)
+            channel = _channel_for_delivery(channel_type)
             if not channel:
                 logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
                 return False
@@ -513,9 +526,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         reply = Reply(ReplyType.TEXT, content)
         
         # Get channel and send
-        from channel.channel_factory import create_channel
-        
-        channel = create_channel(channel_type)
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
@@ -548,7 +559,7 @@ def _execute_application_command(task, agent_id=None):
     from application import Application, RequestContext
     from agent.runtime.run_record import RunRecord
     from agent.scheduler.outcome import ExecutionOutcome
-    from common.runtime_identity import current_identity, identity_scope
+    from common.runtime_identity import identity_scope
     import uuid
     action = task.get("action", {})
     base = RequestContext.ambient("scheduler")
@@ -659,7 +670,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
             return ExecutionOutcome("failed", "receiver is required")
 
-        from agent.scheduler.result_cache import load_output, save_output
+        from agent.scheduler.result_cache import load_output
         store = get_task_store(agent_id=agent_id)
         job_run_id = task.get("job_run_id")
         content = load_output(store, job_run_id)
@@ -703,8 +714,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
 
         reply = Reply(ReplyType.TEXT, content)
 
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
@@ -804,8 +814,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
 
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
