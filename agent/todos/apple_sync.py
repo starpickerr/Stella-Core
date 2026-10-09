@@ -206,6 +206,13 @@ class AppleReminderSync:
         self._set("connected", False)
         return self.status()
 
+    def items(self, list_id):
+        self._validate_selection([list_id], "import")
+        inventory = self.bridge.call("reminders", list_ids=[list_id])
+        if list_id not in inventory["successful_list_ids"]:
+            raise ValueError("selected reminder list could not be scanned")
+        return [row for row in inventory["reminders"] if row["list_id"] == list_id]
+
     @staticmethod
     def _match(remote, maps, inventory):
         direct = [row for row in maps if row["list_id"] == remote["list_id"] and
@@ -323,6 +330,105 @@ class AppleReminderSync:
                                  local["id"] not in baseline and local["status"] != "cancelled"
                                  for local in self.todos.list_todos())
         return result
+
+    def _one_time_items(self, direction, list_id, item_ids):
+        if direction not in ("import", "export"):
+            raise ValueError("one-time direction must be import or export")
+        if not isinstance(item_ids, list) or not item_ids or any(
+                not isinstance(key, str) or not key.strip() for key in item_ids) or len(set(item_ids)) != len(item_ids):
+            raise ValueError("explicit distinct reminder_id or todo_id values are required")
+        self._validate_selection([list_id], direction)
+        if direction == "export":
+            items = [self._local(key) for key in item_ids]
+            if any(row is None for row in items):
+                raise KeyError("Stella todo not found")
+            maps = {row["todo_id"]: row for row in self._maps()}
+            if any((row["source_type"] is not None and row["id"] not in maps) or
+                   (row["id"] in maps and maps[row["id"]]["list_id"] != list_id)
+                   for row in items):
+                raise ValueError("todo cannot be exported to the selected list")
+            return items
+        rows = self.items(list_id)
+        external_counts = {key: sum(row.get("external_id") == key for row in rows)
+                           for key in {row.get("external_id") for row in rows if row.get("external_id")}}
+        items = []
+        for key in item_ids:
+            matches = [row for row in rows if row["list_id"] == list_id and row["reminder_id"] == key]
+            if len(matches) != 1:
+                raise KeyError("Apple reminder_id not found or ambiguous")
+            if not _supported(matches[0]):
+                raise ValueError("Apple reminder has unsupported fields")
+            external = matches[0].get("external_id")
+            if external and external_counts[external] != 1:
+                raise ValueError("Apple reminder identity is ambiguous")
+            items.append(matches[0])
+        return items
+
+    def preview_items(self, direction, list_id, item_ids):
+        with self._lock:
+            items = self._one_time_items(direction, list_id, item_ids)
+            maps = self._maps()
+            result = {"new": 0, "updated": 0, "skipped": 0, "conflicts": 0,
+                      "item_ids": item_ids}
+            for item in items:
+                if direction == "import":
+                    mapping = self._match(item, maps, items)
+                    if mapping is None:
+                        result["new"] += 1
+                    else:
+                        local = self._local(mapping["todo_id"])
+                        if local is None or mapping["state"] == "conflict" or _hash(local) != mapping["local_hash"]:
+                            result["conflicts"] += 1
+                        elif _hash(item, remote=True) != mapping["remote_hash"]:
+                            result["updated"] += 1
+                        else:
+                            result["skipped"] += 1
+                else:
+                    mapping = next((row for row in maps if row["todo_id"] == item["id"]), None)
+                    if mapping is None:
+                        result["new"] += 1
+                    elif mapping["state"] == "conflict":
+                        result["conflicts"] += 1
+                    elif _hash(item) != mapping["local_hash"]:
+                        result["updated"] += 1
+                    else:
+                        result["skipped"] += 1
+            return result
+
+    def one_time(self, direction, list_id, item_ids, *, confirm=False):
+        if confirm is not True:
+            raise ValueError("explicit confirmation is required")
+        with self._lock:
+            items = self._one_time_items(direction, list_id, item_ids)
+            counts = {"status": "success", "imported": 0, "updated": 0,
+                      "exported": 0, "conflicts": 0, "item_ids": item_ids}
+            if direction == "import":
+                inventory = self.bridge.call("reminders", list_ids=[list_id])["reminders"]
+                for remote in items:
+                    maps = self._maps()
+                    mapping = self._match(remote, maps, inventory)
+                    if mapping:
+                        self._process_remote(remote, mapping, "import", counts)
+                    else:
+                        key = _source_key(remote)
+                        local = self.todos.upsert_external_todo(key, _payload(remote))
+                        self._save_map(self._new_map(local, remote, "apple", key))
+                        counts["imported"] += 1
+            else:
+                for local in items:
+                    mapping = next((row for row in self._maps() if row["todo_id"] == local["id"]), None)
+                    if mapping:
+                        remote = self.bridge.call("reminder_lookup", list_id=list_id,
+                            reminder_id=mapping["reminder_id"], external_id=mapping["external_id"]).get("reminder")
+                        if remote is None:
+                            raise ValueError("mapped Apple reminder is unavailable")
+                        self._process_remote(remote, mapping, "export", counts)
+                    else:
+                        remote = self.bridge.call("reminder_upsert", **self._write_payload(
+                            local, list_id=list_id))["reminder"]
+                        self._save_map(self._new_map(local, remote, "stella"))
+                        counts["exported"] += 1
+            return counts
 
     def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
         with self._lock:

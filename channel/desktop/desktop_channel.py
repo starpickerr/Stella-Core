@@ -2070,6 +2070,18 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/apple/sync', 'AppleCalendarSyncHandler',
             '/api/calendar/apple/disconnect', 'AppleCalendarDisconnectHandler',
             '/api/calendar/apple/resolve', 'AppleCalendarResolveHandler',
+            '/api/calendar/apple/preview', 'AppleCalendarPreviewHandler',
+            '/api/calendar/apple/items', 'AppleCalendarItemsHandler',
+            '/api/calendar/apple/one-time', 'AppleCalendarOneTimeHandler',
+            '/api/todos/apple/status', 'AppleReminderStatusHandler',
+            '/api/todos/apple/access', 'AppleReminderAccessHandler',
+            '/api/todos/apple/configure', 'AppleReminderConfigureHandler',
+            '/api/todos/apple/sync', 'AppleReminderSyncHandler',
+            '/api/todos/apple/disconnect', 'AppleReminderDisconnectHandler',
+            '/api/todos/apple/resolve', 'AppleReminderResolveHandler',
+            '/api/todos/apple/preview', 'AppleReminderPreviewHandler',
+            '/api/todos/apple/items', 'AppleReminderItemsHandler',
+            '/api/todos/apple/one-time', 'AppleReminderOneTimeHandler',
             '/api/todos', 'TodosHandler',
             '/api/todos/update', 'TodoUpdateHandler',
             '/api/todos/status', 'TodoStatusHandler',
@@ -6238,18 +6250,9 @@ class CalendarCategoryDeleteHandler:
         return _calendar_response(operation)
 
 
-_apple_calendar_managers = {}
-_apple_calendar_managers_lock = threading.Lock()
-
-
 def _apple_calendar_sync():
-    from agent.calendar.apple_sync import AppleCalendarSync
-    from common.state_dir import calendar_db
-    key = str(calendar_db().with_name("apple_sync.db"))
-    with _apple_calendar_managers_lock:
-        if key not in _apple_calendar_managers:
-            _apple_calendar_managers[key] = AppleCalendarSync(db_path=key)
-        return _apple_calendar_managers[key]
+    from application import Application
+    return Application.apple_calendar()
 
 
 class AppleCalendarStatusHandler:
@@ -6296,6 +6299,112 @@ class AppleCalendarResolveHandler:
         def operation():
             body = _calendar_body()
             return {"connection": _apple_calendar_sync().resolve_conflict(body.get("stella_id"), body.get("choice"))}
+        return _calendar_response(operation)
+
+
+class AppleCalendarPreviewHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"preview": _apple_calendar_sync().preview_items(
+                body.get("direction"), body.get("calendar_id"), body.get("item_ids"))}
+        return _calendar_response(operation)
+
+
+class AppleCalendarItemsHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"items": _apple_calendar_sync().items(
+                body.get("calendar_id"), body.get("start"), body.get("end"))}
+        return _calendar_response(operation)
+
+
+class AppleCalendarOneTimeHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_calendar_sync()
+            result = manager.one_time(body.get("direction"), body.get("calendar_id"),
+                                      body.get("item_ids"), confirm=body.get("confirm") is True)
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+def _apple_reminder_sync():
+    from application import Application
+    return Application.apple_reminders()
+
+
+class AppleReminderStatusHandler:
+    def GET(self):
+        return _calendar_response(lambda: {"connection": _apple_reminder_sync().status()})
+
+
+class AppleReminderAccessHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_reminder_sync().request_access()})
+
+
+class AppleReminderConfigureHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_reminder_sync()
+            manager.configure(body.get("list_ids"), body.get("direction"))
+            result = manager.sync(manual=True)
+            manager.start_auto()
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleReminderSyncHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_reminder_sync()
+            result = manager.sync(manual=True, confirm_deletions=body.get("confirm_deletions") is True,
+                                  confirm_local_deletions=body.get("confirm_local_deletions") is True)
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleReminderDisconnectHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_reminder_sync().disconnect()})
+
+
+class AppleReminderResolveHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"connection": _apple_reminder_sync().resolve_conflict(body.get("todo_id"), body.get("choice"))}
+        return _calendar_response(operation)
+
+
+class AppleReminderPreviewHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"preview": _apple_reminder_sync().preview_items(
+                body.get("direction"), body.get("list_id"), body.get("item_ids"))}
+        return _calendar_response(operation)
+
+
+class AppleReminderItemsHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"items": _apple_reminder_sync().items(
+            _calendar_body().get("list_id"))})
+
+
+class AppleReminderOneTimeHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_reminder_sync()
+            result = manager.one_time(body.get("direction"), body.get("list_id"),
+                                      body.get("item_ids"), confirm=body.get("confirm") is True)
+            return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
 
 
