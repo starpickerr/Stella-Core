@@ -6,4 +6,5 @@
   <key>CFBundleExecutable</key><string>StellaCalendarBridge</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>Stella synchronizes the calendars you select with your schedules.</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>Stella synchronizes the reminder lists you select with your tasks.</string>
 </dict></plist>

@@ -85,6 +85,7 @@
       ],
       "extendInfo": {
         "NSCalendarsFullAccessUsageDescription": "Stella synchronizes the calendars you select with your schedules.",
+        "NSRemindersFullAccessUsageDescription": "Stella synchronizes the reminder lists you select with your tasks.",
         "NSMicrophoneUsageDescription": "Used for voice input in chat: record a short clip and transcribe it via the configured speech recognition provider."
       },
       "target": [
