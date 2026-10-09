@@ -193,6 +193,9 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
         }
         return scan(store, ids, start, end)
     }
+    if op == "lookup" {
+        return ["event": try findEvent(store, request).map(serialize) ?? NSNull()]
+    }
     if op == "upsert" {
         let calendarID = try required(request, "calendar_id")
         guard let calendar = store.calendars(for: .event).first(where: { $0.calendarIdentifier == calendarID }) else {

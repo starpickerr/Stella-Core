@@ -1,4 +1,3 @@
-import json
 import sys
 
 import pytest
@@ -32,6 +31,7 @@ def test_bridge_uses_json_stdin_and_rejects_malformed_output(tmp_path):
     bridge = AppleCalendarBridge(helper_path=valid, platform="darwin")
     assert bridge.call("events", calendar_ids=["a; touch /tmp/nope"])["echo"] == {
         "op": "events", "calendar_ids": ["a; touch /tmp/nope"]}
+    assert bridge.call("lookup", calendar_id="a", event_id="e")["echo"]["op"] == "lookup"
     bad = helper(tmp_path, "print('private calendar contents')\n")
     with pytest.raises(BridgeError, match="invalid response"):
         AppleCalendarBridge(helper_path=bad, platform="darwin").call("calendars")

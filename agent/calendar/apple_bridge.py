@@ -35,7 +35,7 @@ class AppleCalendarBridge:
             if op == "status":
                 return {"supported": False, "authorization": "helper_missing"}
             raise BridgeError("EventKit helper is not installed")
-        if op not in {"status", "request_access", "calendars", "events", "upsert", "delete"}:
+        if op not in {"status", "request_access", "calendars", "events", "lookup", "upsert", "delete"}:
             raise BridgeError("unknown EventKit operation")
         request = json.dumps({"op": op, **payload}, ensure_ascii=False) + "\n"
         try:

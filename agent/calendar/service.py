@@ -317,7 +317,7 @@ class CalendarService:
                  row["location"], row.get("category_id"), "briefing" if _briefing_key else None, _briefing_key, "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], now, now))
         return self.get_event(event_id)
 
-    def upsert_external_event(self, provider, source_key, payload, event_id=None):
+    def upsert_external_event(self, provider, source_key, payload, event_id=None, reconciled=False):
         """Create or refresh a sourced event without overwriting a local edit."""
         if provider != "apple_calendar":
             raise ValueError("unsupported calendar provider")
@@ -331,10 +331,10 @@ class CalendarService:
             if old:
                 if event_id and old["id"] != event_id:
                     raise ValueError("source event mapping changed")
-                if old["user_modified"]:
+                if old["user_modified"] and not reconciled:
                     raise ValueError("source event was locally modified")
                 db.execute("""UPDATE calendar_events SET title=?,description=?,start_at=?,end_at=?,all_day=?,
-                    location=?,repeat_frequency=?,repeat_days=?,repeat_until=?,repeat_timezone=?,updated_at=?
+                    location=?,repeat_frequency=?,repeat_days=?,repeat_until=?,repeat_timezone=?,user_modified=0,updated_at=?
                     WHERE id=?""", (row["title"], row["description"], row["start_at"], row["end_at"],
                     row["all_day"], row["location"], row["repeat_frequency"], row["repeat_days"],
                     row["repeat_until"], row["repeat_timezone"], now, old["id"]))
