@@ -128,3 +128,45 @@ def test_local_calendar_delete_confirmation_reaches_sync_service(tmp_path, monke
         result = json.loads(web_channel.AppleCalendarSyncHandler().POST())
     assert result["result"]["deleted_local"] == 1
     assert port.list_events() == []
+
+
+def test_calendar_auto_switch_persists_and_respects_permission(tmp_path, monkeypatch):
+    from application import Application
+
+    bridge = FakeBridge([])
+    sync = AppleCalendarSync(bridge=bridge, db_path=tmp_path / "sync.db",
+                             calendar_port=Application.port("calendar"))
+    sync.configure(["a"], "import")
+    calls = []
+    monkeypatch.setattr(sync, "start_auto", lambda: calls.append("start"))
+    monkeypatch.setattr(sync, "stop_auto", lambda: calls.append("stop"))
+    assert sync.status()["auto_enabled"] is True
+    sync.set_auto(False)
+    assert calls == ["stop"]
+    reopened = AppleCalendarSync(bridge=bridge, db_path=tmp_path / "sync.db",
+                                 calendar_port=Application.port("calendar"))
+    assert reopened.status()["auto_enabled"] is False
+    monkeypatch.setattr(reopened, "start_auto", lambda: calls.append("restart"))
+    reopened.resume_auto()
+    assert calls == ["stop"]
+    bridge.authorization = "denied"
+    reopened.set_auto(True)
+    reopened.resume_auto()
+    assert calls == ["stop"]
+    bridge.authorization = "full_access"
+    reopened.resume_auto()
+    assert calls == ["stop", "restart"]
+
+
+def test_calendar_auto_route_updates_shared_manager(tmp_path, monkeypatch):
+    from channel.desktop import desktop_channel as web_channel
+    from application import Application
+
+    sync = AppleCalendarSync(bridge=FakeBridge([]), db_path=tmp_path / "sync.db",
+                             calendar_port=Application.port("calendar"))
+    monkeypatch.setattr(web_channel, "_apple_calendar_sync", lambda: sync)
+    with patch.object(web_channel, "_require_auth"), patch.object(web_channel.web, "header"), \
+         patch.object(web_channel.web, "data", return_value=b'{"enabled":false}'), \
+         patch.object(sync, "stop_auto"):
+        result = json.loads(web_channel.AppleCalendarAutoHandler().POST())
+    assert result["connection"]["auto_enabled"] is False

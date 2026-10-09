@@ -106,3 +106,31 @@ def test_one_time_import_recovers_stella_marker_without_duplicate(tmp_path):
     assert result["imported"] == 0
     assert len(todos.list_todos()) == 1
     assert sync._maps()[0]["todo_id"] == own["id"]
+
+
+def test_reminder_auto_switch_is_independent_and_persistent(tmp_path, monkeypatch):
+    sync, todos, bridge, _ = manager(tmp_path)
+    sync.configure(["a"], "import")
+    calls = []
+    monkeypatch.setattr(sync, "stop_auto", lambda: calls.append("stop"))
+    sync.set_auto(False)
+    assert calls == ["stop"]
+    from agent.todos.apple_sync import AppleReminderSync
+    reopened = AppleReminderSync(bridge=bridge, db_path=tmp_path / "apple_reminders.db", todo_port=todos)
+    assert reopened.status()["auto_enabled"] is False
+    monkeypatch.setattr(reopened, "start_auto", lambda: calls.append("start"))
+    reopened.resume_auto()
+    assert calls == ["stop"]
+    reopened.set_auto(True)
+    assert calls == ["stop", "start"]
+
+
+def test_reminder_auto_route_updates_shared_manager(tmp_path, monkeypatch):
+    from channel.desktop import desktop_channel as web_channel
+    sync, _, _, _ = manager(tmp_path)
+    monkeypatch.setattr(web_channel, "_apple_reminder_sync", lambda: sync)
+    with patch.object(web_channel, "_require_auth"), patch.object(web_channel.web, "header"), \
+         patch.object(web_channel.web, "data", return_value=b'{"enabled":false}'), \
+         patch.object(sync, "stop_auto"):
+        result = json.loads(web_channel.AppleReminderAutoHandler().POST())
+    assert result["connection"]["auto_enabled"] is False

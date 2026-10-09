@@ -31,7 +31,7 @@ import type {
   BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
-  CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult,
+  CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection,
   Todo, TodoInput, UncertainReminder,
 } from '../types'
 import { getLang } from '../i18n'
@@ -740,6 +740,18 @@ class ApiClient {
 
   async requestAppleCalendarAccess(): Promise<AppleCalendarConnection> {
     return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/access', {})).connection
+  }
+
+  async setAppleCalendarAuto(enabled: boolean): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/auto', { enabled })).connection
+  }
+
+  async getAppleReminders(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/status')).connection
+  }
+
+  async setAppleRemindersAuto(enabled: boolean): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/auto', { enabled })).connection
   }
 
   async previewAppleCalendarScope(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{
