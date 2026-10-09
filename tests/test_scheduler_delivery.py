@@ -131,6 +131,48 @@ def test_weixin_unknown_login_state_cannot_be_scheduled(monkeypatch):
         delivery.normalize_destination({'channel_type': 'weixin', 'receiver': 'user-1'})
 
 
+def test_route_defaults_to_compatible_desktop_delivery(monkeypatch):
+    assert delivery.normalize_notification_route(None) == {
+        'primary': None, 'backup_enabled': False, 'backup': None,
+    }
+
+
+def test_only_feishu_route_never_retains_a_backup(monkeypatch):
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda _: SimpleNamespace())
+    route = delivery.normalize_notification_route({
+        'primary': {'channel_type': 'feishu', 'receiver': 'ou_user'},
+        'backup_enabled': False,
+        'backup': {'channel_type': 'weixin', 'receiver': 'old-user'},
+    })
+    assert route['primary']['channel_type'] == 'feishu'
+    assert route['backup_enabled'] is False
+    assert route['backup'] is None
+
+
+def test_route_enables_only_explicit_authorized_backup(monkeypatch):
+    channels = {'feishu': SimpleNamespace(),
+                'weixin': SimpleNamespace(login_status='logged_in', _context_tokens={'user-1': 'private-token'})}
+    monkeypatch.setattr(delivery, 'runtime_channel', channels.get)
+    route = delivery.normalize_notification_route({
+        'primary': {'channel_type': 'weixin', 'receiver': 'user-1'},
+        'backup_enabled': True,
+        'backup': {'channel_type': 'feishu', 'receiver': 'ou_backup'},
+    })
+    assert route['backup_enabled'] is True
+    assert route['backup']['receiver'] == 'ou_backup'
+    assert 'private-token' not in str(route)
+
+
+def test_route_rejects_missing_recipient_and_unspecified_backup(monkeypatch):
+    monkeypatch.setattr(delivery, 'runtime_channel', lambda _: SimpleNamespace())
+    with pytest.raises(ValueError, match='recipient'):
+        delivery.normalize_notification_route({'primary': {'channel_type': 'feishu'}})
+    with pytest.raises(ValueError, match='backup'):
+        delivery.normalize_notification_route({
+            'primary': {'channel_type': 'feishu', 'receiver': 'ou_user'}, 'backup_enabled': True,
+        })
+
+
 def test_false_send_is_a_delivery_failure():
     with pytest.raises(RuntimeError,match='rejected'):
         integration._send_checked(SimpleNamespace(send=lambda *_:False),None,{})
