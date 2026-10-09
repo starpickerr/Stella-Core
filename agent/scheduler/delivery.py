@@ -112,6 +112,30 @@ def normalize_destination(destination, agent_id=None):
     return result
 
 
+def normalize_notification_route(route, agent_id=None):
+    """Normalize an explicitly chosen primary and optional backup destination."""
+    if route is None:
+        return {'primary': None, 'backup_enabled': False, 'backup': None}
+    if not isinstance(route, dict):
+        raise ValueError('notification route must be an object')
+    primary = route.get('primary')
+    primary = normalize_destination(primary, agent_id) if primary is not None else None
+    backup_enabled = route.get('backup_enabled', False)
+    if type(backup_enabled) is not bool:
+        raise ValueError('backup_enabled must be true or false')
+    if not backup_enabled:
+        return {'primary': primary, 'backup_enabled': False, 'backup': None}
+    if primary is None:
+        raise ValueError('A primary destination is required before enabling backup')
+    backup = route.get('backup')
+    if backup is None:
+        raise ValueError('A backup destination is required when backup is enabled')
+    backup = normalize_destination(backup, agent_id)
+    if (primary['channel_type'], primary['receiver']) == (backup['channel_type'], backup['receiver']):
+        raise ValueError('Backup must use a different recipient or channel')
+    return {'primary': primary, 'backup_enabled': True, 'backup': backup}
+
+
 DESTINATION_FIELDS = ('channel_type', 'receiver', 'receiver_name', 'is_group',
                       'notify_session_id', 'receive_id_type', 'dingtalk_sender_staff_id',
                       'context_token')
