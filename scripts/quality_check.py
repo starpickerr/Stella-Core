@@ -88,7 +88,8 @@ def affected_checks(files):
         tests.update(p.relative_to(ROOT).as_posix() for p in (ROOT / "tests").glob("test_*cancel*.py"))
     desktop_config = any(path.startswith("desktop/") and (path.endswith(".json") or path.endswith(".mjs") or "preload/" in path) for path in changed)
     renderer = any(path.startswith("desktop/src/renderer/") for path in changed)
-    renderer = renderer or desktop_config or "tests/ui_smoke.py" in changed or "tests/ui_briefing.py" in changed
+    renderer = renderer or desktop_config or any(path in changed for path in
+        ("tests/ui_smoke.py", "tests/ui_briefing.py", "tests/ui_apple_calendar.py"))
     desktop = renderer or any(path.startswith("desktop/src/main/") for path in changed)
     return {
         "ruff": python_files,

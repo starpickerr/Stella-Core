@@ -9,3 +9,13 @@
 简报生成后，`BriefingPipeline` 将精选的来源条目交给 `CalendarService.ingest_briefing`。明确的 `calendar.start_at` 会创建日程；非行动条目的明确 `due_at` 仍可创建日程。行动条目的截止时间交给独立的事务服务。一个邮件线程合并为一张简报卡时，每条被精选的来源仍单独参与联动。
 
 来源标识用于去重。再次生成同一简报会更新未被用户编辑的来源日程，保留用户已编辑的日程，并清理本次简报不再精选的未编辑日程及交接记录。简报写入不依赖日程服务成功；联动故障写入日志，不回滚已生成的简报。
+
+## Apple 日历连接
+
+macOS 桌面端的日程页提供「Apple 日历」入口。首次使用时点击「请求日历权限」，在 macOS 授予完整日历访问权限，选择要同步的日历和方向，再点击「连接并同步」。首次连接只导入所选 Apple 日历；连接前已有的 Stella 自有日程不会被批量上传。之后新建的 Stella 日程会在自动或手动同步时写入第一个选中的可写日历。仅导入、仅导出、双向三种方向均可切换。断开连接会停止后续同步，已有 Stella 日程和 Apple 事件均保留。
+
+EventKit 访问由 `native/apple-calendar/CalendarBridge.swift` 中的独立 Swift 进程完成。Python 的 `apple_bridge.py` 以 JSON stdin/stdout 调用原生进程，`apple_sync.py` 在用户的 `calendar/apple_sync.db` 保存选择、事件映射、内容指纹、冲突与最近成功同步时间；业务日程一律经 `Application.port("calendar")` 读写。原生进程监听 `EKEventStoreChanged`，Python 另以五分钟周期重试。只读取所选日历、当前日期前一年到后两年的事件实例；下一次同步会随日期推进窗口。重复事件的各实例与例外按原始发生日期独立映射，以保留移动后的例外。Stella 自建重复系列在 Apple 端出现单次修改时，Stella 保留系列并以独立日程替换被修改的那一次；无法安全映射的整组系列冲突需要人工处理，不会静默折叠成单次日程。
+
+Apple 事件删除须在连续、间隔至少一分钟的完整读取中被确认；日历不可用时清除待删除判定。Stella 删除的关联日程不会触发自动删除 Apple 事件，用户须在连接面板明确点击「确认删除 Apple 事件」。两边同时修改时记录冲突，用户可选择保留 Stella 或 Apple 版本。来源事件内容不会写入普通同步日志。同步失败不会阻断日程查询和其他业务。
+
+连接后，每日简报的来源列表增加只读「Stella 日程」，读取未来一天的日程候选；Agent 原有 `calendar` 工具可查询和操作同步后的日程。非 macOS 平台会显示不支持状态。开发环境运行 `npm run dev` 会编译 Swift helper；macOS 分发运行 `npm run dist:mac` 时会将 helper 和授权说明打入应用。

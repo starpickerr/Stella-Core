@@ -40,7 +40,8 @@ class AppleCalendarBridge:
         request = json.dumps({"op": op, **payload}, ensure_ascii=False) + "\n"
         try:
             result = subprocess.run([str(self.helper_path)], input=request, text=True,
-                                    capture_output=True, timeout=self.timeout, check=False)
+                                    capture_output=True, timeout=max(self.timeout, 150) if op == "request_access" else self.timeout,
+                                    check=False)
         except subprocess.TimeoutExpired as exc:
             raise BridgeError("EventKit helper timed out") from exc
         except OSError as exc:

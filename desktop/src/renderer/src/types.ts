@@ -839,6 +839,31 @@ export interface CalendarEvent {
 export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
   { all_day: boolean; category_id: string | null; repeat_frequency: CalendarEvent['repeat_frequency']; repeat_days: number[]; repeat_until: string | null; repeat_timezone: string }
 
+export interface AppleCalendarConnection {
+  supported: boolean
+  authorization: 'unsupported' | 'helper_missing' | 'not_determined' | 'denied' | 'restricted' | 'write_only' | 'full_access' | 'unknown'
+  connected: boolean
+  calendar_ids: string[]
+  direction: 'import' | 'export' | 'bidirectional'
+  calendars: { id: string; title: string; source: string; writable: boolean }[]
+  last_success: string | null
+  error: string
+  conflicts: { stella_id: string; reason: string }[]
+  pending_deletions: number
+}
+
+export interface AppleCalendarSyncResult {
+  status: string
+  imported: number
+  updated: number
+  exported: number
+  deleted_local: number
+  deleted_remote: number
+  conflicts: number
+  pending_deletions: number
+  failed_calendar_ids: string[]
+}
+
 export interface Todo {
   id: string; series_id?: string; title: string; notes: string
   status: 'todo' | 'in_progress' | 'waiting' | 'blocked' | 'completed' | 'cancelled'

@@ -56,7 +56,11 @@ func requireAccess() throws {
 }
 
 func recurrence(_ event: EKEvent) -> [String: Any] {
-    guard let rule = event.recurrenceRules?.first else { return ["frequency": "none", "days": [], "until": NSNull()] }
+    guard let rule = event.recurrenceRules?.first else {
+        return ["frequency": "none", "days": [], "until": NSNull(), "interval": 1,
+                "count": 0, "rule_count": 0,
+                "month_days": [], "months": [], "week_numbers": [], "year_days": [], "set_positions": []]
+    }
     let frequency: String
     switch rule.frequency {
     case .daily: frequency = "daily"
@@ -66,7 +70,14 @@ func recurrence(_ event: EKEvent) -> [String: Any] {
     @unknown default: frequency = "unsupported"
     }
     let days = (rule.daysOfTheWeek ?? []).map { ($0.dayOfTheWeek.rawValue + 5) % 7 }
-    return ["frequency": frequency, "days": days, "until": iso(rule.recurrenceEnd?.endDate) ?? NSNull()]
+    return ["frequency": frequency, "days": days, "until": iso(rule.recurrenceEnd?.endDate) ?? NSNull(),
+            "interval": rule.interval, "count": rule.recurrenceEnd?.occurrenceCount ?? 0,
+            "rule_count": event.recurrenceRules?.count ?? 1,
+            "month_days": (rule.daysOfTheMonth ?? []).map { $0.intValue },
+            "months": (rule.monthsOfTheYear ?? []).map { $0.intValue },
+            "week_numbers": (rule.weeksOfTheYear ?? []).map { $0.intValue },
+            "year_days": (rule.daysOfTheYear ?? []).map { $0.intValue },
+            "set_positions": (rule.setPositions ?? []).map { $0.intValue }]
 }
 
 func serialize(_ event: EKEvent) -> [String: Any] {

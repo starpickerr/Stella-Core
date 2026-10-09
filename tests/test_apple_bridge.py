@@ -41,3 +41,21 @@ def test_bridge_times_out_without_logging_request(tmp_path):
     slow = helper(tmp_path, "import time\ntime.sleep(2)\n")
     with pytest.raises(BridgeError, match="timed out"):
         AppleCalendarBridge(helper_path=slow, platform="darwin", timeout=0.05).call("events")
+
+
+def test_permission_prompt_has_longer_timeout_than_regular_calls(tmp_path, monkeypatch):
+    valid = helper(tmp_path, "print('{\"ok\":true,\"authorization\":\"denied\"}')\n")
+    from agent.calendar import apple_bridge
+    original = apple_bridge.subprocess.run
+    timeouts = []
+
+    def run(*args, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(apple_bridge.subprocess, "run", run)
+    bridge = AppleCalendarBridge(helper_path=valid, platform="darwin", timeout=2)
+    bridge.call("status")
+    bridge.call("request_access")
+    assert timeouts[0] == 2
+    assert timeouts[1] >= 120

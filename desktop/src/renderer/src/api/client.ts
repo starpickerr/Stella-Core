@@ -31,7 +31,7 @@ import type {
   BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
-  CalendarCategory, CalendarEvent, CalendarEventInput,
+  CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult,
   Todo, TodoInput, UncertainReminder,
 } from '../types'
 import { getLang } from '../i18n'
@@ -725,6 +725,30 @@ class ApiClient {
 
   async deleteCalendarEvent(id: string): Promise<void> {
     await this.briefingRequest('/api/calendar/events/delete', { id })
+  }
+
+  async getAppleCalendar(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/status')).connection
+  }
+
+  async requestAppleCalendarAccess(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/access', {})).connection
+  }
+
+  async configureAppleCalendar(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/configure', { calendar_ids: calendarIds, direction })
+  }
+
+  async syncAppleCalendar(confirmDeletions = false): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/sync', { confirm_deletions: confirmDeletions })
+  }
+
+  async disconnectAppleCalendar(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/disconnect', {})).connection
+  }
+
+  async resolveAppleCalendarConflict(stellaId: string, choice: 'keep_stella' | 'keep_apple'): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/resolve', { stella_id: stellaId, choice })).connection
   }
 
   async getTodos(start?: string, end?: string, includeCompleted = true): Promise<Todo[]> {

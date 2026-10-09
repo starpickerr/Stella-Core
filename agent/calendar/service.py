@@ -65,6 +65,11 @@ class CalendarService:
                     UNIQUE(source_type, source_key)
                 );
                 CREATE INDEX IF NOT EXISTS calendar_events_start ON calendar_events(start_at);
+                CREATE TABLE IF NOT EXISTS calendar_occurrence_exclusions (
+                    series_id TEXT NOT NULL, occurrence_on TEXT NOT NULL,
+                    PRIMARY KEY(series_id, occurrence_on),
+                    FOREIGN KEY(series_id) REFERENCES calendar_events(id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS agenda_handoffs (
                     source_type TEXT NOT NULL, source_key TEXT NOT NULL,
                     destination TEXT NOT NULL CHECK(destination IN ('task','calendar')),
@@ -253,6 +258,8 @@ class CalendarService:
         sql = "SELECT * FROM calendar_events" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY start_at, id"
         with self._connect() as db:
             templates = [dict(row) for row in db.execute(sql, args)]
+            exclusions = {(row["series_id"], row["occurrence_on"]) for row in db.execute(
+                "SELECT series_id,occurrence_on FROM calendar_occurrence_exclusions")}
         if not start_at or not end_at:
             return templates
         if end_at - start_at > timedelta(days=370):
@@ -263,8 +270,20 @@ class CalendarService:
                 if datetime.fromisoformat(row["end_at"]) > start_at and datetime.fromisoformat(row["start_at"]) < end_at:
                     results.append(row)
             else:
-                results.extend(self._occurrences(row, start_at, end_at))
+                results.extend(instance for instance in self._occurrences(row, start_at, end_at)
+                               if (row["id"], instance["id"].rsplit("@", 1)[-1]) not in exclusions)
         return sorted(results, key=lambda row: (row["start_at"], row["id"]))
+
+    def exclude_occurrence(self, series_id, occurrence_on):
+        try:
+            day = date.fromisoformat(occurrence_on).isoformat()
+        except (ValueError, TypeError) as exc:
+            raise ValueError("occurrence_on must be YYYY-MM-DD") from exc
+        series = self.get_event(series_id)
+        if series["repeat_frequency"] == "none":
+            raise ValueError("event is not a recurring series")
+        with self._connect() as db:
+            db.execute("INSERT OR IGNORE INTO calendar_occurrence_exclusions VALUES (?,?)", (series_id, day))
 
     @staticmethod
     def _occurrences(row, start, end):

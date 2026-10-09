@@ -1,5 +1,8 @@
 """One source registry for desktop, scheduled tasks and Agent tools."""
+import sqlite3
+
 from agent.briefing import settings, elearning_settings
+from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
 
 
 def source_key(source):
@@ -7,7 +10,23 @@ def source_key(source):
 
 
 def configured_sources():
-    return settings.email_sources() + elearning_settings.elearning_sources()
+    sources = settings.email_sources() + elearning_settings.elearning_sources()
+    if apple_calendar_connected():
+        sources.append(CalendarAgendaSource())
+    return sources
+
+
+def apple_calendar_connected():
+    from common.state_dir import calendar_db
+    path = calendar_db(ensure=False).with_name("apple_sync.db")
+    if not path.is_file():
+        return False
+    try:
+        with sqlite3.connect(str(path), timeout=2) as db:
+            row = db.execute("SELECT value FROM settings WHERE key='connected'").fetchone()
+        return bool(row and row[0] == "true")
+    except sqlite3.Error:
+        return False
 
 
 def public_sources():

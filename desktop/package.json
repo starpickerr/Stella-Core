@@ -6,16 +6,17 @@
   "author": "Stella",
   "license": "MIT",
   "scripts": {
-    "dev": "node scripts/sync-version.mjs && npm run build && node scripts/launch-electron.mjs",
+    "dev": "node scripts/sync-version.mjs && npm run build:eventkit && npm run build && node scripts/launch-electron.mjs",
     "dev:hot": "node scripts/sync-version.mjs && concurrently \"npm run dev:renderer\" \"sleep 2 && npm run dev:main\"",
-    "dev:main": "tsc -p tsconfig.main.json && node scripts/launch-electron.mjs --hot-renderer",
+    "dev:main": "npm run build:eventkit && tsc -p tsconfig.main.json && node scripts/launch-electron.mjs --hot-renderer",
+    "build:eventkit": "node scripts/build-eventkit.mjs",
     "dev:renderer": "vite --port 5173 --strictPort",
     "build": "node scripts/sync-version.mjs && npm run typecheck && npm run build:renderer && npm run build:main",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:mac": "npm run build:eventkit && npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
     "lint": "eslint src --max-warnings 0"
   },
@@ -76,7 +77,14 @@
       "icon": "resources/icon.icns",
       "identity": null,
       "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "../native/apple-calendar/.build/StellaCalendarBridge",
+          "to": "apple-calendar/StellaCalendarBridge"
+        }
+      ],
       "extendInfo": {
+        "NSCalendarsFullAccessUsageDescription": "Stella synchronizes the calendars you select with your schedules.",
         "NSMicrophoneUsageDescription": "Used for voice input in chat: record a short clip and transcribe it via the configured speech recognition provider."
       },
       "target": [
