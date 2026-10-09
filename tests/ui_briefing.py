@@ -260,6 +260,12 @@ with sync_playwright() as playwright:
         expect(report.get_by_text('原通知需要关注', exact=True)).to_be_visible()
         expect(report.get_by_text('新要求需要处理', exact=True)).to_be_visible()
         expect(report.get_by_role('link', name='打开来源', exact=True)).to_have_count(2)
+        preferences['show_low_priority'] = False
+        for row in items:
+            actions[row['id']]['category'] = 'other'
+        page.get_by_role('button', name='刷新', exact=True).click()
+        expect(report.get_by_text('旧版纯文本报告', exact=True)).to_have_count(0)
+        preferences['show_low_priority'] = True
         items.clear()
         page.get_by_role('button', name='刷新', exact=True).click()
         expect(report.get_by_text('旧版纯文本报告', exact=True)).to_be_visible()
@@ -268,8 +274,9 @@ with sync_playwright() as playwright:
         page.goto(test_url + '/#/todos', wait_until='networkidle')
         tabs = page.get_by_role('navigation', name='事务')
         expect(tabs.get_by_role('button', name='逾期 3')).to_be_visible()
-        assert page.get_by_role('heading', name='逾期 2').bounding_box()['y'] < page.get_by_role('heading', name='已取消 1').bounding_box()['y'] < page.get_by_role('heading', name='已完成 2').bounding_box()['y']
-        expect(page.get_by_role('heading', name='逾期 2').locator('..').get_by_text('项目任务', exact=True)).to_be_visible()
+        assert page.get_by_role('heading', name='逾期 3').bounding_box()['y'] < page.get_by_role('heading', name='已取消 1').bounding_box()['y'] < page.get_by_role('heading', name='已完成 1').bounding_box()['y']
+        expect(page.get_by_role('heading', name='逾期 3').locator('..').get_by_text('项目任务', exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name='逾期 3').locator('..').get_by_text('已完成父事务', exact=True)).to_be_visible()
         tabs.get_by_role('button', name='逾期 3').click()
         expect(page.get_by_text('逾期作业', exact=True)).to_be_visible()
         expect(page.get_by_text('深层逾期任务', exact=True)).to_be_visible()
