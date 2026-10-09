@@ -58,7 +58,8 @@ def run_server(server, client, port=None):
 
 
 if __name__ == '__main__':
-    checks = [str(python_path(ROOT)), '-c', "import runpy; runpy.run_path('tests/ui_smoke.py'); runpy.run_path('tests/ui_briefing.py')"]
-    if not (ROOT / 'tests/ui_briefing.py').is_file():
-        checks = [str(python_path(ROOT)), 'tests/ui_smoke.py']
+    scripts = ['tests/ui_smoke.py', 'tests/ui_briefing.py', 'tests/ui_apple_calendar.py']
+    scripts = [path for path in scripts if (ROOT / path).is_file()]
+    checks = [str(python_path(ROOT)), '-c', 'import runpy; ' + '; '.join(
+        f'runpy.run_path({path!r})' for path in scripts)]
     sys.exit(run_server([npm_path(), '--prefix', 'desktop', 'run', 'dev:renderer', '--', '--host', '127.0.0.1', '--port', '{port}'], checks))

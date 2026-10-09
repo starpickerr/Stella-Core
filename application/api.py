@@ -32,6 +32,7 @@ _METHODS = {
         "categories", "create_category", "get_category", "update_category", "delete_category",
         "get_event", "list_events", "create_event", "update_event", "delete_event",
         "upsert_external_event",
+        "exclude_occurrence",
         "import_china_holidays", "create_special_date", "import_special_dates",
         "ingest_briefing_revision",
     }),

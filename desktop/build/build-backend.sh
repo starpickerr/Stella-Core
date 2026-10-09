@@ -90,5 +90,8 @@ pyinstaller "$BUILD_DIR/stella-backend.spec" \
 
 echo ""
 echo "==> Done. Bundle at: $BUILD_DIR/dist/stella-backend/"
+if [ "$(uname -s)" = "Darwin" ]; then
+  bash "$ROOT/native/apple-calendar/build.sh"
+fi
 du -sh "$BUILD_DIR/dist/stella-backend/" 2>/dev/null || true
 echo "==> Smoke test: STELLA_DESKTOP=1 \"$BUILD_DIR/dist/stella-backend/stella-backend\""

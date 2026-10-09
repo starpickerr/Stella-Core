@@ -2063,6 +2063,12 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/categories', 'CalendarCategoriesHandler',
             '/api/calendar/categories/update', 'CalendarCategoryUpdateHandler',
             '/api/calendar/categories/delete', 'CalendarCategoryDeleteHandler',
+            '/api/calendar/apple/status', 'AppleCalendarStatusHandler',
+            '/api/calendar/apple/access', 'AppleCalendarAccessHandler',
+            '/api/calendar/apple/configure', 'AppleCalendarConfigureHandler',
+            '/api/calendar/apple/sync', 'AppleCalendarSyncHandler',
+            '/api/calendar/apple/disconnect', 'AppleCalendarDisconnectHandler',
+            '/api/calendar/apple/resolve', 'AppleCalendarResolveHandler',
             '/api/todos', 'TodosHandler',
             '/api/todos/update', 'TodoUpdateHandler',
             '/api/todos/status', 'TodoStatusHandler',
@@ -2143,6 +2149,13 @@ class DesktopChannel(ChatChannel):
             raise
         SERVING.set()
         _log_startup_banner()
+        if sys.platform == 'darwin':
+            try:
+                calendar_sync = _apple_calendar_sync()
+                if calendar_sync.is_connected():
+                    calendar_sync.start_auto()
+            except Exception:
+                logger.exception("[DesktopChannel] Apple Calendar sync could not start")
         try:
             server.serve()
         except (KeyboardInterrupt, SystemExit):
@@ -6203,7 +6216,7 @@ def _calendar_response(operation):
     web.header('Cache-Control', 'no-store')
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
-    except (ValueError, KeyError) as exc:
+    except (ValueError, KeyError, PermissionError) as exc:
         logger.warning(f"[DesktopChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
         return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
     except Exception:
@@ -6289,6 +6302,65 @@ class CalendarCategoryDeleteHandler:
         def operation():
             _calendar_service().delete_category(_calendar_body().get("id"))
             return {}
+        return _calendar_response(operation)
+
+
+_apple_calendar_managers = {}
+_apple_calendar_managers_lock = threading.Lock()
+
+
+def _apple_calendar_sync():
+    from agent.calendar.apple_sync import AppleCalendarSync
+    from common.state_dir import calendar_db
+    key = str(calendar_db().with_name("apple_sync.db"))
+    with _apple_calendar_managers_lock:
+        if key not in _apple_calendar_managers:
+            _apple_calendar_managers[key] = AppleCalendarSync(db_path=key)
+        return _apple_calendar_managers[key]
+
+
+class AppleCalendarStatusHandler:
+    def GET(self):
+        return _calendar_response(lambda: {"connection": _apple_calendar_sync().status()})
+
+
+class AppleCalendarAccessHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_calendar_sync().request_access()})
+
+
+class AppleCalendarConfigureHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_calendar_sync()
+            manager.configure(body.get("calendar_ids"), body.get("direction"))
+            result = manager.sync(manual=True)
+            manager.start_auto()
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleCalendarSyncHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_calendar_sync()
+            result = manager.sync(manual=True, confirm_deletions=body.get("confirm_deletions") is True)
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleCalendarDisconnectHandler:
+    def POST(self):
+        return _calendar_response(lambda: {"connection": _apple_calendar_sync().disconnect()})
+
+
+class AppleCalendarResolveHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return {"connection": _apple_calendar_sync().resolve_conflict(body.get("stella_id"), body.get("choice"))}
         return _calendar_response(operation)
 
 

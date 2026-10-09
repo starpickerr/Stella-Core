@@ -9,6 +9,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from application import Application, RequestContext
 from .apple_bridge import AppleCalendarBridge
@@ -31,11 +32,21 @@ def _fingerprint(row, *, series=False, remote=False):
             data["repeat_frequency"] = rule.get("frequency") or "none"
             data["repeat_days"] = sorted(rule.get("days") or [])
             data["repeat_until"] = (rule.get("until") or "")[:10]
+            data["repeat_interval"] = rule.get("interval", 1)
+            data["repeat_count"] = rule.get("count", 0)
+            data["rule_count"] = rule.get("rule_count", 0 if data["repeat_frequency"] == "none" else 1)
+            for key in ("month_days", "months", "week_numbers", "year_days", "set_positions"):
+                data[key] = sorted(rule.get(key) or [])
         else:
             data["repeat_frequency"] = row.get("repeat_frequency") or "none"
             days = row.get("repeat_days") or []
             data["repeat_days"] = sorted(json.loads(days) if isinstance(days, str) else days)
             data["repeat_until"] = row.get("repeat_until") or ""
+            data["repeat_interval"] = 1
+            data["repeat_count"] = 0
+            data["rule_count"] = 0 if data["repeat_frequency"] == "none" else 1
+            for key in ("month_days", "months", "week_numbers", "year_days", "set_positions"):
+                data[key] = []
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -190,6 +201,9 @@ class AppleCalendarSync:
         self._set("connected", False)
         return self.status()
 
+    def is_connected(self):
+        return bool(self._get("connected", False))
+
     @staticmethod
     def _match(remote, maps, ambiguous=False):
         for row in maps:
@@ -224,20 +238,39 @@ class AppleCalendarSync:
         if mapping:
             data.update(event_id=mapping["event_id"], external_id=mapping["external_id"],
                         occurrence_date=mapping["occurrence_date"])
+        if window and mapping is None:
+            start = datetime.fromisoformat(local["start_at"])
+            if not (datetime.fromisoformat(window[0]) <= start < datetime.fromisoformat(window[1])):
+                window = ((start - timedelta(days=2)).isoformat(), (start + timedelta(days=2)).isoformat())
         if window:
             data.update(scan_start=window[0], scan_end=window[1])
         return data
 
-    def _process_remote(self, remote, maps, direction, window, counts, ambiguous=False):
-        mapping = self._match(remote, maps, ambiguous)
+    def _process_remote(self, remote, maps, direction, window, counts, ambiguous=False, moved_candidate=None):
+        mapping = self._match(remote, maps, ambiguous) or moved_candidate
+        if moved_candidate is not None:
+            mapping["calendar_id"] = remote["calendar_id"]
+            mapping["event_id"] = remote["event_id"]
         if mapping is None and remote.get("stella_id"):
             existing = next((row for row in maps if row["stella_id"] == remote["stella_id"] and row["origin"] == "stella"), None)
             if existing:
                 # EventKit expands a Stella-owned series into multiple instances.
                 # The Stella series already renders those instances itself.
                 if remote.get("is_detached"):
-                    self._conflict(existing, "Apple changed one occurrence of a Stella series")
-                    counts["conflicts"] += 1
+                    series = self._local(existing["stella_id"])
+                    if direction != "export" and series and series["repeat_frequency"] != "none":
+                        day = datetime.fromisoformat(remote["occurrence_date"].replace("Z", "+00:00"))
+                        day = day.astimezone(ZoneInfo(series["repeat_timezone"] or "UTC")).date().isoformat()
+                        self.calendar.exclude_occurrence(series["id"], day)
+                        key = _source_key(remote)
+                        local = self.calendar.upsert_external_event("apple_calendar", key, _payload(remote))
+                        exception_map = self._new_map(local, remote, "apple", key)
+                        self._save_map(exception_map)
+                        maps.append(exception_map)
+                        counts["imported"] += 1
+                    else:
+                        self._conflict(existing, "Apple changed one occurrence of a Stella series")
+                        counts["conflicts"] += 1
                 return
             local = self._local(remote["stella_id"])
             if local and local["source_type"] is None:
@@ -302,6 +335,7 @@ class AppleCalendarSync:
                 self._refresh_map(mapping, local, changed)
                 counts["exported"] += 1
         else:
+            mapping["calendar_id"] = remote["calendar_id"]
             mapping["event_id"] = remote.get("event_id") or mapping["event_id"]
             mapping["missing_since"] = ""
             mapping["updated_at"] = self.clock()
@@ -334,16 +368,30 @@ class AppleCalendarSync:
                 maps = self._maps()
                 seen = set()
                 identity_counts = {}
+                cross_counts = {}
+                inventory_keys = set()
                 for row in inventory["events"]:
                     identity = (row["calendar_id"], row.get("external_id"), row.get("occurrence_date"))
                     identity_counts[identity] = identity_counts.get(identity, 0) + 1
+                    cross = (row.get("external_id"), row.get("occurrence_date"))
+                    cross_counts[cross] = cross_counts.get(cross, 0) + 1
+                    inventory_keys.add((row["calendar_id"], row.get("event_id"), row.get("occurrence_date")))
                 for remote in inventory["events"]:
                     if remote["calendar_id"] not in successful:
                         continue
                     try:
                         identity = (remote["calendar_id"], remote.get("external_id"), remote.get("occurrence_date"))
                         ambiguous = identity_counts[identity] > 1
-                        self._process_remote(remote, maps, direction, window, counts, ambiguous)
+                        moved = None
+                        cross = (remote.get("external_id"), remote.get("occurrence_date"))
+                        if remote.get("external_id") and cross_counts[cross] == 1 and not self._match(remote, maps, ambiguous):
+                            candidates = [row for row in maps if row["calendar_id"] != remote["calendar_id"] and
+                                row["calendar_id"] in successful and row["external_id"] == remote["external_id"] and
+                                row["occurrence_date"] == remote["occurrence_date"] and
+                                (row["calendar_id"], row["event_id"], row["occurrence_date"]) not in inventory_keys]
+                            if len(candidates) == 1:
+                                moved = candidates[0]
+                        self._process_remote(remote, maps, direction, window, counts, ambiguous, moved)
                         found = self._match(remote, maps, ambiguous)
                         if found:
                             seen.add(found["stella_id"])
@@ -435,6 +483,8 @@ class AppleCalendarSync:
         local = self._local(stella_id)
         if local is None:
             raise KeyError("Stella event not found")
+        if choice == "keep_apple" and mapping["origin"] == "stella" and local["repeat_frequency"] != "none":
+            raise ValueError("Apple changes to a recurring series need manual review")
         remote = self.bridge.call("lookup", **{key: mapping[key] for key in
             ("calendar_id", "event_id", "external_id", "occurrence_date")}).get("event")
         if choice == "keep_stella":

@@ -1,14 +1,35 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Settings2, X, Pencil, Trash2, MapPin, ExternalLink, Repeat2, Star, Download, Upload, List } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Settings2, X, Pencil, Trash2, MapPin, ExternalLink, Repeat2, Star, Download, Upload, List, CalendarDays } from 'lucide-react'
 import apiClient from '../api/client'
 import { getLang } from '../i18n'
 import type { CalendarCategory, CalendarEvent, CalendarEventInput } from '../types'
 import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunday, WeekTimeline } from './calendar/CalendarViews'
 import type { ScrollPeriod } from './calendar/CalendarViews'
+import AppleCalendarPanel from './calendar/AppleCalendarPanel'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+const zonedDayKey = (value: string | number, zone: string) => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date(value))
+  const field = (name: string) => parts.find(part => part.type === name)?.value || ''
+  return `${field('year')}-${field('month')}-${field('day')}`
+}
+const zonedMidnight = (day: string, zone: string) => {
+  const [year, month, date] = day.split('-').map(Number)
+  const target = Date.UTC(year, month - 1, date)
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+  let instant = target
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const parts = formatter.formatToParts(new Date(instant))
+    const field = (name: string) => Number(parts.find(part => part.type === name)?.value || 0)
+    const shown = Date.UTC(field('year'), field('month') - 1, field('day'), field('hour'), field('minute'), field('second'))
+    instant += target - shown
+  }
+  return new Date(instant)
+}
 const inputTime = (iso: string) => { const d = new Date(iso); return `${dayKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}` }
 const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
 const addDays = (date: Date, n: number) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + n)
@@ -28,7 +49,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     categories: 'Categories', newCategory: 'New category', name: 'Name', color: 'Color', save: 'Save', cancel: 'Cancel',
     title: 'Title', description: 'Description', start: 'Start', end: 'End', allDay: 'All day', location: 'Location',
     category: 'Category', delete: 'Delete', edit: 'Edit', noEvents: 'No events yet', noDay: 'No events on this day',
-    source: 'From briefing', required: 'Enter a title and a valid time range', confirmDelete: 'Delete this event or series?',
+    source: 'From briefing', appleSource: 'From Apple Calendar', required: 'Enter a title and a valid time range', confirmDelete: 'Delete this event or series?',
     confirmCategory: 'Delete this category? Its events will become uncategorized.',
     repeat: 'Repeat', until: 'Ends on (optional)', series: 'Changes apply to the whole series', repeatOptions: ['Does not repeat', 'Daily', 'Weekly', 'Monthly', 'Yearly'],
     import: 'Import dates', importTitle: 'Import dates', official: 'China public holidays', officialHint: 'Official days off and adjusted workdays. Select a published year.', importYear: 'Import year', alreadyImported: 'Imported',
@@ -43,7 +64,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     categories: '分类管理', newCategory: '新增分类', name: '名称', color: '颜色', save: '保存', cancel: '取消',
     title: '标题', description: '详情', start: '开始时间', end: '结束时间', allDay: '全天', location: '地点',
     category: '分类', delete: '删除', edit: '编辑', noEvents: '暂无日程', noDay: '当天暂无日程',
-    source: '来自简报', required: '请填写标题和有效的时间范围', confirmDelete: '确定删除这条日程或整个重复系列？',
+    source: '来自简报', appleSource: '来自 Apple 日历', required: '请填写标题和有效的时间范围', confirmDelete: '确定删除这条日程或整个重复系列？',
     confirmCategory: '确定删除这个分类？相关日程会变为未分类。',
     repeat: '重复', until: '结束日期（可选）', series: '修改将应用于整个重复系列', repeatOptions: ['不重复', '每天', '每周', '每月', '每年'],
     import: '导入日期', importTitle: '导入日期', official: '中国法定节假日', officialHint: '包含国务院公布的放假日期和调休上班日，按年份导入。', importYear: '导入年份', alreadyImported: '已导入',
@@ -65,6 +86,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null)
   const [form, setForm] = useState<CalendarEventInput>(emptyForm)
   const [categoryPanel, setCategoryPanel] = useState(false)
+  const [applePanel, setApplePanel] = useState(false)
   const [importPanel, setImportPanel] = useState(false)
   const [importYear, setImportYear] = useState(2026)
   const [specialDraft, setSpecialDraft] = useState({ title: '', date: dayKey(new Date()), annual: true, description: '' })
@@ -118,7 +140,9 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const event of visible) {
-      const first = startOfDay(new Date(event.start_at)); const last = startOfDay(new Date(new Date(event.end_at).getTime() - 1))
+      const zone = event.repeat_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+      const first = event.all_day ? startOfDay(new Date(`${zonedDayKey(event.start_at, zone)}T12:00`)) : startOfDay(new Date(event.start_at))
+      const last = event.all_day ? startOfDay(new Date(`${zonedDayKey(new Date(event.end_at).getTime() - 1, zone)}T12:00`)) : startOfDay(new Date(new Date(event.end_at).getTime() - 1))
       for (let d = first; d <= last && d.getTime() - first.getTime() <= 31 * 86400000; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
         const key = dayKey(d); map.set(key, [...(map.get(key) || []), event])
       }
@@ -137,8 +161,10 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     const load = async () => {
       try {
         const original = event.series_id ? (await apiClient.getCalendarEvents()).find(row => row.id === event.series_id) || event : event
-        const displayEnd = original.all_day ? new Date(new Date(original.end_at).getTime() - 1).toISOString() : original.end_at
-        setForm({ title: original.title, description: original.description, start_at: inputTime(original.start_at), end_at: inputTime(displayEnd),
+        const zone = original.repeat_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        const startInput = original.all_day ? `${zonedDayKey(original.start_at, zone)}T00:00` : inputTime(original.start_at)
+        const endInput = original.all_day ? `${zonedDayKey(new Date(original.end_at).getTime() - 1, zone)}T00:00` : inputTime(original.end_at)
+        setForm({ title: original.title, description: original.description, start_at: startInput, end_at: endInput,
           all_day: Boolean(original.all_day), location: original.location, category_id: original.category_id,
           repeat_frequency: original.repeat_frequency || 'none', repeat_days: JSON.parse(original.repeat_days || '[]'),
           repeat_until: original.repeat_until, repeat_timezone: original.repeat_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' })
@@ -148,9 +174,12 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     void load()
   }
   const saveEvent = async () => {
-    const start = form.all_day ? new Date(`${form.start_at.slice(0, 10)}T00:00`) : new Date(form.start_at)
-    const end = form.all_day ? new Date(`${form.end_at.slice(0, 10)}T00:00`) : new Date(form.end_at)
-    if (form.all_day && !Number.isNaN(end.getTime())) end.setDate(end.getDate() + 1)
+    if (form.all_day && (!/^\d{4}-\d{2}-\d{2}$/.test(form.start_at.slice(0, 10)) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(form.end_at.slice(0, 10)))) { setError(labels.required); return }
+    const start = form.all_day ? zonedMidnight(form.start_at.slice(0, 10), form.repeat_timezone) : new Date(form.start_at)
+    const lastDay = new Date(`${form.end_at.slice(0, 10)}T12:00:00Z`)
+    lastDay.setUTCDate(lastDay.getUTCDate() + 1)
+    const end = form.all_day ? zonedMidnight(lastDay.toISOString().slice(0, 10), form.repeat_timezone) : new Date(form.end_at)
     if (!form.title.trim() || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start || (form.repeat_frequency !== 'none' && form.repeat_until && form.repeat_until < form.start_at.slice(0, 10))) { setError(labels.required); return }
     setBusy(true); setError('')
     try {
@@ -220,7 +249,8 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const anchor = new Date(`${selectedDay}T12:00`)
   const dayEvents = byDay.get(selectedDay) || []
   const listGroups = visible.reduce<Record<string, CalendarEvent[]>>((groups, event) => {
-    const key = dayKey(new Date(event.start_at)); (groups[key] ||= []).push(event); return groups
+    const key = event.all_day ? zonedDayKey(event.start_at, event.repeat_timezone || 'UTC') : dayKey(new Date(event.start_at));
+    (groups[key] ||= []).push(event); return groups
   }, {})
   const weekDays = en ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const weekdayValues = [6, 0, 1, 2, 3, 4, 5]
@@ -269,11 +299,11 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         <ChevronRight size={15} className={`text-content-tertiary transition-transform ${isOpen ? 'rotate-90' : ''}`} />
       </button>
       {isOpen && <div className="px-5 pb-4 pl-9 text-sm border-t border-default pt-3 space-y-2 text-content-secondary">
-        <div>{new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: event.all_day ? undefined : 'short' }).format(new Date(event.start_at))} – {new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: event.all_day ? undefined : 'short' }).format(new Date(new Date(event.end_at).getTime() - (event.all_day ? 1 : 0)))}</div>
+        <div>{new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: event.all_day ? undefined : 'short', timeZone: event.all_day ? event.repeat_timezone || 'UTC' : undefined }).format(new Date(event.start_at))} – {new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: event.all_day ? undefined : 'short', timeZone: event.all_day ? event.repeat_timezone || 'UTC' : undefined }).format(new Date(new Date(event.end_at).getTime() - (event.all_day ? 1 : 0)))}</div>
         {event.repeat_frequency !== 'none' && <p className="flex items-center gap-1"><Repeat2 size={13} />{labels.repeatOptions[frequencies.indexOf(event.repeat_frequency)]}{event.repeat_until ? ` · ${event.repeat_until}` : ''}</p>}
         {event.description && <p className="whitespace-pre-wrap">{event.description}</p>}
         {event.location && <p className="flex items-center gap-1"><MapPin size={14} />{event.location}</p>}
-        {event.source_type && <p className="text-xs text-content-tertiary">{event.source_type === 'china_holiday' ? labels.holiday : event.source_type === 'special_date' ? labels.special : labels.source}</p>}
+        {event.source_type && <p className="text-xs text-content-tertiary">{event.source_type === 'china_holiday' ? labels.holiday : event.source_type === 'special_date' ? labels.special : event.source_type === 'apple_calendar' ? labels.appleSource : labels.source}</p>}
         {event.source_url && <a href={event.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent">{event.source_type === 'china_holiday' ? labels.holiday : labels.source}<ExternalLink size={12} /></a>}
         <div className="flex gap-3 pt-1">{event.source_type !== 'china_holiday' && <button type="button" onClick={() => openEdit(event)} className="inline-flex items-center gap-1 text-accent"><Pencil size={13} />{labels.edit}</button>}<button type="button" onClick={() => void removeEvent(event)} className="inline-flex items-center gap-1 text-danger"><Trash2 size={13} />{event.source_type === 'china_holiday' ? labels.remove : labels.delete}</button></div>
       </div>}
@@ -299,6 +329,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => void reload()} aria-label="Refresh" className="h-8 px-2 rounded-btn border border-default hover:bg-surface-2"><RefreshCw size={15} /></button>
+        <button type="button" onClick={() => setApplePanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
         <button type="button" onClick={() => { setImportPanel(true); setImportMessage(''); setError('') }} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Download size={14} />{labels.import}</button>
         <button type="button" onClick={() => setCategoryPanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Settings2 size={14} />{labels.categories}</button>
         <button type="button" onClick={() => openNew(selectedDay)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm inline-flex items-center gap-1"><Plus size={15} />{labels.add}</button>
@@ -342,6 +373,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       {error && <p role="alert" className="text-danger text-sm">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="px-3 py-2 text-sm">{labels.cancel}</button><button type="button" disabled={busy} onClick={() => void saveEvent()} className="px-4 py-2 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{labels.save}</button></div></div></div>}
     {categoryPanel && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setCategoryPanel(false) }}><div role="dialog" aria-modal="true" className="bg-surface rounded-card border border-default w-full max-w-md shadow-xl p-5"><div className="flex items-center justify-between mb-4"><h2 className="font-semibold">{labels.categories}</h2><button type="button" onClick={() => setCategoryPanel(false)} aria-label="Close"><X size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto">{categories.map(c => <div key={c.id} className="flex items-center gap-2 text-sm p-2 rounded-btn hover:bg-surface-2"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color }} /><span className="flex-1">{c.name}</span><button type="button" onClick={() => setCategoryDraft({ id: c.id, name: c.name, color: c.color })} aria-label={`${labels.edit} ${c.name}`}><Pencil size={14} /></button>{c.id !== 'china_holidays' && <button type="button" onClick={() => void removeCategory(c)} aria-label={`${labels.delete} ${c.name}`}><Trash2 size={14} /></button>}</div>)}</div>{categoryDraft ? <div className="border-t border-default mt-4 pt-4 space-y-3"><label className="block text-sm">{labels.name}<input autoFocus value={categoryDraft.name} disabled={categoryDraft.id === 'china_holidays'} onChange={e => setCategoryDraft({ ...categoryDraft, name: e.target.value })} className="mt-1 w-full rounded-btn border border-default bg-surface-2 px-3 py-2 disabled:opacity-60" /></label><div className="flex gap-2">{colors.map(color => <button key={color} type="button" onClick={() => setCategoryDraft({ ...categoryDraft, color })} aria-label={color} className={`w-6 h-6 rounded-full ${categoryDraft.color === color ? 'ring-2 ring-offset-2 ring-accent' : ''}`} style={{ backgroundColor: color }} />)}<input type="color" value={categoryDraft.color} onChange={e => setCategoryDraft({ ...categoryDraft, color: e.target.value })} aria-label={labels.color} className="w-7 h-7" /></div><div className="flex justify-end gap-2"><button type="button" onClick={() => setCategoryDraft(null)} className="text-sm px-3">{labels.cancel}</button><button type="button" disabled={busy} onClick={() => void saveCategory()} className="text-sm px-3 py-1.5 rounded-btn bg-accent text-accent-contrast">{labels.save}</button></div></div> : <button type="button" onClick={() => setCategoryDraft({ name: '', color: colors[0] })} className="mt-4 inline-flex items-center gap-1 text-sm text-accent"><Plus size={14} />{labels.newCategory}</button>}{error && <p role="alert" className="text-danger text-sm mt-3">{error}</p>}</div></div>}
+    {applePanel && <AppleCalendarPanel en={en} onClose={() => setApplePanel(false)} onSynced={() => void reload()} />}
   </div>
 }
 
