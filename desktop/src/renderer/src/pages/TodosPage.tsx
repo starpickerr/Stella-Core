@@ -69,6 +69,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         all: "All tasks",
         incomplete: "Incomplete",
         completed: "Completed",
+        cancelled: "Cancelled",
         search: "Search tasks",
         list: "List / project",
         allLists: "All lists",
@@ -156,6 +157,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         all: "全部事务",
         incomplete: "未完成",
         completed: "已完成",
+        cancelled: "已取消",
         search: "搜索事务",
         list: "清单 / 项目",
         allLists: "全部清单",
@@ -265,9 +267,12 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<string[]>([]);
   const treeRef = useRef<{ scrollTop: number; selectedId: string | null }>({ scrollTop: 0, selectedId: null });
-  const now = new Date();
+  const [now, setNow] = useState(() => new Date());
   const today = dateKey(now);
-  const soon = dateKey(new Date(now.getTime() + 7 * 86400000));
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const refresh = useCallback(async () => {
     try {
       const [all, focus, reminders] = await Promise.all([
@@ -330,7 +335,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     () => [...new Set(templates.flatMap(tagsOf))].sort(),
     [templates],
   );
-  const matchesView = (todo: Todo, target: TodoView) => matchesTodoView(todo, target, now, soon);
+  const matchesView = (todo: Todo, target: TodoView) => matchesTodoView(todo, target, now);
   const subtreeMatchesView = (todo: Todo, target: TodoView): boolean =>
     matchesView(todo, target) ||
     children(todo.id).some((child) => subtreeMatchesView(child, target));
@@ -366,7 +371,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     matchesFilters(todo) || children(todo.id).some(containsMatch);
   const compare = (a: Todo, b: Todo) => {
     if (view === "all") {
-      const rank = (todo: Todo) => isDone(todo) ? 2 : isOverdue(todo, now) ? 0 : 1;
+      const rank = (todo: Todo) => todo.status === "completed" ? 3 : todo.status === "cancelled" ? 2 : isOverdue(todo, now) ? 0 : 1;
       const difference = rank(a) - rank(b);
       if (difference) return difference;
     }
@@ -398,8 +403,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         .map(taskDate)
         .filter((value): value is string => !!value)
         .sort()[0];
-    const group = todoGroup(todo, day || null, now, soon,
-      (view === "all" || view === "overdue") && hasOverdueDescendant(todo));
+    const group = todoGroup(todo, day || null, now,
+      (view === "all" || view === "overdue") && hasOverdueDescendant(todo), view);
     groups.set(group, [...(groups.get(group) || []), todo]);
   }
   const run = async (operation: () => Promise<unknown>) => {
@@ -1026,7 +1031,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </div>
         ) : (
           <div className="space-y-5">
-            {(["overdue", "today", "upcoming", "later", "noDate", "completed"] as const).map(
+            {(["overdue", "today", "upcoming", "later", "noDate", "cancelled", "completed"] as const).map(
               (key) => {
                 const items = groups.get(key);
                 if (!items?.length) return null;

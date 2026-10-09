@@ -1,9 +1,10 @@
 """Exercise the briefing report, detail view and explicit batch task creation."""
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -48,9 +49,12 @@ todo_rows = [
     dict(id='project', title='项目任务', status='todo', due_on=(today + timedelta(days=1)).isoformat()),
     dict(id='middle', title='项目子任务', status='todo', due_on=(today + timedelta(days=1)).isoformat(), parent_id='project'),
     dict(id='deep', title='深层逾期任务', status='todo', due_on=(today - timedelta(days=1)).isoformat(), parent_id='middle'),
+    dict(id='done-parent', title='已完成父事务', status='completed', due_on=(today - timedelta(days=3)).isoformat()),
+    dict(id='late-under-done', title='父事务下的逾期事项', status='todo', due_on=(today - timedelta(days=1)).isoformat(), parent_id='done-parent'),
+    dict(id='cancelled', title='已取消的事项', status='cancelled', due_on=(today - timedelta(days=4)).isoformat()),
 ]
 todo_rows = [dict(dict(parent_id=None), **row, series_id=None, sort_order=index, planned_on=None, due_time=None,
-                  priority=0, created_at='2026-10-01T00:00:00Z', notes='', list_name='', tags='[]',
+                  timezone='Asia/Shanghai', priority=0, created_at='2026-10-01T00:00:00Z', notes='', list_name='', tags='[]',
                   flagged=0, blocked_by=[], subtask_count=0, progress_completed=0,
                   progress_total=0, progress_percent=0, repeat_frequency='none', remind_at=None)
              for index, row in enumerate(todo_rows)]
@@ -256,21 +260,27 @@ with sync_playwright() as playwright:
         expect(report.get_by_text('原通知需要关注', exact=True)).to_be_visible()
         expect(report.get_by_text('新要求需要处理', exact=True)).to_be_visible()
         expect(report.get_by_role('link', name='打开来源', exact=True)).to_have_count(2)
+        items.clear()
+        page.get_by_role('button', name='刷新', exact=True).click()
+        expect(report.get_by_text('旧版纯文本报告', exact=True)).to_be_visible()
+        expect(report.get_by_text('查看报告全文', exact=True)).to_have_count(0)
 
         page.goto(test_url + '/#/todos', wait_until='networkidle')
         tabs = page.get_by_role('navigation', name='事务')
-        expect(tabs.get_by_role('button', name='逾期 2')).to_be_visible()
-        assert page.get_by_role('heading', name='逾期 2').bounding_box()['y'] < page.get_by_role('heading', name='已完成 1').bounding_box()['y']
+        expect(tabs.get_by_role('button', name='逾期 3')).to_be_visible()
+        assert page.get_by_role('heading', name='逾期 2').bounding_box()['y'] < page.get_by_role('heading', name='已取消 1').bounding_box()['y'] < page.get_by_role('heading', name='已完成 2').bounding_box()['y']
         expect(page.get_by_role('heading', name='逾期 2').locator('..').get_by_text('项目任务', exact=True)).to_be_visible()
-        tabs.get_by_role('button', name='逾期 2').click()
+        tabs.get_by_role('button', name='逾期 3').click()
         expect(page.get_by_text('逾期作业', exact=True)).to_be_visible()
         expect(page.get_by_text('深层逾期任务', exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name='逾期 3').locator('..').get_by_text('已完成父事务', exact=True)).to_be_visible()
+        expect(page.get_by_text('父事务下的逾期事项', exact=True)).to_be_visible()
         expect(page.get_by_text('明天的任务', exact=True)).to_have_count(0)
         tabs.get_by_role('button', name='未完成 2').click()
         expect(page.get_by_text('明天的任务', exact=True)).to_be_visible()
         expect(page.get_by_text('逾期作业', exact=True)).to_have_count(0)
         expect(page.get_by_text('深层逾期任务', exact=True)).to_have_count(0)
-        tabs.get_by_role('button', name='全部事务 4').click()
+        tabs.get_by_role('button', name='全部事务 6').click()
         task_screenshot = Path(os.environ.get('STELLA_SCREENSHOT_DIR', os.environ.get('TMPDIR', '/tmp'))) / 'stella-tasks-overdue-desktop.png'
         page.screenshot(path=str(task_screenshot), full_page=True)
         page.set_viewport_size({'width':390,'height':844})
@@ -288,6 +298,22 @@ with sync_playwright() as playwright:
         expect(agent).to_be_enabled()
         agent.click()
         expect(page.locator('textarea').first).to_have_value('请完成以下事项：整理课程资料')
+
+        todo_rows.append({**todo_rows[0], 'id':'timed', 'title':'到点转逾期',
+                          'due_on':today.isoformat(), 'due_time':'12:01'})
+        clock_page = browser.new_page()
+        clock_page.add_init_script("""localStorage.setItem('stella_lang', 'zh'); window.electronAPI = {
+            getBackendPort: async () => 9876, onBackendStatus: () => () => {},
+            getBackendError: async () => null
+        };""")
+        clock_page.route('http://127.0.0.1:9876/**', backend)
+        clock_page.clock.install(time=datetime.combine(today, time(12, 0, 30), ZoneInfo('Asia/Shanghai')))
+        clock_page.goto(test_url + '/#/todos', wait_until='networkidle')
+        clock_tabs = clock_page.get_by_role('navigation', name='事务')
+        expect(clock_tabs.get_by_role('button', name='逾期 3')).to_be_visible()
+        clock_page.clock.run_for(46_000)
+        expect(clock_tabs.get_by_role('button', name='逾期 4')).to_be_visible()
+        clock_page.close()
         assert errors == [], errors
         print('UI briefing and tasks: report, overdue views, ordering, Agent handoff PASS')
     finally:
