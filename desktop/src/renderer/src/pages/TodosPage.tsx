@@ -20,9 +20,7 @@ import {
 } from "lucide-react";
 import apiClient from "../api/client";
 import { getLang } from "../i18n";
-import { useChatStore } from "../store/chatStore";
-import { useSessionStore } from "../store/sessionStore";
-import { useUIStore } from "../store/uiStore";
+import EmbeddedAgent, { type PresetRequest } from "../components/EmbeddedAgent";
 import type {
   Todo,
   TodoChecklistItem,
@@ -93,7 +91,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         empty: "No tasks in this view",
         createHint: "What needs to be done?",
         advanced: "More options",
-        agentCreate: "Create with Agent",
+        agentCreate: "Agent manage",
         details: "Task details",
         notes: "Notes",
         planDate: "Plan date",
@@ -188,7 +186,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         empty: "这个视图还没有事务",
         createHint: "需要完成什么？",
         advanced: "更多选项",
-        agentCreate: "让 Agent 建立事务",
+        agentCreate: "Agent 管理",
         details: "事务详情",
         notes: "备注",
         planDate: "计划日期",
@@ -281,6 +279,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [quickDate, setQuickDate] = useState("");
   const [quickDue, setQuickDue] = useState("");
   const [quickReminder, setQuickReminder] = useState("");
+  const [appleMenu, setAppleMenu] = useState(false);
+  const [agentPreset, setAgentPreset] = useState<PresetRequest | undefined>();
   const [childTitle, setChildTitle] = useState("");
   const [dependencyChoice, setDependencyChoice] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
@@ -292,7 +292,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<string[]>([]);
   const treeRef = useRef<{ scrollTop: number; selectedId: string | null }>({ scrollTop: 0, selectedId: null });
-  const handoffPending = useRef(false);
   const [now, setNow] = useState(() => new Date());
   const today = dateKey(now);
   useEffect(() => {
@@ -513,8 +512,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   };
   const createWithAgent = () => {
     const requirement = quickTitle.trim();
-    if (!requirement || busy || handoffPending.current) return;
-    handoffPending.current = true;
+    if (!requirement || busy) return;
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const details = [
       requirement,
@@ -525,24 +523,21 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     const prompt = en
       ? `Use the todos tool to create tasks from these requirements. Ask if essential details are missing; do not invent deadlines.\n\n${details}`
       : `请使用 todos 事务工具建立事务。若缺少必要信息，先询问我；不要自行编造截止时间。\n\n${details}`;
-    const sessions = useSessionStore.getState();
-    const sid = sessions.newSession();
-    sessions.addOptimistic(sid, null);
-    const chat = useChatStore.getState();
-    chat.ensureSession(sid);
-    if (window.innerWidth < 700) {
-      useUIStore.getState().setNavCollapsed(true);
-      useUIStore.getState().setSessionsCollapsed(true);
-    }
-    void chat.send(sid, prompt, []).then(async () => {
-      try {
-        await apiClient.generateSessionTitle(sid, prompt);
-      } catch {
-        // The conversation remains available when title generation fails.
-      }
-      void useSessionStore.getState().loadSessions(1);
+    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text: prompt });
+    setQuickTitle("");
+  };
+  const createDirect = () => {
+    const title = quickTitle.trim();
+    if (!title || busy) return;
+    void run(async () => {
+      await apiClient.createTodo({ title, planned_on: quickDate || null, due_on: quickDue || null,
+        remind_at: quickReminder ? fromLocalTime(quickReminder) : null });
+      setQuickTitle(""); setQuickDate(""); setQuickDue(""); setQuickReminder("");
     });
-    navigate("/");
+  };
+  const askAppleAgent = (text: string) => {
+    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text });
+    setAppleMenu(false);
   };
   const save = () => {
     if (!selected || !draft?.title.trim()) return;
@@ -917,7 +912,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             event.preventDefault();
             createWithAgent();
           }}
-          className="rounded-card border border-default bg-surface mb-5 overflow-hidden"
+          className="rounded-card border border-default bg-surface mb-3"
         >
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
             <input
@@ -939,12 +934,28 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <MoreHorizontal size={18} />
               </button>
               <button
+                type="button"
+                disabled={!quickTitle.trim() || busy}
+                onClick={createDirect}
+                className="rounded-btn border border-default px-3 py-1.5 text-sm text-content disabled:opacity-40"
+              >
+                {en ? "Add directly" : "直接添加"}
+              </button>
+              <button
                 type="submit"
                 disabled={!quickTitle.trim() || busy}
                 className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
               >
                 {copy.agentCreate}
               </button>
+              <div className="relative">
+                <button type="button" aria-expanded={appleMenu} onClick={() => setAppleMenu(value => !value)} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-1.5 text-sm text-content hover:bg-surface-2">Apple 提醒事项<ChevronDown size={13} /></button>
+                {appleMenu && <div role="menu" aria-label="Apple 提醒事项操作" onKeyDown={event => { if (event.key === "Escape") setAppleMenu(false) }} className="absolute right-0 top-full z-30 mt-1 min-w-56 rounded-btn border border-default bg-surface p-1 shadow-lg">
+                  <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可用列表，帮我选择要导入的提醒事项，先预览变更，并在获得我确认后导入 Stella 事务。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
+                  <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可写列表，帮我选择要同步至 Apple 的 Stella 事务，先预览变更，并在获得我确认后执行。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
+                  <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=integrations&section=apple-reminders") }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
+                </div>}
+              </div>
             </div>
           </div>
           {quickOptions && (
@@ -979,6 +990,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             </div>
           )}
         </form>
+        <div className="mb-5"><EmbeddedAgent context="todos" presetRequest={agentPreset} onRunDone={() => void refresh()} /></div>
         {uncertain.length > 0 && (
           <section className="border border-amber-500/40 bg-amber-500/10 rounded-card p-3 mb-5 text-sm">
             <div className="flex items-center gap-2 font-medium mb-2">
