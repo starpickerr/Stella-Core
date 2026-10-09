@@ -13,6 +13,7 @@ from agent.permission.gateway import SecurityGateway
 from agent.todos import TodoService
 from agent.scheduler.store import TaskStore
 from agent.scheduler.automation_store import AutomationStore
+from agent.scheduler import delivery
 from application import Application, RequestContext
 from common.runtime_identity import identity_scope
 from agent.tools.todos.todos_tool import TodosTool
@@ -212,6 +213,69 @@ def test_explicit_reminder_creates_and_updates_linked_scheduler_task(tmp_path):
     assert store.get_task(child["scheduler_task_id"])
     service.delete_todo(parent["id"])
     assert store.get_task(child["scheduler_task_id"]) is None
+
+
+def test_reminder_route_persists_and_updates_one_scheduler_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace())
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db", scheduler_store=store)
+    instant = (datetime.now(timezone.utc) + timedelta(hours=2)).replace(microsecond=0)
+    local = instant.astimezone(timezone(timedelta(hours=8))).isoformat()
+    utc = instant.isoformat()
+    feishu = {"primary": {"channel_type": "feishu", "receiver": "ou_student"}}
+    todo = service.create_todo({"title": "Submit", "remind_at": local, "reminder_delivery": feishu})
+    task_id = todo["scheduler_task_id"]
+    assert todo["remind_at"] == utc
+    assert todo["reminder_delivery"]["primary"]["receiver"] == "ou_student"
+    assert todo["reminder_delivery"]["backup_enabled"] is False
+    assert service.list_todos()[0]["reminder_delivery"] == todo["reminder_delivery"]
+    assert store.get_task(task_id)["reminder_delivery"] == todo["reminder_delivery"]
+    assert todo["reminder_delivery_status"] is None
+
+    changed = service.update_todo(todo["id"], {"remind_at": utc,
+        "reminder_delivery": {"primary": {"channel_type": "feishu", "receiver": "ou_other"}}})
+    assert changed["scheduler_task_id"] == task_id
+    assert store.get_task(task_id)["reminder_delivery"]["primary"]["receiver"] == "ou_other"
+    assert len(store.list_tasks()) == 1
+    assert service.queue_scheduled_reminder(todo["id"], local, now=instant + timedelta(minutes=1))
+    assert service.queue_scheduled_reminder(todo["id"], utc, now=instant + timedelta(minutes=1))
+    assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "pending"
+    assert service.list_todos()[0]["reminder_delivery_status"]["status"] == "pending"
+    service.update_todo(todo["id"], {"remind_at": None})
+    assert service.get_todo(todo["id"])["reminder_delivery"]["primary"] is None
+    assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "cancelled"
+    assert store.get_task(task_id) is None
+
+
+def test_reminder_route_requires_time_and_legacy_rows_default_to_desktop(tmp_path, monkeypatch):
+    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace())
+    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
+    with pytest.raises(ValueError, match="remind_at"):
+        service.create_todo({"title": "No time", "reminder_delivery": {
+            "primary": {"channel_type": "feishu", "receiver": "ou_student"}}})
+    instant = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    todo = service.create_todo({"title": "Legacy", "remind_at": instant})
+    with sqlite3.connect(service.db_path) as db:
+        db.execute("ALTER TABLE todos DROP COLUMN reminder_delivery")
+    reopened = TodoService(service.db_path, service.legacy_calendar_db_path)
+    assert reopened.get_todo(todo["id"])["reminder_delivery"] == {
+        "primary": None, "backup_enabled": False, "backup": None}
+    assert reopened.list_todos()[0]["reminder_delivery"]["primary"] is None
+    with pytest.raises(ValueError, match="remind_at"):
+        reopened.update_todo(todo["id"], {"remind_at": None, "reminder_delivery": {
+            "primary": {"channel_type": "feishu", "receiver": "ou_student"}}})
+
+
+def test_disconnected_route_does_not_block_unrelated_todo_edit(tmp_path, monkeypatch):
+    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace())
+    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
+    instant = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    todo = service.create_todo({"title": "Original", "remind_at": instant,
+        "reminder_delivery": {"primary": {"channel_type": "feishu", "receiver": "ou_student"}}})
+    monkeypatch.setattr(delivery, "runtime_channel", lambda _: None)
+    renamed = service.update_todo(todo["id"], {"title": "Renamed"})
+    assert renamed["title"] == "Renamed"
+    assert renamed["reminder_delivery"] == todo["reminder_delivery"]
 
 
 def test_scheduler_link_retries_after_store_failure(tmp_path):

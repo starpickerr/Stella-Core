@@ -25,7 +25,8 @@ def task_id_for(todo_id: str) -> str:
     return "todo-reminder:" + todo_id
 
 
-def sync_task(store, todo_id: str, title: str, remind_at: str | None) -> None:
+def sync_task(store, todo_id: str, title: str, remind_at: str | None,
+              reminder_delivery: dict | None = None) -> None:
     task_id = task_id_for(todo_id)
     existing = store.get_task(task_id)
     if not remind_at:
@@ -49,6 +50,7 @@ def sync_task(store, todo_id: str, title: str, remind_at: str | None) -> None:
         "next_run_at": instant.astimezone().replace(tzinfo=None).isoformat(),
         "action": {"type": "application_command", "domain": "todos",
                    "command": "QueueTodoReminder", "params": [todo_id, remind_at]},
+        "reminder_delivery": reminder_delivery,
         "linked_todo_id": todo_id,
         "created_at": existing.get("created_at", stamp) if existing else stamp,
         "updated_at": stamp,
