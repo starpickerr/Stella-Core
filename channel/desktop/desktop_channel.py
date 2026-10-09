@@ -6029,7 +6029,9 @@ class SchedulerHandler:
                     "message": "Cannot calculate next run time. Please check the schedule config.",
                 }, ensure_ascii=False)
             task["next_run_at"] = next_run.isoformat()
-            store.add_task(task)
+            from application import Application
+            task = Application.scheduler(store).create(task, notification_route=body.get("notification_route"),
+                                                       agent_id=current_identity().agent_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
@@ -6081,8 +6083,8 @@ class SchedulerToggleHandler:
             store = _scheduler_store()
             if (store.get_task(task_id) or {}).get("linked_todo_id"):
                 return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
-            store.enable_task(task_id, enabled)
-            task = store.get_task(task_id)
+            from application import Application
+            task = Application.scheduler(store).enable(task_id, enabled)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler toggle error: {e}")
@@ -6099,8 +6101,6 @@ class SchedulerUpdateHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
             
-            from agent.scheduler import SchedulerService
-            from datetime import datetime
             store = _scheduler_store()
             
             # Get original task (single query to avoid repeated I/O)
@@ -6110,80 +6110,10 @@ class SchedulerUpdateHandler:
             if original_task.get("linked_todo_id"):
                 return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
             
-            # Build updates dict
-            updates = {}
-            if "name" in body:
-                updates["name"] = body["name"]
-            if "enabled" in body:
-                updates["enabled"] = body["enabled"]
-            
-            # Update schedule
-            if "schedule" in body:
-                updates["schedule"] = body["schedule"]
-                # If schedule config changed, recalculate next_run_at
-                # Build merged temp task data for calculation (without modifying the original object)
-                merged = dict(original_task)
-                merged.update(updates)
-                if "action" in body:
-                    merged["action"] = body["action"]
-                temp_service = SchedulerService(store, lambda t: None)
-                next_run = temp_service._calculate_next_run(merged, datetime.now())
-                if next_run:
-                    updates["next_run_at"] = next_run.isoformat()
-                else:
-                    # Cannot calculate next run time, schedule config may be invalid
-                    return json.dumps({
-                        "status": "error", 
-                        "message": "Cannot calculate next run time. Please check the schedule config (e.g., cron expression format, or whether the one-time task time has already passed)."
-                    }, ensure_ascii=False)
-            
-            # Update action
-            if "action" in body:
-                # Get the task's original channel_type
-                original_action = original_task.get("action", {})
-                if not isinstance(original_action, dict):
-                    original_action = {}
-                action_patch = body["action"]
-                if not isinstance(action_patch, dict):
-                    return json.dumps({
-                        "status": "error",
-                        "message": "Action must be an object."
-                    }, ensure_ascii=False)
-
-                # The Web editor only exposes a subset of action fields. Merge
-                # that patch into the stored action so scheduler metadata such
-                # as notify_session_id, silent, and channel-specific delivery
-                # fields survive unrelated edits.
-                from agent.scheduler.delivery import patch_destination
-                from agent.scheduler.conversation import validate_conversation_action
-                action = patch_destination(original_action, action_patch, current_identity().agent_id)
-                if (action.get("conversation_mode") == "source" and
-                        action.get("source_session_id") != original_action.get("source_session_id")):
-                    action.pop("conversation_space", None)
-                    action.pop("execution_project_dir", None)
-                if action.get("channel_type") != "web":
-                    for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
-                        action.pop(field, None)
-                action = validate_conversation_action(action)
-                action_type = action.get("type")
-                if action_type == "send_message":
-                    action.pop("task_description", None)
-                    action.pop("silent", None)
-                elif action_type == "agent_task":
-                    action.pop("content", None)
-                updates["action"] = action
-                
-                # If schedule was not updated but action was, ensure next_run_at exists
-                if "schedule" not in body and "next_run_at" not in original_task:
-                    merged = dict(original_task)
-                    merged.update(updates)
-                    temp_service = SchedulerService(store, lambda t: None)
-                    next_run = temp_service._calculate_next_run(merged, datetime.now())
-                    if next_run:
-                        updates["next_run_at"] = next_run.isoformat()
-            
-            store.update_task(task_id, updates)
-            task = store.get_task(task_id)
+            from application import Application
+            task = Application.scheduler(store).update(
+                task_id, {key: body[key] for key in ("name", "enabled", "schedule", "action", "notification_route")
+                          if key in body}, agent_id=current_identity().agent_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler update error: {e}")
@@ -6203,7 +6133,8 @@ class SchedulerDeleteHandler:
             store = _scheduler_store()
             if (store.get_task(task_id) or {}).get("linked_todo_id"):
                 return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
-            store.delete_task(task_id)
+            from application import Application
+            Application.scheduler(store).delete(task_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler delete error: {e}")

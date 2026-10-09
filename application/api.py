@@ -121,6 +121,15 @@ class _Port:
 
 class Application:
     @staticmethod
+    def scheduler(store=None):
+        """Use one scheduler mutation contract from desktop and Agent callers."""
+        from agent.scheduler.mutations import SchedulerMutations
+        if store is None:
+            from agent.todos.scheduler_link import default_scheduler_store
+            store = default_scheduler_store()
+        return SchedulerMutations(store)
+
+    @staticmethod
     def port(domain, context=None):
         return _Port(domain, context or RequestContext.ambient())
 
