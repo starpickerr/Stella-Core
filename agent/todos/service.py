@@ -659,13 +659,16 @@ class TodoService:
                              (source_key,)).fetchone()
         if not row:
             raise KeyError("Apple reminder source not found")
-        self.delete_todo(row["id"])
+        self.delete_todo(row["id"], preserve_children=True)
         return {"deleted": row["id"]}
 
-    def delete_todo(self, todo_id):
+    def delete_todo(self, todo_id, *, preserve_children=False):
         old = self.get_todo(todo_id)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if preserve_children and db.execute(
+                    "SELECT 1 FROM todos WHERE parent_id=? LIMIT 1", (old["id"],)).fetchone():
+                raise ValueError("Apple reminder has Stella subtasks; move them before deleting it")
             descendants = db.execute("""WITH RECURSIVE subtree(id) AS (
                 SELECT id FROM todos WHERE id=? UNION
                 SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)

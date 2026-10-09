@@ -1,7 +1,7 @@
 import json
 import logging
 
-from agent.permission.gateway import Capability, DecisionKind, Scope, SecurityGateway
+from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
 from agent.permission.security_policy import default_policy
 from agent.runtime.tool_invocation import permission_denial
 from agent.tools.write.write import Write
@@ -84,6 +84,20 @@ def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch, secur
 def test_unknown_mode_denied():
     assert not SecurityGateway.check("unexpected", "read", {"path": "x"})
     assert normalize_mode("unexpected") == "read-only"
+
+
+def test_apple_read_and_write_actions_obey_separate_policies(tmp_path, monkeypatch):
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
+    policy = {"preset": "custom", "base_preset": "project-full",
+              "rules": {"workspace_read": "allow", "workspace_write": "deny",
+                        "external": "allow", "high_risk": "allow"}, "connections": {}}
+    assert SecurityGateway.check("full-access", "apple", {"action": "status"}, policy=policy).allowed
+    assert not SecurityGateway.check("full-access", "apple", {"action": "one_time",
+        "kind": "reminders", "source_id": "a", "item_ids": ["r1"]}, policy=policy).allowed
+    policy["rules"]["workspace_write"] = "allow"
+    policy["rules"]["high_risk"] = "deny"
+    assert not SecurityGateway.check("full-access", "apple", {"action": "one_time",
+        "kind": "reminders", "source_id": "a", "item_ids": ["r1"]}, policy=policy).allowed
 
 
 def test_project_full_allows_in_project_bulk_cleanup_but_keeps_boundary(tmp_path):

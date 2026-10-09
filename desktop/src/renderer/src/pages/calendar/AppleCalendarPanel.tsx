@@ -34,6 +34,20 @@ const AppleCalendarPanel: React.FC<Props> = ({ en, onClose, onSynced }) => {
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
+  const connect = async () => {
+    setBusy(true); setError('')
+    try {
+      const prepared = await apiClient.previewAppleCalendarScope(selected, direction)
+      const { preview } = prepared
+      const summary = en
+        ? `Preview: ${preview.new} new, ${preview.updated} updated, ${preview.skipped} skipped, ${preview.conflicts} conflicts. Continue?`
+        : `同步预览：新增 ${preview.new} 条，更新 ${preview.updated} 条，跳过 ${preview.skipped} 条，冲突 ${preview.conflicts} 条。确认执行？`
+      if (!window.confirm(summary)) return
+      const response = await apiClient.configureAppleCalendar(selected, direction, prepared.preview_token)
+      apply(response.connection); setResult(response.result); onSynced()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
   const toggle = (id: string) => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
   const supported = connection?.supported && connection.authorization !== 'unsupported' && connection.authorization !== 'helper_missing'
   const authorized = connection?.authorization === 'full_access'
@@ -107,7 +121,7 @@ const AppleCalendarPanel: React.FC<Props> = ({ en, onClose, onSynced }) => {
           {direction !== 'import' && <p className="text-xs text-content-tertiary">{label.targetHint}</p>}
           {connection.last_success && <p className="text-xs text-content-tertiary">{label.last}：{new Date(connection.last_success).toLocaleString(en ? 'en-US' : 'zh-CN')}</p>}
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={busy || selected.length === 0} onClick={() => void run(() => apiClient.configureAppleCalendar(selected, direction), true)}
+            <button type="button" disabled={busy || selected.length === 0} onClick={() => void connect()}
               className="px-3 py-2 rounded-btn bg-accent text-accent-contrast text-sm disabled:opacity-50">{connection.connected ? label.save : label.connect}</button>
             {connection.connected && <button type="button" disabled={busy} onClick={() => void run(() => apiClient.syncAppleCalendar(), true)}
               className="px-3 py-2 rounded-btn border border-default text-sm hover:bg-surface-2 disabled:opacity-50">{label.sync}</button>}

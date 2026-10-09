@@ -220,6 +220,66 @@ class AppleCalendarSync:
             raise ValueError("selected calendar could not be scanned")
         return [row for row in inventory["events"] if row["calendar_id"] == calendar_id]
 
+    def lookup_item(self, calendar_id, event_id):
+        if not isinstance(event_id, str) or not event_id:
+            raise ValueError("event_id is required")
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        if calendar_id not in {row["id"] for row in self.bridge.call("calendars")["calendars"]}:
+            raise ValueError("selected calendar is unavailable")
+        remote = self.bridge.call("lookup", calendar_id=calendar_id, event_id=event_id).get("event")
+        if remote is None or remote["calendar_id"] != calendar_id or remote["event_id"] != event_id:
+            raise KeyError("Apple event_id not found or ambiguous")
+        return remote
+
+    def preview(self, calendars, direction):
+        if direction not in self.DIRECTIONS:
+            raise ValueError("invalid sync direction")
+        if not isinstance(calendars, list) or not calendars or len(set(calendars)) != len(calendars):
+            raise ValueError("select at least one distinct calendar")
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
+        if any(key not in available for key in calendars):
+            raise ValueError("selected calendar is unavailable")
+        if direction in ("export", "bidirectional") and not any(available[key]["writable"] for key in calendars):
+            raise ValueError("select a writable calendar for export")
+        now = datetime.fromisoformat(self.clock().replace("Z", "+00:00"))
+        window = ((now - timedelta(days=365)).isoformat(), (now + timedelta(days=730)).isoformat())
+        inventory = self.bridge.call("events", calendar_ids=calendars, start=window[0], end=window[1])
+        successful = set(inventory["successful_calendar_ids"]) & set(calendars)
+        result = {"new": 0, "updated": 0, "skipped": 0, "conflicts": 0,
+                  "failed_calendar_ids": sorted(set(calendars) - successful), "window": list(window)}
+        maps = self._maps()
+        for row in inventory["events"]:
+            if row["calendar_id"] not in successful:
+                continue
+            mapping = self._match(row, maps)
+            if mapping is None:
+                result["new" if direction in ("import", "bidirectional") else "skipped"] += 1
+                continue
+            local = self._local(mapping["stella_id"])
+            if local is None or mapping["state"] == "conflict":
+                result["conflicts"] += 1
+                continue
+            series = mapping["origin"] == "stella"
+            local_changed = _fingerprint(local, series=series) != mapping["local_hash"]
+            remote_changed = _fingerprint(row, series=series, remote=True) != mapping["remote_hash"]
+            if (local_changed and remote_changed or
+                    local_changed and direction == "import" or remote_changed and direction == "export"):
+                result["conflicts"] += 1
+            elif local_changed or remote_changed:
+                result["updated"] += 1
+            else:
+                result["skipped"] += 1
+        if direction in ("export", "bidirectional") and self._get("ever_connected", False):
+            with self._connect() as db:
+                baseline = {row[0] for row in db.execute("SELECT stella_id FROM baseline_local")}
+            mapped = {row["stella_id"] for row in maps}
+            result["new"] += sum(row["source_type"] is None and row["id"] not in mapped and
+                                 row["id"] not in baseline for row in self.calendar.list_events())
+        return result
+
     def _one_time_items(self, direction, calendar_id, item_ids):
         if direction not in ("import", "export"):
             raise ValueError("one-time direction must be import or export")
@@ -243,13 +303,7 @@ class AppleCalendarSync:
                    for row in items):
                 raise ValueError("event cannot be exported to the selected calendar")
             return items
-        items = []
-        for key in item_ids:
-            remote = self.bridge.call("lookup", calendar_id=calendar_id, event_id=key).get("event")
-            if remote is None or remote["calendar_id"] != calendar_id or remote["event_id"] != key:
-                raise KeyError("Apple event_id not found or ambiguous")
-            items.append(remote)
-        return items
+        return [self.lookup_item(calendar_id, key) for key in item_ids]
 
     def preview_items(self, direction, calendar_id, item_ids):
         with self._lock:

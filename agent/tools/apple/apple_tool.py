@@ -19,7 +19,7 @@ class AppleTool(BaseTool):
         "properties": {
             "kind": {"type": "string", "enum": ["calendar", "reminders"]},
             "action": {"type": "string", "enum": ["status", "access", "sources", "items", "lookup",
-                "preview", "one_time", "configure", "sync", "resolve", "disconnect"]},
+                "preview", "preview_scope", "one_time", "configure", "sync", "resolve", "disconnect"]},
             "source_id": {"type": "string", "description": "已查询到的 Apple 日历或提醒事项列表 ID"},
             "source_ids": {"type": "array", "items": {"type": "string"}},
             "item_id": {"type": "string", "description": "已查询到的 Apple 条目 ID"},
@@ -29,6 +29,7 @@ class AppleTool(BaseTool):
                          "description": "一次性导入时为 Apple 条目 ID；写入时为 Stella 条目 ID"},
             "direction": {"type": "string", "enum": ["import", "export", "bidirectional"]},
             "confirm": {"type": "boolean"},
+            "preview_token": {"type": "string"},
             "confirm_deletions": {"type": "boolean"},
             "confirm_local_deletions": {"type": "boolean"},
             "target_id": {"type": "string", "description": "待解决冲突的 Stella 条目 ID"},
@@ -65,19 +66,29 @@ class AppleTool(BaseTool):
                 source_id, item_id = params.get("source_id"), params.get("item_id")
                 if not source_id or not item_id:
                     raise ValueError("source_id and item_id are required")
-                rows = manager._one_time_items("import", source_id, [item_id])
-                result = {"item": rows[0]}
+                result = {"item": manager.lookup_item(source_id, item_id)}
             elif action == "preview":
-                result = {"preview": manager.preview_items(
-                    params.get("direction"), params.get("source_id"), params.get("item_ids"))}
+                from agent.calendar.apple_preview import prepare_items
+                result = prepare_items(manager, params.get("direction"),
+                    params.get("source_id"), params.get("item_ids"))
+            elif action == "preview_scope":
+                from agent.calendar.apple_preview import prepare_scope
+                result = prepare_scope(manager, params.get("source_ids"), params.get("direction"))
             elif action == "one_time":
+                if params.get("confirm") is not True:
+                    raise ValueError("explicit confirmation is required")
+                from agent.calendar.apple_preview import confirm_items
+                confirm_items(manager, params.get("direction"), params.get("source_id"),
+                              params.get("item_ids"), params.get("preview_token"))
                 value = manager.one_time(params.get("direction"), params.get("source_id"),
-                                         params.get("item_ids"), confirm=params.get("confirm") is True)
+                                         params.get("item_ids"), confirm=True)
                 result = {"connection": manager.status(), "result": value}
             elif action == "configure":
                 if params.get("confirm") is not True:
                     raise ValueError("explicit confirmation is required")
                 ids = params.get("source_ids")
+                from agent.calendar.apple_preview import confirm_scope
+                confirm_scope(manager, ids, params.get("direction"), params.get("preview_token"))
                 manager.configure(ids, params.get("direction"))
                 manager.start_auto()
                 result = {"connection": manager.status()}

@@ -2071,6 +2071,7 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/apple/disconnect', 'AppleCalendarDisconnectHandler',
             '/api/calendar/apple/resolve', 'AppleCalendarResolveHandler',
             '/api/calendar/apple/preview', 'AppleCalendarPreviewHandler',
+            '/api/calendar/apple/scope-preview', 'AppleCalendarScopePreviewHandler',
             '/api/calendar/apple/items', 'AppleCalendarItemsHandler',
             '/api/calendar/apple/one-time', 'AppleCalendarOneTimeHandler',
             '/api/todos/apple/status', 'AppleReminderStatusHandler',
@@ -2080,6 +2081,7 @@ class DesktopChannel(ChatChannel):
             '/api/todos/apple/disconnect', 'AppleReminderDisconnectHandler',
             '/api/todos/apple/resolve', 'AppleReminderResolveHandler',
             '/api/todos/apple/preview', 'AppleReminderPreviewHandler',
+            '/api/todos/apple/scope-preview', 'AppleReminderScopePreviewHandler',
             '/api/todos/apple/items', 'AppleReminderItemsHandler',
             '/api/todos/apple/one-time', 'AppleReminderOneTimeHandler',
             '/api/todos', 'TodosHandler',
@@ -6270,6 +6272,10 @@ class AppleCalendarConfigureHandler:
         def operation():
             body = _calendar_body()
             manager = _apple_calendar_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_scope
+            confirm_scope(manager, body.get("calendar_ids"), body.get("direction"), body.get("preview_token"))
             manager.configure(body.get("calendar_ids"), body.get("direction"))
             result = manager.sync(manual=True)
             manager.start_auto()
@@ -6306,8 +6312,18 @@ class AppleCalendarPreviewHandler:
     def POST(self):
         def operation():
             body = _calendar_body()
-            return {"preview": _apple_calendar_sync().preview_items(
-                body.get("direction"), body.get("calendar_id"), body.get("item_ids"))}
+            from agent.calendar.apple_preview import prepare_items
+            return prepare_items(_apple_calendar_sync(), body.get("direction"),
+                                 body.get("calendar_id"), body.get("item_ids"))
+        return _calendar_response(operation)
+
+
+class AppleCalendarScopePreviewHandler:
+    def POST(self):
+        def operation():
+            from agent.calendar.apple_preview import prepare_scope
+            body = _calendar_body()
+            return prepare_scope(_apple_calendar_sync(), body.get("calendar_ids"), body.get("direction"))
         return _calendar_response(operation)
 
 
@@ -6325,8 +6341,13 @@ class AppleCalendarOneTimeHandler:
         def operation():
             body = _calendar_body()
             manager = _apple_calendar_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_items
+            confirm_items(manager, body.get("direction"), body.get("calendar_id"),
+                          body.get("item_ids"), body.get("preview_token"))
             result = manager.one_time(body.get("direction"), body.get("calendar_id"),
-                                      body.get("item_ids"), confirm=body.get("confirm") is True)
+                                      body.get("item_ids"), confirm=True)
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
 
@@ -6351,6 +6372,10 @@ class AppleReminderConfigureHandler:
         def operation():
             body = _calendar_body()
             manager = _apple_reminder_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_scope
+            confirm_scope(manager, body.get("list_ids"), body.get("direction"), body.get("preview_token"))
             manager.configure(body.get("list_ids"), body.get("direction"))
             result = manager.sync(manual=True)
             manager.start_auto()
@@ -6386,8 +6411,18 @@ class AppleReminderPreviewHandler:
     def POST(self):
         def operation():
             body = _calendar_body()
-            return {"preview": _apple_reminder_sync().preview_items(
-                body.get("direction"), body.get("list_id"), body.get("item_ids"))}
+            from agent.calendar.apple_preview import prepare_items
+            return prepare_items(_apple_reminder_sync(), body.get("direction"),
+                                 body.get("list_id"), body.get("item_ids"))
+        return _calendar_response(operation)
+
+
+class AppleReminderScopePreviewHandler:
+    def POST(self):
+        def operation():
+            from agent.calendar.apple_preview import prepare_scope
+            body = _calendar_body()
+            return prepare_scope(_apple_reminder_sync(), body.get("list_ids"), body.get("direction"))
         return _calendar_response(operation)
 
 
@@ -6402,8 +6437,13 @@ class AppleReminderOneTimeHandler:
         def operation():
             body = _calendar_body()
             manager = _apple_reminder_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_items
+            confirm_items(manager, body.get("direction"), body.get("list_id"),
+                          body.get("item_ids"), body.get("preview_token"))
             result = manager.one_time(body.get("direction"), body.get("list_id"),
-                                      body.get("item_ids"), confirm=body.get("confirm") is True)
+                                      body.get("item_ids"), confirm=True)
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
 
