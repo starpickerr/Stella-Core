@@ -7,13 +7,13 @@ model arguments onto that layer and formats replies for the conversation.
 """
 
 import uuid
+import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.scheduler.cron import iter_cron
-from bridge.context import Context, ContextType
-from bridge.reply import Reply, ReplyType
+from bridge.context import Context
 from common.log import logger
 
 
@@ -41,7 +41,7 @@ class SchedulerTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "list", "get", "delete", "enable", "disable"],
+                "enum": ["create", "list", "get", "update", "destinations", "delete", "enable", "disable"],
                 "description": "操作类型: create(创建), list(列表), get(查询), delete(删除), enable(启用), disable(禁用)"
             },
             "task_id": {
@@ -76,7 +76,10 @@ class SchedulerTool(BaseTool):
                 "type": "boolean",
                 "default": False,
                 "description": "Silent mode (default false): when true, the task runs normally but its result is not pushed. Set true only when the user explicitly says they don't need the result; reminder, notification and broadcast tasks must keep it false"
-            }
+            },
+            "notification_route": {"type": "object", "description": "显式通知路由；primary 包含 channel_type 和已授权 receiver；backup_enabled 默认 false，启用时必须提供 backup。"},
+            "enabled": {"type": "boolean"},
+            "content": {"type": "string", "description": "更新固定消息内容"},
         },
         "required": ["action"]
     }
@@ -118,6 +121,13 @@ class SchedulerTool(BaseTool):
             elif action == "get":
                 result = self._get_task(**kwargs)
                 return ToolResult.success(result)
+            elif action == "destinations":
+                from application import Application
+                from common.runtime_identity import current_identity
+                return ToolResult.success(json.dumps(Application.scheduler(self.task_store).destinations(
+                    current_identity().agent_id), ensure_ascii=False))
+            elif action == "update":
+                return ToolResult.success(self._update_task(**kwargs))
             elif action == "delete":
                 result = self._delete_task(**kwargs)
                 return ToolResult.success(result)
@@ -143,27 +153,27 @@ class SchedulerTool(BaseTool):
         
         # Validate required fields
         if not name:
-            return "错误: 缺少任务名称 (name)"
+            raise ValueError("缺少任务名称 (name)")
         
         # Check that exactly one of message/ai_task is provided
         if not message and not ai_task:
-            return "错误: 必须提供 message（固定消息）或 ai_task（AI任务）之一"
+            raise ValueError("必须提供 message（固定消息）或 ai_task（AI任务）之一")
         if message and ai_task:
-            return "错误: message 和 ai_task 只能提供其中一个"
+            raise ValueError("message 和 ai_task 只能提供其中一个")
         
         if not schedule_type:
-            return "错误: 缺少调度类型 (schedule_type)"
+            raise ValueError("缺少调度类型 (schedule_type)")
         if not schedule_value:
-            return "错误: 缺少调度值 (schedule_value)"
+            raise ValueError("缺少调度值 (schedule_value)")
         
         # Validate schedule
         schedule = self._parse_schedule(schedule_type, schedule_value)
         if not schedule:
-            return f"错误: 无效的调度配置 - type: {schedule_type}, value: {schedule_value}"
+            raise ValueError(f"无效的调度配置 - type: {schedule_type}, value: {schedule_value}")
         
         # Get context info for receiver
         if not self.current_context:
-            return "错误: 无法获取当前对话上下文"
+            raise ValueError("无法获取当前对话上下文")
         
         context = self.current_context
         
@@ -211,14 +221,14 @@ class SchedulerTool(BaseTool):
         # by default. Freeze its current project scope at creation time.
         if action["channel_type"] == "web":
             if not notify_session_id:
-                return "错误: 桌面定时任务需要当前对话"
+                raise ValueError("桌面定时任务需要当前对话")
             from agent.scheduler.conversation import validate_conversation_action
             action["conversation_mode"] = "source"
             action["source_session_id"] = notify_session_id
             try:
                 action = validate_conversation_action(action, allow_pending_source=True)
             except ValueError as exc:
-                return f"错误: 无法绑定当前对话: {exc}"
+                raise ValueError(f"无法绑定当前对话: {exc}") from exc
         
         task_data = {
             "id": task_id,
@@ -240,7 +250,10 @@ class SchedulerTool(BaseTool):
             task_data["next_run_at"] = next_run.isoformat()
         
         # Save task
-        self.task_store.add_task(task_data)
+        from application import Application
+        from common.runtime_identity import current_identity
+        task_data = Application.scheduler(self.task_store).create(
+            task_data, notification_route=kwargs.get("notification_route"), agent_id=current_identity().agent_id)
         
         # Format response
         schedule_desc = self._format_schedule_description(schedule)
@@ -263,10 +276,31 @@ class SchedulerTool(BaseTool):
             f"{content_desc}{silent_desc}\n"
             f"🕐 下次执行: {next_run.strftime('%Y-%m-%d %H:%M:%S') if next_run else '未知'}"
         )
+
+    def _update_task(self, **kwargs) -> str:
+        task_id = kwargs.get("task_id")
+        if not task_id:
+            raise ValueError("缺少任务ID (task_id)")
+        patch = {}
+        if "name" in kwargs:
+            patch["name"] = kwargs["name"]
+        if "enabled" in kwargs:
+            patch["enabled"] = kwargs["enabled"]
+        if "notification_route" in kwargs:
+            patch["notification_route"] = kwargs["notification_route"]
+        if "content" in kwargs:
+            patch["action"] = {"content": kwargs["content"]}
+        if not patch:
+            raise ValueError("没有要修改的定时任务字段")
+        from application import Application
+        from common.runtime_identity import current_identity
+        task = Application.scheduler(self.task_store).update(task_id, patch, agent_id=current_identity().agent_id)
+        return json.dumps({"task": task}, ensure_ascii=False)
     
     def _list_tasks(self, **kwargs) -> str:
         """List all tasks"""
-        tasks = self.task_store.list_tasks()
+        from application import Application
+        tasks = Application.scheduler(self.task_store).list()
         
         if not tasks:
             return "📋 暂无定时任务"
@@ -290,11 +324,9 @@ class SchedulerTool(BaseTool):
         """Get task details"""
         task_id = kwargs.get("task_id")
         if not task_id:
-            return "错误: 缺少任务ID (task_id)"
-        
-        task = self.task_store.get_task(task_id)
-        if not task:
-            return f"错误: 任务 '{task_id}' 不存在"
+            raise ValueError("缺少任务ID (task_id)")
+        from application import Application
+        task = Application.scheduler(self.task_store).get(task_id)
         
         status = "启用" if task.get("enabled", True) else "禁用"
         schedule_desc = self._format_schedule_description(task.get("schedule", {}))
@@ -311,6 +343,7 @@ class SchedulerTool(BaseTool):
             f"状态: {status}\n"
             f"调度: {schedule_desc}\n"
             f"接收者: {action.get('receiver_name', action.get('receiver'))}\n"
+            f"通知路由: {json.dumps(task.get('notification_route'), ensure_ascii=False)}\n"
             f"消息: {action.get('content')}\n"
             f"下次执行: {next_run_str}\n"
             f"上次执行: {last_run_str}\n"
@@ -321,45 +354,27 @@ class SchedulerTool(BaseTool):
         """Delete a task"""
         task_id = kwargs.get("task_id")
         if not task_id:
-            return "错误: 缺少任务ID (task_id)"
-        
-        task = self.task_store.get_task(task_id)
-        if not task:
-            return f"错误: 任务 '{task_id}' 不存在"
-        if task.get("linked_todo_id"):
-            return "错误: 请在关联事务中修改或删除提醒时间"
-        
-        self.task_store.delete_task(task_id)
+            raise ValueError("缺少任务ID (task_id)")
+        from application import Application
+        task = Application.scheduler(self.task_store).delete(task_id)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已删除"
     
     def _enable_task(self, **kwargs) -> str:
         """Enable a task"""
         task_id = kwargs.get("task_id")
         if not task_id:
-            return "错误: 缺少任务ID (task_id)"
-        
-        task = self.task_store.get_task(task_id)
-        if not task:
-            return f"错误: 任务 '{task_id}' 不存在"
-        if task.get("linked_todo_id"):
-            return "错误: 请在关联事务中修改提醒时间"
-        
-        self.task_store.enable_task(task_id, True)
+            raise ValueError("缺少任务ID (task_id)")
+        from application import Application
+        task = Application.scheduler(self.task_store).enable(task_id, True)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已启用"
     
     def _disable_task(self, **kwargs) -> str:
         """Disable a task"""
         task_id = kwargs.get("task_id")
         if not task_id:
-            return "错误: 缺少任务ID (task_id)"
-        
-        task = self.task_store.get_task(task_id)
-        if not task:
-            return f"错误: 任务 '{task_id}' 不存在"
-        if task.get("linked_todo_id"):
-            return "错误: 请在关联事务中修改提醒时间"
-        
-        self.task_store.enable_task(task_id, False)
+            raise ValueError("缺少任务ID (task_id)")
+        from application import Application
+        task = Application.scheduler(self.task_store).enable(task_id, False)
         return f"✅ 任务 '{task['name']}' ({task_id}) 已禁用"
     
     def _parse_schedule(self, schedule_type: str, schedule_value: str) -> Optional[dict]:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-from agent.todos import TodoService
 from agent.tools.base_tool import BaseTool, ToolResult
 
 
@@ -22,6 +21,7 @@ class TodosTool(BaseTool):
             "status": {"type": "string", "enum": ["todo", "in_progress", "waiting", "blocked", "completed", "cancelled"]},
             "force": {"type": "boolean", "description": "仅在用户明确要求忽略未完成子事务或前置事务时使用"},
             "remind_at": {"type": ["string", "null"], "description": "带时区的 ISO 提醒时间"},
+            "reminder_delivery": {"type": ["object", "null"], "description": "提醒投递路由：primary 首选渠道和接收人；backup_enabled 默认 false，启用时须提供 backup。接收人 ID 必须来自已授权渠道。"},
             "due_on": {"type": "string", "description": "YYYY-MM-DD，可留空"},
             "planned_on": {"type": "string", "description": "计划处理日 YYYY-MM-DD，与截止日分开"},
             "list_name": {"type": "string", "description": "清单名称"},
@@ -57,7 +57,7 @@ class TodosTool(BaseTool):
             action = params.get("action")
             fields = ("title", "notes", "due_on", "due_time", "timezone", "priority",
                       "repeat_frequency", "repeat_days", "repeat_until", "planned_on", "list_name",
-                      "flagged", "tags", "checklist", "remind_at")
+                      "flagged", "tags", "checklist", "remind_at", "reminder_delivery")
             payload = {key: params[key] for key in fields if key in params}
             if action == "create" and "parent_id" in params:
                 payload["parent_id"] = params["parent_id"]
