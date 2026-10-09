@@ -171,3 +171,30 @@ def test_agent_scheduler_missing_task_is_tool_failure(tmp_path, channels):
         result = tool.execute({"action": action, "task_id": "missing",
                                "notification_route": _route("feishu", "ou_student")})
         assert result.status == "error"
+
+
+def test_desktop_test_send_uses_live_channel_without_scheduling(tmp_path, channels, monkeypatch):
+    from channel.desktop import desktop_channel as desktop
+    from agent.scheduler import dispatch
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    sends = []
+    monkeypatch.setattr(desktop, "_scheduler_store", lambda: store)
+    monkeypatch.setattr(desktop, "_require_auth", lambda: None)
+    monkeypatch.setattr(desktop.web, "header", lambda *_args: None)
+    monkeypatch.setattr(dispatch, "_channel_for", lambda _: SimpleNamespace(
+        send=lambda reply, context: sends.append((reply.content, context["receiver"])) or {"ret": 0}))
+    with patch.object(desktop.web, "data", return_value=json.dumps({
+        "notification_route": _route("weixin", "wx_user")}).encode()):
+        result = json.loads(desktop.SchedulerTestDeliveryHandler().POST())
+    assert result["status"] == "success" and result["delivery_status"] == "accepted"
+    assert sends == [("Stella 测试通知", "wx_user")]
+    assert store.list_tasks() == []
+    with patch.object(desktop.web, "data", return_value=json.dumps({
+        "notification_route": _route("weixin", "unknown_user")}).encode()):
+        result = json.loads(desktop.SchedulerTestDeliveryHandler().POST())
+    assert result["status"] == "error" and len(sends) == 1
+    with patch.object(desktop.web, "data", return_value=json.dumps({
+        "notification_route": {"primary": _route("weixin", "wx_user")["primary"],
+                               "backup_enabled": True, "backup": {"channel_type": "feishu", "receiver": ""}}}).encode()):
+        result = json.loads(desktop.SchedulerTestDeliveryHandler().POST())
+    assert result["delivery_status"] == "accepted" and len(sends) == 2

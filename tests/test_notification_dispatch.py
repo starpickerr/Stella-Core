@@ -42,6 +42,9 @@ def test_platform_acceptance_has_separate_persisted_recipient_and_attempt(tmp_pa
     assert record["receiver"] == "wx_user" and record["platform_response"]["message_id"] == "m-1"
     assert "secret" not in str(record)
     assert sent == [("Saved", "wx_user")]
+    assert store.latest_delivery("scheduled")["status"] == "accepted"
+    assert store.latest_delivery("scheduled")["channel_type"] == "weixin"
+    assert store.latest_delivery("other") is None
 
 
 def test_expired_weixin_session_waits_without_repeating_send(tmp_path):

@@ -135,3 +135,38 @@ def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, 
         raise ValueError("Enabled backup requires a destination")
     return _one_delivery(store, delivery_id, "backup", backup, content,
                          agent_id=agent_id, channel_provider=provider)
+
+
+class _TestDeliveryStore:
+    """Record one test attempt without adding a scheduled job or persistent outbox."""
+
+    def __init__(self):
+        self.rows = {}
+
+    def queue_delivery(self, _delivery_id, leg, channel_type, receiver):
+        self.rows.setdefault(leg, {"status": "pending", "attempts": 0,
+                                   "channel_type": channel_type, "receiver": receiver})
+
+    def get_delivery(self, _delivery_id, leg):
+        return self.rows.get(leg)
+
+    def begin_delivery(self, _delivery_id, leg, _channel_type, _receiver):
+        row = self.rows[leg]
+        row.update(status="sending", attempts=row["attempts"] + 1)
+        return "send"
+
+    def finish_delivery(self, _delivery_id, leg, status, *, error="", retryable=False,
+                        platform_response=None):
+        self.rows[leg].update(status=status, error=error, retryable=retryable,
+                              platform_response=platform_response or {})
+
+
+def dispatch_test_notification(route, *, agent_id=None, channel_provider=None):
+    """Send a fixed test message to the selected primary destination only."""
+    store = _TestDeliveryStore()
+    result = dispatch_notification(store, "test", {"primary": route["primary"],
+                                                    "backup_enabled": False},
+                                   "Stella 测试通知", agent_id=agent_id,
+                                   channel_provider=channel_provider)
+    return {"delivery_status": result.status, "error": result.error,
+            "platform_response": store.rows.get("primary", {}).get("platform_response", {})}

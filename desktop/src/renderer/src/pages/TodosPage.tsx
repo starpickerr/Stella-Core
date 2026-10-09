@@ -28,6 +28,7 @@ import type {
   TodoChecklistItem,
   TodoInput,
   UncertainReminder,
+  NotificationRoute,
 } from "../types";
 import { breadcrumbParts, survivingFocus, todoPath } from "./todoFocus";
 import { isDone, isOverdue, matchesTodoView, todoGroup, type TodoView } from "./todoView";
@@ -99,6 +100,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         dueDate: "Due date",
         dueTime: "Time",
         remindAt: "Remind me",
+        reminderChannel: "Reminder channel",
+        reminderRecipient: "Recipient",
+        reminderBackup: "Backup channel (optional)",
+        reminderBackupRecipient: "Backup recipient",
+        reminderRefresh: "Refresh channels",
+        reminderTest: "Send test to primary",
+        reminderAccepted: "Platform accepted the test",
+        reminderLatest: "Latest delivery",
         schedulerLinked: "Linked scheduler task",
         schedulerPending: "Reminder schedule is pending; it will retry automatically.",
         priority: "Priority",
@@ -186,6 +195,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         dueDate: "截止日期",
         dueTime: "时间",
         remindAt: "提醒时间",
+        reminderChannel: "提醒渠道",
+        reminderRecipient: "接收人",
+        reminderBackup: "备用渠道（可选）",
+        reminderBackupRecipient: "备用接收人",
+        reminderRefresh: "刷新渠道",
+        reminderTest: "测试发送至首选渠道",
+        reminderAccepted: "测试消息已被平台接受",
+        reminderLatest: "最近投递",
         schedulerLinked: "已关联定时任务",
         schedulerPending: "提醒排程暂未同步成功，系统会自动重试。",
         priority: "优先级",
@@ -251,6 +268,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TodoInput | null>(null);
   const [draftTags, setDraftTags] = useState("");
+  const [reminderDestinations, setReminderDestinations] = useState<Awaited<ReturnType<typeof apiClient.getTaskDestinations>>>([]);
+  const [reminderTestStatus, setReminderTestStatus] = useState("");
+  const [reminderTesting, setReminderTesting] = useState(false);
+  const refreshReminderDestinations = useCallback(() => {
+    void apiClient.getTaskDestinations().then(setReminderDestinations).catch((cause) =>
+      setReminderTestStatus(cause instanceof Error ? cause.message : String(cause)));
+  }, []);
   const [more, setMore] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickOptions, setQuickOptions] = useState(false);
@@ -447,12 +471,15 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       flagged: !!original.flagged,
       checklist: checklistOf(original),
       remind_at: original.remind_at,
+      reminder_delivery: original.reminder_delivery || { primary: null, backup_enabled: false, backup: null },
     });
     setDraftTags(tagsOf(original).join(", "));
     setChildTitle("");
     setDependencyChoice("");
     setMore(false);
     setError("");
+    setReminderTestStatus("");
+    refreshReminderDestinations();
   };
   const close = () => {
     setSelectedId(null);
@@ -520,7 +547,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const save = () => {
     if (!selected || !draft?.title.trim()) return;
     void run(async () => {
-      await apiClient.updateTodo(taskKey(selected), {
+      const payload: TodoInput = {
         ...draft,
         title: draft.title.trim(),
         tags: draftTags
@@ -529,8 +556,28 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           .filter(Boolean),
         repeat_days:
           draft.repeat_frequency === "weekly" ? draft.repeat_days : [],
-      });
+      };
+      if (!payload.remind_at) delete payload.reminder_delivery;
+      await apiClient.updateTodo(taskKey(selected), payload);
     });
+  };
+  const changeReminderRoute = (change: (route: NotificationRoute) => NotificationRoute) => {
+    setDraft((current) => current ? { ...current, reminder_delivery: change(current.reminder_delivery ||
+      { primary: null, backup_enabled: false, backup: null }) } : current);
+  };
+  const testReminder = async () => {
+    setReminderTesting(true);
+    setReminderTestStatus("");
+    try {
+      const result = await apiClient.testNotificationRoute(draft?.reminder_delivery || null);
+      setReminderTestStatus(result.status === "success"
+        ? result.delivery_status === "accepted" ? copy.reminderAccepted : result.error || result.delivery_status || ""
+        : result.message || "");
+    } catch (cause) {
+      setReminderTestStatus(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setReminderTesting(false);
+    }
   };
   const changeStatus = (todo: Todo, status: Todo["status"]) =>
     void run(async () => {
@@ -1221,6 +1268,69 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   />
                 </label>
               </section>
+              {draft.remind_at && <section className="space-y-3 rounded-card border border-default p-3 text-xs text-content-secondary">
+                <label className="block">{copy.reminderChannel}
+                  <select aria-label={copy.reminderChannel} value={draft.reminder_delivery?.primary?.channel_type || ""}
+                    onChange={(event) => changeReminderRoute(() => ({
+                      primary: event.target.value ? { channel_type: event.target.value as 'web' | 'feishu' | 'weixin', receiver: "" } : null,
+                      backup_enabled: false, backup: null,
+                    }))} className={`${input} mt-1`}>
+                    <option value="">{en ? "Desktop (default)" : "桌面提醒（默认）"}</option>
+                    {reminderDestinations.filter((item) => item.configured || item.channel_type === draft.reminder_delivery?.primary?.channel_type)
+                      .map((item) => <option key={item.channel_type} value={item.channel_type}>
+                        {item.channel_type} · {item.status}
+                      </option>)}
+                  </select>
+                </label>
+                <button type="button" className="text-accent hover:underline" onClick={refreshReminderDestinations}>{copy.reminderRefresh}</button>
+                {draft.reminder_delivery?.primary && <>
+                  {draft.reminder_delivery.primary.channel_type === 'feishu' && <label className="block">{en ? 'Feishu recipient type' : '飞书接收人类型'}
+                    <select aria-label={en ? 'Feishu recipient type' : '飞书接收人类型'} className={`${input} mt-1`}
+                      value={draft.reminder_delivery.primary.receive_id_type || 'open_id'}
+                      onChange={event => changeReminderRoute(route => ({...route, primary: {...route.primary!, receive_id_type: event.target.value,
+                        is_group: event.target.value === 'chat_id'}}))}>
+                      {['open_id', 'user_id', 'union_id', 'email', 'chat_id'].map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </label>}
+                  <label className="block">{copy.reminderRecipient}
+                    <input aria-label={copy.reminderRecipient} list="todo-reminder-recipients" value={draft.reminder_delivery.primary.receiver}
+                      onChange={event => changeReminderRoute(route => ({...route, primary: {...route.primary!, receiver: event.target.value}}))}
+                      className={`${input} mt-1`} />
+                    <datalist id="todo-reminder-recipients">{reminderDestinations.find(item => item.channel_type === draft.reminder_delivery?.primary?.channel_type)?.recipients
+                      .map(item => <option key={item.receiver} value={item.receiver}>{item.name}</option>)}</datalist>
+                  </label>
+                  {draft.reminder_delivery.primary.channel_type === 'weixin' && <p>{en
+                    ? 'Weixin delivery needs a recent conversation. Test now; the session may expire before the reminder.'
+                    : '微信发送需要有效会话。可先测试，但提醒触发前会话仍可能失效。'}</p>}
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={draft.reminder_delivery.backup_enabled}
+                    onChange={event => changeReminderRoute(route => ({...route, backup_enabled: event.target.checked,
+                      backup: event.target.checked ? {channel_type: 'feishu', receiver: ''} : null}))} />{copy.reminderBackup}</label>
+                  {draft.reminder_delivery.backup_enabled && <>
+                    <select aria-label={copy.reminderBackup} value={draft.reminder_delivery.backup?.channel_type || 'feishu'}
+                      onChange={event => changeReminderRoute(route => ({...route, backup: {channel_type: event.target.value as 'web' | 'feishu' | 'weixin', receiver: ''}}))}
+                      className={input}>
+                      {reminderDestinations.filter(item => item.configured || item.channel_type === draft.reminder_delivery?.backup?.channel_type)
+                        .map(item => <option key={item.channel_type} value={item.channel_type}>{item.channel_type} · {item.status}</option>)}
+                    </select>
+                    {draft.reminder_delivery.backup?.channel_type === 'feishu' && <select aria-label={en ? 'Backup Feishu recipient type' : '备用飞书接收人类型'}
+                      className={input} value={draft.reminder_delivery.backup.receive_id_type || 'open_id'}
+                      onChange={event => changeReminderRoute(route => ({...route, backup: {...route.backup!, receive_id_type: event.target.value,
+                        is_group: event.target.value === 'chat_id'}}))}>
+                      {['open_id', 'user_id', 'union_id', 'email', 'chat_id'].map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>}
+                    <label className="block">{copy.reminderBackupRecipient}
+                      <input aria-label={copy.reminderBackupRecipient} value={draft.reminder_delivery.backup?.receiver || ''}
+                        onChange={event => changeReminderRoute(route => ({...route, backup: {...route.backup!, receiver: event.target.value}}))}
+                        className={`${input} mt-1`} />
+                    </label>
+                  </>}
+                  <button type="button" disabled={reminderTesting || !draft.reminder_delivery.primary.receiver.trim()}
+                    onClick={() => void testReminder()} className="text-accent hover:underline disabled:opacity-40">{copy.reminderTest}</button>
+                </>}
+                {reminderTestStatus && <p role="status">{reminderTestStatus}</p>}
+                {selected.reminder_delivery_status && <p role="status">{copy.reminderLatest}: {selected.reminder_delivery_status.status}
+                  {selected.reminder_delivery_status.error ? ` · ${selected.reminder_delivery_status.error}` : ''}</p>}
+              </section>}
               {selected.reminder_sync_pending ? <p role="status" className="text-xs text-amber-500">{copy.schedulerPending}</p>
                 : selected.scheduler_task_id && <button type="button" onClick={() => navigate("/tasks")}
                   className="text-xs text-accent text-left">{copy.schedulerLinked} · {selected.scheduler_task_id}</button>}

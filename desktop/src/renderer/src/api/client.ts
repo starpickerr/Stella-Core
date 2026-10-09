@@ -660,6 +660,7 @@ class ApiClient {
     schedule: TaskSchedule
     action: TaskAction
     session_id: string
+    notification_route?: SchedulerTask['notification_route']
   }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler', {
       method: 'POST',
@@ -681,10 +682,16 @@ class ApiClient {
     })
   }
 
-  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action'>>): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
+  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action' | 'notification_route'>>): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler/update', {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId, ...updates }),
+    })
+  }
+
+  async testNotificationRoute(notification_route: SchedulerTask['notification_route']): Promise<{status: string; delivery_status?: string; message?: string; error?: string}> {
+    return this.request('/api/scheduler/test-delivery', {
+      method: 'POST', body: JSON.stringify({ notification_route }),
     })
   }
 

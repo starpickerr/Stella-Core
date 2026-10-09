@@ -750,9 +750,31 @@ export interface SchedulerTask {
   updated_at: string
   schedule: TaskSchedule
   action: TaskAction
+  notification_route?: NotificationRoute | null
+  notification_delivery_status?: NotificationDeliveryStatus | null
   next_run_at?: string
   last_run_status?: string
   last_error?: string
+}
+
+export interface NotificationDestination {
+  channel_type: 'web' | 'feishu' | 'weixin'
+  receiver: string
+  receive_id_type?: string
+  is_group?: boolean
+}
+
+export interface NotificationRoute {
+  primary: NotificationDestination | null
+  backup_enabled: boolean
+  backup: NotificationDestination | null
+}
+
+export interface NotificationDeliveryStatus {
+  status: string
+  error?: string
+  channel_type?: string
+  receiver?: string
 }
 
 // ============================================================
@@ -871,6 +893,7 @@ export interface Todo {
   status: 'todo' | 'in_progress' | 'waiting' | 'blocked' | 'completed' | 'cancelled'
   parent_id: string | null; sort_order: number; remind_at: string | null
   scheduler_task_id: string | null; reminder_sync_pending: boolean; reminder_sync_error: string
+  reminder_delivery?: NotificationRoute | null; reminder_delivery_status?: NotificationDeliveryStatus | null
   subtask_count: number; progress_completed: number; progress_total: number; progress_percent: number
   dependency_ids: string[]; blocked_by: string[]
   due_on: string | null; due_time: string | null; timezone: string; priority: number
@@ -881,7 +904,7 @@ export interface Todo {
   user_modified: number; briefing_id: string | null; created_at: string; updated_at: string
 }
 export interface TodoChecklistItem { id: string; title: string; completed: boolean }
-export type TodoInput = Pick<Todo, 'title'> & Partial<Pick<Todo, 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until' | 'status' | 'parent_id' | 'remind_at'>> &
+export type TodoInput = Pick<Todo, 'title'> & Partial<Pick<Todo, 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until' | 'status' | 'parent_id' | 'remind_at' | 'reminder_delivery'>> &
   { repeat_days?: number[]; planned_on?: string | null; list_name?: string; tags?: string[];
     flagged?: boolean | number; checklist?: TodoChecklistItem[] }
 
