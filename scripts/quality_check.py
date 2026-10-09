@@ -94,7 +94,7 @@ def affected_checks(files):
         "ruff": python_files,
         "pytest": sorted(path for path in tests if (ROOT / path).is_file()),
         "typecheck": desktop,
-        "node": renderer or "tests/todoFocus.test.mjs" in changed,
+        "node": renderer or bool(changed & {"tests/todoFocus.test.mjs", "tests/todoViews.test.mjs"}),
         "ui": renderer,
         "eslint": desktop,
         "build": desktop,
@@ -224,7 +224,7 @@ def main():
             ("eslint", ["npm", "--prefix", "desktop", "run", "lint"], 180),
             ("build", ["npm", "--prefix", "desktop", "run", "build"], 180),
             ("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180),
-            ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs"], 60),
+            ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs"], 60),
             ("ui", [str(PYTHON), "scripts/ui_check.py"], 120),
             ("policy", [str(PYTHON), "scripts/check_dev_policy.py"], 60),
         ]
@@ -240,7 +240,7 @@ def main():
         if selected["typecheck"]:
             commands.append(("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180))
         if selected["node"]:
-            commands.append(("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs"], 60))
+            commands.append(("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs"], 60))
         if selected["ui"]:
             commands.append(("ui", [str(PYTHON), "scripts/ui_check.py"], 120))
         if selected["policy"]:

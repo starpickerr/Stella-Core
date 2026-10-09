@@ -35,7 +35,7 @@ const labels: Record<string, [string, string]> = {
   generate_todos: ['建立事务', 'Create tasks'], view_item: ['查看', 'View'],
   report_entries: ['条信息', 'items'], return_report: ['返回报告', 'Back to report'],
   item_content: ['具体内容', 'Details'], judgment_reason: ['AI 判断依据', 'AI assessment reason'],
-  source_content: ['来源内容', 'Source content'], full_report: ['查看报告全文', 'View full report'],
+  source_content: ['来源内容', 'Source content'],
   reason_unavailable: ['这份历史简报未保存逐条判断理由。', 'No per-item assessment reason was saved for this report.'],
   content_unavailable: ['来源未提供具体内容。', 'The source did not provide details.'],
   no_source_link: ['来源没有可打开的链接。', 'No source link is available.'],

@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
   Clock3,
   CornerUpLeft,
   Flag,
@@ -28,6 +27,7 @@ import type {
   UncertainReminder,
 } from "../types";
 import { breadcrumbParts, survivingFocus, todoPath } from "./todoFocus";
+import { isDone, isOverdue, matchesTodoView, todoGroup, type TodoView } from "./todoView";
 
 const pad = (value: number) => String(value).padStart(2, "0");
 const dateKey = (value: Date) =>
@@ -42,8 +42,6 @@ const toLocalTime = (value: string | null) => {
 const tagsOf = (todo: Todo) => JSON.parse(todo.tags || "[]") as string[];
 const checklistOf = (todo: Todo) =>
   JSON.parse(todo.checklist || "[]") as TodoChecklistItem[];
-const isDone = (todo: Todo) =>
-  todo.status === "completed" || todo.status === "cancelled";
 const taskKey = (todo: Todo) => todo.series_id || todo.id;
 const taskDate = (todo: Todo) => todo.planned_on || todo.due_on;
 const statusColors: Record<Todo["status"], string> = {
@@ -55,7 +53,6 @@ const statusColors: Record<Todo["status"], string> = {
   cancelled: "text-content-tertiary",
 };
 
-type View = "all" | "upcoming" | "incomplete" | "completed";
 type Sort = "date" | "priority" | "manual";
 
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
@@ -92,7 +89,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         createHint: "What needs to be done?",
         add: "Add task",
         advanced: "More options",
-        agentParse: "Interpret with Agent",
+        agentParse: "Give to Agent",
         details: "Task details",
         notes: "Notes",
         planDate: "Plan date",
@@ -172,14 +169,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         dateSort: "日期",
         prioritySort: "优先级",
         manualSort: "手动顺序",
-        overdue: "已逾期",
+        overdue: "逾期",
         later: "后续",
         noDate: "无日期",
         empty: "这个视图还没有事务",
         createHint: "需要完成什么？",
         add: "添加事务",
         advanced: "更多选项",
-        agentParse: "交给 Agent 识别",
+        agentParse: "交给 Agent",
         details: "事务详情",
         notes: "备注",
         planDate: "计划日期",
@@ -238,7 +235,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [rows, setRows] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<Todo[]>([]);
   const [uncertain, setUncertain] = useState<UncertainReminder[]>([]);
-  const [view, setView] = useState<View>("all");
+  const [view, setView] = useState<TodoView>("all");
   const [query, setQuery] = useState("");
   const [listFilter, setListFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -268,8 +265,9 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<string[]>([]);
   const treeRef = useRef<{ scrollTop: number; selectedId: string | null }>({ scrollTop: 0, selectedId: null });
-  const today = dateKey(new Date());
-  const soon = dateKey(new Date(Date.now() + 7 * 86400000));
+  const now = new Date();
+  const today = dateKey(now);
+  const soon = dateKey(new Date(now.getTime() + 7 * 86400000));
   const refresh = useCallback(async () => {
     try {
       const [all, focus, reminders] = await Promise.all([
@@ -332,18 +330,14 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     () => [...new Set(templates.flatMap(tagsOf))].sort(),
     [templates],
   );
-  const matchesView = (todo: Todo, target: View) => {
-    if (target === "all") return true;
-    if (target === "completed") return todo.status === "completed";
-    if (target === "incomplete") return !isDone(todo);
-    return !isDone(todo) && !!todo.due_on && todo.due_on >= today && todo.due_on <= soon;
-  };
-  const subtreeMatchesView = (todo: Todo, target: View): boolean =>
+  const matchesView = (todo: Todo, target: TodoView) => matchesTodoView(todo, target, now, soon);
+  const subtreeMatchesView = (todo: Todo, target: TodoView): boolean =>
     matchesView(todo, target) ||
     children(todo.id).some((child) => subtreeMatchesView(child, target));
-  const views: View[] = [
+  const views: TodoView[] = [
     "all",
     "upcoming",
+    "overdue",
     "incomplete",
     "completed",
   ];
@@ -353,7 +347,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       rows.filter((todo) => !todo.parent_id && subtreeMatchesView(todo, key))
         .length,
     ]),
-  ) as Record<View, number>;
+  ) as Record<TodoView, number>;
   const matchesFilters = (todo: Todo) => {
     if (listFilter && todo.list_name !== listFilter) return false;
     if (tagFilter && !tagsOf(todo).includes(tagFilter)) return false;
@@ -370,8 +364,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   };
   const containsMatch = (todo: Todo): boolean =>
     matchesFilters(todo) || children(todo.id).some(containsMatch);
-  const compare = (a: Todo, b: Todo) =>
-    sort === "manual"
+  const compare = (a: Todo, b: Todo) => {
+    if (view === "all") {
+      const rank = (todo: Todo) => isDone(todo) ? 2 : isOverdue(todo, now) ? 0 : 1;
+      const difference = rank(a) - rank(b);
+      if (difference) return difference;
+    }
+    return sort === "manual"
       ? a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at)
       : sort === "priority"
         ? b.priority - a.priority ||
@@ -379,6 +378,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         : (taskDate(a) || "9999").localeCompare(taskDate(b) || "9999") ||
           b.priority - a.priority ||
           a.sort_order - b.sort_order;
+  };
   const roots = rows
     .filter(
       (todo) =>
@@ -387,6 +387,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         containsMatch(todo),
     )
     .sort(compare);
+  const hasOverdueDescendant = (todo: Todo): boolean =>
+    children(todo.id).some((child) => isOverdue(child, now) || hasOverdueDescendant(child));
   const groups = new Map<string, Todo[]>();
   for (const todo of roots) {
     const day =
@@ -396,15 +398,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         .map(taskDate)
         .filter((value): value is string => !!value)
         .sort()[0];
-    const group = !day
-      ? "noDate"
-      : day < today
-        ? "overdue"
-        : day === today
-          ? "today"
-          : day <= soon
-            ? "upcoming"
-            : "later";
+    const group = todoGroup(todo, day || null, now, soon,
+      (view === "all" || view === "overdue") && hasOverdueDescendant(todo));
     groups.set(group, [...(groups.get(group) || []), todo]);
   }
   const run = async (operation: () => Promise<unknown>) => {
@@ -583,7 +578,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       !!query ||
       (!matchesView(todo, view) &&
         sub.some((child) => subtreeMatchesView(child, view)));
-    const visibleChildren = sub.filter(containsMatch);
+    const visibleChildren = sub.filter((child) => subtreeMatchesView(child, view) && containsMatch(child));
     return (
       <React.Fragment key={todo.id}>
         <div
@@ -663,7 +658,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     <span
                       title={copy.dueDate}
                       className={
-                        todo.due_on < today && !isDone(todo)
+                        isOverdue(todo, now)
                           ? "text-danger"
                           : ""
                       }
@@ -855,32 +850,43 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           }}
           className="rounded-card border border-default bg-surface mb-5 overflow-hidden"
         >
-          <div className="flex items-center gap-2 px-3 py-2">
-            <Circle size={18} className="text-content-tertiary shrink-0" />
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
             <input
               id="todo-quick-title"
               value={quickTitle}
               onChange={(event) => setQuickTitle(event.target.value)}
               placeholder={copy.createHint}
               aria-label={copy.createHint}
-              className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none"
+              className="min-w-[150px] flex-1 bg-transparent py-1 text-sm outline-none"
             />
-            <button
-              type="button"
-              onClick={() => setQuickOptions(!quickOptions)}
-              aria-expanded={quickOptions}
-              className="p-1.5 text-content-secondary hover:text-accent"
-              title={copy.advanced}
-            >
-              <MoreHorizontal size={18} />
-            </button>
-            <button
-              type="submit"
-              disabled={!quickTitle.trim() || busy}
-              className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
-            >
-              {copy.add}
-            </button>
+            <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setQuickOptions(!quickOptions)}
+                aria-expanded={quickOptions}
+                className="p-1.5 text-content-secondary hover:text-accent"
+                title={copy.advanced}
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              <button
+                type="button"
+                disabled={!quickTitle.trim()}
+                onClick={() => navigate("/", { state: {
+                  taskDraft: `${en ? "Please complete this task: " : "请完成以下事项："}${quickTitle.trim()}`,
+                } })}
+                className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                {copy.agentParse}
+              </button>
+              <button
+                type="submit"
+                disabled={!quickTitle.trim() || busy}
+                className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
+              >
+                {copy.add}
+              </button>
+            </div>
           </div>
           {quickOptions && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 py-3 border-t border-default text-xs">
@@ -911,20 +917,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   className={`${input} mt-1`}
                 />
               </label>
-              <button
-                type="button"
-                disabled={!quickTitle.trim()}
-                onClick={() =>
-                  navigate("/", {
-                    state: {
-                      taskDraft: `${en ? "Create a task from: " : "请根据这句话创建事务："}${quickTitle.trim()}`,
-                    },
-                  })
-                }
-                className="text-left text-accent disabled:opacity-40"
-              >
-                {copy.agentParse}
-              </button>
             </div>
           )}
         </form>
@@ -1034,7 +1026,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </div>
         ) : (
           <div className="space-y-5">
-            {(["overdue", "today", "upcoming", "later", "noDate"] as const).map(
+            {(["overdue", "today", "upcoming", "later", "noDate", "completed"] as const).map(
               (key) => {
                 const items = groups.get(key);
                 if (!items?.length) return null;
