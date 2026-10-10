@@ -81,6 +81,7 @@ class _Job:
 
 _lock = threading.Lock()
 _jobs: Dict[str, _Job] = {}
+_inflight = 0
 
 
 def _owned(job: _Job) -> bool:
@@ -129,11 +130,25 @@ def _cleanup(job: _Job) -> None:
 def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None,
           *, argv=None, shell=True, temp_dir: Optional[str] = None, plan=None) -> str:
     """Launch *command* in the background and return its job id."""
+    global _inflight
     with _lock:
         _evict_finished()
         running = sum(1 for job in _jobs.values() if job.running)
-        if running >= _MAX_JOBS:
+        if running + _inflight >= _MAX_JOBS:
             raise RuntimeError(f"background job limit reached ({_MAX_JOBS})")
+        _inflight += 1
+    reserved = True
+    try:
+        return _launch(command, cwd, env, temp_script, argv=argv, shell=shell,
+                       temp_dir=temp_dir, plan=plan)
+    finally:
+        if reserved:
+            with _lock:
+                _inflight -= 1
+
+
+def _launch(command: str, cwd: str, env: dict, temp_script: Optional[str],
+            *, argv, shell: bool, temp_dir: Optional[str], plan) -> str:
     process = subprocess.Popen(
         argv if argv is not None else command,
         shell=shell,

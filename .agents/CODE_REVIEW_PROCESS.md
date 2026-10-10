@@ -61,3 +61,12 @@
 - 当前版本：`56256a6d`，基于 `94f176d0`。工作区干净。未推送，未改 `main`。
 - 动作：修复提交为 `fix: close review findings and clear the ruff gate`。独立复审交给 [可靠性复审](8aa9c542-0692-4747-958d-68ce0a917bd7)，只读代码和测试，不实现修复。
 - 下一步：等复审结论。FAIL 则继续修。主 Agent 不判定 PASS。
+
+## 2026-10-11 三路审核都要给出通过或失败
+
+- 负责人：主 Agent
+- 用户决定：业务、安全和可靠性三个审核代理各自负责自己的方向，各自给出 PASS 或 FAIL。三路都 PASS 才算通过。改代码只由修复代理做。任一路 FAIL，修复代理改完后，三路重新审核。主 Agent 不判定 PASS。
+- 上一轮可靠性复审是 FAIL：新建任务的渠道拦截没有回归测试；后台命令上限在重叠启动时可以超过 20。CR-008 的排除被该路接受。
+- 本轮修复：占位渠道的保存判断抽到 `taskChannel.ts`，并用 `tests/taskChannel.test.mjs` 覆盖新建拦截和已有 web 会话任务仍可保存。后台启动在进程拉起期间占用名额，重叠启动的回归测试已先失败后通过。
+- 验证：隔离 pytest 这两条通过；`node --experimental-strip-types --test tests/taskChannel.test.mjs` 为 2 passed。
+- 下一步：把包含这次修复的版本同时交给三路审核。任一路 FAIL 就交回修复代理，再三路重审。
