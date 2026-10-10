@@ -98,6 +98,7 @@ class WecomBotChannel(ChatChannel):
         self._ws_thread = None
         self._heartbeat_thread = None
         self._connected = False
+        self._known_chats = set()
         self._stop_event = threading.Event()
         self._pending_responses = {}  # req_id -> (threading.Event, result_holder)
         self._pending_lock = threading.Lock()
@@ -575,6 +576,9 @@ class WecomBotChannel(ChatChannel):
         )
         if not context:
             return None
+        chat_id = body.get("chatid") or getattr(wecom_msg, "from_user_id", "")
+        if chat_id:
+            self._known_chats.add(str(chat_id))
         return context, wecom_msg
 
     # ------------------------------------------------------------------
@@ -950,6 +954,8 @@ class WecomBotChannel(ChatChannel):
         # Determine req_id for responding or use send_msg for scheduled push
         req_id = getattr(msg, "req_id", None) if msg else None
 
+        if context.get("scheduled_delivery") and self.mode != "websocket":
+            raise RuntimeError("企业微信智能机器人需要长连接")
         if reply.type == ReplyType.TEXT:
             self._send_text(reply.content, receiver, is_group, req_id)
         elif reply.type in (ReplyType.IMAGE_URL, ReplyType.IMAGE):
@@ -1253,6 +1259,29 @@ class WecomBotChannel(ChatChannel):
                     "voice": {"media_id": media_id},
                 },
             })
+
+    def known_chat_ids(self):
+        return {str(chat_id) for chat_id in self._known_chats}
+
+    def send_proactive(self, chat_id, text, is_group=False):
+        """Push one markdown message on the long connection and wait for confirmation."""
+        if self.mode != "websocket" or not self._connected:
+            raise RuntimeError("企业微信智能机器人需要长连接")
+        if str(chat_id) not in self.known_chat_ids():
+            raise ValueError("请先与机器人建立会话")
+        response = self._send_and_wait({
+            "cmd": "aibot_send_msg",
+            "headers": {"req_id": self._gen_req_id()},
+            "body": {
+                "chatid": str(chat_id),
+                "chat_type": 2 if is_group else 1,
+                "msgtype": "markdown",
+                "markdown": {"content": text},
+            },
+        })
+        if response.get("errcode") not in (0, "0"):
+            raise RuntimeError(response.get("errmsg") or "企业微信没有确认消息")
+        return {"errcode": 0, "success": True, "message_id": str(response.get("msgid") or "")}
 
     def _active_send_markdown(self, content: str, receiver: str, is_group: bool):
         """Proactively send markdown message (for scheduled tasks, no req_id)."""

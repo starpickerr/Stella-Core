@@ -36,7 +36,8 @@ def web_sessions(agent_id=None):
 
 def desktop_client_connected():
     """The desktop process records presence when it claims notifications."""
-    return False
+    from agent.scheduler.desktop_notify import desktop_client_seen
+    return desktop_client_seen()
 
 
 def destination_catalog(agent_id=None):
@@ -51,7 +52,7 @@ def destination_catalog(agent_id=None):
                      'status': 'ready', 'recipients': [], 'supports_groups': True})
     wecom = runtime_channel('wecom_bot')
     if (wecom is not None and getattr(wecom, 'mode', None) == 'websocket'
-            and getattr(wecom, 'authenticated', False)):
+            and (getattr(wecom, 'authenticated', False) or getattr(wecom, '_connected', False))):
         rows.append({'channel_type': 'wecom_bot', 'configured': True, 'ready': True,
                      'status': 'ready', 'recipients': [], 'supports_groups': True})
     return rows

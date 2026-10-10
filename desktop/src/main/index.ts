@@ -298,6 +298,8 @@ interface ReminderDelivery {
   delivery_id: string
   claim_id: string
   title: string
+  body?: string
+  notification_title?: string
 }
 
 function desktopPost<T>(port: number, token: string, route: string, body: object): Promise<T> {
@@ -341,7 +343,8 @@ async function pollDesktopReminders() {
         if (!Notification.isSupported()) throw new Error('System notifications are unavailable')
         const icon = getRuntimeAppIcon() || getIconPath('png')
         const notification = new Notification({
-          title: '事务到期', body: delivery.title,
+          title: delivery.notification_title || '事务到期',
+          body: delivery.body || delivery.title,
           ...(icon ? { icon } : {}),
         })
         notification.show()
