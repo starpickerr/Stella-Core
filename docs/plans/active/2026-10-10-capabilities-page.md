@@ -16,7 +16,7 @@
 - Catalog includes `memory_search` and `memory_get` and excludes MCP tools.
 - Missing availability still lists the tool with a localized reason.
 - Copy comes from the catalog, never from the agent `description`.
-- Entries start collapsed. Expansion does not toggle a skill. Details use `/skills/tools/:id` and `/skills/skills/:id`.
+- Cards sit in a two-column grid and show the full intro. Tool cards are titled with the agent tool name; the boundary text expands inside the card. There is no detail page; old detail URLs return to `/skills` (changed 2026-10-11). Expansion does not toggle a skill.
 - A failed request shows an error and retry, not an empty catalog.
 
 ## Review Focus

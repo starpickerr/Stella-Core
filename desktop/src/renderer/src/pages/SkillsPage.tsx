@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChevronDown, Loader2, Puzzle } from 'lucide-react'
 import { getLang, t } from '../i18n'
 import apiClient from '../api/client'
@@ -15,17 +14,12 @@ interface SkillsPageProps {
 const copyOf = (value: LocalizedCopy | null | undefined) => value?.[getLang() === 'en' ? 'en' : 'zh'] || ''
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
-  const { toolId, skillId } = useParams()
-  const location = useLocation()
-  const navigate = useNavigate()
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [toolsError, setToolsError] = useState('')
   const [skillsError, setSkillsError] = useState('')
   const [loading, setLoading] = useState(true)
-  const restored = (location.state as { expanded?: string } | null)?.expanded || ''
-  const [openTool, setOpenTool] = useState(restored.startsWith('tool:') ? restored.slice(5) : '')
-  const [openSkill, setOpenSkill] = useState(restored.startsWith('skill:') ? restored.slice(6) : '')
+  const [openTool, setOpenTool] = useState('')
 
   const loadTools = useCallback(async () => {
     try {
@@ -66,10 +60,6 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     }
   }
 
-  const tool = tools.find((item) => item.id === toolId)
-  const skill = skills.find((item) => item.name === skillId)
-  const detail = toolId ? 'tool' : skillId ? 'skill' : ''
-
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <PageHeader className="flex items-start justify-between gap-3">
@@ -77,58 +67,50 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
           <h1 className="text-xl font-bold text-content">{t('skills_title')}</h1>
           <p className="text-xs text-content-tertiary mt-1">{t('skills_desc')}</p>
         </div>
-        {!detail && (
-          <a href={SKILL_HUB_URL} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium text-accent bg-accent-soft">
-            <Puzzle size={12} />{t('skills_hub_btn')}
-          </a>
-        )}
+        <a href={SKILL_HUB_URL} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium text-accent bg-accent-soft">
+          <Puzzle size={12} />{t('skills_hub_btn')}
+        </a>
       </PageHeader>
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5">
-          {detail ? (
-            <DetailView
-              missing={!loading && (detail === 'tool' ? !toolsError && !tool : !skillsError && !skill)}
-              error={detail === 'tool' ? toolsError : skillsError}
-              title={tool ? copyOf(tool.title) : skill?.display_name || skill?.name || ''}
-              body={tool ? copyOf(tool.detail) : skill?.description || ''}
-              note={tool && !tool.available ? copyOf(tool.reason) : ''}
-              identifier={tool?.id || skill?.name || ''}
-              onBack={() => navigate('/skills', { state: { expanded: tool ? `tool:${tool.id}` : `skill:${skill?.name || ''}` } })}
-              onRetry={() => void (detail === 'tool' ? loadTools() : loadSkills())}
-            />
-          ) : loading ? (
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+          {loading ? (
             <div className="flex items-center justify-center py-20 text-content-tertiary">
               <Loader2 size={18} className="animate-spin mr-2" />{t('skills_loading')}
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-10">
               <Section title={t('tools_section_title')} count={tools.length}>
                 {toolsError ? <LoadError text={toolsError || t('capability_tools_error')} onRetry={() => void loadTools()} /> : tools.length === 0 ? (
                   <Empty text={t('tools_empty')} />
-                ) : tools.map((item) => (
-                  <Entry key={item.id} title={copyOf(item.title)} open={openTool === item.id}
-                    onToggle={() => setOpenTool(openTool === item.id ? '' : item.id)}>
-                    <p className="text-sm text-content-secondary whitespace-pre-wrap break-words">{copyOf(item.intro)}</p>
-                    {!item.available && <p className="text-xs text-content-tertiary">{t('capability_unavailable')}：{copyOf(item.reason)}</p>}
-                    <p className="text-xs text-content-tertiary">{item.id}</p>
-                    <Link className="text-sm text-accent" to={`/skills/tools/${item.id}`} state={{ expanded: `tool:${item.id}` }}>{t('capability_detail')}</Link>
-                  </Entry>
-                ))}
+                ) : (
+                  <Grid>
+                    {tools.map((item) => (
+                      <ToolCard key={item.id} tool={item} open={openTool === item.id}
+                        onToggle={() => setOpenTool(openTool === item.id ? '' : item.id)} />
+                    ))}
+                  </Grid>
+                )}
               </Section>
               <Section title={t('skills_section_title')} count={skills.length}>
                 {skillsError ? <LoadError text={skillsError || t('capability_skills_error')} onRetry={() => void loadSkills()} /> : skills.length === 0 ? (
                   <Empty text={t('skills_empty')} />
-                ) : skills.map((item) => (
-                  <Entry key={item.name} title={item.display_name || item.name} open={openSkill === item.name}
-                    onToggle={() => setOpenSkill(openSkill === item.name ? '' : item.name)}>
-                    <p className="text-sm text-content-secondary whitespace-pre-wrap break-words">{item.description}</p>
-                    <div className="flex items-center justify-between gap-3">
-                      <Link className="text-sm text-accent" to={`/skills/skills/${item.name}`} state={{ expanded: `skill:${item.name}` }}>{t('capability_detail')}</Link>
-                      <Toggle checked={item.enabled} onChange={(value) => void toggle(item, value)} />
-                    </div>
-                  </Entry>
-                ))}
+                ) : (
+                  <Grid>
+                    {skills.map((item) => {
+                      const title = item.display_name || item.name
+                      return (
+                        <Card key={item.name} label={title}>
+                          <div className="flex items-start justify-between gap-3">
+                            <h3 className="text-sm font-semibold text-content break-words">{title}</h3>
+                            <Toggle label={title} checked={item.enabled} onChange={(value) => void toggle(item, value)} />
+                          </div>
+                          <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{item.description}</p>
+                        </Card>
+                      )
+                    })}
+                  </Grid>
+                )}
               </Section>
             </div>
           )}
@@ -138,38 +120,54 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   )
 }
 
-const Entry: React.FC<{ title: string; open: boolean; onToggle: () => void; children: React.ReactNode }> = ({ title, open, onToggle, children }) => (
-  <div className="rounded-card border border-default bg-surface">
-    <button type="button" aria-expanded={open} onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
-      <span className="text-sm font-medium text-content">{title}</span>
-      <span className="inline-flex items-center gap-1 text-xs text-content-tertiary">{t('capability_expand')}<ChevronDown size={14} className={open ? 'rotate-180' : ''} /></span>
-    </button>
-    {open && <div className="px-4 pb-4 space-y-2 border-t border-default pt-3">{children}</div>}
-  </div>
+const ToolCard: React.FC<{ tool: ToolInfo; open: boolean; onToggle: () => void }> = ({ tool, open, onToggle }) => {
+  const panelId = `tool-boundary-${tool.id}`
+  return (
+    <Card label={tool.id}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-mono text-[13px] font-semibold text-content break-all">{tool.id}</h3>
+        {!tool.available && (
+          <span className="flex-shrink-0 rounded-full border border-default px-2 py-0.5 text-[11px] text-content-tertiary">
+            {t('capability_unavailable')}
+          </span>
+        )}
+      </div>
+      <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
+      <div className="pt-1">
+        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle}
+          className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-content-secondary cursor-pointer">
+          {t('capability_boundary')}
+          <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && (
+          <div id={panelId} className="mt-2 space-y-1.5 border-t border-default pt-2.5 text-xs leading-relaxed text-content-secondary">
+            <p className="whitespace-pre-wrap break-words">{copyOf(tool.detail)}</p>
+            {!tool.available && copyOf(tool.reason) && <p className="text-content-tertiary">{copyOf(tool.reason)}</p>}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+const Grid: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">{children}</div>
 )
 
-const DetailView: React.FC<{ missing: boolean; error: string; title: string; body: string; note: string; identifier: string; onBack: () => void; onRetry: () => void }> = ({ missing, error, title, body, note, identifier, onBack, onRetry }) => (
-  <div className="space-y-4">
-    <button type="button" onClick={onBack} className="text-sm text-accent">{t('capability_back')}</button>
-    {error ? <LoadError text={error} onRetry={onRetry} /> : missing ? <p>{t('capability_not_found')}</p> : (
-      <>
-        <h2 className="text-lg font-semibold text-content">{title}</h2>
-        <p className="text-sm text-content-secondary whitespace-pre-wrap break-words">{body}</p>
-        {note && <p className="text-sm text-content-tertiary">{note}</p>}
-        <p className="text-xs text-content-tertiary">{identifier}</p>
-      </>
-    )}
-  </div>
+const Card: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <article aria-label={label} className="flex flex-col gap-2 rounded-card border border-default bg-surface p-4">
+    {children}
+  </article>
 )
 
 const Section: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
-  <div className="space-y-3">
-    <div className="flex items-center gap-2">
+  <section className="space-y-3">
+    <div className="flex items-baseline gap-2">
       <h2 className="text-sm font-semibold text-content">{title}</h2>
-      {count > 0 && <span className="text-xs text-content-tertiary">{count}</span>}
+      {count > 0 && <span className="text-xs text-content-tertiary tabular-nums">{count}</span>}
     </div>
     {children}
-  </div>
+  </section>
 )
 
 const LoadError: React.FC<{ text: string; onRetry: () => void }> = ({ text, onRetry }) => (
