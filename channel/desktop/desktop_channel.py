@@ -6052,6 +6052,8 @@ class SchedulerHandler:
                 "schedule": cleaned_schedule,
                 "action": action,
             }
+            if "run_permission_mode" in body:
+                task["run_permission_mode"] = body.get("run_permission_mode")
             store = _scheduler_store()
             next_run = SchedulerService(store, lambda _t: None)._calculate_next_run(task, now)
             if not next_run:
@@ -6143,8 +6145,9 @@ class SchedulerUpdateHandler:
             
             from application import Application
             task = Application.scheduler(store).update(
-                task_id, {key: body[key] for key in ("name", "enabled", "schedule", "action", "notification_route")
-                          if key in body}, agent_id=current_identity().agent_id)
+                task_id, {key: body[key] for key in (
+                    "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode")
+                          if key in body}, agent_id=current_identity().agent_id, origin="user")
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler update error: {e}")

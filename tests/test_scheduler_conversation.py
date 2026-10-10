@@ -97,6 +97,24 @@ def test_explicit_web_route_tracks_resolved_conversation_when_it_targets_executi
         assert sent == [prepared["action"]["receiver"]] == [record["receiver"]]
 
 
+def test_agent_scheduler_schema_and_execute_cannot_raise_run_permission(scope, tmp_path):
+    from agent.scheduler import TaskStore
+    assert "run_permission_mode" not in SchedulerTool.params["properties"]
+    sessions, bindings, project = scope
+    bindings["chat_a"] = str(project)
+    tool = SchedulerTool({"channel_type": "web"})
+    tool.task_store = TaskStore(str(tmp_path / "tasks.json"))
+    context = {"receiver": "chat_a", "session_id": "chat_a", "isgroup": False}
+    tool.current_context = type("ToolContext", (dict,), {"kwargs": {}})(context)
+    with identity_scope(agent_id="agent-a"):
+        refused = tool.execute({"action": "create", "name": "daily", "message": "hello",
+                                "schedule_type": "interval", "schedule_value": "3600",
+                                "run_permission_mode": "full-access"})
+    assert refused.status == "error"
+    assert "运行权限" in refused.result
+    assert tool.task_store.load_tasks() == {}
+
+
 def test_agent_created_task_defaults_to_source_even_before_chat_is_saved(scope):
     sessions, bindings, project = scope
     sessions.clear()  # The Agent can call the tool before its current turn is persisted.

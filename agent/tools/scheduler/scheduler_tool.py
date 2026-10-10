@@ -252,8 +252,11 @@ class SchedulerTool(BaseTool):
         # Save task
         from application import Application
         from common.runtime_identity import current_identity
+        if "run_permission_mode" in kwargs:
+            task_data["run_permission_mode"] = kwargs.get("run_permission_mode")
         task_data = Application.scheduler(self.task_store).create(
-            task_data, notification_route=kwargs.get("notification_route"), agent_id=current_identity().agent_id)
+            task_data, notification_route=kwargs.get("notification_route"),
+            agent_id=current_identity().agent_id, origin="agent")
         
         # Format response
         schedule_desc = self._format_schedule_description(schedule)
@@ -290,11 +293,14 @@ class SchedulerTool(BaseTool):
             patch["notification_route"] = kwargs["notification_route"]
         if "content" in kwargs:
             patch["action"] = {"content": kwargs["content"]}
+        if "run_permission_mode" in kwargs:
+            patch["run_permission_mode"] = kwargs["run_permission_mode"]
         if not patch:
             raise ValueError("没有要修改的定时任务字段")
         from application import Application
         from common.runtime_identity import current_identity
-        task = Application.scheduler(self.task_store).update(task_id, patch, agent_id=current_identity().agent_id)
+        task = Application.scheduler(self.task_store).update(
+            task_id, patch, agent_id=current_identity().agent_id, origin="agent")
         return json.dumps({"task": task}, ensure_ascii=False)
     
     def _list_tasks(self, **kwargs) -> str:
