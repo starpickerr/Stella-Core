@@ -3,6 +3,7 @@ import { ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
 import type { SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
+import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
 import {
   commonCredentials,
@@ -275,21 +276,22 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   return (
     <div
       lang={getLang() === 'en' ? 'en-US' : 'zh-CN'}
-      className="h-full overflow-y-auto px-4 sm:px-6 py-5 sm:py-7"
+      className="h-full flex flex-col min-h-0"
     >
+      <PageHeader className="flex justify-between items-start gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2">
+            <ShieldCheck size={23} className="text-accent" />
+            {copy.title}
+          </h1>
+          <p className="text-sm text-content-secondary mt-1">{copy.subtitle}</p>
+        </div>
+        <button type="button" className={input} aria-label={copy.refresh} onClick={() => void load()}>
+          <RefreshCw size={17} />
+        </button>
+      </PageHeader>
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 sm:py-7">
       <div className="max-w-4xl mx-auto space-y-5">
-        <header className="flex justify-between items-start gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold flex items-center gap-2">
-              <ShieldCheck size={23} className="text-accent" />
-              {copy.title}
-            </h1>
-            <p className="text-sm text-content-secondary mt-1">{copy.subtitle}</p>
-          </div>
-          <button type="button" className={input} aria-label={copy.refresh} onClick={() => void load()}>
-            <RefreshCw size={17} />
-          </button>
-        </header>
         <nav className="flex gap-2 overflow-x-auto border-b border-default pb-2">
           {tabs.map((name) => (
             <button
@@ -878,6 +880,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
 import { RevisionGraph } from './briefing/RevisionGraph'
 import { currentSettingsOrigin, useRestoreScroll } from './settings/origin'
+import PageHeader from '../components/PageHeader'
 import { useBriefingRunStore } from '../store/briefingRunStore'
 
 const localDay = () => {
@@ -170,7 +171,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
 
   return <div className="flex-1 flex flex-col min-h-0">
-    <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-start justify-between gap-3">
+    <PageHeader className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-bold text-content">{t('menu_briefing')}</h1><p className="text-xs text-content-tertiary mt-1">{t('briefing_desc')}</p></div>
       <div className="flex gap-2">
         <button type="button" disabled={generating || marking} onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
@@ -182,7 +183,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           {generating ? <Loader2 size={14} className="animate-spin" /> : <Sun size={14} />}{t(generating ? 'briefing_generating' : todayBriefing ? 'briefing_update' : 'briefing_generate')}
         </button>
       </div>
-    </header>
+    </PageHeader>
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
     <div className="flex-1 flex min-h-0" data-stella-scroll>
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>

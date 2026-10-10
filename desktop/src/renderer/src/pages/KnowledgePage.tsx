@@ -24,6 +24,7 @@ import type {
   KnowledgeGraph as KnowledgeGraphData,
 } from '../types'
 import Markdown from '../components/Markdown'
+import PageHeader from '../components/PageHeader'
 import { resolveKnowledgeLink } from './knowledgeLinks'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 
@@ -407,6 +408,10 @@ const KnowledgePage: React.FC<KnowledgePageProps> = ({ baseUrl }) => {
 
   if (isEmpty) {
     return (
+      <div className="flex-1 flex flex-col min-h-0">
+      <PageHeader>
+        <h1 className="text-xl font-bold text-content">{t('knowledge_title')}</h1>
+      </PageHeader>
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
         <div className="w-14 h-14 rounded-2xl bg-accent-soft text-accent flex items-center justify-center mb-5">
           <Files size={26} />
@@ -423,13 +428,14 @@ const KnowledgePage: React.FC<KnowledgePageProps> = ({ baseUrl }) => {
           {t('knowledge_go_chat')}
         </button>
       </div>
+      </div>
     )
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0">
+      <PageHeader className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-content">{t('knowledge_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{statsLabel}</p>
@@ -476,11 +482,11 @@ const KnowledgePage: React.FC<KnowledgePageProps> = ({ baseUrl }) => {
           className="hidden"
           onChange={onFilesPicked}
         />
-      </div>
+      </PageHeader>
 
       {tab === 'docs' ? (
         <div
-          className="flex-1 flex min-h-0 border-t border-default relative"
+          className="flex-1 flex min-h-0 relative"
           onDragEnter={(e) => {
             if (e.dataTransfer?.types?.includes('Files')) {
               e.preventDefault()
@@ -555,7 +561,7 @@ const KnowledgePage: React.FC<KnowledgePageProps> = ({ baseUrl }) => {
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 border-t border-default relative">
+        <div className="flex-1 min-h-0 relative">
           {graphLoading ? (
             <div className="absolute inset-0 flex items-center justify-center text-content-tertiary">
               <Loader2 size={18} className="animate-spin mr-2" />

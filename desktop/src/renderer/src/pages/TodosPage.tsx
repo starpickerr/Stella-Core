@@ -21,6 +21,7 @@ import {
 import apiClient from "../api/client";
 import { getLang } from "../i18n";
 import EmbeddedAgent, { enqueueEmbeddedPreset, type PresetRequest } from "../components/EmbeddedAgent";
+import PageHeader from "../components/PageHeader";
 import type {
   Todo,
   TodoChecklistItem,
@@ -795,7 +796,26 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     return false;
   };
   return (
-    <div ref={pageRef} data-stella-scroll className="h-full overflow-y-auto bg-surface-0 text-content-primary">
+    <div className="h-full flex flex-col min-h-0 bg-surface-0 text-content-primary">
+      <PageHeader className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-semibold tracking-tight">
+              {focused ? focused.title : copy.title}
+            </h1>
+            <p className="text-sm text-content-tertiary mt-1">
+              {focused ? copy.focusHint : copy.subtitle}
+            </p>
+          </div>
+          {focused ? <button type="button" onClick={exitFocus} className="shrink-0 inline-flex items-center gap-1.5 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content-secondary hover:text-accent"><CornerUpLeft size={15} />{copy.backToTree}</button> : <button
+            type="button"
+            onClick={() => { setCreateTitle(""); setCreating(true); }}
+            className="inline-flex items-center gap-1.5 rounded-btn bg-accent text-accent-contrast px-3.5 py-2 text-sm font-medium"
+          >
+            <Plus size={16} />
+            {copy.newTask}
+          </button>}
+      </PageHeader>
+      <div ref={pageRef} data-stella-scroll className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-8">
         {focused && (
           <nav aria-label={copy.breadcrumb} className="mb-5 flex items-center gap-1.5 text-xs text-content-tertiary min-w-0">
@@ -832,24 +852,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             })()}
           </nav>
         )}
-        <header className="flex items-start justify-between gap-4 mb-6">
-          <div className="min-w-0">
-            <h1 className="break-words text-2xl font-semibold tracking-tight">
-              {focused ? focused.title : copy.title}
-            </h1>
-            <p className="text-sm text-content-tertiary mt-1">
-              {focused ? copy.focusHint : copy.subtitle}
-            </p>
-          </div>
-          {focused ? <button type="button" onClick={exitFocus} className="shrink-0 inline-flex items-center gap-1.5 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content-secondary hover:text-accent"><CornerUpLeft size={15} />{copy.backToTree}</button> : <button
-            type="button"
-            onClick={() => { setCreateTitle(""); setCreating(true); }}
-            className="inline-flex items-center gap-1.5 rounded-btn bg-accent text-accent-contrast px-3.5 py-2 text-sm font-medium"
-          >
-            <Plus size={16} />
-            {copy.newTask}
-          </button>}
-        </header>
         {error && <p role="alert" className="mb-4 rounded-card border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
         {loading && <p role="status" className="mb-4 text-sm text-content-tertiary">{en ? "Loading tasks…" : "正在加载事务…"}</p>}
         {!focusedId && <div>
@@ -1606,6 +1608,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             </section>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

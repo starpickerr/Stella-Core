@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { MemoryItem, MemoryCategory } from '../types'
 import Markdown from '../components/Markdown'
+import PageHeader from '../components/PageHeader'
 
 interface MemoryPageProps {
   baseUrl: string
@@ -92,7 +93,7 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0">
+      <PageHeader className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-content">{t('memory_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('memory_desc')}</p>
@@ -108,11 +109,11 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
             />
           </div>
         )}
-      </div>
+      </PageHeader>
 
       {viewing ? (
         /* File viewer */
-        <div className="flex-1 flex flex-col min-h-0 border-t border-default">
+        <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
             <button
               onClick={() => setViewing(null)}
@@ -137,7 +138,7 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
         </div>
       ) : (
         /* List */
-        <div className="flex-1 overflow-y-auto border-t border-default">
+        <div className="flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto px-6 py-5">
             {loading ? (
               <div className="flex items-center justify-center py-20 text-content-tertiary">
