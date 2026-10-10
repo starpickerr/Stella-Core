@@ -99,3 +99,12 @@
 - 结论：PASS。占位渠道拦截和重叠后台名额有行为测试；名额在成功、失败和异常时归还。损坏任务文件、账单回滚、简报未确认、迁移重试和桌面通知再领取仍成立。CR-008 继续排除。
 - 三路结果：业务 PASS、安全 PASS、可靠性 PASS。修复循环停止。
 - 下一步：重跑 `.venv/bin/python scripts/quality_check.py full`。通过后再快进本地 `develop`。不推送，不改 `main`。
+
+## 2026-10-11 修复后完整门禁
+
+- 命令：`.venv/bin/python scripts/quality_check.py full`
+- 结果：退出码 0。
+- PASS：ruff、pytest（1532 passed，4 skipped）、eslint、desktop build、typecheck、node、ui、policy。
+- FAIL：无。SKIP：pytest 4 skipped。
+- 报告：`audit-reports/Full-Audit-2026-10-11-032840-061146.md`（已被忽略，不入库）。
+- 下一步：快进本地 `develop`。不推送，不改 `main`。
