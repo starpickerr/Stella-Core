@@ -61,8 +61,9 @@ function remember(context: EmbeddedContext, id: string): string[] {
   return history
 }
 
-export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
+export default function EmbeddedAgent({ context, presetRequest, onRunDone, accessory }: {
   context: EmbeddedContext; presetRequest?: PresetRequest; onRunDone?: () => void
+  accessory?: React.ReactNode
 }) {
   const [sessionId, setSessionId] = useState(() => {
     const saved = localStorage.getItem(sessionKey(context))
@@ -132,16 +133,19 @@ export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
     void send(sessionId, message, attachments)
   }
 
-  return <section aria-label={`${context === 'calendar' ? '日程' : '事务'} Agent`} className="rounded-card border border-default bg-surface text-content overflow-hidden">
+  return <section aria-label={`${context === 'calendar' ? '日程' : '事务'} Agent`} className="rounded-card border border-default bg-surface text-content">
     <header className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="flex items-center gap-2 min-w-0"><Sparkles size={16} className="text-accent shrink-0" />
         <div><h2 className="text-sm font-semibold">Stella Agent</h2><p className="text-xs text-content-tertiary">{context === 'calendar' ? '用自然语言管理日程' : '用自然语言管理事务'}{streaming ? ' · 正在执行' : ''}</p></div>
         {streaming && <Loader2 size={13} className="animate-spin text-accent" />}
       </div>
-      <button type="button" aria-label={expanded ? '收起 Agent' : '展开 Agent'} onClick={() => setExpanded(value => !value)}
-        className="inline-flex items-center gap-1 rounded-btn px-2 py-1 text-xs text-content-secondary hover:bg-surface-2">
-        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{expanded ? '收起' : '展开'}
-      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        {accessory}
+        <button type="button" aria-label={expanded ? '收起 Agent' : '展开 Agent'} onClick={() => setExpanded(value => !value)}
+          className="inline-flex items-center gap-1 rounded-btn px-2 py-1 text-xs text-content-secondary hover:bg-surface-2">
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{expanded ? '收起' : '展开'}
+        </button>
+      </div>
     </header>
     {expanded && <>
       <div className="flex items-center justify-between gap-2 border-t border-default px-4 py-2 text-xs text-content-secondary">

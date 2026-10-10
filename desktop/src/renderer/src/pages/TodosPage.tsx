@@ -89,9 +89,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         later: "Later",
         noDate: "No date",
         empty: "No tasks in this view",
-        createHint: "What needs to be done?",
         advanced: "More options",
-        agentCreate: "Agent manage",
         details: "Task details",
         notes: "Notes",
         planDate: "Plan date",
@@ -181,9 +179,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         later: "后续",
         noDate: "无日期",
         empty: "这个视图还没有事务",
-        createHint: "需要完成什么？",
         advanced: "更多选项",
-        agentCreate: "Agent 管理",
         details: "事务详情",
         notes: "备注",
         planDate: "计划日期",
@@ -269,11 +265,8 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       setReminderTestStatus(cause instanceof Error ? cause.message : String(cause)));
   }, []);
   const [more, setMore] = useState(false);
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickOptions, setQuickOptions] = useState(false);
-  const [quickDate, setQuickDate] = useState("");
-  const [quickDue, setQuickDue] = useState("");
-  const [quickReminder, setQuickReminder] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
   const [appleMenu, setAppleMenu] = useState(false);
   const [agentPreset, setAgentPreset] = useState<PresetRequest | undefined>();
   const [childTitle, setChildTitle] = useState("");
@@ -505,29 +498,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       if (pageRef.current) pageRef.current.scrollTop = treeRef.current.scrollTop;
     });
   };
-  const createWithAgent = () => {
-    const requirement = quickTitle.trim();
-    if (!requirement || busy) return;
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    const details = [
-      requirement,
-      quickDate && `${en ? "Planned date" : "计划日期"}: ${quickDate}`,
-      quickDue && `${en ? "Due date" : "截止日期"}: ${quickDue}`,
-      quickReminder && `${en ? "Reminder" : "提醒时间"}: ${fromLocalTime(quickReminder)} (${zone})`,
-    ].filter(Boolean).join("\n");
-    const prompt = en
-      ? `Use the todos tool to create tasks from these requirements. Ask if essential details are missing; do not invent deadlines.\n\n${details}`
-      : `请使用 todos 事务工具建立事务。若缺少必要信息，先询问我；不要自行编造截止时间。\n\n${details}`;
-    setAgentPreset(enqueueEmbeddedPreset('todos', prompt));
-    setQuickTitle("");
-  };
-  const createDirect = () => {
-    const title = quickTitle.trim();
+  const createTask = () => {
+    const title = createTitle.trim();
     if (!title || busy) return;
     void run(async () => {
-      await apiClient.createTodo({ title, planned_on: quickDate || null, due_on: quickDue || null,
-        remind_at: quickReminder ? fromLocalTime(quickReminder) : null });
-      setQuickTitle(""); setQuickDate(""); setQuickDue(""); setQuickReminder("");
+      await apiClient.createTodo({ title });
+      setCreateTitle("");
+      setCreating(false);
     });
   };
   const askAppleAgent = (text: string) => {
@@ -861,7 +838,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           </div>
           {focused ? <button type="button" onClick={exitFocus} className="shrink-0 inline-flex items-center gap-1.5 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content-secondary hover:text-accent"><CornerUpLeft size={15} />{copy.backToTree}</button> : <button
             type="button"
-            onClick={() => document.getElementById("todo-quick-title")?.focus()}
+            onClick={() => { setCreateTitle(""); setCreating(true); }}
             className="inline-flex items-center gap-1.5 rounded-btn bg-accent text-accent-contrast px-3.5 py-2 text-sm font-medium"
           >
             <Plus size={16} />
@@ -889,90 +866,26 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             </button>
           ))}
         </nav>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            createWithAgent();
-          }}
-          className="rounded-card border border-default bg-surface mb-3"
-        >
-          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-            <input
-              id="todo-quick-title"
-              value={quickTitle}
-              onChange={(event) => setQuickTitle(event.target.value)}
-              placeholder={copy.createHint}
-              aria-label={copy.createHint}
-              className="min-w-[150px] flex-1 bg-transparent py-1 text-sm outline-none"
-            />
-            <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-              <button
-                type="button"
-                onClick={() => setQuickOptions(!quickOptions)}
-                aria-expanded={quickOptions}
-                className="p-1.5 text-content-secondary hover:text-accent"
-                title={copy.advanced}
-              >
-                <MoreHorizontal size={18} />
-              </button>
-              <button
-                type="button"
-                disabled={!quickTitle.trim() || busy}
-                onClick={createDirect}
-                className="rounded-btn border border-default px-3 py-1.5 text-sm text-content disabled:opacity-40"
-              >
-                {en ? "Add directly" : "直接添加"}
-              </button>
-              <button
-                type="submit"
-                disabled={!quickTitle.trim() || busy}
-                className="rounded-btn bg-accent px-3 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
-              >
-                {copy.agentCreate}
-              </button>
-              <div className="relative">
-                <button type="button" aria-expanded={appleMenu} onClick={() => setAppleMenu(value => !value)} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-1.5 text-sm text-content hover:bg-surface-2">Apple 提醒事项<ChevronDown size={13} /></button>
-                {appleMenu && <div role="menu" aria-label="Apple 提醒事项操作" onKeyDown={event => { if (event.key === "Escape") setAppleMenu(false) }} className="absolute right-0 top-full z-30 mt-1 min-w-56 rounded-btn border border-default bg-surface p-1 shadow-lg">
-                  <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可用列表，帮我选择要导入的提醒事项，先预览变更，并在获得我确认后导入 Stella 事务。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
-                  <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可写列表，帮我选择要同步至 Apple 的 Stella 事务，先预览变更，并在获得我确认后执行。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
-                  <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=integrations&section=apple-reminders") }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
-                </div>}
-              </div>
-            </div>
+        <div className="mb-5"><EmbeddedAgent context="todos" presetRequest={agentPreset} onRunDone={() => void refresh()} accessory={
+          <div className={`relative ${appleMenu ? "z-30" : ""}`}>
+            <button type="button" aria-expanded={appleMenu} onClick={() => setAppleMenu(value => !value)} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-1.5 text-sm text-content hover:bg-surface-2">Apple 提醒事项<ChevronDown size={13} /></button>
+            {appleMenu && <div role="menu" aria-label="Apple 提醒事项操作" onKeyDown={event => { if (event.key === "Escape") setAppleMenu(false) }} className="absolute right-0 top-full z-30 mt-1 min-w-56 rounded-btn border border-default bg-surface p-1 shadow-lg">
+              <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可用列表，帮我选择要导入的提醒事项，先预览变更，并在获得我确认后导入 Stella 事务。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
+              <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可写列表，帮我选择要同步至 Apple 的 Stella 事务，先预览变更，并在获得我确认后执行。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
+              <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=integrations&section=apple-reminders") }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
+            </div>}
           </div>
-          {quickOptions && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 py-3 border-t border-default text-xs">
-              <label>
-                {copy.planDate}
-                <input
-                  type="date"
-                  value={quickDate}
-                  onChange={(event) => setQuickDate(event.target.value)}
-                  className={`${input} mt-1`}
-                />
-              </label>
-              <label>
-                {copy.dueDate}
-                <input
-                  type="date"
-                  value={quickDue}
-                  onChange={(event) => setQuickDue(event.target.value)}
-                  className={`${input} mt-1`}
-                />
-              </label>
-              <label>
-                {copy.remindAt}
-                <input
-                  type="datetime-local"
-                  value={quickReminder}
-                  onChange={(event) => setQuickReminder(event.target.value)}
-                  className={`${input} mt-1`}
-                />
-              </label>
+        } /></div>
+        {creating && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreating(false); }}>
+          <form role="dialog" aria-modal="true" aria-label={copy.newTask} onSubmit={(event) => { event.preventDefault(); createTask(); }} className="w-full max-w-md rounded-card border border-default bg-surface p-5 shadow-xl space-y-4">
+            <h2 className="text-base font-semibold">{copy.newTask}</h2>
+            <input autoFocus value={createTitle} onChange={(event) => setCreateTitle(event.target.value)} placeholder={copy.title} aria-label={copy.title} className={input} />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setCreating(false)} className="px-3 py-2 text-sm">{en ? "Cancel" : "取消"}</button>
+              <button type="submit" disabled={busy || !createTitle.trim()} className="rounded-btn bg-accent px-4 py-2 text-sm text-accent-contrast disabled:opacity-40">{en ? "Add" : "添加"}</button>
             </div>
-          )}
-        </form>
-        <div className="mb-5"><EmbeddedAgent context="todos" presetRequest={agentPreset} onRunDone={() => void refresh()} /></div>
+          </form>
+        </div>}
         {uncertain.length > 0 && (
           <section className="border border-amber-500/40 bg-amber-500/10 rounded-card p-3 mb-5 text-sm">
             <div className="flex items-center gap-2 font-medium mb-2">

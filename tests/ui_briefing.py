@@ -330,43 +330,17 @@ with sync_playwright() as playwright:
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         task_mobile_screenshot = task_screenshot.with_name('stella-tasks-overdue-mobile.png')
         page.screenshot(path=str(task_mobile_screenshot), full_page=True)
-        quick = page.locator('form').filter(has=page.locator('#todo-quick-title'))
-        add_box = quick.get_by_role('button', name='Agent 管理').bounding_box()
-        form_box = quick.bounding_box()
-        assert add_box and form_box and add_box['x'] + add_box['width'] <= form_box['x'] + form_box['width']
-        expect(quick.locator('svg.lucide-circle')).to_have_count(0)
-        expect(quick.get_by_role('button', name='直接添加')).to_be_visible()
-        expect(quick.get_by_role('button', name='交给 Agent', exact=True)).to_have_count(0)
-        agent = quick.get_by_role('button', name='Agent 管理')
-        expect(agent).to_be_disabled()
-        quick.get_by_role('textbox', name='需要完成什么？').fill('整理课程资料')
-        expect(agent).to_be_enabled()
-        quick.get_by_role('button', name='更多选项').click()
-        quick.get_by_label('截止日期').fill((today + timedelta(days=2)).isoformat())
-        agent.click()
-        expect(page.get_by_text('已接收事务要求', exact=True).last).to_be_visible()
-        assert len(sent_messages) == 1
-        assert sent_messages[0]['session_id']
-        assert '使用 todos 事务工具建立' in sent_messages[0]['message']
-        assert '整理课程资料' in sent_messages[0]['message']
-        assert (today + timedelta(days=2)).isoformat() in sent_messages[0]['message']
-        assert created_todos == []
-
-        page.goto(test_url + '/#/todos', wait_until='networkidle')
-        fail_next_message[0] = True
-        page.get_by_role('textbox', name='需要完成什么？').fill('失败后重试的事务')
-        page.get_by_role('button', name='Agent 管理').click()
-        expect(page.get_by_text('HTTP 503', exact=False)).to_be_visible()
-        page.goto(test_url + '/#/todos', wait_until='networkidle')
-        page.get_by_role('textbox', name='需要完成什么？').fill('失败后重试的事务')
-        page.get_by_role('button', name='Agent 管理').click()
-        expect(page.get_by_text('已接收事务要求', exact=True).last).to_be_visible()
-        assert len(sent_messages) == 3
-        assert created_todos == []
-
-        quick.get_by_role('textbox', name='需要完成什么？').fill('直接添加事务')
-        quick.get_by_role('button', name='直接添加').click()
-        expect(quick.get_by_role('textbox', name='需要完成什么？')).to_have_value('')
+        expect(page.locator('#todo-quick-title')).to_have_count(0)
+        expect(page.get_by_role('button', name='直接添加')).to_have_count(0)
+        expect(page.get_by_role('button', name='Agent 管理')).to_have_count(0)
+        agent = page.get_by_role('region', name='事务 Agent')
+        expect(agent.get_by_text('用自然语言管理事务')).to_be_visible()
+        expect(agent.get_by_role('button', name='Apple 提醒事项')).to_be_visible()
+        page.get_by_role('button', name='新建事务').click()
+        dialog = page.get_by_role('dialog', name='新建事务')
+        dialog.get_by_role('textbox', name='事务').fill('直接添加事务')
+        dialog.get_by_role('button', name='添加').click()
+        expect(dialog).to_have_count(0)
         assert created_todos[-1]['title'] == '直接添加事务'
 
         todo_rows.append({**todo_rows[0], 'id':'timed', 'title':'到点转逾期',
