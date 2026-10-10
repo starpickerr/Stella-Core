@@ -54,3 +54,10 @@
 - 验证：隔离环境下相关 pytest 通过，包括 `tests/test_review_regressions.py`、账单、简报投影、待办迁移、通知投递和浏览器 SSRF。浏览器修复曾在 Python 3.9 上误用 `IPv4Address.ipv4_mapped`，已改为 `getattr` 后重跑通过。
 - 未完成：修复后的 `.venv/bin/python scripts/quality_check.py full`、界面交互验证、Agent 3 复审。主 Agent 不判定 PASS。
 - 下一步：把当前 diff 交给 Agent 3 按代码和测试复审。通过后再跑完整门禁。
+
+## 2026-10-11 提交修复并启动独立复审
+
+- 负责人：主 Agent
+- 当前版本：`56256a6d`，基于 `94f176d0`。工作区干净。未推送，未改 `main`。
+- 动作：修复提交为 `fix: close review findings and clear the ruff gate`。独立复审交给 [可靠性复审](8aa9c542-0692-4747-958d-68ce0a917bd7)，只读代码和测试，不实现修复。
+- 下一步：等复审结论。FAIL 则继续修。主 Agent 不判定 PASS。
