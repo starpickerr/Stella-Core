@@ -115,9 +115,8 @@ class ElearningSource:
                 errors.append("{} / files：{}".format(course["name"], exc))
                 return []
 
-        # Publish the small, actionable assignment set before scanning the
-        # potentially large announcement and file catalogs. The pipeline can
-        # update its draft while the remaining metadata is still loading.
+        # Assignments are the small actionable set. A listener can see them
+        # before the larger announcement and file catalogs finish.
         for course in courses:
             self._check_cancelled()
             assignments = read(course, "assignments", {"include[]": ["submission", "submission_comments"]})

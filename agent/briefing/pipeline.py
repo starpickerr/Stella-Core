@@ -315,7 +315,7 @@ class BriefingPipeline:
                 "section": card.section if card else "fyi", "score": card.score if card else 50,
                 "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
 
-    def _fetch_source(self, source: Source, start: str, end: str, on_items_ready=None) -> FetchResult:
+    def _fetch_source(self, source: Source, start: str, end: str) -> FetchResult:
         self._check_cancelled()
         if hasattr(source, "cancel_event"):
             source.cancel_event = self.cancel_event
@@ -330,14 +330,7 @@ class BriefingPipeline:
             old_rows = self.service.store.window_candidates(start, end, [(source.name, source.account_id)])
             if any("body" not in row[0].payload for row in old_rows):
                 cursors["refresh_existing_content"] = "1"
-        if not hasattr(source, "on_items_ready"):
-            return source.fetch(cursors)
-        previous = source.on_items_ready
-        try:
-            source.on_items_ready = on_items_ready
-            return source.fetch(cursors)
-        finally:
-            source.on_items_ready = previous
+        return source.fetch(cursors)
 
     def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem]) -> None:
         rows = [self.service.build_source_item(fetched.to_catalog_payload()) for fetched in items]

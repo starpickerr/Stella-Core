@@ -58,15 +58,12 @@ def test_generation_starts_once_after_every_source_finishes(tmp_path):
     class SlowElearningSource:
         name = "elearning"
         account_id = "school"
-        on_items_ready = None
 
         def fetch(self, cursors):
             metadata_started.set()
             assert release_metadata.wait(10), "simulated metadata read was not released"
             rows = [FetchedItem(source="elearning", account_id="school", source_id="announcement:1",
                 title="课程作业公告", occurred_at="2026-09-08T22:00:00Z", payload={"body": "明天交作业"})]
-            if self.on_items_ready is not None:
-                self.on_items_ready(rows)
             sync_started.set()
             assert release_sync.wait(10), "simulated file sync was not released"
             return FetchResult(rows, {"elearning_state": "updated"})
