@@ -378,6 +378,15 @@ class AgentLLMModel(LLMModel):
         return chunk
 
 
+def reply_for_run(agent, response, scheduled):
+    """A scheduled run succeeds only when no tool reported a business failure."""
+    failure = getattr(agent, "_scheduled_business_failure", None) if scheduled else None
+    if failure:
+        agent._scheduled_business_failure = None
+        return Reply(ReplyType.ERROR, str(failure))
+    return Reply(ReplyType.TEXT, response)
+
+
 class AgentBridge:
     """
     Bridge class that integrates super Agent with STELLA
@@ -1012,7 +1021,7 @@ class AgentBridge:
                         reply.extra_replies = extras
                     return reply
             
-            return Reply(ReplyType.TEXT, response)
+            return reply_for_run(agent, response, bool(context and context.get("is_scheduled_task")))
             
         except Exception as e:
             logger.error(f"Agent reply error: {e}")

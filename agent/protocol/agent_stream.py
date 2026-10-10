@@ -642,6 +642,10 @@ class AgentStreamExecutor:
         
         return False, "", False
     
+    def _note_scheduled_failure(self, detail):
+        if getattr(self.agent, "_scheduled_noninteractive", False):
+            self.agent._scheduled_business_failure = str(detail)
+
     def _record_tool_result(self, tool_name: str, args: dict, success: bool):
         """Record tool execution result for failure tracking"""
         args_hash = self._hash_args(args)
@@ -1679,6 +1683,7 @@ class AgentStreamExecutor:
         if denial:
             logger.info(f"🔐 Permission denied for tool {tool_name}")
             result = {"status": "error", "result": denial, "execution_time": 0}
+            self._note_scheduled_failure(denial)
             self._emit_event("tool_execution_start", {
                 "tool_call_id": tool_id,
                 "tool_name": tool_name,
@@ -1808,6 +1813,8 @@ class AgentStreamExecutor:
             # Record tool result for failure tracking
             success = result.status == "success"
             self._record_tool_result(tool_name, arguments, success)
+            if not success:
+                self._note_scheduled_failure(result.result)
 
             # Auto-refresh skills after skill creation
             if tool_name in ("write", "edit") and result.status == "success" and self.agent.skill_manager:
