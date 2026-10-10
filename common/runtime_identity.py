@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterator, Optional
 
-_FIELDS = ("agent_id", "user_id", "session_id", "run_id")
+_FIELDS = ("agent_id", "user_id", "session_id", "run_id", "task_id", "execution_session_id")
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,8 @@ class RuntimeIdentity:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     run_id: Optional[str] = None
+    task_id: Optional[str] = None
+    execution_session_id: Optional[str] = None
 
     def derive(self, **overrides: Optional[str]) -> "RuntimeIdentity":
         unknown = set(overrides) - set(_FIELDS)

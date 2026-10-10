@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import os
 import json
 
-from agent.permission import global_mode, normalize_mode
+from agent.permission import global_mode
 from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
 from common.log import logger
 
@@ -63,18 +63,17 @@ def invocation_scope(tool_call_id):
 
 
 def execution_workspace(session_id=None, agent_id=None, workspace=None):
-    from agent.workspace import project_store
-    from common.state_dir import personal_work_dir
+    from agent.workspace.context import resolve_context
     from common.runtime_identity import current_identity
-    workspace = workspace or str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
-    project = project_store.get_project_dir(session_id, agent_id) if session_id else None
-    active = project or workspace
+    identity = current_identity()
+    context = resolve_context(identity.execution_session_id or session_id, agent_id,
+                              task_id=identity.task_id)
+    active = str(context.root)
     return active, [active]
 
 
 def _current_authorization(agent, agent_id, session_id, workspace, wait_for_approval):
     from common.runtime_identity import current_identity
-    from common.state_dir import personal_work_dir
     from config import conf
     from agent.permission.security_policy import legacy_policy, resolve
     from agent.workspace import project_store
@@ -85,10 +84,10 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
         cwd, roots = agent.effective_cwd(), agent.write_roots()
     else:
         mode = global_mode()
-        default = workspace or str(personal_work_dir(identity.derive(agent_id=agent_id)))
-        cwd, roots = execution_workspace(session_id, agent_id, default)
-    project_dir = project_store.get_project_dir(session_id, agent_id) if session_id else None
-    policy = resolve(mode, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
+        cwd, roots = execution_workspace(session_id, agent_id, workspace)
+    scope_session_id = identity.execution_session_id or session_id
+    project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id else None
+    policy = resolve(mode, project_dir=project_dir, session_id=scope_session_id, agent_id=agent_id)
     if agent is not None and not session_id and mode != global_mode():
         policy = legacy_policy(mode)
     limit = _permission_limit.get()
@@ -189,6 +188,12 @@ def permission_denial(
             else:
                 raise ApprovalRejectedError(f"{tool_name} 审批已过期，本轮已停止；操作未执行。")
         if decision.allowed:
+            if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
+                from agent.workspace.context import resolve_context
+                context = resolve_context(identity.execution_session_id or session_id, agent_id,
+                                          task_id=identity.task_id)
+                if context.kind in ("session", "automation"):
+                    context.root.mkdir(parents=True, exist_ok=True)
             if tool_name == "bash" and decision.resource.startswith("/"):
                 _shell_expansion.set((str(arguments.get("command") or "").strip(), decision.resource))
             if tool_name == "browser" and decision.resource.startswith("/"):

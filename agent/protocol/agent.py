@@ -4,9 +4,9 @@ import time
 import threading
 
 from common.log import logger
-from agent.protocol.models import LLMRequest, LLMModel
+from agent.protocol.models import LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
-from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
+from agent.protocol.result import AgentAction, AgentActionType, ToolResult
 from agent.tools.base_tool import BaseTool, ToolStage, is_tool_available
 
 
@@ -60,6 +60,7 @@ class Agent:
         # directory (bash cwd, relative file paths) while memory/skills stay
         # anchored to workspace_dir. None means "use workspace_dir".
         self.project_dir = None
+        self.work_root = None
         # How much this session may change (see agent.permission). None means
         # "follow the global setting", resolved at check time so a change to the
         # global default reaches sessions that never picked a mode themselves.
@@ -116,8 +117,15 @@ class Agent:
         """The working directory in force: the project override, else workspace."""
         if self.project_dir:
             return self.project_dir
+        if self.work_root:
+            return self.work_root
         from common.state_dir import personal_work_dir
         return str(personal_work_dir(base=self.workspace_dir)) if self.workspace_dir else os.getcwd()
+
+    def apply_work_context(self, context):
+        """Retarget file and Shell tools to one resolved conversation/task root."""
+        self.work_root = str(context.root)
+        return self.apply_project_dir(str(context.root) if context.kind == "project" else None)
 
     def apply_project_dir(self, project_dir):
         """Point the working directory at ``project_dir`` (None resets to workspace).
@@ -221,6 +229,7 @@ class Agent:
                 memory_manager=self.memory_manager,
                 runtime_info=self.runtime_info,
                 project_dir=self.project_dir,
+                work_dir=self.effective_cwd(),
                 permission_mode=self.effective_permission_mode(),
             )
             if self.extra_system_suffix:

@@ -44,6 +44,7 @@ class PromptBuilder:
         memory_manager: Any = None,
         runtime_info: Optional[Dict[str, Any]] = None,
         project_dir: Optional[str] = None,
+        work_dir: Optional[str] = None,
         permission_mode: Optional[str] = None,
         **kwargs
     ) -> str:
@@ -74,6 +75,7 @@ class PromptBuilder:
             memory_manager=memory_manager,
             runtime_info=runtime_info,
             project_dir=project_dir,
+            work_dir=work_dir,
             permission_mode=permission_mode,
             **kwargs
         )
@@ -90,6 +92,7 @@ def build_agent_system_prompt(
     memory_manager: Any = None,
     runtime_info: Optional[Dict[str, Any]] = None,
     project_dir: Optional[str] = None,
+    work_dir: Optional[str] = None,
     permission_mode: Optional[str] = None,
     **kwargs
 ) -> str:
@@ -146,7 +149,7 @@ def build_agent_system_prompt(
     # hold when the context files were actually loaded, which sub agents skip.
     sections.extend(
         _build_workspace_section(
-            workspace_dir, language, bool(context_files), project_dir=project_dir
+            workspace_dir, language, bool(context_files), project_dir=project_dir, work_dir=work_dir
         )
     )
 
@@ -158,7 +161,8 @@ def build_agent_system_prompt(
             from common.runtime_identity import current_identity
             identity = current_identity()
             policy = resolve(permission_mode, project_dir=project_dir,
-                             session_id=identity.session_id, agent_id=identity.agent_id)
+                             session_id=identity.execution_session_id or identity.session_id,
+                             agent_id=identity.agent_id)
             available_names = {getattr(tool, "name", "") for tool in (tools or [])}
             elearning_sync = None
             if "elearning" in available_names:
@@ -173,7 +177,7 @@ def build_agent_system_prompt(
                     pass
             allowlist = conf().get("agent_tool_allowlist")
             sections.extend(describe(
-                policy, language, workspace=project_dir or workspace_dir,
+                policy, language, workspace=work_dir or project_dir or workspace_dir,
                 tool_allowlist=allowlist if isinstance(allowlist, list) else None,
                 elearning_sync=elearning_sync,
             ))
@@ -696,6 +700,7 @@ def _build_docs_section(workspace_dir: str, language: str) -> List[str]:
 def _build_workspace_section(
     workspace_dir: str, language: str, context_files_loaded: bool = True,
     project_dir: Optional[str] = None,
+    work_dir: Optional[str] = None,
 ) -> List[str]:
     """Build the workspace section.
 
@@ -721,6 +726,14 @@ def _build_workspace_section(
         return _build_project_workspace_section(
             workspace_dir, normalized_project, language, context_files_loaded
         )
+
+    if work_dir and os.path.realpath(work_dir) != os.path.realpath(workspace_dir):
+        if language == "en":
+            return ["## 📂 Workspace", "", f"Current working directory: `{work_dir}`",
+                    f"System directory (memory and skills): `{workspace_dir}`",
+                    "Relative file paths use the current working directory."]
+        return ["## 📂 工作空间", "", f"当前工作目录：`{work_dir}`",
+                f"系统目录（记忆与技能）：`{workspace_dir}`", "相对文件路径以当前工作目录为基准。"]
 
     if language == "en":
         lines = [
@@ -774,16 +787,16 @@ def _build_workspace_section(
             "**路径使用规则** (非常重要):",
             "",
             f"1. **相对路径的基准目录**: 所有相对路径都是相对于 `{workspace_dir}` 而言的",
-            f"   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
+            "   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
             f"   - ❌ 错误: 用相对路径访问其他目录的文件 (如果它不在 `{workspace_dir}` 内)",
             "",
             "2. **访问其他目录**: 如果要访问工作空间之外的目录（如项目代码、系统文件），**必须使用绝对路径**",
-            f"   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
-            f"   - ❌ 错误: 假设相对路径会指向其他目录",
+            "   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
+            "   - ❌ 错误: 假设相对路径会指向其他目录",
             "",
             "3. **路径解析示例**:",
             f"   - 相对路径 `memory/` → 实际路径 `{workspace_dir}/memory/`",
-            f"   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
+            "   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
             "",
             "4. **不确定时**: 先用 `bash pwd` 确认当前目录，或用 `ls .` 查看当前位置",
             "",
@@ -844,7 +857,7 @@ def _build_project_workspace_section(
             "",
             f"2. **Memory and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Use memory tools for memory and the `skill` tool to create or update skills; generic file and shell writes to the skill store are blocked.",
             f"   - ✅ absolute `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
+            "   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
             "",
             "3. **Accessing any other directory**: use absolute paths.",
             "",
@@ -867,7 +880,7 @@ def _build_project_workspace_section(
             "",
             f"2. **记忆和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。记忆使用记忆工具，创建或更新技能使用 `skill` 工具；普通文件工具和终端不能写入技能库。",
             f"   - ✅ 绝对路径 `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
+            "   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
             "",
             "3. **访问其他任意目录**：使用绝对路径。",
             "",

@@ -22,6 +22,8 @@ def scope(monkeypatch, tmp_path):
         list_session_ids=lambda channel_type: list(sessions)))
     monkeypatch.setattr(conversation.project_store, "get_project_dir",
                         lambda session_id, agent_id=None: bindings.get(session_id))
+    monkeypatch.setattr(conversation.project_store, "get_project_binding",
+                        lambda session_id, agent_id=None: bindings.get(session_id))
     monkeypatch.setattr(conversation.project_store, "set_project_dir",
                         lambda session_id, path, agent_id=None: bindings.__setitem__(session_id, path))
     monkeypatch.setattr(conversation.project_store, "list_known_projects",

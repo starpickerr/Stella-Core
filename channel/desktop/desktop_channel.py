@@ -344,24 +344,9 @@ def _get_upload_dir() -> str:
 
 
 def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
-    """Resolve the working directory for this request.
-
-    When a session has opened a project directory, that project is the working
-    directory the file panel / preview / ``@`` picker operate in. Otherwise it
-    is the user's personal work folder. Memory and skills
-    always stay in ``state_root`` regardless; only the working root moves.
-    """
-    if session_id:
-        try:
-            from agent.workspace import project_store
-            project_dir = project_store.get_project_dir(session_id, agent_id)
-            if project_dir:
-                return project_dir
-        except Exception as e:
-            logger.debug(f"[DesktopChannel] project_dir resolve failed: {e}")
-    from common.state_dir import personal_work_dir
-    from common.runtime_identity import current_identity
-    return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
+    """Resolve the same working root used by the Agent and tool gateway."""
+    from agent.workspace.context import resolve_context
+    return str(resolve_context(session_id, agent_id).root)
 
 
 def _get_state_root() -> str:
@@ -7205,7 +7190,6 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     session_policy = prefs.get("security_policy") or {}
     layers = [name for name, patch in (("project", project_policy), ("session", session_policy)) if patch]
     source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
-    from common.state_dir import personal_work_dir
     from agent.permission.process_sandbox import capability
     isolation = capability()
     if effective_mode(effective_policy) == "full-access":
@@ -7230,7 +7214,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "rules": effective_rules(effective_policy),
             "policy": effective_policy,
             "mode_definitions": MODE_DEFINITIONS,
-            "authorized_roots": [project_dir or str(personal_work_dir()), *(effective_policy.get("extra_roots") or [])],
+            "authorized_roots": [_get_workspace_root(session_id, agent_id), *(effective_policy.get("extra_roots") or [])],
             "project": project_dir,
             "error": effective_policy.get("error"),
             "process_isolation": isolation,
@@ -7686,7 +7670,6 @@ class WorkspaceMetaHandler:
 def _project_state(session_id: str, agent_id: str = None) -> dict:
     """Assemble the project picker state: current selection + recents + root."""
     from agent.workspace import project_store
-    from common.state_dir import personal_work_dir
 
     current = project_store.get_project_dir(session_id, agent_id) if session_id else None
     return {
@@ -7694,7 +7677,7 @@ def _project_state(session_id: str, agent_id: str = None) -> dict:
             {"path": current, "name": project_store.display_name_for(current)}
             if current else None
         ),
-        "default_workspace": str(personal_work_dir()),
+        "default_workspace": _get_workspace_root(session_id, agent_id),
         "projects_root": project_store.projects_root(),
         "recents": project_store.list_recents(),
     }
@@ -7729,7 +7712,7 @@ class ProjectSelectHandler:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session is required"})
             project_dir = body.get("project_dir")
-            applied = project_store.set_project_dir(
+            project_store.set_project_dir(
                 session_id, project_dir or None, agent_id
             )
             # Retarget an already-instantiated session agent immediately, so the
@@ -7738,8 +7721,8 @@ class ProjectSelectHandler:
                 from bridge.bridge import Bridge
                 ab = Bridge().get_agent_bridge()
                 agent = ab.get_cached_agent(session_id, agent_id)
-                if agent is not None and getattr(agent, "apply_project_dir", None):
-                    agent.apply_project_dir(applied)
+                if agent is not None:
+                    ab._apply_session_project(agent, session_id, agent_id)
             except Exception as e:
                 logger.debug(f"[DesktopChannel] project apply-to-agent skipped: {e}")
             state = _project_state(session_id, agent_id)
@@ -7772,8 +7755,8 @@ class ProjectCreateHandler:
                     from bridge.bridge import Bridge
                     ab = Bridge().get_agent_bridge()
                     agent = ab.get_cached_agent(session_id, agent_id)
-                    if agent is not None and getattr(agent, "apply_project_dir", None):
-                        agent.apply_project_dir(path)
+                    if agent is not None:
+                        ab._apply_session_project(agent, session_id, agent_id)
                 except Exception as e:
                     logger.debug(f"[DesktopChannel] project apply-to-agent skipped: {e}")
             state = _project_state(session_id or None, agent_id)
