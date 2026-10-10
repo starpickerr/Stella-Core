@@ -39,7 +39,9 @@ client_config.json
 .preview_secret
 /references/
 **/.dev.vars
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 local/
 node_modules/
 

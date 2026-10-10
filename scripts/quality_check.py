@@ -76,6 +76,9 @@ def affected_checks(files):
     if (changed & {"AGENTS.md", "scripts/quality_check.py"}
             or any(path.startswith(".agents/skills/") for path in changed)):
         tests.add("tests/test_quality_check.py")
+    if (changed & {"AGENTS.md", ".agents/AGENTS.md", "scripts/check_dev_policy.py"}
+            or any(path.startswith((".agents/rules/", ".cursor/rules/")) for path in changed)):
+        tests.add("tests/test_dev_policy.py")
     if any(path.startswith(("agent/briefing/", "agent/tools/briefing/")) for path in changed):
         tests.update(("tests/test_todos.py", "tests/test_calendar.py"))
         tests.update(p.relative_to(ROOT).as_posix() for p in (ROOT / "tests").glob("test_briefing_*.py"))
@@ -102,8 +105,8 @@ def affected_checks(files):
         "ui": renderer,
         "eslint": desktop,
         "build": desktop,
-        "policy": any(path in {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml"}
-                      or path.startswith((".agents/rules/", ".agents/skills/")) for path in changed),
+        "policy": any(path in {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml", "scripts/check_dev_policy.py"}
+                      or path.startswith((".agents/rules/", ".agents/skills/", ".cursor/rules/")) for path in changed),
     }
 
 

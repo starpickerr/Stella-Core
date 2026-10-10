@@ -4,7 +4,7 @@
 
 | 场景提示 | 期望可观察行为 |
 | --- | --- |
-| “总结当前 Stella 开发规则及来源文件” | 识别根 `AGENTS.md`，按链接读取 `.agents/AGENTS.md` 与相关规则 |
+| “总结当前 Stella 开发规则及来源文件” | Codex 与 Cursor 都识别根 `AGENTS.md`；Cursor 同时识别 `.cursor/rules/stella-development.mdc`；按链接读取 `.agents/AGENTS.md` 与相关规则，不把 Skill 长文当作项目准则 |
 | “修复一个模拟 Bug” | 先查看 Git 状态、创建分支、复现、修复、执行相关测试和验证 Skill |
 | “审查一个安全敏感 diff” | 按需调用 `differential-review`，给出证据和未覆盖范围 |
 | “从中断的计划继续” | 先核对代码、提交和测试，再更新 `docs/plans/active/` 进度 |

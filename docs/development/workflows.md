@@ -45,6 +45,6 @@
 
 依赖安装、浏览器下载和真实模型评测需要外部资源。离线 Agent Evals 使用 Mock，不代表真实模型完成率或任意提示注入抵抗力。代码与结果不一致时先定位、补回归测试并重跑；交付时分别列出 PASS、FAIL、SKIP。
 
-## Codex 与外部工具
+## Codex、Cursor 与外部工具
 
-Codex 的根规则由 `AGENTS.md` 显式引到 `.agents/AGENTS.md`，项目配置位于 `.codex/config.toml`；项目级 Skills 放在 `.agents/skills/`，清单见 [技能维护](skills.md)。`codex mcp list --json` 本次列出 `code-review`、`codex_app`、`computer-use`、`cua_repl`、`node_repl`。加上现有 GitHub CLI、浏览器和测试工具，当前任务没有需要新登录或凭证的 MCP/插件。首次在新 Codex 会话使用新 Skill 时，按 [开发行为检查表](../../evals/codex-development.md) 抽查实际发现和使用情况。
+Codex 与 Cursor 自动读取仓库根目录 `AGENTS.md`。Codex 再按其中的链接读取 `.agents/AGENTS.md`，项目配置位于 `.codex/config.toml`。Cursor 同时读取 `.cursor/rules/stella-development.mdc`。两份入口描述同一套步骤；冲突时以根目录 `AGENTS.md` 和 `.agents/rules/` 为准。项目级 Skills 放在 `.agents/skills/`，清单见 [技能维护](skills.md)。Skill 目录里的长文使用 Skill 入口或 `compiled-guide.md` 等名称，不用 `AGENTS.md`，避免被两个工具当成项目开发准则自动载入。`codex mcp list --json` 本次列出 `code-review`、`codex_app`、`computer-use`、`cua_repl`、`node_repl`。加上现有 GitHub CLI、浏览器和测试工具，当前任务没有需要新登录或凭证的 MCP/插件。首次在新 Codex 会话使用新 Skill 时，按 [开发行为检查表](../../evals/codex-development.md) 抽查实际发现和使用情况。

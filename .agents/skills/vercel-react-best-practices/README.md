@@ -2,6 +2,8 @@
 
 A structured repository for creating and maintaining React Best Practices optimized for agents and LLMs.
 
+Stella keeps the generated full guide at `compiled-guide.md`. It is not named `AGENTS.md`, so Codex and Cursor do not load it as the project development guide. Read it only when this Skill is selected. Upstream build commands below still emit `AGENTS.md`; rename that output before committing it here.
+
 ## Structure
 
 - `rules/` - Individual rule files (one per rule)
