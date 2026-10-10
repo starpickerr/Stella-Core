@@ -79,5 +79,12 @@
 
 ## Progress
 
-- Status: not started. The 06:00–07:00 log gap is consistent with a one-hour approval wait, but the specific approval event was not logged; confirm the actual path during implementation.
-- Verification: SKIP — no implementation or test run for this plan yet.
+- Status: implemented on `fix/briefing-generation-20261010`.
+- Commits: `a01e8628` persist user-chosen mode, `73f79d3e` apply it without an approval wait, `7369fdcc` structured tool failure, `2a1dc20a` editor and list.
+- The one-hour wait matches `agent_stream._permission_denial`: a scheduled run registers a cancel event, and that used to set `wait_for_approval`. Scheduled runs now pass `noninteractive=True`.
+- Verification:
+  - PASS isolated pytest `tests/test_scheduler_web_update.py tests/test_scheduler_conversation.py` — 23 passed.
+  - PASS isolated pytest `tests/test_scheduler_delivery.py tests/test_security_approval_resume.py` — 29 passed.
+  - PASS isolated pytest `tests/test_briefing_scheduler.py` — 8 passed.
+  - PASS `tests/ui_tasks.py` through the isolated renderer: task editor saves 完全访问, reopens it, runs now, and shows a failed reason. `npx tsc --noEmit -p desktop/tsconfig.json` passed.
+  - SKIP final `quality_check.py incremental` until the later plans in this iteration are included.

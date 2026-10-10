@@ -69,5 +69,6 @@
 
 ## Progress
 
-- Status: not started. Baseline branch: `develop`; initial work branch observed as `fix/briefing-generation-20261010`.
-- Verification: SKIP — no implementation or test run for this plan yet.
+- Status: implemented on `fix/briefing-generation-20261010`. Preview generation is removed. The decision task lists `expected_ids` and the hard rules, and the tool schema requires section, score, and summary only when `selected` is true.
+- Verification: PASS isolated pytest `tests/test_briefing_pipeline.py tests/test_briefing_daily.py tests/test_briefing_agent.py` — 40 passed.
+- SKIP final incremental quality check until the knowledge-link plan in this iteration is included.
