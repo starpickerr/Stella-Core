@@ -5679,31 +5679,8 @@ class ToolsHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.tools.tool_manager import ToolManager
-            from common import i18n
-            tm = ToolManager()
-            if not tm.tool_classes:
-                tm.load_tools()
-            tools = []
-            lang = i18n.get_language()
-            for name, cls in tm.tool_classes.items():
-                try:
-                    instance = cls()
-                    desc = instance.description
-                    if lang == i18n.ZH_HANT and desc:
-                        desc = i18n.to_traditional(desc)
-                    elif lang == "en" and name == "scheduler":
-                        desc = (
-                            "Create, query and manage scheduled tasks (reminders, periodic tasks, etc.).\n\n"
-                            "⚠️ IMPORTANT: Only use this tool when delayed or periodic execution is needed."
-                        )
-                    tools.append({
-                        "name": name,
-                        "description": desc,
-                    })
-                except Exception:
-                    tools.append({"name": name, "description": ""})
-            return json.dumps({"status": "success", "tools": tools}, ensure_ascii=False)
+            from agent.tools.catalog import tools_payload
+            return json.dumps(tools_payload(), ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Tools API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
