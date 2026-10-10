@@ -185,7 +185,7 @@ const App: React.FC = () => {
     <div className="flex h-screen overflow-hidden bg-base text-content">
       {onboardingOpen && <OnboardingWizard onDone={handleLangChange} />}
       <Lightbox />
-      <NavRail onLangChange={handleLangChange} />
+      <NavRail />
 
       {showSessions && <SessionList />}
 

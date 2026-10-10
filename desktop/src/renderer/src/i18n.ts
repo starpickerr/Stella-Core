@@ -497,6 +497,9 @@ const translations: Record<string, Record<string, string>> = {
     // settings tabs
     settings_tab_basic: '基础配置',
     settings_tab_models: '模型配置',
+    settings_tab_briefing: '简报',
+    settings_tab_about: '关于',
+    settings_return: '返回原页面',
     // models tab
     models_vendors: '厂商凭据',
     models_vendors_sub: '一处配置，多个模型能力共享',
@@ -1280,6 +1283,9 @@ const translations: Record<string, Record<string, string>> = {
     // settings tabs
     settings_tab_basic: 'Basic',
     settings_tab_models: 'Models',
+    settings_tab_briefing: 'Briefing',
+    settings_tab_about: 'About',
+    settings_return: 'Back',
     // models tab
     models_vendors: 'Provider Credentials',
     models_vendors_sub: 'Configured once, shared by multiple model capabilities',
