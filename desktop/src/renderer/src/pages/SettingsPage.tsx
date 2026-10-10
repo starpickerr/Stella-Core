@@ -10,6 +10,7 @@ import AppleIntegrations from './settings/AppleIntegrations'
 import { SettingsPanel } from './briefing/SettingsPanel'
 import { docsUrl, FEEDBACK_URL, openExternal, websiteUrl } from './settings/links'
 import type { SettingsOrigin } from './settings/origin'
+import PageHeader from '../components/PageHeader'
 
 interface SettingsPageProps {
   baseUrl: string
@@ -43,21 +44,21 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
   ]
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-6">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold text-content">{t('menu_settings')}</h2>
-            <p className="text-sm text-content-tertiary mt-1">{t('config_desc')}</p>
-          </div>
-          {origin?.from && (
-            <button type="button" className="h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2"
-              onClick={() => navigate(origin.from, { state: { restoreScroll: origin.scroll } })}>
-              {t('settings_return')}
-            </button>
-          )}
+    <div className="flex-1 flex flex-col min-h-0">
+      <PageHeader className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-content">{t('menu_settings')}</h2>
+          <p className="text-sm text-content-tertiary mt-1">{t('config_desc')}</p>
         </div>
-
+        {origin?.from && (
+          <button type="button" className="h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2"
+            onClick={() => navigate(origin.from, { state: { restoreScroll: origin.scroll } })}>
+            {t('settings_return')}
+          </button>
+        )}
+      </PageHeader>
+      <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto p-6">
         <div className="flex items-center gap-1 mb-6 border-b border-default">
           {tabs.map((tb) => (
             <button
@@ -92,6 +93,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
           <AppleIntegrations section={new URLSearchParams(location.search).get('section')} />
         )}
         </TabBoundary>
+      </div>
       </div>
     </div>
   )

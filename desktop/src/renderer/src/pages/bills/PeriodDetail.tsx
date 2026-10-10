@@ -6,6 +6,7 @@ import type { PeriodStatement, PeriodStatementItem } from '../../types'
 import { formatDateTime, formatMinor, formatPeriodRange, periodLabel } from './helpers'
 import { PeriodCharts } from './PeriodCharts'
 import { PeriodRankings } from './PeriodRankings'
+import PageHeader from '../../components/PageHeader'
 
 interface PeriodDetailProps {
   baseUrl: string
@@ -45,7 +46,7 @@ export const PeriodDetail: React.FC<PeriodDetailProps> = ({ baseUrl, statement, 
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
+      <PageHeader className="flex items-center gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -62,7 +63,7 @@ export const PeriodDetail: React.FC<PeriodDetailProps> = ({ baseUrl, statement, 
         >
           {open ? t('bills_status_open') : t('bills_status_closed')}
         </span>
-      </div>
+      </PageHeader>
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (

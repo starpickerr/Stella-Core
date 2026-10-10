@@ -6,6 +6,7 @@ import apiClient from '../api/client'
 import { useSessionStore } from '../store/sessionStore'
 import type { SchedulerTask, TaskSchedule, TaskAction, NotificationRoute } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
+import PageHeader from '../components/PageHeader'
 
 interface TasksPageProps {
   baseUrl: string
@@ -109,7 +110,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-6 pt-5 pb-3 flex-shrink-0 flex items-start justify-between gap-4">
+      <PageHeader className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-content">{t('tasks_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('tasks_desc')}</p>
@@ -120,9 +121,9 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
             {t('tasks_add')}
           </span>
         </Btn>
-      </div>
+      </PageHeader>
 
-      <div className="flex-1 overflow-y-auto border-t border-default">
+      <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-5">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-content-tertiary">

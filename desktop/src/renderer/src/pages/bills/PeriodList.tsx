@@ -5,6 +5,7 @@ import apiClient from '../../api/client'
 import type { PeriodStatement, PeriodType } from '../../types'
 import { PeriodCard } from './PeriodCard'
 import { LedgerList } from './LedgerList'
+import PageHeader from '../../components/PageHeader'
 
 interface PeriodListProps {
   baseUrl: string
@@ -67,7 +68,7 @@ export const PeriodList: React.FC<PeriodListProps> = ({ baseUrl, onSelect }) => 
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-6 pt-5 pb-3 flex-shrink-0">
+      <PageHeader>
         <h2 className="text-xl font-bold text-content">{t('bills_title')}</h2>
         <p className="text-xs text-content-tertiary mt-1">{t('bills_desc')}</p>
 
@@ -106,9 +107,9 @@ export const PeriodList: React.FC<PeriodListProps> = ({ baseUrl, onSelect }) => 
             />
           </div>
         </div>
-      </div>
+      </PageHeader>
 
-      <div className="flex-1 overflow-y-auto border-t border-default">
+      <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-5">
           {tab === 'ledger' ? (
             <LedgerList baseUrl={baseUrl} />

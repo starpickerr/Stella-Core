@@ -8,6 +8,7 @@ import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunda
 import type { ScrollPeriod } from './calendar/CalendarViews'
 import EmbeddedAgent, { enqueueEmbeddedPreset, type PresetRequest } from '../components/EmbeddedAgent'
 import { currentSettingsOrigin, useRestoreScroll } from './settings/origin'
+import PageHeader from '../components/PageHeader'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -332,7 +333,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
 
   return <div className="flex-1 flex flex-col min-h-0 text-content" data-stella-scroll>
-    <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-center justify-between gap-3">
+    <PageHeader className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => void reload()} aria-label="Refresh" className="h-8 px-2 rounded-btn border border-default hover:bg-surface-2"><RefreshCw size={15} /></button>
@@ -340,7 +341,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         <button type="button" onClick={() => setCategoryPanel(true)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><Settings2 size={14} />{labels.categories}</button>
         <button type="button" onClick={() => openNew(selectedDay)} className="h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm inline-flex items-center gap-1"><Plus size={15} />{labels.add}</button>
       </div>
-    </header>
+    </PageHeader>
     <div className="px-6 py-3 border-b border-default"><EmbeddedAgent context="calendar" presetRequest={agentPreset} onRunDone={() => void reload()} accessory={
       <div className={`relative ${appleMenu ? 'z-30' : ''}`}>
         <button type="button" aria-expanded={appleMenu} onClick={() => setAppleMenu(value => !value)} className="h-8 px-3 rounded-btn border border-default hover:bg-surface-2 text-sm inline-flex items-center gap-1"><CalendarDays size={14} />{en ? 'Apple Calendar' : 'Apple 日历'}</button>
