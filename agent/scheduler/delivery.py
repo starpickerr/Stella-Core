@@ -6,6 +6,7 @@ import re
 import sys
 
 SUPPORTED = ('web', 'feishu', 'weixin')
+PROACTIVE = ('desktop', 'telegram', 'wecom_bot')
 
 
 def runtime_channel(channel_type):
@@ -33,45 +34,35 @@ def web_sessions(agent_id=None):
     return [{'receiver': row['session_id'], 'name': row['title'] or row['session_id']} for row in rows]
 
 
+def desktop_client_connected():
+    """The desktop process records presence when it claims notifications."""
+    return False
+
+
 def destination_catalog(agent_id=None):
-    from config import conf
-    active = conf().get('channel_type', '')
-    configured_channels = set(active if isinstance(active, list) else active.split(','))
-    configured_channels = {name.strip() for name in configured_channels}
-    result = []
-    for name in SUPPORTED:
-        channel = runtime_channel(name)
-        configured = name == 'web' or channel is not None or name in configured_channels
-        recipients = web_sessions(agent_id) if name == 'web' else []
-        if name == 'weixin' and channel is not None:
-            lock = getattr(channel, '_context_tokens_lock', None)
-            if lock:
-                with lock:
-                    tokens = dict(getattr(channel, '_context_tokens', {}) or {})
-            else:
-                tokens = dict(getattr(channel, '_context_tokens', {}) or {})
-            recipients = [{'receiver': key, 'name': key} for key, token in tokens.items() if token]
-        if channel is None:
-            status = 'unavailable' if configured else 'unconfigured'
-        elif name == 'weixin' and getattr(channel, 'login_status', None) is None:
-            status = 'unknown'
-        elif name == 'weixin' and getattr(channel, 'login_status') != 'logged_in':
-            status = 'login_required'
-        elif name == 'weixin' and not recipients and getattr(channel, '_expired_context_recipients', None):
-            status = 'session_expired'
-        elif name == 'weixin' and not recipients:
-            status = 'no_recipient'
-        else:
-            status = 'ready'
-        result.append({'channel_type': name, 'configured': configured, 'ready': status == 'ready', 'status': status,
-                       'recipients': recipients, 'supports_groups': name == 'feishu'})
-    return result
+    """Connected proactive channels only. Unconnected channels are omitted."""
+    rows = []
+    if desktop_client_connected():
+        rows.append({'channel_type': 'desktop', 'configured': True, 'ready': True,
+                     'status': 'ready', 'recipients': [], 'supports_groups': False})
+    telegram = runtime_channel('telegram')
+    if telegram is not None:
+        rows.append({'channel_type': 'telegram', 'configured': True, 'ready': True,
+                     'status': 'ready', 'recipients': [], 'supports_groups': True})
+    wecom = runtime_channel('wecom_bot')
+    if (wecom is not None and getattr(wecom, 'mode', None) == 'websocket'
+            and getattr(wecom, 'authenticated', False)):
+        rows.append({'channel_type': 'wecom_bot', 'configured': True, 'ready': True,
+                     'status': 'ready', 'recipients': [], 'supports_groups': True})
+    return rows
 
 
 def normalize_destination(destination, agent_id=None):
     if not isinstance(destination, dict):
         raise ValueError('delivery must be an object')
     channel_type = destination.get('channel_type')
+    if channel_type in PROACTIVE:
+        return normalize_proactive_destination(destination, agent_id)
     if channel_type not in SUPPORTED:
         raise ValueError('Scheduled delivery supports desktop, Feishu and Weixin')
     receiver = destination.get('receiver')
@@ -113,36 +104,59 @@ def normalize_destination(destination, agent_id=None):
 
 
 def normalize_notification_route(route, agent_id=None):
-    """Normalize an explicitly chosen primary and optional backup destination."""
+    """Normalize one new proactive destination. Backup fields are rejected."""
     if route is None:
-        return {'primary': None, 'backup_enabled': False, 'backup': None}
+        return {'primary': None, 'needs_reselect': False}
     if not isinstance(route, dict):
         raise ValueError('notification route must be an object')
+    if route.get('backup_enabled') is True or route.get('backup') not in (None,):
+        raise ValueError('备用渠道已移除')
     primary = route.get('primary')
-    primary = normalize_destination(primary, agent_id) if primary is not None else None
-    backup_enabled = route.get('backup_enabled', False)
-    if type(backup_enabled) is not bool:
-        raise ValueError('backup_enabled must be true or false')
-    if not backup_enabled:
-        return {'primary': primary, 'backup_enabled': False, 'backup': None}
     if primary is None:
-        raise ValueError('A primary destination is required before enabling backup')
-    backup = route.get('backup')
-    if backup is None:
-        raise ValueError('A backup destination is required when backup is enabled')
-    backup = normalize_destination(backup, agent_id)
-    if (primary['channel_type'], primary['receiver']) == (backup['channel_type'], backup['receiver']):
-        raise ValueError('Backup must use a different recipient or channel')
-    return {'primary': primary, 'backup_enabled': True, 'backup': backup}
+        return {'primary': None, 'needs_reselect': False}
+    channel_type = primary.get('channel_type') if isinstance(primary, dict) else None
+    if channel_type not in PROACTIVE:
+        raise ValueError('需要重新选择渠道')
+    return {'primary': normalize_proactive_destination(primary, agent_id), 'needs_reselect': False}
+
+
+def normalize_proactive_destination(destination, agent_id=None):
+    if not isinstance(destination, dict):
+        raise ValueError('delivery must be an object')
+    channel_type = destination.get('channel_type')
+    if channel_type not in PROACTIVE:
+        raise ValueError('需要重新选择渠道')
+    receiver = destination.get('receiver')
+    if not isinstance(receiver, str) or not receiver.strip() or len(receiver.strip()) > 200:
+        raise ValueError('A destination recipient is required')
+    receiver = receiver.strip()
+    is_group = destination.get('is_group', False)
+    if type(is_group) is not bool:
+        raise ValueError('is_group must be true or false')
+    if channel_type == 'desktop' and is_group:
+        raise ValueError('This destination does not support group delivery')
+    name = destination.get('receiver_name') or receiver
+    if not isinstance(name, str) or len(name) > 200:
+        raise ValueError('recipient name must be at most 200 characters')
+    return {'channel_type': channel_type, 'receiver': receiver, 'is_group': is_group,
+            'receiver_name': name, 'notify_session_id': receiver}
+
+
+def load_saved_route(route):
+    """Keep a stored primary and drop any backup. Legacy channels need a new choice."""
+    if not isinstance(route, dict):
+        return {'primary': None, 'needs_reselect': False}
+    primary = route.get('primary')
+    if not isinstance(primary, dict):
+        return {'primary': None, 'needs_reselect': False}
+    channel_type = primary.get('channel_type')
+    return {'primary': primary, 'needs_reselect': channel_type not in PROACTIVE}
 
 
 def same_notification_route(candidate, saved):
     """Compare user choices while ignoring server-added recipient metadata."""
     if not isinstance(candidate, dict) or not isinstance(saved, dict):
         return False
-    if candidate.get('backup_enabled', False) is not saved.get('backup_enabled', False):
-        return False
-
     def identity(destination):
         if destination is None:
             return None
@@ -153,9 +167,7 @@ def same_notification_route(candidate, saved):
         return (channel, destination.get('receiver'), group,
                 destination.get('receive_id_type') or ('chat_id' if group else 'open_id') if channel == 'feishu' else None)
 
-    return (identity(candidate.get('primary')) == identity(saved.get('primary')) and
-            (not saved.get('backup_enabled') or
-             identity(candidate.get('backup')) == identity(saved.get('backup'))))
+    return identity(candidate.get('primary')) == identity(saved.get('primary'))
 
 
 DESTINATION_FIELDS = ('channel_type', 'receiver', 'receiver_name', 'is_group',

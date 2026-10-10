@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from agent.scheduler.conversation import validate_conversation_action
-from agent.scheduler.delivery import (DESTINATION_FIELDS, destination_catalog,
+from agent.scheduler.delivery import (DESTINATION_FIELDS, destination_catalog, load_saved_route,
                                       normalize_notification_route, patch_destination, same_notification_route)
 
 
@@ -35,10 +35,7 @@ class SchedulerMutations:
         return destination_catalog(agent_id)
 
     def test_send(self, route, *, agent_id=None):
-        # A test targets only the primary. The optional backup may still be
-        # unfinished in the editor and must never receive a test message.
-        normalized = normalize_notification_route({"primary": route.get("primary")}, agent_id) if isinstance(
-            route, dict) else normalize_notification_route(route, agent_id)
+        normalized = normalize_notification_route(route, agent_id)
         if normalized["primary"] is None:
             raise ValueError("A primary notification destination is required")
         from agent.scheduler.dispatch import dispatch_test_notification
@@ -54,6 +51,9 @@ class SchedulerMutations:
         return [self._with_delivery_status(task) for task in self.store.list_tasks()]
 
     def _with_delivery_status(self, task):
+        route = task.get("notification_route")
+        if isinstance(route, dict):
+            task = {**task, "notification_route": load_saved_route(route)}
         return {**task, "notification_delivery_status": self.store.latest_delivery(task["id"])} if hasattr(
             self.store, "latest_delivery") else task
 
@@ -107,8 +107,12 @@ class SchedulerMutations:
         else:
             action = dict(original.get("action") or {})
         if "notification_route" in patch:
+            submitted = patch["notification_route"]
+            if isinstance(submitted, dict) and (
+                    submitted.get("backup_enabled") is True or submitted.get("backup") not in (None,)):
+                raise ValueError("备用渠道已移除")
             if same_route:
-                route = original["notification_route"]
+                route = load_saved_route(original.get("notification_route"))
             else:
                 action, route = self._route_action(action, patch["notification_route"], agent_id)
             updates["notification_route"] = route

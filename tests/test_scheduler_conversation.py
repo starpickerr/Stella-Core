@@ -93,8 +93,8 @@ def test_explicit_web_route_tracks_resolved_conversation_when_it_targets_executi
                                            channel_provider=lambda _: SimpleNamespace(send=lambda reply, context:
                                                sent.append(context["receiver"]) or {"success": True}))
             record = store.get_delivery(job_id, "primary")
-        assert result.status == "accepted"
-        assert sent == [prepared["action"]["receiver"]] == [record["receiver"]]
+        assert result.status == "failed" and "重新选择" in result.error
+        assert sent == []
 
 
 def test_agent_scheduler_schema_and_execute_cannot_raise_run_permission(scope, tmp_path):

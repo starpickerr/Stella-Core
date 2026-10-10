@@ -38,8 +38,7 @@ def test_apple_import_is_idempotent_and_preserves_stella_only_fields(tmp_path, m
     dependency = todos.create_todo({"title": "Prerequisite"})
     todos.move_todo(first["id"], parent["id"])
     todos.add_dependency(first["id"], dependency["id"])
-    route = {"primary": {"channel_type": "feishu", "receiver": "ou_user"},
-             "backup_enabled": False, "backup": None}
+    route = {"primary": {"channel_type": "telegram", "receiver": "100"}}
     todos.update_todo(first["id"], {"reminder_delivery": route})
     assert len(store.list_tasks()) == 1
     todos.change_todo_status(first["id"], "waiting")
@@ -48,7 +47,7 @@ def test_apple_import_is_idempotent_and_preserves_stella_only_fields(tmp_path, m
     merged = todos.upsert_external_todo("eventkit:assignment", remote(title="Changed in Apple"), reconciled=True)
     assert merged["title"] == "Changed in Apple"
     assert merged["parent_id"] == parent["id"] and merged["dependency_ids"] == [dependency["id"]]
-    assert merged["status"] == "waiting" and merged["reminder_delivery"]["primary"]["receiver"] == "ou_user"
+    assert merged["status"] == "waiting" and merged["reminder_delivery"]["primary"]["receiver"] == "100"
     assert merged["user_modified"] == 0 and len(store.list_tasks()) == 1
 
 

@@ -24,9 +24,11 @@ def _store(tmp_path):
 
 
 def _route(enabled=False):
-    return {"primary": {"channel_type": "weixin", "receiver": "wx_user", "is_group": False},
-            "backup_enabled": enabled,
-            "backup": {"channel_type": "feishu", "receiver": "ou_backup", "is_group": False} if enabled else None}
+    route = {"primary": {"channel_type": "telegram", "receiver": "100", "is_group": False}}
+    if enabled:
+        route["backup_enabled"] = True
+        route["backup"] = {"channel_type": "desktop", "receiver": "client", "is_group": False}
+    return route
 
 
 def test_platform_acceptance_has_separate_persisted_recipient_and_attempt(tmp_path):
@@ -39,27 +41,27 @@ def test_platform_acceptance_has_separate_persisted_recipient_and_attempt(tmp_pa
     assert result.status == "accepted"
     record = store.get_delivery(job_id, "primary")
     assert record["status"] == "accepted" and record["attempts"] == 1
-    assert record["receiver"] == "wx_user" and record["platform_response"]["message_id"] == "m-1"
+    assert record["receiver"] == "100" and record["platform_response"]["message_id"] == "m-1"
     assert "secret" not in str(record)
-    assert sent == [("Saved", "wx_user")]
+    assert sent == [("Saved", "100")]
     assert store.latest_delivery("scheduled")["status"] == "accepted"
-    assert store.latest_delivery("scheduled")["channel_type"] == "weixin"
+    assert store.latest_delivery("scheduled")["channel_type"] == "telegram"
     assert store.latest_delivery("other") is None
 
 
-def test_expired_weixin_session_waits_without_repeating_send(tmp_path):
+def test_failed_proactive_send_does_not_repeat_or_switch_channel(tmp_path):
     store = _store(tmp_path)
     job_id = store.claim_occurrence("scheduled", manual=True)
     calls = []
     def expired(*_args):
         calls.append(1)
-        raise RuntimeError("iLink ret=-14 context token expired")
+        raise RuntimeError("platform rejected the chat")
     channel = SimpleNamespace(send=expired)
-    first = dispatch_notification(store, job_id, _route(), "Saved", channel_provider=lambda _: channel)
-    second = dispatch_notification(store, job_id, _route(), "Saved", channel_provider=lambda _: channel)
-    assert first.status == second.status == "waiting"
+    first = dispatch_notification(store, job_id, _route(True), "Saved", channel_provider=lambda _: channel)
+    second = dispatch_notification(store, job_id, _route(True), "Saved", channel_provider=lambda _: channel)
+    assert first.status == second.status == "failed"
     assert len(calls) == 1
-    assert store.get_delivery(job_id, "primary")["attempts"] == 1
+    assert store.get_delivery(job_id, "backup") is None
 
 
 def test_transient_error_retries_only_three_times_and_uses_saved_job(tmp_path):
@@ -85,7 +87,7 @@ def test_connection_reset_after_server_acceptance_is_unknown_and_never_falls_bac
         calls.append("primary")
         raise requests.exceptions.ConnectionError("connection reset after send")
     result = dispatch_notification(store, job_id, _route(True), "Saved",
-                                   channel_provider=lambda name: SimpleNamespace(send=lost_response if name == "weixin"
+                                   channel_provider=lambda name: SimpleNamespace(send=lost_response if name == "telegram"
                                        else lambda *_args: calls.append("backup")))
     assert result.status == "unknown" and calls == ["primary"]
     assert store.get_delivery(job_id, "primary")["status"] == "unknown"
@@ -100,7 +102,7 @@ def test_unknown_timeout_never_blindly_retries_or_uses_backup(tmp_path):
         calls.append("primary")
         raise requests.exceptions.Timeout("response lost")
     result = dispatch_notification(store, job_id, _route(True), "Saved",
-                                   channel_provider=lambda name: SimpleNamespace(send=timeout if name == "weixin"
+                                   channel_provider=lambda name: SimpleNamespace(send=timeout if name == "telegram"
                                        else lambda *_args: calls.append("backup")))
     assert result.status == "unknown"
     assert calls == ["primary"]
@@ -120,11 +122,11 @@ def test_backup_dispatch_requires_saved_opt_in_and_explicit_failure(tmp_path):
         return SimpleNamespace(send=send)
     first = store.claim_occurrence("scheduled", manual=True)
     assert dispatch_notification(store, first, _route(False), "Saved", channel_provider=provider).status == "failed"
-    assert sends == ["weixin"]
+    assert sends == ["telegram"]
     second = store.claim_occurrence("scheduled", manual=True)
-    assert dispatch_notification(store, second, _route(True), "Saved", channel_provider=provider).status == "accepted"
-    assert sends == ["weixin", "weixin", "feishu"]
-    assert store.get_delivery(second, "backup")["status"] == "accepted"
+    assert dispatch_notification(store, second, _route(True), "Saved", channel_provider=provider).status == "failed"
+    assert sends == ["telegram", "telegram"]
+    assert store.get_delivery(second, "backup") is None
 
 
 def test_restart_and_expiry_do_not_resend(tmp_path):
@@ -279,7 +281,7 @@ def test_todo_external_reminder_uses_same_outbox_without_desktop_duplicate(tmp_p
     assert service.queue_scheduled_reminder(todo["id"], due)
     assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
     assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
-    assert sends == [("weixin", "wx_user", "事务提醒：Submit")]
+    assert sends == [("telegram", "100", "事务提醒：Submit")]
     assert service.claim_desktop_reminders() == []
     assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "accepted"
 
@@ -322,8 +324,8 @@ def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(tmp_path, m
     def provider(name):
         def send(*_args):
             sends.append(name)
-            if name == "weixin":
-                raise RuntimeError("iLink ret=-14 context token expired")
+            if name == "telegram":
+                raise RuntimeError("platform rejected the chat")
             return True
         return SimpleNamespace(send=send)
     monkeypatch.setattr("agent.scheduler.dispatch._channel_for", provider)
@@ -331,12 +333,12 @@ def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(tmp_path, m
     due = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
     todo = service.create_todo({"title": "Submit", "remind_at": due, "reminder_delivery": _route()})
     service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "waiting"
+    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "failed"
     service.update_todo(todo["id"], {"reminder_delivery": {
-        "primary": {"channel_type": "feishu", "receiver": "ou_student"}}})
+        "primary": {"channel_type": "wecom_bot", "receiver": "chat-1"}}})
     service.queue_scheduled_reminder(todo["id"], due)
     assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
-    assert sends == ["weixin", "feishu"]
+    assert sends == ["telegram", "wecom_bot"]
 
 
 def test_todo_unknown_result_is_preserved_across_route_edit(tmp_path, monkeypatch):
@@ -353,7 +355,7 @@ def test_todo_unknown_result_is_preserved_across_route_edit(tmp_path, monkeypatc
     service.queue_scheduled_reminder(todo["id"], due)
     assert service.dispatch_scheduled_reminder(todo["id"], due).status == "unknown"
     service.update_todo(todo["id"], {"reminder_delivery": {
-        "primary": {"channel_type": "feishu", "receiver": "ou_student"}}})
+        "primary": {"channel_type": "wecom_bot", "receiver": "chat-1"}}})
     service.queue_scheduled_reminder(todo["id"], due)
     assert service.dispatch_scheduled_reminder(todo["id"], due).status == "unknown"
     assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "unknown"
