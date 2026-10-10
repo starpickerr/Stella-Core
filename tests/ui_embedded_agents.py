@@ -14,6 +14,8 @@ event_reads = []
 todo_reads = []
 pending = [None]
 approvals = []
+hold_todo_history = [False]
+held_history = [None]
 
 
 def backend(route):
@@ -28,6 +30,9 @@ def backend(route):
         data.update(providers=[{'id': 'test', 'configured': True}],
                     capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
     elif path == '/api/history':
+        if hold_todo_history[0]:
+            held_history[0] = route
+            return
         data.update(messages=[], total=0, page=1, page_size=20, has_more=False)
     elif path == '/message':
         sent.append(body)
@@ -87,8 +92,17 @@ with sync_playwright() as playwright:
         expect(embedded.get_by_text('已处理：请创建读书日程')).to_be_visible()
         assert len(sent) == 1 and sent[0]['message'] == '请创建读书日程'
         calendar_session = sent[0]['session_id']
+        hold_todo_history[0] = True
         page.evaluate("window.mountEmbedded('todos', null)")
         embedded.get_by_role('button', name='展开 Agent').click()
+        expect(embedded.get_by_text('正在载入历史…')).to_be_visible()
+        expect(embedded.locator('textarea')).to_have_count(0)
+        assert held_history[0] is not None
+        hold_todo_history[0] = False
+        held_history[0].fulfill(status=200, content_type='application/json',
+                                body=json.dumps({'status': 'success', 'messages': [], 'total': 0,
+                                                 'page': 1, 'page_size': 20, 'has_more': False}),
+                                headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
         todo_input = embedded.locator('textarea')
         todo_input.fill('提醒我买书')
         page.evaluate("window.mountEmbedded('calendar', { id: 'preset-1', text: '请创建读书日程' })")
@@ -113,12 +127,22 @@ with sync_playwright() as playwright:
         expect(embedded.get_by_text('AppleTool')).to_be_visible()
         page.get_by_role('dialog', name='审批操作').get_by_role('button', name='允许一次').click()
         assert approvals[0]['action'] == 'approve'
+        page.evaluate("""async () => {
+          const { enqueueEmbeddedPreset } = await import('/src/components/EmbeddedAgent.tsx')
+          enqueueEmbeddedPreset('calendar', '之后安排复盘')
+          const next = enqueueEmbeddedPreset('calendar', '再安排总结')
+          window.mountEmbedded('calendar', next)
+        }""")
         embedded.get_by_role('button', name='收起 Agent').click()
         page.evaluate('window.detachEmbedded()')
         page.wait_for_timeout(2700)
         page.evaluate("window.mountEmbedded('calendar', null)")
-        embedded.get_by_role('button', name='展开 Agent').click()
+        expect(embedded.get_by_role('button', name='收起 Agent')).to_be_visible()
         expect(embedded.get_by_text('任务完成')).to_be_visible()
+        expect(embedded.get_by_text('已处理：之后安排复盘')).to_be_visible()
+        expect(embedded.get_by_text('已处理：再安排总结')).to_be_visible()
+        assert len([row for row in sent if row['message'] == '之后安排复盘']) == 1
+        assert len([row for row in sent if row['message'] == '再安排总结']) == 1
         assert sent[-1]['session_id'] == calendar_session
         page.evaluate("window.detachEmbedded(); document.getElementById('embedded-test-root').remove()")
         page.goto(url + '/#/calendar', wait_until='networkidle')

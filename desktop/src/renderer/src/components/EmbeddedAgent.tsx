@@ -14,6 +14,38 @@ export type PresetRequest = { id: string; text: string }
 const sessionKey = (context: EmbeddedContext) => `stella_embedded_${context}_session`
 const historyKey = (context: EmbeddedContext) => `stella_embedded_${context}_history`
 const consumedKey = (context: EmbeddedContext) => `stella_embedded_${context}_consumed`
+const queueKey = (context: EmbeddedContext) => `stella_embedded_${context}_queue`
+
+function readJsonArray(key: string): unknown[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(value) ? value : []
+  } catch { return [] }
+}
+
+function readQueue(context: EmbeddedContext): PresetRequest[] {
+  return readJsonArray(queueKey(context)).filter((value): value is PresetRequest =>
+    typeof value === 'object' && value !== null && 'id' in value && 'text' in value &&
+    typeof value.id === 'string' && typeof value.text === 'string')
+}
+
+export function enqueueEmbeddedPreset(context: EmbeddedContext, text: string): PresetRequest {
+  const request = { id: `${Date.now()}-${Math.random()}`, text }
+  localStorage.setItem(queueKey(context), JSON.stringify([...readQueue(context), request]))
+  return request
+}
+
+function rememberPreset(context: EmbeddedContext, request: PresetRequest): void {
+  const seen = readJsonArray(consumedKey(context)).filter((id): id is string => typeof id === 'string')
+  localStorage.setItem(consumedKey(context), JSON.stringify([...seen.filter(id => id !== request.id), request.id].slice(-100)))
+}
+
+function queuePreset(context: EmbeddedContext, request: PresetRequest): void {
+  if (readJsonArray(consumedKey(context)).includes(request.id)) return
+  const queue = readQueue(context)
+  if (!queue.some(value => value.id === request.id))
+    localStorage.setItem(queueKey(context), JSON.stringify([...queue, request]))
+}
 
 function readHistory(context: EmbeddedContext): string[] {
   try {
@@ -38,6 +70,7 @@ export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
   })
   const [historyIds, setHistoryIds] = useState(() => remember(context, sessionId))
   const [expanded, setExpanded] = useState(false)
+  const [queueVersion, setQueueVersion] = useState(0)
   const [localError, setLocalError] = useState('')
   const session = useChatStore(state => state.sessions[sessionId])
   const ensureSession = useChatStore(state => state.ensureSession)
@@ -67,12 +100,20 @@ export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
   }, [expanded, session?.messages])
 
   useEffect(() => {
-    if (!presetRequest || !session?.historyLoaded || streaming) return
-    if (localStorage.getItem(consumedKey(context)) === presetRequest.id) return
-    localStorage.setItem(consumedKey(context), presetRequest.id)
+    if (!presetRequest) return
+    queuePreset(context, presetRequest)
+    setQueueVersion(value => value + 1)
+  }, [context, presetRequest])
+
+  useEffect(() => {
+    if (!session?.historyLoaded || streaming) return
+    const [next, ...rest] = readQueue(context)
+    if (!next) return
+    localStorage.setItem(queueKey(context), JSON.stringify(rest))
+    rememberPreset(context, next)
     setExpanded(true)
-    void send(sessionId, presetRequest.text, [])
-  }, [context, presetRequest, session?.historyLoaded, streaming, send, sessionId])
+    void send(sessionId, next.text, [])
+  }, [context, queueVersion, session?.historyLoaded, streaming, send, sessionId])
 
   const changeSession = (id: string) => {
     setSessionId(id)
@@ -86,7 +127,7 @@ export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
     changeSession(id)
   }
   const handleSend = (message: string, attachments: Attachment[]) => {
-    if (streaming) return
+    if (streaming || !session?.historyLoaded) return
     setExpanded(true)
     void send(sessionId, message, attachments)
   }
@@ -123,9 +164,9 @@ export default function EmbeddedAgent({ context, presetRequest, onRunDone }: {
         <div ref={bottomRef} />
       </div>
       {localError && <p role="alert" className="px-4 text-xs text-danger">{localError}</p>}
-      <ChatInput key={`${context}:${sessionId}`} draftKey={context} sessionId={sessionId} isStreaming={streaming}
+      {(session?.historyLoaded || streaming) && <ChatInput key={`${context}:${sessionId}`} draftKey={context} sessionId={sessionId} isStreaming={streaming}
         onSend={handleSend} onStop={() => void cancel(sessionId)} onNewChat={newSession}
-        onClearContext={() => void clearContext(sessionId).then(ok => { if (!ok) setLocalError('无法清空上下文') })} />
+        onClearContext={() => void clearContext(sessionId).then(ok => { if (!ok) setLocalError('无法清空上下文') })} />}
     </>}
     <ChatApprovalDialog sessionId={sessionId} isStreaming={streaming} onStop={() => void cancel(sessionId)} />
   </section>

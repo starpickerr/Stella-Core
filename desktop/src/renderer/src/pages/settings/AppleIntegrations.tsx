@@ -27,8 +27,8 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
   const [items, setItems] = useState<Item[]>([])
   const [itemIds, setItemIds] = useState<string[]>([])
   const [itemPreview, setItemPreview] = useState<{ preview: Preview; token: string } | null>(null)
-  const [start, setStart] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10))
-  const [end, setEnd] = useState(() => new Date(new Date().getFullYear() + 1, 0, 1).toISOString().slice(0, 10))
+  const [start, setStart] = useState(() => `${new Date().getFullYear()}-01-01`)
+  const [end, setEnd] = useState(() => `${new Date().getFullYear() + 1}-01-01`)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -193,25 +193,25 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
       <div className="border-t border-default pt-4 space-y-3">
         <div><h4 className="font-medium text-sm text-content">一次性传输</h4><p className="text-xs text-content-tertiary mt-1">只处理你选择的条目，不开启持续同步。</p></div>
         <div className="flex gap-2">
-          <button type="button" onClick={() => openTransfer('import')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2"><ArrowDownToLine size={14} />一次性导入</button>
-          <button type="button" onClick={() => openTransfer('export')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2"><ArrowUpFromLine size={14} />一次性写入</button>
+          <button type="button" disabled={busy} onClick={() => openTransfer('import')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50"><ArrowDownToLine size={14} />一次性导入</button>
+          <button type="button" disabled={busy} onClick={() => openTransfer('export')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50"><ArrowUpFromLine size={14} />一次性写入</button>
         </div>
         {transferDirection && <div className="space-y-3 rounded-btn bg-surface-2 p-3">
           <label className="block text-sm text-content">目标{sourceTitle}
-            <select aria-label={`一次性${sourceTitle}`} value={transferSource} onChange={event => { setTransferSource(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }}
+            <select aria-label={`一次性${sourceTitle}`} value={transferSource} disabled={busy} onChange={event => { setTransferSource(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }}
               className="mt-1 block w-full rounded-btn border border-default bg-surface px-3 py-2">
               <option value="">请选择</option>{sources.filter(source => transferDirection === 'import' || source.writable).map(source => <option key={source.id} value={source.id}>{source.title}</option>)}
             </select>
           </label>
           {calendar && <div className="flex flex-wrap gap-2 text-sm text-content">
-            <label>开始日期 <input aria-label="开始日期" type="date" value={start} onChange={event => { setStart(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1" /></label>
-            <label>结束日期 <input aria-label="结束日期" type="date" value={end} onChange={event => { setEnd(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1" /></label>
+            <label>开始日期 <input aria-label="开始日期" type="date" value={start} disabled={busy} onChange={event => { setStart(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
+            <label>结束日期 <input aria-label="结束日期" type="date" value={end} disabled={busy} onChange={event => { setEnd(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
           </div>}
           <button type="button" disabled={busy || !transferSource || (calendar && (!start || !end || start >= end))} onClick={() => void loadItems()}
             className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">载入条目</button>
           {items.length === 0 && <p className="text-xs text-content-tertiary">暂无已载入条目。</p>}
           {items.length > 0 && <fieldset className="space-y-1"><legend className="text-xs text-content-secondary">选择具体条目</legend>{items.map(item => <label key={item.id} className="flex items-center gap-2 text-sm text-content py-1">
-            <input type="checkbox" checked={itemIds.includes(item.id)} onChange={() => { setItemIds(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id]); setItemPreview(null) }} />{item.title}
+            <input type="checkbox" checked={itemIds.includes(item.id)} disabled={busy} onChange={() => { setItemIds(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id]); setItemPreview(null) }} />{item.title}
           </label>)}</fieldset>}
           {items.length > 0 && <button type="button" disabled={busy || itemIds.length === 0} onClick={() => void prepareItems()}
             className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">{transferDirection === 'import' ? '预览导入' : '预览写入'}</button>}

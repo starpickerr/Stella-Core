@@ -90,7 +90,7 @@ class AppleTool(BaseTool):
                 from agent.calendar.apple_preview import confirm_scope
                 confirm_scope(manager, ids, params.get("direction"), params.get("preview_token"))
                 manager.configure(ids, params.get("direction"))
-                manager.start_auto()
+                manager.resume_auto()
                 result = {"connection": manager.status()}
             elif action == "sync":
                 value = manager.sync(manual=True,
