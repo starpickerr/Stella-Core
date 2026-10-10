@@ -21,7 +21,7 @@ class TodosTool(BaseTool):
             "status": {"type": "string", "enum": ["todo", "in_progress", "waiting", "blocked", "completed", "cancelled"]},
             "force": {"type": "boolean", "description": "仅在用户明确要求忽略未完成的外部前置事务时使用。完成父事务会同时完成其全部未取消的后代，不需要 force。"},
             "remind_at": {"type": ["string", "null"], "description": "带时区的 ISO 提醒时间"},
-            "reminder_delivery": {"type": ["object", "null"], "description": "提醒投递路由：primary 首选渠道和接收人；backup_enabled 默认 false，启用时须提供 backup。接收人 ID 必须来自已授权渠道。"},
+            "reminder_delivery": {"type": ["object", "null"], "description": "提醒投递路由。primary 只能是已连接的 desktop、telegram 或 wecom_bot，并包含 receiver。不要提交 backup。"},
             "due_on": {"type": "string", "description": "YYYY-MM-DD，可留空"},
             "planned_on": {"type": "string", "description": "计划处理日 YYYY-MM-DD，与截止日分开"},
             "list_name": {"type": "string", "description": "清单名称"},

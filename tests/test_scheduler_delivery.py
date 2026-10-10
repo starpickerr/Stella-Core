@@ -115,29 +115,21 @@ def test_runtime_channel_uses_running_main_module(monkeypatch):
     manager = SimpleNamespace(get_channel=lambda name: channel if name == 'weixin' else None)
     monkeypatch.setattr(sys.modules['__main__'], '_channel_mgr', manager, raising=False)
     assert delivery.runtime_channel('weixin') is channel
-    catalog = next(row for row in delivery.destination_catalog() if row['channel_type'] == 'weixin')
-    assert catalog['ready'] is True
-    assert catalog['status'] == 'ready'
-    assert catalog['recipients'] == [{'receiver': 'user-1', 'name': 'user-1'}]
-    assert 'private-token' not in str(catalog)
+    assert [row['channel_type'] for row in delivery.destination_catalog()] == []
+    assert 'private-token' not in str(delivery.destination_catalog())
 
 
-def test_weixin_catalog_distinguishes_login_and_recipient_states(monkeypatch):
-    channel = SimpleNamespace(_context_tokens={}, login_status='waiting_scan')
+def test_weixin_is_absent_from_the_proactive_catalog(monkeypatch):
+    channel = SimpleNamespace(_context_tokens={}, login_status='logged_in')
     monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['status'] == 'login_required' and not row['ready']
-    channel.login_status = 'logged_in'
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['status'] == 'no_recipient' and not row['ready']
+    assert delivery.destination_catalog() == []
 
 
-def test_configured_weixin_stays_visible_when_runtime_is_temporarily_absent(monkeypatch):
+def test_configured_weixin_is_not_offered_for_proactive_delivery(monkeypatch):
     monkeypatch.setattr(delivery, 'runtime_channel', lambda _: None)
+    monkeypatch.setattr(delivery, 'desktop_client_connected', lambda: False)
     monkeypatch.setattr('config.conf', lambda: {'channel_type': 'web,weixin'})
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['configured'] is True
-    assert row['status'] == 'unavailable'
+    assert delivery.destination_catalog() == []
 
 
 def test_weixin_readiness_checks_the_running_channel(monkeypatch):
@@ -169,61 +161,46 @@ def test_weixin_catalog_marks_known_expired_session_until_new_context(monkeypatc
     with pytest.raises(RuntimeError, match='-14'):
         channel._check_send_response({'ret': -14}, 'user-1')
     monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['status'] == 'session_expired'
-    channel._update_context_token('user-1', 'new-token')
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['status'] == 'ready'
+    assert delivery.destination_catalog() == []
 
 
 def test_weixin_unknown_login_state_cannot_be_scheduled(monkeypatch):
     channel = SimpleNamespace(_context_tokens={'user-1': 'private-token'})
     monkeypatch.setattr(delivery, 'runtime_channel', lambda name: channel if name == 'weixin' else None)
-    row = next(item for item in delivery.destination_catalog() if item['channel_type'] == 'weixin')
-    assert row['status'] == 'unknown' and not row['ready']
+    assert delivery.destination_catalog() == []
     with pytest.raises(ValueError, match='login'):
         delivery.normalize_destination({'channel_type': 'weixin', 'receiver': 'user-1'})
 
 
-def test_route_defaults_to_compatible_desktop_delivery(monkeypatch):
+def test_route_defaults_to_no_destination(monkeypatch):
     assert delivery.normalize_notification_route(None) == {
-        'primary': None, 'backup_enabled': False, 'backup': None,
+        'primary': None, 'needs_reselect': False,
     }
 
 
-def test_only_feishu_route_never_retains_a_backup(monkeypatch):
-    monkeypatch.setattr(delivery, 'runtime_channel', lambda _: SimpleNamespace())
+def test_disabled_backup_field_is_not_stored(monkeypatch):
     route = delivery.normalize_notification_route({
-        'primary': {'channel_type': 'feishu', 'receiver': 'ou_user'},
+        'primary': {'channel_type': 'telegram', 'receiver': '100'},
         'backup_enabled': False,
-        'backup': {'channel_type': 'weixin', 'receiver': 'old-user'},
+        'backup': None,
     })
-    assert route['primary']['channel_type'] == 'feishu'
-    assert route['backup_enabled'] is False
-    assert route['backup'] is None
+    assert route == {'primary': {'channel_type': 'telegram', 'receiver': '100', 'is_group': False,
+                                 'receiver_name': '100', 'notify_session_id': '100'},
+                     'needs_reselect': False}
 
 
-def test_route_enables_only_explicit_authorized_backup(monkeypatch):
-    channels = {'feishu': SimpleNamespace(),
-                'weixin': SimpleNamespace(login_status='logged_in', _context_tokens={'user-1': 'private-token'})}
-    monkeypatch.setattr(delivery, 'runtime_channel', channels.get)
-    route = delivery.normalize_notification_route({
-        'primary': {'channel_type': 'weixin', 'receiver': 'user-1'},
-        'backup_enabled': True,
-        'backup': {'channel_type': 'feishu', 'receiver': 'ou_backup'},
-    })
-    assert route['backup_enabled'] is True
-    assert route['backup']['receiver'] == 'ou_backup'
-    assert 'private-token' not in str(route)
-
-
-def test_route_rejects_missing_recipient_and_unspecified_backup(monkeypatch):
-    monkeypatch.setattr(delivery, 'runtime_channel', lambda _: SimpleNamespace())
-    with pytest.raises(ValueError, match='recipient'):
-        delivery.normalize_notification_route({'primary': {'channel_type': 'feishu'}})
-    with pytest.raises(ValueError, match='backup'):
+def test_route_rejects_backup_and_missing_recipient(monkeypatch):
+    with pytest.raises(ValueError, match='备用渠道已移除'):
         delivery.normalize_notification_route({
-            'primary': {'channel_type': 'feishu', 'receiver': 'ou_user'}, 'backup_enabled': True,
+            'primary': {'channel_type': 'telegram', 'receiver': '100'},
+            'backup_enabled': True,
+            'backup': {'channel_type': 'desktop', 'receiver': 'client'},
+        })
+    with pytest.raises(ValueError, match='recipient'):
+        delivery.normalize_notification_route({'primary': {'channel_type': 'telegram'}})
+    with pytest.raises(ValueError, match='备用渠道已移除'):
+        delivery.normalize_notification_route({
+            'primary': {'channel_type': 'telegram', 'receiver': '100'}, 'backup_enabled': True,
         })
 
 

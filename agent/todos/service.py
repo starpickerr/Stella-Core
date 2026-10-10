@@ -12,7 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from common.log import logger
-from agent.scheduler.delivery import normalize_notification_route, same_notification_route
+from agent.scheduler.delivery import load_saved_route, normalize_notification_route, same_notification_route
 from agent.todos.scheduler_link import task_id_for, sync_task
 
 
@@ -473,6 +473,9 @@ class TodoService:
             row["reminder_delivery"] = None
         elif "reminder_delivery" in payload or not existing:
             route = payload.get("reminder_delivery")
+            if isinstance(route, dict) and (
+                    route.get("backup_enabled") is True or route.get("backup") not in (None,)):
+                raise ValueError("备用渠道已移除")
             if existing and same_notification_route(route, existing.get("reminder_delivery")):
                 route = existing["reminder_delivery"]
             else:
@@ -708,8 +711,8 @@ class TodoService:
 
     @staticmethod
     def _with_progress(db, row):
-        row["reminder_delivery"] = (json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else
-                                    normalize_notification_route(None))
+        stored = json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else None
+        row["reminder_delivery"] = load_saved_route(stored) if stored else normalize_notification_route(None)
         row["reminder_delivery_status"] = TodoService._delivery_summaries(db, row["id"]).get(row["id"])
         children = db.execute("SELECT status FROM todos WHERE parent_id=?", (row["id"],)).fetchall()
         effective = [child for child in children if child["status"] != "cancelled"]
@@ -1306,7 +1309,8 @@ class TodoService:
                 continue
             progress = counts.get(row["id"], {"count": 0, "total": 0, "done": 0})
             link = links.get(row.get("series_id", row["id"]))
-            route = json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else normalize_notification_route(None)
+            stored = json.loads(row["reminder_delivery"]) if row.get("reminder_delivery") else None
+            route = load_saved_route(stored) if stored else normalize_notification_route(None)
             result.append({**row, "reminder_delivery": route,
                            "reminder_delivery_status": delivery_summaries.get(row.get("series_id", row["id"])),
                            "subtask_count": progress["count"],

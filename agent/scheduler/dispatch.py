@@ -116,15 +116,23 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
 
 def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, expires_at=None,
                           now=None, channel_provider=None):
-    """Attempt an explicit route once; only a saved opt-in permits backup."""
+    """Send the saved primary once. A legacy or backup route fails in place."""
+    from agent.scheduler.delivery import PROACTIVE, load_saved_route
     if not isinstance(route, dict) or not isinstance(route.get("primary"), dict):
         raise ValueError("A primary notification destination is required")
-    primary = route["primary"]
+    loaded = load_saved_route(route)
+    primary = loaded["primary"]
+    if loaded["needs_reselect"] or primary.get("channel_type") not in PROACTIVE:
+        channel_type = primary.get("channel_type") or ""
+        receiver = primary.get("receiver") or ""
+        store.queue_delivery(delivery_id, "primary", channel_type, receiver)
+        error = "需要重新选择渠道"
+        if store.begin_delivery(delivery_id, "primary", channel_type, receiver) == "send":
+            store.finish_delivery(delivery_id, "primary", "failed", error=error)
+        return DeliveryOutcome("failed", error)
     store.queue_delivery(delivery_id, "primary", primary["channel_type"], primary["receiver"])
     recorded = store.get_delivery(delivery_id, "primary")
-    backup_recorded = store.get_delivery(delivery_id, "backup")
-    if (recorded and recorded["status"] == "accepted" or
-            backup_recorded and backup_recorded["status"] == "accepted"):
+    if recorded and recorded["status"] == "accepted":
         return DeliveryOutcome("accepted")
     if recorded and recorded["status"] in ("unknown", "sending"):
         if recorded["status"] == "sending":
@@ -137,13 +145,7 @@ def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, 
     provider = channel_provider or _channel_for
     result = _one_delivery(store, delivery_id, "primary", primary, content,
                            agent_id=agent_id, channel_provider=provider)
-    if result.status in ("accepted", "unknown") or not route.get("backup_enabled"):
-        return result
-    backup = route.get("backup")
-    if not isinstance(backup, dict):
-        raise ValueError("Enabled backup requires a destination")
-    return _one_delivery(store, delivery_id, "backup", backup, content,
-                         agent_id=agent_id, channel_provider=provider)
+    return result
 
 
 class _TestDeliveryStore:

@@ -77,7 +77,7 @@ class SchedulerTool(BaseTool):
                 "default": False,
                 "description": "Silent mode (default false): when true, the task runs normally but its result is not pushed. Set true only when the user explicitly says they don't need the result; reminder, notification and broadcast tasks must keep it false"
             },
-            "notification_route": {"type": "object", "description": "显式通知路由；primary 包含 channel_type 和已授权 receiver；backup_enabled 默认 false，启用时必须提供 backup。"},
+            "notification_route": {"type": "object", "description": "显式通知路由。primary 只能是已连接的 desktop、telegram 或 wecom_bot，并包含 receiver。不要提交 backup。"},
             "enabled": {"type": "boolean"},
             "content": {"type": "string", "description": "更新固定消息内容"},
         },
