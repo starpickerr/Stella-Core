@@ -71,4 +71,4 @@
 
 - Status: implemented on `fix/briefing-generation-20261010`. Preview generation is removed. The decision task lists `expected_ids` and the hard rules, and the tool schema requires section, score, and summary only when `selected` is true.
 - Verification: PASS isolated pytest `tests/test_briefing_pipeline.py tests/test_briefing_daily.py tests/test_briefing_agent.py` — 40 passed.
-- SKIP final incremental quality check until the knowledge-link plan in this iteration is included.
+- PASS `.venv/bin/python scripts/quality_check.py incremental` — ruff, pytest (1509 passed, 4 skipped), eslint, build, typecheck, node, and ui. SKIP policy: no relevant changes. `12e6d0a8` removes the unused imports that the first incremental run reported.
