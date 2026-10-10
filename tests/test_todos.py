@@ -81,15 +81,54 @@ def test_subtasks_status_progress_and_explicit_parent_completion(service):
     assert service.get_todo(parent["id"])["progress_total"] == 2
     service.change_todo_status(first["id"], "completed")
     assert service.get_todo(parent["id"])["progress_percent"] == 50
-    with pytest.raises(ValueError, match="unfinished_subtasks:2"):
-        service.complete_todo(parent["id"], True)
-    service.complete_todo(parent["id"], True, force=True)
+    read_at = service.get_todo(first["id"])["completed_at"]
+    service.complete_todo(parent["id"], True)
     assert service.get_todo(parent["id"])["status"] == "completed"
-    assert service.get_todo(second["id"])["status"] == "todo"
+    assert service.get_todo(second["id"])["status"] == "completed"
+    assert service.get_todo(leaf["id"])["status"] == "completed"
+    assert service.get_todo(first["id"])["completed_at"] == read_at
+    assert service.get_todo(parent["id"])["progress_percent"] == 100
     service.change_todo_status(leaf["id"], "cancelled")
     assert service.get_todo(second["id"])["progress_total"] == 0
     service.change_todo_status(parent["id"], "in_progress")
     assert service.get_todo(parent["id"])["completed_at"] is None
+    assert service.get_todo(second["id"])["status"] == "completed"
+    assert service.get_todo(first["id"])["status"] == "completed"
+
+
+def test_complete_parent_cascades_and_keeps_independent_uncomplete(service):
+    parent = service.create_todo({"title": "Parent"})
+    child = service.add_subtask(parent["id"], {"title": "Child"})
+    dropped = service.add_subtask(child["id"], {"title": "Dropped"})
+    service.change_todo_status(dropped["id"], "cancelled")
+    outside = service.create_todo({"title": "Outside"})
+    service.add_dependency(parent["id"], outside["id"])
+    with pytest.raises(ValueError, match="unfinished_dependencies:1"):
+        service.complete_todo(parent["id"], True)
+    assert service.get_todo(child["id"])["status"] == "todo"
+    service.complete_todo(parent["id"], True, force=True)
+    assert service.get_todo(parent["id"])["status"] == "completed"
+    assert service.get_todo(child["id"])["status"] == "completed"
+    assert service.get_todo(dropped["id"])["status"] == "cancelled"
+    assert service.get_todo(outside["id"])["status"] == "todo"
+    service.complete_todo(parent["id"], False)
+    assert service.get_todo(parent["id"])["status"] == "todo"
+    assert service.get_todo(parent["id"])["completed_at"] is None
+    assert service.get_todo(child["id"])["status"] == "completed"
+
+    nested = service.create_todo({"title": "Deep"})
+    current = nested
+    for level in range(12):
+        current = service.add_subtask(current["id"], {"title": f"Level {level}"})
+    service.complete_todo(nested["id"], True)
+    assert service.get_todo(current["id"])["status"] == "completed"
+
+    first = service.add_subtask(service.create_todo({"title": "Linked"})["id"], {"title": "First"})
+    second = service.add_subtask(first["parent_id"], {"title": "Second"})
+    service.add_dependency(second["id"], first["id"])
+    service.complete_todo(first["parent_id"], True)
+    assert service.get_todo(first["id"])["status"] == "completed"
+    assert service.get_todo(second["id"])["status"] == "completed"
 
 
 def test_move_reorder_promote_and_cycle_rejection(service):
@@ -712,8 +751,10 @@ def test_agent_and_desktop_share_hierarchy_and_status_rules(service, monkeypatch
         child = json.loads(web_channel.TodoSubtaskHandler().POST())["todo"]
     assert child["parent_id"] == parent["id"]
     assert json.loads(tool.execute({"action": "get", "id": parent["id"]}).result)["todo"]["progress_total"] == 1
-    blocked = tool.execute({"action": "status", "id": parent["id"], "status": "completed"})
-    assert blocked.status == "error" and "unfinished_subtasks" in blocked.result
+    completed = tool.execute({"action": "status", "id": parent["id"], "status": "completed"})
+    assert completed.status == "success"
+    assert json.loads(completed.result)["todo"]["status"] == "completed"
+    assert service.get_todo(child["id"])["status"] == "completed"
     with patch.object(web_channel.web, "data", return_value=json.dumps({
         "id": child["id"], "status": "completed"}).encode()):
         assert json.loads(web_channel.TodoStatusHandler().POST())["todo"]["status"] == "completed"
