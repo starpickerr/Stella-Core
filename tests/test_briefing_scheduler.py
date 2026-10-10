@@ -161,6 +161,27 @@ def test_silent_tool_dispatch_has_no_delivery_and_propagates_errors(monkeypatch)
     assert not integration._execute_tool_call(task, None)
 
 
+def test_agent_explanation_does_not_hide_a_failed_briefing(monkeypatch):
+    from bridge.agent_bridge import reply_for_run
+    from bridge.reply import Reply, ReplyType
+    agent = SimpleNamespace(_scheduled_business_failure="简报没有写入")
+    reply = reply_for_run(agent, "邮箱暂时不可用，这次没有生成简报", True)
+    assert reply.type == ReplyType.ERROR
+    assert reply.content == "简报没有写入"
+    assert agent._scheduled_business_failure is None
+    kept = reply_for_run(SimpleNamespace(), "今天没有新邮件", True)
+    assert kept.type == ReplyType.TEXT and kept.content == "今天没有新邮件"
+    monkeypatch.setattr(integration, "get_task_store", lambda **kwargs: SimpleNamespace())
+    monkeypatch.setattr("agent.scheduler.result_cache.load_output", lambda *args, **kwargs: None)
+    monkeypatch.setattr("agent.scheduler.result_cache.save_output", lambda *args, **kwargs: None)
+    bridge = SimpleNamespace(agent_reply=lambda *args, **kwargs: Reply(ReplyType.ERROR, "简报没有写入"))
+    task = {"id": "briefing", "action": {"type": "agent_task", "task_description": "生成简报",
+            "receiver": "session", "channel_type": "web", "silent": True}}
+    outcome = integration._execute_agent_task(task, bridge, "alpha")
+    assert outcome.status == "failed"
+    assert "简报没有写入" in outcome.error
+
+
 def test_desktop_boot_starts_empty_and_manual_silent_task_runs(tmp_path, monkeypatch):
     bridge = SimpleNamespace(agent_registry=SimpleNamespace(
         get=lambda agent_id: SimpleNamespace(id="default"), default_agent_id="default"))
