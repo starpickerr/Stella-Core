@@ -328,9 +328,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       <h2 className="text-lg font-semibold">
                         {center.process_isolation.status === 'unavailable'
                           ? (getLang() === 'en' ? 'Process isolation unavailable' : '不支持进程隔离')
-                          : center.process_isolation.status === 'full-access'
-                            ? (getLang() === 'en' ? 'Full access is active' : '当前完全访问')
-                            : center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
+                          : center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
                       </h2>
                       <p className={faded}>
                         {center.process_isolation.reason}
@@ -453,7 +451,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     ))}
                   </div>
                   {pendingGlobalFull && <div className="mt-3 rounded-btn border border-accent p-3 text-sm space-y-2">
-                    <p>{getLang() === 'en' ? 'Full access expands file access beyond the workspace. Important external and destructive actions still need approval.' : '完全访问将文件访问扩大到工作区外；重要外部操作和破坏性操作仍需审批。'}</p>
+                    <p>{getLang() === 'en' ? 'Full Access relaxes ordinary file and shell limits. Other chats’ private Work folders, managed data, credentials and Apple grants stay blocked. Destructive actions still need approval.' : '完全访问只放宽一般文件和命令限制。其他会话的私有工作区、托管数据、凭据和 Apple 系统授权仍会被拦截；破坏性操作仍需审批。'}</p>
                     <p className="text-xs break-all text-content-secondary">{center.authorized_roots.join(' · ')}</p>
                     <div className="flex gap-3"><button type="button" onClick={() => setPendingGlobalFull(false)}>{getLang() === 'en' ? 'Cancel' : '取消'}</button>
                       <button type="button" className="text-accent" onClick={() => { saveGlobal({ preset: 'full-access', rules: {} }); setPendingGlobalFull(false) }}>{getLang() === 'en' ? 'Enable full access' : '启用完全访问'}</button></div>

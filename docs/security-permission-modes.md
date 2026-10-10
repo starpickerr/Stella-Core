@@ -10,12 +10,12 @@ The desktop Security Center and chat composer use the backend's `mode_definition
 
 | Mode | Normal work | Scope outside the workspace |
 | --- | --- | --- |
-| `approval` | Reads and built-in queries run; changes and shell commands require confirmation | Confirm |
-| `project-full` | Work, shell, tests, local Git, and project dependencies run in the authorized workspace | Confirm |
-| `full-access` | General filesystem and shell access | Allow; important external and destructive actions still require confirmation |
+| `read-only` | Authorized reads run; unauthorized writes are denied | Deny |
+| `workspace-write` | Create, change and delete in the current workspace | Confirm |
+| `full-access` | Ordinary file and shell limits are relaxed; other chats' private Work, managed data, credentials and Apple grants stay blocked | Allow; important external and destructive actions still require confirmation |
 | `custom` | Saved rule snapshot copied from the effective mode | Determined by saved rules |
 
-Fresh installs use `project-full`. Existing `read-only`, `workspace-write`, and `full-access` settings, and `strict`, `standard`, and legacy `custom` presets, become exact custom rule snapshots. A damaged policy fails closed and reports an error. Corrupt project or conversation stores fail closed rather than silently resetting their contents.
+Fresh installs use `workspace-write`. Stored `approval` becomes a Custom snapshot of its confirm-on-write rules. Stored `project-full` is Workspace Write. `strict`, `standard`, and a bare legacy `custom` name remain exact custom snapshots. A damaged policy fails closed and reports an error. Corrupt project or conversation stores fail closed rather than silently resetting their contents.
 
 ## Process and browser enforcement
 

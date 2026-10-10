@@ -56,6 +56,7 @@ def test_direct_tool_entry_cannot_skip_gateway(tmp_path, monkeypatch):
 def test_session_override_and_audit_without_secrets(tmp_path, monkeypatch, security_audit_path):
     monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
     from config import conf
+    monkeypatch.setitem(conf(), "security_policy", {"preset": "read-only", "rules": {}, "connections": {}})
 
     class SessionAgent:
         def effective_permission_mode(self):

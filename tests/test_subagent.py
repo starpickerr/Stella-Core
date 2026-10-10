@@ -11,8 +11,6 @@ import threading
 import time
 from pathlib import Path
 
-ASSET_DIR = Path(__file__).resolve().parent.parent / "agent" / "subagent" / "assets"
-
 import pytest
 
 from agent.subagent import (
@@ -25,6 +23,8 @@ from agent.subagent import (
     run_tasks,
 )
 from agent.tools.subagent import SubagentTool
+
+ASSET_DIR = Path(__file__).resolve().parent.parent / "agent" / "subagent" / "assets"
 
 
 def test_nested_permission_limit_never_widens_parent(tmp_path):
