@@ -6624,8 +6624,11 @@ class DesktopNotificationClaimHandler:
     def POST(self):
         _require_desktop_internal()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        return json.dumps({"status": "success", "deliveries": _todo_service().claim_desktop_reminders()},
-                          ensure_ascii=False)
+        from agent.scheduler.desktop_notify import claim_desktop_notifications, note_desktop_client
+        note_desktop_client()
+        deliveries = _todo_service().claim_desktop_reminders()
+        deliveries.extend(claim_desktop_notifications())
+        return json.dumps({"status": "success", "deliveries": deliveries}, ensure_ascii=False)
 
 
 class DesktopNotificationAckHandler:
@@ -6634,6 +6637,14 @@ class DesktopNotificationAckHandler:
         body = _todo_body()
         acknowledged = _todo_service().acknowledge_desktop_reminder(
             body.get("delivery_id"), body.get("claim_id"), body.get("shown"), body.get("error"))
+        if not acknowledged:
+            from agent.scheduler.desktop_notify import acknowledge_desktop_notification
+            try:
+                acknowledge_desktop_notification(
+                    _scheduler_store(), body.get("delivery_id"), body.get("shown"), body.get("error"))
+                acknowledged = True
+            except ValueError:
+                acknowledged = False
         web.header('Content-Type', 'application/json; charset=utf-8')
         return json.dumps({"status": "success", "acknowledged": acknowledged})
 

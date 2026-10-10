@@ -48,6 +48,12 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
         return DeliveryOutcome(decision, row.get("error") or "" if row else "",
                                bool(row and row.get("retryable") and row.get("attempts", 0) < 3))
 
+    if channel_type == "desktop":
+        from agent.scheduler.desktop_notify import enqueue_desktop_notification
+        enqueue_desktop_notification(delivery_id, receiver, content)
+        error = "等待客户端确认通知"
+        store.finish_delivery(delivery_id, leg, "waiting", error=error)
+        return DeliveryOutcome("waiting", error)
     channel = channel_provider(channel_type)
     if channel is None:
         error = f"{channel_type} is unavailable"
@@ -80,7 +86,14 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
         if hasattr(channel, "request_to_session"):
             channel.request_to_session[context["request_id"]] = receiver
     try:
-        response = channel.send(Reply(ReplyType.TEXT, content), context)
+        if channel_type in ("desktop", "telegram", "wecom_bot") and hasattr(channel, "send_proactive"):
+            response = channel.send_proactive(receiver, content, destination.get("is_group", False))
+            if isinstance(response, dict) and response.get("queued") and not response.get("shown"):
+                error = response.get("error") or "等待客户端确认通知"
+                store.finish_delivery(delivery_id, leg, "waiting", error=error, platform_response=response)
+                return DeliveryOutcome("waiting", error)
+        else:
+            response = channel.send(Reply(ReplyType.TEXT, content), context)
         details = _response_details(response)
         if response is False or details.get("success") is False:
             error = "Channel rejected scheduled delivery"

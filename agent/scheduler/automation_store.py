@@ -341,6 +341,17 @@ class AutomationStore:
                     (job_run_id, leg, self._current_user(), channel_type, receiver, _stamp()))
             return "send"
 
+    def settle_delivery(self, job_run_id, leg, status, error=""):
+        """Close a desktop notification that was waiting for the client."""
+        if status not in ("accepted", "failed"):
+            raise ValueError("invalid delivery status")
+        with self.lock, self._connect() as db:
+            changed = db.execute("""UPDATE job_deliveries SET status=?,error=?,updated_at=?
+                WHERE job_run_id=? AND leg=? AND owner_user_id=? AND status='waiting'""",
+                (status, error or None, _stamp(), job_run_id, leg, self._current_user())).rowcount
+            if not changed:
+                raise ValueError("delivery is not waiting")
+
     def finish_delivery(self, job_run_id, leg, status, *, error=None, platform_response=None, retryable=False):
         if status not in ("accepted", "failed", "waiting", "unknown", "expired"):
             raise ValueError("invalid delivery status")

@@ -62,6 +62,7 @@ class TelegramChannel(ChatChannel):
         self._loop = None
         self._loop_thread = None
         self._stop_event = threading.Event()
+        self._known_chats = set()
         # Idempotent dedup; TG occasionally redelivers the same update on flaky networks
         self._received_msgs = ExpiredDict(60 * 60 * 1)
 
@@ -384,6 +385,7 @@ class TelegramChannel(ChatChannel):
                 context["session_id"] = session_id
                 context["receiver"] = str(chat.id)
                 context["telegram_chat_id"] = chat.id
+                self._known_chats.add(str(chat.id))
                 context["telegram_reply_to_msg_id"] = message.message_id if is_group else None
                 self.produce(context)
             logger.debug(f"[Telegram] received: type={ctype}, content={str(tg_msg.content)[:80]}")
@@ -564,6 +566,8 @@ class TelegramChannel(ChatChannel):
             return
 
         chat_id = context.get("telegram_chat_id")
+        if chat_id is None and context.get("scheduled_delivery"):
+            chat_id = context.get("receiver")
         reply_to = context.get("telegram_reply_to_msg_id")
         if chat_id is None:
             logger.warning("[Telegram] no telegram_chat_id in context, drop reply")
@@ -576,6 +580,27 @@ class TelegramChannel(ChatChannel):
             future.result(timeout=180)
         except Exception as e:
             logger.error(f"[Telegram] send failed: {e}")
+            if context.get("scheduled_delivery"):
+                raise
+
+    def known_chat_ids(self):
+        return {str(chat_id) for chat_id in getattr(self, "_known_chats", ())}
+
+    def send_proactive(self, chat_id, text, is_group=False):
+        """Send without a fresh inbound update. The chat must already exist."""
+        if str(chat_id) not in self.known_chat_ids():
+            raise ValueError("请先与机器人建立聊天")
+        if self._loop is None or self._bot is None:
+            raise RuntimeError("Telegram 未连接")
+
+        async def _send():
+            message = await self._bot.send_message(chat_id=chat_id, text=text)
+            return getattr(message, "message_id", None)
+
+        message_id = asyncio.run_coroutine_threadsafe(_send(), self._loop).result(timeout=30)
+        if not message_id:
+            raise RuntimeError("Telegram 没有确认消息")
+        return {"message_id": str(message_id), "success": True}
 
     # Number of retries for transient network errors (proxy hiccups etc.)
     _SEND_RETRIES = 2
