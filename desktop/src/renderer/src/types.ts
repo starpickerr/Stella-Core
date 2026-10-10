@@ -770,16 +770,16 @@ export interface SchedulerTask {
 }
 
 export interface NotificationDestination {
-  channel_type: 'web' | 'feishu' | 'weixin'
+  channel_type: 'desktop' | 'telegram' | 'wecom_bot' | 'web' | 'feishu' | 'weixin'
   receiver: string
   receive_id_type?: string
   is_group?: boolean
+  receiver_name?: string
 }
 
 export interface NotificationRoute {
   primary: NotificationDestination | null
-  backup_enabled: boolean
-  backup: NotificationDestination | null
+  needs_reselect?: boolean
 }
 
 export interface NotificationDeliveryStatus {

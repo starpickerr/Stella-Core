@@ -98,10 +98,10 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         remindAt: "Remind me",
         reminderChannel: "Reminder channel",
         reminderRecipient: "Recipient",
-        reminderBackup: "Backup channel (optional)",
-        reminderBackupRecipient: "Backup recipient",
         reminderRefresh: "Refresh channels",
-        reminderTest: "Send test to primary",
+        reminderTest: "Send test",
+        reminderReselect: "Choose a channel again",
+        reminderConnect: "Connect a channel first",
         reminderAccepted: "Platform accepted the test",
         reminderLatest: "Latest delivery",
         schedulerLinked: "Linked scheduler task",
@@ -188,10 +188,10 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         remindAt: "提醒时间",
         reminderChannel: "提醒渠道",
         reminderRecipient: "接收人",
-        reminderBackup: "备用渠道（可选）",
-        reminderBackupRecipient: "备用接收人",
         reminderRefresh: "刷新渠道",
-        reminderTest: "测试发送至首选渠道",
+        reminderTest: "测试发送",
+        reminderReselect: "需要重新选择渠道",
+        reminderConnect: "先连接渠道",
         reminderAccepted: "测试消息已被平台接受",
         reminderLatest: "最近投递",
         schedulerLinked: "已关联定时任务",
@@ -458,7 +458,9 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       flagged: !!original.flagged,
       checklist: checklistOf(original),
       remind_at: original.remind_at,
-      reminder_delivery: original.reminder_delivery || { primary: null, backup_enabled: false, backup: null },
+      reminder_delivery: original.reminder_delivery?.primary
+        ? { primary: original.reminder_delivery.primary }
+        : { primary: null },
     });
     setDraftTags(tagsOf(original).join(", "));
     setChildTitle("");
@@ -525,12 +527,13 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           draft.repeat_frequency === "weekly" ? draft.repeat_days : [],
       };
       if (!payload.remind_at) delete payload.reminder_delivery;
+      else if (payload.reminder_delivery) payload.reminder_delivery = { primary: payload.reminder_delivery.primary ?? null };
       await apiClient.updateTodo(taskKey(selected), payload);
     });
   };
   const changeReminderRoute = (change: (route: NotificationRoute) => NotificationRoute) => {
     setDraft((current) => current ? { ...current, reminder_delivery: change(current.reminder_delivery ||
-      { primary: null, backup_enabled: false, backup: null }) } : current);
+      { primary: null }) } : current);
   };
   const testReminder = async () => {
     setReminderTesting(true);
@@ -1179,26 +1182,21 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <label className="block">{copy.reminderChannel}
                   <select aria-label={copy.reminderChannel} value={draft.reminder_delivery?.primary?.channel_type || ""}
                     onChange={(event) => changeReminderRoute(() => ({
-                      primary: event.target.value ? { channel_type: event.target.value as 'web' | 'feishu' | 'weixin', receiver: "" } : null,
-                      backup_enabled: false, backup: null,
+                      primary: event.target.value ? { channel_type: event.target.value as 'desktop' | 'telegram' | 'wecom_bot', receiver: "" } : null,
                     }))} className={`${input} mt-1`}>
-                    <option value="">{en ? "Desktop (default)" : "桌面提醒（默认）"}</option>
-                    {reminderDestinations.filter((item) => item.configured || item.channel_type === draft.reminder_delivery?.primary?.channel_type)
+                    <option value="">{copy.reminderReselect}</option>
+                    {!['desktop', 'telegram', 'wecom_bot'].includes(draft.reminder_delivery?.primary?.channel_type || '') && draft.reminder_delivery?.primary?.channel_type &&
+                      <option value={draft.reminder_delivery.primary.channel_type}>{copy.reminderReselect}</option>}
+                    {reminderDestinations.filter((item) => item.ready && ['desktop', 'telegram', 'wecom_bot'].includes(item.channel_type))
                       .map((item) => <option key={item.channel_type} value={item.channel_type}>
-                        {item.channel_type} · {item.status}
+                        {item.channel_type === 'desktop' ? (en ? 'Desktop' : '客户端') : item.channel_type === 'wecom_bot' ? (en ? 'WeCom bot' : '企业微信智能机器人') : 'Telegram Bot'}
                       </option>)}
                   </select>
                 </label>
                 <button type="button" className="text-accent hover:underline" onClick={refreshReminderDestinations}>{copy.reminderRefresh}</button>
-                {draft.reminder_delivery?.primary && <>
-                  {draft.reminder_delivery.primary.channel_type === 'feishu' && <label className="block">{en ? 'Feishu recipient type' : '飞书接收人类型'}
-                    <select aria-label={en ? 'Feishu recipient type' : '飞书接收人类型'} className={`${input} mt-1`}
-                      value={draft.reminder_delivery.primary.receive_id_type || 'open_id'}
-                      onChange={event => changeReminderRoute(route => ({...route, primary: {...route.primary!, receive_id_type: event.target.value,
-                        is_group: event.target.value === 'chat_id'}}))}>
-                      {['open_id', 'user_id', 'union_id', 'email', 'chat_id'].map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>
-                  </label>}
+                {!reminderDestinations.some((item) => item.ready && ['desktop', 'telegram', 'wecom_bot'].includes(item.channel_type)) && <p>{copy.reminderConnect}</p>}
+                {draft.reminder_delivery?.primary && !['desktop', 'telegram', 'wecom_bot'].includes(draft.reminder_delivery.primary.channel_type) && <p>{copy.reminderReselect}</p>}
+                {draft.reminder_delivery?.primary && ['telegram', 'wecom_bot'].includes(draft.reminder_delivery.primary.channel_type) && <>
                   <label className="block">{copy.reminderRecipient}
                     <input aria-label={copy.reminderRecipient} list="todo-reminder-recipients" value={draft.reminder_delivery.primary.receiver}
                       onChange={event => changeReminderRoute(route => ({...route, primary: {...route.primary!, receiver: event.target.value}}))}
@@ -1206,34 +1204,10 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     <datalist id="todo-reminder-recipients">{reminderDestinations.find(item => item.channel_type === draft.reminder_delivery?.primary?.channel_type)?.recipients
                       .map(item => <option key={item.receiver} value={item.receiver}>{item.name}</option>)}</datalist>
                   </label>
-                  {draft.reminder_delivery.primary.channel_type === 'weixin' && <p>{en
-                    ? 'Weixin delivery needs a recent conversation. Test now; the session may expire before the reminder.'
-                    : '微信发送需要有效会话。可先测试，但提醒触发前会话仍可能失效。'}</p>}
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={draft.reminder_delivery.backup_enabled}
-                    onChange={event => changeReminderRoute(route => ({...route, backup_enabled: event.target.checked,
-                      backup: event.target.checked ? {channel_type: 'feishu', receiver: ''} : null}))} />{copy.reminderBackup}</label>
-                  {draft.reminder_delivery.backup_enabled && <>
-                    <select aria-label={copy.reminderBackup} value={draft.reminder_delivery.backup?.channel_type || 'feishu'}
-                      onChange={event => changeReminderRoute(route => ({...route, backup: {channel_type: event.target.value as 'web' | 'feishu' | 'weixin', receiver: ''}}))}
-                      className={input}>
-                      {reminderDestinations.filter(item => item.configured || item.channel_type === draft.reminder_delivery?.backup?.channel_type)
-                        .map(item => <option key={item.channel_type} value={item.channel_type}>{item.channel_type} · {item.status}</option>)}
-                    </select>
-                    {draft.reminder_delivery.backup?.channel_type === 'feishu' && <select aria-label={en ? 'Backup Feishu recipient type' : '备用飞书接收人类型'}
-                      className={input} value={draft.reminder_delivery.backup.receive_id_type || 'open_id'}
-                      onChange={event => changeReminderRoute(route => ({...route, backup: {...route.backup!, receive_id_type: event.target.value,
-                        is_group: event.target.value === 'chat_id'}}))}>
-                      {['open_id', 'user_id', 'union_id', 'email', 'chat_id'].map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>}
-                    <label className="block">{copy.reminderBackupRecipient}
-                      <input aria-label={copy.reminderBackupRecipient} value={draft.reminder_delivery.backup?.receiver || ''}
-                        onChange={event => changeReminderRoute(route => ({...route, backup: {...route.backup!, receiver: event.target.value}}))}
-                        className={`${input} mt-1`} />
-                    </label>
-                  </>}
-                  <button type="button" disabled={reminderTesting || !draft.reminder_delivery.primary.receiver.trim()}
-                    onClick={() => void testReminder()} className="text-accent hover:underline disabled:opacity-40">{copy.reminderTest}</button>
                 </>}
+                {draft.reminder_delivery?.primary && ['desktop', 'telegram', 'wecom_bot'].includes(draft.reminder_delivery.primary.channel_type) &&
+                  <button type="button" disabled={reminderTesting || (draft.reminder_delivery.primary.channel_type !== 'desktop' && !draft.reminder_delivery.primary.receiver.trim())}
+                    onClick={() => void testReminder()} className="text-accent hover:underline disabled:opacity-40">{copy.reminderTest}</button>}
                 {reminderTestStatus && <p role="status">{reminderTestStatus}</p>}
                 {selected.reminder_delivery_status && <p role="status">{copy.reminderLatest}: {selected.reminder_delivery_status.status}
                   {selected.reminder_delivery_status.error ? ` · ${selected.reminder_delivery_status.error}` : ''}</p>}
