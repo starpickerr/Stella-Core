@@ -6,7 +6,14 @@
 - 主动发送的渠道选择器只允许“客户端、Telegram Bot、企业微信智能机器人”三个选项。三者都必须有可用的实际发送能力。
 - 用户提供的截图是操作系统通知横幅，含应用图标、标题、正文和系统显示的时间。“客户端”应按这种系统通知实现，而不是单独的 App 内消息页、应用内弹窗或对话消息。用户随后限定本轮只考虑 Stella 电脑客户端，手机通知不在本轮范围内。
 - 这里的企业微信智能机器人是 WebSocket 长连接接入方式，不泛指企业微信的其他机器人或应用接口。
+- 用户确认不再保留项目原有的备用渠道功能。定时任务和待办提醒都应只用一个选定目标，失败时不自动改投备用目标。
 - 平台本身允许主动发送，不代表 Stella 当前已经实现；需求以 [需求与验收](requirements.md) 为准。
+
+## 现有功能线索
+
+- 定时任务编辑器 `desktop/src/renderer/src/pages/TasksPage.tsx` 和待办提醒编辑器 `desktop/src/renderer/src/pages/TodosPage.tsx` 均有备用渠道开关及接收人字段。
+- `agent/scheduler/delivery.py` 的 `normalize_notification_route` 使用 `backup_enabled`、`backup`；`agent/scheduler/dispatch.py` 在首选投递失败后可能尝试备用目标。定时任务和待办 Agent 工具描述也暴露了备用配置。
+- 这些位置用于开发时定位清理范围，不表示本轮已修改代码。旧数据处理和验收以 [需求与验收](requirements.md#3-移除现有备用渠道) 为准。
 
 ## 官方资料依据
 
