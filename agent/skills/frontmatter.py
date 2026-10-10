@@ -5,7 +5,7 @@ Frontmatter parsing for skills.
 import re
 import json
 from typing import Dict, Any, Optional, List
-from agent.skills.types import SkillMetadata, SkillInstallSpec
+from agent.skills.types import SkillMetadata, SkillInstallSpec, ToolBinding
 
 
 def parse_frontmatter(content: str) -> Dict[str, Any]:
@@ -136,7 +136,35 @@ def parse_metadata(frontmatter: Dict[str, Any]) -> Optional[SkillMetadata]:
         os=_normalize_string_list(meta_obj.get('os')),
         requires=requires,
         install=install_specs,
+        tool_bindings=_parse_tool_bindings(meta_obj.get('tool_bindings')),
     )
+
+
+def _parse_tool_bindings(raw: Any) -> List[ToolBinding]:
+    """Read tool_bindings. A missing actions list covers every call of that tool."""
+    if not isinstance(raw, list):
+        return []
+    bindings = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        tool = item.get('tool')
+        if not isinstance(tool, str) or not tool.strip():
+            continue
+        actions = item.get('actions')
+        if actions is None:
+            bindings.append(ToolBinding(tool=tool.strip(), actions=None))
+            continue
+        if not isinstance(actions, list):
+            continue
+        names = frozenset(
+            action.strip() for action in actions
+            if isinstance(action, str) and action.strip()
+        )
+        if not names:
+            continue
+        bindings.append(ToolBinding(tool=tool.strip(), actions=names))
+    return bindings
 
 
 _KNOWN_METADATA_NAMESPACES = {"stella", "openclaw"}
