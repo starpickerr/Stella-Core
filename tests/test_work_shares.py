@@ -70,6 +70,32 @@ def test_share_recipients_are_scoped_to_agent_and_ids_are_valid(work):
         create_share("owner", "alpha", "file.txt", "../escape", "read")
 
 
+def test_share_source_changed_to_symlink_after_validation_is_rejected(work, tmp_path, monkeypatch):
+    from agent.workspace import shares
+
+    owner = resolve_context("owner", "alpha", ensure=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    link = owner.root / "file.txt"
+    link.symlink_to(outside)
+    monkeypatch.setattr(shares, "_regular_source", lambda root, relative: link)
+    with pytest.raises(ValueError):
+        create_share("owner", "alpha", "file.txt", "recipient", "read")
+    assert list_shares("recipient", "alpha") == []
+
+
+def test_replacing_shared_copy_with_symlink_does_not_expand_grant(work, tmp_path):
+    owner = resolve_context("owner", "alpha", ensure=True)
+    (owner.root / "file.txt").write_text("safe")
+    shared = create_share("owner", "alpha", "file.txt", "recipient", "read")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    target = work / "shared" / shared["id"] / "file.txt"
+    target.unlink()
+    target.symlink_to(outside)
+    assert share_access(shared["path"], "recipient", "alpha") is None
+
+
 def test_authenticated_share_api_creates_lists_and_revokes(work, monkeypatch):
     import json
     from types import SimpleNamespace

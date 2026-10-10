@@ -393,28 +393,41 @@ def _get_preview_secret() -> bytes:
         return _PREVIEW_SECRET
 
 
-def _encode_dir_token(dir_path: str) -> str:
+def _encode_dir_token(dir_path: str, session_id: str = '', agent_id: str = '') -> str:
     """Encode a directory path into a signed, URL-safe token for /preview."""
     real = os.path.realpath(dir_path)
-    body = base64.urlsafe_b64encode(real.encode("utf-8")).decode("ascii").rstrip("=")
-    sig = hmac.new(_get_preview_secret(), real.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+    payload = json.dumps([real, session_id, agent_id], ensure_ascii=False)
+    body = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    sig = hmac.new(_get_preview_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
     return f"{body}.{sig}"
 
 
-def _decode_dir_token(token: str) -> str:
+def _decode_dir_token_scope(token: str) -> tuple[str, str, str]:
     """Verify and decode a /preview directory token. Raises ValueError if invalid."""
     body, _, sig = (token or "").partition(".")
     if not body or not sig:
         raise ValueError("Malformed preview token")
     padding = "=" * (-len(body) % 4)
     try:
-        real = base64.urlsafe_b64decode(body + padding).decode("utf-8")
+        payload = base64.urlsafe_b64decode(body + padding).decode("utf-8")
     except Exception:
         raise ValueError("Malformed preview token")
-    expected = hmac.new(_get_preview_secret(), real.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+    expected = hmac.new(_get_preview_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
     if not hmac.compare_digest(sig, expected):
         raise ValueError("Bad preview token signature")
-    return real
+    try:
+        real, session_id, agent_id = json.loads(payload)
+        if not all(isinstance(value, str) for value in (real, session_id, agent_id)):
+            raise ValueError("Malformed preview token")
+        return real, session_id, agent_id
+    except (TypeError, ValueError):
+        # Tokens issued before scoped previews carried only the path. They may
+        # still serve non-private files; private Work access requires a session.
+        return payload, '', ''
+
+
+def _decode_dir_token(token: str) -> str:
+    return _decode_dir_token_scope(token)[0]
 
 
 def _serve_allowed_roots() -> list:
@@ -439,7 +452,17 @@ def _serve_allowed_roots() -> list:
     return roots
 
 
-def _is_path_allowed(real_path: str) -> bool:
+def _is_path_allowed(real_path: str, session_id: str = '', agent_id: str = '') -> bool:
+    try:
+        from agent.workspace.context import private_access, resolve_context
+        context = resolve_context(session_id or None, agent_id or None)
+        access = private_access(real_path, context)
+        if access == 'deny':
+            return False
+        if access in ('read', 'write'):
+            return True
+    except (ValueError, FileNotFoundError, RuntimeError):
+        return False
     roots = _serve_allowed_roots()
     if os.sep in roots:
         return True
@@ -452,17 +475,17 @@ def _is_path_allowed(real_path: str) -> bool:
     return False
 
 
-def _build_preview_url(abs_path: str) -> str:
+def _build_preview_url(abs_path: str, session_id: str = '', agent_id: str = '') -> str:
     """
     Preview URL that mounts the file's *directory*, so relative assets
     referenced by an HTML page (./style.css, ./img/a.png) resolve correctly.
     """
     directory = os.path.dirname(abs_path)
     name = os.path.basename(abs_path)
-    return f"/preview/{_encode_dir_token(directory)}/{quote(name)}"
+    return f"/preview/{_encode_dir_token(directory, session_id, agent_id)}/{quote(name)}"
 
 
-def _build_artifact_payload(data: dict) -> dict:
+def _build_artifact_payload(data: dict, session_id: str = '', agent_id: str = '') -> dict:
     """Turn an agent `artifact` event into an SSE payload for the web clients."""
     file_path = data.get("path", "")
     if not file_path:
@@ -475,8 +498,8 @@ def _build_artifact_payload(data: dict) -> dict:
         "kind": data.get("kind", "file"),
         "previewable": bool(data.get("previewable")),
         "size": data.get("size", 0),
-        "raw_url": f"/api/file?path={quote(file_path)}",
-        "preview_url": _build_preview_url(file_path),
+        "raw_url": f"/api/file?path={quote(file_path)}&session={quote(session_id)}&agent={quote(agent_id)}",
+        "preview_url": _build_preview_url(file_path, session_id, agent_id),
     }
 
 
@@ -532,7 +555,7 @@ def _artifacts_from_steps(steps, session_id: str = None, agent_id: str = None) -
             if not info or info["path"] in seen:
                 continue
             seen.add(info["path"])
-            payload = _build_artifact_payload(info)
+            payload = _build_artifact_payload(info, session_id or '', agent_id or '')
             if payload:
                 out.append(payload)
     return out
@@ -1157,7 +1180,8 @@ class DesktopChannel(ChatChannel):
                 publish(payload)
 
             elif event_type == "artifact":
-                payload = _build_artifact_payload(data)
+                payload = _build_artifact_payload(data, self.request_to_session.get(request_id, ''),
+                                                  self.request_to_agent.get(request_id, ''))
                 if payload:
                     publish(payload)
 
@@ -2429,7 +2453,7 @@ class FileServeHandler:
     def GET(self):
         _require_auth()
         try:
-            params = web.input(path="")
+            params = web.input(path="", session="", agent="")
             file_path = params.path
             if not file_path or not os.path.isabs(file_path):
                 raise web.notfound()
@@ -2438,7 +2462,7 @@ class FileServeHandler:
             # Defaults to the user home dir plus the agent workspace; set web_file_serve_root="/"
             # to allow the whole filesystem.
             file_path = os.path.realpath(file_path)
-            if not _is_path_allowed(file_path):
+            if not _is_path_allowed(file_path, params.session, params.agent):
                 raise web.notfound()
             if not os.path.isfile(file_path):
                 raise web.notfound()
@@ -2447,7 +2471,7 @@ class FileServeHandler:
             from urllib.parse import quote
             web.header('Content-Type', content_type)
             web.header('Content-Disposition', f"inline; filename*=UTF-8''{quote(file_name)}")
-            web.header('Cache-Control', 'public, max-age=3600')
+            web.header('Cache-Control', 'no-store')
             with open(file_path, 'rb') as f:
                 return f.read()
         except web.HTTPError:
@@ -2507,7 +2531,7 @@ class PreviewHandler:
             rel_path = unquote(rel_path)
 
             try:
-                base_dir = _decode_dir_token(token)
+                base_dir, session_id, agent_id = _decode_dir_token_scope(token)
             except ValueError:
                 raise web.notfound()
 
@@ -2516,12 +2540,12 @@ class PreviewHandler:
             # Confine to the mounted directory, then to the globally allowed roots.
             if os.path.commonpath([full_path, base_real]) != base_real:
                 raise web.notfound()
-            if not _is_path_allowed(full_path) or not os.path.isfile(full_path):
+            if not _is_path_allowed(full_path, session_id, agent_id) or not os.path.isfile(full_path):
                 raise web.notfound()
 
             content_type = mimetypes.guess_type(full_path)[0] or "application/octet-stream"
             web.header('Content-Type', content_type)
-            web.header('Cache-Control', 'no-cache')
+            web.header('Cache-Control', 'no-store')
             web.header('X-Content-Type-Options', 'nosniff')
             is_html = content_type.startswith("text/html")
             if is_html:
@@ -7549,14 +7573,14 @@ def _system_workspace_service():
     return WorkspaceService(state_root_str())
 
 
-def _decorate_entry(svc, entry: dict) -> dict:
+def _decorate_entry(svc, entry: dict, session_id: str = '', agent_id: str = '') -> dict:
     """Attach the URLs the frontend needs to preview or download an entry."""
     if entry.get("is_dir"):
         return entry
     abs_path = entry.get("abs_path") or os.path.join(svc.root, entry["path"])
     entry["abs_path"] = abs_path
-    entry["raw_url"] = f"/api/file?path={quote(abs_path)}"
-    entry["preview_url"] = _build_preview_url(abs_path)
+    entry["raw_url"] = f"/api/file?path={quote(abs_path)}&session={quote(session_id)}&agent={quote(agent_id)}"
+    entry["preview_url"] = _build_preview_url(abs_path, session_id, agent_id)
     return entry
 
 
@@ -7568,7 +7592,7 @@ class WorkspaceTreeHandler:
             params = web.input(path='', show_hidden='', session='', agent='')
             svc = _workspace_service(params.session or None, params.agent or None)
             result = svc.list_dir(params.path, show_hidden=params.show_hidden == '1')
-            result["entries"] = [_decorate_entry(svc, e) for e in result["entries"]]
+            result["entries"] = [_decorate_entry(svc, e, params.session, params.agent) for e in result["entries"]]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
@@ -7589,7 +7613,7 @@ class WorkspaceSearchHandler:
                 limit = 30
             svc = _workspace_service(params.session or None, params.agent or None)
             result = svc.search(params.q, limit=limit)
-            result["results"] = [_decorate_entry(svc, e) for e in result["results"]]
+            result["results"] = [_decorate_entry(svc, e, params.session, params.agent) for e in result["results"]]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Workspace search error: {e}")
@@ -7617,7 +7641,7 @@ class WorkspaceResolveHandler:
             svc = _workspace_service(params.session or None, params.agent or None)
             if os.path.isabs(os.path.expanduser(raw_path)):
                 abs_path = os.path.realpath(os.path.expanduser(raw_path))
-                if not _is_path_allowed(abs_path):
+                if not _is_path_allowed(abs_path, params.session, params.agent):
                     return json.dumps({"status": "error", "message": "Path not allowed"})
                 is_dir = os.path.isdir(abs_path)
                 if not is_dir and not os.path.isfile(abs_path):
@@ -7646,8 +7670,9 @@ class WorkspaceResolveHandler:
 
             # A directory has nothing to serve; the client browses into it.
             if not entry["is_dir"]:
-                entry["raw_url"] = f"/api/file?path={quote(entry['abs_path'])}"
-                entry["preview_url"] = _build_preview_url(entry["abs_path"])
+                entry["raw_url"] = (f"/api/file?path={quote(entry['abs_path'])}"
+                                    f"&session={quote(params.session)}&agent={quote(params.agent)}")
+                entry["preview_url"] = _build_preview_url(entry["abs_path"], params.session, params.agent)
             return json.dumps({"status": "success", "file": entry}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})

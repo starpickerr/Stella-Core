@@ -113,6 +113,8 @@ def _evict_finished() -> None:
 
 
 def _cleanup(job: _Job) -> None:
+    from agent.permission.process_sandbox import unregister_share_process
+    unregister_share_process(job.process)
     if job.temp_script:
         try:
             os.remove(job.temp_script)
@@ -125,7 +127,7 @@ def _cleanup(job: _Job) -> None:
 
 
 def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None,
-          *, argv=None, shell=True, temp_dir: Optional[str] = None) -> str:
+          *, argv=None, shell=True, temp_dir: Optional[str] = None, plan=None) -> str:
     """Launch *command* in the background and return its job id."""
     process = subprocess.Popen(
         argv if argv is not None else command,
@@ -137,6 +139,15 @@ def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None,
         env=env,
         start_new_session=not _IS_WIN,
     )
+    from agent.permission.process_sandbox import register_share_process
+    try:
+        if plan is not None:
+            register_share_process(process, plan)
+    except Exception:
+        if process.poll() is None:
+            _kill_process(process)
+        process.wait()
+        raise
     job = _Job(f"bash_{uuid.uuid4().hex[:8]}", command, process, temp_script, temp_dir)
     reader = threading.Thread(target=_drain, args=(job, process.stdout), daemon=True)
     job.readers.append(reader)

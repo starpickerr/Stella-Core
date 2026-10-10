@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -13,6 +14,7 @@ from common.runtime_identity import current_identity
 from common.state_dir import personal_work_dir
 
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+_EXTERNAL_ID = re.compile(r"^[A-Za-z0-9_:@.-]{1,80}$")
 _RESERVED = frozenset({"sessions", "shared", "automations"})
 
 
@@ -27,10 +29,57 @@ class WorkContext:
     task_id: str | None
 
 
+def _inside(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath((path, root)) == root
+    except ValueError:
+        return False
+
+
+def private_access(path: str, context: WorkContext) -> str | None:
+    """Classify reserved Work paths: read, write, deny, or outside this boundary.
+
+    A broad project/Full Access root never overrides another conversation's
+    private directory. Shared grants apply to one file, never its parent.
+    """
+    real = os.path.realpath(os.path.expanduser(path))
+    from agent.workspace.shares import _manifest_file
+    if real == os.path.realpath(_manifest_file()):
+        return "deny"
+    work = os.path.realpath(context.work_root)
+    if not _inside(real, work):
+        return None
+    if real == work:
+        return "deny"
+    for category in ("sessions", "automations"):
+        reserved = os.path.join(work, category)
+        if _inside(real, reserved):
+            own = os.path.realpath(context.private_root) if context.private_root else None
+            if own and _inside(real, own) and _inside(own, reserved):
+                return "write"
+            return "deny"
+    shared = os.path.join(work, "shared")
+    if _inside(real, shared):
+        if context.session_id and not context.task_id:
+            from agent.workspace.shares import share_access
+            return share_access(real, context.session_id, context.agent_id) or "deny"
+        return "deny"
+    return None
+
+
 def _valid(value: str | None, label: str) -> str:
     if not isinstance(value, str) or not _ID.fullmatch(value):
         raise ValueError(f"invalid {label}")
     return value
+
+
+def _safe_segment(value: str | None, label: str) -> str:
+    """Keep platform chat IDs stable without placing their punctuation in paths."""
+    if not isinstance(value, str) or not _EXTERNAL_ID.fullmatch(value) or value in (".", ".."):
+        raise ValueError(f"invalid {label}")
+    if _ID.fullmatch(value):
+        return value
+    return "~" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:40]
 
 
 def resolve_context(session_id: str | None, agent_id: str | None = None,
@@ -39,14 +88,12 @@ def resolve_context(session_id: str | None, agent_id: str | None = None,
     from agent.registry import get_agent_registry
 
     agent_id = _valid(get_agent_registry().default_agent_id if agent_id is None else agent_id, "agent ID")
-    if session_id is not None:
-        _valid(session_id, "session ID")
-    if task_id is not None:
-        _valid(task_id, "task ID")
+    session_segment = _safe_segment(session_id, "session ID") if session_id is not None else None
+    task_segment = _safe_segment(task_id, "task ID") if task_id is not None else None
     identity = current_identity().derive(agent_id=agent_id)
     work_root = personal_work_dir(identity=identity, ensure=False)
-    private_root = (work_root / "automations" / agent_id / task_id if task_id else
-                    work_root / "sessions" / agent_id / session_id if session_id else None)
+    private_root = (work_root / "automations" / agent_id / task_segment if task_segment else
+                    work_root / "sessions" / agent_id / session_segment if session_segment else None)
     binding = project_store.get_project_binding(session_id, agent_id) if session_id else None
     if binding:
         project = Path(os.path.realpath(os.path.expanduser(binding)))
