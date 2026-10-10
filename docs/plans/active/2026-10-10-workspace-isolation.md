@@ -36,9 +36,9 @@
 
 **Interfaces:** `resolve_context(session_id, agent_id=None, task_id=None, ensure=False) -> WorkContext` returns `root`, `kind` (`session`, `project`, `automation`, `legacy`), and `work_root`; `get_project_binding()` distinguishes no binding from a missing directory. IDs are validated before path construction. `list_legacy_files()` lists only old top-level Work files; `copy_legacy_file()` copies an explicitly selected file into the active root without removing the source.
 
-- [ ] Write tests for two private sessions, same project, stable task runs, invalid IDs, missing project and safe legacy copy; run RED.
-- [ ] Implement the resolver and compatibility APIs; run focused tests GREEN.
-- [ ] Commit the resolver and tests.
+- [x] Write tests for two private sessions, same project, stable task runs, invalid IDs, missing project and safe legacy copy; run RED.
+- [x] Implement the resolver and compatibility APIs; run focused tests GREEN.
+- [x] Commit the resolver and tests.
 
 ### Task 2: Runtime, automation and Desktop workspace resolution
 
@@ -46,9 +46,9 @@
 
 **Interfaces:** Interactive Agent tools, prompt cwd, file tree/search/resolve/preview and Desktop Security Center report the same context root. Scheduled Agent runs use `automations/<agent>/<task>` unless an actual project is bound, regardless of `source/reuse/new`; task run IDs do not create a new file root. Missing projects fail before execution. The per-session runtime no longer retains a prior session's `cwd` after switching context.
 
-- [ ] Write failing tests for runtime/API consistency, stable automation root and missing project failure; run RED.
-- [ ] Integrate the resolver at the named boundaries; run focused tests GREEN.
-- [ ] Commit runtime integration and tests.
+- [x] Write failing tests for runtime/API consistency, stable automation root and missing project failure; run RED.
+- [x] Integrate the resolver at the named boundaries; run focused tests GREEN.
+- [x] Commit runtime integration and tests.
 
 ### Task 3: Exact file sharing and user controls
 
@@ -56,9 +56,9 @@
 
 **Interfaces:** Authenticated Desktop endpoints list, create and revoke shares. Creating a share copies a regular non-symlink file to `work/shared/<share_id>/<filename>` and records owner and named recipient sessions plus `read`/`write`. Recipient views show only granted files. Revocation removes the grant immediately but retains shared data for the owner; no API lists unrelated private files.
 
-- [ ] Write failing service/API/browser tests for exact file selection, read/write, revoke and symlink rejection; run RED.
-- [ ] Implement the manifest, API and compact file-panel controls; run focused tests GREEN.
-- [ ] Commit sharing and tests.
+- [x] Write failing service/API/browser tests for exact file selection, read/write, revoke and symlink rejection; run RED.
+- [x] Implement the manifest, API and compact file-panel controls; run focused tests GREEN.
+- [x] Commit sharing and tests.
 
 ### Task 4: Private boundary across tools and processes
 
@@ -66,14 +66,14 @@
 
 **Interfaces:** A centralized `WorkContext` predicate decides whether an absolute real path is own workspace, an exact granted shared file, another private workspace or managed Work metadata. Direct file tools, search/preview, Browser file navigation and Shell approvals use it. The OS sandbox hides other private folders and unrelated shares even in Full Access; if the platform cannot enforce this, Shell launch fails closed. Pending approvals bind to the current context and share grant version.
 
-- [ ] Write failing tests for cross-session read/write, path traversal, symlink escape, share revocation, Shell child process and Browser file access; run RED.
-- [ ] Enforce the same boundary in gateway and sandbox; run focused tests GREEN, including actual OS sandbox where available.
-- [ ] Commit boundary enforcement and tests.
+- [x] Write failing tests for cross-session read/write, path traversal, symlink escape, share revocation, Shell child process and Browser file access; run RED.
+- [x] Enforce the same boundary in gateway and sandbox; run focused tests GREEN, including actual OS sandbox where available.
+- [x] Commit boundary enforcement and tests.
 
 ### Task 5: Stage 5 integration and record
 
 **Files:** Modify `.agents/task/DEVELOPMENT_PROGRESS.md`; run focused Work tests, browser checks and `.venv/bin/python scripts/quality_check.py incremental`.
 
-- [ ] Review the branch diff for missed path and identity boundaries; fix important findings with regressions.
-- [ ] Run the full incremental gate in temporary HOME and STELLA_DATA_DIR; record PASS/FAIL/SKIP, especially OS sandbox availability.
+- [x] Review the branch diff for missed path and identity boundaries; fix important findings with regressions.
+- [x] Run the full incremental gate in temporary HOME and STELLA_DATA_DIR; record PASS/FAIL/SKIP, especially OS sandbox availability.
 - [ ] Commit the progress record, then continue to stage 6.
