@@ -185,12 +185,12 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       </div>
     </PageHeader>
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
-    <div className="flex-1 flex min-h-0" data-stella-scroll>
+    <div className="flex-1 flex min-h-0">
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
         {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setDraftSelected(false); setSelectedId(id) }} />}
       </aside>
-      <main className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
+      <main data-stella-scroll className={`flex-1 min-w-0 overflow-y-auto p-6 ${!selectedId && !showDraft ? 'hidden lg:block' : ''}`}>
         {generating && <div className="flex items-center gap-1 border-b border-default mb-5" role="tablist" aria-label={t('menu_briefing')}>
           <button type="button" role="tab" aria-selected={showDraft} onClick={() => setDraftSelected(true)}
             className={`px-3 py-2 text-sm border-b-2 ${showDraft ? 'border-accent text-accent font-medium' : 'border-transparent text-content-secondary hover:text-content'}`}>{t('briefing_draft')}</button>

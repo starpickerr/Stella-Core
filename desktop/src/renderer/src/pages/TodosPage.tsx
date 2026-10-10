@@ -1186,7 +1186,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <label className="block">{copy.reminderChannel}
                   <select aria-label={copy.reminderChannel} value={draft.reminder_delivery?.primary?.channel_type || ""}
                     onChange={(event) => changeReminderRoute(() => ({
-                      primary: event.target.value ? { channel_type: event.target.value as 'desktop' | 'telegram' | 'wecom_bot', receiver: "" } : null,
+                      primary: event.target.value ? { channel_type: event.target.value as 'desktop' | 'telegram' | 'wecom_bot', receiver: event.target.value === 'desktop' ? 'desktop' : "" } : null,
                     }))} className={`${input} mt-1`}>
                     <option value="">{copy.reminderReselect}</option>
                     {!['desktop', 'telegram', 'wecom_bot'].includes(draft.reminder_delivery?.primary?.channel_type || '') && draft.reminder_delivery?.primary?.channel_type &&

@@ -9,7 +9,6 @@ from agent.scheduler.automation_store import AutomationStore
 from agent.scheduler.dispatch import dispatch_notification
 from agent.scheduler import integration
 from agent.scheduler.dispatch import DeliveryOutcome
-from agent.scheduler.outcome import ExecutionOutcome
 from agent.scheduler import delivery
 from agent.todos import TodoService
 from bridge.reply import Reply, ReplyType
@@ -312,8 +311,7 @@ def test_scheduler_todo_command_reports_external_delivery_waiting(monkeypatch):
             "action": {"type": "application_command", "domain": "todos", "command": "QueueTodoReminder",
                        "params": ["one", "2026-10-09T06:00:00+00:00"]}}
     outcome = integration._execute_application_command(task, "agent-a")
-    assert isinstance(outcome, ExecutionOutcome)
-    assert outcome.status == "failed" and not outcome.retryable
+    assert outcome is False
     assert calls == [("one", "2026-10-09T06:00:00+00:00", "scheduler")]
 
 

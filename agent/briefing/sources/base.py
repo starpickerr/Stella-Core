@@ -7,7 +7,7 @@ stay inside the adapter; the pipeline only sees ``FetchedItem``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Protocol, runtime_checkable
 
 
 @dataclass

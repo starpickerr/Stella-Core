@@ -55,6 +55,7 @@ class BillStore:
     def __init__(self, db_path: Path):
         self._db_path = Path(db_path)
         self._lock = threading.RLock()
+        self._tx = threading.local()
         self.created_new = not self._db_path.exists()
         self._init_db()
 
@@ -86,9 +87,15 @@ class BillStore:
         return conn
 
     @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Run several store calls as one commit. Nested calls join the open transaction."""
+        current = getattr(self._tx, "conn", None)
+        if current is not None:
+            yield current
+            return
         with self._lock:
             conn = self._raw_connect()
+            self._tx.conn = conn
             try:
                 yield conn
                 conn.commit()
@@ -96,7 +103,17 @@ class BillStore:
                 conn.rollback()
                 raise
             finally:
+                self._tx.conn = None
                 conn.close()
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        current = getattr(self._tx, "conn", None)
+        if current is not None:
+            yield current
+            return
+        with self.transaction() as conn:
+            yield conn
 
     # ------------------------------------------------------------------
     # Ledger

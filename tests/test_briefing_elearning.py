@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from agent.briefing import elearning_settings as settings
-from agent.briefing.elearning.client import Canvas, SafeRedirect
+from agent.briefing.elearning.client import Canvas
 from agent.briefing.elearning.errors import LoginRequired, SyncCancelled, SyncError
 from agent.briefing.sources.elearning import ElearningSource
 from agent.tools.elearning.elearning_tool import ElearningTool

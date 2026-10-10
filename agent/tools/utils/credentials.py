@@ -53,6 +53,7 @@ def protected_credential_paths() -> set[str]:
     from config import get_data_root, get_weixin_credentials_path
     from common.state_dir import mcp_config_file, shared_root, state_root
     from agent.briefing import elearning_settings
+    from agent.briefing.settings import mailbox_path
     elearning_config = elearning_settings.settings_path()
     return {os.path.realpath(path) for path in (
         expand_path("~/.stella/.env"),
@@ -66,6 +67,7 @@ def protected_credential_paths() -> set[str]:
         str(state_root() / "RULE.md"),
         str(state_root() / "BOOTSTRAP.md"),
         str(elearning_config),
+        str(mailbox_path()),
     )}
 
 

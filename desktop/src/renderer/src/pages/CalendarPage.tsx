@@ -332,7 +332,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     </section>
   }
 
-  return <div className="flex-1 flex flex-col min-h-0 text-content" data-stella-scroll>
+  return <div className="flex-1 flex flex-col min-h-0 text-content">
     <PageHeader className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
@@ -362,7 +362,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         {(['day', 'week', 'month', 'year', 'list'] as View[]).map(item => <button key={item} type="button" onClick={() => changeView(item)} aria-pressed={view === item} className={`px-3 py-1 rounded-btn text-sm inline-flex items-center gap-1 ${view === item ? 'bg-surface shadow-sm' : 'text-content-tertiary'}`}>{item === 'list' && <List size={13} />}{labels[item]}</button>)}
       </div>
     </div>
-    <main className="flex-1 min-h-0 overflow-y-auto p-6">
+    <main data-stella-scroll className="flex-1 min-h-0 overflow-y-auto p-6">
       <div className="max-w-6xl mx-auto flex items-center justify-between mb-4"><h2 className="font-semibold">{periodTitle}</h2>{view !== 'list' && <div className="flex items-center gap-1"><button type="button" onClick={() => go(-1)} aria-label={labels.previousDay} className="p-1 rounded-btn hover:bg-surface-2"><ChevronLeft size={17} /></button><button type="button" onClick={() => navigateTo(new Date())} className="px-2 py-1 text-xs rounded-btn hover:bg-surface-2">{labels.today}</button><button type="button" onClick={() => go(1)} aria-label={labels.nextDay} className="p-1 rounded-btn hover:bg-surface-2"><ChevronRight size={17} /></button></div>}</div>
       {view === 'list' && <div className="max-w-3xl mx-auto space-y-5">{Object.entries(listGroups).sort(([a], [b]) => a.localeCompare(b)).map(([day, rows]) => <section key={day}><h3 className="text-sm font-semibold mb-2">{new Intl.DateTimeFormat(locale, { dateStyle: 'full' }).format(new Date(`${day}T12:00`))}</h3><div className="space-y-2">{rows.map(eventCard)}</div></section>)}{visible.length === 0 && <div className="text-center text-content-tertiary py-20"><p>{labels.noEvents}</p><button type="button" onClick={() => openNew()} className="text-accent text-sm mt-2">{labels.add}</button></div>}</div>}
       {view === 'day' && <div className="max-w-6xl mx-auto"><SplitCalendar dividerLabel={labels.divider} sideFirstOnMobile main={<DayTimeline date={anchor} events={dayEvents} categories={categories} locale={locale} onSelect={event => setExpanded(event.id)} onCreateAt={hour => openNew(selectedDay, hour)} />} side={<><MiniCalendar selected={anchor} locale={locale} marked={new Set(byDay.keys())} onSelect={date => setSelectedDay(dayKey(date))} /><section className="space-y-2" aria-label={labels.dayItems}><div className="flex items-center justify-between"><h3 className="font-semibold text-sm">{labels.dayItems}</h3><button type="button" onClick={() => openNew(selectedDay)} aria-label={labels.add} className="p-1 rounded-btn hover:bg-surface-2"><Plus size={16} /></button></div>{dayEvents.length ? dayEvents.map(eventCard) : <p className="text-sm text-content-tertiary py-8 text-center">{labels.noDay}</p>}</section></>} /></div>}

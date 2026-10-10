@@ -4,7 +4,6 @@ import time
 from wechatpy.client import WeChatClient
 from wechatpy.exceptions import APILimitedException
 
-from channel.wechatmp.common import *
 from common.log import logger
 
 

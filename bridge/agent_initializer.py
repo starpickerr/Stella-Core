@@ -78,7 +78,7 @@ class AgentInitializer:
         
         # Initialize workspace
         from agent.prompt import ensure_workspace, load_context_files, PromptBuilder
-        workspace_files = ensure_workspace(workspace_root, create_templates=True)
+        ensure_workspace(workspace_root, create_templates=True)
         
         if session_id is None:
             logger.info(f"[AgentInitializer] Workspace initialized at: {workspace_root}")
@@ -308,7 +308,6 @@ class AgentInitializer:
         try:
             from agent.memory import MemoryManager, MemoryConfig, register_memory_config
             from agent.tools import MemorySearchTool, MemoryGetTool
-            from config import conf
 
             memory_config = MemoryConfig(workspace_root=workspace_root)
             # Publish per workspace, not process-wide: this runs once per Agent,
@@ -673,7 +672,7 @@ class AgentInitializer:
                     for key, value in sorted(existing_env_vars.items()):
                         f.write(f'{key}={value}\n')
 
-                logger.info(f"[AgentInitializer] Synced API keys from config.json to .env")
+                logger.info("[AgentInitializer] Synced API keys from config.json to .env")
             except Exception as e:
                 logger.warning(f"[AgentInitializer] Failed to sync API keys: {e}")
 

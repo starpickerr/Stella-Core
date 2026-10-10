@@ -371,7 +371,7 @@ class BriefingActions:
             self.save_rule(dict(source=entity['source'],account_id=entity['account_id'],information_type=entity['information_type'],course_id=entity['course_id'],kind=kind,mode='auto'))
         return receipt
 
-    def _execute(self, db, entity, kind, force=False):
+    def _execute(self, db, entity, kind, force=False, propagate=False):
         key = entity['entity_key']
         action = self._receipt(db, key, kind)
         facts = json.loads(entity['facts'])
@@ -431,6 +431,8 @@ class BriefingActions:
                 result={'operation':'conflict' if conflicts else 'synced','changes':conflicts,'source_facts':facts},error='User fields differ from source; choose confirm update or keep current' if conflicts else '')
         except Exception as exc:
             self._write(db,key,kind,state='failed',error=str(exc),result={'operation':'failed'})
+            if propagate:
+                raise
 
     def sync(self, detail, consumer):
         if consumer not in {'todo','calendar'}:
@@ -454,7 +456,7 @@ class BriefingActions:
                 sync_rule = self._rule(db,entity,'sync')
                 if action['target_id']:
                     if not sync_rule or sync_rule['mode']=='auto':
-                        self._execute(db,entity,consumer)
+                        self._execute(db,entity,consumer,propagate=True)
                     elif sync_rule['mode'] == 'suggest' and action['result'].get('source_facts') != json.loads(entity['facts']):
                         self._write(db, key, consumer, state='conflict', error='Your source rule requires confirmation before synchronizing new facts', result={'operation': 'confirmation_required'})
                 elif rule and rule['mode']=='auto' and consumer != 'todo':
@@ -466,7 +468,7 @@ class BriefingActions:
                         self._write(db, key, consumer, result={'operation':'matching_required','candidate_ids':[row['id'] for row in matches]})
                         continue
                     self._write(db,key,consumer,authorization='rule:'+rule['id'])
-                    self._execute(db,entity,consumer)
+                    self._execute(db,entity,consumer,propagate=True)
                 elif rule and rule['mode']=='briefing_only':
                     self._write(db,key,consumer,state='briefing_only')
                 if consumer == 'todo':

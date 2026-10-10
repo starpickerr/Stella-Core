@@ -280,6 +280,19 @@ class AutomationStore:
             db.execute("UPDATE job_runs SET result_ref=? WHERE job_run_id=? AND owner_user_id=?",
                        (str(path), job_run_id, self._current_user()))
 
+    def list_waiting_deliveries(self, channel_type):
+        with self.lock, self._connect() as db:
+            rows = db.execute("""SELECT job_run_id,leg,channel_type,receiver,platform_response
+                FROM job_deliveries WHERE owner_user_id=? AND status='waiting' AND channel_type=?""",
+                (self._current_user(), channel_type)).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["platform_response"] = (json.loads(item["platform_response"])
+                                         if item["platform_response"] else None)
+            result.append(item)
+        return result
+
     def get_delivery(self, job_run_id, leg):
         with self.lock, self._connect() as db:
             row = db.execute("""SELECT * FROM job_deliveries WHERE job_run_id=? AND leg=?

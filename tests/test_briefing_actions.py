@@ -30,6 +30,28 @@ def publish(env, *, day='2026-10-08', source_id='12:assignment:4', section='acti
     return detail, detail['items'][0]
 
 
+def test_failed_calendar_projection_stays_unacked(env, monkeypatch):
+    import sqlite3
+    from agent.briefing.outbox import dispatch_pending
+
+    service, actions, _, _calendar = env
+    publish(env, payload={'resource_type': 'assignment', 'course_id': '12',
+                          'start_at': '2026-10-10T11:00:00+08:00', 'end_at': '2026-10-10T12:00:00+08:00',
+                          'due_at': '2026-10-29T15:59:00Z'})
+    actions.save_rule(dict(source='elearning', account_id='campus', information_type='assignment',
+                           kind='calendar', mode='auto', course_id='12'))
+
+    def locked(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(CalendarService, "create_event", locked)
+    dispatch_pending(service.store)
+    pending = service.store.pending_projection_events()
+    calendar_rows = [row for row in pending if row["calendar_ack_at"] is None]
+    assert calendar_rows
+    assert "database is locked" in (calendar_rows[0]["calendar_error"] or "")
+
+
 def test_new_assignment_suggests_without_unauthorized_side_effects(env):
     detail,item=publish(env)
     _,actions,todos,calendar=env

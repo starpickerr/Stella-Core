@@ -185,7 +185,7 @@ class DiscordChannel(ChatChannel):
 
             # Guild trigger gate (silently drop if not triggered)
             if is_group and not self._should_reply_in_guild(message):
-                logger.debug(f"[Discord] guild message not triggered (need @mention or reply), skip")
+                logger.debug("[Discord] guild message not triggered (need @mention or reply), skip")
                 return
 
             # Parse message type + download attachments if needed.

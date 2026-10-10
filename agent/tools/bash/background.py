@@ -129,6 +129,11 @@ def _cleanup(job: _Job) -> None:
 def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None,
           *, argv=None, shell=True, temp_dir: Optional[str] = None, plan=None) -> str:
     """Launch *command* in the background and return its job id."""
+    with _lock:
+        _evict_finished()
+        running = sum(1 for job in _jobs.values() if job.running)
+        if running >= _MAX_JOBS:
+            raise RuntimeError(f"background job limit reached ({_MAX_JOBS})")
     process = subprocess.Popen(
         argv if argv is not None else command,
         shell=shell,

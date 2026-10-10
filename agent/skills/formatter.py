@@ -112,7 +112,7 @@ def _extract_setup_hint(skill: Skill) -> str:
 
     setup_text = match.group(1).strip()
     lines = setup_text.split('\n')
-    hint_lines = [l.strip() for l in lines[:6] if l.strip()]
+    hint_lines = [line.strip() for line in lines[:6] if line.strip()]
     return ' '.join(hint_lines)[:300]
 
 

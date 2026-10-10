@@ -92,7 +92,6 @@ def test_explicit_web_route_tracks_resolved_conversation_when_it_targets_executi
             result = dispatch_notification(store, job_id, prepared["notification_route"], "hello",
                                            channel_provider=lambda _: SimpleNamespace(send=lambda reply, context:
                                                sent.append(context["receiver"]) or {"success": True}))
-            record = store.get_delivery(job_id, "primary")
         assert result.status == "failed" and "重新选择" in result.error
         assert sent == []
 

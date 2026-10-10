@@ -79,12 +79,12 @@ _LOCAL_ACTIONS = {
     "scheduler": {"create", "delete", "enable", "disable"},
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|elearning-sessions/[^\s'\"]+)|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
+_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|mailbox\.json|elearning-sessions/[^\s'\"]+)|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
 _ESCALATE = re.compile(r"\b(?:sudo|doas|pkexec|su)\b")
 _BULK_DELETE = re.compile(r"\b(?:rm\s+-(?:\w*r\w*f|\w*f\w*r)|find\b[^\n]*-delete|git\s+clean\s+-\w*f)\b", re.I)
 _PUBLISH = re.compile(r"\b(?:git\s+push|npm\s+publish|gh\s+release|docker\s+push)\b", re.I)
-_INSTALL = re.compile(r"\b(?:npm|pnpm|yarn|pip|pip3|brew|apt|apt-get)\s+(?:install|add|upgrade)\b", re.I)
-_NETWORK = re.compile(r"\b(?:curl|wget|ssh|scp|git\s+(?:clone|fetch|pull))\b", re.I)
+_INSTALL = re.compile(r"\b(?:npm|pnpm|yarn|pip|pip3|brew|apt|apt-get)\s+(?:install|add|upgrade|i|ci)\b", re.I)
+_NETWORK = re.compile(r"\b(?:curl|wget|ssh|scp|git\s+(?:clone|fetch|pull)|python(?:3)?\s+-c\b[^\n]*(?:urllib|requests))\b", re.I)
 _EXTERNAL_VERB = re.compile(r"(?:^|[_\-.])(create|add|update|edit|delete|remove|send|publish|deploy|revoke|install)(?:$|[_\-.])", re.I)
 _lock = threading.RLock()
 _condition = threading.Condition(_lock)

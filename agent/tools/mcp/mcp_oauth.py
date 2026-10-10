@@ -444,7 +444,7 @@ class OAuthHandler:
             fields["client_secret"] = self.client_secret
         try:
             resp = _http_post_form(self.metadata["token_endpoint"], fields)
-        except Exception as e:
+        except Exception:
             logger.warning(f"[MCP-OAuth:{self.server_name}] token exchange failed")
             return False
         ok = self._absorb_token_response(resp)

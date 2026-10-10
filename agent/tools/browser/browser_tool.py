@@ -186,10 +186,13 @@ class BrowserTool(BaseTool):
         for family, _, _, _, sockaddr in addr_infos:
             ip_str = sockaddr[0]
             ip = ipaddress.ip_address(ip_str)
+            mapped = getattr(ip, "ipv4_mapped", None)
             # Block only the high-risk targets — link-local (incl. the
-            # 169.254.169.254 cloud-metadata endpoint) and the IPv6 metadata
+            # 169.254.169.254 cloud-metadata endpoint), the same address
+            # written as an IPv4-mapped IPv6 literal, and the IPv6 metadata
             # address. Loopback and RFC1918/LAN stay reachable for local dev.
-            if ip.is_link_local or ip in _CLOUD_METADATA_IPS:
+            if (ip.is_link_local or ip in _CLOUD_METADATA_IPS
+                    or (mapped is not None and (mapped.is_link_local or mapped in _CLOUD_METADATA_IPS))):
                 raise ValueError(
                     f"URL resolves to a link-local / cloud-metadata address "
                     f"({ip_str}), request blocked for security"

@@ -48,10 +48,14 @@ class TaskStore:
             try:
                 with open(self.store_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get("tasks", {})
-            except Exception as e:
-                print(f"Error loading tasks: {e}")
-                return {}
+            except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+                raise ValueError(f"Task file is unreadable: {self.store_path}") from exc
+            if not isinstance(data, dict):
+                raise ValueError(f"Task file is unreadable: {self.store_path}")
+            tasks = data.get("tasks", {})
+            if not isinstance(tasks, dict):
+                raise ValueError(f"Task file is unreadable: {self.store_path}")
+            return tasks
     
     def save_tasks(self, tasks: Dict[str, dict]):
         """

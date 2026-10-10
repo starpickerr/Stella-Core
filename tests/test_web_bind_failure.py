@@ -7,7 +7,6 @@ falls in, with no process listening, so the usual "kill the stale process"
 advice sends people chasing a process that doesn't exist.
 """
 
-import logging
 import sys
 import types
 from pathlib import Path
