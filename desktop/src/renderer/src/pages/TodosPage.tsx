@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import apiClient from "../api/client";
 import { getLang } from "../i18n";
-import EmbeddedAgent, { type PresetRequest } from "../components/EmbeddedAgent";
+import EmbeddedAgent, { enqueueEmbeddedPreset, type PresetRequest } from "../components/EmbeddedAgent";
 import type {
   Todo,
   TodoChecklistItem,
@@ -523,7 +523,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     const prompt = en
       ? `Use the todos tool to create tasks from these requirements. Ask if essential details are missing; do not invent deadlines.\n\n${details}`
       : `请使用 todos 事务工具建立事务。若缺少必要信息，先询问我；不要自行编造截止时间。\n\n${details}`;
-    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text: prompt });
+    setAgentPreset(enqueueEmbeddedPreset('todos', prompt));
     setQuickTitle("");
   };
   const createDirect = () => {
@@ -536,7 +536,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     });
   };
   const askAppleAgent = (text: string) => {
-    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text });
+    setAgentPreset(enqueueEmbeddedPreset('todos', text));
     setAppleMenu(false);
   };
   const save = () => {

@@ -41,3 +41,21 @@ def test_agent_can_inspect_unsupported_relative_alarm_without_importing(tmp_path
     assert result.status == "success"
     assert json.loads(result.result)["item"]["alarm_count"] == 1
     assert todos.list_todos() == []
+
+
+def test_agent_configure_keeps_disabled_auto_sync_off(tmp_path, monkeypatch):
+    sync, _, _, _ = manager(tmp_path, [reminder()])
+    monkeypatch.setattr(Application, "apple_reminders", staticmethod(lambda: sync))
+    starts = []
+    monkeypatch.setattr(sync, "start_auto", lambda *args: starts.append(args))
+    sync.set_auto(False)
+    tool = AppleTool()
+    preview = tool.execute({"kind": "reminders", "action": "preview_scope",
+                            "source_ids": ["a"], "direction": "import"})
+    assert preview.status == "success", preview.result
+    token = json.loads(preview.result)["preview_token"]
+    configured = tool.execute({"kind": "reminders", "action": "configure", "source_ids": ["a"],
+                               "direction": "import", "confirm": True, "preview_token": token})
+    assert configured.status == "success", configured.result
+    assert sync.status()["auto_enabled"] is False
+    assert starts == []

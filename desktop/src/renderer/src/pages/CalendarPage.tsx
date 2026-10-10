@@ -6,7 +6,7 @@ import { getLang } from '../i18n'
 import type { CalendarCategory, CalendarEvent, CalendarEventInput } from '../types'
 import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunday, WeekTimeline } from './calendar/CalendarViews'
 import type { ScrollPeriod } from './calendar/CalendarViews'
-import EmbeddedAgent, { type PresetRequest } from '../components/EmbeddedAgent'
+import EmbeddedAgent, { enqueueEmbeddedPreset, type PresetRequest } from '../components/EmbeddedAgent'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -99,7 +99,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [navigationToken, setNavigationToken] = useState(0)
   const requestId = useRef(0)
   const askAgent = (text: string) => {
-    setAgentPreset({ id: `${Date.now()}-${Math.random()}`, text })
+    setAgentPreset(enqueueEmbeddedPreset('calendar', text))
     setAppleMenu(false)
   }
   useEffect(() => {

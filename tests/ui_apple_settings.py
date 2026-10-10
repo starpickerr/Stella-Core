@@ -10,6 +10,8 @@ from playwright.sync_api import expect, sync_playwright
 url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 calls = []
 reject_preview = [False]
+hold_reminder_items = [False]
+held_items = [None]
 connections = {
     'calendar': dict(supported=True, authorization='full_access', connected=False,
                      auto_enabled=True, calendar_ids=[], direction='bidirectional',
@@ -57,6 +59,9 @@ def backend(route):
                 'calendar_ids' if kind == 'calendar' else 'list_ids']
             data['result'] = {'status': 'success', 'imported': 1, 'updated': 0, 'exported': 0}
         elif path.endswith('/items'):
+            if kind == 'todos' and hold_reminder_items[0]:
+                held_items[0] = route
+                return
             data['items'] = [dict(event_id='event-1', title='读书会', calendar_id='cal-a')] if kind == 'calendar' else [
                 dict(reminder_id='rem-1', title='读书', list_id='list-a')]
         elif path.endswith('/one-time'):
@@ -78,7 +83,7 @@ def backend(route):
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     try:
-        page = browser.new_page(viewport={'width': 1280, 'height': 900})
+        page = browser.new_page(viewport={'width': 1280, 'height': 900}, timezone_id='Asia/Shanghai')
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('dialog', lambda dialog: dialog.accept())
@@ -111,7 +116,16 @@ with sync_playwright() as playwright:
         reminders.get_by_role('checkbox', name='个人').check()
         reminders.get_by_role('button', name='一次性导入').click()
         reminders.get_by_label('一次性列表').select_option('list-a')
+        hold_reminder_items[0] = True
         reminders.get_by_role('button', name='载入条目').click()
+        expect(reminders.get_by_label('一次性列表')).to_be_disabled()
+        expect(reminders.get_by_role('button', name='一次性写入')).to_be_disabled()
+        assert held_items[0] is not None
+        hold_reminder_items[0] = False
+        held_items[0].fulfill(status=200, content_type='application/json',
+                              body=json.dumps({'status': 'success', 'items': [
+                                  {'reminder_id': 'rem-1', 'title': '读书', 'list_id': 'list-a'}]}),
+                              headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
         reminders.get_by_role('checkbox', name='读书').check()
         reminders.get_by_role('button', name='预览导入').click()
         reminders.get_by_role('button', name='确认一次性导入').click()
@@ -119,6 +133,9 @@ with sync_playwright() as playwright:
                    for path, body in calls)
         assert connections['todos']['connected'] is False
         calendar.get_by_role('button', name='一次性导入').click()
+        year = page.evaluate('new Date().getFullYear()')
+        assert calendar.get_by_label('开始日期').input_value() == f'{year}-01-01'
+        assert calendar.get_by_label('结束日期').input_value() == f'{year + 1}-01-01'
         calendar.get_by_label('一次性日历').select_option('cal-a')
         calendar.get_by_role('button', name='载入条目').click()
         calendar.get_by_role('checkbox', name='读书会').check()
