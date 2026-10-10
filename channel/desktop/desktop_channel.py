@@ -1980,6 +1980,8 @@ class DesktopChannel(ChatChannel):
             '/api/workspace/search', 'WorkspaceSearchHandler',
             '/api/workspace/resolve', 'WorkspaceResolveHandler',
             '/api/workspace/meta', 'WorkspaceMetaHandler',
+            '/api/workspace/shares', 'WorkspaceSharesHandler',
+            '/api/workspace/shares/revoke', 'WorkspaceShareRevokeHandler',
             '/api/projects', 'ProjectsHandler',
             '/api/projects/select', 'ProjectSelectHandler',
             '/api/projects/create', 'ProjectCreateHandler',
@@ -7665,6 +7667,50 @@ class WorkspaceMetaHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] Workspace meta error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class WorkspaceSharesHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.registry import get_agent_registry
+            from agent.workspace.shares import list_shares
+            params = web.input(session='', agent='')
+            agent_id = params.agent or get_agent_registry().default_agent_id
+            return json.dumps({"status": "success", "shares": list_shares(params.session, agent_id)},
+                              ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as exc:
+            return json.dumps({"status": "error", "message": str(exc)})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.registry import get_agent_registry
+            from agent.workspace.shares import create_share
+            body = json.loads(web.data() or b'{}')
+            agent_id = body.get("agent") or get_agent_registry().default_agent_id
+            share = create_share(body.get("session"), agent_id, body.get("path"),
+                                 body.get("recipient"), body.get("access"))
+            return json.dumps({"status": "success", "share": share}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError, PermissionError) as exc:
+            return json.dumps({"status": "error", "message": str(exc)})
+
+
+class WorkspaceShareRevokeHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.registry import get_agent_registry
+            from agent.workspace.shares import revoke_share
+            body = json.loads(web.data() or b'{}')
+            agent_id = body.get("agent") or get_agent_registry().default_agent_id
+            share = revoke_share(body.get("id"), body.get("session"), agent_id)
+            return json.dumps({"status": "success", "share": share}, ensure_ascii=False)
+        except (ValueError, PermissionError) as exc:
+            return json.dumps({"status": "error", "message": str(exc)})
 
 
 def _project_state(session_id: str, agent_id: str = None) -> dict:

@@ -363,6 +363,17 @@ export interface SessionsPage {
   project_order?: string[]
 }
 
+export interface WorkspaceShare {
+  id: string
+  path: string
+  name: string
+  owner_agent: string
+  owner_session: string
+  recipient_session: string
+  access: 'read' | 'write'
+  active: boolean
+}
+
 /** Per-session model + permission overrides (from /api/sessions/{id}/settings). */
 export interface SessionModelProvider {
   id: string
