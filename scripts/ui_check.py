@@ -59,7 +59,7 @@ def run_server(server, client, port=None):
 
 if __name__ == '__main__':
     scripts = ['tests/ui_smoke.py', 'tests/ui_briefing.py', 'tests/ui_tasks.py', 'tests/ui_apple_calendar.py',
-               'tests/ui_apple_settings.py', 'tests/ui_embedded_agents.py']
+               'tests/ui_apple_settings.py', 'tests/ui_embedded_agents.py', 'tests/ui_work_shares.py']
     scripts = [path for path in scripts if (ROOT / path).is_file()]
     checks = [str(python_path(ROOT)), '-c', 'import runpy; ' + '; '.join(
         f'runpy.run_path({path!r})' for path in scripts)]

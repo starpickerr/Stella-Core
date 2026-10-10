@@ -12,6 +12,7 @@ import type {
   TaskAction,
   Attachment,
   SessionsPage,
+  WorkspaceShare,
   SessionSettingsState,
   HistoryPage,
   ModelsData,
@@ -322,6 +323,20 @@ class ApiClient {
 
   async workspaceResolve(path: string, session?: string): Promise<{ file: WorkspaceEntry } & ApiResult> {
     return this.request(`/api/workspace/resolve?path=${encodeURIComponent(path)}${this.sessionQuery(session)}`)
+  }
+
+  async workspaceShares(session: string): Promise<{ shares: WorkspaceShare[] } & ApiResult> {
+    return this.request(`/api/workspace/shares?session=${encodeURIComponent(session)}`)
+  }
+
+  async createWorkspaceShare(session: string, path: string, recipient: string, access: 'read' | 'write'):
+    Promise<{ share: WorkspaceShare } & ApiResult> {
+    return this.request('/api/workspace/shares', { method: 'POST',
+      body: JSON.stringify({ session, path, recipient, access }) })
+  }
+
+  async revokeWorkspaceShare(session: string, id: string): Promise<{ share: WorkspaceShare } & ApiResult> {
+    return this.request('/api/workspace/shares/revoke', { method: 'POST', body: JSON.stringify({ session, id }) })
   }
 
   // ---------------------------------------------------------
