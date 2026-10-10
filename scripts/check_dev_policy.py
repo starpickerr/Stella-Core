@@ -21,9 +21,21 @@ def main():
     root_guide = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     core_guide = (ROOT / ".agents/AGENTS.md").read_text(encoding="utf-8")
     for target in (".agents/AGENTS.md", ".agents/rules/git.md",
-                   ".agents/rules/skill-coordination.md", "develop", "main"):
+                   ".agents/rules/skill-coordination.md", "develop", "main",
+                   "Codex", "Cursor"):
         if target not in root_guide:
             failures.append(f"AGENTS.md missing {target}")
+    for path in (ROOT / ".agents/skills").glob("*/AGENTS.md"):
+        failures.append(f"skill guide must not be named AGENTS.md: {path.relative_to(ROOT)}")
+    cursor_rules = list((ROOT / ".cursor/rules").glob("*.mdc"))
+    always = [path.read_text(encoding="utf-8") for path in cursor_rules if "alwaysApply: true" in path.read_text(encoding="utf-8")]
+    if not always:
+        failures.append("missing always-on Cursor development rule")
+    else:
+        cursor_guide = "\n".join(always)
+        for target in ("AGENTS.md", "develop", "scripts/quality_check.py incremental"):
+            if target not in cursor_guide:
+                failures.append(f"Cursor rule missing {target}")
     for name in ("architecture", "testing", "security", "git", "ui-design", "skill-coordination"):
         path = ROOT / ".agents/rules" / f"{name}.md"
         if not path.is_file() or path.stat().st_size == 0:

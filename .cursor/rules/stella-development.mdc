@@ -1,0 +1,18 @@
+---
+description: Stella 开发步骤。Codex 与 Cursor 共用仓库根目录 AGENTS.md。
+alwaysApply: true
+---
+
+# Stella 开发步骤
+
+权威文本是仓库根目录 `AGENTS.md`，细则是 `.agents/AGENTS.md` 与 `.agents/rules/`。本规则与根文件一致。
+
+1. 先看 `git status --short --branch`。保留未提交改动和真实数据。中断后用 Git、代码和测试恢复。
+2. 从当前 `develop` 建专用分支。`main` 只在获得 `develop → main` 的明确授权后更新。不擅自推送或改写共享历史。
+3. 局部改动直接做。跨模块任务先把验收和进度写入 `docs/plans/active/`，再按 `.agents/rules/skill-coordination.md` 选择 Skill。
+4. 业务规则放在共享服务。界面、Agent 和后台不各写一套实现。
+5. 先写会失败的测试，再改可观察行为。门禁：`.venv/bin/python scripts/quality_check.py incremental`。界面改动验证实际浏览器交互。分别报告 PASS、FAIL、SKIP。
+6. 提交遵守 `.agents/rules/git.md`，不添加 `Co-authored-by`、`co-worker` 或 AI 署名。
+7. 测试隔离 `HOME` 和 `STELLA_DATA_DIR`。`Full Audit` 或 `全项目体检` 才执行只读审计。
+
+`.agents/skills/` 中的长文只在选中该 Skill 时阅读，不是本项目的开发准则。

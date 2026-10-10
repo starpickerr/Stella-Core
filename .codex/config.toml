@@ -1,3 +1,4 @@
-# Trusted-project Codex settings only. AGENTS.md links to .agents/AGENTS.md;
-# fallback filenames are basenames, so a nested path is not configured here.
+# Trusted-project Codex settings only. Root AGENTS.md is the shared Codex and
+# Cursor entry and links to .agents/AGENTS.md. Fallback filenames are basenames,
+# so a nested path is not configured here.
 project_doc_max_bytes = 32768

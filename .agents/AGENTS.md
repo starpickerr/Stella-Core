@@ -1,4 +1,6 @@
-# Stella Codex 开发规范
+# Stella 开发准则细则
+
+Codex 从仓库根目录的 `AGENTS.md` 进入本文件。Cursor 自动读取根目录 `AGENTS.md` 和 `.cursor/rules/stella-development.mdc`，并在需要领域细节时读取本文件。两边遵循同一套步骤，不另写工具专用流程。
 
 ## 执行
 

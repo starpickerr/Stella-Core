@@ -5,7 +5,7 @@ from scripts import check_dev_policy
 
 def test_missing_skill_coordination_rule_fails_policy(tmp_path, monkeypatch, capsys):
     (tmp_path / "AGENTS.md").write_text(
-        ".agents/AGENTS.md .agents/rules/git.md .agents/rules/skill-coordination.md develop main",
+        "Codex Cursor .agents/AGENTS.md .agents/rules/git.md .agents/rules/skill-coordination.md develop main",
         encoding="utf-8",
     )
     core = tmp_path / ".agents/AGENTS.md"
@@ -26,4 +26,13 @@ def test_missing_skill_coordination_rule_fails_policy(tmp_path, monkeypatch, cap
     assert "missing rule skill-coordination" in capsys.readouterr().out
 
     (rules / "skill-coordination.md").write_text("workflow\n", encoding="utf-8")
+    cursor_rule = tmp_path / ".cursor/rules/stella-development.mdc"
+    cursor_rule.parent.mkdir(parents=True)
+    cursor_rule.write_text("alwaysApply: true\nAGENTS.md develop scripts/quality_check.py incremental\n", encoding="utf-8")
     assert check_dev_policy.main() == 0
+
+    skill_guide = tmp_path / ".agents/skills/example/AGENTS.md"
+    skill_guide.parent.mkdir()
+    skill_guide.write_text("guide\n", encoding="utf-8")
+    assert check_dev_policy.main() == 1
+    assert "skill guide must not be named AGENTS.md" in capsys.readouterr().out

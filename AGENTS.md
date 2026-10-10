@@ -1,11 +1,15 @@
-# Stella 开发入口
+# Stella 开发准则
 
-先阅读 [.agents/AGENTS.md](.agents/AGENTS.md)，按 [Skill 协作规则](.agents/rules/skill-coordination.md) 为任务选择流程，再按需阅读 `.agents/rules/` 和 `.agents/skills/` 中的相关文件；不要假设嵌套目录的 `AGENTS.md` 会自动加载。
+Codex 与 Cursor 都会自动读取本文件。两边使用同一套步骤：先按本文件执行，再按任务阅读 [.agents/AGENTS.md](.agents/AGENTS.md) 和 [Skill 协作规则](.agents/rules/skill-coordination.md)。领域细则在 `.agents/rules/`，命令说明在 [docs/development/workflows.md](docs/development/workflows.md)。`.agents/skills/` 里的长文只在对应 Skill 被选中时阅读，不是项目开发准则。
 
-- `main` 是正式分支，`develop` 是开发基线。代码和配置修改先从当前 `develop` 创建专用分支，在分支提交并验证；用户已要求功能完成后及时合并回 `develop`。`develop → main` 仍须单独获得用户授权，禁止擅自推送或改写共享历史。
-- 提交遵循 [.agents/rules/git.md](.agents/rules/git.md)，不添加 `Co-authored-by`、`co-worker` 或 AI 自动署名。
-- 保护现有代码、未提交改动和真实数据。测试使用临时 `HOME`、`STELLA_DATA_DIR` 和工作区数据；审计不得接触真实数据库、凭证或外部服务。
-- 默认增量门禁：`.venv/bin/python scripts/quality_check.py incremental`。UI 改动还须验证实际浏览器交互。结果分别报告 PASS、FAIL、SKIP。
-- 用户明确说 `Full Audit` 或 `全项目体检` 时，读取 `.agents/skills/software-audit/SKILL.md` 并执行完整只读审计；未经明确要求不要在审计中修改业务代码。
+## 步骤
 
-架构与开发导航见 [docs/architecture/overview.md](docs/architecture/overview.md)；统一命令见 [docs/development/workflows.md](docs/development/workflows.md)；长期任务进度放在 `docs/plans/active/`。
+1. 查看 `git status --short --branch`、近期提交和相关代码。保留未提交改动、真实数据和已验证成果。中断后用 Git、代码和新鲜测试判断停点，不把计划或聊天记录当作完成。
+2. 代码和配置修改从当前 `develop` 建立专用分支。`main` 是正式分支。功能完成并验证后合并本地 `develop`。`develop → main`、推送远程和改写共享历史需要单独授权。
+3. 范围清楚的修改直接实现。跨模块、迁移或依赖顺序不清楚时，把目标、验收和进度写进 `docs/plans/active/`，再按 [Skill 协作规则](.agents/rules/skill-coordination.md) 选择规划、调试或测试步骤。不要机械跑完全部 Skill。
+4. 先复用现有服务和接口。业务规则放在共享服务和可信边界，不在界面、Agent 和后台各写一套。
+5. 改变可观察行为时，先写会失败的测试，再实现。默认门禁是 `.venv/bin/python scripts/quality_check.py incremental`。界面改动还要验证实际浏览器交互。结果分别写 PASS、FAIL、SKIP。失败先定位，不删除或放宽测试。
+6. 提交遵守 [.agents/rules/git.md](.agents/rules/git.md)。不添加 `Co-authored-by`、`co-worker` 或 AI 自动署名。
+7. 测试使用临时 `HOME`、`STELLA_DATA_DIR` 和工作区数据。不修改真实用户数据，不关闭权限机制来通过检查。只有用户明确说 `Full Audit` 或 `全项目体检` 时，才读取 `.agents/skills/software-audit/SKILL.md` 做只读审计。
+
+架构入口见 [docs/architecture/overview.md](docs/architecture/overview.md)。Cursor 的常驻规则在 [.cursor/rules/stella-development.mdc](.cursor/rules/stella-development.mdc)，内容与本文件一致；冲突时以本文件和 `.agents/rules/` 为准。
