@@ -909,6 +909,7 @@ class AgentBridge:
             try:
                 if session_id:
                     steer_inbox = get_steer_registry().register(session_id)
+                agent._scheduled_noninteractive = bool(context and context.get("is_scheduled_task"))
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
                     user_message=query,
@@ -923,6 +924,7 @@ class AgentBridge:
                     allow_empty_response=bool(context and context.get("is_scheduled_task")),
                 )
             finally:
+                agent._scheduled_noninteractive = False
                 # Clear the mid-run flag so idle scans can review this session.
                 try:
                     from agent.evolution.trigger import mark_run_active

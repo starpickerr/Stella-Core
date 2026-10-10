@@ -107,9 +107,11 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                         task = prepare_run(task, agent_id)
                     owner_session_id = ((task.get("action") or {}).get("execution_session_id") or
                                         (task.get("action") or {}).get("notify_session_id"))
+                    from agent.runtime.tool_invocation import scheduled_permission_scope
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
                                         session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
-                                        execution_session_id=owner_session_id):
+                                        execution_session_id=owner_session_id), scheduled_permission_scope(
+                                            task.get("run_permission_mode")):
                         action = task.get("action", {})
                         action_type = action.get("type")
                         channel_type = action.get("channel_type", "unknown")
@@ -657,16 +659,17 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     invoked = False
     tool_call_id = uuid.uuid4().hex
     try:
+        from agent.runtime.tool_invocation import scheduled_permission_scope
         with identity_scope(run_id=run_id, session_id=source_session,
-                            task_id=str(task["id"]), execution_session_id=source_session):
+                            task_id=str(task["id"]), execution_session_id=source_session), scheduled_permission_scope(
+                                task.get("run_permission_mode")):
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
                 session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
                 noninteractive=True)
             if denial:
                 record.event(run_id, "permission_denied")
-                status = "pending_approval" if "Authorization required" in denial else "failed"
-                record.transition(run_id, status, denial)
-                return ExecutionOutcome(status, denial)
+                record.transition(run_id, "failed", denial)
+                return ExecutionOutcome("failed", denial)
             tool = ToolManager().create_tool(tool_name)
             if not tool:
                 record.transition(run_id, "failed", f"Tool '{tool_name}' not found")

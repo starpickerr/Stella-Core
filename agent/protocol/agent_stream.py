@@ -1865,8 +1865,10 @@ class AgentStreamExecutor:
         """
         from agent.runtime.tool_invocation import permission_denial
 
+        scheduled = bool(getattr(self.agent, "_scheduled_noninteractive", False))
         return permission_denial(tool_name, arguments, agent=self.agent,
-                                 wait_for_approval=self.cancel_event is not None,
+                                 wait_for_approval=self.cancel_event is not None and not scheduled,
+                                 noninteractive=scheduled,
                                  cancel_event=self.cancel_event)
 
     def _build_tool_not_found_message(self, tool_name: str) -> str:

@@ -30,6 +30,57 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
 
 
+def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
+    import threading
+    from agent.permission.gateway import SecurityGateway
+    from agent.runtime.run_record import RunRecord
+    from agent.runtime.tool_invocation import permission_denial, scheduled_permission_scope
+    workspace = tmp_path / 'work'
+    workspace.mkdir()
+    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **kwargs: workspace)
+    monkeypatch.setattr('agent.workspace.session_prefs.get_prefs', lambda *_args, **_kwargs: {
+        'security_policy': {'preset': 'workspace-write', 'rules': {}}})
+    monkeypatch.setattr('agent.runtime.tool_invocation.global_mode', lambda: 'workspace-write')
+    monkeypatch.setattr(integration, '_resolve_working_dir', lambda **_kwargs: str(workspace))
+    monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path / 'runs.db'))
+    calls = []
+    monkeypatch.setattr('agent.tools.tool_manager.ToolManager', lambda: SimpleNamespace(
+        create_tool=lambda _name: SimpleNamespace(execute=lambda params: calls.append(params) or ToolResult.success('ok'),
+                                                  config={})))
+    inherited = {'id': 'inherit', 'action': {'execution_session_id': 'source', 'silent': True}}
+    started = threading.Event()
+
+    def slow_wait(*_args, **_kwargs):
+        started.set()
+        raise AssertionError('approval wait')
+
+    monkeypatch.setattr(SecurityGateway, 'wait_for_decision', slow_wait)
+    blocked = integration._run_scheduled_tool(inherited, 'bash', {'command': 'git push origin main'},
+                                              'alpha', threading.Event(), None)
+    assert blocked.status == 'failed'
+    assert calls == []
+    assert not started.is_set()
+    explicit = {'id': 'full', 'run_permission_mode': 'full-access',
+                'action': {'execution_session_id': 'source', 'silent': True}}
+    allowed = integration._run_scheduled_tool(explicit, 'bash', {'command': 'git push origin main'},
+                                              'alpha', threading.Event(), None)
+    assert allowed == 'ok'
+    assert calls == [{'command': 'git push origin main'}]
+    later = permission_denial('bash', {'command': 'git push origin main'}, session_id='source', noninteractive=True)
+    assert later and 'Authorization required' in later
+    from agent.workspace.context import resolve_context
+    owner = resolve_context('owner', 'alpha', ensure=True)
+    secret = owner.root / 'secret.txt'
+    secret.write_text('secret')
+    with scheduled_permission_scope('full-access'):
+        denied = permission_denial('read', {'path': str(secret)}, session_id='source', noninteractive=True)
+    assert denied and 'private' in denied.lower()
+    readonly = integration._run_scheduled_tool(
+        {'id': 'ro', 'run_permission_mode': 'read-only', 'action': {'execution_session_id': 'source', 'silent': True}},
+        'write', {'path': 'note.txt', 'content': 'no'}, 'alpha', None, None)
+    assert readonly.status == 'failed'
+
+
 def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, monkeypatch):
     from agent.runtime.run_record import RunRecord
     monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path/'runs.db'))
@@ -40,7 +91,8 @@ def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, 
                         lambda: SimpleNamespace(create_tool=lambda _: pytest.fail('tool must not run')))
     result = integration._run_scheduled_tool({'id':'pending', 'action':{}}, 'bash', {'command':'echo hi'},
                                              None, None, None)
-    assert result.status == 'pending_approval' and not result.retryable
+    assert result.status == 'failed' and not result.retryable
+    assert 'Authorization required' in result.error
 
 
 def test_destination_change_preserves_source_and_cleans_old_fields(monkeypatch):
