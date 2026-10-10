@@ -7,14 +7,13 @@ import { useSessionStore } from '../store/sessionStore'
 import type { SchedulerTask, TaskSchedule, TaskAction, NotificationRoute } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 import PageHeader from '../components/PageHeader'
+import { PROACTIVE_CHANNELS, notificationChannelError } from './taskChannel'
 
 interface TasksPageProps {
   baseUrl: string
 }
 
 type TaskDestination = { channel_type: string; configured: boolean; ready: boolean; status: string; recipients: { receiver: string; name: string }[] }
-
-const PROACTIVE_CHANNELS = new Set(['desktop', 'telegram', 'wecom_bot'])
 
 const permissionLabel = (mode: SchedulerTask['run_permission_mode'] | 'inherit' | undefined) => {
   if (mode === 'read-only') return 'task_permission_read_only' as const
@@ -349,7 +348,7 @@ const TaskEditModal: React.FC<{
       setError(t('task_save_error'))
       return
     }
-    if (hasNotification && isCreate && !PROACTIVE_CHANNELS.has(channel)) {
+    if (notificationChannelError({ isCreate, hasNotification, channel })) {
       setError(t('task_channel_reselect'))
       return
     }

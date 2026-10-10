@@ -135,6 +135,59 @@ def test_linux_bubblewrap_unshares_pid_and_network(tmp_path, monkeypatch):
         shutil.rmtree(plan.temp_dir, ignore_errors=True)
 
 
+def test_overlapping_background_starts_stop_at_the_limit(monkeypatch):
+    import subprocess
+    import threading
+    import time
+    from agent.tools.bash import background
+
+    monkeypatch.setattr(background, "_MAX_JOBS", 1)
+    monkeypatch.setattr(background, "_jobs", {})
+    release = threading.Event()
+    entered = []
+
+    def blocking_popen(*_args, **_kwargs):
+        entered.append(threading.get_ident())
+        assert release.wait(2)
+        return subprocess.Popen(
+            ["sleep", "30"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+
+    monkeypatch.setattr(background.subprocess, "Popen", blocking_popen)
+    errors = []
+
+    def launch():
+        try:
+            background.start("sleep 30", os.getcwd(), os.environ.copy())
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    first = threading.Thread(target=launch)
+    second = threading.Thread(target=launch)
+    first.start()
+    for _ in range(50):
+        if entered:
+            break
+        time.sleep(0.01)
+    second.start()
+    for _ in range(100):
+        if len(entered) > 1 or errors:
+            break
+        time.sleep(0.01)
+    try:
+        assert len(entered) == 1
+        assert len(errors) == 1
+        assert "background job limit" in errors[0]
+    finally:
+        release.set()
+        first.join(3)
+        second.join(3)
+        background.reset()
+
+
 def test_running_background_jobs_count_toward_the_limit(monkeypatch):
     from agent.tools.bash import background
 
