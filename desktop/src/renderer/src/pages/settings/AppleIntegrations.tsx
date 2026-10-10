@@ -244,8 +244,7 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
 
 export default function AppleIntegrations({ section }: { section: string | null }) {
   return <div className="space-y-5">
-    <div className="flex items-center gap-2 text-content"><Apple size={19} className="text-accent" /><h2 className="font-semibold">Apple 互联</h2></div>
-    <p className="text-sm text-content-secondary">日历与提醒事项分别授权和配置。每次连接或传输前先查看预览。</p>
+    <p className="flex items-center gap-2 px-1 text-xs text-content-tertiary"><Apple size={14} />日历与提醒事项分别授权和配置。每次连接或传输前先查看预览。</p>
     <AppleConnectionSection kind="calendar" focus={section === 'apple-calendar'} />
     <AppleConnectionSection kind="todos" focus={section === 'apple-reminders'} />
   </div>

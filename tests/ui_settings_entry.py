@@ -57,7 +57,7 @@ with sync_playwright() as playwright:
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/settings', wait_until='networkidle')
 
-        nav = page.get_by_role('navigation')
+        nav = page.get_by_role('complementary').get_by_role('navigation')
         expect(nav.get_by_role('button', name='设置')).to_be_visible()
         expect(nav.get_by_role('button', name='配置')).to_have_count(0)
         expect(nav.get_by_role('button', name='日志')).to_be_visible()
@@ -71,8 +71,11 @@ with sync_playwright() as playwright:
 
         nav.get_by_role('button', name='设置').click()
         expect(page.get_by_role('button', name='返回原页面')).to_have_count(0)
-        page.get_by_role('button', name='关于').click()
-        for label in ('检查更新', '文档中心', 'GitHub', '反馈', '主题', '语言'):
+        categories = page.get_by_role('navigation', name='设置分类')
+        expect(page.get_by_text('颜色模式', exact=True)).to_be_visible()
+        expect(page.get_by_text('界面语言', exact=True)).to_be_visible()
+        categories.get_by_role('button', name='关于', exact=True).click()
+        for label in ('检查更新', '文档中心', 'GitHub', '反馈'):
             expect(page.get_by_text(label, exact=True).first).to_be_visible()
 
         nav.get_by_role('button', name='简报').click()
@@ -81,7 +84,7 @@ with sync_playwright() as playwright:
         expect(page).to_have_url(test_url + '/#/settings?tab=briefing')
         expect(page.get_by_role('button', name='添加邮箱')).to_be_visible()
         expect(page.get_by_role('button', name='返回简报')).to_have_count(0)
-        page.get_by_role('button', name='模型配置').click()
+        categories.get_by_role('button', name='模型', exact=True).click()
         page.get_by_role('button', name='返回原页面').click()
         expect(page).to_have_url(test_url + '/#/briefing')
 
@@ -95,7 +98,7 @@ with sync_playwright() as playwright:
         nav.get_by_role('button', name='事务').click()
         page.get_by_role('button', name='Apple 提醒事项').click()
         page.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
-        page.get_by_role('button', name='简报').nth(1).click()
+        categories.get_by_role('button', name='简报', exact=True).click()
         page.get_by_role('button', name='返回原页面').click()
         expect(page).to_have_url(test_url + '/#/todos')
         assert errors == [], errors

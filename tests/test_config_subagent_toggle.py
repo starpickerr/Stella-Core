@@ -142,7 +142,7 @@ def test_a_broken_availability_check_does_not_cost_the_agent_the_tool():
 
 def test_the_switch_is_exposed_by_desktop():
     web_source = (ROOT / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
-    desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/BasicSettings.tsx").read_text(encoding="utf-8")
+    desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/AssistantSettings.tsx").read_text(encoding="utf-8")
 
     assert '"subagent_enabled": ("subagent", "enabled")' in web_source
     assert "subagent_enabled: subagent" in desktop_page

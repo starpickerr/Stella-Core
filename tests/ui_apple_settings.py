@@ -92,7 +92,7 @@ with sync_playwright() as playwright:
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(url + '/#/settings?tab=integrations&section=apple-calendar', wait_until='networkidle')
-        expect(page.get_by_role('button', name='集成与连接')).to_be_visible()
+        expect(page.get_by_role('navigation', name='设置分类').get_by_role('button', name='连接', exact=True)).to_be_visible()
         calendar = page.get_by_role('region', name='Apple 日历')
         reminders = page.get_by_role('region', name='Apple 提醒事项')
         expect(calendar).to_be_visible()
