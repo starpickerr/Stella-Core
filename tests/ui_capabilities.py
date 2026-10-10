@@ -54,6 +54,12 @@ def backend(route):
         }, {
             'name': 'short-skill', 'display_name': '短技能', 'enabled': True, 'source': 'custom',
             'description': '一行介绍。',
+        }, {
+            'name': 'mid-skill', 'display_name': '中技能', 'enabled': True, 'source': 'custom',
+            'description': '中等长度的介绍。' * 2,
+        }, {
+            'name': 'tiny-skill', 'display_name': '更短技能', 'enabled': True, 'source': 'custom',
+            'description': '短。',
         }]
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
@@ -76,7 +82,11 @@ with sync_playwright() as playwright:
         memory = page.get_by_role('article', name='memory_search')
         expect(memory.get_by_role('heading', name='memory_search', exact=True)).to_be_visible()
         expect(memory.get_by_text(INTRO)).to_be_visible()
-        expect(memory.get_by_text('当前不可用')).to_be_visible()
+        expect(memory.get_by_role('switch', name='memory_search')).not_to_be_checked()
+        expect(page.get_by_role('article', name='read').get_by_role('switch', name='read')).to_be_checked()
+        expect(page.get_by_text('当前不可用')).to_have_count(0)
+        memory.get_by_role('switch', name='memory_search').click()
+        expect(memory.get_by_role('switch', name='memory_search')).not_to_be_checked()
         expect(page.get_by_text('搜索记忆', exact=True)).to_have_count(0)
         expect(page.get_by_text('读取文件', exact=True)).to_have_count(0)
         expect(page.get_by_text('查看详情')).to_have_count(0)
@@ -98,11 +108,16 @@ with sync_playwright() as playwright:
         expect(page).to_have_url(test_url + '/#/skills')
 
         demo = page.get_by_role('article', name='演示技能')
-        short = page.get_by_role('article', name='短技能')
+        short = page.get_by_role('article', name='短技能', exact=True)
+        mid = page.get_by_role('article', name='中技能', exact=True)
+        tiny = page.get_by_role('article', name='更短技能', exact=True)
         expect(demo.get_by_text('技能介绍需要完整显示。', exact=False)).to_be_visible()
-        demo_box, short_box = demo.bounding_box(), short.bounding_box()
-        assert abs(demo_box['y'] - short_box['y']) < 2, (demo_box, short_box)
-        assert abs((demo_box['y'] + demo_box['height']) - (short_box['y'] + short_box['height'])) < 2, (demo_box, short_box)
+        demo_box, short_box, mid_box, tiny_box = demo.bounding_box(), short.bounding_box(), mid.bounding_box(), tiny.bounding_box()
+        assert short_box['height'] + 20 < demo_box['height'], (demo_box, short_box)
+        assert abs(demo_box['y'] - short_box['y']) < 2 and short_box['x'] > demo_box['x'], (demo_box, short_box)
+        left_gap = mid_box['y'] - (demo_box['y'] + demo_box['height'])
+        right_gap = tiny_box['y'] - (short_box['y'] + short_box['height'])
+        assert abs(left_gap - right_gap) < 2 and 8 <= left_gap <= 16, (left_gap, right_gap, demo_box, short_box, mid_box, tiny_box)
         assert skill_posts == []
         demo.get_by_role('switch').click()
         page.wait_for_timeout(200)
