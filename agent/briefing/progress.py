@@ -1,7 +1,6 @@
-"""Transient briefing drafts for the authenticated desktop client.
+"""Transient progress for the authenticated desktop client.
 
-Previews never touch the catalog, revisions, cursors, or completed briefing.
-The pipeline publishes them only while a run is active.
+Progress never touches the catalog, revisions, cursors, or completed briefing.
 """
 
 from __future__ import annotations

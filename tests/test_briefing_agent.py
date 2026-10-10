@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 
 from agent.briefing.generator import (AgentBriefingGenerator, BriefingAgent, ReadSourceTool,
-                                      ResultTool, validate_body, validate_decisions)
+                                      ResultTool, decision_schema, validate_body, validate_decisions)
 from agent.briefing.instructions import DEFAULT_RULE_TEXT
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
@@ -170,6 +170,42 @@ def test_tool_supports_markdown_rules_and_uses_calling_agents_model(service, mon
     full = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09-morning", "source_item_id": row["id"]}).result)
     assert full["body"] == "课程作业通知"
     assert tool.model.requests
+
+
+def test_decision_request_states_every_id_and_hard_rule_before_submission(service):
+    model = ScriptedModel()
+    pipeline = BriefingPipeline(service, [StaticSource([item("course"), item("notice")])], generator=AgentBriefingGenerator(model=model))
+    pipeline.run(briefing_date="2026-09-09")
+    texts = [block.get("text", "") for request in model.requests for message in request.messages
+             for block in (message["content"] if isinstance(message["content"], list) else [])
+             if isinstance(block, dict)]
+    text = next(value for value in texts if "expected_ids" in value)
+    payload = json.loads(text[text.index("{"):])
+    ids = [row["id"] for row in payload["candidates"]]
+    assert "expected_ids: " + json.dumps(ids, ensure_ascii=False) in text
+    for rule in ("不能遗漏、重复或加入未知 ID", "selected 必须是布尔值", "reason 必须是非空字符串",
+                 "selected 为 false", "section 必须是 action 或 fyi", "score 必须是 0 至 100 的整数",
+                 "summary 必须是非空字符串", "category", "information_type"):
+        assert rule in text
+    schema = next(tool["input_schema"] for request in model.requests for tool in request.tools
+                  if tool["name"] == "briefing_decisions_result")
+    item_schema = schema["properties"]["decisions"]["items"]
+    assert item_schema["required"] == ["id", "selected", "reason"]
+    assert item_schema["allOf"][0]["then"]["required"] == ["section", "score", "summary"]
+    assert decision_schema()["properties"]["decisions"]["items"]["required"] == item_schema["required"]
+    excluded = validate_decisions({"decisions": [
+        {"id": ids[0], "selected": False, "reason": "排除"},
+        {"id": ids[1], "selected": True, "reason": "保留", "section": "fyi", "score": 10, "summary": "摘要"},
+    ]}, ids)
+    assert excluded is None
+    rejected = ResultTool("result", {}, lambda data: validate_decisions(data, ids)).execute(
+        {"decisions": [
+            {"id": ids[0], "selected": True, "reason": "保留"},
+            {"id": ids[1], "selected": False, "reason": "排除"},
+        ]})
+    assert rejected.status == "error"
+    assert ids[0] in rejected.result and "section" in rejected.result
+    assert "body" not in rejected.result
 
 
 def test_result_tools_reject_unknown_missing_duplicate_and_bad_values():

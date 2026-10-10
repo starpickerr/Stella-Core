@@ -125,8 +125,18 @@ class ResultTool(BaseTool):
 def _ids_exact(rows, expected):
     if not isinstance(rows, list) or any(not isinstance(row, str) for row in rows):
         raise ValueError("结果中的 ID 必须是字符串列表")
-    if len(rows) != len(set(rows)) or set(rows) != set(expected):
-        raise ValueError("结果必须覆盖本批全部 ID，不能遗漏、重复或加入未知 ID")
+    missing = [item for item in expected if item not in rows]
+    unknown = [item for item in rows if item not in set(expected)]
+    duplicates = sorted({item for item in rows if rows.count(item) > 1})
+    if missing or unknown or duplicates:
+        parts = []
+        if missing:
+            parts.append("缺少 " + "、".join(missing))
+        if duplicates:
+            parts.append("重复 " + "、".join(duplicates))
+        if unknown:
+            parts.append("未知 " + "、".join(dict.fromkeys(unknown)))
+        raise ValueError("结果必须覆盖本批全部 ID，不能遗漏、重复或加入未知 ID。" + "；".join(parts))
 
 
 def validate_decisions(payload, expected):
@@ -135,18 +145,19 @@ def validate_decisions(payload, expected):
         raise ValueError("decisions 必须是逐项判断的列表")
     _ids_exact([row.get("id") for row in decisions], expected)
     for row in decisions:
+        label = row.get("id") if isinstance(row.get("id"), str) else "未知条目"
         if not isinstance(row.get("selected"), bool):
-            raise ValueError("selected 必须是布尔值")
+            raise ValueError(f"{label}: selected 必须是布尔值")
         if not isinstance(row.get("reason"), str) or not row["reason"].strip():
-            raise ValueError("每条判断必须说明具体理由")
+            raise ValueError(f"{label}: reason 必须是非空字符串")
         if row["selected"]:
             if row.get("section") not in ("action", "fyi"):
-                raise ValueError("精选信息的 section 必须是 action 或 fyi")
+                raise ValueError(f"{label}: section 必须是 action 或 fyi")
             score = row.get("score")
             if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
-                raise ValueError("score 必须是 0 至 100 的整数")
+                raise ValueError(f"{label}: score 必须是 0 至 100 的整数")
             if not isinstance(row.get("summary"), str) or not row["summary"].strip():
-                raise ValueError("精选信息必须有具体摘要")
+                raise ValueError(f"{label}: summary 必须是非空字符串")
 
 
 def validate_body(payload, expected):
@@ -159,6 +170,43 @@ def validate_body(payload, expected):
     _ids_exact([row.get("id") for row in reports], expected)
     if any(not isinstance(row.get("content"), str) or not row["content"].strip() for row in reports):
         raise ValueError("每条报告必须包含具体内容")
+
+
+DECISION_RULES = """硬性提交规则：
+- expected_ids 中的每个 ID 恰好出现一次，不能遗漏、重复或加入未知 ID。
+- selected 必须是布尔值，不能是字符串。
+- reason 必须是非空字符串。
+- selected 为 false 的条目不需要 section、score 或 summary。
+- selected 为 true 时，section 必须是 action 或 fyi，score 必须是 0 至 100 的整数，summary 必须是非空字符串。
+- category 和 information_type 请填写，但缺少它们不会被拒绝。
+"""
+
+
+def decision_schema():
+    return {"type": "object", "properties": {"decisions": {"type": "array", "items": {
+        "type": "object", "properties": {
+            "id": {"type": "string"}, "selected": {"type": "boolean"},
+            "reason": {"type": "string"}, "section": {"type": "string", "enum": ["action", "fyi"]},
+            "category": {"type": "string", "enum": ["needs_action", "attention", "status_update", "other"]},
+            "information_type": {"type": "string", "enum": ["assignment", "grade", "meeting", "material", "competition", "announcement", "action", "information"]},
+            "score": {"type": "integer", "minimum": 0, "maximum": 100}, "summary": {"type": "string"},
+            "calendar": {"type": "object", "description": "仅会议或活动明确给出实际开始与结束时间时填写。截止时间不是日程时间。时间须带时区，仅提出待确认建议。", "properties": {
+                "start_at": {"type": "string", "description": "ISO 8601 含时区"},
+                "end_at": {"type": "string", "description": "可选，ISO 8601 含时区"},
+                "all_day": {"type": "boolean"}}},
+        }, "required": ["id", "selected", "reason"],
+        "allOf": [{"if": {"properties": {"selected": {"const": True}}, "required": ["selected"]},
+                   "then": {"required": ["section", "score", "summary"]}}],
+    }}}, "required": ["decisions"]}
+
+
+def decision_task(batch, window_start, window_end):
+    ids = [row["id"] for row in batch]
+    return (DECISION_RULES
+        + "expected_ids: " + json.dumps(ids, ensure_ascii=False)
+        + "\n逐项判断以下候选信息，调用 briefing_decisions_result。reason 须说明保留或排除原因。"
+        + "只有会议或活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交或评分等同事务完成。\n"
+        + json.dumps({"window_start": window_start, "window_end": window_end, "candidates": batch}, ensure_ascii=False))
 
 
 def _batches(entries):
@@ -201,10 +249,6 @@ class AgentBriefingGenerator:
             raise ValueError("简报 Agent 未提交完整结果，请检查模型配置或重试")
         return tool.submission
 
-    def preview(self, rows, rules, **kwargs):
-        """Draft from the candidates currently available, without persistence."""
-        return self.generate(rows, rules, **kwargs)
-
     def generate(self, rows, rules, *, briefing_date, kind, window_start, window_end, preserved_decisions=None):
         self._check_cancelled()
         documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]
@@ -228,24 +272,10 @@ class AgentBriefingGenerator:
             if self.progress:
                 self.progress(f"Agent 正在筛选第 {number} 批候选信息")
             ids = [row["id"] for row in batch]
-            tool = ResultTool("briefing_decisions_result", {
-                "type": "object", "properties": {"decisions": {"type": "array", "items": {
-                    "type": "object", "properties": {
-                        "id": {"type": "string"}, "selected": {"type": "boolean"},
-                        "reason": {"type": "string"}, "section": {"type": "string", "enum": ["action", "fyi"]},
-                        "category": {"type": "string", "enum": ["needs_action", "attention", "status_update", "other"]},
-                        "information_type": {"type": "string", "enum": ["assignment", "grade", "meeting", "material", "competition", "announcement", "action", "information"]},
-                        "score": {"type": "integer", "minimum": 0, "maximum": 100}, "summary": {"type": "string"},
-                        "calendar": {"type": "object", "description": "仅会议或活动明确给出实际开始与结束时间时填写。截止时间不是日程时间。时间须带时区，仅提出待确认建议。", "properties": {
-                            "start_at": {"type": "string", "description": "ISO 8601 含时区"},
-                            "end_at": {"type": "string", "description": "可选，ISO 8601 含时区"},
-                            "all_day": {"type": "boolean"}}},
-                    }, "required": ["id", "selected", "reason"],
-                }}}, "required": ["decisions"],
-            }, lambda payload, expected=ids: validate_decisions(payload, expected))
-            result = self._run_agent("逐项判断以下候选信息，调用 briefing_decisions_result。给出 category 和 information_type；reason 须说明保留原因，以及为什么需要处理、只需关注或等待。只有会议/活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交、评分等同事务完成。\n" + json.dumps({
-                "window_start": window_start, "window_end": window_end, "candidates": batch,
-            }, ensure_ascii=False), rule_text, tool, [row for row in entries if row["id"] in ids])
+            tool = ResultTool("briefing_decisions_result", decision_schema(),
+                lambda payload, expected=ids: validate_decisions(payload, expected))
+            result = self._run_agent(decision_task(batch, window_start, window_end), rule_text, tool,
+                [row for row in entries if row["id"] in ids])
             decisions.update({row["id"]: row for row in result["decisions"]})
             if self.progress:
                 self.progress(f"Agent 已完成第 {number} 批筛选（{len(batch)} 条）")

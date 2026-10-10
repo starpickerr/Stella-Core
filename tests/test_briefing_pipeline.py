@@ -37,7 +37,7 @@ def test_concurrent_run_reports_active_briefing_instead_of_waiting(tmp_path):
         service.store.run_lock.release()
 
 
-def test_draft_is_available_during_elearning_file_sync_without_committing(tmp_path):
+def test_generation_starts_once_after_every_source_finishes(tmp_path):
     service = _svc(tmp_path)
     metadata_started = threading.Event()
     release_metadata = threading.Event()
@@ -65,7 +65,8 @@ def test_draft_is_available_during_elearning_file_sync_without_committing(tmp_pa
             assert release_metadata.wait(10), "simulated metadata read was not released"
             rows = [FetchedItem(source="elearning", account_id="school", source_id="announcement:1",
                 title="课程作业公告", occurred_at="2026-09-08T22:00:00Z", payload={"body": "明天交作业"})]
-            self.on_items_ready(rows)
+            if self.on_items_ready is not None:
+                self.on_items_ready(rows)
             sync_started.set()
             assert release_sync.wait(10), "simulated file sync was not released"
             return FetchResult(rows, {"elearning_state": "updated"})
@@ -83,37 +84,21 @@ def test_draft_is_available_during_elearning_file_sync_without_committing(tmp_pa
     worker.start()
     try:
         assert metadata_started.wait(5)
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            first = briefing_progress.snapshot()
-            if first and "邮件课程通知" in first["body"]:
-                break
-            time.sleep(0.01)
-        assert first and "邮件课程通知" in first["body"]
-        assert "课程作业公告" not in first["body"]
-        assert first["completed_sources"] == 1
         release_metadata.set()
         assert sync_started.wait(5)
-        deadline = time.monotonic() + 5
-        draft = None
-        while time.monotonic() < deadline:
-            draft = briefing_progress.snapshot()
-            if draft and "课程作业公告" in draft["body"] and "邮件课程通知" in draft["body"]:
-                break
-            time.sleep(0.01)
-        assert draft and "课程作业公告" in draft["body"]
-        assert draft["completed_sources"] == 1
-        assert model.classification_calls == 2
+        assert model.classification_calls == 0
+        snapshot = briefing_progress.snapshot()
+        assert snapshot and "邮件课程通知" not in snapshot["body"] and "课程作业公告" not in snapshot["body"]
         assert service.get_cursor("elearning", "school", "elearning_state") is None
         assert service.get_briefing("brf-2026-09-09-morning")["briefing"].body == ""
     finally:
-        release_metadata.set()
         release_sync.set()
         worker.join(10)
     assert not worker.is_alive()
     assert "error" not in outcome, outcome.get("error")
     assert "课程作业公告" in outcome["detail"]["briefing"].body
-    assert model.classification_calls == 2
+    assert "邮件课程通知" in outcome["detail"]["briefing"].body
+    assert model.classification_calls == 1
     assert service.get_cursor("elearning", "school", "elearning_state").cursor_value == "updated"
     assert briefing_progress.snapshot() is None
 
