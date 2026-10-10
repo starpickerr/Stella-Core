@@ -7236,7 +7236,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "preset": effective_policy["preset"],
             "global_preset": global_policy["preset"],
             "mode": effective_mode(effective_policy),
-            "base_preset": effective_policy.get("base_preset", "project-full" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
+            "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
             "rules": effective_rules(effective_policy),
             "policy": effective_policy,
             "mode_definitions": MODE_DEFINITIONS,

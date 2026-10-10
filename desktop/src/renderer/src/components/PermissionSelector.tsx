@@ -6,10 +6,10 @@ import { getLang } from '../i18n'
 import ComposerChip from './ComposerChip'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 
-type Mode = 'approval' | 'project-full' | 'full-access' | 'custom'
+type Mode = 'read-only' | 'workspace-write' | 'full-access' | 'custom'
 type BaseMode = Exclude<Mode, 'custom'>
 const icons: Record<Mode, React.ReactNode> = {
-  approval: <Eye size={13} />, 'project-full': <Shield size={13} />,
+  'read-only': <Eye size={13} />, 'workspace-write': <Shield size={13} />,
   'full-access': <Shield size={13} />, custom: <SlidersHorizontal size={13} />,
 }
 const ruleNames: Record<string, [string, string]> = {
@@ -30,7 +30,7 @@ const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const apply = useSessionSettingsStore(s => s.apply)
   const refresh = useSessionSettingsStore(s => s.refresh)
   const [editing, setEditing] = useState(false)
-  const [base, setBase] = useState<BaseMode>('project-full')
+  const [base, setBase] = useState<BaseMode>('workspace-write')
   const [draft, setDraft] = useState<Record<string, 'allow' | 'confirm' | 'deny'>>({})
   const [pendingFull, setPendingFull] = useState(false)
   const [localError, setLocalError] = useState('')

@@ -28,11 +28,11 @@ from agent.tools.subagent import SubagentTool
 
 
 def test_nested_permission_limit_never_widens_parent(tmp_path):
-    from agent.permission.security_policy import PRESETS, rule
+    from agent.permission.security_policy import PRESETS, rule, validate_patch
     from agent.runtime.tool_invocation import _permission_limit, permission_limit_scope
     work = str(tmp_path / "project")
     outside = str(tmp_path / "outside")
-    with permission_limit_scope({"preset": "approval", "rules": PRESETS["approval"]}, (work,)):
+    with permission_limit_scope(validate_patch({"preset": "approval"}), (work,)):
         with permission_limit_scope({"preset": "full-access", "rules": PRESETS["full-access"]},
                                     (work, outside)):
             policy, roots = _permission_limit.get()

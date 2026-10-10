@@ -33,11 +33,11 @@ const PolicyEditor: React.FC<{
   onSave: (patch: SecurityPolicy) => void
   onCancel?: () => void
 }> = ({ policy, definitions, copy, busy, inherit, onSave, onCancel }) => {
-  const initialBase = policy.base_preset || (policy.preset === 'custom' ? 'project-full' : policy.preset) || 'project-full'
+  const initialBase = policy.base_preset || (policy.preset === 'custom' ? 'workspace-write' : policy.preset) || 'workspace-write'
   const [base, setBase] = useState(initialBase)
   const [rules, setRules] = useState<Record<string, 'allow' | 'confirm' | 'deny'>>({ ...(policy.rules || {}) })
   useEffect(() => {
-    setBase(policy.base_preset || (policy.preset === 'custom' ? 'project-full' : policy.preset) || 'project-full')
+    setBase(policy.base_preset || (policy.preset === 'custom' ? 'workspace-write' : policy.preset) || 'workspace-write')
     setRules({ ...(policy.rules || {}) })
   }, [policy])
   const baseRules = definitions.find(row => row.id === base)?.rules || {}
@@ -443,7 +443,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.effective_mode === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
                       >
                         <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
-                        {entry.id === 'project-full' && (
+                        {entry.id === 'workspace-write' && (
                           <span className="ml-2 text-xs text-accent">{copy.recommended}</span>
                         )}
                         <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
