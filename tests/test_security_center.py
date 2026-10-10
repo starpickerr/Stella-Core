@@ -44,6 +44,32 @@ def test_managed_skills_require_dedicated_settings_flow(tmp_path, monkeypatch):
     assert rows[0]["trace"][-1] == "Decision: deny"
 
 
+def test_full_access_allows_high_risk_and_keeps_hard_denials(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    state.mkdir()
+    work = tmp_path / "work"
+    monkeypatch.setattr("agent.workspace.context.personal_work_dir", lambda **kwargs: work)
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
+    monkeypatch.setattr("common.state_dir.state_root", lambda *args, **kwargs: state)
+    monkeypatch.setattr("common.state_dir.skills_dir", lambda *args, **kwargs: state / "skills")
+    monkeypatch.setattr("common.state_dir.mcp_config_file", lambda *args, **kwargs: state / "mcp.json")
+    monkeypatch.setattr("config.get_data_root", lambda: str(state))
+    from agent.workspace.context import resolve_context
+    owner = resolve_context("owner", "alpha", ensure=True)
+    (owner.root / "secret.txt").write_text("secret")
+    policy = {"preset": "full-access", "rules": {}}
+    pushed = SecurityGateway.check("full-access", "bash", {"command": "git push origin main"},
+                                   cwd=str(tmp_path), session_id="risk", policy=policy)
+    assert pushed.kind is DecisionKind.ALLOW
+    assert SecurityGateway.check("full-access", "bash", {"command": "sudo true"},
+                                 cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
+    assert SecurityGateway.check("full-access", "read", {"path": str(state / "config.json")},
+                                 cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
+    denied = SecurityGateway.check("full-access", "read", {"path": str(owner.root / "secret.txt")},
+                                   cwd=str(tmp_path), session_id="recipient", agent_id="alpha", policy=policy)
+    assert denied.kind is DecisionKind.DENY
+
+
 def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch, security_audit_path):
     state = tmp_path / "state"
     state.mkdir()
@@ -52,20 +78,20 @@ def test_risk_confirmation_and_credential_denial(tmp_path, monkeypatch, security
     monkeypatch.setattr("common.state_dir.skills_dir", lambda *args, **kwargs: state / "skills")
     monkeypatch.setattr("common.state_dir.mcp_config_file", lambda *args, **kwargs: state / "mcp.json")
     monkeypatch.setattr("config.get_data_root", lambda: str(state))
-    policy = legacy_policy("full-access")
+    policy = legacy_policy("workspace-write")
     args = {"command": "git push origin main"}
-    first = SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy)
+    first = SecurityGateway.check("workspace-write", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy)
     assert first.kind is DecisionKind.CONFIRM
     assert SecurityGateway.approve(first.request_id)
-    assert SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy).allowed
-    rejected = SecurityGateway.check("full-access", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy)
+    assert SecurityGateway.check("workspace-write", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy).allowed
+    rejected = SecurityGateway.check("workspace-write", "bash", args, cwd=str(tmp_path), session_id="risk", policy=policy)
     assert rejected.kind is DecisionKind.CONFIRM
     assert SecurityGateway.reject(rejected.request_id)
     assert not SecurityGateway.approve(rejected.request_id)
     assert any(row["event"] == "confirmation" and row["decision"] == "deny"
                for row in recent(filters={"conversation": "risk"}))
-    assert SecurityGateway.check("full-access", "bash", {"command": "sudo true"}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
-    assert SecurityGateway.check("full-access", "read", {"path": str(state / "config.json")}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
+    assert SecurityGateway.check("workspace-write", "bash", {"command": "sudo true"}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
+    assert SecurityGateway.check("workspace-write", "read", {"path": str(state / "config.json")}, cwd=str(tmp_path), policy=policy).kind is DecisionKind.DENY
     assert "TOPSECRET" not in security_audit_path.read_text()
 
 
@@ -97,6 +123,7 @@ def test_four_modes_and_legacy_snapshots_are_stable():
     assert rule({"preset": "workspace-write"}, "workspace_write") == "allow"
     assert rule({"preset": "workspace-write"}, "workspace_outside") == "confirm"
     assert rule({"preset": "full-access"}, "workspace_outside") == "allow"
+    assert rule({"preset": "full-access"}, "high_risk") == "allow"
     approval = validate_patch({"preset": "approval"})
     assert approval["preset"] == "custom"
     assert rule(approval, "workspace_write") == "confirm"

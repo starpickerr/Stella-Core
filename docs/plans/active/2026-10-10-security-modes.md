@@ -54,5 +54,10 @@
 
 ## Progress
 
-- Status: not started.
-- Verification: SKIP — no implementation or test run for this plan yet.
+- Status: implemented on `fix/briefing-generation-20261010`. Full Access preset `high_risk` is `allow`. Composer and Security page apply Full Access in one click. Custom rule editing stays on the Security page; the composer only switches to custom using the current rules.
+- Ruling: approval-resume and gateway confirmation fixtures now use `workspace-write`, because those tests cover the approval protocol and Full Access no longer confirms ordinary high-risk actions.
+- Verification:
+  - PASS `.venv/bin/python scripts/run_isolated.py .venv/bin/python -m pytest tests/test_security_center.py tests/test_security_gateway.py tests/test_security_approval_resume.py tests/test_work_boundaries.py -q` — 46 passed.
+  - PASS `python scripts/ui_check.py` — Security modes UI: immediate Full Access and on-page custom editor passed. The same run also passed the other isolated UI scripts.
+  - PASS `npx tsc --noEmit -p desktop/tsconfig.json`.
+  - SKIP composer browser click: the isolated page opens `/#/security`, not a live chat composer. The composer component no longer renders a second confirm or a rule grid.

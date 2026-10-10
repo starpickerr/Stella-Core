@@ -34,14 +34,14 @@ def test_gateway_allowlist_unknown_capability_and_confirmation(tmp_path, monkeyp
     assert not SecurityGateway.check("full-access", "browser", {"action": "navigate", "account_id": "other"}, scope=accounts)
     assert not SecurityGateway.check("full-access", "browser", {"action": "navigate"}, scope=accounts)
     args = {"action": "evaluate", "script": "document.title"}
-    assert not SecurityGateway.check("full-access", "browser", args, session_id="s")
+    assert not SecurityGateway.check("workspace-write", "browser", args, session_id="s")
     pending = [row for row in SecurityGateway.pending() if row["session"] == "s"]
     assert pending
     assert pending[-1]["summary"] == "document.title"
     assert SecurityGateway.approve(pending[-1]["id"])
-    assert SecurityGateway.check("full-access", "browser", args, session_id="s")
-    assert not SecurityGateway.check("full-access", "browser", args, session_id="s")
-    assert not SecurityGateway.check("full-access", "bash", {"command": "rm -rf password=TOPSECRET"}, session_id="secret")
+    assert SecurityGateway.check("workspace-write", "browser", args, session_id="s")
+    assert not SecurityGateway.check("workspace-write", "browser", args, session_id="s")
+    assert not SecurityGateway.check("workspace-write", "bash", {"command": "rm -rf password=TOPSECRET"}, session_id="secret")
     assert "TOPSECRET" not in str(SecurityGateway.pending())
 
 

@@ -19,9 +19,14 @@ DEFINITIONS = [
 ]
 
 
+saved = []
+
+
 def backend(route):
     path = urlparse(route.request.url).path
     data = {'status': 'success'}
+    if route.request.method == 'POST' and path == '/api/security/policy':
+        saved.append(json.loads(route.request.post_data or '{}'))
     if path == '/api/health':
         data = {'status': 'ok'}
     elif path == '/auth/check':
@@ -49,7 +54,9 @@ def backend(route):
     elif path == '/api/security/activity':
         data['records'] = []
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
-                  headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
+                  headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true',
+                           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                           'Access-Control-Allow-Headers': 'Content-Type'})
 
 
 with sync_playwright() as playwright:
@@ -69,8 +76,14 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='默认权限').click()
         expect(page.get_by_role('button', name='只读')).to_be_visible()
         page.get_by_role('button', name='完全访问').click()
-        expect(page.get_by_text('其他会话的私有工作区')).to_be_visible()
+        expect(page.get_by_role('button', name='启用完全访问')).to_have_count(0)
+        expect(page.get_by_text('破坏性操作仍需审批')).to_have_count(0)
+        assert saved and saved[-1]['policy']['preset'] == 'full-access'
+        page.get_by_role('button', name='自定义').click()
+        expect(page.get_by_role('heading', name='逐项调整权限')).to_be_visible()
+        expect(page.get_by_role('button', name='保存自定义')).to_be_visible()
+        assert saved[-1]['policy']['preset'] == 'custom'
         assert not errors, errors
-        print('Security modes UI: product names and Full Access warning passed')
+        print('Security modes UI: immediate Full Access and on-page custom editor passed')
     finally:
         browser.close()

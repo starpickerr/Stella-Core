@@ -27,7 +27,7 @@ _WORKSPACE_WRITE = {
 _FULL_ACCESS = {
     "managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
     "workspace_outside": "allow", "shell": "allow", "git": "allow", "network": "allow",
-    "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm",
+    "install": "allow", "background": "allow", "external": "allow", "high_risk": "allow",
 }
 _APPROVAL = {
     "managed": "allow", "workspace_read": "allow", "workspace_write": "confirm",
