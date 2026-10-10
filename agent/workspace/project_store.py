@@ -113,17 +113,21 @@ def get_project_dir(session_id: str, agent_id: Optional[str] = None) -> Optional
     ``state_root``. A path that no longer exists on disk also returns None so a
     deleted project silently reverts to the default instead of erroring.
     """
-    if not session_id:
-        return None
-    with _lock:
-        data = _load()
-        entry = data["sessions"].get(_session_key(session_id, agent_id))
-    if not entry:
-        return None
-    path = entry.get("path") if isinstance(entry, dict) else entry
+    path = get_project_binding(session_id, agent_id)
     if path and os.path.isdir(path):
         return path
     return None
+
+
+def get_project_binding(session_id: str, agent_id: Optional[str] = None) -> Optional[str]:
+    """Return the recorded path even when the project has disappeared."""
+    if not session_id:
+        return None
+    with _lock:
+        entry = _load()["sessions"].get(_session_key(session_id, agent_id))
+    if not entry:
+        return None
+    return entry.get("path") if isinstance(entry, dict) else entry
 
 
 def get_project_map(agent_id: Optional[str] = None) -> Dict[str, str]:
