@@ -161,7 +161,11 @@ class AutomationStore:
             if not row:
                 raise ValueError(f"Task '{task_id}' not found")
             task = json.loads(row[0])
-            task.update(updates)
+            for key, value in updates.items():
+                if key == "run_permission_mode" and value is None:
+                    task.pop(key, None)
+                else:
+                    task[key] = value
             task["updated_at"] = datetime.now().isoformat()
             self._write_task(db, task_id, task)
         return True

@@ -9,6 +9,24 @@ from agent.scheduler.delivery import (DESTINATION_FIELDS, destination_catalog,
                                       normalize_notification_route, patch_destination, same_notification_route)
 
 
+_EXPLICIT_RUN_MODES = {"read-only", "workspace-write", "full-access"}
+
+
+def normalize_run_permission(value, *, origin):
+    """Return a stored mode, or None when the task should inherit.
+
+    Only a trusted user action may store an explicit mode. Agent-origin
+    calls that try to set one are refused instead of silently dropped.
+    """
+    if value is None or value == "" or value == "inherit":
+        return None
+    if value not in _EXPLICIT_RUN_MODES:
+        raise ValueError("invalid run permission mode")
+    if origin != "user":
+        raise ValueError("只有用户可以设置定时任务的运行权限")
+    return value
+
+
 class SchedulerMutations:
     def __init__(self, store):
         self.store = store
@@ -51,8 +69,14 @@ class SchedulerMutations:
                 action.pop(field, None)
         return validate_conversation_action(action), normalized
 
-    def create(self, task, *, notification_route=None, agent_id=None):
+    def create(self, task, *, notification_route=None, agent_id=None, origin="user"):
         task = dict(task)
+        if "run_permission_mode" in task or origin != "user":
+            mode = normalize_run_permission(task.get("run_permission_mode"), origin=origin)
+            if mode is None:
+                task.pop("run_permission_mode", None)
+            else:
+                task["run_permission_mode"] = mode
         if notification_route is not None:
             action, route = self._route_action(task.get("action") or {}, notification_route, agent_id)
             task["action"] = action
@@ -60,18 +84,20 @@ class SchedulerMutations:
         self.store.add_task(task)
         return task
 
-    def update(self, task_id, patch, *, agent_id=None):
+    def update(self, task_id, patch, *, agent_id=None, origin="user"):
         original = self.get(task_id)
         if original.get("linked_todo_id"):
             raise ValueError("请在关联事务中修改提醒时间和渠道")
         if not isinstance(patch, dict):
             raise ValueError("task update must be an object")
-        allowed = {"name", "enabled", "schedule", "action", "notification_route"}
+        allowed = {"name", "enabled", "schedule", "action", "notification_route", "run_permission_mode"}
         if set(patch) - allowed:
             raise ValueError("unsupported scheduler update fields")
         same_route = ("notification_route" in patch and
                       same_notification_route(patch["notification_route"], original.get("notification_route")))
         updates = {key: patch[key] for key in ("name", "enabled", "schedule") if key in patch}
+        if "run_permission_mode" in patch:
+            updates["run_permission_mode"] = normalize_run_permission(patch["run_permission_mode"], origin=origin)
         if "action" in patch:
             if not isinstance(patch["action"], dict):
                 raise ValueError("Action must be an object")

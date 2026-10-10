@@ -124,8 +124,11 @@ class TaskStore:
         if task_id not in tasks:
             raise ValueError(f"Task '{task_id}' not found")
         
-        # Update fields
-        tasks[task_id].update(updates)
+        for key, value in updates.items():
+            if key == "run_permission_mode" and value is None:
+                tasks[task_id].pop(key, None)
+            else:
+                tasks[task_id][key] = value
         tasks[task_id]["updated_at"] = datetime.now().isoformat()
         
         self.save_tasks(tasks)

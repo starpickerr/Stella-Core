@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from agent.scheduler import TaskStore
 
 # Keep this unit test independent from the optional web.py dependency.
@@ -258,6 +260,67 @@ def test_web_create_rejects_missing_conversation_mode(tmp_path):
     })
     assert result["status"] == "error"
     assert "conversation mode" in result["message"]
+
+
+def _web_action():
+    return {"type": "send_message", "content": "hello",
+            "conversation_mode": "reuse", "conversation_space": "personal"}
+
+
+def test_desktop_persists_run_permission_and_reload_keeps_it(tmp_path):
+    created = _post_create(tmp_path, {
+        "name": "briefing", "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": _web_action(), "session_id": "session-web-1",
+        "run_permission_mode": "full-access",
+    })
+    assert created["status"] == "success", created
+    task_id = created["task"]["id"]
+    assert created["task"]["run_permission_mode"] == "full-access"
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    assert store.get_task(task_id)["run_permission_mode"] == "full-access"
+    updated = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "read-only"})
+    assert updated["status"] == "success", updated
+    assert store.get_task(task_id)["run_permission_mode"] == "read-only"
+    inherited = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "inherit"})
+    assert inherited["status"] == "success", inherited
+    assert "run_permission_mode" not in store.get_task(task_id)
+
+
+def test_old_task_without_permission_field_stays_inherited(tmp_path):
+    store = _store_task(tmp_path, _web_action())
+    assert "run_permission_mode" not in store.get_task("task-1")
+    listed = store.list_tasks()
+    assert all("run_permission_mode" not in task for task in listed)
+
+
+def test_desktop_rejects_invalid_run_permission(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "briefing", "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": _web_action(), "session_id": "session-web-1",
+        "run_permission_mode": "root",
+    })
+    assert result["status"] == "error"
+    assert "permission" in result["message"].lower() or "权限" in result["message"]
+
+
+def test_shared_mutation_refuses_agent_elevation(tmp_path):
+    from agent.scheduler.mutations import SchedulerMutations
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    mutations = SchedulerMutations(store)
+    task = {"id": "agent-task", "name": "daily", "enabled": True,
+            "schedule": {"type": "interval", "seconds": 3600},
+            "action": {"type": "send_message", "content": "hi", "channel_type": "feishu", "receiver": "u"},
+            "next_run_at": "2099-01-01T00:00:00", "run_permission_mode": "full-access"}
+    with pytest.raises(ValueError, match="运行权限"):
+        mutations.create(task, origin="agent")
+    assert store.get_task("agent-task") is None
+    saved = mutations.create({key: value for key, value in task.items() if key != "run_permission_mode"}, origin="agent")
+    assert "run_permission_mode" not in saved
+    user = mutations.create({**task, "id": "user-task"}, origin="user")
+    assert user["run_permission_mode"] == "full-access"
+    with pytest.raises(ValueError, match="运行权限"):
+        mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
+    assert store.get_task("user-task")["run_permission_mode"] == "full-access"
 
 
 def test_create_is_exposed_by_desktop_controls():
