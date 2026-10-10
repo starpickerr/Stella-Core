@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { Eye, AlertTriangle, Loader2, Download } from 'lucide-react'
-import hljs from 'highlight.js'
 import { t } from '../i18n'
 import apiClient from '../api/client'
 import Markdown from './Markdown'
+import { CodeBlock } from './content/CodeBlock'
+import { PdfPreview } from './content/PdfPreview'
 import { iconFor, colorFor } from '../lib/fileKind'
 import type { WorkspaceEntry } from '../types'
 
@@ -64,19 +65,18 @@ const TextPreview: React.FC<{ file: WorkspaceEntry }> = ({ file }) => {
     )
   }
 
-  const lang = file.name.split('.').pop()?.toLowerCase() || ''
-  const highlighted =
-    file.kind === 'code' && hljs.getLanguage(lang)
-      ? hljs.highlight(state.text || '', { language: lang }).value
-      : null
+  if (file.kind === 'code') {
+    const language = file.name.split('.').pop()?.toLowerCase() || 'text'
+    return (
+      <div className="p-4 msg-content">
+        <CodeBlock language={language} code={state.text || ''} />
+      </div>
+    )
+  }
 
   return (
     <pre className="m-0 p-4 text-[12.5px] leading-relaxed overflow-auto">
-      {highlighted ? (
-        <code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted }} />
-      ) : (
-        <code>{state.text}</code>
-      )}
+      <code>{state.text}</code>
     </pre>
   )
 }
@@ -120,7 +120,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, error }) => {
       )
 
     case 'pdf':
-      return <iframe key={src} src={src} title={file.name} className="w-full h-full border-0" />
+      return <PdfPreview key={rawSrc} url={rawSrc} name={file.name} />
 
     case 'image':
       return (
