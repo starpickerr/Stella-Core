@@ -108,7 +108,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
   const [showGlobalEditor, setShowGlobalEditor] = useState(false)
-  const [pendingGlobalFull, setPendingGlobalFull] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -435,8 +434,19 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         type="button"
                         key={entry.id}
                         disabled={busy}
-                        onClick={() => entry.id === 'custom' ? setShowGlobalEditor(true) : entry.id === 'full-access' && center.global_policy.preset !== 'full-access'
-                          ? setPendingGlobalFull(true) : saveGlobal({ preset: entry.id, rules: {} })}
+                        onClick={() => {
+                          if (entry.id === 'custom') {
+                            setShowGlobalEditor(true)
+                            const current = center.global_policy
+                            const base = current.base_preset || (current.preset !== 'custom' ? current.preset : 'workspace-write')
+                            if (current.preset !== 'custom') {
+                              saveGlobal({ preset: 'custom', base_preset: base, rules: { ...center.effective_rules } })
+                            }
+                            return
+                          }
+                          setShowGlobalEditor(false)
+                          saveGlobal({ preset: entry.id, rules: {} })
+                        }}
                         aria-pressed={center.effective_mode === entry.id}
                         className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.effective_mode === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
                       >
@@ -450,14 +460,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       </button>
                     ))}
                   </div>
-                  {pendingGlobalFull && <div className="mt-3 rounded-btn border border-accent p-3 text-sm space-y-2">
-                    <p>{getLang() === 'en' ? 'Full Access relaxes ordinary file and shell limits. Other chats’ private Work folders, managed data, credentials and Apple grants stay blocked. Destructive actions still need approval.' : '完全访问只放宽一般文件和命令限制。其他会话的私有工作区、托管数据、凭据和 Apple 系统授权仍会被拦截；破坏性操作仍需审批。'}</p>
-                    <p className="text-xs break-all text-content-secondary">{center.authorized_roots.join(' · ')}</p>
-                    <div className="flex gap-3"><button type="button" onClick={() => setPendingGlobalFull(false)}>{getLang() === 'en' ? 'Cancel' : '取消'}</button>
-                      <button type="button" className="text-accent" onClick={() => { saveGlobal({ preset: 'full-access', rules: {} }); setPendingGlobalFull(false) }}>{getLang() === 'en' ? 'Enable full access' : '启用完全访问'}</button></div>
-                  </div>}
                 </section>
-                {showGlobalEditor && <section className={card}>
+                {(showGlobalEditor || center.global_policy.preset === 'custom') && <section className={card}>
                   <h3 className="font-semibold mb-3">{copy.advanced}</h3>
                   <PolicyEditor policy={center.global_policy} definitions={center.mode_definitions} copy={copy}
                     busy={busy} inherit={false} onSave={(patch) => { void saveGlobal(patch).then(ok => { if (ok) setShowGlobalEditor(false) }) }}
