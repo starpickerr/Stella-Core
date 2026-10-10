@@ -59,3 +59,4 @@
   - PASS `node --experimental-strip-types --test tests/knowledgeLinks.test.mjs` — 2 passed.
   - PASS isolated `tests/ui_knowledge_links.py`: clicking “软件设计” in `index.md` shows the software-design document.
   - PASS `npx tsc --noEmit -p desktop/tsconfig.json` before the browser run.
+  - PASS `.venv/bin/python scripts/quality_check.py incremental` — ruff, pytest (1509 passed, 4 skipped), eslint, build, typecheck, node (includes `tests/knowledgeLinks.test.mjs`), and ui (includes the index click). SKIP policy: no relevant changes.

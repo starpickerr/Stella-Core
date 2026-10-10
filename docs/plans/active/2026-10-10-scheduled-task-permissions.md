@@ -87,4 +87,4 @@
   - PASS isolated pytest `tests/test_scheduler_delivery.py tests/test_security_approval_resume.py` — 29 passed.
   - PASS isolated pytest `tests/test_briefing_scheduler.py` — 8 passed.
   - PASS `tests/ui_tasks.py` through the isolated renderer: task editor saves 完全访问, reopens it, runs now, and shows a failed reason. `npx tsc --noEmit -p desktop/tsconfig.json` passed.
-  - SKIP final `quality_check.py incremental` until the later plans in this iteration are included.
+  - PASS `.venv/bin/python scripts/quality_check.py incremental` — ruff, pytest (1509 passed, 4 skipped), eslint, build, typecheck, node, and ui. SKIP policy: no relevant changes. Isolated `tests/ui_tasks.py` passed inside that ui step.

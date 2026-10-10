@@ -61,3 +61,4 @@
   - PASS `python scripts/ui_check.py` — Security modes UI: immediate Full Access and on-page custom editor passed. The same run also passed the other isolated UI scripts.
   - PASS `npx tsc --noEmit -p desktop/tsconfig.json`.
   - SKIP composer browser click: the isolated page opens `/#/security`, not a live chat composer. The composer component no longer renders a second confirm or a rule grid.
+  - PASS `.venv/bin/python scripts/quality_check.py incremental` — ruff, pytest (1509 passed, 4 skipped), eslint, build, typecheck, node, and ui. SKIP policy: no relevant changes.
