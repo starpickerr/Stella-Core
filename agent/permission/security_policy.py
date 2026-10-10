@@ -13,28 +13,42 @@ RULES = (
     "shell", "git", "network", "install", "background", "external", "high_risk",
 )
 VALUES = {"allow", "confirm", "deny"}
-PRESETS = {
-    "approval": {"managed": "allow", "workspace_read": "allow", "workspace_write": "confirm",
-                 "workspace_outside": "confirm", "shell": "confirm", "git": "confirm", "network": "allow",
-                 "install": "confirm", "background": "confirm", "external": "allow", "high_risk": "confirm"},
-    "project-full": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
-                     "workspace_outside": "confirm", "shell": "allow", "git": "allow", "network": "allow",
-                     "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm"},
-    "full-access": {"managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
-                    "workspace_outside": "allow", "shell": "allow", "git": "allow", "network": "allow",
-                    "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm"},
+_READ_ONLY = {
+    "managed": "allow", "workspace_read": "allow", "workspace_write": "deny",
+    "workspace_outside": "deny", "shell": "deny", "git": "deny", "network": "confirm",
+    "install": "deny", "background": "deny", "external": "confirm", "high_risk": "confirm",
 }
-PRESETS["custom"] = dict(PRESETS["project-full"])
+_WORKSPACE_WRITE = {
+    "managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
+    "workspace_outside": "confirm", "shell": "allow", "git": "allow", "network": "allow",
+    "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm",
+}
+_FULL_ACCESS = {
+    "managed": "allow", "workspace_read": "allow", "workspace_write": "allow",
+    "workspace_outside": "allow", "shell": "allow", "git": "allow", "network": "allow",
+    "install": "allow", "background": "allow", "external": "allow", "high_risk": "confirm",
+}
+_APPROVAL = {
+    "managed": "allow", "workspace_read": "allow", "workspace_write": "confirm",
+    "workspace_outside": "confirm", "shell": "confirm", "git": "confirm", "network": "allow",
+    "install": "confirm", "background": "confirm", "external": "allow", "high_risk": "confirm",
+}
+PRESETS = {
+    "read-only": dict(_READ_ONLY),
+    "workspace-write": dict(_WORKSPACE_WRITE),
+    "full-access": dict(_FULL_ACCESS),
+}
+PRESETS["custom"] = dict(PRESETS["workspace-write"])
 MODE_DEFINITIONS = [
-    {"id": "approval", "name": {"zh": "审批模式", "en": "Approval mode"},
-     "description": {"zh": "日常读取直接执行，修改和命令逐次确认。",
-                     "en": "Read normally; confirm changes and commands one at a time."}},
-    {"id": "project-full", "name": {"zh": "项目内完全访问", "en": "Full project access"},
-     "description": {"zh": "在当前工作区自主开发，重要外部操作需确认。",
-                     "en": "Work freely in this workspace; confirm important external actions."}},
-    {"id": "full-access", "name": {"zh": "完全访问", "en": "Full access"},
-     "description": {"zh": "扩大到项目外目录，重要外部操作仍需确认。",
-                     "en": "Access outside this project; important external actions still need approval."}},
+    {"id": "read-only", "name": {"zh": "只读", "en": "Read Only"},
+     "description": {"zh": "在授权范围内读取；未授权的写入会被拒绝。",
+                     "en": "Read authorized files; unauthorized writes are denied."}},
+    {"id": "workspace-write", "name": {"zh": "工作区写入", "en": "Workspace Write"},
+     "description": {"zh": "当前工作区内可自主修改，工作区外操作需要授权。",
+                     "en": "Change files in this workspace; authorize anything outside it."}},
+    {"id": "full-access", "name": {"zh": "完全访问", "en": "Full Access"},
+     "description": {"zh": "放宽一般文件与命令限制；其他会话私有目录、托管数据和系统授权仍不可越过。",
+                     "en": "Relax ordinary file and shell limits; other chats' private files, managed data and OS grants stay blocked."}},
     {"id": "custom", "name": {"zh": "自定义", "en": "Custom"},
      "description": {"zh": "从当前规则复制并按需调整，保存后生效。",
                      "en": "Copy the current rules, adjust them, and apply on save."}},
@@ -43,32 +57,47 @@ for _mode in MODE_DEFINITIONS:
     _mode["rules"] = dict(PRESETS[_mode["id"]])
 
 LEGACY_PRESETS = {
-    "strict": {**PRESETS["approval"], "workspace_write": "deny", "workspace_outside": "deny",
+    "approval": dict(_APPROVAL),
+    "strict": {**_APPROVAL, "workspace_write": "deny", "workspace_outside": "deny",
                "shell": "deny", "git": "deny", "network": "confirm", "install": "deny",
                "background": "deny", "external": "confirm"},
-    "standard": {**PRESETS["project-full"], "workspace_outside": "deny",
+    "standard": {**_WORKSPACE_WRITE, "workspace_outside": "deny",
                  "install": "confirm", "background": "confirm"},
-    "custom": {**PRESETS["full-access"]},
+    "custom": dict(_FULL_ACCESS),
 }
+_PRODUCT_ALIASES = {"project-full": "workspace-write"}
+_DEFAULT_BASE = "workspace-write"
 
 
 def default_policy() -> dict:
-    return {"preset": "project-full", "rules": {}, "connections": {}}
+    return {"preset": "workspace-write", "rules": {}, "connections": {}}
 
 
 def legacy_policy(mode: str) -> dict:
     preset = {READ_ONLY: "strict", WORKSPACE_WRITE: "standard", FULL_ACCESS: "custom"}.get(mode, "strict")
-    return {"preset": "custom", "base_preset": "project-full",
+    return {"preset": "custom", "base_preset": _DEFAULT_BASE,
             "rules": dict(LEGACY_PRESETS[preset]), "connections": {}}
 
 
 def _migrate_legacy(value: dict) -> dict:
-    """Old preset names become exact snapshots, so upgrades never widen access."""
-    if value.get("preset") not in LEGACY_PRESETS:
-        return value
-    snapshot = dict(LEGACY_PRESETS[value["preset"]])
+    """Old preset names become exact snapshots or product aliases, never wider access."""
+    preset = value.get("preset")
+    base = _PRODUCT_ALIASES.get(value.get("base_preset"), value.get("base_preset"))
+    if base == "approval":
+        snapshot = dict(_APPROVAL)
+        snapshot.update(value.get("rules") or {})
+        return {**value, "preset": "custom", "base_preset": _DEFAULT_BASE, "rules": snapshot}
+    if preset == "project-full":
+        return {**value, "preset": "workspace-write",
+                **({"base_preset": base} if "base_preset" in value else {})}
+    if preset == "custom" and (value.get("base_preset") or value.get("rules")):
+        rewritten = {**value, "base_preset": base or _DEFAULT_BASE}
+        return rewritten
+    if preset not in LEGACY_PRESETS:
+        return {**value, **({"base_preset": base} if "base_preset" in value else {})}
+    snapshot = dict(LEGACY_PRESETS[preset])
     snapshot.update(value.get("rules") or {})
-    return {**value, "preset": "custom", "base_preset": "project-full", "rules": snapshot}
+    return {**value, "preset": "custom", "base_preset": _DEFAULT_BASE, "rules": snapshot}
 
 
 def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
@@ -164,10 +193,11 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
 
 
 def rule(policy: dict, name: str) -> str:
-    preset = policy.get("preset", "project-full")
+    preset = _PRODUCT_ALIASES.get(policy.get("preset", _DEFAULT_BASE), policy.get("preset", _DEFAULT_BASE))
     if preset == "custom":
-        preset = policy.get("base_preset", "project-full")
-    return policy.get("rules", {}).get(name, PRESETS.get(preset, PRESETS["approval"])[name])
+        base = policy.get("base_preset", _DEFAULT_BASE)
+        preset = _PRODUCT_ALIASES.get(base, base)
+    return policy.get("rules", {}).get(name, PRESETS.get(preset, PRESETS["read-only"])[name])
 
 
 def effective_rules(policy: dict) -> dict:
@@ -175,16 +205,16 @@ def effective_rules(policy: dict) -> dict:
 
 
 def effective_mode(policy: dict) -> str:
-    preset = policy.get("preset", "project-full")
+    preset = policy.get("preset", _DEFAULT_BASE)
     if preset not in PRESETS or preset == "custom":
         return "custom"
     return "custom" if effective_rules(policy) != PRESETS[preset] else preset
 
 
 def copy_custom(policy: dict) -> dict:
-    base = policy.get("preset", "project-full")
+    base = policy.get("preset", _DEFAULT_BASE)
     if base == "custom":
-        base = policy.get("base_preset", "project-full")
+        base = policy.get("base_preset", _DEFAULT_BASE)
     return {"preset": "custom", "base_preset": base,
             "rules": effective_rules(policy),
             "connections": deepcopy(policy.get("connections") or {}),
@@ -204,7 +234,7 @@ def intersect(current: dict, ceiling: dict) -> dict:
             scopes = parent_scopes if not scopes or "*" in scopes else [scope for scope in scopes if scope in parent_scopes]
         connections[name] = {"allowed": parent.get("allowed", True) and child.get("allowed", True),
                              "scopes": scopes}
-    return {"preset": "custom", "base_preset": "project-full", "rules": rules,
+    return {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
             "connections": connections}
 
 

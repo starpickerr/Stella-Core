@@ -3,7 +3,7 @@ import pytest
 
 from agent.permission.audit import recent
 from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
-from agent.permission.security_policy import (PRESETS, copy_custom, default_policy, effective_mode,
+from agent.permission.security_policy import (MODE_DEFINITIONS, PRESETS, copy_custom, default_policy, effective_mode,
                                               effective_rules, legacy_policy, resolve, rule, validate_patch)
 from agent.workspace import project_store, session_prefs
 
@@ -90,20 +90,30 @@ def test_policy_inheritance_and_restart_persistence(tmp_path, monkeypatch):
 
 
 def test_four_modes_and_legacy_snapshots_are_stable():
-    assert list(PRESETS) == ["approval", "project-full", "full-access", "custom"]
-    assert default_policy()["preset"] == "project-full"
-    assert rule({"preset": "approval"}, "workspace_write") == "confirm"
-    assert rule({"preset": "project-full"}, "workspace_write") == "allow"
-    assert rule({"preset": "project-full"}, "workspace_outside") == "confirm"
+    assert [row["id"] for row in MODE_DEFINITIONS] == [
+        "read-only", "workspace-write", "full-access", "custom"]
+    assert default_policy()["preset"] == "workspace-write"
+    assert rule({"preset": "read-only"}, "workspace_write") == "deny"
+    assert rule({"preset": "workspace-write"}, "workspace_write") == "allow"
+    assert rule({"preset": "workspace-write"}, "workspace_outside") == "confirm"
     assert rule({"preset": "full-access"}, "workspace_outside") == "allow"
+    approval = validate_patch({"preset": "approval"})
+    assert approval["preset"] == "custom"
+    assert rule(approval, "workspace_write") == "confirm"
+    assert rule(approval, "shell") == "confirm"
+    project = validate_patch({"preset": "project-full"})
+    assert project["preset"] == "workspace-write"
+    assert rule(project, "workspace_outside") == "confirm"
     for old, expected in (("strict", "deny"), ("standard", "allow"), ("custom", "allow")):
         migrated = validate_patch({"preset": old})
         assert migrated["preset"] == "custom"
         assert rule(migrated, "workspace_write") == expected
         assert validate_patch(migrated) == migrated
-    copied = copy_custom({"preset": "project-full", "rules": {"network": "deny"}})
+    copied = copy_custom({"preset": "workspace-write", "rules": {"network": "deny"}})
     assert copied["rules"] == effective_rules(copied)
     assert effective_mode(copied) == "custom"
+    assert rule(legacy_policy("read-only"), "workspace_write") == "deny"
+    assert rule(legacy_policy("workspace-write"), "workspace_outside") == "deny"
 
 
 def test_legacy_conversation_permission_is_migrated_once(tmp_path, monkeypatch):

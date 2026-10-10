@@ -391,10 +391,10 @@ export interface SessionSettingsState {
   }
   permission: {
     source: 'session' | 'project' | 'global' | 'mixed'
-    preset: 'approval' | 'project-full' | 'full-access' | 'custom'
-    global_preset: 'approval' | 'project-full' | 'full-access' | 'custom'
-    mode: 'approval' | 'project-full' | 'full-access' | 'custom'
-    base_preset: 'approval' | 'project-full' | 'full-access'
+    preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    global_preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    base_preset: 'read-only' | 'workspace-write' | 'full-access'
     rules: Record<string, 'allow' | 'confirm' | 'deny'>
     policy: import('./api/client').SecurityPolicy
     mode_definitions: import('./api/client').SecurityModeDefinition[]

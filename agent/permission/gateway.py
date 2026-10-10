@@ -246,7 +246,14 @@ class SecurityGateway:
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
-        policy = policy or legacy_policy(mode)
+        from agent.permission.security_policy import default_policy, merge, validate_patch
+        try:
+            policy = merge(default_policy(), validate_patch(policy or legacy_policy(mode)))
+        except (TypeError, ValueError):
+            policy = {"preset": "custom", "rules": {name: "deny" for name in (
+                "managed", "workspace_read", "workspace_write", "workspace_outside",
+                "shell", "git", "network", "install", "background", "external", "high_risk")},
+                      "connections": {}}
         args = arguments if isinstance(arguments, Mapping) else {}
         action = str(args.get("action") or "").lower()
         operation = action or ("write" if tool_name in ("write", "edit") else "read" if declared == Capability.READ else "execute")

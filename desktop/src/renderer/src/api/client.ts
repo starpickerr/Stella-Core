@@ -43,8 +43,8 @@ interface ApiResult {
 }
 
 export interface SecurityPolicy {
-  preset?: 'approval' | 'project-full' | 'full-access' | 'custom'
-  base_preset?: 'approval' | 'project-full' | 'full-access'
+  preset?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  base_preset?: 'read-only' | 'workspace-write' | 'full-access'
   rules?: Record<string, 'allow' | 'confirm' | 'deny'>
   connections?: Record<string, { allowed: boolean; scopes: string[] }>
   extra_roots?: string[]
@@ -68,7 +68,7 @@ export interface SecurityRecord {
 export interface SecurityCenterState extends ApiResult {
   global_policy: SecurityPolicy
   effective_policy: SecurityPolicy
-  effective_mode: 'approval' | 'project-full' | 'full-access' | 'custom'
+  effective_mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
   effective_rules: Record<string, 'allow' | 'confirm' | 'deny'>
   policy_source: 'global' | 'project' | 'session' | 'mixed'
   mode_definitions: SecurityModeDefinition[]
@@ -86,7 +86,7 @@ export interface SecurityCenterState extends ApiResult {
 }
 
 export interface SecurityModeDefinition {
-  id: 'approval' | 'project-full' | 'full-access' | 'custom'
+  id: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
   name: { zh: string; en: string }
   description: { zh: string; en: string }
   rules: Record<string, 'allow' | 'confirm' | 'deny'>

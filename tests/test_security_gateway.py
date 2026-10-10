@@ -88,7 +88,7 @@ def test_unknown_mode_denied():
 
 def test_apple_read_and_write_actions_obey_separate_policies(tmp_path, monkeypatch):
     monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
-    policy = {"preset": "custom", "base_preset": "project-full",
+    policy = {"preset": "custom", "base_preset": "workspace-write",
               "rules": {"workspace_read": "allow", "workspace_write": "deny",
                         "external": "allow", "high_risk": "allow"}, "connections": {}}
     assert SecurityGateway.check("full-access", "apple", {"action": "status"}, policy=policy).allowed
