@@ -34,6 +34,7 @@ def backend(route):
         data['tasks'] = tasks
     elif path == '/api/scheduler/destinations':
         data['destinations'] = [dict(channel_type='web', configured=True, ready=True, status='ready', recipients=[]),
+                                dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
                                 dict(channel_type='weixin', configured=True, ready=False, status='no_recipient', recipients=[])]
     elif path == '/api/todos':
         data['todos'] = [{'id': 'todo-1', 'title': 'Linked todo'}]
@@ -83,11 +84,12 @@ with sync_playwright() as playwright:
         assert page.url.endswith('/#/tasks'), page.url
         page.get_by_role('dialog').get_by_role('button', name='取消').click()
         page.get_by_text('Standalone digest').click()
-        page.get_by_role('dialog').get_by_role('button', name='客户端').click()
-        expect(page.get_by_text('微信', exact=True)).to_be_visible()
-        page.get_by_text('微信', exact=True).click()
-        expect(page.get_by_role('dialog')).to_contain_text('尚无可用接收人')
-        page.get_by_role('dialog').get_by_role('button', name='取消').click()
+        editor = page.get_by_role('dialog')
+        expect(editor).to_contain_text('需要重新选择渠道')
+        editor.get_by_role('button', name='需要重新选择渠道').click()
+        expect(page.get_by_text('客户端', exact=True)).to_be_visible()
+        expect(page.get_by_text('微信', exact=True)).to_have_count(0)
+        editor.get_by_role('button', name='取消').click()
         expect(page.get_by_text('沿用绑定对话').first).to_be_visible()
         page.get_by_text('Standalone digest').click()
         editor = page.get_by_role('dialog')
