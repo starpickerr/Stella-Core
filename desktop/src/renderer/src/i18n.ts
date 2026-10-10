@@ -231,6 +231,7 @@ const translations: Record<string, Record<string, string>> = {
     knowledge_graph_empty: '暂无关联图谱',
     knowledge_disabled: '知识库未启用',
     knowledge_doc_load_error: '文档加载失败',
+    knowledge_link_missing: '找不到这篇知识文档',
     // knowledge management
     knowledge_new: '新建',
     knowledge_new_category: '新建分类',
@@ -1010,6 +1011,7 @@ const translations: Record<string, Record<string, string>> = {
     knowledge_graph_empty: 'No graph available',
     knowledge_disabled: 'Knowledge base is disabled',
     knowledge_doc_load_error: 'Failed to load document',
+    knowledge_link_missing: 'That knowledge document was not found',
     // knowledge management
     knowledge_new: 'New',
     knowledge_new_category: 'New category',
