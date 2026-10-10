@@ -587,12 +587,14 @@ class ApiClient {
   // ---------------------------------------------------------
 
   async getTools(): Promise<ToolInfo[]> {
-    const data = await this.request<{ status: string; tools: ToolInfo[] }>('/api/tools')
+    const data = await this.request<{ status: string; tools?: ToolInfo[]; message?: string }>('/api/tools')
+    if (data.status !== 'success' || !Array.isArray(data.tools)) throw new Error(data.message || 'Could not load tools')
     return data.tools
   }
 
   async getSkills(): Promise<SkillInfo[]> {
-    const data = await this.request<{ status: string; skills: SkillInfo[] }>('/api/skills')
+    const data = await this.request<{ status: string; skills?: SkillInfo[]; message?: string }>('/api/skills')
+    if (data.status !== 'success' || !Array.isArray(data.skills)) throw new Error(data.message || 'Could not load skills')
     return data.skills
   }
 

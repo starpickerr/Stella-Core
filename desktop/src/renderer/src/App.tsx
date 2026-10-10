@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
         {/* Content */}
         <div className="flex-1 flex min-h-0 overflow-hidden bg-base">
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+          <div data-main-pane className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {showProductGate && ProductGate ? (
             <ProductGate onAuthenticated={() => setProductAuthed(true)} />
           ) : (
@@ -242,6 +242,8 @@ const App: React.FC = () => {
             <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
+            <Route path="/skills/tools/:toolId" element={<SkillsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/skills/skills/:skillId" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />

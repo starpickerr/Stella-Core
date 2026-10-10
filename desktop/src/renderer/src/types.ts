@@ -628,9 +628,18 @@ export type ChannelAction = 'save' | 'connect' | 'disconnect'
 // Tools / skills
 // ============================================================
 
+export interface LocalizedCopy {
+  zh: string
+  en: string
+}
+
 export interface ToolInfo {
-  name: string
-  description: string
+  id: string
+  title: LocalizedCopy
+  intro: LocalizedCopy
+  detail: LocalizedCopy
+  available: boolean
+  reason?: LocalizedCopy | null
 }
 
 export interface SkillInfo {
