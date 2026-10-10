@@ -159,7 +159,6 @@ export const ItemList: React.FC<{
     })() : items.length > 0 && <div className="overflow-hidden rounded-card border border-default bg-surface divide-y divide-default">
       {items.map((item) => {
         const view = actions[item.id]
-        const category = view?.category ?? (item.section === 'action' ? 'needs_action' : 'attention')
         return <div key={item.id} className={`flex items-start gap-3 px-4 py-4 transition-colors hover:bg-surface-2 ${selectedIds.has(item.id) ? 'bg-accent-soft' : ''}`}>
           <input type="checkbox" aria-label={`${label('select_item')} ${item.title || item.source}`}
             checked={selectedIds.has(item.id)} disabled={busy || generating} className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
@@ -168,7 +167,7 @@ export const ItemList: React.FC<{
             aria-label={`${label('view_item')} ${item.title || item.source}`} onClick={() => { returnFocusId.current = item.id; setFocusedId(item.id) }}
             className="group flex min-w-0 flex-1 items-start justify-between gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             <span className="min-w-0 space-y-1.5">
-              <span className="block text-xs font-medium text-accent">{label(category)}{view?.todo?.business ? ` · ${label('linked_task')}` : ''}</span>
+              {view?.todo?.business ? <span className="block text-xs font-medium text-accent">{label('linked_task')}</span> : null}
               <span className="block text-sm font-medium leading-snug text-content break-words group-hover:text-accent">{item.title || item.source}</span>
               <span className="block text-sm text-content-secondary line-clamp-2 break-words">{item.snippet}</span>
               <span className="block text-xs text-content-tertiary">{item.sender} · {new Date(item.occurred_at).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US')}</span>
