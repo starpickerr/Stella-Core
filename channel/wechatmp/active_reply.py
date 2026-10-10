@@ -1,12 +1,11 @@
-import time
 
 import web
 from wechatpy import parse_message
 from wechatpy.replies import create_reply
 
-from bridge.context import *
-from bridge.reply import *
-from channel.wechatmp.common import *
+from bridge.context import ContextType
+from bridge.reply import ReplyType
+from channel.wechatmp.common import verify_server
 from channel.wechatmp.wechatmp_channel import WechatMPChannel
 from channel.wechatmp.wechatmp_message import WeChatMPMessage
 from common.log import logger
@@ -25,13 +24,15 @@ class Query:
             verify_server(args)
             channel = WechatMPChannel()
             message = web.data()
-            encrypt_func = lambda x: x
+            def encrypt_func(x):
+                return x
             if args.get("encrypt_type") == "aes":
                 logger.debug("[wechatmp] Receive encrypted post data:\n" + message.decode("utf-8"))
                 if not channel.crypto:
                     raise Exception("Crypto not initialized, Please set wechatmp_aes_key in config.json")
                 message = channel.crypto.decrypt_message(message, args.msg_signature, args.timestamp, args.nonce)
-                encrypt_func = lambda x: channel.crypto.encrypt_message(x, args.nonce, args.timestamp)
+                def encrypt_func(x):
+                    return channel.crypto.encrypt_message(x, args.nonce, args.timestamp)
             else:
                 logger.debug("[wechatmp] Receive post data:\n" + message.decode("utf-8"))
             msg = parse_message(message)

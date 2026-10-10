@@ -114,8 +114,9 @@ class BillsService:
 
     def create_ledger(self, payload: dict) -> dict:
         entry = self._build_ledger(payload, existing=None)
-        saved = self.store.insert_ledger(entry)
-        self._refresh_periods(saved["occurred_at"], saved["currency"])
+        with self.store.transaction():
+            saved = self.store.insert_ledger(entry)
+            self._refresh_periods(saved["occurred_at"], saved["currency"])
         return saved
 
     def update_ledger(self, entry_id: str, payload: dict) -> dict:
@@ -123,21 +124,23 @@ class BillsService:
         if existing is None:
             raise KeyError(f"ledger entry not found: {entry_id}")
         entry = self._build_ledger(payload, existing=existing)
-        saved = self.store.update_ledger(entry)
-        self._refresh_periods(
-            saved["occurred_at"],
-            saved["currency"],
-            also=existing["occurred_at"],
-            also_currency=existing["currency"],
-        )
+        with self.store.transaction():
+            saved = self.store.update_ledger(entry)
+            self._refresh_periods(
+                saved["occurred_at"],
+                saved["currency"],
+                also=existing["occurred_at"],
+                also_currency=existing["currency"],
+            )
         return saved
 
     def delete_ledger(self, entry_id: str) -> None:
         existing = self.store.get_ledger(entry_id)
         if existing is None:
             raise KeyError(f"ledger entry not found: {entry_id}")
-        self.store.delete_ledger(entry_id)
-        self._refresh_periods(existing["occurred_at"], existing["currency"])
+        with self.store.transaction():
+            self.store.delete_ledger(entry_id)
+            self._refresh_periods(existing["occurred_at"], existing["currency"])
 
     # ------------------------------------------------------------------
     # Period statements (月 / 年账单)

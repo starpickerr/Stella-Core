@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agent.permission.gateway import SecurityGateway
-check_tool_call = SecurityGateway.check
 from agent.runtime.run_record import RunRecord
 from agent.runtime.session_run import SessionRun
 from agent.runtime.tool_invocation import permission_denial
@@ -14,6 +13,8 @@ from agent.scheduler.service import SchedulerService
 from common.runtime_identity import identity_scope
 from application import Application, RequestContext
 from application.operations import OutcomeUnknown
+
+check_tool_call = SecurityGateway.check
 
 
 def test_bills_writes_are_refused_in_read_only():

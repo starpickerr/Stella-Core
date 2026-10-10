@@ -94,7 +94,8 @@ def test_all_and_group_selection_and_source_registry(monkeypatch):
 def test_failed_selected_source_preserves_other_source_and_does_not_advance(service, deterministic_briefing_generator):
     email = TrackedSource("email", "a", [item("email", "a", "邮件", "2026-09-08T23:00:00Z")])
     canvas = TrackedSource("elearning", "b", [item("elearning", "b", "课程", "2026-09-08T23:00:00Z")])
-    at = lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")
+    def at():
+        return datetime.fromisoformat("2026-09-09T08:00:00+08:00")
     pipeline = BriefingPipeline(service, [email, canvas], clock=at)
     first = pipeline.run()
     canvas._error = RuntimeError("offline")
@@ -123,7 +124,8 @@ def test_old_database_gains_source_windows_without_changing_old_revision(tmp_pat
     conn.execute("INSERT INTO briefings (id,kind,status,title,body,generated_at,created_at,updated_at,window_start,window_end) VALUES (?,?,?,?,?,?,?,?,?,?)",
         ("brf-2026-09-09-morning", "morning", "completed", "简报", "旧正文", "2026-09-09T00:00:00Z",
          "2026-09-09T00:00:00Z", "2026-09-09T00:00:00Z", "2026-09-08T12:00:00Z", "2026-09-09T00:00:00Z"))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     service = BriefingService(BriefingStore(path))
     detail = service.get_briefing("brf-2026-09-09-morning")
     assert detail["briefing"].source_windows == {} and detail["briefing"].updated_sources == []

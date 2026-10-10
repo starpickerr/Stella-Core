@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 
 from channel import channel_factory
@@ -11,8 +12,7 @@ from common import const
 from common.log import logger
 from common.ssl_certs import ensure_ca_bundle
 from config import load_config, conf
-from plugins import *
-import threading
+from plugins import PluginManager
 
 
 _channel_mgr = None

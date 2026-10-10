@@ -52,23 +52,24 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
         from agent.scheduler.desktop_notify import enqueue_desktop_notification
         enqueue_desktop_notification(delivery_id, receiver, content)
         error = "等待客户端确认通知"
-        store.finish_delivery(delivery_id, leg, "waiting", error=error)
+        store.finish_delivery(delivery_id, leg, "waiting", error=error,
+                              platform_response={"body": content})
         return DeliveryOutcome("waiting", error)
     channel = channel_provider(channel_type)
     if channel is None:
         error = f"{channel_type} is unavailable"
-        store.finish_delivery(delivery_id, leg, "waiting", error=error)
-        return DeliveryOutcome("waiting", error)
+        store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
+        return DeliveryOutcome("failed", error, retryable=True)
     if channel_type == "weixin":
         if getattr(channel, "login_status", "logged_in") != "logged_in":
             error = "Weixin login is required"
-            store.finish_delivery(delivery_id, leg, "waiting", error=error)
-            return DeliveryOutcome("waiting", error)
+            store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
+            return DeliveryOutcome("failed", error, retryable=True)
         tokens = getattr(channel, "_context_tokens", None)
         if tokens is not None and not tokens.get(receiver):
             error = "Weixin conversation context expired"
-            store.finish_delivery(delivery_id, leg, "waiting", error=error)
-            return DeliveryOutcome("waiting", error)
+            store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
+            return DeliveryOutcome("failed", error, retryable=True)
 
     context = Context(ContextType.TEXT, content)
     context["receiver"] = receiver

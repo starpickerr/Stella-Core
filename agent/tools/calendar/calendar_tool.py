@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 from agent.tools.base_tool import BaseTool, ToolResult
-from agent.calendar import CalendarService
 
 
 class CalendarTool(BaseTool):

@@ -165,7 +165,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
                             else:
                                 body["sender_name"] = context.kwargs.get("msg").from_user_nickname
 
-            except Exception as e:
+            except Exception:
                 pass
             file_id = context.kwargs.get("file_id")
             if file_id:
@@ -388,7 +388,6 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             }
             url = _linkai_base_url() + "/v1/images/generations"
             res = requests.post(url, headers=headers, json=data, timeout=(5, 90))
-            t2 = time.time()
             image_url = res.json()["data"][0]["url"]
             logger.info("[OPEN_AI] image_url={}".format(image_url))
             return True, image_url
@@ -638,10 +637,11 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
     except Exception as e:
         logger.error(f"[LinkAI] call_with_tools error: {e}")
         if stream:
+            error_message = str(e)
             def error_generator():
                 yield {
                     "error": True,
-                    "message": str(e),
+                    "message": error_message,
                     "status_code": 500
                 }
             return error_generator()

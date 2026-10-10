@@ -76,7 +76,7 @@ def test_appears_with_a_summary_in_the_system_prompt_tooling_section():
     fake_tool = type("FakeTool", (), {"name": "search_files"})()
     for language in ("en", "zh"):
         lines = _build_tooling_section([fake_tool], language)
-        tooling_line = next(l for l in lines if l.startswith("- search_files"))
+        tooling_line = next(line for line in lines if line.startswith("- search_files"))
         assert tooling_line != "- search_files", f"missing summary for language={language}"
 
 

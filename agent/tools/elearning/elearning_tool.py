@@ -215,7 +215,8 @@ class ElearningTool(BaseTool):
             self._check_cancelled()
             selected = ([str(course["id"]) for course in select_courses(courses, selected)]
                         if selected else [str(course["id"]) for course in courses])
-            client_factory = lambda _: client
+            def client_factory(_account):
+                return client
         if not selected:
             return {"source_items": [], "total": 0, "next_offset": None,
                     "window": {"start": start.astimezone(timezone.utc).isoformat(),

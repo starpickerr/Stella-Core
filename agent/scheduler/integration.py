@@ -348,7 +348,9 @@ def _delivery_execution_outcome(result):
         return True
     if result.status == "accepted":
         return True
-    if result.status == "failed" and result.retryable:
+    if result.status == "waiting" and result.error == "等待客户端确认通知":
+        return True
+    if result.status == "waiting" or (result.status == "failed" and result.retryable):
         return False
     if result.status == "unknown":
         return ExecutionOutcome("outcome_unknown", result.error)

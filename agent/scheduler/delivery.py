@@ -128,6 +128,8 @@ def normalize_proactive_destination(destination, agent_id=None):
     if channel_type not in PROACTIVE:
         raise ValueError('需要重新选择渠道')
     receiver = destination.get('receiver')
+    if channel_type == 'desktop' and receiver in (None, ''):
+        receiver = 'desktop'
     if not isinstance(receiver, str) or not receiver.strip() or len(receiver.strip()) > 200:
         raise ValueError('A destination recipient is required')
     receiver = receiver.strip()

@@ -130,6 +130,7 @@ class TodoService:
                 raise
             logger.warning("[Todos] Calendar migration deferred: %s", exc)
             migration_deferred = True
+        self._migration_deferred = migration_deferred
         if os.environ.get("STELLA_DESKTOP") == "1" and not migration_deferred:
             try:
                 self._record_legacy_claims()
@@ -137,6 +138,7 @@ class TodoService:
                 if "locked" not in str(exc).lower():
                     raise
                 logger.warning("[Todos] Legacy reminder claims deferred: %s", exc)
+                self._migration_deferred = True
         self.scheduler_store = scheduler_store
         if self.scheduler_store is None and db_path is None:
             try:
@@ -522,6 +524,7 @@ class TodoService:
         return row
 
     def create_todo(self, payload, *, _briefing_key=None, _external_source_key=None):
+        self._ensure_migrations()
         row = self._validate_todo(payload)
         if _briefing_key and _external_source_key:
             raise ValueError("one external source is required")
@@ -1256,7 +1259,22 @@ class TodoService:
                 frequency == "monthly" and candidate.day == first.day or
                 frequency == "yearly" and (candidate.month, candidate.day) == (first.month, first.day))
 
+    def _ensure_migrations(self):
+        if not self._migration_deferred:
+            return
+        try:
+            self._migrate_calendar_records()
+            if os.environ.get("STELLA_DESKTOP") == "1":
+                self._record_legacy_claims()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            logger.warning("[Todos] Calendar migration still deferred: %s", exc)
+            return
+        self._migration_deferred = False
+
     def list_todos(self, start=None, end=None, include_completed=True):
+        self._ensure_migrations()
         try:
             first = date.fromisoformat(start) if start else None
             last = date.fromisoformat(end) if end else None

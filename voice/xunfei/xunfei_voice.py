@@ -24,15 +24,14 @@ import time
 from bridge.reply import Reply, ReplyType
 from common.log import logger
 from common.tmp_dir import TmpDir
-from config import conf
 from voice.voice import Voice
 from .xunfei_asr import xunfei_asr
 from .xunfei_tts import xunfei_tts
-import shutil
 
 try:
-    from voice.audio_convert import any_to_mp3
-    from pydub import AudioSegment
+    import importlib
+    importlib.import_module("voice.audio_convert")
+    importlib.import_module("pydub")
     _audio_available = True
 except ImportError as e:
     logger.debug("import audio libraries failed: {}".format(e))
@@ -83,10 +82,10 @@ class XunfeiVoice(Voice):
         try:
             # Avoid the same filename under multithreading
             fileName = TmpDir().path() + "reply-" + str(int(time.time())) + "-" + str(hash(text) & 0x7FFFFFFF) + ".mp3"
-            return_file = xunfei_tts(self.APPID,self.APIKey,self.APISecret,self.BusinessArgsTTS,text,fileName)
+            xunfei_tts(self.APPID,self.APIKey,self.APISecret,self.BusinessArgsTTS,text,fileName)
             logger.info("[Xunfei] textToVoice text={} voice file name={}".format(text, fileName))
             reply = Reply(ReplyType.VOICE, fileName)
-        except Exception as e:
+        except Exception:
             logger.error("[Xunfei] textToVoice error={}".format(fileName))
             reply = Reply(ReplyType.ERROR, "抱歉，讯飞语音合成失败")
         return reply

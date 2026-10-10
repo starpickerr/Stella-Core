@@ -6604,7 +6604,7 @@ class DesktopNotificationClaimHandler:
         from agent.scheduler.desktop_notify import claim_desktop_notifications, note_desktop_client
         note_desktop_client()
         deliveries = _todo_service().claim_desktop_reminders()
-        deliveries.extend(claim_desktop_notifications())
+        deliveries.extend(claim_desktop_notifications(_scheduler_store()))
         return json.dumps({"status": "success", "deliveries": deliveries}, ensure_ascii=False)
 
 

@@ -314,7 +314,7 @@ const TaskEditModal: React.FC<{
     return {
       primary: {
         channel_type: channel as 'desktop' | 'telegram' | 'wecom_bot',
-        receiver: channel === 'desktop' ? '' : receiver.trim(),
+        receiver: channel === 'desktop' ? 'desktop' : receiver.trim(),
         is_group: false,
       },
     }
@@ -347,6 +347,10 @@ const TaskEditModal: React.FC<{
     }
     if (!isToolCall && !content.trim()) {
       setError(t('task_save_error'))
+      return
+    }
+    if (hasNotification && isCreate && !PROACTIVE_CHANNELS.has(channel)) {
+      setError(t('task_channel_reselect'))
       return
     }
     if (channel === 'web' && conversationMode === 'source' && !sourceSessionId) {

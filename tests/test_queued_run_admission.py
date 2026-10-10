@@ -278,7 +278,9 @@ def test_scheduled_run_uses_source_session_execution_settings():
 
 
 def test_fifo_reservation_prevents_three_admissions_overtaking_slow_record(tmp_path, monkeypatch):
-    paused = threading.Event(); release = threading.Event(); calls = []
+    paused = threading.Event()
+    release = threading.Event()
+    calls = []
     history = None
     def run(query, context, *_args, **_kwargs):
         calls.append(query)
@@ -287,19 +289,25 @@ def test_fifo_reservation_prevents_three_admissions_overtaking_slow_record(tmp_p
     bridge, history = _bridge(tmp_path, monkeypatch, run)
     real = RunRecord
     class SlowRecord(real):
-        def __init__(self): super().__init__(tmp_path/'runs.db')
+        def __init__(self):
+            super().__init__(tmp_path/'runs.db')
         def create(self, *args, **kwargs):
             super().create(*args, **kwargs)
             if kwargs.get('request_id')=='first':
-                paused.set(); assert release.wait(3)
+                paused.set()
+                assert release.wait(3)
     monkeypatch.setattr('agent.runtime.run_record.RunRecord', SlowRecord)
     threads=[]
     def invoke(query):
         AgentBridge.agent_reply(bridge,query,{'session_id':'s','request_id':query})
-    first=threading.Thread(target=invoke,args=('first',));first.start();threads.append(first)
+    first=threading.Thread(target=invoke,args=('first',))
+    first.start()
+    threads.append(first)
     assert paused.wait(3)
     for query in ('second','third'):
-        thread=threading.Thread(target=invoke,args=(query,));thread.start();threads.append(thread)
+        thread=threading.Thread(target=invoke,args=(query,))
+        thread.start()
+        threads.append(thread)
         deadline=time.monotonic()+3
         while not any(row['request_id']==query for row in history.list_run_admissions('s')):
             assert time.monotonic()<deadline
@@ -307,6 +315,8 @@ def test_fifo_reservation_prevents_three_admissions_overtaking_slow_record(tmp_p
     assert calls==[]
     assert history.list_sessions()['sessions'][0]['session_id']=='s'
     release.set()
-    for thread in threads: thread.join(3); assert not thread.is_alive()
+    for thread in threads:
+        thread.join(3)
+        assert not thread.is_alive()
     assert calls==['first','second','third']
     assert [m['content'][0]['text'] for m in history.load_messages('s')]==['first','first reply','second','second reply','third','third reply']

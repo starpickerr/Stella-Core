@@ -5,7 +5,7 @@ Splits text into chunks with token limits and overlap
 """
 
 from __future__ import annotations
-from typing import List, Tuple
+from typing import List
 from dataclasses import dataclass
 
 
@@ -94,7 +94,7 @@ class TextChunker:
                 # Start new chunk with overlap
                 overlap_lines = self._get_overlap_lines(current_chunk, overlap_chars)
                 current_chunk = overlap_lines + [line]
-                current_chars = sum(len(l) for l in current_chunk)
+                current_chars = sum(len(item) for item in current_chunk)
                 start_line = i - len(overlap_lines)
             else:
                 # Add line to current chunk

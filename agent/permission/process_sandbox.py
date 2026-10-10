@@ -109,9 +109,10 @@ def _seatbelt_literal(path: str) -> str:
 def _protected_paths() -> tuple[list[str], list[str]]:
     from common.state_dir import mcp_config_file, shared_root, state_root, user_root
     from agent.workspace.shares import _manifest_file
-    from config import get_data_root
+    from config import get_data_root, get_weixin_credentials_path
     files = [str(Path(get_data_root()) / "config.json"), str(Path.home() / ".stella" / ".env"),
              str(mcp_config_file()), str(user_root() / "briefing" / "elearning.json"),
+             str(user_root() / "briefing" / "mailbox.json"), get_weixin_credentials_path(),
              str(shared_root() / ".env"), str(shared_root() / "session_prefs.json"),
              str(shared_root() / "projects.json"), str(_manifest_file())]
     folders = [str(user_root() / "briefing" / "elearning-sessions")]
@@ -162,6 +163,8 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                 f"(allow file-write* (subpath {_seatbelt_literal(path)}))" for path in write_roots)
             if approved_target:
                 permissions += f" (allow file-write* (literal {_seatbelt_literal(approved_target)}))"
+        if rule(policy, "network") == "deny":
+            permissions += " (deny network*)"
         work = os.path.realpath(context.work_root)
         private_rules = [f"(deny file-read* file-write* (literal {_seatbelt_literal(work)}))"]
         for name in ("sessions", "automations", "shared"):
@@ -181,8 +184,11 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         argv = [shutil.which("sandbox-exec"), "-p", profile, "/bin/sh", "-c", command]
     else:
         executable = shutil.which("bwrap")
+        isolation = ["--unshare-pid"]
+        if rule(policy, "network") == "deny":
+            isolation.append("--unshare-net")
         if constrained:
-            argv = [executable, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc",
+            argv = [executable, "--die-with-parent", *isolation, "--ro-bind", "/", "/", "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev"]
             for path in write_roots:
                 argv.extend(["--bind", path, path])
@@ -194,7 +200,7 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                 argv.extend(["--bind", target, target])
             argv.extend(["--chdir", cwd, "--", "/bin/sh", "-c", command])
         else:
-            argv = [executable, "--die-with-parent", "--bind", "/", "/", "--proc", "/proc",
+            argv = [executable, "--die-with-parent", *isolation, "--bind", "/", "/", "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev", "--chdir", cwd, "--", "/bin/sh", "-c", command]
         # Hide control data inside the mount namespace even in full-access
         # mode. The tool gate also rejects direct requests for these paths,

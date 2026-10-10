@@ -577,14 +577,14 @@ class KnowledgeService:
             nodes[rel] = {"id": rel, "label": title, "category": category}
 
         valid_ids = set(nodes.keys())
-        links = [l for l in links if l["source"] in valid_ids and l["target"] in valid_ids]
+        links = [link for link in links if link["source"] in valid_ids and link["target"] in valid_ids]
         seen = set()
         deduped = []
-        for l in links:
-            key = tuple(sorted([l["source"], l["target"]]))
+        for link in links:
+            key = tuple(sorted([link["source"], link["target"]]))
             if key not in seen:
                 seen.add(key)
-                deduped.append(l)
+                deduped.append(link)
 
         return {"nodes": list(nodes.values()), "links": deduped}
 

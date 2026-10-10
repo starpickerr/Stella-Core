@@ -20,6 +20,29 @@ def _lunch(amount=3200, occurred_at="2026-08-02T12:30:00+08:00", **extra):
     return payload
 
 
+def test_failed_yearly_statement_does_not_keep_a_partial_ledger(tmp_path, monkeypatch):
+    import sqlite3
+
+    svc = _service(tmp_path)
+    original = svc.store.replace_statement_items
+
+    def fail_yearly(statement_id, items):
+        statement = svc.store.get_statement(statement_id)
+        if statement and statement["period_type"] == "yearly":
+            raise sqlite3.OperationalError("database is locked")
+        return original(statement_id, items)
+
+    monkeypatch.setattr(svc.store, "replace_statement_items", fail_yearly)
+    with pytest.raises(sqlite3.OperationalError):
+        svc.create_ledger(_lunch())
+    assert svc.store.list_ledgers() == []
+    assert svc.list_statements() == []
+    monkeypatch.undo()
+    saved = svc.create_ledger(_lunch())
+    assert svc.store.get_ledger(saved["id"])["name"] == "午餐"
+    assert len(svc.list_statements("yearly", 2026)) == 1
+
+
 def test_create_ledger_rebuilds_monthly_and_yearly_statements(tmp_path):
     svc = _service(tmp_path)
     entry = svc.create_ledger(_lunch())

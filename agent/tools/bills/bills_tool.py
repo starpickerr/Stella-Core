@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Optional
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger

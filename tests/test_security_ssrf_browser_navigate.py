@@ -105,6 +105,14 @@ class TestBrowserNavigateSSRF(unittest.TestCase):
         self.assertIn("blocked for security", str(result.result))
         self.assertEqual(self.stub.navigated, [])
 
+    def test_ipv4_mapped_metadata_literal_blocked(self):
+        result = self.tool.execute(
+            {"action": "navigate", "url": "http://[::ffff:169.254.169.254]/latest/meta-data/"}
+        )
+        self.assertEqual(result.status, "error")
+        self.assertIn("blocked for security", str(result.result))
+        self.assertEqual(self.stub.navigated, [])
+
     # --- Local dev targets stay reachable (the maintainer's core workflow) ---
 
     def test_loopback_literal_allowed(self):

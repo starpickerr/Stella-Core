@@ -476,6 +476,40 @@ def test_desktop_migrations_defer_together_and_recover_after_writer_lock(tmp_pat
         assert {row[0] for row in db.execute("SELECT name FROM todo_migrations")} == {"calendar_affairs_v1", "desktop_reminders_v1"}
 
 
+def test_same_service_retries_calendar_migration_after_the_writer_lock(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    path = tmp_path / "todos.db"
+    calendar_path = tmp_path / "calendar.db"
+    sqlite3.connect(str(calendar_path)).close()
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    TodoService(path, calendar_path, scheduler_store=store)
+    with sqlite3.connect(str(path)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("DELETE FROM todo_migrations WHERE name IN ('calendar_affairs_v1','desktop_reminders_v1')")
+    real_connect = TodoService._connect
+
+    @contextmanager
+    def quick_connect(self):
+        with real_connect(self) as db:
+            db.execute("PRAGMA busy_timeout=50")
+            yield db
+
+    with sqlite3.connect(str(path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE todo_migrations SET name=name")
+        monkeypatch.setattr(TodoService, "_connect", quick_connect)
+        service = TodoService(path, calendar_path, scheduler_store=store)
+        assert service.list_todos() == []
+    monkeypatch.setattr(TodoService, "_connect", real_connect)
+    assert service.list_todos() == []
+    with sqlite3.connect(str(path)) as db:
+        assert {row[0] for row in db.execute("SELECT name FROM todo_migrations")} == {
+            "calendar_affairs_v1", "desktop_reminders_v1"}
+
+
 def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path):
     with identity_scope(user_id="student-a"):
         store = AutomationStore(tmp_path / "scheduler" / "tasks.json", "default")
