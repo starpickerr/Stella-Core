@@ -166,8 +166,11 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     from agent.permission.process_sandbox import capability
     isolation = capability()
     if effective_mode(effective) == "full-access" and isolation["status"] == "enabled":
-        isolation = {**isolation, "status": "full-access",
-                     "reason": "Full access permits general filesystem writes; protected controls remain blocked."}
+        isolation = {
+            **isolation,
+            "reason": (isolation.get("reason") or "")
+            + " 完全访问仍拦截其他会话的私有工作区、托管数据、凭据和 Apple 系统授权。",
+        }
     activity = [row for row in recent(limit=200) if row.get("at", 0) >= time.time() - 7 * 86400]
     denials = [row for row in activity if row.get("decision") == "deny"]
     high = [row for row in activity if row.get("risk") in ("L3", "L4")]

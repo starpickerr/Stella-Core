@@ -3,7 +3,7 @@ import pytest
 
 from agent.permission.audit import recent
 from agent.permission.gateway import DecisionKind, Scope, SecurityGateway
-from agent.permission.security_policy import (MODE_DEFINITIONS, PRESETS, copy_custom, default_policy, effective_mode,
+from agent.permission.security_policy import (MODE_DEFINITIONS, copy_custom, default_policy, effective_mode,
                                               effective_rules, legacy_policy, resolve, rule, validate_patch)
 from agent.workspace import project_store, session_prefs
 
@@ -211,6 +211,41 @@ def test_security_api_persists_real_policy_and_returns_no_secret(tmp_path, monke
     assert rule(overview["global_policy"], "workspace_write") == "deny"
     assert overview["summary"]["app_password_set"] is True
     assert "TOPSECRET" not in json.dumps(overview)
+
+
+def test_extra_roots_cannot_name_foreign_private_work(tmp_path, monkeypatch):
+    from agent.workspace.context import resolve_context
+
+    work = tmp_path / "work"
+    monkeypatch.setattr("agent.workspace.context.personal_work_dir", lambda **kwargs: work)
+    monkeypatch.setattr("common.state_dir.personal_work_dir", lambda **kwargs: work)
+    monkeypatch.setattr("agent.workspace.project_store._store_file", lambda: str(tmp_path / "projects.json"))
+    other = resolve_context("other", "alpha", ensure=True)
+    with pytest.raises(ValueError, match="private"):
+        validate_patch({"extra_roots": [str(other.root / "secret.txt")]})
+    with pytest.raises(ValueError, match="private"):
+        validate_patch({"extra_roots": [str(work / "shared")]})
+    allowed = validate_patch({"extra_roots": [str(tmp_path / "notes")]})
+    assert allowed["extra_roots"] == [str(tmp_path / "notes")]
+
+
+def test_full_access_overview_keeps_enabled_sandbox_status(tmp_path, monkeypatch):
+    from agent.permission import center as security_center
+    import config as config_module
+
+    live = {"security_policy": {"preset": "full-access", "rules": {}, "connections": {}}}
+    work = tmp_path / "work"
+    monkeypatch.setattr(config_module, "conf", lambda: live)
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path)
+    monkeypatch.setattr("common.state_dir.mcp_config_file", lambda: tmp_path / "mcp.json")
+    monkeypatch.setattr("agent.workspace.context.personal_work_dir", lambda **kwargs: work)
+    monkeypatch.setattr("agent.permission.process_sandbox.capability",
+                        lambda: {"status": "enabled", "reason": "Seatbelt is active."})
+    overview = security_center.overview("owner", "alpha")
+    assert overview["effective_mode"] == "full-access"
+    assert overview["process_isolation"]["status"] == "enabled"
+    reason = overview["process_isolation"]["reason"].lower()
+    assert "private" in reason or "会话" in overview["process_isolation"]["reason"]
 
 
 def test_shell_does_not_inherit_backend_secret(tmp_path, monkeypatch):

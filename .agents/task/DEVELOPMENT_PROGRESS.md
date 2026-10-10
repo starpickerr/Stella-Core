@@ -10,7 +10,7 @@
 | 3 Apple EventKit 与同步 | 本地验收通过 | 独立 Calendar/Reminders 授权、原生桥接、映射与双向对账；桌面与 Agent 共用 Application 管理器。一次性操作须选定来源及条目、预览并确认；首次持续同步须预览并确认。独立复核后修复失败扫描确认删除、父事务级联删除、相对闹钟覆盖、原生写入后映射恢复及 Agent 写入权限分级。假 EventKit、Swift 编译和浏览器交互通过。 | 在隔离测试日历/列表和打包应用中验收真实 Apple 授权；阶段 4 实现统一设置和页面 Agent。 |
 | 4 Apple 设置与页面 Agent | 本地验收通过 | Apple 日历与提醒事项统一在设置中心，分别控制自动同步、来源、方向、预览、一次性传输、冲突和断开；日程与事务页面使用独立可恢复的内嵌 Agent 会话与草稿，快捷菜单直接发送并进入同一设置中心。修复 Agent 配置绕过自动同步开关、历史加载覆盖新消息、忙碌时改动一次性传输条件、快捷请求离页丢失及本地时区日期偏移。事务主体未改造。 | 真实 Apple 授权及打包运行仍需隔离测试目标；继续阶段 5。 |
 | 5 Work 工作区 | 本地验收通过 | 提交 `8fc7c22c`、`5d7370f8`、`109810b9`、`0b73a764`：会话/项目/自动化上下文、精确文件共享、网关与 OS 沙箱私有边界。Python 工作区测试 54 项通过；增量门禁含 `tests/ui_work_shares.py`。 | 独立审查 Work 范围后进入阶段 6。 |
-| 6 安全权限 | 待核实 | 已有 `SecurityGateway`、`SecurityPolicy`、`ProcessSandbox` 与 `approval`/`project-full`/`full-access`/`custom`；网关仍识别历史 `read-only`/`workspace-write`。 | 对齐产品四模式、Custom、工作区有效权限与验收。 |
+| 6 安全权限 | 本地验收通过 | 产品预设 `read-only`/`workspace-write`/`full-access`/`custom`；`approval` 迁为 Custom 快照、`project-full` 等同工作区写入；持久化策略不被 Agent mode 放宽；Full Access 仍报告沙箱 enabled；extra_roots 不能指向私有 Work。增量门禁通过。 | 独立审查后合并 `develop`。 |
 
 ## 本轮验证
 
@@ -22,10 +22,10 @@
 - PASS：阶段 3 假 EventKit 同步/API/Agent/权限回归 71 项；Swift EventKit helper 编译及无真实 Reminder store 的闹钟测试通过。浏览器日历设置的首次预览、确认、同步、冲突及断开流程通过。
 - PASS：阶段 4 Apple 设置与内嵌 Agent 浏览器交互：独立开关、精确条目预览/确认、离页恢复、审批、连续快捷请求与页面刷新；Agent 自动同步开关回归先失败后通过，设置忙碌状态和历史加载用例先失败后通过。分支复核发现并处理上述竞态；独立审查代理中途达到额度限制，未产生完整审查结论。
 - PASS：阶段 5 Work Python 测试 54 项（context/runtime/shares/boundaries/sandbox/browser/scheduler/project）。
-- PASS：`.venv/bin/python scripts/quality_check.py incremental`（本次会话）：Ruff；pytest 1485 passed / 4 skipped；ESLint、构建、类型检查、Node；UI 含 Work 共享精确文件/接收人/撤销。`policy` SKIP。
+- PASS：`.venv/bin/python scripts/quality_check.py incremental`（本次会话，阶段 6 后）：Ruff；pytest 1489 passed / 4 skipped；ESLint、构建、类型检查、Node；UI 含 Work 共享与安全四模式/完全访问提示。`policy` SKIP。
 - SKIP：真实 Apple 日历与提醒事项授权/读写、微信/飞书外部发送、打包运行；未使用用户账号或数据。Windows 进程沙箱本机不适用。
 
 ## 下一步
 
 1. 在隔离测试账号可用时补真实渠道与 Apple 授权验收。
-2. 对 Work 提交做独立审查后进入阶段 6：四模式、Custom、沙箱与审批。
+2. 完成 Work 与安全权限独立审查后，按既有授权合并本地 `develop`。

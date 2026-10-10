@@ -92,7 +92,7 @@ const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           </span>{mode === item.id && <Check size={14} />}
         </button>)}
         {pendingFull && <div className="rounded-btn border border-accent p-2 text-xs space-y-2">
-          <p>{en ? 'Full access expands file access beyond this workspace. Important external and destructive actions still need approval.' : '完全访问会把文件访问扩大到当前工作区以外；重要外部操作和破坏性操作仍需审批。'}</p>
+          <p>{en ? 'Full Access relaxes ordinary file and shell limits. Other chats’ private Work folders, managed data, credentials and Apple grants stay blocked.' : '完全访问只放宽一般文件和命令限制。其他会话的私有工作区、托管数据、凭据和 Apple 系统授权仍会被拦截。'}</p>
           <p className="break-all text-content-secondary">{state.authorized_roots.join(' · ')}</p>
           <div className="flex gap-2"><button type="button" onClick={() => setPendingFull(false)}>{en ? 'Cancel' : '取消'}</button>
             <button type="button" className="text-accent" onClick={() => void applyPolicy({ preset: 'full-access' })}>{en ? 'Enable full access' : '启用完全访问'}</button></div>

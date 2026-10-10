@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import os
 from typing import Any
 
 from agent.permission.policy import FULL_ACCESS, READ_ONLY, WORKSPACE_WRITE
@@ -67,6 +68,21 @@ LEGACY_PRESETS = {
 }
 _PRODUCT_ALIASES = {"project-full": "workspace-write"}
 _DEFAULT_BASE = "workspace-write"
+
+
+def _is_private_work_path(path: str) -> bool:
+    from common.state_dir import personal_work_dir
+    work = os.path.realpath(personal_work_dir(ensure=False))
+    real = os.path.realpath(os.path.expanduser(path))
+    try:
+        inside = os.path.commonpath((real, work)) == work
+    except ValueError:
+        return False
+    if not inside:
+        return False
+    relative = os.path.relpath(real, work)
+    first = relative.split(os.sep, 1)[0]
+    return first in {"sessions", "automations", "shared"}
 
 
 def default_policy() -> dict:
@@ -137,6 +153,8 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
         roots = value["extra_roots"]
         if global_policy or not isinstance(roots, list) or any(not isinstance(p, str) or not p.strip() for p in roots):
             raise ValueError("extra roots are only valid for a project or conversation")
+        if any(_is_private_work_path(path) for path in roots):
+            raise ValueError("extra roots cannot name private Work paths")
         result["extra_roots"] = list(dict.fromkeys(roots))
     return result
 
