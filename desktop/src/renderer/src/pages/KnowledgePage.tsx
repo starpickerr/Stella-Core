@@ -24,6 +24,7 @@ import type {
   KnowledgeGraph as KnowledgeGraphData,
 } from '../types'
 import Markdown from '../components/Markdown'
+import { resolveKnowledgeLink } from './knowledgeLinks'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 
 interface KnowledgePageProps {
@@ -118,49 +119,6 @@ function firstFile(list: KnowledgeList): { path: string; title: string } | null 
   return null
 }
 
-// Find a document by its bare filename anywhere in the tree (root files first,
-// then a DFS). Used to resolve relative `../foo.md` links from index docs.
-function findFileByName(list: KnowledgeList, filename: string): { path: string; title: string } | null {
-  for (const f of list.root_files || []) {
-    if (f.name === filename) return { path: f.name, title: f.title || f.name }
-  }
-  const walk = (dir: KnowledgeDir, prefix: string): { path: string; title: string } | null => {
-    const dirPath = prefix ? `${prefix}/${dir.dir}` : dir.dir
-    for (const f of dir.files) {
-      if (f.name === filename) return { path: `${dirPath}/${f.name}`, title: f.title || f.name }
-    }
-    for (const c of dir.children) {
-      const hit = walk(c, dirPath)
-      if (hit) return hit
-    }
-    return null
-  }
-  for (const d of list.tree || []) {
-    const hit = walk(d, '')
-    if (hit) return hit
-  }
-  return null
-}
-
-// Resolve a relative `.md` link (from a document body) into a knowledge path.
-// Supports `knowledge/…/x.md`, `category/x.md`, and bare/relative `../x.md`
-// (matched by filename).
-function resolveKnowledgeLink(list: KnowledgeList, href: string): { path: string; title: string } | null {
-  const clean = href.split('#')[0].split('?')[0]
-  if (!clean.endsWith('.md')) return null
-  if (clean.startsWith('knowledge/')) {
-    const path = clean.replace(/^knowledge\//, '')
-    return { path, title: findTitle(list, path) }
-  }
-  if (/^[a-z0-9_-]+\/[a-z0-9_.-]+\.md$/i.test(clean) && !clean.startsWith('/') && !clean.startsWith('.')) {
-    return { path: clean, title: findTitle(list, clean) }
-  }
-  // Relative/other path: fall back to matching by filename.
-  const filename = clean.split('/').pop() || clean
-  return findFileByName(list, filename)
-}
-
-// Resolve a document's display title from its path, falling back to the stem.
 function findTitle(list: KnowledgeList, path: string): string {
   const fallback = path.split('/').pop()?.replace(/\.md$/i, '') || path
   for (const f of list.root_files || []) {
@@ -239,10 +197,11 @@ const KnowledgePage: React.FC<KnowledgePageProps> = ({ baseUrl }) => {
   const openInternalLink = useCallback(
     (href: string) => {
       if (!data) return
-      const hit = resolveKnowledgeLink(data, href)
+      const hit = resolveKnowledgeLink(data, activePath || '', href)
       if (hit) void openDoc(hit.path, hit.title)
+      else showStatus(t('knowledge_link_missing'), true)
     },
-    [data, openDoc]
+    [activePath, data, openDoc, showStatus]
   )
 
   // Reload the tree. When targetPath is given, open it; otherwise keep the

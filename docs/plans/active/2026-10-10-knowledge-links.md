@@ -54,5 +54,8 @@
 
 ## Progress
 
-- Status: not started. Root cause supported by code comparison: the new renderer's `workspaceHrefOf` branch runs before `onInternalLink`; the previous renderer handled knowledge links first.
-- Verification: SKIP — no implementation or browser run for this plan yet.
+- Status: implemented on `fix/briefing-generation-20261010`. Relative Markdown links in the knowledge page use the knowledge callback before workspace preview. Exact paths replace the first-basename fallback, and a missing target shows “找不到这篇知识文档”.
+- Verification:
+  - PASS `node --experimental-strip-types --test tests/knowledgeLinks.test.mjs` — 2 passed.
+  - PASS isolated `tests/ui_knowledge_links.py`: clicking “软件设计” in `index.md` shows the software-design document.
+  - PASS `npx tsc --noEmit -p desktop/tsconfig.json` before the browser run.

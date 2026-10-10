@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { workspaceHrefOf } from '../lib/fileKind'
+import { markdownLinkRoute } from '../pages/knowledgeLinks'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useLightboxStore } from './Lightbox'
 import { CodeBlock } from './content/CodeBlock'
@@ -32,7 +33,11 @@ const MarkdownContext = React.createContext<Pick<MarkdownProps, 'onInternalLink'
 function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
   const { onInternalLink } = React.useContext(MarkdownContext)
   const target = safeUrl(href || '')
-  const workspacePath = workspaceHrefOf(target)
+  const route = markdownLinkRoute(href || '', Boolean(onInternalLink))
+  if (route === 'knowledge' && onInternalLink) {
+    return <a href={target} onClick={(event) => { event.preventDefault(); onInternalLink(target) }}>{children}</a>
+  }
+  const workspacePath = route === 'workspace' ? workspaceHrefOf(target) : null
   if (workspacePath) {
     return (
       <a href={target} data-ws-path={workspacePath} className="ws-link" onClick={(event) => {
@@ -40,9 +45,6 @@ function MarkdownLink({ href, children }: { href?: string; children?: React.Reac
         useWorkspaceStore.getState().openLink(workspacePath)
       }}>{children}</a>
     )
-  }
-  if (onInternalLink && target.endsWith('.md') && !/^https?:\/\//i.test(target)) {
-    return <a href={target} onClick={(event) => { event.preventDefault(); onInternalLink(target) }}>{children}</a>
   }
   if (!target) return <span>{children}</span>
   return <a href={target} target="_blank" rel="noopener noreferrer">{children}</a>
