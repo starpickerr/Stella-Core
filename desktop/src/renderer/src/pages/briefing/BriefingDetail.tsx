@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import apiClient from '../../api/client'
 import { MailList } from './MailList'
 import { ItemList } from './ItemList'
 import { RevisionGraph } from './RevisionGraph'
 import { t, getLang } from '../../i18n'
 import type { BriefingDetail as Detail, BriefingDecision } from '../../types'
 import { actionLabel as label } from './actionLabels'
+import { sortBriefingItems } from './sortItems'
 
 export const BriefingDetail: React.FC<{
   detail: Detail
@@ -21,33 +21,10 @@ export const BriefingDetail: React.FC<{
   const [category, setCategory] = useState<'candidate' | 'selected' | 'filtered' | null>(null)
   useEffect(() => { setCategory(null) }, [briefing.id])
   const [sourceFilter, setSourceFilter] = useState('email')
-  const [overview, setOverview] = useState(false)
-  const [tracked, setTracked] = useState<Pick<Detail, 'items' | 'actions' | 'preferences'> | null>(null)
-  const [overviewLoading, setOverviewLoading] = useState(false)
-  const [overviewError, setOverviewError] = useState('')
-  useEffect(() => {
-    if (!overview || version !== null) return
-    let active = true
-    setOverviewLoading(true); setOverviewError('')
-    apiClient.getBriefingOverview().then((value) => { if (active) setTracked(value) })
-      .catch((err) => { if (active) setOverviewError(String(err instanceof Error ? err.message : err)) })
-      .finally(() => { if (active) setOverviewLoading(false) })
-    return () => { active = false }
-  }, [overview, version, detail])
-  const display = overview && version === null && tracked ? tracked : detail
-  const preferences = detail.preferences
-  const visibleItems = display.items.filter((item) => {
-    const view = display.actions?.[item.id]
-    if (!view || overview || version !== null) return true
-    const important = preferences?.important_types.includes(view.information_type)
-    if (!important && preferences?.show_low_priority === false && view.category === 'other') return false
-    if (view.change_type !== 'unchanged') return true
-    if (['failed', 'conflict'].includes(view.todo?.state ?? '') || ['failed', 'conflict'].includes(view.calendar?.state ?? '')) return true
-    const deadline = view.facts.due_at ? Date.parse(String(view.facts.due_at)) : NaN
-    const completed = view.todo?.business && 'status' in view.todo.business && ['completed', 'cancelled'].includes(view.todo.business.status)
-    if (!completed && deadline < Date.now() + 3 * 86400000) return true
-    return preferences?.show_ongoing !== false && (!preferences || preferences.reminder_frequency === 'daily') && (item.status === 'follow_up' || (view.category === 'needs_action' && !completed))
-  })
+  const items = useMemo(
+    () => sortBriefingItems(detail.items, detail.actions),
+    [detail.items, detail.actions],
+  )
   const snapshots = detail.mail ?? []
   const sourceTypes = [...new Set([...snapshots.map((row) => row.source), ...Object.values(briefing.source_windows ?? {}).map((window) => window.source)])]
   if (!sourceTypes.length) sourceTypes.push('email')
@@ -101,15 +78,9 @@ export const BriefingDetail: React.FC<{
           </div>
           {briefing.mail_snapshot_available ? <MailList key={`${briefing.id}:${version ?? 'current'}:${briefing.updated_at}`} mail={visibleMail} source={sourceFilter} />
             : <p className="text-sm text-content-tertiary rounded-card bg-surface-2 p-4">{t('briefing_mail_legacy')}</p>}
-        </div> : <>
-          <div className="flex flex-wrap gap-2" role="group" aria-label={label('overview')}><button type="button" aria-pressed={!overview} onClick={() => setOverview(false)} className={`rounded-btn px-3 py-1.5 text-xs ${!overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('incremental')}</button><button type="button" aria-pressed={overview} onClick={() => setOverview(true)} className={`rounded-btn px-3 py-1.5 text-xs ${overview ? 'bg-accent-soft text-accent' : 'text-content-secondary'}`}>{label('overview')}</button></div>
-          {!visibleItems.length && detail.items.length > 0 && <p role="status" className="text-sm text-content-tertiary">{label('no_changes')}</p>}
-          {overviewError && <p role="alert" className="text-sm text-danger">{overviewError}</p>}
-          {overviewLoading && <p role="status" className="text-sm text-content-tertiary">{t('briefing_loading')}</p>}
-          <ItemList items={visibleItems} actions={display.actions} mail={detail.mail}
-            emptyReportBody={display.items.length === 0 && (!overview || version !== null) ? briefing.body : ''}
-            busy={busy || version !== null || overviewLoading} onDecision={onDecision} />
-        </>}
+        </div> : <ItemList items={items} actions={detail.actions} mail={detail.mail}
+            emptyReportBody={detail.items.length === 0 ? briefing.body : ''}
+            busy={busy || version !== null} onDecision={onDecision} />}
       </>}
     </section>
     <RevisionGraph revisions={detail.revisions} version={version} busy={busy} onVersion={onVersion} />

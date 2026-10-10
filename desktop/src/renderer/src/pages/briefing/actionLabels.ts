@@ -27,8 +27,6 @@ const labels: Record<string, [string, string]> = {
   submitted: ['已提交', 'Submitted'], graded: ['已评分', 'Graded'], completed: ['已完成', 'Completed'],
   todo: ['待办', 'To do'], in_progress: ['进行中', 'In progress'], waiting: ['等待', 'Waiting'],
   blocked: ['受阻', 'Blocked'], cancelled: ['已取消', 'Cancelled'],
-  overview: ['完整概览', 'Full overview'], incremental: ['增量变化', 'Changes'],
-  no_changes: ['本次没有新变化，可切换完整概览查看持续关注事项。', 'No new changes. Open the full overview to see ongoing items.'],
   summary: ['AI 报告', 'AI report'], full_summary: ['展开完整摘要', 'Expand summary'],
   source_details: ['来源与时间窗口', 'Sources and time windows'],
   select_all: ['全选', 'Select all'], select_item: ['选择', 'Select'],
