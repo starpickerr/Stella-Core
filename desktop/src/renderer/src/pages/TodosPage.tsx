@@ -29,6 +29,7 @@ import type {
   NotificationRoute,
 } from "../types";
 import { breadcrumbParts, survivingFocus, todoPath } from "./todoFocus";
+import { currentSettingsOrigin, useRestoreScroll } from "./settings/origin";
 import { isDone, isOverdue, matchesTodoView, todoGroup, type TodoView } from "./todoView";
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -60,6 +61,7 @@ type Sort = "date" | "priority" | "manual";
 const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  useRestoreScroll();
   const en = getLang() === "en";
   const copy = en
     ? {
@@ -793,7 +795,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     return false;
   };
   return (
-    <div ref={pageRef} className="h-full overflow-y-auto bg-surface-0 text-content-primary">
+    <div ref={pageRef} data-stella-scroll className="h-full overflow-y-auto bg-surface-0 text-content-primary">
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-8">
         {focused && (
           <nav aria-label={copy.breadcrumb} className="mb-5 flex items-center gap-1.5 text-xs text-content-tertiary min-w-0">
@@ -875,7 +877,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {appleMenu && <div role="menu" aria-label="Apple 提醒事项操作" onKeyDown={event => { if (event.key === "Escape") setAppleMenu(false) }} className="absolute right-0 top-full z-30 mt-1 min-w-56 rounded-btn border border-default bg-surface p-1 shadow-lg">
               <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可用列表，帮我选择要导入的提醒事项，先预览变更，并在获得我确认后导入 Stella 事务。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
               <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可写列表，帮我选择要同步至 Apple 的 Stella 事务，先预览变更，并在获得我确认后执行。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
-              <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=integrations&section=apple-reminders") }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
+              <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=integrations&section=apple-reminders", { state: currentSettingsOrigin(location.pathname, location.search) }) }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
             </div>}
           </div>
         } /></div>

@@ -10,7 +10,7 @@ import { ActionSettings } from './ActionSettings'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
 const emptyRule: BriefingRuleInput = { text: '', source: '*' }
 
-export const SettingsPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [defaultText, setDefaultText] = useState('')
   const [rules, setRules] = useState<BriefingRule[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,9 +45,9 @@ export const SettingsPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return <div className="max-w-3xl mx-auto space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold text-content">{t('briefing_settings')}</h2>
-      <button type="button" onClick={onBack} className={`inline-flex items-center gap-1.5 ${buttonClass}`}>
+      {onBack && <button type="button" onClick={onBack} className={`inline-flex items-center gap-1.5 ${buttonClass}`}>
         <ArrowLeft size={14} />{t('briefing_back_to_briefing')}
-      </button>
+      </button>}
     </div>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}

@@ -7,6 +7,7 @@ import type { CalendarCategory, CalendarEvent, CalendarEventInput } from '../typ
 import { ContinuousCalendarRail, DayTimeline, MiniCalendar, SplitCalendar, sunday, WeekTimeline } from './calendar/CalendarViews'
 import type { ScrollPeriod } from './calendar/CalendarViews'
 import EmbeddedAgent, { enqueueEmbeddedPreset, type PresetRequest } from '../components/EmbeddedAgent'
+import { currentSettingsOrigin, useRestoreScroll } from './settings/origin'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -42,6 +43,7 @@ const colors = ['#6B8AF7', '#55B89A', '#E5A755', '#A48BCD', '#E67878', '#4CA7C8'
 
 const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const location = useLocation()
+  useRestoreScroll()
   const navigate = useNavigate()
   const en = getLang() === 'en'
   const labels = en ? {
@@ -329,7 +331,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     </section>
   }
 
-  return <div className="flex-1 flex flex-col min-h-0 text-content">
+  return <div className="flex-1 flex flex-col min-h-0 text-content" data-stella-scroll>
     <header className="px-6 pt-5 pb-4 border-b border-default flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">{en ? 'Calendar' : '日程'}</h1><p className="text-xs text-content-tertiary mt-1">{labels.subtitle}</p></div>
       <div className="flex items-center gap-2">
@@ -345,7 +347,7 @@ const CalendarPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         {appleMenu && <div role="menu" aria-label="Apple 日历操作" onKeyDown={event => { if (event.key === 'Escape') setAppleMenu(false) }} className="absolute right-0 top-full mt-1 z-30 min-w-52 rounded-btn border border-default bg-surface shadow-lg p-1">
           <button type="button" role="menuitem" onClick={() => askAgent('请查看 Apple 日历权限和可用日历，帮我选择要导入的日程范围，先预览变更，并在获得我确认后导入 Stella。')} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
           <button type="button" role="menuitem" onClick={() => askAgent('请查看 Apple 日历权限和可写日历，帮我选择要同步至 Apple 的 Stella 日程，先预览变更，并在获得我确认后执行。')} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
-          <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate('/settings?tab=integrations&section=apple-calendar') }} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">管理 Apple 日历</button>
+          <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate('/settings?tab=integrations&section=apple-calendar', { state: currentSettingsOrigin(location.pathname, location.search) }) }} className="w-full text-left rounded-btn px-3 py-2 text-sm hover:bg-surface-2">管理 Apple 日历</button>
         </div>}
       </div>
     } /></div>

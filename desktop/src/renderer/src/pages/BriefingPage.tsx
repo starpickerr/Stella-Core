@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
@@ -6,8 +7,8 @@ import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingRunP
 import Markdown from '../components/Markdown'
 import { BriefingList } from './briefing/BriefingList'
 import { BriefingDetail } from './briefing/BriefingDetail'
-import { SettingsPanel } from './briefing/SettingsPanel'
 import { RevisionGraph } from './briefing/RevisionGraph'
+import { currentSettingsOrigin, useRestoreScroll } from './settings/origin'
 import { useBriefingRunStore } from '../store/briefingRunStore'
 
 const localDay = () => {
@@ -16,6 +17,9 @@ const localDay = () => {
 }
 
 const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
+  const location = useLocation()
+  const navigate = useNavigate()
+  useRestoreScroll()
   const [briefings, setBriefings] = useState<Briefing[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -28,7 +32,6 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const takeRunResult = useBriefingRunStore((state) => state.takeResult)
   const clearRunError = useBriefingRunStore((state) => state.clearError)
   const [marking, setMarking] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [sources, setSources] = useState<BriefingSource[]>([])
   const [sourcesLoading, setSourcesLoading] = useState(true)
   const [error, setError] = useState('')
@@ -81,9 +84,9 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }, [baseUrl, load])
 
   useEffect(() => {
-    if (!settingsOpen) void loadSources()
+    void loadSources()
     return () => { sourceRequest.current++ }
-  }, [baseUrl, settingsOpen, loadSources])
+  }, [baseUrl, loadSources])
 
   useEffect(() => {
     if (!generating) { setRunProgress(null); return }
@@ -172,16 +175,16 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div className="flex gap-2">
         <button type="button" disabled={generating || marking} onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 disabled:opacity-50"><RefreshCw size={15} /></button>
-        <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label={t('briefing_settings')} aria-expanded={settingsOpen}
-          className={`h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 ${settingsOpen ? 'bg-surface-2' : ''}`}><Settings size={15} /></button>
-        <button type="button" disabled={settingsOpen || loading || sourcesLoading || generating || marking || !sources.length} onClick={() => void generate()}
+        <button type="button" onClick={() => navigate('/settings?tab=briefing', { state: currentSettingsOrigin(location.pathname, location.search) })} aria-label={t('briefing_settings')}
+          className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2"><Settings size={15} /></button>
+        <button type="button" disabled={loading || sourcesLoading || generating || marking || !sources.length} onClick={() => void generate()}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm font-medium disabled:opacity-50">
           {generating ? <Loader2 size={14} className="animate-spin" /> : <Sun size={14} />}{t(generating ? 'briefing_generating' : todayBriefing ? 'briefing_update' : 'briefing_generate')}
         </button>
       </div>
     </header>
     {(error || runError) && <div role="alert" className="mx-6 mt-4 p-3 rounded-card bg-danger-soft text-danger text-sm flex items-start gap-3"><span className="flex-1 break-words">{error || runError}</span><button type="button" onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }}>{t('briefing_retry')}</button></div>}
-    {settingsOpen ? <div className="flex-1 overflow-y-auto p-6"><SettingsPanel key={baseUrl} onBack={() => setSettingsOpen(false)} /></div> : <div className="flex-1 flex min-h-0">
+    <div className="flex-1 flex min-h-0" data-stella-scroll>
       <aside className={`w-full lg:w-72 lg:shrink-0 lg:border-r border-default overflow-y-auto p-4 ${selectedId || showDraft ? 'hidden lg:block' : ''}`}>
         <h2 className="text-xs font-semibold text-content-tertiary mb-3">{t('briefing_history')}</h2>
         {loading ? <div className="flex items-center gap-2 text-sm text-content-tertiary py-8"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</div> : <BriefingList briefings={briefings} selectedId={selectedId} onSelect={(id) => { setError(''); setVersion(null); setDraftSelected(false); setSelectedId(id) }} />}
@@ -210,7 +213,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           : detailLoading ? <div className="flex items-center justify-center text-content-tertiary py-16"><Loader2 size={18} className="animate-spin mr-2" />{t('briefing_loading')}</div>
             : <div className="text-center text-sm text-content-tertiary py-20">{t('briefing_select')}{selectedId && <button type="button" onClick={() => setSelectedId(null)} className="block mx-auto mt-4 text-accent">{t('briefing_back')}</button>}</div>}
       </main>
-    </div>}
+    </div>
   </div>
 }
 
