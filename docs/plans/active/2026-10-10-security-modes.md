@@ -1,79 +1,58 @@
-# Security Permission Modes Implementation Plan
+# Security Modes Implementation Plan
 
 > **For Stella workers:** Use the project `executing-plans` skill to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking; tests use isolated project data.
 
-**Goal:** Complete stage 6 of `.agents/task/DEVELOPMENT_PLAN.md`: first-class Read Only, Workspace Write, Full Access and Custom modes that actually bind tools, sandbox and approvals, without widening historical configs.
+**Goal:** Make Full Access immediate and place all custom rule editing on the Security page.
 
-**Architecture:** Keep `SecurityGateway`, `SecurityPolicy` and `ProcessSandbox` as the three authorities. Persist four product presets in `security_policy`; migrate stored `approval`/`project-full`/`strict`/`standard` without privilege elevation. Work private paths, managed state, Apple system authorization and user-chosen notification channels stay independent of Full Access.
+**Architecture:** The policy preset in `security_policy.py` is the single enforcement source. The composer selector only selects a mode; the Security page owns detailed custom rules. Both frontends save through the existing policy APIs, with gateway hard boundaries unchanged.
 
-**Tech Stack:** Python 3.9, existing Security Center React page, pytest, Playwright.
+**Tech Stack:** Python policy gateway, React/TypeScript, pytest, Playwright.
 
-**Spec:** `.agents/task/DEVELOPMENT_PLAN.md` stage 6, section 1.2 item 4, decision A7; `docs/security-permission-modes.md` operational limits.
+**Spec:** [Stella current requirements](../../../.agents/task/requirements.md#3-会话安全模式).
 
 ## Global Constraints
 
-- Do not bypass OS identity, Apple EventKit grants, other chats' private Work, unshared files, or managed Stella data even in Full Access.
-- Historical `approval`, `project-full`, `full-access`, `custom`, `read-only` and `workspace-write` stores must not silently gain privilege or lose user rules.
-- Stored `approval` becomes a Custom snapshot of its confirm-on-write rules; it must not become Read Only (deny) or Workspace Write (allow).
-- Stored `project-full` is the same privilege as Workspace Write (workspace allow, outside confirm).
-- `legacy_policy("workspace-write")` keeps the old `standard` snapshot (outside deny) so old `agent_permission_mode` users are not widened.
-- Notification backup channels and Apple authorization remain separate from file/shell rules.
-- Fail closed on damaged policy stores.
+- Full Access changes the `high_risk` preset decision to `allow` only; hard private-workspace, managed-data, credential, account and Apple grants remain enforced.
+- Preserve existing saved custom rules when switching to custom; do not replace them with an empty draft.
+- No separate Full Access confirmation in composer or Security page.
 
 ## Review Focus
 
-- A session or project Custom deny must still apply after a global Full Access change that did not explicitly override that rule.
-- Extra authorized roots must not include another session's private Work path.
-- MCP tools with the same public name on two servers must not share one connection grant.
-- Changing mode while a confirmation waits must re-check the latest policy and identity binding.
-- Sandbox unavailable on the current OS must fail Shell closed, not claim isolation in the UI.
+- Full Access allows a high-risk action that otherwise only required confirmation.
+- A path into another session's private Work folder remains denied under Full Access.
+- A credential or managed-data hard refusal remains denied.
+- Switching to custom in composer retains prior rule overrides.
+- Security page edits and persists an individual custom rule; composer exposes no rule editor.
 
 ---
 
-### Task 1: Product presets and conservative migration
+### Task 1: Align policy and hard-boundary tests
 
-**Files:** Modify `agent/permission/security_policy.py`, `desktop/src/renderer/src/api/client.ts`, `desktop/src/renderer/src/types.ts`, `desktop/src/renderer/src/pages/securityLocale.ts`; test `tests/test_security_center.py`.
+**Files:** Modify `agent/permission/security_policy.py`; test `tests/test_security_gateway.py`, `tests/test_security_center.py`.
 
-**Interfaces:** `PRESETS` ids are `read-only`, `workspace-write`, `full-access`, `custom`. `default_policy()["preset"] == "workspace-write"`. `MODE_DEFINITIONS` names: 只读 / 工作区写入 / 完全访问 / 自定义. `validate_patch` accepts historical ids and rewrites them: `approval` → custom snapshot of old approval rules; `project-full` → `workspace-write`; `strict`/`standard` remain custom snapshots. `legacy_policy("read-only")` still denies workspace writes.
+**Interfaces:** `rule(resolve(...), "high_risk") == "allow"` for a selected Full Access preset. `SecurityGateway.check(...)` still applies resource-specific hard denials.
 
-- [ ] Change `test_four_modes_and_legacy_snapshots_are_stable` so product ids are the four names above, `approval` migrates to custom without allowing workspace writes, `project-full` equals workspace-write; run RED.
-- [ ] Implement preset table, aliases and copy; run focused tests GREEN.
-- [ ] Commit presets and tests.
+- [ ] Write failing tests for Full Access high-risk allowance and for existing hard boundaries under that preset; run targeted tests to observe the allowance failure.
+- [ ] Change `_FULL_ACCESS["high_risk"]` to `"allow"` without changing hard-denial code.
+- [ ] Run targeted gateway and center tests; confirm PASS. Commit this logical change.
 
-### Task 2: Runtime uses one effective policy
+### Task 2: Simplify the two UI entry points
 
-**Files:** Modify `agent/permission/security_policy.py`, `agent/runtime/tool_invocation.py`, `agent/permission/center.py`; test `tests/test_security_center.py`, `tests/test_security_gateway.py`.
+**Files:** Modify `desktop/src/renderer/src/components/PermissionSelector.tsx`, `desktop/src/renderer/src/pages/SecurityPage.tsx`, `desktop/src/renderer/src/pages/securityLocale.ts` where copy changes; test `tests/ui_security_modes.py` and any focused UI test.
 
-**Interfaces:** `resolve()` documents that the `mode` argument is unused when a persisted `security_policy` exists; callers pass it only for `legacy_policy` fallback when no store is present. Interactive and scheduled checks use `resolve(...)` then `SecurityGateway.check(..., policy=policy)`. Read Only denies workspace writes; Workspace Write allows current Work/project writes and requires authorization outside; Full Access still denies other private Work, managed paths and credentials.
+**Interfaces:** Selecting `full-access` calls existing save once. Selecting `custom` in composer saves/activates a custom policy using current rules; detailed editing remains in `SecurityPage`.
 
-- [ ] Write failing tests for unused-mode-does-not-widen, Read Only write deny, Full Access private Work deny via resolved policy; run RED.
-- [ ] Wire fallback only when the store is absent; run GREEN.
-- [ ] Commit runtime policy resolution.
+- [ ] Update the isolated browser test to select Full Access once in each entry and assert the policy save and applied state; assert composer custom has no rule grid, while Security page does.
+- [ ] Run the browser test and confirm its current failure.
+- [ ] Remove `pendingFull` UI in both entry points and the composer rule editor; make composer custom selection preserve the current custom rule snapshot. Keep Security page `PolicyEditor` as the editing location.
+- [ ] Run browser interaction and TypeScript checks; confirm PASS. Commit this logical change.
 
-### Task 3: Security Center shows sandbox, approval and tool rules separately
+### Final gate
 
-**Files:** Modify `agent/permission/center.py`, `desktop/src/renderer/src/pages/SecurityPage.tsx`, `desktop/src/renderer/src/pages/securityLocale.ts`; test `tests/test_security_center.py`, `tests/ui_security_modes.py`.
+- [ ] Run `.venv/bin/python scripts/quality_check.py incremental` and isolated browser interaction; report PASS/FAIL/SKIP.
+- [ ] Compare observed gateway decisions with the linked spec, inspect the diff, and record final commit(s).
 
-**Interfaces:** Overview reports `process_isolation` without rewriting Full Access to hide an enabled sandbox. Full Access copy states private Work, managed data, Apple grants and credentials remain blocked. Permissions tab lists four product modes, Custom copy/restore, current workspace root and sandbox status. Browser: select Read Only, confirm Full Access warning, see isolation still enabled.
+## Progress
 
-- [ ] Write failing API and Playwright tests for mode labels, Full Access warning text and sandbox status; run RED.
-- [ ] Update Center payload and page copy; run GREEN.
-- [ ] Commit Security Center alignment.
-
-### Task 4: Custom extras stay scoped
-
-**Files:** Modify `agent/permission/security_policy.py`, `agent/permission/gateway.py` if extra_roots can name private Work; test `tests/test_security_center.py`, `tests/test_work_boundaries.py`.
-
-**Interfaces:** Custom may set extra_roots, connection grants, MCP/Browser/Git/Skill rules, Allow/Confirm/Deny. `extra_roots` that resolve inside another private Work directory or `work/shared` parent are rejected. Copy-from-current and restore-default keep existing PolicyEditor behavior. Apple/notification settings are not stored in `security_policy`.
-
-- [ ] Write failing tests rejecting foreign Work extra_roots and preserving Custom copy/restore; run RED.
-- [ ] Enforce the extra_roots predicate; run GREEN.
-- [ ] Commit Custom scoping.
-
-### Task 5: Stage 6 record
-
-**Files:** Modify `.agents/task/DEVELOPMENT_PROGRESS.md`, `.agents/task/DEVELOPMENT_PLAN.md`, `docs/security-permission-modes.md`.
-
-- [ ] Run `.venv/bin/python scripts/quality_check.py incremental` and record PASS/FAIL/SKIP including OS sandbox.
-- [ ] Update progress, archive completed plans under `docs/plans/completed/` when this and the Work plan reviews are clean.
-- [ ] Commit the record.
+- Status: not started.
+- Verification: SKIP — no implementation or test run for this plan yet.
