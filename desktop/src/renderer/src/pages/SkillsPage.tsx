@@ -151,11 +151,11 @@ const ToolCard: React.FC<{ tool: ToolInfo; open: boolean; onToggle: () => void }
 }
 
 const Grid: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">{children}</div>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{children}</div>
 )
 
 const Card: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <article aria-label={label} className="flex flex-col gap-2 rounded-card border border-default bg-surface p-4">
+  <article aria-label={label} className="flex h-full flex-col gap-2 rounded-card border border-default bg-surface p-4">
     {children}
   </article>
 )
