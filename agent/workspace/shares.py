@@ -11,7 +11,7 @@ import stat
 import threading
 import uuid
 
-from agent.workspace.context import resolve_context
+from agent.workspace.context import _safe_segment, resolve_context
 from common.state_dir import user_root
 
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
@@ -25,8 +25,7 @@ def _manifest_file() -> Path:
 def _identity(session_id: str, agent_id: str) -> tuple[str, str]:
     if not isinstance(agent_id, str) or not _ID.fullmatch(agent_id):
         raise ValueError("invalid agent ID")
-    if not isinstance(session_id, str) or not _ID.fullmatch(session_id):
-        raise ValueError("invalid session ID")
+    _safe_segment(session_id, "session ID")
     return agent_id, session_id
 
 
@@ -80,6 +79,29 @@ def _regular_source(root: Path, relative_path: str) -> Path:
     return current
 
 
+def _open_regular(root: Path, relative_path: str):
+    """Open each component without following symlinks after path validation."""
+    parts = Path(relative_path).parts
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    directory_flags = flags | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(str(root), directory_flags)
+    try:
+        for part in parts[:-1]:
+            next_descriptor = os.open(part, directory_flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        source_fd = os.open(parts[-1], flags, dir_fd=descriptor)
+    except OSError as exc:
+        raise ValueError("share file changed during validation") from exc
+    finally:
+        os.close(descriptor)
+    metadata = os.fstat(source_fd)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024 * 1024:
+        os.close(source_fd)
+        raise ValueError("choose one regular file under 64 MB")
+    return os.fdopen(source_fd, "rb")
+
+
 def create_share(owner_session: str, agent_id: str, relative_path: str,
                  recipient_session: str, access: str) -> dict:
     agent_id, owner_session = _identity(owner_session, agent_id)
@@ -101,7 +123,7 @@ def create_share(owner_session: str, agent_id: str, relative_path: str,
     folder.mkdir()
     destination = folder / source.name
     try:
-        with source.open("rb") as reader, destination.open("xb") as writer:
+        with _open_regular(context.root, relative_path) as reader, destination.open("xb") as writer:
             shutil.copyfileobj(reader, writer)
         row = {"id": share_id, "path": str(destination), "name": source.name,
                "owner_agent": agent_id, "owner_session": owner_session,
@@ -128,6 +150,7 @@ def list_shares(session_id: str, agent_id: str) -> list[dict]:
 
 def revoke_share(share_id: str, owner_session: str, agent_id: str) -> dict:
     agent_id, owner_session = _identity(owner_session, agent_id)
+    changed = False
     with _lock:
         data = _load()
         row = data["shares"].get(share_id)
@@ -139,16 +162,28 @@ def revoke_share(share_id: str, owner_session: str, agent_id: str) -> dict:
             row["active"] = False
             data["version"] += 1
             _save(data)
-        return dict(row)
+            changed = True
+        result = dict(row)
+    if changed:
+        from agent.permission.process_sandbox import revoke_share_processes
+        revoke_share_processes(share_id)
+    return result
 
 
 def share_access(path: str, session_id: str, agent_id: str) -> str | None:
     """Return an exact file grant; callers must still apply tool permissions."""
     agent_id, session_id = _identity(session_id, agent_id)
     real = os.path.realpath(path)
+    shared_root = resolve_context(session_id, agent_id).work_root / "shared"
     with _lock:
         for row in _load()["shares"].values():
-            if row.get("owner_agent") != agent_id or os.path.realpath(row.get("path", "")) != real:
+            recorded_path = row.get("path", "")
+            if row.get("owner_agent") != agent_id or not isinstance(recorded_path, str):
+                continue
+            recorded = Path(recorded_path)
+            if (recorded.parent.parent != shared_root or recorded.parent.name != row.get("id")
+                    or any(part.is_symlink() for part in (recorded, recorded.parent, shared_root))
+                    or not recorded.is_file() or os.path.realpath(recorded) != real):
                 continue
             if row.get("owner_session") == session_id:
                 return "write"

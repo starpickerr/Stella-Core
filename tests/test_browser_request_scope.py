@@ -45,3 +45,25 @@ def test_browser_subrequest_file_scope_and_metadata(tmp_path):
     route = _Route(outside.as_uri())
     service._authorize_request(route)
     assert route.result == "continued"
+
+
+def test_browser_full_access_subrequests_still_hide_other_chats(tmp_path, monkeypatch):
+    from agent.workspace import project_store
+    from agent.workspace.context import resolve_context
+
+    work = tmp_path / "work"
+    monkeypatch.setattr("agent.workspace.context.personal_work_dir", lambda **kwargs: work)
+    monkeypatch.setattr(project_store, "_store_file", lambda: str(tmp_path / "projects.json"))
+    owner = resolve_context("owner", "alpha", ensure=True)
+    recipient = resolve_context("recipient", "alpha", ensure=True)
+    other = owner.root / "secret.txt"
+    own = recipient.root / "own.txt"
+    other.write_text("secret")
+    own.write_text("own")
+    service = object.__new__(BrowserService)
+    service._config = {}
+    service._set_authorized_roots((str(tmp_path),), (), recipient)
+    for path, expected in ((own, "continued"), (other, "blocked")):
+        route = _Route(path.as_uri())
+        service._authorize_request(route)
+        assert route.result == expected

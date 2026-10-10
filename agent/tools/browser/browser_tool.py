@@ -304,9 +304,14 @@ class BrowserTool(BaseTool):
                 if hasattr(service, "set_authorized_roots"):
                     from agent.permission.process_sandbox import current_policy_and_roots
                     from agent.runtime.tool_invocation import approved_browser_file
+                    from agent.workspace.context import resolve_context
+                    from common.runtime_identity import current_identity
+                    identity = current_identity()
+                    private_context = resolve_context(identity.execution_session_id or identity.session_id,
+                                                      identity.agent_id, task_id=identity.task_id)
                     _, roots = current_policy_and_roots(self.cwd)
                     selected = approved_browser_file(str(args.get("url") or ""))
-                    service.set_authorized_roots(roots, [selected] if selected else [])
+                    service.set_authorized_roots(roots, [selected] if selected else [], private_context)
                 try:
                     result = handler(self, args)
                 finally:
@@ -364,7 +369,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().click(ref=ref, selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Clicked successfully. Use 'snapshot' to see updated page.")
+        return ToolResult.success("Clicked successfully. Use 'snapshot' to see updated page.")
 
     def _do_fill(self, args: Dict[str, Any]) -> ToolResult:
         text = args.get("text", "")
@@ -376,7 +381,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().fill(text, ref=ref, selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Filled text into element. Use 'snapshot' to verify.")
+        return ToolResult.success("Filled text into element. Use 'snapshot' to verify.")
 
     def _do_select(self, args: Dict[str, Any]) -> ToolResult:
         value = args.get("value", "")
@@ -412,7 +417,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().wait(selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Wait completed.")
+        return ToolResult.success("Wait completed.")
 
     def _do_back(self, args: Dict[str, Any]) -> ToolResult:
         result = self._get_service().go_back()

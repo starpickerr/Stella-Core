@@ -242,7 +242,8 @@ SAFETY:
                 # process is still reading it, so it can only go once the job does.
                 try:
                     job_id = background.start(command, self.cwd, env, temp_script_path,
-                                              argv=plan.argv, shell=plan.shell, temp_dir=plan.temp_dir)
+                                              argv=plan.argv, shell=plan.shell, temp_dir=plan.temp_dir,
+                                              plan=plan)
                 except Exception:
                     if plan.temp_dir:
                         shutil.rmtree(plan.temp_dir, ignore_errors=True)
@@ -263,6 +264,7 @@ SAFETY:
                     env,
                     dotenv_vars,
                     shell=plan.shell,
+                    plan=plan,
                 )
             finally:
                 if plan.temp_dir:
@@ -279,7 +281,7 @@ SAFETY:
             
             # Workaround for exit code 126 with no output
             if plan.status != "enabled" and result.returncode == 126 and not result.stdout and not result.stderr:
-                logger.warning(f"[Bash] Exit 126 with no output - trying alternative execution method")
+                logger.warning("[Bash] Exit 126 with no output - trying alternative execution method")
                 # Try using argument list instead of shell=True
                 import shlex
                 try:
@@ -315,7 +317,7 @@ SAFETY:
                                     stdout='{"error": "图片无法解析", "reason": "该图片格式可能不受支持，或图片文件存在问题", "suggestion": "请尝试其他图片"}',
                                     stderr=''
                                 )
-                                logger.info(f"[Bash] Converted exit 126 to user-friendly image error message for vision skill")
+                                logger.info("[Bash] Converted exit 126 to user-friendly image error message for vision skill")
                 except Exception as retry_err:
                     logger.warning(f"[Bash] Retry failed: {retry_err}")
 
@@ -439,7 +441,7 @@ SAFETY:
         known = ", ".join(j["id"] for j in jobs)
         return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
-    def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True):
+    def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True, plan=None):
         process = subprocess.Popen(
             command,
             shell=shell,
@@ -450,6 +452,14 @@ SAFETY:
             env=env,
             start_new_session=not self._IS_WIN,
         )
+        from agent.permission.process_sandbox import register_share_process, unregister_share_process
+        try:
+            if plan is not None:
+                register_share_process(process, plan)
+        except Exception:
+            self._kill_process(process)
+            process.wait()
+            raise
         stdout_chunks, stderr_chunks = [], []
         recent = bytearray()
         recent_lock = threading.Lock()
@@ -495,6 +505,7 @@ SAFETY:
                     last_reported_at = now
                 time.sleep(0.1)
         finally:
+            unregister_share_process(process)
             if process.poll() is None:
                 self._kill_process(process)
             process.wait()

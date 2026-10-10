@@ -14,6 +14,16 @@ def work_root(tmp_path, monkeypatch):
     return work
 
 
+def test_external_chat_id_uses_a_stable_safe_directory(work_root):
+    external_id = "wxid:person@im.chat"
+    first = resolve_context(external_id, "alpha")
+    second = resolve_context(external_id, "alpha")
+    assert first.root == second.root
+    assert first.root.parent == work_root / "sessions" / "alpha"
+    assert first.root.name != external_id
+    assert "/" not in first.root.name
+
+
 def test_sessions_projects_and_tasks_get_distinct_lazy_roots(work_root, tmp_path):
     first = resolve_context("one", "alpha")
     second = resolve_context("two", "alpha")

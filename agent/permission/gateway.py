@@ -157,12 +157,19 @@ def _shell_write_targets(command: str, cwd: str | None) -> list[str] | None:
     return output
 
 
-def _shell_boundary(command: str, roots: tuple[str, ...], cwd: str | None) -> str | None:
+def _shell_boundary(command: str, roots: tuple[str, ...], cwd: str | None,
+                    private_context=None) -> str | None:
     targets = _shell_write_targets(command, cwd)
     if targets is None:
         return "Shell command could not be parsed for workspace boundaries."
+    from agent.workspace.context import private_access
+    def grant(target: str) -> bool:
+        try:
+            return private_context is not None and private_access(target, private_context) == "write"
+        except (ValueError, OSError, RuntimeError):
+            return False
     return next((target for target in targets if not any(
-        _inside(target, _path(root, cwd)) for root in roots)), None)
+        _inside(target, _path(root, cwd)) for root in roots) and not grant(target)), None)
 
 
 def _skill_store(path: str) -> bool:
@@ -205,9 +212,10 @@ def _trusted_skill_init(command: str, cwd: str | None) -> bool:
 def _fingerprint(tool_name: str, arguments: Mapping[str, Any], session_id: Optional[str], project: str | None,
                  agent_id: str | None, cwd: str | None, scope: Scope) -> str:
     from common.runtime_identity import current_identity
+    from agent.workspace.shares import grant_version
     identity = current_identity()
     payload = json.dumps([identity.user_id, agent_id, session_id, identity.run_id, project,
-                          cwd, scope.write_roots, scope.extra_roots, tool_name, arguments],
+                          cwd, scope.write_roots, scope.extra_roots, grant_version(), tool_name, arguments],
                          sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -247,11 +255,43 @@ class SecurityGateway:
         risk = "L0" if declared == Capability.READ else "L1"
         policy_key = "workspace_read" if declared == Capability.READ else "workspace_write"
         hard_reason = None
+        private_context = None
+        try:
+            from agent.workspace.context import resolve_context
+            from common.runtime_identity import current_identity
+            identity = current_identity()
+            private_context = resolve_context(identity.execution_session_id or session_id, agent_id,
+                                              task_id=identity.task_id)
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            hard_reason = str(exc)
+
+        def private_denial(path: str, write: bool = False) -> str | None:
+            if private_context is None:
+                return "Private workspace context is unavailable."
+            from agent.workspace.context import private_access
+            try:
+                access = private_access(path, private_context)
+            except (ValueError, OSError, RuntimeError):
+                return "Private Work grants are unavailable."
+            if access == "deny" or (write and access == "read"):
+                return "This conversation has no access to that private Work file."
+            return None
+
+        def private_grant(path: str) -> str | None:
+            if private_context is None:
+                return None
+            from agent.workspace.context import private_access
+            try:
+                return private_access(path, private_context)
+            except (ValueError, OSError, RuntimeError):
+                return None
+
         prerequisites: list[str] = []
         path_arg = str(args.get("path") or "")
         event = "tool_decision"
         if tool_name in ("read", "write", "edit", "ls", "search_files", "send") and path_arg and not path_arg.lower().startswith(("http://", "https://")):
             real = _path(path_arg, cwd)
+            hard_reason = hard_reason or private_denial(real, tool_name in ("write", "edit"))
             from agent.tools.utils.credentials import credential_denial_message, is_credential_path
             if is_credential_path(real):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
@@ -268,7 +308,7 @@ class SecurityGateway:
             else:
                 resource = real
                 roots = tuple(scope.write_roots) + tuple(scope.extra_roots) + tuple(policy.get("extra_roots") or ())
-                if not any(_inside(real, _path(root, cwd)) for root in roots):
+                if not any(_inside(real, _path(root, cwd)) for root in roots) and private_grant(real) not in ("read", "write"):
                     policy_key = "workspace_outside"
                 risk = "L0" if declared == Capability.READ else "L1"
                 if policy_key == "workspace_outside":
@@ -279,7 +319,7 @@ class SecurityGateway:
                     resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "send", "L3", "high_risk"
                     event = "external_access"
                     prerequisites.append("workspace_read")
-                    if not any(_inside(real, _path(root, cwd)) for root in roots):
+                    if not any(_inside(real, _path(root, cwd)) for root in roots) and private_grant(real) not in ("read", "write"):
                         prerequisites.append("workspace_outside")
         elif tool_name == "bash":
             command = str(args.get("command") or "")
@@ -333,7 +373,7 @@ class SecurityGateway:
                     prerequisites.append("high_risk")
             if not hard_reason and resource_kind != ResourceKind.AGENT_MANAGED:
                 outside = _shell_boundary(command, scope.write_roots + scope.extra_roots +
-                                          tuple(policy.get("extra_roots") or ()), cwd)
+                                          tuple(policy.get("extra_roots") or ()), cwd, private_context)
                 if outside:
                     if outside.startswith("Shell command could not"):
                         hard_reason = outside
@@ -341,6 +381,21 @@ class SecurityGateway:
                         resource_kind, resource, risk = ResourceKind.USER_WORKSPACE, outside, "L3"
                         if policy_key != "workspace_outside":
                             prerequisites.append("workspace_outside")
+            if not hard_reason and segments:
+                for tokens in segments:
+                    _, rest = _command_name(tokens)
+                    candidates = _positional_paths(rest) + _redirect_targets(tokens)
+                    write_targets = set(_shell_write_targets(command, cwd) or ())
+                    for candidate in candidates:
+                        if candidate.startswith("-") or "://" in candidate:
+                            continue
+                        candidate_path = _path(candidate, cwd)
+                        reason = private_denial(candidate_path, candidate_path in write_targets)
+                        if reason:
+                            hard_reason = reason
+                            break
+                    if hard_reason:
+                        break
         elif tool_name == "env_config":
             resource_kind, resource = ResourceKind.CREDENTIAL, "Credential Store"
             event = "secret_use"
@@ -388,6 +443,7 @@ class SecurityGateway:
                 from agent.tools.utils.credentials import is_credential_path, credential_denial_message
                 parsed = urlparse(url)
                 local = _path(unquote(parsed.path), cwd)
+                hard_reason = hard_reason or private_denial(local)
                 resource_kind, resource, risk, policy_key = ResourceKind.USER_WORKSPACE, local, "L0", "workspace_read"
                 if parsed.netloc not in ("", "localhost"):
                     hard_reason = "Remote file URLs are not allowed."

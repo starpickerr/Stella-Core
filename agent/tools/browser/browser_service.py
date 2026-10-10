@@ -40,7 +40,7 @@ _V8_HEAP_DEFAULT_MB = 256
 _V8_HEAP_FRACTION = 0.4
 
 try:
-    from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Playwright
+    from playwright.sync_api import sync_playwright
     _HAS_PLAYWRIGHT = True
 except ImportError:
     _HAS_PLAYWRIGHT = False
@@ -922,12 +922,13 @@ class BrowserService:
         except Exception as e:
             raise RuntimeError(f"Browser request protection could not be installed: {e}") from e
 
-    def set_authorized_roots(self, roots, files=()) -> None:
-        self._submit(self._set_authorized_roots, tuple(roots), tuple(files))
+    def set_authorized_roots(self, roots, files=(), private_context=None) -> None:
+        self._submit(self._set_authorized_roots, tuple(roots), tuple(files), private_context)
 
-    def _set_authorized_roots(self, roots, files) -> None:
+    def _set_authorized_roots(self, roots, files, private_context=None) -> None:
         self._file_roots = tuple(os.path.realpath(path) for path in roots)
         self._file_paths = tuple(os.path.realpath(path) for path in files)
+        self._private_context = private_context
 
     def _authorize_request(self, route) -> None:
         from agent.tools.browser.browser_tool import BrowserTool
@@ -940,14 +941,19 @@ class BrowserService:
                     BrowserTool._validate_url_safe(url)
             elif parsed.scheme == "file":
                 path = os.path.realpath(unquote(parsed.path))
+                private_context = getattr(self, "_private_context", None)
+                private_access = None
+                if private_context is not None:
+                    from agent.workspace.context import private_access as classify_private
+                    private_access = classify_private(path, private_context)
                 inside = any(os.path.commonpath((path, root)) == root for root in self._file_roots)
-                if parsed.netloc not in ("", "localhost") or is_credential_path(path) or not (
-                    inside or path in self._file_paths
+                if parsed.netloc not in ("", "localhost") or is_credential_path(path) or private_access == "deny" or not (
+                    inside or path in self._file_paths or private_access in ("read", "write")
                 ):
                     raise ValueError("Local file is outside the authorized browser scope")
             elif parsed.scheme not in ("about", "data", "blob", "chrome", "chrome-extension"):
                 raise ValueError("Unsupported browser request scheme")
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             route.abort()
             return
         route.continue_()

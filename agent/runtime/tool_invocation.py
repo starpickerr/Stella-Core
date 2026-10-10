@@ -77,6 +77,7 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     from config import conf
     from agent.permission.security_policy import legacy_policy, resolve
     from agent.workspace import project_store
+    from agent.workspace.shares import grant_version
 
     identity = current_identity()
     if agent is not None:
@@ -106,7 +107,7 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
                   agent_id=agent_id, project_dir=project_dir, reserve_for_waiter=wait_for_approval)
     binding = (identity.user_id, identity.run_id, agent_id, session_id, project_dir,
                cwd, tuple(roots), accounts, tuple(allowlist or ()),
-               json.dumps(policy, sort_keys=True, ensure_ascii=False))
+               grant_version(), json.dumps(policy, sort_keys=True, ensure_ascii=False))
     return mode, kwargs, binding
 
 
