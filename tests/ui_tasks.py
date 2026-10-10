@@ -37,7 +37,17 @@ def backend(route):
                                 dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
                                 dict(channel_type='weixin', configured=True, ready=False, status='no_recipient', recipients=[])]
     elif path == '/api/todos':
-        data['todos'] = [{'id': 'todo-1', 'title': 'Linked todo'}]
+        data['todos'] = [dict(
+            id='todo-1', title='Linked todo', notes='', status='todo', parent_id=None, sort_order=0,
+            remind_at=None, scheduler_task_id='linked-1', reminder_sync_pending=False, reminder_sync_error='',
+            subtask_count=0, progress_completed=0, progress_total=0, progress_percent=0,
+            dependency_ids=[], blocked_by=[], due_on=None, due_time=None, timezone='Asia/Shanghai',
+            priority=0, completed_at=None, repeat_frequency='none', repeat_days='[]', repeat_until=None,
+            planned_on=None, list_name='', tags='[]', flagged=0, checklist='[]', source_type=None,
+            source_key=None, source_url='', user_modified=0, briefing_id=None, created_at='', updated_at='',
+        )]
+    elif path == '/api/todos/reminders/uncertain':
+        data['reminders'] = []
     elif route.request.method == 'POST' and path == '/api/scheduler/update':
         body = json.loads(route.request.post_data or '{}')
         for task in tasks:
@@ -112,6 +122,7 @@ with sync_playwright() as playwright:
         page.reload(wait_until='networkidle')
         page.get_by_role('button', name='关联事务').click()
         expect(page).to_have_url(re.compile(r'/todos$'))
+        page.wait_for_load_state('networkidle')
         assert errors == [], errors
         print('Task cards: linked detail and explicit todo navigation passed')
     finally:
