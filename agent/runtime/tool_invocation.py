@@ -17,6 +17,7 @@ _tool_call_id = ContextVar("stella_tool_call_id", default=None)
 _shell_expansion = ContextVar("stella_shell_expansion", default=None)
 _browser_file_expansion = ContextVar("stella_browser_file_expansion", default=None)
 _permission_limit = ContextVar("stella_permission_limit", default=None)
+_scheduled_permission = ContextVar("stella_scheduled_permission", default=None)
 
 
 class ApprovalRejectedError(Exception):
@@ -35,6 +36,19 @@ def approved_shell_target(command: str) -> str | None:
 def approved_browser_file(url: str) -> str | None:
     record = _browser_file_expansion.get()
     return record[1] if record and record[0] == url else None
+
+
+@contextmanager
+def scheduled_permission_scope(mode):
+    """Apply one task's explicit preset for this run, then restore the caller."""
+    if mode not in {"read-only", "workspace-write", "full-access"}:
+        yield
+        return
+    token = _scheduled_permission.set(mode)
+    try:
+        yield
+    finally:
+        _scheduled_permission.reset(token)
 
 
 @contextmanager
@@ -89,6 +103,9 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     scope_session_id = identity.execution_session_id or session_id
     project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id else None
     policy = resolve(mode, project_dir=project_dir, session_id=scope_session_id, agent_id=agent_id)
+    override = _scheduled_permission.get()
+    if override:
+        policy = {**policy, "preset": override, "base_preset": override, "rules": {}}
     limit = _permission_limit.get()
     if limit:
         from agent.permission.security_policy import intersect
