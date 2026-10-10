@@ -37,6 +37,16 @@ def backend(route):
                                 dict(channel_type='weixin', configured=True, ready=False, status='no_recipient', recipients=[])]
     elif path == '/api/todos':
         data['todos'] = [{'id': 'todo-1', 'title': 'Linked todo'}]
+    elif route.request.method == 'POST' and path == '/api/scheduler/update':
+        body = json.loads(route.request.post_data or '{}')
+        for task in tasks:
+            if task['id'] == body.get('task_id') and 'run_permission_mode' in body:
+                if body['run_permission_mode'] == 'inherit':
+                    task.pop('run_permission_mode', None)
+                else:
+                    task['run_permission_mode'] = body['run_permission_mode']
+    elif route.request.method == 'POST' and path == '/api/scheduler/run':
+        data['message'] = 'queued'
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
 
@@ -78,6 +88,24 @@ with sync_playwright() as playwright:
         page.get_by_text('微信', exact=True).click()
         expect(page.get_by_role('dialog')).to_contain_text('尚无可用接收人')
         page.get_by_role('dialog').get_by_role('button', name='取消').click()
+        expect(page.get_by_text('沿用绑定对话').first).to_be_visible()
+        page.get_by_text('Standalone digest').click()
+        editor = page.get_by_role('dialog')
+        editor.get_by_role('button', name='沿用绑定对话').click()
+        page.get_by_text('完全访问', exact=True).click()
+        editor.get_by_role('button', name='保存').click()
+        expect(editor).to_be_hidden()
+        expect(page.get_by_text('完全访问')).to_be_visible()
+        page.get_by_text('Standalone digest').click()
+        expect(page.get_by_role('dialog').get_by_role('button', name='完全访问')).to_be_visible()
+        page.once('dialog', lambda popup: popup.accept())
+        page.get_by_role('dialog').get_by_role('button', name='立即执行').click()
+        page.get_by_role('dialog').get_by_role('button', name='取消').click()
+        tasks[0]['last_run_status'] = 'failed'
+        tasks[0]['last_error'] = '需要审批，任务未执行'
+        page.reload(wait_until='networkidle')
+        expect(page.get_by_text('需要审批，任务未执行')).to_be_visible()
+        expect(page.get_by_text('完全访问')).to_be_visible()
         tasks[1]['linked_todo_id'] = 'todo-1'
         page.reload(wait_until='networkidle')
         page.get_by_role('button', name='关联事务').click()

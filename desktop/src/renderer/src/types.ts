@@ -762,6 +762,7 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   notification_route?: NotificationRoute | null
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
   notification_delivery_status?: NotificationDeliveryStatus | null
   next_run_at?: string
   last_run_status?: string
