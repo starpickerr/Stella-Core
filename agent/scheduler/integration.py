@@ -108,7 +108,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                     owner_session_id = ((task.get("action") or {}).get("execution_session_id") or
                                         (task.get("action") or {}).get("notify_session_id"))
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
-                                        session_id=owner_session_id):
+                                        session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
+                                        execution_session_id=owner_session_id):
                         action = task.get("action", {})
                         action_type = action.get("type")
                         channel_type = action.get("channel_type", "unknown")
@@ -408,6 +409,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         context["agent_id"] = agent_id
         context["channel_type"] = channel_type
         context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
+        context["task_id"] = str(task["id"])
         if task.get("job_run_id"):
             context["job_run_id"] = task["job_run_id"]
         
@@ -528,6 +530,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         context["agent_id"] = agent_id
         context["channel_type"] = channel_type
         context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
+        context["task_id"] = str(task["id"])
         
         # Channel-specific context setup
         if channel_type == "web":
@@ -654,7 +657,8 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     invoked = False
     tool_call_id = uuid.uuid4().hex
     try:
-        with identity_scope(run_id=run_id, session_id=source_session):
+        with identity_scope(run_id=run_id, session_id=source_session,
+                            task_id=str(task["id"]), execution_session_id=source_session):
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
                 session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
                 noninteractive=True)
@@ -828,6 +832,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         context["channel_type"] = channel_type
         context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
         context["is_scheduled_task"] = True
+        context["task_id"] = str(task["id"])
         if task.get("job_run_id"):
             context["job_run_id"] = task["job_run_id"]
 

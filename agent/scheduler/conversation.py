@@ -48,6 +48,9 @@ def validate_conversation_action(action, *, allow_pending_source=False):
         store = get_conversation_store(profile.workspace)
         if not allow_pending_source and session_id not in store.list_session_ids(channel_type="web"):
             raise ValueError("The bound conversation is no longer available")
+        bound_project = project_store.get_project_binding(session_id, current_identity().agent_id)
+        if bound_project and not os.path.isdir(bound_project):
+            raise ValueError("The bound conversation project is no longer available")
         current_project = project_store.get_project_dir(session_id, current_identity().agent_id) or ""
         frozen_project = action.get("execution_project_dir") or ""
         if frozen_project and os.path.realpath(frozen_project) != os.path.realpath(current_project):

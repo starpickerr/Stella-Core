@@ -7,24 +7,26 @@ from agent.scheduler import delivery, integration
 from agent.tools.base_tool import ToolResult
 
 
-@pytest.mark.parametrize('source,folder', [('source','project'),(None,'workspace')])
+@pytest.mark.parametrize('source,folder', [('source','project'),(None,'work/automations/alpha/write')])
 def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder):
     from agent.tools.write.write import Write
     from agent.runtime.run_record import RunRecord
-    workspace = tmp_path / 'workspace'
+    workspace = tmp_path / 'work'
     project = tmp_path / 'project'
     workspace.mkdir()
     project.mkdir()
     monkeypatch.setattr('agent.workspace.project_store.get_project_dir',lambda session,agent: str(project) if session=='source' else None)
+    monkeypatch.setattr('agent.workspace.project_store.get_project_binding',lambda session,agent: str(project) if session=='source' else None)
+    monkeypatch.setattr('agent.workspace.context.personal_work_dir',lambda **kwargs: workspace)
     monkeypatch.setattr('agent.workspace.session_prefs.get_prefs',lambda *_: {'permission':'workspace-write'})
     monkeypatch.setattr('agent.runtime.tool_invocation.global_mode',lambda:'workspace-write')
     monkeypatch.setattr(integration,'_resolve_working_dir',lambda **_:str(workspace))
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:Write()))
     task={'id':'write','action':{'execution_session_id':source}}
-    integration._run_scheduled_tool(task,'write',{'path':'scheduled-probe.txt','content':'saved'},None,None,None)
+    integration._run_scheduled_tool(task,'write',{'path':'scheduled-probe.txt','content':'saved'},'alpha',None,None)
     assert (tmp_path/folder/'scheduled-probe.txt').read_text()=='saved'
-    assert not (tmp_path/('workspace' if folder=='project' else 'project')/'scheduled-probe.txt').exists()
+    assert not (tmp_path/('work/automations/alpha/write' if folder=='project' else 'project')/'scheduled-probe.txt').exists()
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
 
 

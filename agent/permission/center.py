@@ -11,7 +11,7 @@ from pathlib import Path
 from agent.permission import global_mode
 from agent.permission.audit import record, recent
 from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve, validate_patch
-from common.state_dir import mcp_config_file, personal_work_dir
+from common.state_dir import mcp_config_file
 
 _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 
@@ -160,7 +160,8 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     conversation_patch = session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {}
     layers = [name for name, patch in (("project", project_patch), ("session", conversation_patch)) if patch]
     source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
-    work_root = project or str(personal_work_dir())
+    from agent.workspace.context import resolve_context
+    work_root = str(resolve_context(session_id, agent_id).root)
     from agent.permission.gateway import SecurityGateway
     from agent.permission.process_sandbox import capability
     isolation = capability()

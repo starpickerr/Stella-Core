@@ -90,6 +90,8 @@ class WorkspaceService:
         """List one directory level, directories first then files by mtime desc."""
         full = self.resolve(rel_path)
         if not os.path.isdir(full):
+            if full == self.root and not os.path.exists(full):
+                return {"path": "", "root": self.root, "entries": [], "truncated": False}
             raise FileNotFoundError(f"Not a directory: {rel_path}")
 
         dirs: List[Dict] = []

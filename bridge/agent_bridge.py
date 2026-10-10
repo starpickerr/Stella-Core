@@ -571,19 +571,19 @@ class AgentBridge:
             return agent
 
     def _apply_session_project(self, agent, session_id: str, agent_id: str) -> None:
-        """Retarget the agent's working directory to the session's project dir.
-
-        A no-op when the session has no project selected (clears any previous
-        override). Failures are swallowed: a bad project setting must not break
-        the chat, it just falls back to the default workspace.
-        """
-        try:
-            from agent.workspace import project_store
-            project_dir = project_store.get_project_dir(session_id, agent_id)
-            if getattr(agent, "apply_project_dir", None):
-                agent.apply_project_dir(project_dir)
-        except Exception as e:
-            logger.debug(f"[AgentBridge] apply_session_project failed: {e}")
+        """Retarget tools to the resolved root; a lost project fails closed."""
+        if not (getattr(agent, "apply_work_context", None) or
+                getattr(agent, "apply_project_dir", None)):
+            return
+        from agent.workspace.context import resolve_context
+        from common.runtime_identity import current_identity
+        identity = current_identity()
+        context = resolve_context(identity.execution_session_id or session_id, agent_id,
+                                  task_id=identity.task_id)
+        if getattr(agent, "apply_work_context", None):
+            agent.apply_work_context(context)
+        else:
+            agent.apply_project_dir(str(context.root))
 
     def apply_session_prefs(self, agent, session_id: str, agent_id: str = None) -> None:
         """Apply a session's model override to its agent.
@@ -692,7 +692,9 @@ class AgentBridge:
             manager = self._session_run = SessionRun()
         ticket = manager.reserve(user_id, agent_id, session_id)
         with identity_scope(agent_id=agent_id, user_id=user_id,
-                            session_id=session_id, run_id=run_id):
+                            session_id=session_id, run_id=run_id,
+                            task_id=context.get("task_id") if context and context.get("is_scheduled_task") else None,
+                            execution_session_id=context.get("execution_session_id") if context and context.get("is_scheduled_task") else None):
             admission_store = None
             if session_id and query and not session_id.startswith("scheduler_") and not (
                 context and context.get("is_scheduled_task")
@@ -789,7 +791,6 @@ class AgentBridge:
             Reply object
         """
         session_id = None
-        agent_id = None
         agent = None
         request_id = None
         cancel_event = None
@@ -1182,7 +1183,7 @@ class AgentBridge:
                     for key, value in sorted(existing_env_vars.items()):
                         f.write(f'{key}={value}\n')
 
-                logger.info(f"[AgentBridge] Synced API keys from config.json to .env")
+                logger.info("[AgentBridge] Synced API keys from config.json to .env")
             except Exception as e:
                 logger.warning(f"[AgentBridge] Failed to sync API keys: {e}")
     
