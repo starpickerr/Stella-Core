@@ -116,6 +116,40 @@ def test_four_modes_and_legacy_snapshots_are_stable():
     assert rule(legacy_policy("workspace-write"), "workspace_outside") == "deny"
 
 
+def test_resolve_ignores_caller_mode_when_policy_is_stored():
+    stored = {"preset": "read-only", "rules": {}, "connections": {}}
+    effective = resolve("full-access", global_value=stored)
+    assert rule(effective, "workspace_write") == "deny"
+    assert effective_mode(effective) == "read-only"
+
+
+def test_agent_mode_cannot_widen_persisted_read_only(tmp_path, monkeypatch):
+    from agent.runtime.tool_invocation import permission_denial
+    import config as config_module
+
+    project = tmp_path / "project"
+    project.mkdir()
+    live = {
+        "security_policy": {"preset": "read-only", "rules": {}, "connections": {}},
+        "agent_permission_mode": "workspace-write",
+    }
+    monkeypatch.setattr(config_module, "conf", lambda: live)
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path / "state")
+
+    class Agent:
+        def effective_permission_mode(self):
+            return "full-access"
+
+        def effective_cwd(self):
+            return str(project)
+
+        def write_roots(self):
+            return [str(project)]
+
+    denied = permission_denial("write", {"path": str(project / "note.txt"), "content": "x"}, agent=Agent())
+    assert denied
+
+
 def test_legacy_conversation_permission_is_migrated_once(tmp_path, monkeypatch):
     state = tmp_path / "state"
     state.mkdir()

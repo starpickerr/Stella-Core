@@ -158,14 +158,15 @@ def merge(base: dict, patch: dict) -> dict:
 
 def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
             agent_id: str | None = None, global_value: dict | None = None) -> dict:
-    """Global -> project difference -> conversation difference."""
+    """Persisted security_policy wins; `mode` is the legacy fallback only."""
     if global_value is None:
         from config import conf
         global_value = conf().get("security_policy")
-    base = default_policy()
-    if isinstance(global_value, dict):
+    if not isinstance(global_value, dict):
+        base = legacy_policy(mode)
+    else:
         try:
-            base = merge(base, validate_patch(global_value, global_policy=True))
+            base = merge(default_policy(), validate_patch(global_value, global_policy=True))
         except ValueError:
             return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                     "connections": {}, "error": "Global security policy is invalid."}
