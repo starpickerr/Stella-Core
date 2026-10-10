@@ -75,7 +75,7 @@ def execution_workspace(session_id=None, agent_id=None, workspace=None):
 def _current_authorization(agent, agent_id, session_id, workspace, wait_for_approval):
     from common.runtime_identity import current_identity
     from config import conf
-    from agent.permission.security_policy import legacy_policy, resolve
+    from agent.permission.security_policy import resolve
     from agent.workspace import project_store
     from agent.workspace.shares import grant_version
 
@@ -89,8 +89,6 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     scope_session_id = identity.execution_session_id or session_id
     project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id else None
     policy = resolve(mode, project_dir=project_dir, session_id=scope_session_id, agent_id=agent_id)
-    if agent is not None and not session_id and mode != global_mode():
-        policy = legacy_policy(mode)
     limit = _permission_limit.get()
     if limit:
         from agent.permission.security_policy import intersect
