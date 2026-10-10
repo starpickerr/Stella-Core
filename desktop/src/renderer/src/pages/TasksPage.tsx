@@ -161,16 +161,17 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       {t('task_linked_todo')}
                     </button>}
                     {task.last_run_status && <p className="text-xs text-content-tertiary mb-2">{t(('task_status_'+task.last_run_status) as Parameters<typeof t>[0])}{task.last_error ? ` · ${task.last_error}` : ''}</p>}
-                    <div
-                      className="flex items-center gap-2 text-xs text-content-tertiary"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex items-center gap-2 text-xs text-content-tertiary">
                       <Clock size={12} />
                       <span>
                         {t('tasks_next_run')}: {formatNextRun(task.next_run_at)}
                       </span>
                       <div className="flex-1" />
-                      {!task.linked_todo_id && <Toggle checked={task.enabled} onChange={(v) => toggle(task, v)} />}
+                      {!task.linked_todo_id && (
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <Toggle checked={task.enabled} onChange={(v) => toggle(task, v)} />
+                        </span>
+                      )}
                     </div>
                   </div>
                 )
@@ -180,10 +181,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
         </div>
       </div>
 
-      {editing && editing !== 'new' && editing.linked_todo_id ? (
-        <LinkedTaskDetail task={editing} onClose={() => setEditing(null)}
-          onOpenTodo={() => { navigate('/todos', { state: { todoId: editing.linked_todo_id } }); setEditing(null) }} />
-      ) : editing && (
+      {editing && (
         <TaskEditModal
           key={editing === 'new' ? 'new' : editing.id}
           task={editing === 'new' ? null : editing}
@@ -201,35 +199,6 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
       )}
     </div>
   )
-}
-
-const LinkedTaskDetail: React.FC<{ task: SchedulerTask; onClose: () => void; onOpenTodo: () => void }> = ({ task, onClose, onOpenTodo }) => {
-  const [todoAvailable, setTodoAvailable] = useState<boolean | null>(null)
-  useEffect(() => {
-    let active = true
-    apiClient.getTodos().then((todos) => {
-      if (active) setTodoAvailable(todos.some((todo) => todo.id === task.linked_todo_id))
-    }).catch(() => { if (active) setTodoAvailable(false) })
-    return () => { active = false }
-  }, [task.linked_todo_id])
-
-  return <Modal open title={t('task_detail_title')} onClose={onClose} footer={<>
-    {todoAvailable && <Btn variant="ghost" onClick={onOpenTodo}>{t('task_linked_todo')}</Btn>}
-    <Btn variant="primary" onClick={onClose}>{t('task_cancel')}</Btn>
-  </>}>
-    <div className="space-y-3 text-sm text-content-secondary">
-      <p className="font-medium text-content">{task.name || task.id}</p>
-      <p>{t('task_schedule_type')}: {scheduleSummary(task.schedule)}</p>
-      <p>{t('task_enabled')}: {t(task.enabled ? 'tasks_active' : 'tasks_paused')}</p>
-      <p>{t('tasks_next_run')}: {formatNextRun(task.next_run_at)}</p>
-      {task.last_run_status && <p>{t(('task_status_' + task.last_run_status) as Parameters<typeof t>[0])}</p>}
-      {task.last_error && <p className="text-danger">{task.last_error}</p>}
-      {task.action.channel_type && <p>{t('task_channel')}: {t(('task_channel_' + task.action.channel_type) as Parameters<typeof t>[0])}</p>}
-      {task.action.receiver && <p>{t('task_receiver')}: {task.action.receiver_name || task.action.receiver}</p>}
-      {todoAvailable === false && <p className="text-danger">{t('task_linked_todo_unavailable')}</p>}
-      <p>{t('task_linked_readonly')}</p>
-    </div>
-  </Modal>
 }
 
 const TaskEditModal: React.FC<{
@@ -276,6 +245,18 @@ const TaskEditModal: React.FC<{
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
   const [error, setError] = useState('')
+  const linkedTodoId = task?.linked_todo_id || ''
+  const linked = linkedTodoId !== ''
+  const navigate = useNavigate()
+  const [todoAvailable, setTodoAvailable] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!linkedTodoId) return
+    let active = true
+    apiClient.getTodos().then((todos) => {
+      if (active) setTodoAvailable(todos.some((todo) => todo.id === linkedTodoId))
+    }).catch(() => { if (active) setTodoAvailable(false) })
+    return () => { active = false }
+  }, [linkedTodoId])
 
   const buildSchedule = (): TaskSchedule => {
     if (schedType === 'cron') return { type: 'cron', expression: cron.trim() }
@@ -425,12 +406,17 @@ const TaskEditModal: React.FC<{
       onClose={onClose}
       footer={
         <>
-          {!isCreate && (
+          {linked && todoAvailable && (
+            <Btn variant="ghost" onClick={() => { navigate('/todos', { state: { todoId: linkedTodoId } }); onClose() }} className="mr-auto">
+              {t('task_linked_todo')}
+            </Btn>
+          )}
+          {!isCreate && !linked && (
             <Btn variant="danger" onClick={del} disabled={saving} className="mr-auto">
               {t('task_delete')}
             </Btn>
           )}
-          {!isCreate && (
+          {!isCreate && !linked && (
             <Btn variant="ghost" onClick={runNow} disabled={saving || running}>
               {running ? <Loader2 size={14} className="inline animate-spin mr-1" /> : <Play size={14} className="inline mr-1" />}
               {t('task_run_now')}
@@ -439,12 +425,17 @@ const TaskEditModal: React.FC<{
           <Btn variant="ghost" onClick={onClose} disabled={saving}>
             {t('task_cancel')}
           </Btn>
-          <Btn variant="primary" onClick={save} disabled={saving}>
-            {t('task_save')}
-          </Btn>
+          {!linked && (
+            <Btn variant="primary" onClick={save} disabled={saving}>
+              {t('task_save')}
+            </Btn>
+          )}
         </>
       }
     >
+      {linked && <p className="text-xs text-content-secondary">{t('task_linked_readonly')}</p>}
+      {linked && todoAvailable === false && <p className="text-xs text-danger">{t('task_linked_todo_unavailable')}</p>}
+      <fieldset disabled={linked} className="min-w-0 space-y-4 border-0 p-0">
       <Field label={t('task_name')}>
         <TextInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
@@ -590,6 +581,7 @@ const TaskEditModal: React.FC<{
 
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
+      </fieldset>
     </Modal>
   )
 }
