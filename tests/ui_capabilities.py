@@ -51,6 +51,9 @@ def backend(route):
         data['skills'] = [{
             'name': 'demo-skill', 'display_name': '演示技能', 'enabled': True, 'source': 'custom',
             'description': '技能介绍需要完整显示。' * 8,
+        }, {
+            'name': 'short-skill', 'display_name': '短技能', 'enabled': True, 'source': 'custom',
+            'description': '一行介绍。',
         }]
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
@@ -95,9 +98,13 @@ with sync_playwright() as playwright:
         expect(page).to_have_url(test_url + '/#/skills')
 
         demo = page.get_by_role('article', name='演示技能')
+        short = page.get_by_role('article', name='短技能')
         expect(demo.get_by_text('技能介绍需要完整显示。', exact=False)).to_be_visible()
+        demo_box, short_box = demo.bounding_box(), short.bounding_box()
+        assert abs(demo_box['y'] - short_box['y']) < 2, (demo_box, short_box)
+        assert abs((demo_box['y'] + demo_box['height']) - (short_box['y'] + short_box['height'])) < 2, (demo_box, short_box)
         assert skill_posts == []
-        page.get_by_role('switch').click()
+        demo.get_by_role('switch').click()
         page.wait_for_timeout(200)
         assert skill_posts and skill_posts[-1]['action'] == 'close'
         assert skill_posts[-1]['name'] == 'demo-skill'
