@@ -256,6 +256,21 @@ def personal_work_dir(identity=None, ensure: bool = True, base=None) -> Path:
     return _ensure(_user_base(identity, base) / "work", ensure)
 
 
+def session_work_dir(session_id: str, agent_id: str, *, identity=None, ensure: bool = False) -> Path:
+    """Private user Work folder for one Agent conversation."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "sessions" / agent_id / session_id, ensure)
+
+
+def automation_work_dir(task_id: str, agent_id: str, *, identity=None, ensure: bool = False) -> Path:
+    """Stable user Work folder for one scheduled task."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "automations" / agent_id / task_id, ensure)
+
+
+def shared_work_dir(*, identity=None, ensure: bool = False) -> Path:
+    """User Work folder for explicitly shared files."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "shared", ensure)
+
+
 def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
     """Personal ledger. User-scoped: spending is a fact about the person,
     not about one Agent."""
