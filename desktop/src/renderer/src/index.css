@@ -1,4 +1,3 @@
-@import './highlight.css';
 
 @tailwind base;
 @tailwind components;
@@ -446,12 +445,69 @@ body * {
   background: transparent;
 }
 .msg-content .code-block-wrapper pre code,
-.msg-content pre code.hljs {
+.msg-content .shiki-host pre,
+.msg-content .shiki-host code {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.6;
-  background: transparent;
+  background: transparent !important;
   padding: 0;
+}
+.msg-content .shiki-host pre { margin: 0; padding: 12px 14px; overflow-x: auto; }
+.msg-content .diagram-block,
+.msg-content .chart-block {
+  margin: 0.7em 0;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.msg-content .diagram-canvas { padding: 12px; overflow: auto; }
+.msg-content .diagram-canvas svg { max-width: 100%; height: auto; }
+.msg-content .chart-block { height: 320px; }
+.diagram-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 24px;
+}
+.diagram-zoom-panel {
+  width: min(960px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+}
+.diagram-zoom-bar, .pdf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.diagram-zoom-bar button, .pdf-toolbar button {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+}
+.pdf-preview { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pdf-stage { flex: 1; overflow: auto; padding: 16px; }
+.pdf-stage canvas { margin: 0 auto; display: block; background: white; }
+.pdf-search { display: inline-flex; align-items: center; gap: 6px; color: var(--text-tertiary); }
+.pdf-search input {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 /* ============================================================

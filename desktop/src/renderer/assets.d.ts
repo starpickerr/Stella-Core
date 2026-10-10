@@ -19,6 +19,10 @@ declare module '*.webp' {
   const src: string
   export default src
 }
+declare module '*?url' {
+  const src: string
+  export default src
+}
 
 // Injected by vite.config.ts from the repo-root VERSION file.
 declare const __APP_VERSION__: string

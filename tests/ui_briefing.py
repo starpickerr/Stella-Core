@@ -20,7 +20,24 @@ item = dict(id='item-1', briefing_id=briefing['id'], source_item_id='source-1', 
             section='action', status='undo', source='elearning', account_id='campus', source_id='12:assignment:4',
             occurred_at='2026-10-08T08:00:00Z', score=80, sender='课程', snippet='10月29日截止',
             payload={'_briefing_reason':'课程作业有截止时间，需要处理', 'body':'完整作业要求与提交方式',
-                     '_briefing_report':'完整 AI 分析：提交作业并核对截止时间'},
+                     '_briefing_report':'\n'.join([
+                         '完整 AI 分析：提交作业并核对截止时间',
+                         '',
+                         '| 列 | 值 |',
+                         '| --- | --- |',
+                         '| 截止 | 明天 |',
+                         '',
+                         '行内公式 $E=mc^2$。',
+                         '',
+                         '```python',
+                         'print(1)',
+                         '```',
+                         '',
+                         '```mermaid',
+                         'graph TD',
+                         '  A-->B',
+                         '```',
+                     ])},
             url='https://example.test/assignment')
 
 
@@ -174,6 +191,8 @@ with sync_playwright() as playwright:
         title_box = report.get_by_role('heading', name='AI 报告').bounding_box()
         create_box = create.bounding_box()
         assert title_box and create_box and create_box['x'] > title_box['x'] + title_box['width']
+        expect(page.get_by_text('增量变化', exact=True)).to_have_count(0)
+        expect(page.get_by_text('完整概览', exact=True)).to_have_count(0)
         expect(report.get_by_text('查看报告全文', exact=True)).to_have_count(0)
         expect(page.get_by_text('旧版纯文本报告', exact=True)).to_have_count(0)
         for removed in ('关联已有', '仅保留简报', '暂不处理', '忽略建议', '创建日程', '更多'):
@@ -182,6 +201,10 @@ with sync_playwright() as playwright:
         expect(report.get_by_role('heading', name='算法设计大作业4')).to_be_focused()
         expect(report.get_by_text('具体内容', exact=True)).to_be_visible()
         expect(report.get_by_text('完整 AI 分析：提交作业并核对截止时间', exact=True)).to_be_visible()
+        expect(report.get_by_role('cell', name='明天', exact=True)).to_be_visible()
+        expect(report.locator('.katex')).to_be_visible(timeout=15000)
+        expect(report.get_by_role('button', name='复制', exact=True)).to_be_visible(timeout=15000)
+        expect(report.locator('.diagram-canvas svg')).to_be_visible(timeout=20000)
         expect(report.get_by_text('完整作业要求与提交方式', exact=True)).to_be_visible()
         expect(report.get_by_text('AI 判断依据', exact=True)).to_be_visible()
         expect(report.get_by_text('课程作业有截止时间，需要处理', exact=True)).to_be_visible()
