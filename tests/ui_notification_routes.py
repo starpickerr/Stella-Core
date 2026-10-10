@@ -10,14 +10,13 @@ from playwright.sync_api import expect, sync_playwright
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://localhost:5173')
 requests = []
-weixin_ready = [False]
+telegram_ready = [False]
 todo = dict(id='todo-1', title='交作业', status='todo', series_id=None, parent_id=None,
             sort_order=0, notes='', due_on=(date.today() + timedelta(days=1)).isoformat(),
             due_time=None, timezone='Asia/Shanghai', priority=0, repeat_frequency='none',
             repeat_days='[]', repeat_until=None, planned_on=None, list_name='', tags='[]',
             flagged=0, checklist='[]', remind_at=(date.today() + timedelta(days=1)).isoformat() + 'T06:00:00Z',
-            scheduler_task_id=None, reminder_sync_pending=False, reminder_delivery={
-                'primary': None, 'backup_enabled': False, 'backup': None},
+            scheduler_task_id=None, reminder_sync_pending=False, reminder_delivery={'primary': None},
             reminder_delivery_status={'status': 'waiting', 'error': 'session expired'}, blocked_by=[], dependency_ids=[], subtask_count=0,
             progress_completed=0, progress_total=0, progress_percent=0, created_at='2026-10-01T00:00:00Z')
 task = dict(id='task-1', name='邮件简报', enabled=True, created_at='', updated_at='',
@@ -40,11 +39,10 @@ def backend(route):
         data['tasks'] = [task]
     elif path == '/api/scheduler/destinations':
         data['destinations'] = [
-            dict(channel_type='web', configured=True, ready=True, status='ready', recipients=[{'receiver': 'session-1', 'name': 'Current chat'}]),
-            dict(channel_type='feishu', configured=True, ready=True, status='ready', recipients=[]),
-            dict(channel_type='weixin', configured=True, ready=weixin_ready[0],
-                 status='ready' if weixin_ready[0] else 'no_recipient',
-                 recipients=[{'receiver': 'wx-user', 'name': 'wx-user'}] if weixin_ready[0] else []),
+            dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
+            dict(channel_type='telegram', configured=True, ready=telegram_ready[0],
+                 status='ready' if telegram_ready[0] else 'no_recipient',
+                 recipients=[{'receiver': '100', 'name': 'Telegram chat'}] if telegram_ready[0] else []),
         ]
     elif path == '/api/scheduler/test-delivery':
         requests.append((path, body))
@@ -79,52 +77,46 @@ with sync_playwright() as playwright:
         page.goto(test_url + '/#/tasks', wait_until='networkidle')
         page.get_by_text('邮件简报').click()
         modal = page.get_by_role('dialog')
-        expect(modal.get_by_text('备用渠道（可选）')).to_be_visible()
-        modal.get_by_role('button', name='客户端').click()
-        page.get_by_text('飞书', exact=True).click()
-        modal.locator('input[list="task-recipients"]').fill('ou_primary')
-        modal.get_by_role('button', name='测试发送至首选渠道').click()
+        expect(modal.get_by_text('备用渠道')).to_have_count(0)
+        expect(modal.get_by_text('需要重新选择渠道').first).to_be_visible()
+        expect(page.get_by_text('Telegram Bot', exact=True)).to_have_count(0)
+        telegram_ready[0] = True
+        modal.get_by_role('button', name='刷新通道状态').click()
+        modal.get_by_role('button', name='需要重新选择渠道').click()
+        expect(page.get_by_text('Telegram Bot', exact=True)).to_be_visible()
+        page.get_by_text('Telegram Bot', exact=True).click()
+        modal.locator('input[list="task-recipients"]').fill('100')
+        modal.get_by_role('button', name='测试发送', exact=True).click()
         expect(modal.get_by_text('平台已接受', exact=False)).to_be_visible()
-        assert requests[-1][1]['notification_route']['backup_enabled'] is False
+        assert requests[-1][1]['notification_route']['primary'] == {
+            'channel_type': 'telegram', 'receiver': '100', 'is_group': False}
+        assert 'backup_enabled' not in requests[-1][1]['notification_route']
+        assert 'backup' not in requests[-1][1]['notification_route']
         modal.get_by_role('button', name='保存').click()
-        assert requests[-1][1]['notification_route']['primary']['receiver'] == 'ou_primary'
-        assert requests[-1][1]['notification_route']['backup_enabled'] is False
-        page.get_by_text('邮件简报').click()
-        modal = page.get_by_role('dialog')
-        modal.get_by_role('switch').nth(1).click()
-        modal.get_by_text('备用渠道', exact=True).locator('..').get_by_role('button').click()
-        page.get_by_text('微信', exact=True).click()
-        modal.locator('input[list="task-backup-recipients"]').fill('wx-user')
-        modal.get_by_role('button', name='保存').click()
-        assert requests[-1][1]['notification_route']['backup_enabled'] is True
-        assert requests[-1][1]['notification_route']['backup']['receiver'] == 'wx-user'
-        page.get_by_text('邮件简报').click()
-        modal = page.get_by_role('dialog')
-        modal.get_by_role('switch').nth(1).click()
-        modal.get_by_role('button', name='保存').click()
-        assert requests[-1][1]['notification_route']['backup_enabled'] is False
-        assert requests[-1][1]['notification_route']['backup'] is None
+        assert requests[-1][1]['notification_route']['primary']['receiver'] == '100'
+        assert 'backup' not in requests[-1][1]['notification_route']
 
+        telegram_ready[0] = False
         page.goto(test_url + '/#/todos', wait_until='networkidle')
         page.get_by_text('交作业', exact=True).click()
         page.get_by_role('button', name='编辑详情').click()
         editor = page.get_by_role('region', name='事务详情')
         expect(editor.get_by_label('提醒渠道')).to_be_visible()
         expect(editor.get_by_text('最近投递: waiting · session expired')).to_be_visible()
-        editor.get_by_label('提醒渠道').select_option('weixin')
-        expect(editor.get_by_role('option', name='weixin · no_recipient')).to_have_count(1)
-        expect(editor.get_by_text('微信发送需要有效会话', exact=False)).to_be_visible()
-        editor.get_by_label('接收人', exact=True).fill('wx-user')
-        assert not editor.get_by_label('备用渠道（可选）').is_checked()
-        weixin_ready[0] = True
+        expect(editor.get_by_text('备用渠道')).to_have_count(0)
+        expect(editor.get_by_role('option', name='Telegram Bot')).to_have_count(0)
+        expect(editor.get_by_role('option', name='客户端')).to_have_count(1)
+        telegram_ready[0] = True
         editor.get_by_role('button', name='刷新渠道').click()
-        expect(editor.get_by_role('option', name='weixin · ready')).to_have_count(1)
-        editor.get_by_role('button', name='测试发送至首选渠道').click()
+        expect(editor.get_by_role('option', name='Telegram Bot')).to_have_count(1)
+        editor.get_by_label('提醒渠道').select_option('telegram')
+        editor.get_by_label('接收人', exact=True).fill('100')
+        editor.get_by_role('button', name='测试发送', exact=True).click()
         expect(editor.get_by_text('测试消息已被平台接受')).to_be_visible()
         editor.get_by_role('button', name='保存修改').click()
-        assert requests[-1][1]['reminder_delivery']['primary']['channel_type'] == 'weixin'
-        assert requests[-1][1]['reminder_delivery']['backup_enabled'] is False
+        assert requests[-1][1]['reminder_delivery'] == {
+            'primary': {'channel_type': 'telegram', 'receiver': '100'}}
         assert errors == [], errors
-        print('Notification UI: task and todo routes, optional backup, refresh, test send passed')
+        print('Notification UI: one proactive channel, no backup, refresh, test send passed')
     finally:
         browser.close()

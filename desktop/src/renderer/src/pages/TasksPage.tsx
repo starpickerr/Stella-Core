@@ -13,6 +13,8 @@ interface TasksPageProps {
 
 type TaskDestination = { channel_type: string; configured: boolean; ready: boolean; status: string; recipients: { receiver: string; name: string }[] }
 
+const PROACTIVE_CHANNELS = new Set(['desktop', 'telegram', 'wecom_bot'])
+
 const permissionLabel = (mode: SchedulerTask['run_permission_mode'] | 'inherit' | undefined) => {
   if (mode === 'read-only') return 'task_permission_read_only' as const
   if (mode === 'workspace-write') return 'task_permission_workspace_write' as const
@@ -239,10 +241,6 @@ const TaskEditModal: React.FC<{
     task?.action.conversation_space || 'personal')
   const [projectDir, setProjectDir] = useState(task?.action.execution_project_dir || '')
   const [receiveIdType, setReceiveIdType] = useState(task?.action.receive_id_type || (task?.action.is_group ? 'chat_id' : 'open_id'))
-  const [backupEnabled, setBackupEnabled] = useState(task?.notification_route?.backup_enabled ?? false)
-  const [backupChannel, setBackupChannel] = useState(task?.notification_route?.backup?.channel_type || 'feishu')
-  const [backupReceiver, setBackupReceiver] = useState(task?.notification_route?.backup?.receiver || '')
-  const [backupReceiveType, setBackupReceiveType] = useState(task?.notification_route?.backup?.receive_id_type || 'open_id')
   const [testStatus, setTestStatus] = useState('')
   const [testing, setTesting] = useState(false)
   const [destinations, setDestinations] = useState<TaskDestination[]>([])
@@ -310,19 +308,27 @@ const TaskEditModal: React.FC<{
     return a
   }
 
-  const buildRoute = (): NotificationRoute => ({
-    primary: { channel_type: channel as 'web' | 'feishu' | 'weixin',
-      receiver: receiver.trim(), ...(channel === 'feishu' ? { receive_id_type: receiveIdType, is_group: receiveIdType === 'chat_id' } : {}) },
-    backup_enabled: backupEnabled,
-    backup: backupEnabled ? { channel_type: backupChannel as 'web' | 'feishu' | 'weixin', receiver: backupReceiver.trim(),
-      ...(backupChannel === 'feishu' ? { receive_id_type: backupReceiveType, is_group: backupReceiveType === 'chat_id' } : {}) } : null,
-  })
+  const buildRoute = (): NotificationRoute | null => {
+    if (!PROACTIVE_CHANNELS.has(channel)) return null
+    return {
+      primary: {
+        channel_type: channel as 'desktop' | 'telegram' | 'wecom_bot',
+        receiver: channel === 'desktop' ? '' : receiver.trim(),
+        is_group: false,
+      },
+    }
+  }
 
   const testSend = async () => {
+    const route = buildRoute()
+    if (!route) {
+      setTestStatus(t('task_channel_reselect'))
+      return
+    }
     setTesting(true)
     setTestStatus('')
     try {
-      const result = await apiClient.testNotificationRoute(buildRoute())
+      const result = await apiClient.testNotificationRoute(route)
       setTestStatus(result.status === 'success'
         ? `${getLang() === 'en' ? 'Test send' : '测试发送'}: ${result.delivery_status === 'accepted' ? (getLang() === 'en' ? 'platform accepted' : '平台已接受') : result.delivery_status || result.error || ''}`
         : result.message || '')
@@ -352,6 +358,7 @@ const TaskEditModal: React.FC<{
     }
     setSaving(true)
     setError('')
+    const route = hasNotification ? buildRoute() : null
     try {
       if (isCreate) {
         const result = await apiClient.createTask({
@@ -361,7 +368,7 @@ const TaskEditModal: React.FC<{
           action: buildAction(),
           session_id: sessionId,
           run_permission_mode: runPermission,
-          ...(hasNotification ? { notification_route: buildRoute() } : {}),
+          ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       } else if (task) {
@@ -371,7 +378,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           run_permission_mode: runPermission,
-          ...(hasNotification ? { notification_route: buildRoute() } : {}),
+          ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
       }
@@ -523,14 +530,15 @@ const TaskEditModal: React.FC<{
       {!task?.action.silent && task?.action.type !== 'application_command' && <>
         <Field label={t('task_channel')}>
           <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }}
-            options={destinations.filter(d => d.configured || d.channel_type === channel).map(d => ({
-              value: d.channel_type, label: t(('task_channel_'+d.channel_type) as Parameters<typeof t>[0]),
-              hint: d.ready ? undefined : t(('task_destination_'+d.status) as Parameters<typeof t>[0]),
-            }))} />
+            options={[
+              ...(destinations.some(d => d.channel_type === channel && d.ready && PROACTIVE_CHANNELS.has(d.channel_type)) ? [] : [{ value: channel, label: t('task_channel_reselect') }]),
+              ...destinations.filter(d => d.ready && PROACTIVE_CHANNELS.has(d.channel_type)).map(d => ({
+                value: d.channel_type, label: t('task_channel_' + d.channel_type),
+              })),
+            ]} />
           <button type="button" className="mt-1 text-xs text-accent hover:underline" onClick={refreshDestinations}>{t('task_destination_refresh')}</button>
-          {destinations.find(d => d.channel_type === channel && !d.ready) && <p className="text-xs text-content-tertiary mt-1">
-            {t(('task_destination_' + destinations.find(d => d.channel_type === channel)?.status) as Parameters<typeof t>[0])}
-          </p>}
+          {!destinations.some(d => d.ready && PROACTIVE_CHANNELS.has(d.channel_type)) && <p className="text-xs text-content-tertiary mt-1">{t('task_channel_connect')}</p>}
+          {!PROACTIVE_CHANNELS.has(channel) && <p className="text-xs text-content-tertiary mt-1">{t('task_channel_reselect')}</p>}
         </Field>
       </>}
       {channel === 'web' && <>
@@ -568,34 +576,13 @@ const TaskEditModal: React.FC<{
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
           <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
         </Field>}
-        {channel !== 'web' && <Field label={t('task_receiver')}>
+        {(channel === 'telegram' || channel === 'wecom_bot') && <Field label={t('task_receiver')}>
           <TextInput value={receiver} onChange={event => setReceiver(event.target.value)} list="task-recipients" />
           <datalist id="task-recipients">{destinations.find(d => d.channel_type === channel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
         </Field>}
-        {channel === 'weixin' && <p className="text-xs text-content-tertiary">{t('task_weixin_condition')}</p>}
         {channel !== 'web' && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-content-secondary">{getLang() === 'en' ? 'Backup channel (optional)' : '备用渠道（可选）'}</span>
-          <Toggle checked={backupEnabled} onChange={setBackupEnabled} />
-        </div>
-        {backupEnabled && <>
-          <Field label={getLang() === 'en' ? 'Backup channel' : '备用渠道'}>
-            <Dropdown value={backupChannel} onChange={value => { setBackupChannel(value as 'web' | 'feishu' | 'weixin'); setBackupReceiver(''); setBackupReceiveType('open_id') }}
-              options={destinations.filter(d => d.configured || d.channel_type === backupChannel).map(d => ({
-                value: d.channel_type, label: t(('task_channel_' + d.channel_type) as Parameters<typeof t>[0]),
-                hint: d.ready ? undefined : t(('task_destination_' + d.status) as Parameters<typeof t>[0]),
-              }))} />
-          </Field>
-          {backupChannel === 'feishu' && <Field label={t('task_receive_type')}>
-            <Dropdown value={backupReceiveType} onChange={setBackupReceiveType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
-          </Field>}
-          <Field label={getLang() === 'en' ? 'Backup recipient' : '备用接收人'}>
-            <TextInput value={backupReceiver} onChange={event => setBackupReceiver(event.target.value)} list="task-backup-recipients" />
-            <datalist id="task-backup-recipients">{destinations.find(d => d.channel_type === backupChannel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
-          </Field>
-        </>}
-        <button type="button" className="text-xs text-accent hover:underline disabled:opacity-40" disabled={testing || !receiver.trim()}
-          onClick={() => void testSend()}>{testing ? (getLang() === 'en' ? 'Sending…' : '发送中…') : (getLang() === 'en' ? 'Send test to primary' : '测试发送至首选渠道')}</button>
+        <button type="button" className="text-xs text-accent hover:underline disabled:opacity-40" disabled={testing || !PROACTIVE_CHANNELS.has(channel) || ((channel === 'telegram' || channel === 'wecom_bot') && !receiver.trim())}
+          onClick={() => void testSend()}>{testing ? (getLang() === 'en' ? 'Sending…' : '发送中…') : (getLang() === 'en' ? 'Send test' : '测试发送')}</button>
         {testStatus && <p role="status" className="text-xs text-content-secondary">{testStatus}</p>}
         {task?.notification_delivery_status && <p role="status" className="text-xs text-content-secondary">
           {getLang() === 'en' ? 'Latest delivery' : '最近投递'}: {task.notification_delivery_status.status}
