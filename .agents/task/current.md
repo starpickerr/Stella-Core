@@ -45,3 +45,4 @@
 - 当前侧边栏 `/skills` 的中文标签是“进化”，英文是“Evolution”；页面标题另为“技能管理”／“Skills”。页面同时展示“内置工具”和“技能”，两处名称需要一起统一。
 - 当前 `SkillsPage.tsx` 通过 `apiClient.getTools()` 读取 `/api/tools`。`agent/tools/__init__.py` 的 `__all__` 列有 24 个内置工具类候选（已排除 `BaseTool`、`ToolManager` 和外部 `McpTool`）；`ToolsHandler` 却只遍历 `ToolManager.tool_classes`。`ToolManager` 在加载时明确跳过 `MemorySearchTool` 和 `MemoryGetTool`，而 `bridge/agent_initializer.py` 会在运行时单独构造并注入 `memory_search` 和 `memory_get`。因此当前页面**未包含所有实际内置工具**，至少漏了这两项。
 - `ToolManager` 还可能因可选依赖缺失而不加载某些内置工具；Agent 初始化也会按配置跳过某些工具。当前页面没有区分“属于内置目录”和“此时可用”。页面并发请求工具与技能，任一请求失败只写控制台日志，已有空列表会被当作“暂无”显示。以上是需求中的目录与错误状态需要修正的原因，不表示已改动代码。
+- 新补充要求：所有内置工具提供中英文界面文案；工具和技能条目默认只见标题，展开可读完整介绍并进入详情页。现有两类卡片都使用 `line-clamp-2`，因此长介绍会被省略号截断。`ToolInfo` 当前只有 `name`、`description` 两个字符串；`/api/tools` 取 `instance.description`，仅对定时任务有英文特例，且请求没有传入前端 `getLang()`。各工具的 `description` 实际有中文、英文和面向 Agent 的操作指令，不能直接满足双语用户文案。详见 [能力页面实施参考](capabilities.md)。
