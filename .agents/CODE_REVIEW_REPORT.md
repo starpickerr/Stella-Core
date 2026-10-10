@@ -1,6 +1,6 @@
 # Stella 多 Agent 审核报告
 
-状态：三路审核都是 PASS。完整质量门禁正在按修复后的版本重跑，通过前不合并。
+状态：PASS。业务、安全和可靠性审核都通过。修复后的完整质量门禁退出码 0：ruff、pytest 1532 passed / 4 skipped、eslint、desktop build、typecheck、node、ui、policy 全部 PASS。
 
 ## 范围
 
