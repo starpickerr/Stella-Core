@@ -108,3 +108,9 @@
 - FAIL：无。SKIP：pytest 4 skipped。
 - 报告：`audit-reports/Full-Audit-2026-10-11-032840-061146.md`（已被忽略，不入库）。
 - 下一步：快进本地 `develop`。不推送，不改 `main`。
+
+## 2026-10-11 合并到本地 develop
+
+- 本地 `develop` 从 `94f176d0` 快进到 `ca1eb09a`。
+- `main` 仍是 `1f4e31df`。没有推送。
+- 合并没有产生新的代码差异，完整门禁覆盖的是同一棵代码树。
