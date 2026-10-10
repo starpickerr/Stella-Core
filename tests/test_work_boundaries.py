@@ -43,6 +43,26 @@ def test_other_session_and_automation_are_private_even_in_full_access(work):
     assert _check("read", {"path": str(alias / "secret.txt")}, recipient.root).kind is DecisionKind.DENY
 
 
+def test_vision_cannot_read_another_session_private_image(work):
+    owner = resolve_context("owner", "alpha", ensure=True)
+    recipient = resolve_context("recipient", "alpha", ensure=True)
+    secret = owner.root / "scan.png"
+    own = recipient.root / "note.png"
+    secret.write_bytes(b"secret-image")
+    own.write_bytes(b"own-image")
+    args = {"image": str(secret), "question": "what is this"}
+    assert _check("vision", args, recipient.root).kind is DecisionKind.DENY
+    assert _check("vision", {"image": str(own), "question": "what is this"},
+                  recipient.root).allowed
+    alias = recipient.root / "alias.png"
+    alias.symlink_to(secret)
+    assert _check("vision", {"image": str(alias), "question": "what is this"},
+                  recipient.root).kind is DecisionKind.DENY
+    share = create_share("owner", "alpha", "scan.png", "recipient", "read")
+    assert _check("vision", {"image": share["path"], "question": "what is this"},
+                  recipient.root).allowed
+
+
 def test_exact_share_read_write_and_revoke(work):
     owner = resolve_context("owner", "alpha", ensure=True)
     recipient = resolve_context("recipient", "alpha", ensure=True)
