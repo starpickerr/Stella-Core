@@ -268,6 +268,8 @@ Write the YAML frontmatter with `name`, `description`, and optional `metadata`:
   - `requires.anyBins`: Alternative binaries — at least one must be present
   - `always`: Set to `true` to always load regardless of requirements
   - `emoji`: Skill icon (optional)
+  - `tool_bindings`: Load this skill before a tool runs. Omit `actions` to cover every call of that tool; list `actions` to cover only those `action` values. The first matching call returns this skill and does not execute.
+  - Example: `tool_bindings: [{tool: elearning, actions: [list_files, sync_files]}, {tool: bills}]`
   - Do NOT set `category` — it defaults to `skill` and is managed by the system
 
 **API Key Requirements**:

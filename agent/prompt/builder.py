@@ -418,6 +418,7 @@ def _build_skills_section(skill_manager: Any, tools: Optional[List[Any]], langua
             "",
             f"**Important**: skills are not tools and cannot be called directly. The only way to use a skill is to read its SKILL.md with `{read_tool_name}`, then act on the file's content. "
             "Never read multiple skills at once — only read one after selecting it.",
+            "If a skill declares tool_bindings, calling that tool first returns the skill and does not run the call. Follow it, then call the tool again.",
             "",
             "Available skills:"
         ]
@@ -434,6 +435,7 @@ def _build_skills_section(skill_manager: Any, tools: Optional[List[Any]], langua
             "",
             f"**重要**: 技能不是工具，不能直接调用。使用技能的唯一方式是用 `{read_tool_name}` 读取 SKILL.md 文件，然后按文件内容操作。"
             "永远不要一次性读取多个技能，只在选择后再读取。",
+            "技能若声明了 tool_bindings，调用对应工具时会先返回技能正文，该次调用不会执行。遵循正文后再次调用才会执行。",
             "",
             "以下是可用技能："
         ]

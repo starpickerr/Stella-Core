@@ -35,7 +35,7 @@ const ThinkingStep: React.FC<{ content: string; streaming?: boolean }> = ({ cont
 /** One tool call a sub agent made, in the list under its step. */
 const SubStepRow: React.FC<{ sub: SubStep }> = ({ sub }) => {
   const running = sub.status === 'running'
-  const failed = !running && sub.status !== 'success'
+  const failed = !running && sub.status !== 'success' && sub.status !== 'skill_required'
   return (
     <div className="flex items-center gap-1.5 py-0.5 min-w-0" title={sub.error}>
       {running ? (
@@ -72,7 +72,7 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
     setExpanded(true)
   }, [step.display, substeps.length])
   const running = step.status === 'running'
-  const isError = step.is_error || (!!step.status && step.status !== 'success' && !running)
+  const isError = step.status !== 'skill_required' && (step.is_error || (!!step.status && step.status !== 'success' && !running))
 
   const icon = running ? (
     <Loader2 size={12} className="text-accent animate-spin" />
