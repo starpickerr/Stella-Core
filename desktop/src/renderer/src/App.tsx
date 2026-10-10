@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { History, FolderTree } from 'lucide-react'
 import NavRail from './layout/NavRail'
 import SessionList from './layout/SessionList'
@@ -242,8 +242,7 @@ const App: React.FC = () => {
             <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
-            <Route path="/skills/tools/:toolId" element={<SkillsPage baseUrl={backend.baseUrl} />} />
-            <Route path="/skills/skills/:skillId" element={<SkillsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/skills/*" element={<Navigate to="/skills" replace />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />

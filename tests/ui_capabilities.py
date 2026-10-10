@@ -1,4 +1,4 @@
-"""Capabilities page: folded catalog, details, skill toggle, and load errors."""
+"""Capabilities page: tool grid with agent names, inline boundaries, skill toggle, and load errors."""
 
 import json
 import os
@@ -31,6 +31,13 @@ def backend(route):
             data = {'status': 'error', 'message': '工具目录加载失败'}
         else:
             data['tools'] = [{
+                'id': 'read',
+                'title': {'zh': '读取文件', 'en': 'Read Files'},
+                'intro': {'zh': '读取工作区中的文件内容。', 'en': 'Read workspace files.'},
+                'detail': {'zh': '只能读取当前工作区里已有的文件。', 'en': 'Reads files in the workspace.'},
+                'available': True,
+                'reason': {'zh': '', 'en': ''},
+            }, {
                 'id': 'memory_search',
                 'title': {'zh': '搜索记忆', 'en': 'Search Memory'},
                 'intro': {'zh': INTRO, 'en': 'Search the agent memory. This introduction must stay complete.'},
@@ -63,20 +70,32 @@ with sync_playwright() as playwright:
         nav = page.get_by_role('navigation')
         expect(nav.get_by_role('button', name='能力')).to_be_visible()
         expect(page.get_by_role('heading', name='能力')).to_be_visible()
-        expect(page.get_by_text(INTRO)).to_have_count(0)
-        page.get_by_role('button', name='搜索记忆').click()
-        expect(page.get_by_text(INTRO)).to_be_visible()
+        memory = page.get_by_role('article', name='memory_search')
+        expect(memory.get_by_role('heading', name='memory_search', exact=True)).to_be_visible()
+        expect(memory.get_by_text(INTRO)).to_be_visible()
+        expect(memory.get_by_text('当前不可用')).to_be_visible()
+        expect(page.get_by_text('搜索记忆', exact=True)).to_have_count(0)
+        expect(page.get_by_text('读取文件', exact=True)).to_have_count(0)
+        expect(page.get_by_text('查看详情')).to_have_count(0)
         expect(page.locator('.line-clamp-2')).to_have_count(0)
-        assert skill_posts == []
-        page.get_by_role('link', name='查看详情').click()
-        expect(page).to_have_url(test_url + '/#/skills/tools/memory_search')
-        expect(page.get_by_text(DETAIL)).to_be_visible()
-        expect(page.get_by_text('memory_search')).to_be_visible()
-        page.get_by_role('button', name='返回能力').click()
-        expect(page.get_by_text(INTRO)).to_be_visible()
+        read_box = page.get_by_role('article', name='read').bounding_box()
+        memory_box = memory.bounding_box()
+        assert abs(read_box['y'] - memory_box['y']) < 2 and memory_box['x'] > read_box['x'] + read_box['width'], (read_box, memory_box)
 
-        page.get_by_role('button', name='演示技能').click()
-        expect(page.get_by_text('技能介绍需要完整显示。', exact=False)).to_be_visible()
+        expect(memory.get_by_text(DETAIL)).to_have_count(0)
+        boundary = memory.get_by_role('button', name='适用说明')
+        expect(boundary).to_have_attribute('aria-expanded', 'false')
+        boundary.click()
+        expect(boundary).to_have_attribute('aria-expanded', 'true')
+        expect(memory.get_by_text(DETAIL)).to_be_visible()
+        expect(memory.get_by_text('仅在启用记忆的对话中可用。')).to_be_visible()
+        assert skill_posts == []
+
+        page.goto(test_url + '/#/skills/tools/memory_search', wait_until='networkidle')
+        expect(page).to_have_url(test_url + '/#/skills')
+
+        demo = page.get_by_role('article', name='演示技能')
+        expect(demo.get_by_text('技能介绍需要完整显示。', exact=False)).to_be_visible()
         assert skill_posts == []
         page.get_by_role('switch').click()
         page.wait_for_timeout(200)
@@ -90,6 +109,6 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('暂无内置工具')).to_have_count(0)
         expect(page.get_by_role('button', name='重试')).to_be_visible()
         assert errors == [], errors
-        print('Capabilities page: folded catalog, detail, skill toggle, and error passed')
+        print('Capabilities page: tool grid, raw names, inline boundaries, skill toggle, and error passed')
     finally:
         browser.close()
