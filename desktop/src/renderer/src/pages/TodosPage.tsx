@@ -125,9 +125,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         save: "Save changes",
         delete: "Delete task",
         deleteConfirm: "Delete this task and all its subtasks?",
-        unfinished:
-          "Some subtasks are still open. Complete only this parent task?",
-        finishParent: "All subtasks are done. Complete the parent task?",
         statusNames: {
           todo: "To do",
           in_progress: "In progress",
@@ -220,8 +217,6 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         save: "保存修改",
         delete: "删除事务",
         deleteConfirm: "删除这条事务及其所有子事务？",
-        unfinished: "仍有未完成的子事务。只完成父事务，保留子事务原状态？",
-        finishParent: "所有子事务都已完成，是否完成父事务？",
         statusNames: {
           todo: "待处理",
           in_progress: "进行中",
@@ -575,20 +570,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     }
   };
   const changeStatus = (todo: Todo, status: Todo["status"]) =>
-    void run(async () => {
-      try {
-        await apiClient.changeTodoStatus(todo.id, status);
-      } catch (cause) {
-        if (
-          status === "completed" &&
-          cause instanceof Error &&
-          cause.message.includes("unfinished_subtasks")
-        ) {
-          if (window.confirm(copy.unfinished))
-            await apiClient.changeTodoStatus(todo.id, status, true);
-        } else throw cause;
-      }
-    });
+    void run(() => apiClient.changeTodoStatus(todo.id, status));
   const toggle = (todo: Todo) =>
     changeStatus(todo, todo.status === "completed" ? "todo" : "completed");
   const move = (id: string, parentId: string | null, position?: number) =>
@@ -1715,6 +1697,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         <span className={statusColors[child.status]}>{copy.statusNames[child.status]}</span>
                         {child.priority > 0 && <span className="text-amber-500">{copy.priority}: {copy.priorities[child.priority]}</span>}
                         {child.subtask_count > 0 && <span className="text-accent">{copy.progress(child.progress_completed, child.progress_total)}</span>}
+                        {child.due_on && <span title={copy.dueDate} className={isOverdue(child, now) ? "text-danger" : ""}><Clock3 size={11} className="inline mr-1" />{child.due_on}{child.due_time ? ` ${child.due_time}` : ""}</span>}
                       </div>
                     </div>
                     <button type="button" onClick={() => { enterFocus(child); open(child); }} title={copy.edit} aria-label={`${copy.edit} ${child.title}`} className="shrink-0 rounded-btn p-1.5 text-content-tertiary hover:text-accent"><Pencil size={15} /></button>

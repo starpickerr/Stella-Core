@@ -818,28 +818,76 @@ class TodoService:
             raise ValueError("recurring occurrence only supports completion")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            if status in ("in_progress", "completed") and not force:
-                blocked = db.execute("""SELECT COUNT(*) FROM todo_dependencies d
-                    JOIN todos t ON t.id=d.prerequisite_id
-                    WHERE d.task_id=? AND t.status!='completed'""", (old["id"],)).fetchone()[0]
-                if blocked:
-                    raise ValueError(f"unfinished_dependencies:{blocked}")
-            if status == "completed" and not force:
-                pending = db.execute("""WITH RECURSIVE subtree(id) AS (
-                    SELECT id FROM todos WHERE parent_id=? UNION ALL
-                    SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
-                    SELECT COUNT(*) FROM todos WHERE id IN (SELECT id FROM subtree)
-                    AND status NOT IN ('completed','cancelled')""", (old["id"],)).fetchone()[0]
-                if pending:
-                    raise ValueError(f"unfinished_subtasks:{pending}")
-            if status in TERMINAL_STATUSES:
-                self._cancel_pending_reminders(db, old["id"])
-            now = _now()
-            db.execute("UPDATE todos SET status=?,completed_at=?,user_modified=1,updated_at=? WHERE id=?",
-                       (status, now if status == "completed" else None, now, old["id"]))
-            self._queue_scheduler_link(db, old["id"], old["remind_at"], status)
+            if status == "completed":
+                self._complete_subtree(db, old["id"], force)
+            else:
+                if status == "in_progress" and not force:
+                    blocked = self._external_unfinished_dependencies(db, [old["id"]])
+                    if blocked:
+                        raise ValueError(f"unfinished_dependencies:{blocked}")
+                if status in TERMINAL_STATUSES:
+                    self._cancel_pending_reminders(db, old["id"])
+                now = _now()
+                db.execute("UPDATE todos SET status=?,completed_at=?,user_modified=1,updated_at=? WHERE id=?",
+                           (status, None, now, old["id"]))
+                self._queue_scheduler_link(db, old["id"], old["remind_at"], status)
         self._sync_scheduler_links()
         return self.get_todo(old["id"])
+
+    def _subtree_rows(self, db, root_id):
+        """Walk every descendant in Python so nesting is not capped by SQLite's CTE depth."""
+        rows = []
+        pending = [root_id]
+        seen = set()
+        while pending:
+            node_id = pending.pop()
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            row = db.execute("SELECT id, status, remind_at FROM todos WHERE id=?", (node_id,)).fetchone()
+            if row is None:
+                if node_id == root_id:
+                    raise ValueError("todo not found")
+                continue
+            rows.append(row)
+            children = db.execute(
+                "SELECT id FROM todos WHERE parent_id=? ORDER BY sort_order, id", (node_id,)).fetchall()
+            pending.extend(child["id"] for child in children)
+        return rows
+
+    @staticmethod
+    def _external_unfinished_dependencies(db, ids):
+        """Count unfinished prerequisites that live outside the nodes being completed."""
+        inside = set(ids)
+        blocked = 0
+        for task_id in ids:
+            dependencies = db.execute("""SELECT t.id, t.status FROM todo_dependencies d
+                JOIN todos t ON t.id=d.prerequisite_id WHERE d.task_id=?""", (task_id,))
+            blocked += sum(1 for item in dependencies
+                           if item["status"] != "completed" and item["id"] not in inside)
+        return blocked
+
+    def _complete_subtree(self, db, root_id, force):
+        """Complete a task and every non-cancelled descendant in the current transaction.
+
+        Already completed nodes keep their completion time. Cancelled descendants stay
+        cancelled. Prerequisites inside the subtree are completed together, so only
+        unfinished prerequisites outside the subtree can block the operation.
+        """
+        rows = self._subtree_rows(db, root_id)
+        blocked = self._external_unfinished_dependencies(db, [row["id"] for row in rows])
+        if blocked and not force:
+            raise ValueError(f"unfinished_dependencies:{blocked}")
+        now = _now()
+        for row in rows:
+            if row["status"] == "cancelled":
+                continue
+            self._cancel_pending_reminders(db, row["id"])
+            self._queue_scheduler_link(db, row["id"], row["remind_at"], "completed")
+            if row["status"] == "completed":
+                continue
+            db.execute("""UPDATE todos SET status='completed', completed_at=COALESCE(completed_at, ?),
+                user_modified=1, updated_at=? WHERE id=?""", (now, now, row["id"]))
 
     def complete_todo(self, todo_id, completed, force=False):
         if type(completed) is not bool:
