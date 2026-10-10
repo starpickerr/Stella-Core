@@ -294,9 +294,9 @@ class SecurityGateway:
                 return None
 
         prerequisites: list[str] = []
-        path_arg = str(args.get("path") or "")
+        path_arg = str(args.get("path") or args.get("image") or "")
         event = "tool_decision"
-        if tool_name in ("read", "write", "edit", "ls", "search_files", "send") and path_arg and not path_arg.lower().startswith(("http://", "https://")):
+        if tool_name in ("read", "write", "edit", "ls", "search_files", "send", "vision") and path_arg and not path_arg.lower().startswith(("http://", "https://")):
             real = _path(path_arg, cwd)
             hard_reason = hard_reason or private_denial(real, tool_name in ("write", "edit"))
             from agent.tools.utils.credentials import credential_denial_message, is_credential_path

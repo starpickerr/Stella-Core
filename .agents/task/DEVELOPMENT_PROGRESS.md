@@ -22,10 +22,10 @@
 - PASS：阶段 3 假 EventKit 同步/API/Agent/权限回归 71 项；Swift EventKit helper 编译及无真实 Reminder store 的闹钟测试通过。浏览器日历设置的首次预览、确认、同步、冲突及断开流程通过。
 - PASS：阶段 4 Apple 设置与内嵌 Agent 浏览器交互：独立开关、精确条目预览/确认、离页恢复、审批、连续快捷请求与页面刷新；Agent 自动同步开关回归先失败后通过，设置忙碌状态和历史加载用例先失败后通过。分支复核发现并处理上述竞态；独立审查代理中途达到额度限制，未产生完整审查结论。
 - PASS：阶段 5 Work Python 测试 54 项（context/runtime/shares/boundaries/sandbox/browser/scheduler/project）。
-- PASS：`.venv/bin/python scripts/quality_check.py incremental`（本次会话，阶段 6 后）：Ruff；pytest 1489 passed / 4 skipped；ESLint、构建、类型检查、Node；UI 含 Work 共享与安全四模式/完全访问提示。`policy` SKIP。
+- PASS：`.venv/bin/python scripts/quality_check.py incremental`（vision 边界修复后）：Ruff；pytest 1490 passed / 4 skipped；ESLint、构建、类型检查、Node；UI 含 Work 共享与安全四模式。`policy` SKIP。
 - SKIP：真实 Apple 日历与提醒事项授权/读写、微信/飞书外部发送、打包运行；未使用用户账号或数据。Windows 进程沙箱本机不适用。
 
 ## 下一步
 
 1. 在隔离测试账号可用时补真实渠道与 Apple 授权验收。
-2. 完成 Work 与安全权限独立审查后，按既有授权合并本地 `develop`。
+2. Work 审查的 Important 项（vision 读取私有图片）已补回归；按既有授权合并本地 `develop`。
