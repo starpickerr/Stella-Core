@@ -70,3 +70,13 @@
 - 本轮修复：占位渠道的保存判断抽到 `taskChannel.ts`，并用 `tests/taskChannel.test.mjs` 覆盖新建拦截和已有 web 会话任务仍可保存。后台启动在进程拉起期间占用名额，重叠启动的回归测试已先失败后通过。
 - 验证：隔离 pytest 这两条通过；`node --experimental-strip-types --test tests/taskChannel.test.mjs` 为 2 passed。
 - 下一步：把包含这次修复的版本同时交给三路审核。任一路 FAIL 就交回修复代理，再三路重审。
+
+## 2026-10-11 三路同时复审 a758dc91
+
+- 负责人：主 Agent
+- 当前版本：`a758dc91`。未推送，未改 `main`。
+- 审核：
+  - [业务审核](ebd77864-0d63-4c57-bcd9-92404f9aece4)
+  - [安全审核](83f3d62d-9c15-40e7-885f-fd03e19ebbb9)
+  - [可靠性审核](60ed4492-6465-4ee2-8a29-97b040d4a4a0)
+- 三路都只读。任一路 FAIL 后，才由修复代理改代码并重新三路审核。主 Agent 不判定 PASS。
