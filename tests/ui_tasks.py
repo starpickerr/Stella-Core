@@ -53,9 +53,15 @@ with sync_playwright() as playwright:
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/tasks', wait_until='networkidle')
         page.get_by_text('Linked reminder').click()
-        expect(page.get_by_role('dialog')).to_be_visible()
-        expect(page.get_by_role('dialog')).to_contain_text('Linked reminder')
+        dialog = page.get_by_role('dialog')
+        expect(dialog).to_be_visible()
+        expect(dialog).to_have_attribute('aria-label', '编辑任务')
+        expect(dialog.locator('input').first).to_have_value('Linked reminder')
+        expect(dialog).to_contain_text('此提醒由关联事务管理，请在事务中修改。')
         assert page.url.endswith('/#/tasks'), page.url
+        page.get_by_role('dialog').get_by_role('button', name='取消').click()
+        page.get_by_role('button', name='Linked reminder').get_by_text('下次执行').click()
+        expect(page.get_by_role('dialog')).to_have_attribute('aria-label', '编辑任务')
         page.get_by_role('dialog').get_by_role('button', name='取消').click()
         tasks[1]['linked_todo_id'] = 'missing-todo'
         page.reload(wait_until='networkidle')
