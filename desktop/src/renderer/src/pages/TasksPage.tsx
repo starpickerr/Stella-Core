@@ -13,6 +13,13 @@ interface TasksPageProps {
 
 type TaskDestination = { channel_type: string; configured: boolean; ready: boolean; status: string; recipients: { receiver: string; name: string }[] }
 
+const permissionLabel = (mode: SchedulerTask['run_permission_mode'] | 'inherit' | undefined) => {
+  if (mode === 'read-only') return 'task_permission_read_only' as const
+  if (mode === 'workspace-write') return 'task_permission_workspace_write' as const
+  if (mode === 'full-access') return 'task_permission_full_access' as const
+  return 'task_permission_inherit' as const
+}
+
 const scheduleSummary = (s: TaskSchedule): string => {
   if (s.type === 'cron') return s.expression || 'cron'
   if (s.type === 'interval') {
@@ -154,6 +161,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="font-medium text-sm text-content truncate">{task.name || task.id}</span>
                       <div className="flex-1" />
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
+                      <span className="text-xs text-content-tertiary">{t(permissionLabel(task.run_permission_mode))}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
                     {task.linked_todo_id && <button type="button" className="text-xs text-accent mb-2 hover:underline"
@@ -214,6 +222,7 @@ const TaskEditModal: React.FC<{
   const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
+  const [runPermission, setRunPermission] = useState<NonNullable<SchedulerTask['run_permission_mode']> | 'inherit'>(task?.run_permission_mode || 'inherit')
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -351,6 +360,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           session_id: sessionId,
+          run_permission_mode: runPermission,
           ...(hasNotification ? { notification_route: buildRoute() } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -360,6 +370,7 @@ const TaskEditModal: React.FC<{
           enabled,
           schedule: buildSchedule(),
           action: buildAction(),
+          run_permission_mode: runPermission,
           ...(hasNotification ? { notification_route: buildRoute() } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -444,6 +455,19 @@ const TaskEditModal: React.FC<{
         <span className="text-sm text-content-secondary">{t('task_enabled')}</span>
         <Toggle checked={enabled} onChange={setEnabled} />
       </div>
+
+      <Field label={t('task_run_permission')}>
+        <Dropdown
+          value={runPermission}
+          onChange={(value) => setRunPermission(value as NonNullable<SchedulerTask['run_permission_mode']> | 'inherit')}
+          options={[
+            { value: 'inherit', label: t('task_permission_inherit') },
+            { value: 'read-only', label: t('task_permission_read_only') },
+            { value: 'workspace-write', label: t('task_permission_workspace_write') },
+            { value: 'full-access', label: t('task_permission_full_access') },
+          ]}
+        />
+      </Field>
 
       <Field label={t('task_schedule_type')}>
         <Dropdown
