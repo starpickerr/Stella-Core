@@ -30,3 +30,17 @@
 - `channel/desktop/desktop_channel.py` 的 `SecurityPolicyHandler` 接收目标层级写入；`SessionSettingsHandler` 维护输入框读写的对话设置。`desktop/src/renderer/src/store/sessionSettingsStore.ts` 缓存当前对话权限，`useSessionStore` 有对话列表和项目归属。实现时让安全页显式选中对话，并核对两个入口保存后彼此刷新；项目选择和对话选择不能共用一个隐式活动上下文。
 - `agent/workspace/project_store.py`、`agent/workspace/session_prefs.py` 分别持久化项目与对话策略。`extra_roots` 与方案同处策略对象；实施“恢复继承”或修改目录时需分开处理，不得顺带删除独立目录授权或制造一个自定义方案。
 - `tests/test_security_center.py` 已覆盖部分分层合并与旧配置迁移。新增测试应覆盖不同层的预设覆盖、继承具体名称、旧规则差异不放宽、未保存自定义不落盘、非当前对话写入、项目默认、恢复继承及目录保留；前端还需验证实际交互。
+
+## 外部连接、总览与活动的现状
+
+- `agent/permission/center.py` 的 `connections()` 先写死 GitHub、Email、Calendar、Browser、Plugins、External API 六项，Browser 恒为 `connected=True`，Plugins/External API 恒为 `False`；Email/Calendar 分别看 `email_password`、`calendar_token` 等通用字段，不读取简报邮箱或 Apple 日历的实际状态。GitHub 仅看令牌是否存在；MCP 再依据配置和 `ToolManager.list_mcp_status()` 添加实例。`overview()` 的 `connection_count` 计入已连接且未暂停的条目，因此浏览器会抬高数量。
+- 同一函数从安全活动的 `resource` 与连接 `id` **完全相等**的记录推算 `last_access`，但 `agent/permission/gateway.py` 对外部调用还可能记录工具名、资源类别或 `external_api`，因此“尚未使用”不能证明没有使用。`SecurityPage.tsx` 在 `scopes` 为空时仍显示“全部操作”；真正明确的 `*` 与未知范围没有区分。
+- `agent/briefing/settings.py` 的 `public_mailboxes()` 可提供简报邮箱配置和启用状态，连接测试在同一模块；Apple 日历真实授权与配置由 `/api/calendar/apple/status` 和设置页 `AppleIntegrations.tsx` 管理。需要区分“配置存在”“已验证可用”和“权限允许使用”，不能用一个布尔值概括。
+- `SecurityPage.tsx` 总览标题按 `summary.status` 显示正常或待查看，标题下却始终渲染 `process_isolation.reason`；隔离不可用时还会覆盖总览状态标题。`agent/permission/center.py` 会把中文限制附加到隔离原因上，其他隔离原因为英文。已有 `securityLocale.ts` 的 `statusNormalHelp`、`statusAttentionHelp` 可作为状态说明入口。
+- `securityLocale.ts` 的 `tools` 翻译表只有部分工具；活动列表、过滤器和待确认操作对表外工具直接显示原始 id。`agent/tools/catalog.py` 已有内置工具的双语展示名称，可用作共享目录；动态 MCP 工具仍需真实显示名与安全回退。
+
+## 定时任务运行权限的现状
+
+- `desktop/src/renderer/src/pages/TasksPage.tsx` 的运行权限下拉只含“沿用／只读／工作区写入／完全访问”；任务卡片用 `run_permission_mode` 原值标注“沿用”，不显示具体生效方案。`agent/scheduler/mutations.py` 仅允许用户保存三种显式预设，`inherit` 在存储中变成没有该字段。
+- `agent/scheduler/conversation.py` 会为桌面任务选择来源对话、复用任务对话或新建任务对话，并绑定项目。`agent/runtime/tool_invocation.py` 在运行时会先通过 `resolve()` 读取执行会话的默认、项目、对话策略；`scheduled_permission_scope()` 没有显式预设时不覆盖，存在显式预设时以它替换当次运行的预设和规则。因此“沿用”在**有可解析执行会话的运行路径**已走共享策略，但 UI 未展示具体结果，也没有明确说明新建/复用对话的归属与变化时机；这与“完全不读取安全页方案”的表面观感不同。
+- 定时任务权限是一次运行的覆盖，不应把所选值写回全局、项目或对话策略；当前没有任务级自定义规则存储，也没有把任务的实际权限状态返回给列表/编辑器。后续实现须明确执行会话来源、失效处理以及与前述三层权限语义的一致性。
