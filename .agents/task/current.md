@@ -42,5 +42,6 @@
 ## 定时任务运行权限的现状
 
 - `desktop/src/renderer/src/pages/TasksPage.tsx` 的运行权限下拉只含“沿用／只读／工作区写入／完全访问”；任务卡片用 `run_permission_mode` 原值标注“沿用”，不显示具体生效方案。`agent/scheduler/mutations.py` 仅允许用户保存三种显式预设，`inherit` 在存储中变成没有该字段。
-- `agent/scheduler/conversation.py` 当前有 `source`（已有对话）、`reuse`（任务复用对话）、`new`（每次新建对话）三种桌面执行方式。用户本轮把“沿用”限定为**明确绑定已有对话**，即须保存且验证 `source_session_id`；`reuse`、`new` 或仅在创建时恰好打开某条对话，都不能算绑定。`agent/runtime/tool_invocation.py` 运行时会先通过 `resolve()` 读取执行会话的默认、项目、对话策略，`scheduled_permission_scope()` 有显式预设时会覆盖当次运行。当前“沿用”在有可解析执行会话时实际经过共享策略，但 UI 未区分是否明确绑定，也不显示具体结果；新要求需把资格与执行目标绑定一致。
-- 定时任务权限是一次运行的覆盖，不应把所选值写回全局、项目或对话策略；当前没有任务级自定义规则存储，也没有把任务的实际权限状态返回给列表/编辑器。后续实现须明确执行会话来源、失效处理以及与前述三层权限语义的一致性。
+- `agent/scheduler/conversation.py` 当前有 `source`（已有对话）、`reuse`（任务复用对话）、`new`（每次新建对话）三种桌面执行方式，但 `validate_conversation_action()` 拒绝非 `web` 渠道上的对话选择。`TasksPage.tsx` 只在 `channel === 'web'` 时显示这些选择，切到其他发送渠道时 `buildAction()` 会删除 `conversation_mode`、`source_session_id` 等字段。新需求要求执行对话和发送渠道独立：三个执行方式不随客户端、Telegram Bot、企业微信智能机器人等通知渠道切换而丢失；绑定已有对话与消息投递目的地是不同字段和不同判断。
+- 用户本轮把“沿用”限定为**明确绑定已有对话**，即须保存且验证 `source_session_id`；`reuse`、`new` 或仅在创建时恰好打开某条对话，都不能算绑定。`agent/runtime/tool_invocation.py` 运行时会先通过 `resolve()` 读取执行会话的默认、项目、对话策略，`scheduled_permission_scope()` 有显式预设时会覆盖当次运行。当前“沿用”在有可解析执行会话时实际经过共享策略，但 UI 未区分是否明确绑定，也不显示具体结果；新要求需把资格与执行目标绑定一致。
+- 定时任务权限是一次运行的覆盖，不应把所选值写回全局、项目或对话策略；当前没有任务级自定义规则存储，本轮也不新增。绑定对话可通过共享三层方案沿用自定义规则，未绑定任务只选三种显式预设。当前还没有把任务的实际权限状态返回给列表/编辑器；后续实现须明确执行会话来源、失效处理以及与前述三层权限语义的一致性。客户端通知、外部渠道投递与执行对话的结果记录须分别核对，不能用切换渠道来暗改绑定。
