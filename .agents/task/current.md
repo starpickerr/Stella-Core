@@ -20,3 +20,13 @@
 ## 产品解释
 
 安全中心的清单展示“现在存了什么、存在哪”，不表示列出的都是 Stella 支持的模型厂商；未保存的厂商不应为了凑齐目录而出现。对于模型密钥，安全中心与模型设置读写的是同一配置。应用访问密码是浏览器登录开关相关设置，不属于服务密钥。终端和文件读取密钥的限制由现有权限/凭据路径保护实现，而非安全中心的录入表单。
+
+## 权限分层的代码现状
+
+- `agent/permission/security_policy.py` 定义三种预设、自定义和当前 **11 项**规则；`resolve()` 顺序读取默认、项目、对话，`merge()` 当前按字段合并，后层与前层预设相同时可能保留前层的规则差异。新需求要求本层保存的方案完整覆盖前层方案，同时兼容旧的部分差异记录，不能直接改变旧数据的安全效果。
+- `agent/permission/center.py` 的 `overview(session_id, agent_id)` 回传全局、项目、对话原始策略与最终方案，但当前安全页只把正在打开的 `activeId` 传入。`desktop/src/renderer/src/pages/SecurityPage.tsx` 的“项目与对话”只选项目；对话区域跟随活动对话，并在项目和对话各自展开 `PolicyEditor`。`overrideSummary` 只显示规则差异，没有展示实际生效的具体方案名。
+- 同一页面的“默认权限”四选项中，点击“自定义”会立即 `saveGlobal()` 并复制规则，尚未点击“保存自定义”就持久化。项目和对话的 `PolicyEditor` 可在继承或预设状态下展开；需改为仅本层自定义已保存时稳定展示，或选择自定义后的未保存草稿。
+- `desktop/src/renderer/src/components/PermissionSelector.tsx` 是输入框的权限芯片。点击自定义会立刻把当前有效规则写成对话策略；“设为项目默认”按 `mode` 和有效规则写入项目，另有“设为全局默认”快捷操作；“恢复继承”把整份对话策略设为 `null`。芯片提示当前混入了 `authorized_roots`，与独立目录授权要求不符。
+- `channel/desktop/desktop_channel.py` 的 `SecurityPolicyHandler` 接收目标层级写入；`SessionSettingsHandler` 维护输入框读写的对话设置。`desktop/src/renderer/src/store/sessionSettingsStore.ts` 缓存当前对话权限，`useSessionStore` 有对话列表和项目归属。实现时让安全页显式选中对话，并核对两个入口保存后彼此刷新；项目选择和对话选择不能共用一个隐式活动上下文。
+- `agent/workspace/project_store.py`、`agent/workspace/session_prefs.py` 分别持久化项目与对话策略。`extra_roots` 与方案同处策略对象；实施“恢复继承”或修改目录时需分开处理，不得顺带删除独立目录授权或制造一个自定义方案。
+- `tests/test_security_center.py` 已覆盖部分分层合并与旧配置迁移。新增测试应覆盖不同层的预设覆盖、继承具体名称、旧规则差异不放宽、未保存自定义不落盘、非当前对话写入、项目默认、恢复继承及目录保留；前端还需验证实际交互。
