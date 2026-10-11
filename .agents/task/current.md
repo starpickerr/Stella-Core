@@ -1,49 +1,22 @@
-# 当前任务现状与决策记录
+# 代码现状与实施线索
 
-本文保存需求依据和 2026-10-10 的代码核查结果。[需求与验收](requirements.md) 是开发和验收的依据；本记录中的现状描述不表示功能已实现，待定扩展项也不应被实现为默认行为。
+以下依据 2026-10-11 的代码核查，描述的是**当前实现**，不是本轮完成状态。目标和验收以 [需求与验收](requirements.md) 为准。
 
-## 渠道决策摘要
+## 已有入口
 
-- 发送选择器限定为已连接的电脑客户端、Telegram Bot 和企业微信智能机器人；目标还须具备接收条件，不要求近期再次向 Stella 发消息。
-- “客户端”指电脑操作系统通知横幅或通知中心条目，不指聊天对话或 App 内提示；手机不在本轮范围。企业微信智能机器人特指 WebSocket 长连接模式。
-- 定时任务和待办提醒不再设置备用渠道；一次发送只有一个渠道和目标，失败后不自动改投。平台支持主动推送不等于 Stella 当前已实现。
+- `desktop/src/renderer/src/pages/SecurityPage.tsx`：安全中心目前有独立 `secrets` 标签页。该页先列出 `center.secrets` 并调用 `deleteSecuritySecret` 删除，接着显示固定服务下拉、密钥输入和 `saveSecuritySecret`，最后还有通过 `updateConfig({ web_password })` 修改应用访问密码的卡片。“总览”已有 `secret_count` 统计，可承接精简清单。
+- `desktop/src/renderer/src/pages/securityLocale.ts`：`commonCredentials` 固定列出 OpenAI、DeepSeek、Gemini、Claude、GitHub、LinkAI、千帆、Moonshot、DashScope 九项；另有“其他凭据”。这不是模型页厂商目录。删除表单后同步清理失效的表单文案，保留并更新清单相关双语文案。
+- `desktop/src/renderer/src/pages/settings/ModelsTab.tsx`：模型设置已有内置及自定义厂商的密钥录入、修改和清除入口；`SettingsPage.tsx` 支持 `/settings?tab=models` 及返回来源状态。`GeneralSettings.tsx` 已有 `web_password` 编辑入口。
+- `desktop/src/renderer/src/api/client.ts`：安全凭据现有 `saveSecuritySecret`、`deleteSecuritySecret` 客户端调用；后端 `channel/desktop/desktop_channel.py` 的 `SecuritySecretsHandler` 提供 POST 和 DELETE。移除界面新增路径时检查调用方；本轮不要求为非模型凭据另建编辑器，也不要求凭据迁移。
 
-## 现有功能线索
+## 清单与删除的现状差异
 
-- 定时任务编辑器 `desktop/src/renderer/src/pages/TasksPage.tsx` 和待办提醒编辑器 `desktop/src/renderer/src/pages/TodosPage.tsx` 均有备用渠道开关及接收人字段。
-- `agent/scheduler/delivery.py` 的 `normalize_notification_route` 使用 `backup_enabled`、`backup`；`agent/scheduler/dispatch.py` 在首选投递失败后可能尝试备用目标。定时任务和待办 Agent 工具描述也暴露了备用配置。
-- 这些位置用于开发时定位清理范围，不表示本轮已修改代码。旧数据处理和验收以 [需求与验收](requirements.md#3-移除现有备用渠道) 为准。
+- `agent/permission/center.py` 的 `secrets()` 遍历配置中非空且字段名以 `_api_key`、`_token` 结尾的顶层值，并合并 `_env_keys()`。当前 `_env_keys()` 只验证变量名格式，**没有过滤后缀，也没有检查值是否非空**；这与目标清单范围不一致。
+- `custom_providers` 的密钥保存在模型配置的嵌套列表中（见 `models/custom_provider.py`），当前 `secrets()` 不会遍历它们。列表要能够区分多个自定义厂商；删除某个密钥时不能删掉整个自定义厂商记录。
+- `center.set_secret()` 目前对已知模型字段写顶层模型配置，对其他名称写 `.env`；模型字段删除时会尝试清除 `.env` 同名项。实施时还须核对运行时环境变量同步、模型页状态以及多来源去重，不能只把行从前端列表中隐藏。
+- `SecuritySecretsHandler` 的现有响应只返回名称、来源、配置状态，不返回明文。更新接口或数据结构仍应保持这个边界。不要因为 UI 删除了录入表单就移除工具的凭据路径保护。
+- `tests/test_security_center.py` 已有 `test_model_secret_status_and_revoke_without_plaintext`，可作为隔离数据测试起点；新增覆盖空值、普通变量、自定义厂商、双来源、删除后重启和跨模型设置状态的行为测试。测试前核对共享配置与环境变量的隔离方式。
 
-## 官方资料依据
+## 产品解释
 
-- [Telegram 官方机器人说明](https://core.telegram.org/bots)：机器人不能率先与陌生用户开始对话；用户先发消息或将机器人加入群后，可在已建立的聊天中发送。[Bot FAQ](https://core.telegram.org/bots/faq) 说明机器人向用户广播消息的限速规则。[Bot token 教程](https://core.telegram.org/bots/tutorial) 说明 token 可以由管理员撤销。
-- [企业微信智能机器人官方 Node.js SDK](https://github.com/WecomTeam/aibot-node-sdk)：文档明确写有向指定会话主动推送、无需依赖回调帧；使用 `botId + secret` 认证，并维护长连接心跳和断线重连。
-- 客户端是 Stella 自身的通知目标，不由外部平台文档定义；需在已登录且允许通知的电脑客户端上显示操作系统通知横幅或通知中心条目，而不是依赖打开对话或新建应用内消息页。
-- [腾讯 QQ 机器人发送文档](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md) 明确写明主动推送能力自 2025-04-21 起不再提供。[腾讯微信渠道协议说明](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md) 明确指出缺少 `context_token` 时客户端仍尝试发送，不等于服务端接受。二者均不纳入本轮主动发送选择器。
-
-## 尚未确定的后续扩展
-
-- 客户端系统通知的点击去向与可配置文案模板。通知权限关闭时本轮仍须给出明确的不可用状态和发送失败原因，不能因为这项体验细节未定而静默成功。
-- 除本轮已涉及的定时任务、待办提醒及明确发起的发送操作外，其他 Stella 事件是否也可触发主动发送，以及对应的消息模板和内容类型。
-- 多渠道或多接收对象发送属于将来扩展；**本轮已确定单次发送只能选择一个渠道和一个接收目标，且没有备用目标**。
-
-这些扩展尚未确认，不应被开发 Agent 当作已批准的本轮功能。
-
-## 设置整理：代码线索
-
-- `desktop/src/renderer/src/pages/BriefingPage.tsx` 目前在页面内切换 `SettingsPanel`，其中包含邮箱、eLearning、动作授权和筛选规则。统一设置页迁移范围以 [第 5 节](requirements.md#5-设置入口整理) 为准。
-- `desktop/src/renderer/src/layout/NavRail.tsx` 底部目前由版本号和“更多”菜单组成；菜单含主题、语言、检查更新、日志、文档、项目网站和反馈等。日志另有侧边栏入口。
-- 日程与待办页面目前有前往 Apple 集成设置的链接；增加返回原页面的行为时应覆盖这两个已有入口。
-
-## 能力页面：代码线索
-
-- 页面命名与目录验收见 [需求与验收](requirements.md#6-进化页面更新为能力)。
-- 当前侧边栏 `/skills` 的中文标签是“进化”，英文是“Evolution”；页面标题另为“技能管理”／“Skills”。页面同时展示“内置工具”和“技能”，两处名称需要一起统一。
-- 当前 `SkillsPage.tsx` 通过 `apiClient.getTools()` 读取 `/api/tools`。`agent/tools/__init__.py` 的 `__all__` 列有 24 个内置工具类候选（已排除 `BaseTool`、`ToolManager` 和外部 `McpTool`）；`ToolsHandler` 却只遍历 `ToolManager.tool_classes`。`ToolManager` 在加载时明确跳过 `MemorySearchTool` 和 `MemoryGetTool`，而 `bridge/agent_initializer.py` 会在运行时单独构造并注入 `memory_search` 和 `memory_get`。因此当前页面**未包含所有实际内置工具**，至少漏了这两项。
-- `ToolManager` 还可能因可选依赖缺失而不加载某些内置工具；Agent 初始化也会按配置跳过某些工具。当前页面没有区分“属于内置目录”和“此时可用”。页面并发请求工具与技能，任一请求失败只写控制台日志，已有空列表会被当作“暂无”显示。以上是需求中的目录与错误状态需要修正的原因，不表示已改动代码。
-- 现有两类卡片都使用 `line-clamp-2`，长介绍会被省略号截断。`ToolInfo` 当前只有 `name`、`description` 两个字符串；`/api/tools` 取 `instance.description`，仅对定时任务有英文特例，且请求没有传入前端 `getLang()`。各工具的 `description` 有中文、英文和面向 Agent 的操作指令，不能直接满足双语用户文案。详见 [能力页面实施参考](capabilities.md)。
-
-## 桌面端界面统一：已确认范围
-
-- 用户指出各页面顶部横线有的缺失、有的只在中间、有的贯穿两边，页面主体有的居中限宽、有的铺满。讨论中曾选择“全部铺满可用宽度”，随后用定时任务卡片截图明确修正：**只有页面标题区域和页面级横线需要横贯主内容区；下方内容可按需要居中、限宽、分栏或铺满**。截图是布局示例，不是让卡片数据或文案成为需求。
-- 页面级要求见 [需求与验收](requirements.md#7-桌面端页面顶部与内容布局统一)，逐页代码线索见 [界面统一实施参考](ui-consistency.md)。页面头部已按该要求修改。
+安全中心的清单展示“现在存了什么、存在哪”，不表示列出的都是 Stella 支持的模型厂商；未保存的厂商不应为了凑齐目录而出现。对于模型密钥，安全中心与模型设置读写的是同一配置。应用访问密码是浏览器登录开关相关设置，不属于服务密钥。终端和文件读取密钥的限制由现有权限/凭据路径保护实现，而非安全中心的录入表单。
