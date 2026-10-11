@@ -5,7 +5,7 @@ Codex 与 Cursor 都会自动读取本文件。两边使用同一套步骤：先
 ## 步骤
 
 1. 查看 `git status --short --branch`、近期提交和相关代码。保留未提交改动、真实数据和已验证成果。中断后用 Git、代码和新鲜测试判断停点，不把计划或聊天记录当作完成。
-2. 代码和配置修改从当前 `develop` 建立专用分支。`main` 是正式分支。功能完成并验证后合并本地 `develop`。`develop → main`、推送远程和改写共享历史需要单独授权。
+2. 代码和配置修改从当前 `develop` 建立以任务命名的专用分支，分支名不以 `codex`、`cursor`、`ai` 等工具或 AI 名称开头。`main` 是正式分支。功能完成并验证后合并本地 `develop`。`develop → main`、推送远程和改写共享历史需要单独授权。
 3. 范围清楚的修改直接实现。跨模块、迁移或依赖顺序不清楚时，把目标、验收和进度写进 `docs/plans/active/`，再按 [Skill 协作规则](.agents/rules/skill-coordination.md) 选择规划、调试或测试步骤。不要机械跑完全部 Skill。
 4. 先复用现有服务和接口。业务规则放在共享服务和可信边界，不在界面、Agent 和后台各写一套。
 5. 改变可观察行为时，先写会失败的测试，再实现。默认门禁是 `.venv/bin/python scripts/quality_check.py incremental`。界面改动还要验证实际浏览器交互。结果分别写 PASS、FAIL、SKIP。失败先定位，不删除或放宽测试。
