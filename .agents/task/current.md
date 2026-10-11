@@ -42,5 +42,5 @@
 ## 定时任务运行权限的现状
 
 - `desktop/src/renderer/src/pages/TasksPage.tsx` 的运行权限下拉只含“沿用／只读／工作区写入／完全访问”；任务卡片用 `run_permission_mode` 原值标注“沿用”，不显示具体生效方案。`agent/scheduler/mutations.py` 仅允许用户保存三种显式预设，`inherit` 在存储中变成没有该字段。
-- `agent/scheduler/conversation.py` 会为桌面任务选择来源对话、复用任务对话或新建任务对话，并绑定项目。`agent/runtime/tool_invocation.py` 在运行时会先通过 `resolve()` 读取执行会话的默认、项目、对话策略；`scheduled_permission_scope()` 没有显式预设时不覆盖，存在显式预设时以它替换当次运行的预设和规则。因此“沿用”在**有可解析执行会话的运行路径**已走共享策略，但 UI 未展示具体结果，也没有明确说明新建/复用对话的归属与变化时机；这与“完全不读取安全页方案”的表面观感不同。
+- `agent/scheduler/conversation.py` 当前有 `source`（已有对话）、`reuse`（任务复用对话）、`new`（每次新建对话）三种桌面执行方式。用户本轮把“沿用”限定为**明确绑定已有对话**，即须保存且验证 `source_session_id`；`reuse`、`new` 或仅在创建时恰好打开某条对话，都不能算绑定。`agent/runtime/tool_invocation.py` 运行时会先通过 `resolve()` 读取执行会话的默认、项目、对话策略，`scheduled_permission_scope()` 有显式预设时会覆盖当次运行。当前“沿用”在有可解析执行会话时实际经过共享策略，但 UI 未区分是否明确绑定，也不显示具体结果；新要求需把资格与执行目标绑定一致。
 - 定时任务权限是一次运行的覆盖，不应把所选值写回全局、项目或对话策略；当前没有任务级自定义规则存储，也没有把任务的实际权限状态返回给列表/编辑器。后续实现须明确执行会话来源、失效处理以及与前述三层权限语义的一致性。
