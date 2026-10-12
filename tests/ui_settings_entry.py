@@ -17,10 +17,13 @@ def backend(route):
         data = {'status': 'ok'}
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
+    elif path in ('/api/calendar/apple/status', '/api/todos/apple/status'):
+        data['connection'] = dict(supported=False, authorization='unsupported', connected=False,
+                                  auto_enabled=False, links=[], calendars=[], lists=[], conflicts=[])
     elif path.startswith('/api/calendar'):
         data.update(events=[], categories=[])
     elif path.startswith('/api/todos'):
-        data.update(todos=[], reminders=[])
+        data.update(todos=[], reminders=[], categories=[])
     elif path in ('/api/briefings/elearning', '/api/elearning/file-sync'):
         data['settings'] = {'enabled': False, 'configured': False, 'base_url': '', 'username': '',
                             'courses': [], 'course_options': [], 'account_id': '', 'password_set': False,

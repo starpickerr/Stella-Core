@@ -84,4 +84,4 @@ Skills with the same name in the custom directory override builtin ones.
 
 ## Create & Contribute
 
-See the [Skill Creation docs](../docs/skills/create.mdx) for details, or submit your skill to [skill广场](https://www.skill-marketplace.com/).
+See the bundled [skill creator guide](skill-creator/SKILL.md) for creation and packaging instructions.
