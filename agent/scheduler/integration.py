@@ -119,7 +119,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
 
                         silent = (action_type == "application_command" or
                                   action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
-                        persist_in_chat = channel_type == "web" and "conversation_mode" in action
+                        persist_in_chat = "conversation_mode" in action
                         if not silent and not task.get("notification_route") and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
@@ -277,7 +277,7 @@ def _remember_delivered_output(
         if remember:
             conversation_store = None
             is_new = False
-            if channel_type == "web" and "conversation_mode" in action:
+            if "conversation_mode" in action:
                 from agent.memory import get_conversation_store
                 from agent.registry import get_agent_registry
                 profile = get_agent_registry().get(agent_id)
@@ -290,7 +290,7 @@ def _remember_delivered_output(
             }
             if hasattr(agent_bridge, "agent_registry"):
                 kwargs["agent_id"] = agent_id
-                if channel_type == "web" and "conversation_mode" in action:
+                if "conversation_mode" in action:
                     kwargs["force"] = True
                     kwargs["require_existing"] = action.get("conversation_mode") == "source"
             remember(session_id, str(content), **kwargs)
@@ -495,7 +495,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             persisted = _remember_delivered_output(
                 agent_bridge, task, channel_type, reply.content, agent_id
             )
-            if channel_type == "web" and "conversation_mode" in action and not persisted:
+            if "conversation_mode" in action and not persisted:
                 return False
             logger.info(f"[Scheduler] Task {task['id']} executed successfully, result sent to {receiver}")
             return True
@@ -594,7 +594,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
-        if channel_type == "web" and "conversation_mode" in action and not persisted:
+        if "conversation_mode" in action and not persisted:
             return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent message to {receiver}")
         return True
@@ -795,7 +795,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
         persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
-        if channel_type == "web" and "conversation_mode" in action and not persisted:
+        if "conversation_mode" in action and not persisted:
             return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent tool result to {receiver}")
         return True
@@ -905,7 +905,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
-        if channel_type == "web" and "conversation_mode" in action and not persisted:
+        if "conversation_mode" in action and not persisted:
             return False
         logger.info(f"[Scheduler] Task {task['id']} executed: skill result sent to {receiver}")
         return True

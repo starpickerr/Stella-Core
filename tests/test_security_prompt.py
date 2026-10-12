@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from common.runtime_identity import identity_scope
 from agent.permission.security_policy import describe, legacy_policy
 from agent.prompt.builder import build_agent_system_prompt
-from agent.workspace import project_store, session_prefs
+from agent.workspace import project_store
 
 
 def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_path, monkeypatch):
@@ -36,7 +36,13 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
         assert str(tmp_path / "selected") in first
         assert "TOPSECRET" not in first
         assert "不要用脚本或换工具绕过拒绝" in first
-        session_prefs.set_prefs("conversation", security_policy={"rules": {"network": "allow"}})
+        # Project-internal chats share one project policy; rule changes save on the project.
+        project_store.set_security_policy(str(project), {
+            "preset": "workspace-write",
+            "rules": {"network": "allow"},
+            "connections": {"browser": {"allowed": False}},
+            "extra_roots": [str(tmp_path / "extra")],
+        })
         second = build_agent_system_prompt(**kwargs)
         assert "network=allow" in second
         assert "network=deny" not in second

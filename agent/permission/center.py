@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from agent.permission import global_mode
-from agent.permission.audit import record, recent
+from agent.permission.audit import activity_counts, record, recent
 from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve, validate_patch
 from common.state_dir import mcp_config_file
 
@@ -66,10 +66,19 @@ def _env_keys() -> set[str]:
 def secrets() -> list[dict]:
     from config import MODEL_CONFIG_TO_ENV, conf
     names = {name: "credential store" for name in _env_keys()}
-    for key, value in conf().items():
+    cfg = conf()
+    for key, value in cfg.items():
         if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
             name = MODEL_CONFIG_TO_ENV.get(key, key.upper())
             names[name] = "model configuration" if name not in names else "model configuration + credential store"
+    for entry in cfg.get("custom_providers") or []:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("api_key") or "").strip()
+        provider_id = str(entry.get("id") or "").strip()
+        if not key or not provider_id:
+            continue
+        names[f"CUSTOM:{provider_id}"] = "custom model provider"
     return [{"name": name, "source": source, "configured": True} for name, source in sorted(names.items())]
 
 
@@ -112,43 +121,172 @@ def set_secret(name: str, value: str | None) -> None:
            decision="policy_change", reason="Credential status changed in the credential store.")
 
 
+def _connection_row(entry_id: str, name: str, *, configured: bool, available: bool,
+                    scopes: list | None = None, detail: str = "") -> dict:
+    return {
+        "id": entry_id, "name": name, "configured": configured, "available": available,
+        "connected": available, "scopes": list(scopes or []), "detail": detail,
+    }
+
+
 def connections(policy: dict | None = None) -> list[dict]:
     from config import conf
     policy = policy or global_policy()
     cfg = conf()
+    github_token = bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token"))
+    github_verified = bool(github_token and cfg.get("github_verified_at"))
+    try:
+        from agent.briefing.settings import public_mailboxes
+        mail = public_mailboxes()
+        email_configured = bool(mail.get("configured"))
+    except Exception:
+        email_configured = bool(cfg.get("email_password") or os.environ.get("EMAIL_PASSWORD"))
+    try:
+        from agent.calendar.apple_sync import AppleCalendarSync
+        calendar_status = AppleCalendarSync().status()
+        calendar_configured = bool(calendar_status.get("connected") or calendar_status.get("authorization") == "full_access")
+        calendar_available = bool(
+            calendar_status.get("connected") and calendar_status.get("authorization") == "full_access"
+        )
+    except Exception:
+        calendar_configured = bool(cfg.get("calendar_token") or os.environ.get("CALENDAR_TOKEN"))
+        calendar_available = calendar_configured
+    try:
+        from agent.tools.browser.browser_env import capability_summary
+        browser_ready = bool(capability_summary().get("ready"))
+    except Exception:
+        browser_ready = False
+    try:
+        from plugins import PluginManager
+        plugins_ready = bool(getattr(PluginManager(), "instances", None))
+    except Exception:
+        plugins_ready = False
     entries = {
-        "github": {"name": "GitHub", "connected": bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token")), "scopes": []},
-        "email": {"name": "Email", "connected": bool(cfg.get("email_password") or os.environ.get("EMAIL_PASSWORD")), "scopes": []},
-        "calendar": {"name": "Calendar", "connected": bool(cfg.get("calendar_token") or os.environ.get("CALENDAR_TOKEN")), "scopes": []},
-        "browser": {"name": "Browser", "connected": True, "scopes": ["*"]},
-        "plugins": {"name": "Plugins", "connected": False, "scopes": []},
-        "external_api": {"name": "External API", "connected": False, "scopes": ["*"]},
+        "github": _connection_row(
+            "github", "GitHub", configured=github_token, available=github_verified,
+            detail="verified" if github_verified else ("configured" if github_token else ""),
+        ),
+        "email": _connection_row("email", "Email", configured=email_configured, available=email_configured),
+        "calendar": _connection_row(
+            "calendar", "Calendar", configured=calendar_configured, available=calendar_available,
+        ),
+        "browser": _connection_row("browser", "Browser", configured=browser_ready, available=browser_ready),
+        "plugins": _connection_row("plugins", "Plugins", configured=plugins_ready, available=plugins_ready),
+        "external_api": _connection_row("external_api", "External API", configured=False, available=False),
     }
     path = mcp_config_file()
     if path.is_file():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            from agent.tools.tool_manager import _normalize_mcp_configs
+            from agent.tools.tool_manager import ToolManager, _normalize_mcp_configs
             servers = _normalize_mcp_configs(raw.get("mcpServers", raw.get("mcp_servers", raw)))
-            from agent.tools.tool_manager import ToolManager
             statuses = {}
             for manager in ToolManager.instances():
                 statuses.update(manager.list_mcp_status())
             for item in servers:
                 name = str(item.get("name") or "")
                 if name:
-                    entries[f"mcp:{name}"] = {"name": name, "connected": statuses.get(name) == "ready", "scopes": []}
+                    ready = statuses.get(name) == "ready"
+                    entries[f"mcp:{name}"] = _connection_row(
+                        f"mcp:{name}", name, configured=True, available=ready,
+                    )
         except (ValueError, OSError, TypeError):
             pass
     for key, value in entries.items():
         grant = policy.get("connections", {}).get(key, {})
-        value.update({"id": key, "allowed": grant.get("allowed", True),
-                      "scopes": grant.get("scopes") or value["scopes"], "last_access": None})
+        policy_scopes = grant.get("scopes")
+        value.update({
+            "allowed": grant.get("allowed", True),
+            "scopes": list(policy_scopes) if isinstance(policy_scopes, list) else value["scopes"],
+            "last_access": None,
+        })
     for row in recent(limit=500, filters={"decision": "allow"}):
         resource = row.get("resource")
         if resource in entries and entries[resource]["last_access"] is None:
             entries[resource]["last_access"] = row.get("at")
     return list(entries.values())
+
+
+def describe_task_permission(task: dict) -> dict:
+    """Resolve one background task's effective run permission for display."""
+    action = task.get("action") if isinstance(task.get("action"), dict) else {}
+    session_id = (
+        action.get("execution_session_id")
+        or action.get("source_session_id")
+        or None
+    )
+    project = action.get("execution_project_dir") or None
+    if project:
+        project = str(project)
+    if session_id and not project:
+        from agent.workspace import project_store
+        try:
+            project = project_store.get_project_dir(session_id)
+        except ValueError:
+            project = None
+    explicit = task.get("run_permission_mode")
+    conversation_mode = action.get("conversation_mode")
+    base = {
+        "id": task.get("id"),
+        "name": task.get("name") or task.get("id") or "",
+        "enabled": bool(task.get("enabled")),
+        "conversation_mode": conversation_mode,
+        "execution_session_id": session_id,
+        "execution_project_dir": project,
+        "run_permission_mode": explicit if explicit in {"read-only", "workspace-write", "full-access"} else None,
+    }
+    if explicit in {"read-only", "workspace-write", "full-access"}:
+        return {**base, "effective_mode": explicit, "permission_source": "independent", "unknown": False,
+                "policy_error": None}
+    if not session_id and not project:
+        return {**base, "effective_mode": None, "permission_source": "unspecified", "unknown": True,
+                "policy_error": "Task has no bound conversation or independent permission."}
+    try:
+        policy = resolve(global_mode(), project_dir=project, session_id=session_id)
+    except (ValueError, OSError) as error:
+        return {**base, "effective_mode": None, "permission_source": "unknown", "unknown": True,
+                "policy_error": str(error)}
+    if policy.get("error"):
+        return {**base, "effective_mode": None, "permission_source": "unknown", "unknown": True,
+                "policy_error": policy.get("error")}
+    source = "project" if project else ("conversation" if session_id else "global")
+    return {**base, "effective_mode": effective_mode(policy), "permission_source": source,
+            "unknown": False, "policy_error": None}
+
+
+def background_tasks() -> list[dict]:
+    from agent.scheduler.store import TaskStore
+    from common.state_dir import scheduler_file
+    store = TaskStore(scheduler_file())
+    return [describe_task_permission(task) for task in store.list_tasks()]
+
+
+def background_task_summary(tasks: list[dict] | None = None) -> dict:
+    rows = tasks if tasks is not None else background_tasks()
+    modes = {"read-only": 0, "workspace-write": 0, "full-access": 0, "custom": 0}
+    unknown = 0
+    enabled = paused = 0
+    for row in rows:
+        if row.get("enabled"):
+            enabled += 1
+        else:
+            paused += 1
+        if row.get("unknown") or not row.get("effective_mode"):
+            unknown += 1
+            continue
+        mode = row["effective_mode"]
+        if mode in modes:
+            modes[mode] += 1
+        else:
+            modes["custom"] += 1
+    return {
+        "total": len(rows),
+        "enabled": enabled,
+        "paused": paused,
+        "modes": modes,
+        "unknown": unknown,
+        "available": True,
+    }
 
 
 def overview(session_id: str | None = None, agent_id: str | None = None) -> dict:
@@ -158,8 +296,12 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     effective = resolve(mode, project_dir=project, session_id=session_id, agent_id=agent_id)
     project_patch = project_store.get_security_policy(project) if project else {}
     conversation_patch = session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {}
-    layers = [name for name, patch in (("project", project_patch), ("session", conversation_patch)) if patch]
-    source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
+    if project:
+        source = "project"
+    elif conversation_patch:
+        source = "session"
+    else:
+        source = "global"
     from agent.workspace.context import resolve_context
     work_root = str(resolve_context(session_id, agent_id).root)
     from agent.permission.gateway import SecurityGateway
@@ -174,9 +316,22 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     activity = [row for row in recent(limit=200) if row.get("at", 0) >= time.time() - 7 * 86400]
     denials = [row for row in activity if row.get("decision") == "deny"]
     high = [row for row in activity if row.get("risk") in ("L3", "L4")]
+    counts = activity_counts(days=7)
     active_pending = SecurityGateway.pending()
     all_connections = connections()
     all_secrets = secrets()
+    try:
+        task_rows = background_tasks()
+        task_summary = background_task_summary(task_rows)
+    except (OSError, ValueError, TypeError):
+        task_rows = []
+        task_summary = {"total": None, "enabled": None, "paused": None, "modes": None,
+                        "unknown": None, "available": False}
+    try:
+        from agent.permission.privacy import inventory as privacy_inventory
+        privacy = privacy_inventory()
+    except (OSError, ValueError, TypeError):
+        privacy = {"available": False, "categories": []}
     return {
         "global_policy": global_policy(), "effective_policy": effective,
         "effective_mode": effective_mode(effective), "effective_rules": effective_rules(effective),
@@ -189,8 +344,15 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
                      for item in project_store.list_known_projects()],
         "conversation_policy": conversation_patch,
         "connections": all_connections, "secrets": all_secrets,
+        "background_tasks": task_rows,
+        "privacy": privacy,
         "summary": {"status": "attention" if denials or active_pending else "normal",
                     "app_password_set": bool(__import__("config").conf().get("web_password")),
-                    "connection_count": sum(1 for item in all_connections if item["connected"] and item["allowed"]),
-                    "secret_count": len(all_secrets), "recent_high_risk": high[:5], "recent_denials": denials[:5]},
+                    "connection_count": sum(
+                        1 for item in all_connections
+                        if item.get("available", item.get("connected")) and item.get("allowed", True)
+                    ),
+                    "secret_count": len(all_secrets), "recent_high_risk": high[:5], "recent_denials": denials[:5],
+                    "activity_counts": counts,
+                    "background_tasks": task_summary},
     }
