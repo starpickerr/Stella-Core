@@ -194,7 +194,15 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
   const saveGlobal = (patch: SecurityPolicy) => {
     if (!center) return Promise.resolve(false)
-    return mutate(() => apiClient.saveSecurityPolicy('global', { ...center.global_policy, ...patch }))
+    // Global defaults only store product presets. Do not carry legacy custom
+    // fields (base_preset / rule overrides) from an older global snapshot.
+    return mutate(() =>
+      apiClient.saveSecurityPolicy('global', {
+        preset: patch.preset,
+        rules: {},
+        connections: patch.connections || center.global_policy.connections || {},
+      }),
+    )
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
@@ -574,6 +582,9 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <section className={card}>
                   <h2 className="font-semibold">{copy.presetsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
+                  {(center.global_policy.preset === 'custom' || center.global_policy.base_preset) && (
+                    <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{copy.presetsLegacyCustom}</p>
+                  )}
                   <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
                     {center.mode_definitions
                       .filter((entry) => (DEFAULT_PRESETS as readonly string[]).includes(entry.id))

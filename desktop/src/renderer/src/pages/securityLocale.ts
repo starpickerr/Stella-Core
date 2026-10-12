@@ -101,6 +101,8 @@ const locales = {
     seeActivity: '查看全部活动',
     presetsTitle: '默认权限',
     presetsHelp: '新建项目和新建项目外对话时采用此权限；已有项目与对话不受影响。',
+    presetsLegacyCustom:
+      '当前默认仍是升级前的自定义配置。请选择只读、工作区写入或完全访问之一作为新的默认权限；已有项目与对话不受影响。',
     projectSharedHelp: '一个项目只有一套权限。从项目或项目内任意对话保存，都会同步到该项目全部对话。',
     standaloneConversationHelp: '项目外对话拥有独立权限，修改不影响其他对话或项目。',
     savePermission: '保存权限',
@@ -401,6 +403,8 @@ const locales = {
     seeActivity: 'View all activity',
     presetsTitle: 'Default access',
     presetsHelp: 'New projects and standalone chats start with this access. Existing ones stay unchanged.',
+    presetsLegacyCustom:
+      'Your default is still a custom policy from before this update. Choose Read Only, Workspace Write, or Full Access as the new default. Existing projects and chats stay unchanged.',
     projectSharedHelp: 'Each project has one shared policy. Saving from the project or any of its chats updates the whole project.',
     standaloneConversationHelp: 'Standalone chats keep their own policy and do not affect projects or other chats.',
     savePermission: 'Save permissions',
