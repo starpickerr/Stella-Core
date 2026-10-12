@@ -152,6 +152,22 @@ def get_project_map(agent_id: Optional[str] = None) -> Dict[str, str]:
     return out
 
 
+def list_project_session_ids(project_dir: str, agent_id: Optional[str] = None) -> List[str]:
+    """Session ids currently bound to ``project_dir`` for one agent."""
+    real = _normalize(project_dir)
+    prefix = f"{agent_id or 'default'}::"
+    with _lock:
+        sessions = dict(_load().get("sessions") or {})
+    out: List[str] = []
+    for key, entry in sessions.items():
+        if not key.startswith(prefix):
+            continue
+        path = entry.get("path") if isinstance(entry, dict) else entry
+        if path and _normalize(path) == real:
+            out.append(key[len(prefix):])
+    return out
+
+
 def forget_session(session_id: str, agent_id: Optional[str] = None) -> None:
     """Drop a session's binding (called when the conversation is deleted).
 
@@ -398,5 +414,12 @@ def create_project(name: str) -> str:
         data = _load()
         _touch_recent(data, target)
         _save(data)
+    try:
+        from agent.permission import global_mode
+        from agent.permission.security_policy import resolve, snapshot_policy
+        seed = snapshot_policy(resolve(global_mode()))
+        set_security_policy(target, seed)
+    except Exception as error:
+        logger.warning(f"[ProjectStore] Could not seed security policy for {target}: {error}")
     logger.info(f"[ProjectStore] Created project: {target}")
     return target

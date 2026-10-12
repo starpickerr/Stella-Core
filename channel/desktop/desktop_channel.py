@@ -2041,6 +2041,7 @@ class DesktopChannel(ChatChannel):
             '/api/security/connections', 'SecurityConnectionsHandler',
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
+            '/api/security/privacy', 'SecurityPrivacyHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -5795,7 +5796,7 @@ class SecurityActivityHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        from agent.permission.audit import recent
+        from agent.permission.audit import activity_counts, recent
         params = web.input(limit="100", agent="", project="", tool="", risk="", decision="", conversation="", since="")
         filters = {key: getattr(params, key, "") for key in ("agent", "project", "tool", "risk", "decision", "conversation")}
         records = recent(limit=params.limit, filters=filters)
@@ -5804,7 +5805,11 @@ class SecurityActivityHandler:
                 records = [row for row in records if row["at"] >= float(params.since)]
             except ValueError:
                 return json.dumps({"status": "error", "message": "invalid since timestamp"})
-        return json.dumps({"status": "success", "records": records}, ensure_ascii=False)
+        return json.dumps({
+            "status": "success",
+            "records": records,
+            "counts": activity_counts(days=7),
+        }, ensure_ascii=False)
 
 
 class SecurityCenterHandler:
@@ -5832,23 +5837,43 @@ class SecurityPolicyHandler:
             body = json.loads(web.data() or b"{}")
             target = body.get("target")
             policy = body.get("policy")
+            from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
             if target == "global":
                 saved = save_global_policy(policy)
             elif target == "project":
                 path = str(body.get("project") or "")
                 if not path:
                     raise ValueError("project path required")
-                saved = project_store.set_security_policy(path, policy)
+                saved = project_store.set_security_policy(path, snapshot_policy(validate_patch(policy)))
+                migrate_project_conversation_policies(path)
                 record(operation="update", resource="project policy", project=path, decision="policy_change",
-                       reason="Project security difference updated.")
+                       reason="Project security policy updated.")
             elif target == "conversation":
                 session = str(body.get("session") or "")
                 if not session:
                     raise ValueError("conversation required")
-                saved = validate_patch(policy)
-                session_prefs.set_prefs(session, body.get("agent"), security_policy=saved or None)
-                record(operation="update", resource="conversation policy", conversation=session,
-                       decision="policy_change", reason="Conversation security difference updated.")
+                agent = body.get("agent")
+                project = project_store.get_project_dir(session, agent)
+                patch = validate_patch(policy)
+                roots = patch.get("extra_roots")
+                rule_fields = {key: patch[key] for key in ("preset", "base_preset", "rules", "connections") if key in patch}
+                if project and rule_fields:
+                    saved = project_store.set_security_policy(project, snapshot_policy(rule_fields))
+                    migrate_project_conversation_policies(project)
+                    if roots is not None:
+                        session_prefs.set_prefs(session, agent, security_policy={"extra_roots": roots})
+                    record(operation="update", resource="project policy", project=project, conversation=session,
+                           decision="policy_change", reason="Project security policy updated from a project conversation.")
+                elif project:
+                    saved = {"extra_roots": roots} if roots is not None else {}
+                    session_prefs.set_prefs(session, agent, security_policy=saved or None)
+                    record(operation="update", resource="conversation policy", conversation=session,
+                           decision="policy_change", reason="Conversation authorized paths updated.")
+                else:
+                    saved = snapshot_policy(patch)
+                    session_prefs.set_prefs(session, agent, security_policy=saved or None)
+                    record(operation="update", resource="conversation policy", conversation=session,
+                           decision="policy_change", reason="Standalone conversation security policy updated.")
             else:
                 raise ValueError("invalid policy target")
             return json.dumps({"status": "success", "policy": saved,
@@ -5861,7 +5886,9 @@ class SecurityConnectionsHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import global_policy, save_global_policy, connections
+        from agent.permission.center import save_global_policy, connections
+        from agent.permission.security_policy import LEGACY_PRESETS, default_policy, validate_patch
+        from config import conf, get_data_root, read_config_template
         try:
             body = json.loads(web.data() or b"{}")
             connection_id = str(body.get("id") or "")
@@ -5870,10 +5897,20 @@ class SecurityConnectionsHandler:
             allowed = body.get("allowed")
             if not isinstance(allowed, bool):
                 raise ValueError("allowed must be a boolean")
-            policy = global_policy()
-            policy.setdefault("connections", {})[connection_id] = {"allowed": allowed,
+            stored = dict(conf().get("security_policy") or default_policy())
+            stored.setdefault("connections", {})[connection_id] = {"allowed": allowed,
                 "scopes": [str(item) for item in body.get("scopes", [])] if isinstance(body.get("scopes", []), list) else []}
-            save_global_policy(policy)
+            legacy = stored.get("preset") == "custom" or stored.get("preset") in LEGACY_PRESETS
+            if legacy:
+                clean = validate_patch(stored, global_policy=False)
+                path = __import__("pathlib").Path(get_data_root()) / "config.json"
+                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
+                data["security_policy"] = clean
+                from agent.permission.center import _write_config
+                _write_config(path, data)
+                conf()["security_policy"] = clean
+            else:
+                save_global_policy(stored)
             return json.dumps({"status": "success", "connections": connections()}, ensure_ascii=False)
         except ValueError as error:
             return json.dumps({"status": "error", "message": str(error)})
@@ -5901,6 +5938,29 @@ class SecuritySecretsHandler:
             body = json.loads(web.data() or b"{}")
             set_secret(str(body.get("name") or ""), None)
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
+        except ValueError as error:
+            return json.dumps({"status": "error", "message": str(error)})
+
+
+class SecurityPrivacyHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from agent.permission.privacy import inventory
+        try:
+            return json.dumps({"status": "success", **inventory()}, ensure_ascii=False)
+        except (ValueError, OSError) as error:
+            return json.dumps({"status": "error", "message": str(error), "available": False})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from agent.permission.privacy import cleanup, inventory
+        try:
+            body = json.loads(web.data() or b"{}")
+            result = cleanup(str(body.get("action") or ""))
+            return json.dumps({**result, **inventory()}, ensure_ascii=False)
         except ValueError as error:
             return json.dumps({"status": "error", "message": str(error)})
 
@@ -6121,10 +6181,16 @@ class SchedulerUpdateHandler:
                 return json.dumps({"status": "error", "message": "请在关联事务中修改提醒时间"}, ensure_ascii=False)
             
             from application import Application
+            patch = {key: body[key] for key in (
+                "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode")
+                     if key in body}
             task = Application.scheduler(store).update(
-                task_id, {key: body[key] for key in (
-                    "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode")
-                          if key in body}, agent_id=current_identity().agent_id, origin="user")
+                task_id, patch, agent_id=current_identity().agent_id, origin="user")
+            if "run_permission_mode" in patch:
+                from agent.permission.audit import record
+                record(operation="update", resource=f"background-task:{task_id}",
+                       decision="policy_change",
+                       reason="Background task run permission updated.")
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler update error: {e}")

@@ -79,10 +79,63 @@ export interface SecurityCenterState extends ApiResult {
   project_policy: SecurityPolicy
   projects: { path: string; name: string; policy: SecurityPolicy }[]
   conversation_policy: SecurityPolicy
-  connections: { id: string; name: string; connected: boolean; allowed: boolean; scopes: string[]; last_access: number | null }[]
+  connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null }[]
   secrets: { name: string; source: string; configured: boolean }[]
+  background_tasks?: SecurityBackgroundTask[]
+  privacy?: SecurityPrivacyInventory
   summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
-    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[] }
+    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[];
+    activity_counts?: SecurityActivityCounts
+    background_tasks?: SecurityBackgroundTaskSummary }
+}
+
+export interface SecurityBackgroundTask {
+  id: string
+  name: string
+  enabled: boolean
+  conversation_mode?: string | null
+  execution_session_id?: string | null
+  execution_project_dir?: string | null
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | null
+  effective_mode?: string | null
+  permission_source?: string
+  unknown?: boolean
+  policy_error?: string | null
+}
+
+export interface SecurityBackgroundTaskSummary {
+  total: number | null
+  enabled: number | null
+  paused: number | null
+  modes: Record<string, number> | null
+  unknown: number | null
+  available: boolean
+}
+
+export interface SecurityPrivacyCategory {
+  id: string
+  name: { zh: string; en: string }
+  path: string
+  bytes: number
+  exists: boolean
+  retention: { zh: string; en: string }
+  actions: string[]
+  detail?: Record<string, unknown>
+}
+
+export interface SecurityPrivacyInventory {
+  available: boolean
+  categories: SecurityPrivacyCategory[]
+  external_transfers?: { id: string; name: string; available: boolean; note: { zh: string; en: string } }[]
+}
+
+export interface SecurityActivityCounts {
+  auto_allow: number
+  user_authorized: number
+  denied: number
+  uncertain: boolean
+  since: number
+  until: number
 }
 
 export interface SecurityModeDefinition {
@@ -467,11 +520,16 @@ class ApiClient {
     return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
   }
 
-  async getSecurityRecords(filters: Record<string, string> = {}): Promise<SecurityRecord[]> {
+  async getSecurityRecords(filters: Record<string, string> = {}): Promise<{
+    records: SecurityRecord[]
+    counts?: SecurityActivityCounts
+  }> {
     const query = new URLSearchParams(filters).toString()
-    const result = await this.request<{ status: string; records: SecurityRecord[] }>(`/api/security/activity${query ? `?${query}` : ''}`)
+    const result = await this.request<{ status: string; records: SecurityRecord[]; counts?: SecurityActivityCounts }>(
+      `/api/security/activity${query ? `?${query}` : ''}`,
+    )
     if (result.status !== 'success') throw new Error('Unable to load security activity')
-    return result.records || []
+    return { records: result.records || [], counts: result.counts }
   }
 
   async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
@@ -489,6 +547,10 @@ class ApiClient {
 
   async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
     return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
+  }
+
+  async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
+    return this.request('/api/security/privacy', { method: 'POST', body: JSON.stringify({ action }) })
   }
 
   async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[]> {

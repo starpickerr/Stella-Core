@@ -569,7 +569,8 @@ class SecurityGateway:
             from agent.permission.audit import record
             record(agent=agent_id, conversation=session_id, project=project_dir, tool=tool_name,
                    operation=operation, resource=_redact(resource), event=event, risk=risk, decision=kind.value,
-                   reason=_redact(reason), trace=result.trace)
+                   reason=_redact(reason), trace=result.trace,
+                   operation_id=result.request_id or str(uuid.uuid4()))
         except Exception:
             if result.request_id:
                 with _lock:
@@ -620,7 +621,7 @@ class SecurityGateway:
             record(agent=request["agent"], conversation=request["session"], project=request["project"],
                    tool=request["tool"], operation=request["operation"], resource=request["resource"],
                    risk=request["risk"], decision="allow", event="confirmation",
-                   reason="User approved this exact action once.")
+                   reason="User approved this exact action once.", operation_id=request_id)
             del _pending[request_id]
             for other_id, other in list(_pending.items()):
                 if other["key"] == request["key"]:
@@ -646,7 +647,7 @@ class SecurityGateway:
             record(agent=request["agent"], conversation=request["session"], project=request["project"],
                    tool=request["tool"], operation=request["operation"], resource=request["resource"],
                    risk=request["risk"], decision="deny", event="confirmation",
-                   reason="User rejected this action.")
+                   reason="User rejected this action.", operation_id=request_id)
             del _pending[request_id]
             _outcomes[request_id] = ("rejected", time.time() + 300)
             _condition.notify_all()
