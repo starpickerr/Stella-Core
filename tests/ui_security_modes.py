@@ -50,7 +50,11 @@ def backend(route):
             effective_mode='workspace-write', effective_rules={}, policy_source='global',
             mode_definitions=DEFINITIONS, authorized_roots=['/isolated/work'],
             process_isolation={'status': 'enabled', 'reason': 'Seatbelt is active. 完全访问仍拦截其他会话的私有工作区。'},
-            connections=[], secrets=[
+            connections=[
+                {'id': 'email', 'name': 'Email', 'connected': True, 'allowed': True, 'scopes': [], 'last_access': None},
+                {'id': 'mcp:github', 'name': 'GitHub MCP', 'connected': True, 'allowed': False, 'scopes': ['read'], 'last_access': None},
+                {'id': 'github', 'name': 'GitHub', 'connected': False, 'allowed': True, 'scopes': [], 'last_access': None},
+            ], secrets=[
                 {'name': 'DEEPSEEK_API_KEY', 'source': 'model configuration', 'configured': True},
                 {'name': 'CUSTOM:6891955f', 'display_name': 'packyapi',
                  'source': 'custom model provider', 'configured': True},
@@ -58,8 +62,13 @@ def backend(route):
                  'source': 'custom model provider', 'configured': True},
                 {'name': 'CUSTOM:unnamed', 'source': 'custom model provider', 'configured': True},
             ], pending=[], background_tasks=[],
-            privacy={'available': True, 'categories': [], 'external_transfers': []},
-            summary={'status': 'normal', 'app_password_set': False, 'connection_count': 0,
+            privacy={'available': True, 'categories': [
+                {'id': 'conversations', 'name': {'zh': '对话记录', 'en': 'Conversations'}, 'bytes': 204800,
+                 'path': '/isolated/conversations', 'retention': {'zh': '保留至删除', 'en': 'Until deleted'}, 'actions': []},
+                {'id': 'activity', 'name': {'zh': '安全活动', 'en': 'Security activity'}, 'bytes': 32768,
+                 'path': '/isolated/activity', 'retention': {'zh': '保留至清理', 'en': 'Until cleared'}, 'actions': []},
+            ], 'external_transfers': []},
+            summary={'status': 'normal', 'app_password_set': False, 'connection_count': 2,
                      'secret_count': 4, 'recent_high_risk': [], 'recent_denials': [],
                      'activity_counts': {'auto_allow': 0, 'user_authorized': 0, 'denied': 0,
                                          'uncertain': False, 'since': 0, 'until': 1},
@@ -99,8 +108,42 @@ with sync_playwright() as playwright:
         page.goto(url + '/#/security', wait_until='networkidle')
         expect(page.get_by_role('heading', name='安全中心')).to_be_visible()
         expect(page.get_by_text('工作区写入', exact=True).first).to_be_visible()
+        connections_card = page.get_by_role('heading', name='外部连接', exact=True).locator('xpath=..')
+        expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
+        overview_links = [
+            ('默认权限', 'permissions', '默认权限'),
+            ('后台任务权限', 'background', '后台任务权限'),
+            ('外部连接', 'connections', '连接与访问'),
+            ('凭据', 'secrets', '服务凭据'),
+            ('安全活动', 'activity', '安全活动'),
+            ('数据与隐私', 'privacy', '数据与隐私'),
+        ]
+        for title, target, destination in overview_links:
+            link = page.get_by_role('heading', name=title, exact=True).get_by_role('link', name=title, exact=True)
+            expect(link).to_have_attribute('href', '#/security?tab=' + target)
+            link.focus()
+            link.press('Enter')
+            expect(page).to_have_url(url + '/#/security?tab=' + target)
+            expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
+            if target == 'connections':
+                assert page.locator('section h3').all_text_contents() == ['邮箱', 'GitHub MCP', 'GitHub']
+            if target == 'secrets':
+                page.reload(wait_until='networkidle')
+                expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
+            page.go_back(wait_until='networkidle')
+            expect(page.get_by_role('heading', name='默认权限', exact=True).get_by_role('link')).to_be_visible()
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.set_viewport_size({'width': 1280, 'height': 1280})
+            page.get_by_role('heading', name='默认权限', exact=True).evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview.png', full_page=True, animations='disabled')
+        page.set_viewport_size({'width': 640, 'height': 900})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        narrow_title = page.get_by_role('heading', name='默认权限').get_by_role('link')
+        expect(narrow_title).to_be_visible()
+        assert narrow_title.bounding_box()['height'] <= 44
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-narrow.png', full_page=True, animations='disabled')
+        page.set_viewport_size({'width': 1280, 'height': 900})
         expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
         expect(page.get_by_text('灵算', exact=True)).to_be_visible()
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
@@ -135,6 +178,15 @@ with sync_playwright() as playwright:
         page.set_viewport_size({'width': 390, 'height': 844})
         page.get_by_role('button', name='收起侧栏').click()
         expect(page.get_by_role('complementary')).to_have_css('width', '56px')
+        page.get_by_role('navigation', name='安全中心').get_by_role('button', name='总览', exact=True).click()
+        mobile_title = page.get_by_role('heading', name='默认权限').get_by_role('link')
+        expect(mobile_title).to_be_visible()
+        assert mobile_title.bounding_box()['height'] <= 44
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            mobile_title.evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-mobile.png', full_page=True, animations='disabled')
+        page.get_by_role('navigation', name='安全中心').get_by_role('button', name='凭据', exact=True).click()
         expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
@@ -154,6 +206,9 @@ with sync_playwright() as playwright:
         english.route('http://127.0.0.1:9876/**', backend)
         english.goto(url + '/#/security', wait_until='networkidle')
         expect(english.get_by_role('heading', name='Security Center')).to_be_visible()
+        expect(english.get_by_role('heading', name='Connections', exact=True).get_by_role('link')).to_have_attribute('href', '#/security?tab=connections')
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-dark-en.png', full_page=True, animations='disabled')
         english.get_by_role('navigation', name='Security Center').get_by_role('button', name='Credentials', exact=True).click()
         expect(english.get_by_text('packyapi', exact=True)).to_be_visible()
         expect(english.get_by_text('Custom provider', exact=True)).to_be_visible()
