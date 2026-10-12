@@ -37,9 +37,18 @@ jobs:
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
             BASE_SHA="$(git rev-parse HEAD^)"
           fi
-          echo "STELLA_CHECK_BASE=$BASE_SHA" >> "$GITHUB_ENV"
-      - name: Run the shared incremental gate
-        run: make check
+          if git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
+            echo "STELLA_CHECK_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+          else
+            echo "STELLA_CHECK_FULL=1" >> "$GITHUB_ENV"
+          fi
+      - name: Run the shared quality gate
+        run: |
+          if [[ "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
+            .venv/bin/python scripts/quality_check.py full
+          else
+            make check
+          fi
       - name: Run Stella product agent evals
         run: make eval
       - name: Generate a full audit report on manual request
