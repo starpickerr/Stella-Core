@@ -2,15 +2,10 @@
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://github.com/starpickerr/Stella/tree/main/docs"><img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-Stella-blue?style=flat&logo=readthedocs&logoColor=white" alt="ドキュメント" /></a>
   <a href="https://github.com/starpickerr/Stella/issues"><img src="https://img.shields.io/badge/Community-GitHub-2F93F0?style=flat&logo=github&logoColor=white" alt="Community" /></a>
-  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
-</p>
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/25763" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25763" alt="zhayujie%2FStella | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -27,15 +22,6 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
   <a href="guide/quick-start.mdx">🚀 クイックスタート</a> &nbsp;·&nbsp;
   <a href="https://www.skill-marketplace.com/">🧩 skill広場</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella/releases">💻 ダウンロード</a> &nbsp;·&nbsp;
-  <a href="https://github.com/starpickerr/Stella">☁️ オンラインで試す</a>
-</p>
-
-<br/>
-
-## 🎬 デモ
-
-<p align="center">
-  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -59,8 +45,6 @@ Stella は軽量でデプロイしやすく、拡張性に優れています。�
 
 ## 🏗️ アーキテクチャ
 
-<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
-
 Stella は完全な **Agent Harness** です：メッセージは各種**チャネル**から流入し、**Agent Core** が記憶・知識・利用可能なツール／Skill を組み合わせてタスクを計画・判断、**モデル**が応答を生成し、結果は元のチャネルに返されます。各レイヤーは疎結合で、独立して拡張可能です。
 
 詳細は [アーキテクチャ](intro/architecture.mdx) を参照してください。
@@ -71,12 +55,15 @@ Stella は完全な **Agent Harness** です：メッセージは各種**チャ�
 
 [GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) から Electron デスクトップアプリをダウンロードして起動します。ソースから実行する場合：
 
+Python 3.9+ と Node.js 22.13+ が必要です。Windows のコマンドは[ソースからビルド](guide/manual-install.mdx)を参照してください。
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
@@ -129,8 +116,6 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 > Feishu と WeCom Bot は **デスクトップクライアント内で QR コードをスキャンするだけで接続**できます — パブリック IP は不要です。詳細は [チャネル概要](channels/index.mdx) を参照してください。
 
-<img src="../images/placeholder-image.svg" alt="Stella desktop client" width="800"/>
-
 *デスクトップクライアントはデフォルトのチャネルであると同時に、Agent の設定・管理を統一的に行う場でもあります。*
 
 <br/>
@@ -140,19 +125,6 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 **長期記憶**は三層構造：会話コンテキスト（短期）→ デイリー記憶（中期）→ MEMORY.md（長期）。毎晩の **Deep Dream** が散在する記憶を洗練された長期記憶とナラティブな日記に蒸留します。詳細は [長期記憶](memory/index.mdx) · [Deep Dream](memory/deep-dream.mdx) を参照してください。
 
 **パーソナルナレッジベース**は時系列の記憶とは異なり、構造化された知識を**トピック単位**で整理します。Agent が会話中に有用な情報を自動でキュレーションし、相互参照とインデックスを維持し、デスクトップクライアントでナレッジグラフを可視化できます。詳細は [パーソナルナレッジベース](knowledge/index.mdx) を参照してください。
-
-<table>
-  <tr>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="長期記憶" />
-      <p align="center"><em>長期記憶 · 三層構造 + Deep Dream</em></p>
-    </td>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="パーソナルナレッジベース" />
-      <p align="center"><em>ナレッジベース · 自動キュレーションされた Markdown Wiki</em></p>
-    </td>
-  </tr>
-</table>
 
 <br/>
 
@@ -192,18 +164,6 @@ Stella は主要な LLM プロバイダーすべてに対応しています。**
 
 <br/>
 
-## 🤝 コミュニティとサポート
-
-[**Discord サーバー**](https://discord.gg/9U8eA8v9TR) に参加して、質問や Skill の共有、開発状況の確認ができます：
-
-<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-コミュニティに参加-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord に参加" /></a>
-
-GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
-
-<img width="130" src="../images/placeholder-image.svg" />
-
-<br/>
-
 ## 🔗 関連プロジェクト
 
 - **[skill広場](https://www.skill-marketplace.com/)** — AI エージェント向け Skill マーケットプレイス
@@ -212,21 +172,9 @@ GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) し�
 
 <br/>
 
-## 🏢 エンタープライズサービス
-
-[**LinkAI**](https://link-ai.tech/) は企業や開発者向けのワンストップ AI Agent プラットフォームで、Stella にマネージドホスティングとエンタープライズグレードのサポートを提供します：
-
-- **🚀 デプロイ不要のホスト型ランタイム** — [Stella オンラインアシスタント](https://github.com/starpickerr/Stella) を 1 分以内に起動、サーバー不要
-- **🧠 Agent インフラ** — 主要 LLM・ナレッジベース・データベース・Skill・ワークフローへの統一アクセス。Stella の機能を拡張する、すぐに使えるビルディングブロック
-- **🏢 チーム & エンタープライズ機能** — ワークスペース、ロールベースのアクセス制御、監査ログ、本番運用向けプライベートデプロイ
-
-お問い合わせは [GitHub Issues](https://github.com/starpickerr/Stella/issues) をご利用ください。
-
-<br/>
-
 ## 🛠️ 開発とコントリビューション
 
-あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [skill広場](https://www.skill-marketplace.com/) への Skill の共有など。まずは [CONTRIBUTING.md](/CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
+あらゆる形のコントリビューションを歓迎します —— 新機能、バグ修正、パフォーマンス改善、ドキュメント、あるいは [skill広場](https://www.skill-marketplace.com/) への Skill の共有など。まずは [CONTRIBUTING.md](../../CONTRIBUTING.md) をご覧いただき、Issue で相談するか、直接 PR を送ってください。
 
 ⭐ Star でプロジェクトを応援し、Watch → Custom → Releases で新バージョンの通知を受け取れます。PR や Issue の提出も歓迎します。
 
@@ -238,12 +186,8 @@ GitHub で [Issue を報告](https://github.com/starpickerr/Stella/issues) し�
 
 ## ⚠️ 免責事項
 
-1. 本プロジェクトは [MIT License](/LICENSE) に基づき、技術研究と学習を目的としています。利用者は所在地の法令・規制を遵守する必要があり、本プロジェクトの利用に起因するいかなる結果についてもメンテナーは責任を負いません。
+1. 本プロジェクトは [MIT License](../../LICENSE) に基づき、技術研究と学習を目的としています。利用者は所在地の法令・規制を遵守する必要があり、本プロジェクトの利用に起因するいかなる結果についてもメンテナーは責任を負いません。
 2. **コストと安全性：** Agent モードは通常のチャットよりトークン消費が大幅に多いため、品質とコストのバランスを考慮してモデルを選択してください。Agent はローカル OS にアクセスできるため、信頼できる環境にのみデプロイしてください。
 3. Stella は純粋なオープンソースプロジェクトであり、暗号通貨の発行・参加・承認は一切行いません。
 
 <br/>
-
-## 📌 プロジェクト改名のお知らせ
-
-本プロジェクトは旧名 `chatgpt-on-wechat` から、2026.04.13 に **Stella** へ正式に改名されました。元の GitHub URL は自動的にリダイレクトされます。既存ユーザーは `git remote set-url origin https://github.com/starpickerr/Stella.git` でローカルのリモートを更新できます。

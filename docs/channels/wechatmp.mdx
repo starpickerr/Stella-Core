@@ -34,7 +34,6 @@ Add the following configuration to `config.json`:
 
 These configurations must be consistent with the [WeChat Official Account Platform](https://mp.weixin.qq.com/advanced/advanced?action=dev&t=advanced/dev). Navigate to **Settings & Development → Basic Configuration → Server Configuration** and configure as shown below:
 
-<img src="/images/placeholder-image.svg" width="480"/>
 
 1. Enable the developer secret on the platform (corresponds to `wechatmp_app_secret`), and add the server IP to the whitelist
 2. Fill in the `config.json` with the official account parameters matching the platform configuration
@@ -43,7 +42,6 @@ These configurations must be consistent with the [WeChat Official Account Platfo
 
 After following the account and sending a message, you should see the following result:
 
-<img src="/images/placeholder-image.svg" width="720"/>
 
 Due to subscription account limitations, short replies (within 15s) can be returned immediately, but longer replies will first send a "Thinking..." placeholder, requiring users to send any text to retrieve the answer. Enterprise service accounts can solve this with the customer service API.
 

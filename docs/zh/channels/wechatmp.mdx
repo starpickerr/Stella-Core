@@ -34,7 +34,6 @@ Stella 支持接入个人订阅号和企业服务号两种公众号类型。
 
 这些配置需要和 [微信公众号后台](https://mp.weixin.qq.com/advanced/advanced?action=dev&t=advanced/dev) 中的保持一致，进入页面后，在左侧菜单选择 **设置与开发 → 基本配置 → 服务器配置**，按下图进行配置：
 
-<img src="/images/placeholder-image.svg" width="480"/>
 
 1. 在公众平台启用开发者密码（对应配置 `wechatmp_app_secret`），并将服务器 IP 填入白名单
 2. 按上图填写 `config.json` 中与公众号相关的配置，要与公众号后台的配置一致
@@ -43,7 +42,6 @@ Stella 支持接入个人订阅号和企业服务号两种公众号类型。
 
 随后关注公众号并发送消息即可看到以下效果：
 
-<img src="/images/placeholder-image.svg" width="720"/>
 
 由于受订阅号限制，回复内容较短的情况下（15s 内），可以立即完成回复，但耗时较长的回复则会先回复一句 "正在思考中"，后续需要用户输入任意文字主动获取答案，而服务号则可以通过客服接口解决这一问题。
 

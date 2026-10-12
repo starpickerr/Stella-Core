@@ -46,10 +46,6 @@ Manual execution works for disabled tasks and does not enable, delete, or
 reschedule the task. Its original `next_run_at` remains unchanged. A task cannot
 be run manually while the same task is already executing on schedule.
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 ## Results injected into the conversation
 
 Scheduled tasks run inside an isolated session (so internal planning and tool calls do not pollute the user's chat), but the **final output** is written back to the user's real session as a message pair. You can directly follow up — e.g. "expand on point 2 from earlier".

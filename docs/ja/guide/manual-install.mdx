@@ -3,12 +3,19 @@ title: ソースからビルド
 description: Electron デスクトップ版をビルド
 ---
 
+Python 3.9+ と Node.js 22.13+ が必要です。Windows では `python -m venv .venv` を使い、以下の `.venv/bin/python` を `.venv\Scripts\python.exe` に置き換えてください。
+
+macOS では Swift/EventKit カレンダーブリッジのビルドに Xcode Command Line Tools（`xcode-select --install`）または互換性のある Xcode ツールチェーンが必要です。
+
 Python と Node.js の依存関係をインストールして、デスクトップ版を起動します。
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
