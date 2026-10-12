@@ -80,7 +80,7 @@ export interface SecurityCenterState extends ApiResult {
   projects: { path: string; name: string; policy: SecurityPolicy }[]
   conversation_policy: SecurityPolicy
   connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null }[]
-  secrets: { name: string; source: string; configured: boolean }[]
+  secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
   background_tasks?: SecurityBackgroundTask[]
   privacy?: SecurityPrivacyInventory
   summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
