@@ -71,8 +71,8 @@ with sync_playwright() as pw:
         pending.append(dict(run_id='uncertain-2', status='queued', clear_history=False,
                             user_content=[dict(type='text', text='新的保存输入')]))
         page.reload(wait_until='networkidle')
-        expect(close).to_be_visible()
-        expect(page.get_by_text('新的保存输入', exact=True)).to_be_visible()
+        expect(close).to_have_count(0)
+        expect(page.get_by_text('新的保存输入', exact=True)).to_have_count(0)
         expect(page.get_by_text('更新简报', exact=True)).to_have_count(0)
         page.goto(url + '/#/briefing', wait_until='networkidle')
         update = page.get_by_role('button', name='更新今日简报', exact=True)
@@ -82,6 +82,6 @@ with sync_playwright() as pw:
         runs = [body for path, body in mutations if path == '/api/briefings/run']
         assert len(runs) == 1 and runs[0]['operation'] == 'update' and 'kind' not in runs[0], runs
         assert not errors, errors
-        print('PASS: notice closes by keyboard, stays hidden after reload, new inputs remain visible; neutral briefing updates once')
+        print('PASS: notice closes by keyboard and stays hidden after reload and new inputs; neutral briefing updates once')
     finally:
         browser.close()

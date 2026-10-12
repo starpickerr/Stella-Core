@@ -47,12 +47,13 @@ interface ChatState {
 // EventSource instances kept outside the store (not serializable).
 const streams: Record<string, EventSource> = {}
 
-function dismissedAdmissions(sid: string): string[] {
+function pendingNoticeDismissed(sid: string): boolean {
   try {
-    const rows: unknown = JSON.parse(localStorage.getItem(`stella_pending_dismissed:${sid}`) || '[]')
-    return Array.isArray(rows) ? rows.filter((id): id is string => typeof id === 'string') : []
+    const value: unknown = JSON.parse(localStorage.getItem(`stella_pending_dismissed:${sid}`) || 'false')
+    // Keep previous dismissals when upgrading from the per-run setting.
+    return value === true || (Array.isArray(value) && value.length > 0)
   } catch {
-    return []
+    return false
   }
 }
 
@@ -583,9 +584,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       try {
         const res = await apiClient.getHistory(sid, page, 20)
         const uiMsgs = res.messages.map(historyToMessage)
-        const dismissed = new Set(dismissedAdmissions(sid))
         patchSession(sid, {
-          pendingAdmissions: (res.pending_admissions || []).filter((row) => !dismissed.has(row.run_id)),
+          pendingAdmissions: pendingNoticeDismissed(sid) ? [] : res.pending_admissions || [],
           historyPage: res.page,
           historyHasMore: res.has_more,
           historyLoaded: true,
@@ -602,11 +602,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     dismissPendingAdmissions: (sid) => {
-      const rows = get().sessions[sid]?.pendingAdmissions || []
       try {
-        localStorage.setItem(`stella_pending_dismissed:${sid}`, JSON.stringify(
-          [...new Set([...dismissedAdmissions(sid), ...rows.map((row) => row.run_id)])],
-        ))
+        localStorage.setItem(`stella_pending_dismissed:${sid}`, 'true')
       } catch { /* Closing still works when browser storage is unavailable. */ }
       patchSession(sid, { pendingAdmissions: [] })
     },
