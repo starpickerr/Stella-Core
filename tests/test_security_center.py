@@ -817,7 +817,25 @@ def test_secrets_include_custom_providers_without_plaintext(tmp_path, monkeypatc
     assert "OPENAI_API_KEY" in names
     assert "CUSTOM:my-lab" in names
     assert "CUSTOM:empty" not in names
+    custom = next(row for row in status if row["name"] == "CUSTOM:my-lab")
+    assert custom["display_name"] == "My Lab"
     assert "secret-key" not in json.dumps(status)
+
+
+def test_custom_secret_names_follow_provider_renames(tmp_path, monkeypatch):
+    from agent.permission import center as security_center
+    import config as config_module
+
+    provider = {"id": "c483bd9c", "name": "  灵算  ", "api_key": "private-test-key"}
+    monkeypatch.setattr(config_module, "conf", lambda: {"custom_providers": [provider]})
+    monkeypatch.setattr(security_center, "_env_path", lambda: tmp_path / "missing.env")
+    assert security_center.secrets() == [{
+        "name": "CUSTOM:c483bd9c", "display_name": "灵算",
+        "source": "custom model provider", "configured": True,
+    }]
+    provider["name"] = "packyapi"
+    assert security_center.secrets()[0]["display_name"] == "packyapi"
+    assert "private-test-key" not in json.dumps(security_center.secrets())
 
 
 def test_mcp_connection_scope_controls_registered_tools(tmp_path, monkeypatch):

@@ -32,8 +32,14 @@ def backend(route):
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
     elif path == '/api/models':
-        data.update(providers=[{'id': 'test', 'configured': True}],
-                    capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
+        blank = {'current_provider': '', 'current_model': '', 'providers': []}
+        data.update(providers=[{'id': 'test', 'label': 'Test', 'configured': True}], capabilities={
+            'chat': {'current_provider': 'test', 'current_model': 'test', 'providers': ['test']},
+            'vision': blank, 'image': blank, 'asr': blank,
+            'tts': {**blank, 'current_voice': '', 'reply_mode': 'off'},
+            'embedding': {**blank, 'current_dim': 0},
+            'search': {'strategy': 'auto', 'providers': [], 'fixed_provider': '', 'current_provider': ''},
+        })
     elif path in ('/api/sessions', '/api/history', '/api/projects'):
         data.update(sessions=[], history=[], messages=[], total=0, page=1, page_size=20,
                     has_more=False, projects=[], current=None)
@@ -44,10 +50,17 @@ def backend(route):
             effective_mode='workspace-write', effective_rules={}, policy_source='global',
             mode_definitions=DEFINITIONS, authorized_roots=['/isolated/work'],
             process_isolation={'status': 'enabled', 'reason': 'Seatbelt is active. 完全访问仍拦截其他会话的私有工作区。'},
-            connections=[], secrets=[], pending=[], background_tasks=[],
+            connections=[], secrets=[
+                {'name': 'DEEPSEEK_API_KEY', 'source': 'model configuration', 'configured': True},
+                {'name': 'CUSTOM:6891955f', 'display_name': 'packyapi',
+                 'source': 'custom model provider', 'configured': True},
+                {'name': 'CUSTOM:c483bd9c', 'display_name': '灵算',
+                 'source': 'custom model provider', 'configured': True},
+                {'name': 'CUSTOM:unnamed', 'source': 'custom model provider', 'configured': True},
+            ], pending=[], background_tasks=[],
             privacy={'available': True, 'categories': [], 'external_transfers': []},
             summary={'status': 'normal', 'app_password_set': False, 'connection_count': 0,
-                     'secret_count': 0, 'recent_high_risk': [], 'recent_denials': [],
+                     'secret_count': 4, 'recent_high_risk': [], 'recent_denials': [],
                      'activity_counts': {'auto_allow': 0, 'user_authorized': 0, 'denied': 0,
                                          'uncertain': False, 'since': 0, 'until': 1},
                      'background_tasks': {'total': 0, 'enabled': 0, 'paused': 0,
@@ -86,7 +99,11 @@ with sync_playwright() as playwright:
         page.goto(url + '/#/security', wait_until='networkidle')
         expect(page.get_by_role('heading', name='安全中心')).to_be_visible()
         expect(page.get_by_text('工作区写入', exact=True).first).to_be_visible()
-        page.get_by_role('button', name='权限管理').click()
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview.png', full_page=True, animations='disabled')
+        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        expect(page.get_by_text('灵算', exact=True)).to_be_visible()
+        page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
         default_card = page.get_by_role('heading', name='默认权限').locator('xpath=..')
         expect(default_card).to_be_visible()
         expect(default_card.get_by_role('button', name='只读')).to_be_visible()
@@ -97,7 +114,53 @@ with sync_playwright() as playwright:
         assert len(saved) > before and saved[-1]['policy']['preset'] == 'full-access'
         assert not any(item.get('policy', {}).get('preset') == 'custom' for item in saved)
         expect(page.get_by_role('heading', name='项目权限')).to_be_visible()
+        for tab, heading in [('后台任务权限', '后台任务权限'), ('外部连接', '连接与访问'),
+                             ('安全活动', '安全活动'), ('数据与隐私', '数据与隐私')]:
+            page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
+            expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
+        page.get_by_role('button', name='凭据', exact=True).click()
+        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        expect(page.get_by_text('灵算', exact=True)).to_be_visible()
+        expect(page.get_by_text('自定义厂商', exact=True)).to_be_visible()
+        expect(page.get_by_text('CUSTOM:', exact=False)).to_have_count(0)
+        expect(page.get_by_role('button', name='删除凭据 CUSTOM:6891955f')).to_have_count(0)
+        expect(page.get_by_role('link', name='管理 packyapi')).to_be_visible()
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials.png', full_page=True, animations='disabled')
+        page.set_viewport_size({'width': 640, 'height': 900})
+        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-narrow.png', full_page=True, animations='disabled')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.get_by_role('button', name='收起侧栏').click()
+        expect(page.get_by_role('complementary')).to_have_css('width', '56px')
+        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-mobile.png', full_page=True, animations='disabled')
+        manage = page.get_by_role('link', name='管理 packyapi')
+        manage.focus()
+        expect(manage).to_be_focused()
+        manage.press('Enter')
+        expect(page).to_have_url(url + '/#/settings?tab=models')
+        expect(page.get_by_role('heading', name='厂商凭据')).to_be_visible()
+        english = browser.new_page(viewport={'width': 1280, 'height': 900})
+        english.on('pageerror', lambda error: errors.append(str(error)))
+        english.add_init_script("""localStorage.setItem('stella_lang','en');
+          localStorage.setItem('cow_theme','dark'); window.electronAPI = {
+          getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
+        };""")
+        english.route('http://127.0.0.1:9876/**', backend)
+        english.goto(url + '/#/security', wait_until='networkidle')
+        expect(english.get_by_role('heading', name='Security Center')).to_be_visible()
+        english.get_by_role('navigation', name='Security Center').get_by_role('button', name='Credentials', exact=True).click()
+        expect(english.get_by_text('packyapi', exact=True)).to_be_visible()
+        expect(english.get_by_text('Custom provider', exact=True)).to_be_visible()
+        expect(english.get_by_text('CUSTOM:', exact=False)).to_have_count(0)
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-dark-en.png', full_page=True, animations='disabled')
         assert not errors, errors
-        print('Security modes UI: default three presets, no immediate custom save, merged permissions tab passed')
+        print('Security UI: tabs, presets, provider names, keyboard management link, desktop/narrow/mobile, English dark theme passed')
     finally:
         browser.close()

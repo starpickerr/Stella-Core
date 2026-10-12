@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
+import { ShieldCheck, RefreshCw, ChevronRight, SlidersHorizontal, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
@@ -25,6 +26,10 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
 
 const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy'] as const
 type Tab = (typeof tabs)[number]
+const tabIcons: Record<Tab, LucideIcon> = {
+  overview: ShieldCheck, permissions: SlidersHorizontal, background: Clock3,
+  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database,
+}
 
 const modeLabel = (
   copy: ReturnType<typeof securityCopy>,
@@ -46,12 +51,22 @@ const permissionSourceLabel = (
 }
 const DEFAULT_PRESETS = ['read-only', 'workspace-write', 'full-access'] as const
 const SCOPED_PRESETS = ['read-only', 'workspace-write', 'full-access', 'custom'] as const
-const card = 'rounded-card border border-default bg-surface p-5'
+const card = 'min-w-0 rounded-card border border-default bg-surface p-5 sm:p-6'
+const heading = 'text-base font-semibold text-content leading-snug'
 const input =
-  'rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent'
+  'min-w-0 min-h-10 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content hover:border-strong focus-visible:outline-2 focus-visible:outline-accent'
 const action =
-  'rounded-btn bg-accent text-accent-contrast px-3 py-2 text-sm disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
-const faded = 'text-sm text-content-secondary'
+  'min-h-10 shrink-0 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
+const faded = 'text-sm leading-relaxed text-content-secondary'
+
+const SectionTitle: React.FC<{ icon: LucideIcon; children: React.ReactNode }> = ({ icon: Icon, children }) => (
+  <h2 className={`${heading} flex items-center gap-2.5`}>
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-btn bg-accent-soft text-accent">
+      <Icon size={17} aria-hidden="true" />
+    </span>
+    {children}
+  </h2>
+)
 
 const PolicyEditor: React.FC<{
   policy: SecurityPolicy
@@ -393,41 +408,47 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   return (
     <div
       lang={getLang() === 'en' ? 'en-US' : 'zh-CN'}
-      className="h-full flex flex-col min-h-0"
+      className="h-full flex flex-col min-h-0 min-w-0"
     >
       <PageHeader className="flex justify-between items-start gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <ShieldCheck size={23} className="text-accent" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-card bg-accent-soft text-accent">
+              <ShieldCheck size={23} aria-hidden="true" />
+            </span>
             {copy.title}
           </h1>
-          <p className="text-sm text-content-secondary mt-1">{copy.subtitle}</p>
+          <p className={`${faded} mt-2`}>{copy.subtitle}</p>
         </div>
-        <button type="button" className={input} aria-label={copy.refresh} onClick={() => void load()}>
+        <button type="button" className={`${input} shrink-0`} aria-label={copy.refresh} title={copy.refresh} onClick={() => void load()}>
           <RefreshCw size={17} />
         </button>
       </PageHeader>
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 sm:py-7">
-      <div className="max-w-4xl mx-auto space-y-5">
-        <nav className="flex gap-2 overflow-x-auto border-b border-default pb-2">
-          {tabs.map((name) => (
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 sm:py-6">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <nav aria-label={copy.title} className="flex gap-1 overflow-x-auto border-b border-default pb-3">
+          {tabs.map((name) => {
+            const Icon = tabIcons[name]
+            return (
             <button
               type="button"
               key={name}
               onClick={() => setTab(name)}
-              className={`shrink-0 px-3 py-2 rounded-btn text-sm ${tab === name ? 'bg-accent-soft text-accent font-semibold' : 'text-content-secondary hover:bg-surface-2'}`}
+              aria-current={tab === name ? 'page' : undefined}
+              className={`flex items-center gap-2 shrink-0 min-h-10 px-3 py-2 rounded-btn text-sm focus-visible:outline-2 focus-visible:outline-accent ${tab === name ? 'bg-accent-soft text-content font-semibold' : 'text-content-secondary hover:bg-surface-2'}`}
             >
+              <Icon size={16} aria-hidden="true" className={tab === name ? 'text-accent' : 'text-content-tertiary'} />
               {copy.tabs[name]}
             </button>
-          ))}
+          )})}
         </nav>
         {notice && (
-          <p role="status" className="text-sm text-accent">
+          <p role="status" className="rounded-btn border border-default bg-accent-soft px-4 py-3 text-sm text-content">
             {notice}
           </p>
         )}
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="rounded-btn border border-danger-border bg-danger-soft px-4 py-3 text-sm text-danger">
             {error}
           </p>
         )}
@@ -445,34 +466,40 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 ? null
                 : (center.privacy?.categories || []).slice(0, 4)
               return (
-              <div className="space-y-5">
-                <section className={card}>
-                  <h2 className="font-semibold">{copy.presetsTitle}</h2>
-                  <p className={`${faded} mt-1`}>{copy.overviewDefaultHelp}</p>
-                  <p className="font-medium mt-3">{modeLabel(copy, globalMode)}</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <section className={`${card} md:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5`}>
+                  <div>
+                    <SectionTitle icon={ShieldCheck}>{copy.presetsTitle}</SectionTitle>
+                    <p className={`${faded} mt-3`}>{copy.overviewDefaultHelp}</p>
+                    <p className="text-2xl font-semibold tracking-tight mt-3">{modeLabel(copy, globalMode)}</p>
+                  </div>
+                  <button type="button" className={`${input} flex items-center justify-center gap-2 self-start sm:self-center`}
+                    onClick={() => setTab('permissions')}>
+                    {copy.tabs.permissions}<ChevronRight size={16} aria-hidden="true" />
+                  </button>
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.overviewBackgroundTitle}</h2>
+                  <SectionTitle icon={Clock3}>{copy.overviewBackgroundTitle}</SectionTitle>
                   {!taskSummary || taskSummary.available === false ? (
                     <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                       <div>
                         <span className="text-content-secondary">{copy.backgroundTitle}</span>
-                        <p className="font-medium mt-1">{taskSummary.total ?? copy.overviewUnavailable}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.total ?? copy.overviewUnavailable}</p>
                       </div>
                       <div>
                         <span className="text-content-secondary">{copy.backgroundEnabled}</span>
-                        <p className="font-medium mt-1">{taskSummary.enabled ?? copy.overviewUnavailable}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.enabled ?? copy.overviewUnavailable}</p>
                       </div>
                       <div>
                         <span className="text-content-secondary">{copy.backgroundPaused}</span>
-                        <p className="font-medium mt-1">{taskSummary.paused ?? copy.overviewUnavailable}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.paused ?? copy.overviewUnavailable}</p>
                       </div>
                       {taskSummary.modes && (
-                        <div className="sm:col-span-3 text-xs text-content-secondary">
+                        <div className="col-span-3 border-t border-default pt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-content-secondary">
                           {(['read-only', 'workspace-write', 'full-access', 'custom'] as const).map((mode) => (
-                            <span key={mode} className="mr-3">
+                            <span key={mode}>
                               {modeLabel(copy, mode)}：{taskSummary.modes?.[mode] ?? 0}
                             </span>
                           ))}
@@ -485,17 +512,17 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   )}
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.overviewConnectionsTitle}</h2>
-                  <p className="font-medium mt-2">
+                  <SectionTitle icon={Link2}>{copy.overviewConnectionsTitle}</SectionTitle>
+                  <p className="text-2xl font-semibold tabular-nums mt-4">
                     {typeof center.summary.connection_count === 'number'
                       ? center.summary.connection_count
                       : copy.overviewUnavailable}
                   </p>
                   <div className="mt-3 space-y-2 text-sm">
                     {connectionPreview.map((item) => (
-                      <div key={item.id} className="flex justify-between gap-3">
-                        <span>{item.name}</span>
-                        <span className="text-content-secondary">
+                      <div key={item.id} className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+                        <span className="font-medium break-words">{item.name}</span>
+                        <span className="text-xs text-content-secondary">
                           {(item.available ?? item.connected)
                             ? (getLang() === 'en' ? 'Connected' : '已连接')
                             : (getLang() === 'en' ? 'Unavailable' : '不可用')}
@@ -512,8 +539,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.overviewSecretsTitle}</h2>
-                  <p className="font-medium mt-2">
+                  <SectionTitle icon={KeyRound}>{copy.overviewSecretsTitle}</SectionTitle>
+                  <p className="text-2xl font-semibold tabular-nums mt-4">
                     {typeof center.summary.secret_count === 'number'
                       ? center.summary.secret_count
                       : copy.overviewUnavailable}
@@ -521,8 +548,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <div className="mt-3 space-y-2 text-sm">
                     {secretPreview.map((item) => (
                       <div key={item.name} className="flex justify-between gap-3">
-                        <span>{securitySecretName(copy, item.name)}</span>
-                        <span className="text-content-secondary">
+                        <span className="font-medium break-words min-w-0">{securitySecretName(copy, item.name, item.display_name)}</span>
+                        <span className="text-xs text-content-secondary shrink-0">
                           {item.configured
                             ? (getLang() === 'en' ? 'Configured' : '已配置')
                             : (getLang() === 'en' ? 'Missing' : '未配置')}
@@ -535,36 +562,36 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.overviewActivityTitle}</h2>
+                  <SectionTitle icon={Activity}>{copy.overviewActivityTitle}</SectionTitle>
                   <p className={`${faded} mt-1`}>{copy.activityStatsTitle}</p>
                   {!activityCounts ? (
                     <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                       <div>
                         <span className="text-content-secondary">{copy.autoAllow}</span>
-                        <p className="font-medium mt-1">{activityCounts.auto_allow}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.auto_allow}</p>
                       </div>
                       <div>
                         <span className="text-content-secondary">{copy.userAuthorized}</span>
-                        <p className="font-medium mt-1">{activityCounts.user_authorized}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.user_authorized}</p>
                       </div>
                       <div>
                         <span className="text-content-secondary">{copy.deniedCount}</span>
-                        <p className="font-medium mt-1">{activityCounts.denied}</p>
+                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.denied}</p>
                       </div>
                       {activityCounts.uncertain && (
-                        <p className="sm:col-span-3 text-xs text-content-secondary">{copy.activityStatsUncertain}</p>
+                        <p className="col-span-3 text-xs text-content-secondary">{copy.activityStatsUncertain}</p>
                       )}
                     </div>
                   )}
                 </section>
-                <section className={card}>
-                  <h2 className="font-semibold">{copy.overviewPrivacyTitle}</h2>
+                <section className={`${card} md:col-span-2`}>
+                  <SectionTitle icon={Database}>{copy.overviewPrivacyTitle}</SectionTitle>
                   {!privacyCats ? (
                     <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-3 space-y-2 text-sm">
+                    <div className="mt-4 grid sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
                       {privacyCats.map((item) => (
                         <div key={item.id} className="flex justify-between gap-3">
                           <span>{item.name[lang]}</span>
@@ -580,7 +607,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'permissions' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.presetsTitle}</h2>
+                  <h2 className={heading}>{copy.presetsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
                   {(center.global_policy.preset === 'custom' || center.global_policy.base_preset) && (
                     <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{copy.presetsLegacyCustom}</p>
@@ -611,7 +638,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.projectsTitle}</h2>
+                  <h2 className={heading}>{copy.projectsTitle}</h2>
                   <p className={`${faded} mt-1 mb-3`}>{copy.projectsHelp}</p>
                   <select
                     aria-label={copy.selectProject}
@@ -637,7 +664,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </section>
                 {sid && (
                   <section className={card}>
-                    <h2 className="font-semibold">{copy.conversationTitle}</h2>
+                    <h2 className={heading}>{copy.conversationTitle}</h2>
                     <p className={`${faded} mt-2`}>{copy.conversationHelp}</p>
                     <p className="text-xs text-content-tertiary mt-1 break-all">
                       {center.project || copy.defaultWorkspace}
@@ -704,7 +731,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
             {tab === 'background' && (
               <section className={card}>
-                <h2 className="font-semibold">{copy.backgroundTitle}</h2>
+                <h2 className={heading}>{copy.backgroundTitle}</h2>
                 <p className={`${faded} mt-1`}>{copy.backgroundHelp}</p>
                 {(center.background_tasks || []).length === 0 ? (
                   <p className={`${faded} mt-4`}>{copy.backgroundEmpty}</p>
@@ -778,7 +805,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'connections' && (
               <div className="space-y-3">
                 <div>
-                  <h2 className="font-semibold">{copy.connectionsTitle}</h2>
+                  <h2 className={heading}>{copy.connectionsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.connectionsHelp}</p>
                 </div>
                 {center.connections.length === 0 && <p className={faded}>{copy.noConnections}</p>}
@@ -848,35 +875,49 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'secrets' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.secretsTitle}</h2>
-                  <p className={`${faded} mt-1`}>{copy.secretsHelp}</p>
-                  <div className="mt-3 divide-y divide-default">
+                  <SectionTitle icon={KeyRound}>{copy.secretsTitle}</SectionTitle>
+                  <p className={`${faded} mt-3`}>{copy.secretsHelp}</p>
+                  <div className="mt-5 divide-y divide-default border-y border-default">
                     {center.secrets.length === 0 && <p className={`${faded} py-3`}>{copy.noSecrets}</p>}
-                    {center.secrets.map((item) => (
-                      <div key={item.name} className="flex justify-between items-center gap-3 py-3 text-sm">
-                        <div className="min-w-0">
-                          <p className="font-medium">{securitySecretName(copy, item.name)}</p>
-                          <p className="text-xs text-content-secondary mt-0.5">
-                            <code>{item.name}</code> · {copy.source}
-                            {copy.fieldSeparator}
-                            {(copy.secretSources as Record<string, string>)[item.source] ||
-                              copy.secretSources['credential store']}
-                          </p>
+                    {center.secrets.map((item) => {
+                      const custom = item.name.startsWith('CUSTOM:')
+                      const title = securitySecretName(copy, item.name, item.display_name)
+                      return (
+                      <div key={item.name} className="flex justify-between items-center gap-3 py-4 text-sm">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span aria-hidden="true" className="hidden sm:flex size-10 shrink-0 items-center justify-center rounded-btn bg-surface-2 text-content-secondary font-semibold text-base">
+                            {title.slice(0, 1).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[15px] font-semibold break-words">{title}</p>
+                            <p className="text-xs leading-relaxed text-content-secondary mt-1 break-words">
+                              {(copy.secretSources as Record<string, string>)[item.source] ||
+                                copy.secretSources['credential store']}
+                            </p>
+                          </div>
                         </div>
-                        <button
+                        {custom ? (
+                          <Link to="/settings?tab=models" aria-label={`${copy.manageSecret} ${title}`}
+                            className={`${input} flex items-center gap-1.5 shrink-0`}>
+                            {copy.manageSecret}<ArrowUpRight size={14} aria-hidden="true" />
+                          </Link>
+                        ) : <button
+                          type="button"
                           disabled={busy}
-                          className="text-danger shrink-0"
-                          aria-label={`${copy.deleteSecret} ${item.name}`}
+                          className="min-h-10 px-3 rounded-btn text-danger hover:bg-danger-soft shrink-0 focus-visible:outline-2 focus-visible:outline-accent"
+                          aria-label={`${copy.deleteSecret} ${title}`}
                           onClick={() => void mutate(() => apiClient.deleteSecuritySecret(item.name))}
                         >
                           {copy.deleteSecret}
-                        </button>
+                        </button>}
                       </div>
-                    ))}
+                    )})}
                   </div>
-                  <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 mt-4">
+                  <div className="grid lg:grid-cols-[1fr_1fr_auto] gap-3 mt-5">
+                    <label className="min-w-0 text-sm font-medium">
+                      {copy.selectService}
                     <select
-                      className={input}
+                      className={`${input} block w-full mt-2 font-normal`}
                       aria-label={copy.selectService}
                       value={secretName}
                       onChange={(event) => setSecretName(event.target.value)}
@@ -889,18 +930,22 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       ))}
                       <option value="other">{copy.otherCredential}</option>
                     </select>
+                    </label>
+                    <label className="min-w-0 text-sm font-medium">
+                      {copy.secretValue}
                     <input
                       type="password"
                       autoComplete="new-password"
-                      className={input}
+                      className={`${input} block w-full mt-2 font-normal`}
                       aria-label={copy.secretValue}
                       placeholder={copy.secretValue}
                       value={secretValue}
                       onChange={(event) => setSecretValue(event.target.value)}
                     />
+                    </label>
                     <button
                       disabled={busy || !credentialName || !secretValue}
-                      className={action}
+                      className={`${action} self-end`}
                       onClick={() => {
                         void mutate(() => apiClient.saveSecuritySecret(credentialName, secretValue)).then(
                           (ok) => {
@@ -925,12 +970,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   )}
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.appPassword}</h2>
-                  <p className={`${faded} mt-1`}>{copy.appPasswordHelp}</p>
-                  <p className="text-xs text-content-tertiary mt-2">
+                  <SectionTitle icon={LockKeyhole}>{copy.appPassword}</SectionTitle>
+                  <p className={`${faded} mt-3`}>{copy.appPasswordHelp}</p>
+                  <p className="text-xs text-content-secondary mt-3 flex items-center gap-2">
+                    <span aria-hidden="true" className={`size-1.5 rounded-full ${center.summary.app_password_set ? 'bg-accent' : 'bg-content-tertiary'}`} />
                     {center.summary.app_password_set ? copy.configured : copy.notConfigured}
                   </p>
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex flex-col md:flex-row gap-3 mt-3">
                     <input
                       type="password"
                       autoComplete="new-password"
@@ -959,7 +1005,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
                   <div>
-                    <h2 className="font-semibold">{copy.activityTitle}</h2>
+                    <h2 className={heading}>{copy.activityTitle}</h2>
                     <p className={`${faded} mt-1`}>{copy.activityHelp}</p>
                   </div>
                   <button
@@ -1105,7 +1151,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'privacy' && (
               <div className="space-y-5">
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.privacyTitle}</h2>
+                  <h2 className={heading}>{copy.privacyTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
                   {center.privacy?.available === false ? (
                     <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
@@ -1182,7 +1228,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   )}
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold">{copy.privacyExternalTitle}</h2>
+                  <h2 className={heading}>{copy.privacyExternalTitle}</h2>
                   <div className="mt-3 space-y-3 text-sm">
                     {(center.privacy?.external_transfers || []).map((item) => (
                       <div key={item.id}>

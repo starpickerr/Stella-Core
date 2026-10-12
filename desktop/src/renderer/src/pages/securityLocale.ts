@@ -186,7 +186,10 @@ const locales = {
       'credential store': 'Stella 凭据库',
       'model configuration': '模型设置',
       'model configuration + credential store': '模型设置和凭据库',
+      'custom model provider': '模型设置 · 自定义厂商',
     },
+    customProvider: '自定义厂商',
+    manageSecret: '管理',
     selectService: '选择服务',
     otherCredential: '其他凭据',
     customCredentialName: '凭据标识',
@@ -505,7 +508,10 @@ const locales = {
       'credential store': 'Stella credential store',
       'model configuration': 'Model settings',
       'model configuration + credential store': 'Model settings and credential store',
+      'custom model provider': 'Model settings · Custom provider',
     },
+    customProvider: 'Custom provider',
+    manageSecret: 'Manage',
     selectService: 'Choose a service',
     otherCredential: 'Other credential',
     customCredentialName: 'Credential identifier',
@@ -654,7 +660,8 @@ export function securityRuleName(copy: SecurityCopy, key: string): string {
   return (copy.rules as Record<string, { name: string }>)[key]?.name || key
 }
 
-export function securitySecretName(copy: SecurityCopy, name: string): string {
+export function securitySecretName(copy: SecurityCopy, name: string, displayName?: string): string {
+  if (name.startsWith('CUSTOM:')) return displayName?.trim() || copy.customProvider
   const known = commonCredentials.find(([key]) => key === name)
   return known ? `${name === 'QIANFAN_API_KEY' ? copy.qianfanName : known[1]} ${copy.secretKeyLabel}` : name
 }
