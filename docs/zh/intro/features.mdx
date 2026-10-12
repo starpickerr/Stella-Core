@@ -11,15 +11,7 @@ description: Stella 长期记忆、个人知识库、任务规划、技能系统
 
 在后续的长期对话中，Agent 会在需要时智能记录或检索记忆，并对自身设定、用户偏好、记忆文件等进行不断更新。每日自动执行 **梦境蒸馏（Deep Dream）**，将分散的天级记忆整合为精炼的长期记忆，同时生成叙事风格的梦境日记。
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 在此基础上，**自主进化（Self-Evolution）** 让 Agent 在使用中持续成长：对话空闲后自动复盘，优化技能、处理遗留任务、补全记忆与知识，仅在确有改动时简短告知，且每次改动可随时撤销。
-
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
 
 详细说明请参考 [长期记忆](/zh/memory)、[梦境蒸馏](/zh/memory/deep-dream) 和 [自主进化](/zh/memory/self-evolution)。
 
@@ -34,10 +26,6 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 - **对话联动**：Agent 回复中引用的知识文档链接可在桌面客户端中直接点击跳转查看
 - **CLI 管理**：通过 `/knowledge` 命令查看统计、浏览目录，通过 `/knowledge on|off` 开关功能
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 详细说明请参考 [个人知识库](/zh/knowledge)。
 
 ## 3. 任务规划和工具调用
@@ -50,41 +38,21 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 针对操作系统的终端和文件的访问能力，是最基础和核心的工具，其他很多工具或技能都是基于此进行扩展。用户可通过手机端与 Agent 交互，操作个人电脑或服务器上的资源：
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 ### 3.2 编程能力
 
 基于编程能力和系统访问能力，Agent 可以实现从信息搜索、图片等素材生成、编码、测试、部署、Nginx 配置修改、发布的 **Vibecoding 全流程**，通过手机端简单的一句命令完成应用的快速 demo：
-
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
 
 ### 3.3 定时任务
 
 基于 `scheduler` 工具实现动态定时任务，支持**一次性任务、固定时间间隔、Cron 表达式**三种形式，任务触发可选择**固定消息发送**或 **Agent 动态任务**执行两种模式：
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 ### 3.4 浏览器操作
 
 内置 `browser` 工具，Agent 可控制浏览器访问网页、填写表单、点击元素、截图，支持动态 JS 渲染页面。运行 `stella install-browser` 一键安装，适配桌面环境：
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="750" />
-</Frame>
-
 ### 3.5 环境变量管理
 
 技能所需的秘钥存储在环境变量文件中，由 `env_config` 工具进行管理，你可以通过对话的方式更新秘钥，工具内置安全保护和脱敏策略：
-
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
 
 ## 4. 技能系统
 
@@ -100,18 +68,10 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 
 通过 `skill-creator` 技能可以通过对话的方式快速创建技能。你可以让 Agent 将某个工作流程固化为技能，或者把任意接口文档和示例发送给 Agent，让他直接完成对接：
 
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
-
 ### 4.2 搜索和图像识别
 
 - **联网搜索：** 内置 `web_search` 工具，支持多种搜索引擎，配置 `BOCHA_API_KEY` 或 `LINKAI_API_KEY` 后启用。
 - **图像识别：** 内置 `openai-image-vision` 技能，可使用 `gpt-4.1-mini`、`gpt-4.1` 等模型，依赖 `OPENAI_API_KEY`。
-
-<Frame>
-  <img src="/images/placeholder-image.svg" width="800" />
-</Frame>
 
 ### 4.3 skill广场
 
@@ -124,8 +84,6 @@ Agent 会在对话中自动将有价值的信息整理为知识页面，维护�
 ```
 
 同时还支持安装Github、ClawHub、LinkAI等第三方平台上的所有技能，详情查看 [技能安装](/zh/skills/install)
-
-<img src="/images/placeholder-image.svg" width="750" />
 
 
 ## 5. 对话命令

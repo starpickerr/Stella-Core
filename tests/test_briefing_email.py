@@ -155,11 +155,11 @@ def test_briefing_tool_run_and_get(tmp_path):
     ran = tool.execute({"action": "run", "briefing_date": "2026-09-09"})
     assert ran.status == "success"
     assert "请确认合同" in ran.result
-    listed = tool.execute({"action": "list", "kind": "morning"})
-    assert "brf-2026-09-09-morning" in listed.result
-    got = tool.execute({"action": "get", "briefing_id": "brf-2026-09-09-morning"})
+    listed = tool.execute({"action": "list"})
+    assert "brf-2026-09-09" in listed.result
+    got = tool.execute({"action": "get", "briefing_id": "brf-2026-09-09"})
     assert got.status == "success"
-    item_id = svc.get_briefing("brf-2026-09-09-morning")["items"][0].id
+    item_id = svc.get_briefing("brf-2026-09-09")["items"][0].id
     marked = tool.execute({"action": "item_status", "item_id": item_id, "status": "done"})
     assert marked.status == "success"
     assert "done" in marked.result

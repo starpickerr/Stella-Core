@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
 </p>
 
@@ -18,14 +18,6 @@
   <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
   <a href="intro/index.mdx">📖 文档</a> &nbsp;·&nbsp;
   <a href="guide/quick-start.mdx">🚀 快速开始</a>
-</p>
-
-<br/>
-
-## 🎬 演示
-
-<p align="center">
-  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -49,8 +41,6 @@
 
 ## 🏗️ 架构总览
 
-<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
-
 Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，**Agent Core** 结合记忆、知识库与可用工具/技能进行任务规划与决策，调用**模型**生成结果，再回传至原通道。各模块解耦清晰，按需扩展。
 
 详见 [项目架构](intro/architecture.mdx)。
@@ -61,12 +51,15 @@ Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，
 
 从 [GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) 下载并打开 Electron 桌面客户端。开发者可从源码运行：
 
+需要 Python 3.9+ 和 Node.js 22.13+。Windows 命令见[源码构建](guide/manual-install.mdx)。
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
@@ -78,21 +71,21 @@ npm run dev
 
 Stella 支持国内外主流厂商的大语言模型。**文本对话、图像理解、图像生成、语音识别/合成、向量** 等能力均可独立配置厂商。
 
-| 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
-| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](models/openai.mdx) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [智谱 GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [通义千问](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
-| [豆包 Doubao](models/doubao.mdx) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [百度ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
-| [小米 MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](models/linkai.mdx) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定义](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
+| 厂商 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| [DeepSeek](models/deepseek.mdx) | ✅ | | | | | |
+| [Claude](models/claude.mdx) | ✅ | ✅ | | | | |
+| [OpenAI](models/openai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](models/gemini.mdx) | ✅ | ✅ | ✅ | | | |
+| [MiniMax](models/minimax.mdx) | ✅ | ✅ | ✅ | | ✅ | |
+| [智谱 GLM](models/glm.mdx) | ✅ | ✅ | | ✅ | | ✅ |
+| [通义千问](models/qwen.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](models/kimi.mdx) | ✅ | ✅ | | | | |
+| [豆包 Doubao](models/doubao.mdx) | ✅ | ✅ | ✅ | | | ✅ |
+| [百度ERNIE](models/qianfan.mdx) | ✅ | ✅ | | | | |
+| [小米 MiMo](models/mimo.mdx) | ✅ | ✅ | | | ✅ | |
+| [LinkAI](models/linkai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [自定义](models/custom.mdx) | ✅ | | | | | |
 
 > 推荐通过 桌面客户端在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](models/index.mdx)。
 
@@ -119,8 +112,6 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 > 飞书、企微智能机器人支持在桌面客户端内**扫码一键接入**，无需公网 IP。详见 [通道概览](channels/index.mdx)。
 
-<img src="../images/placeholder-image.svg" alt="Stella 桌面客户端" width="800"/>
-
 *桌面客户端是默认通道，也是统一的 Agent 配置和管理入口*
 
 <br/>
@@ -131,21 +122,7 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 **个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，桌面客户端可视化浏览知识图谱。详见 [个人知识库](knowledge/index.mdx)。
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="长期记忆" />
-      <p align="center"><em>长期记忆 · 三层记忆 + 梦境蒸馏</em></p>
-    </td>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="个人知识库" />
-      <p align="center"><em>个人知识库 · 自动整理的 Markdown Wiki</em></p>
-    </td>
-  </tr>
-</table>
-
 <br/>
-
 
 ## 🔧 工具与技能
 
@@ -185,15 +162,11 @@ Stella 支持国内外主流厂商的大语言模型。**文本对话、图像�
 
 ## 🛠️ 开发
 
-开发说明见 [CONTRIBUTING.md](/CONTRIBUTING.md)。本项目远程仓库为：
-
-```bash
-git remote set-url origin https://github.com/starpickerr/Stella.git
-```
+开发说明见 [CONTRIBUTING.md](../../CONTRIBUTING.md)。
 
 ## ⚠️ 声明
 
-1. 本项目遵循 [MIT 开源协议](/LICENSE)。使用时请遵守所在地法律法规，因使用本项目所产生的一切后果由使用者自行承担。
+1. 本项目遵循 [MIT 开源协议](../../LICENSE)。使用时请遵守所在地法律法规，因使用本项目所产生的一切后果由使用者自行承担。
 2. **成本与安全：** Agent 模式 Token 消耗显著高于普通对话。Stella 可以访问本地操作系统，请只在可信环境中部署。
 
 ## 📌 来源

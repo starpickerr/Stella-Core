@@ -8,9 +8,15 @@ description: Electron デスクトップ版で Stella を起動
 ソースから実行する場合：
 
 ```bash
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
 `npm run dev` は最新の画面をビルドしてデスクトップ用バックエンドを起動します。詳細は[デスクトップガイド](/ja/guide/desktop)を参照してください。
+
+必要な環境と Windows のコマンドは[ソースからビルド](/ja/guide/manual-install)を参照してください。

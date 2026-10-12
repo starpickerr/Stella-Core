@@ -8,9 +8,15 @@ Download the current desktop release from [GitHub Releases](https://github.com/s
 For source development:
 
 ```bash
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
 `npm run dev` builds the current interface and starts the desktop backend. See [Desktop setup](/guide/desktop) for packaging and details.
+
+Source prerequisites and Windows commands: [Build from Source](/guide/manual-install).

@@ -1,8 +1,6 @@
 # Contributing to Stella
 
-Thanks for taking the time to contribute! 🎉 Stella is built by a global
-community, and contributions of all sizes are welcome — from typo fixes to new
-features.
+Contributions of all sizes are welcome, from documentation fixes to new features.
 
 ## Language policy
 
@@ -47,32 +45,41 @@ style is preferred but not required:
 ```
 feat: add web search tool
 fix: reconnect Telegram websocket on timeout
-docs: clarify Docker setup
+docs: clarify desktop setup
 ```
 
 ## Development setup
 
-See the [Install from Source](docs/guide/manual-install.mdx)
-guide. In short:
+See [Build from Source](docs/guide/manual-install.mdx) for prerequisites and Windows commands. From a source checkout:
 
 ```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
-pip install -r requirements.txt
-pip install -e .
-stella start
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m playwright install chromium
+npm --prefix desktop ci
+npm --prefix desktop run dev
 ```
+
+See [Desktop development](desktop/README.md) for hot reload and packaging.
+
+## Quality checks
+
+Run checks appropriate to your changes:
+
+```bash
+.venv/bin/python scripts/quality_check.py incremental
+```
+
+The runner selects checks from changed files, isolates Stella state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths. For the full Python and frontend suite, build, and browser checks:
+
+```bash
+.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md
+```
+
+On Windows, use `.venv\Scripts\python.exe` and choose a writable report path. The runner resolves native npm and Python executables and cleans up the private renderer process tree.
+
+Tests use temporary user data. Manual app launches share `~/.stella` with the installed app, so back up your data before testing changes that affect storage.
 
 ## Code of conduct
 
-Be respectful and constructive. We want Stella to be a welcoming place for
-everyone.
-# Quality checks
-
-Install development checks into the project virtual environment with `.venv/bin/python -m pip install -r requirements-dev.txt`. Install runtime requirements from `requirements.txt` and desktop dependencies with `npm --prefix desktop ci` when needed.
-
-During development, run `.venv/bin/python scripts/quality_check.py incremental`. It selects checks from changed files, isolates Stella state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths.
-
-On Windows, invoke the same scripts with `.venv\Scripts\python.exe` and install dependencies through that interpreter. The runner resolves native npm and Python executables, redirects Windows profile/temp directories, and terminates its private renderer process tree.
-
-Say `Full Audit` or `全项目体检` to Codex for an evidence-based report without automatic business-code changes. The repeatable automated portion is `.venv/bin/python scripts/quality_check.py full`; its report is written to `.agents/audits/code-review/` and requires the manual review described in `.agents/skills/software-audit/SKILL.md`.
+Be respectful and constructive. We want Stella to be a welcoming place for everyone.

@@ -4,22 +4,30 @@ Cross-platform desktop client for Stella, built with Electron + React + TypeScri
 
 Stella uses the Electron client and its private loopback Python API. The old Web frontend is removed.
 
-The **Briefing** page supports IMAP mailbox setup, daily email briefings, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
+The **Briefing** page supports IMAP mailbox setup, briefings from configured sources, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Python 3.7+ (for the backend)
+- Node.js 22.13+
+- npm (use the checked-in lockfile)
+- Python 3.9+ (for the backend)
+- macOS: Xcode Command Line Tools (`xcode-select --install`) or a compatible Xcode toolchain, for the Swift/EventKit calendar bridge
 
 ### Setup
 
+From the repository root:
+
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 ```
+
+On Windows, use `python -m venv .venv` and `.venv\Scripts\python.exe`.
+For browser automation, install Chromium with `.venv/bin/python -m playwright install chromium` from the repository root.
 
 ### Run in Development
 
@@ -88,7 +96,7 @@ contains the latest Python backend and Electron UI:
 ```bash
 # 1. Install Electron dependencies (first build, or after package changes)
 cd desktop
-npm install
+npm ci
 cd ..
 
 # 2. Freeze the Python backend
@@ -117,10 +125,10 @@ One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix).
 
 | Place                            | Form                           | Example                  |
 | -------------------------------- | ------------------------------ | ------------------------ |
-| `VERSION`                        | `X.Y.Z`                        | `0.0.1`                  |
-| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.1`                  |
-| git tag                          | `v` + that number              | `v0.0.1`                 |
-| dmg name                         | `Stella-<X.Y.Z>-<arch>.dmg`    | `Stella-0.0.1-arm64.dmg` |
+| `VERSION`                        | `X.Y.Z`                        | `0.0.4`                  |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.4`                  |
+| git tag                          | `v` + that number              | `v0.0.4`                 |
+| dmg name                         | `Stella-<X.Y.Z>-<arch>.dmg`    | `Stella-0.0.4-arm64.dmg` |
 
 
 The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release tags (`vX.Y.Z`). Drafts, GitHub prereleases, and tags that are not exactly `vX.Y.Z` are ignored.
@@ -130,7 +138,7 @@ The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release ta
 echo 0.0.2 > VERSION
 
 # 2. First build, or after desktop dependency changes
-cd desktop && npm install && cd ..
+cd desktop && npm ci && cd ..
 
 # 3. Freeze the Python backend, then package the macOS dmg (dmg only; no zip)
 bash desktop/build/build-backend.sh

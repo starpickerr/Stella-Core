@@ -25,19 +25,15 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
 
 1. 在 [企业微信管理后台](https://work.weixin.qq.com/wework_admin/frame#apps)，点击 **应用管理 → 创建应用**：
 
-<img src="/images/placeholder-image.svg" width="480"/>
 
 2. 点击 **我的企业**，在最下方获取 **企业ID**（后续填写到 `wechat_kf_corp_id`）：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 3. 进入上一步创建的应用，点击 Secret 旁的「**查看**」，Secret 会推送到管理员手机端的企业微信里查看：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 4. 进入应用 **接收消息 → 设置API接收**，点击右侧「**随机获取**」生成 **Token** 和 **EncodingAESKey** 并保存：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 <Note>
   此时保存 API 接收配置会失败，因为程序还未启动，等项目运行后再回来保存。
@@ -51,7 +47,6 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
   <Tab title="桌面客户端">
     启动 Stella 项目后打开 桌面客户端，选择 **通道** 菜单，点击 **接入通道**，选择 **微信客服**，依次填入 Corp ID / Secret / Token / AES Key（端口默认 9888，可改），点击接入即可。
 
-    <img src="/images/placeholder-image.svg" width="800"/>
   </Tab>
   <Tab title="配置文件">
     在 `config.json` 中添加以下配置（各参数与企业微信后台的对应关系见上方截图）：
@@ -81,9 +76,6 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
 
 接着回到企业微信「接收消息 → 设置API接收」，将回调 URL 填为 `http://<your-host>:9888/wxkf/`，点击保存。保存成功后还需将服务器 IP 添加到 **企业可信IP** 中，否则无法收发消息：
 
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="520"/>
 
 <Warning>
   如遇到 URL 配置回调不通过或配置失败：
@@ -96,11 +88,6 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
 
 进入企业微信管理后台 **微信客服** 页面，创建客服账号并与上一步的企微自建应用绑定：
 
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="600"/>
 
 绑定完成后，进入 **微信客服 → 微信客服账号详情**，在「**接入链接**」一栏：
 
@@ -109,17 +96,14 @@ description: 将 Stella 接入微信客服（WeChat Customer Service）
 
 把链接或二维码推给微信客户使用即可：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 ## 五、使用
 
 微信用户通过链接或二维码进入客服对话后，即可与 AI 进行多轮对话，支持文本、图片、语音等消息：
 
-<img src="/images/placeholder-image.svg" width="900"/>
 
 除此之外，基于微信生态官方能力，还可将微信客服应用在公众号、小程序、视频号及视频号小店等场景，详情可查看企业微信管理后台 [微信客服 → 接入场景](https://work.weixin.qq.com/wework_admin/frame#/app/servicer) 的相关说明：
 
-<img src="/images/placeholder-image.svg" width="800"/>
 
 ## 常见问题
 

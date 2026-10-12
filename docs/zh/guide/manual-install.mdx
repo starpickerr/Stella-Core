@@ -3,12 +3,19 @@ title: 从源码构建
 description: 构建 Electron 桌面客户端
 ---
 
+需要 Python 3.9+ 和 Node.js 22.13+。Windows 使用 `python -m venv .venv` 创建环境，并将下方 `.venv/bin/python` 替换为 `.venv\Scripts\python.exe`。
+
+macOS 还需要 Xcode 命令行工具（`xcode-select --install`）或兼容的 Xcode 工具链，用于编译 Swift/EventKit 日历桥接程序。
+
 安装 Python 与 Node.js 依赖，然后启动桌面客户端：
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
