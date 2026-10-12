@@ -99,6 +99,20 @@ def test_reminder_watch_uses_same_process_protocol(tmp_path):
 
 
 @pytest.mark.skipif(platform.system() != 'Darwin', reason='Swift compiler requires macOS')
+def test_native_reminders_operation_is_not_handled_as_calendar(tmp_path):
+    import json
+    root = Path(__file__).parents[1] / 'native/apple-calendar'
+    subprocess.run(['bash', str(root / 'build.sh'), str(tmp_path)], check=True)
+    result = subprocess.run([str(tmp_path / 'StellaCalendarBridge')],
+                            input='{"op":"reminders","list_ids":[]}\n',
+                            text=True, capture_output=True, check=False)
+    payload = json.loads(result.stdout)
+    assert payload.get('error') != 'Unknown operation'
+    assert 'Calendar full access' not in str(payload.get('error', ''))
+    assert payload.get('ok') is True or 'Reminder' in str(payload.get('error', ''))
+
+
+@pytest.mark.skipif(platform.system() != 'Darwin', reason='Swift compiler requires macOS')
 def test_native_reminder_date_fields(tmp_path):
     root = Path(__file__).parents[1] / 'native/apple-calendar'
     binary = tmp_path / 'reminder-fields'
