@@ -172,7 +172,7 @@ with sync_playwright() as playwright:
         page = browser.new_page(viewport={'width':1440,'height':900})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.add_init_script("""localStorage.setItem('stella_lang', 'zh'); window.electronAPI = {
+        page.add_init_script("""localStorage.setItem('stella_lang', 'zh'); window.electronAPI = {platform: 'darwin',
             getBackendPort: async () => 9876, onBackendStatus: () => () => {},
             getBackendError: async () => null
         };""")
@@ -352,7 +352,7 @@ with sync_playwright() as playwright:
         todo_rows.append({**todo_rows[0], 'id':'timed', 'title':'到点转逾期',
                           'due_on':today.isoformat(), 'due_time':'12:01'})
         clock_page = browser.new_page()
-        clock_page.add_init_script("""localStorage.setItem('stella_lang', 'zh'); window.electronAPI = {
+        clock_page.add_init_script("""localStorage.setItem('stella_lang', 'zh'); window.electronAPI = {platform: 'darwin',
             getBackendPort: async () => 9876, onBackendStatus: () => () => {},
             getBackendError: async () => null
         };""")
