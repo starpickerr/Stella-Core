@@ -814,6 +814,49 @@ class ApiClient {
     await this.briefingRequest('/api/calendar/events/delete', { id })
   }
 
+  async getTodoCategories(): Promise<CalendarCategory[]> {
+    return (await this.briefingRequest<{ categories: CalendarCategory[] }>('/api/todos/categories')).categories
+  }
+
+  async createTodoCategory(name: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/todos/categories', { name })).category
+  }
+
+  async previewAppleCategoryLinks(kind: 'calendar' | 'todos', links: unknown[]): Promise<{ preview_token: string }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/links-preview' : '/api/todos/apple/links-preview'
+    return this.briefingRequest(path, { links })
+  }
+
+  async saveAppleCategoryLinks(kind: 'calendar' | 'todos', links: unknown[], previewToken: string): Promise<{ connection: AppleCalendarConnection | AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/links' : '/api/todos/apple/links'
+    return this.briefingRequest(path, { links, preview_token: previewToken, confirm: true })
+  }
+
+  async previewAppleCategoryBatch(kind: 'calendar' | 'todos', payload: {
+    direction: 'import' | 'export'
+    selections: { apple_id: string; stella_id: string }[]
+    start: string
+    end: string
+    include_undated?: boolean
+    include_completed?: boolean
+  }): Promise<{ preview: { new: number; skipped: number; failed: number }; preview_token: string }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/batch-preview' : '/api/todos/apple/batch-preview'
+    return this.briefingRequest(path, payload)
+  }
+
+  async transferAppleCategoryBatch(kind: 'calendar' | 'todos', payload: {
+    direction: 'import' | 'export'
+    selections: { apple_id: string; stella_id: string }[]
+    start: string
+    end: string
+    preview_token: string
+    include_undated?: boolean
+    include_completed?: boolean
+  }): Promise<{ connection: AppleCalendarConnection | AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/batch' : '/api/todos/apple/batch'
+    return this.briefingRequest(path, { ...payload, confirm: true })
+  }
+
   async getAppleCalendar(): Promise<AppleCalendarConnection> {
     return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/status')).connection
   }

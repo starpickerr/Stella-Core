@@ -35,7 +35,7 @@ class RequestContext:
 _METHODS = {
     "calendar": frozenset({
         "categories", "create_category", "get_category", "update_category", "delete_category",
-        "get_event", "list_events", "create_event", "update_event", "delete_event",
+        "get_event", "list_events", "create_event", "update_event", "delete_event", "set_event_category",
         "upsert_external_event",
         "exclude_occurrence",
         "import_china_holidays", "create_special_date", "import_special_dates",
@@ -48,6 +48,8 @@ _METHODS = {
         "acknowledge_desktop_reminder", "list_uncertain_reminders",
         "retry_uncertain_reminder", "queue_scheduled_reminder", "ingest_briefing_revision",
         "upsert_external_todo", "delete_external_todo",
+        "categories", "create_category", "get_category", "update_category", "delete_category",
+        "set_todo_category",
     }),
     "bills": frozenset({
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",

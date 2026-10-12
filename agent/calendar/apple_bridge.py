@@ -35,9 +35,9 @@ class AppleCalendarBridge:
             if op in ("status", "reminder_status"):
                 return {"supported": False, "authorization": "helper_missing"}
             raise BridgeError("EventKit helper is not installed")
-        if op not in {"status", "request_access", "calendars", "events", "lookup", "upsert", "delete",
+        if op not in {"status", "request_access", "calendars", "events", "lookup", "upsert", "delete", "rename",
                       "reminder_status", "reminder_request_access", "reminder_lists", "reminders",
-                      "reminder_lookup", "reminder_upsert", "reminder_delete"}:
+                      "reminder_lookup", "reminder_upsert", "reminder_delete", "reminder_rename"}:
             raise BridgeError("unknown EventKit operation")
         request = json.dumps({"op": op, **payload}, ensure_ascii=False) + "\n"
         try:

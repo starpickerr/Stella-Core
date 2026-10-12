@@ -1,17 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Apple, ArrowDownToLine, ArrowUpFromLine, RefreshCw } from 'lucide-react'
 import apiClient from '../../api/client'
-import type { AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection } from '../../types'
+import type { AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection, CalendarCategory } from '../../types'
 
 type Kind = 'calendar' | 'todos'
 type Connection = AppleCalendarConnection | AppleReminderConnection
-type Direction = Connection['direction']
-type Preview = { new: number; updated: number; skipped: number; conflicts: number }
+type ContentDirection = 'import' | 'export' | 'bidirectional'
 type TransferDirection = 'import' | 'export'
-type Item = { id: string; title: string }
+type DraftLink = { apple_id: string; stella_id: string; direction: ContentDirection; enabled: boolean }
 
 const readableError = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
-const summarize = (preview: Preview) => `新增 ${preview.new} · 更新 ${preview.updated} · 跳过 ${preview.skipped} · 冲突 ${preview.conflicts}`
+const CREATE = '__create__'
 
 function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean }) {
   const calendar = kind === 'calendar'
@@ -19,31 +18,49 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
   const sourceTitle = calendar ? '日历' : '列表'
   const sectionRef = useRef<HTMLElement>(null)
   const [connection, setConnection] = useState<Connection | null>(null)
-  const [selected, setSelected] = useState<string[]>([])
-  const [direction, setDirection] = useState<Direction>('bidirectional')
-  const [scopePreview, setScopePreview] = useState<{ preview: Preview; token: string } | null>(null)
+  const [categories, setCategories] = useState<CalendarCategory[]>([])
+  const [links, setLinks] = useState<DraftLink[]>([])
+  const [linkPreview, setLinkPreview] = useState<{ token: string } | null>(null)
   const [transferDirection, setTransferDirection] = useState<TransferDirection | null>(null)
-  const [transferSource, setTransferSource] = useState('')
-  const [items, setItems] = useState<Item[]>([])
-  const [itemIds, setItemIds] = useState<string[]>([])
-  const [itemPreview, setItemPreview] = useState<{ preview: Preview; token: string } | null>(null)
+  const [sourceId, setSourceId] = useState('')
+  const [targetId, setTargetId] = useState('')
   const [start, setStart] = useState(() => `${new Date().getFullYear()}-01-01`)
   const [end, setEnd] = useState(() => `${new Date().getFullYear() + 1}-01-01`)
+  const [includeUndated, setIncludeUndated] = useState(false)
+  const [includeCompleted, setIncludeCompleted] = useState(false)
+  const [batchPreview, setBatchPreview] = useState<{ new: number; skipped: number; failed: number; token: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const apply = (state: Connection) => {
+  const apply = (state: Connection, rows = categories) => {
     setConnection(state)
-    setSelected(calendar ? (state as AppleCalendarConnection).calendar_ids : (state as AppleReminderConnection).list_ids)
-    setDirection(state.direction)
+    setLinks((state.links ?? []).map(link => ({
+      apple_id: link.apple_id,
+      stella_id: rows.some(row => row.id === link.stella_id) ? link.stella_id : link.stella_id,
+      direction: link.direction,
+      enabled: link.enabled,
+    })))
   }
-  const refresh = async () => apply(calendar ? await apiClient.getAppleCalendar() : await apiClient.getAppleReminders())
+  const loadCategories = async () => calendar ? apiClient.getCalendarCategories() : apiClient.getTodoCategories()
+  const refresh = async () => {
+    const [state, rows] = await Promise.all([
+      calendar ? apiClient.getAppleCalendar() : apiClient.getAppleReminders(),
+      loadCategories(),
+    ])
+    setCategories(rows)
+    apply(state, rows)
+  }
   useEffect(() => {
     let active = true
-    ;(calendar ? apiClient.getAppleCalendar() : apiClient.getAppleReminders())
-      .then(state => { if (active) apply(state) })
-      .catch(reason => { if (active) setError(readableError(reason)) })
+    Promise.all([
+      calendar ? apiClient.getAppleCalendar() : apiClient.getAppleReminders(),
+      loadCategories(),
+    ]).then(([state, rows]) => {
+      if (!active) return
+      setCategories(rows)
+      apply(state, rows)
+    }).catch(reason => { if (active) setError(readableError(reason)) })
     return () => { active = false }
   }, [calendar])
   useEffect(() => { if (focus) sectionRef.current?.scrollIntoView({ block: 'start' }) }, [focus])
@@ -57,7 +74,7 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
     setBusy(true); setError(''); setNotice('')
     try {
       const response = await action()
-      setConnection(response.connection)
+      apply(response.connection as Connection)
       if (response.result) setNotice(`已完成：导入 ${response.result.imported}，更新 ${response.result.updated}，写入 ${response.result.exported}`)
     } catch (reason) { setError(readableError(reason)) }
     finally { setBusy(false) }
@@ -73,82 +90,79 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
       setError(readableError(reason))
     } finally { setBusy(false) }
   }
-  const chooseSource = (id: string) => {
-    setSelected(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id])
-    setScopePreview(null)
+  const payloadLinks = () => links.filter(link => link.apple_id).map(link => {
+    const apple = sources.find(source => source.id === link.apple_id)
+    if (link.stella_id === CREATE) return { apple_id: link.apple_id, create_name: apple?.title || '新分类', direction: link.direction, enabled: link.enabled }
+    return { apple_id: link.apple_id, stella_id: link.stella_id, direction: link.direction, enabled: link.enabled }
+  })
+  const updateLink = (index: number, patch: Partial<DraftLink>) => {
+    setLinks(current => current.map((link, position) => position === index ? { ...link, ...patch } : link))
+    setLinkPreview(null)
   }
-  const prepareScope = async () => {
-    setBusy(true); setError(''); setScopePreview(null)
+  const prepareLinks = async () => {
+    setBusy(true); setError(''); setLinkPreview(null)
     try {
-      const result = calendar ? await apiClient.previewAppleCalendarScope(selected, direction)
-        : await apiClient.previewAppleRemindersScope(selected, direction)
-      setScopePreview({ preview: result.preview, token: result.preview_token })
+      const result = await apiClient.previewAppleCategoryLinks(kind, payloadLinks())
+      setLinkPreview({ token: result.preview_token })
     } catch (reason) { setError(readableError(reason)) }
     finally { setBusy(false) }
   }
-  const confirmScope = () => {
-    if (!scopePreview) return
-    const token = scopePreview.token
-    setScopePreview(null)
-    void request(() => calendar ? apiClient.configureAppleCalendar(selected, direction, token)
-      : apiClient.configureAppleReminders(selected, direction, token))
+  const confirmLinks = () => {
+    if (!linkPreview) return
+    const token = linkPreview.token
+    setLinkPreview(null)
+    void request(async () => {
+      const response = await apiClient.saveAppleCategoryLinks(kind, payloadLinks(), token)
+      const rows = await loadCategories()
+      setCategories(rows)
+      return response as { connection: Connection; result: AppleCalendarSyncResult }
+    })
   }
   const openTransfer = (next: TransferDirection) => {
-    setTransferDirection(next); setTransferSource(''); setItems([]); setItemIds([]); setItemPreview(null)
+    setTransferDirection(next); setSourceId(''); setTargetId(''); setBatchPreview(null)
   }
-  const loadItems = async () => {
-    if (!transferSource || !transferDirection) return
-    setBusy(true); setError(''); setItems([]); setItemIds([]); setItemPreview(null)
+  const selection = () => {
+    if (transferDirection === 'import') return [{ apple_id: sourceId, stella_id: targetId }]
+    return [{ apple_id: targetId, stella_id: sourceId }]
+  }
+  const prepareBatch = async () => {
+    if (!transferDirection || !sourceId || !targetId) return
+    setBusy(true); setError(''); setBatchPreview(null)
     try {
-      if (transferDirection === 'import') {
-        if (calendar) {
-          const rows = await apiClient.getAppleCalendarItems(transferSource,
-            new Date(`${start}T00:00:00`).toISOString(), new Date(`${end}T00:00:00`).toISOString())
-          setItems(rows.map(row => ({ id: row.event_id, title: row.title })))
-        } else {
-          const rows = await apiClient.getAppleRemindersItems(transferSource)
-          setItems(rows.map(row => ({ id: row.reminder_id, title: row.title })))
-        }
-      } else if (calendar) {
-        const rows = await apiClient.getCalendarEvents(new Date(`${start}T00:00:00`).toISOString(),
-          new Date(`${end}T00:00:00`).toISOString())
-        setItems(rows.filter(row => !row.source_type).map(row => ({ id: row.id, title: row.title })))
-      } else {
-        const rows = await apiClient.getTodos()
-        setItems(rows.filter(row => !row.source_type).map(row => ({ id: row.id, title: row.title })))
-      }
+      const result = await apiClient.previewAppleCategoryBatch(kind, {
+        direction: transferDirection, selections: selection(), start, end,
+        include_undated: includeUndated, include_completed: includeCompleted,
+      })
+      setBatchPreview({ ...result.preview, token: result.preview_token })
     } catch (reason) { setError(readableError(reason)) }
     finally { setBusy(false) }
   }
-  const prepareItems = async () => {
-    if (!transferDirection || !transferSource || itemIds.length === 0) return
-    setBusy(true); setError(''); setItemPreview(null)
-    try {
-      const result = calendar
-        ? await apiClient.previewAppleCalendarItems(transferDirection, transferSource, itemIds)
-        : await apiClient.previewAppleRemindersItems(transferDirection, transferSource, itemIds)
-      setItemPreview({ preview: result.preview, token: result.preview_token })
-    } catch (reason) { setError(readableError(reason)) }
-    finally { setBusy(false) }
-  }
-  const confirmItems = () => {
-    if (!itemPreview || !transferDirection) return
-    const token = itemPreview.token
-    setItemPreview(null)
-    void request(() => calendar
-      ? apiClient.transferAppleCalendarItems(transferDirection, transferSource, itemIds, token)
-      : apiClient.transferAppleRemindersItems(transferDirection, transferSource, itemIds, token))
+  const confirmBatch = () => {
+    if (!batchPreview || !transferDirection) return
+    const token = batchPreview.token
+    setBatchPreview(null)
+    void request(() => apiClient.transferAppleCategoryBatch(kind, {
+      direction: transferDirection, selections: selection(), start, end, preview_token: token,
+      include_undated: includeUndated, include_completed: includeCompleted,
+    }) as Promise<{ connection: Connection; result: AppleCalendarSyncResult }>)
   }
   const resolve = (id: string, choice: 'keep_stella' | 'keep_apple') => void mutate(() => calendar
     ? apiClient.resolveAppleCalendarConflict(id, choice) : apiClient.resolveAppleRemindersConflict(id, choice))
   const sync = (remote = false, local = false) => void request(() => calendar
     ? apiClient.syncAppleCalendar(remote, local) : apiClient.syncAppleReminders(remote, local))
   const conflictRows = connection?.conflicts ?? []
+  const nameConflicts = (connection?.links ?? []).filter(link => link.name_conflict)
+  const sourceChoices = transferDirection === 'export'
+    ? categories.map(row => ({ id: row.id, title: row.name }))
+    : sources.map(row => ({ id: row.id, title: row.title }))
+  const targetChoices = transferDirection === 'export'
+    ? sources.filter(row => row.writable).map(row => ({ id: row.id, title: row.title }))
+    : categories.map(row => ({ id: row.id, title: row.name }))
 
   return <section ref={sectionRef} role="region" aria-label={title} className="rounded-card border border-default bg-surface p-5 space-y-5 scroll-mt-6">
     <header className="flex items-start justify-between gap-4">
       <div><h3 className="text-base font-semibold text-content">{title}</h3>
-        <p className="text-xs text-content-tertiary mt-1">{calendar ? '选择系统日历，与 Stella 日程连接。' : '选择系统列表，与 Stella 事务连接。'}</p></div>
+        <p className="text-xs text-content-tertiary mt-1">按稳定分类一一对应。分类名称双向同步，内容方向在每一行单独设置。</p></div>
       <button type="button" disabled={busy} onClick={() => void refresh().catch(reason => setError(readableError(reason)))}
         className="text-xs text-content-secondary inline-flex items-center gap-1 hover:text-content disabled:opacity-50"><RefreshCw size={13} />重新检查</button>
     </header>
@@ -161,62 +175,89 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
         className="rounded-btn bg-accent px-3 py-2 text-sm text-accent-contrast disabled:opacity-50">请求访问权限</button>
     </div>}
     {connection && supported && authorized && <>
-      <fieldset className="space-y-2"><legend className="text-sm font-medium text-content mb-2">持续同步的{sourceTitle}</legend>
-        {sources.length === 0 && <p className="text-xs text-content-tertiary">未找到可用{sourceTitle}。</p>}
-        {sources.map(source => <label key={source.id} className="flex items-center gap-3 rounded-btn border border-default px-3 py-2 text-sm text-content cursor-pointer hover:bg-surface-2">
-          <input type="checkbox" checked={selected.includes(source.id)} onChange={() => chooseSource(source.id)} disabled={busy} />
-          <span className="flex-1">{source.title}</span><span className="text-xs text-content-tertiary">{source.source}{source.writable ? '' : ' · 只读'}</span>
-        </label>)}
-      </fieldset>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm text-content">同步方向
-          <select aria-label={`${title}同步方向`} value={direction} disabled={busy} onChange={event => { setDirection(event.target.value as Direction); setScopePreview(null) }}
-            className="mt-1 block w-full rounded-btn border border-default bg-surface-2 px-3 py-2">
-            <option value="import">仅 Apple → Stella</option><option value="export">仅 Stella → Apple</option><option value="bidirectional">双向同步</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-sm text-content self-end pb-2">
-          <input type="checkbox" aria-label="自动同步" checked={connection.auto_enabled} disabled={busy}
-            onChange={event => void toggleAuto(event.target.checked)} />自动同步
-        </label>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium text-content">持续同步</h4>
+          <label className="flex items-center gap-2 text-sm text-content">
+            <input type="checkbox" aria-label="自动同步" checked={connection.auto_enabled} disabled={busy}
+              onChange={event => void toggleAuto(event.target.checked)} />自动同步
+          </label>
+        </div>
+        {links.length === 0 && <p className="text-xs text-content-tertiary">还没有分类映射。未映射的{sourceTitle}不参与持续同步。</p>}
+        {links.map((link, index) => <div key={`${link.apple_id}-${index}`} className="grid gap-2 rounded-btn border border-default p-3 md:grid-cols-4">
+          <label className="text-sm text-content">Apple {sourceTitle}
+            <select aria-label={`Apple ${sourceTitle} ${index + 1}`} value={link.apple_id} disabled={busy} onChange={event => updateLink(index, { apple_id: event.target.value })}
+              className="mt-1 block w-full rounded-btn border border-default bg-surface-2 px-3 py-2">
+              <option value="">请选择</option>
+              {sources.map(source => <option key={source.id} value={source.id}>{source.title}{source.writable ? '' : ' · 只读'}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-content">Stella 分类
+            <select aria-label={`Stella 分类 ${index + 1}`} value={link.stella_id} disabled={busy} onChange={event => updateLink(index, { stella_id: event.target.value })}
+              className="mt-1 block w-full rounded-btn border border-default bg-surface-2 px-3 py-2">
+              <option value="">请选择</option>
+              <option value={CREATE}>新建同名分类</option>
+              {categories.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-content">内容方向
+            <select aria-label={`内容方向 ${index + 1}`} value={link.direction} disabled={busy} onChange={event => updateLink(index, { direction: event.target.value as ContentDirection })}
+              className="mt-1 block w-full rounded-btn border border-default bg-surface-2 px-3 py-2">
+              <option value="import">Apple → Stella</option>
+              <option value="export">Stella → Apple</option>
+              <option value="bidirectional">双向</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-content md:mt-6">
+            <input type="checkbox" aria-label={`已启用 ${index + 1}`} checked={link.enabled} disabled={busy} onChange={event => updateLink(index, { enabled: event.target.checked })} />
+            {link.enabled ? '已启用' : '已暂停'}
+          </label>
+        </div>)}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy} onClick={() => { setLinks(current => [...current, { apple_id: '', stella_id: '', direction: 'bidirectional', enabled: true }]); setLinkPreview(null) }}
+            className="rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50">添加映射</button>
+          <button type="button" disabled={busy || links.length === 0} onClick={() => void prepareLinks()}
+            className="rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50">预览同步</button>
+          {connection.connected && <button type="button" disabled={busy} onClick={() => sync()}
+            className="rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50">立即同步</button>}
+        </div>
+        {linkPreview && <div className="rounded-btn border border-accent/40 bg-surface-2 p-3 space-y-2 text-sm text-content">
+          <p>将保存 {payloadLinks().length} 条分类映射。分类名称会双向同步，没有单独的名称方向。</p>
+          <button type="button" disabled={busy} onClick={confirmLinks} className="rounded-btn bg-accent px-3 py-2 text-accent-contrast disabled:opacity-50">确认连接并同步</button>
+        </div>}
       </div>
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy || selected.length === 0} onClick={() => void prepareScope()}
-          className="rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50">预览同步</button>
-        {connection.connected && <button type="button" disabled={busy} onClick={() => sync()}
-          className="rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50">立即同步</button>}
-      </div>
-      {scopePreview && <div className="rounded-btn border border-accent/40 bg-surface-2 p-3 space-y-2 text-sm text-content">
-        <p>同步预览：{summarize(scopePreview.preview)}</p>
-        <button type="button" disabled={busy} onClick={confirmScope} className="rounded-btn bg-accent px-3 py-2 text-accent-contrast disabled:opacity-50">确认连接并同步</button>
-      </div>}
       <div className="border-t border-default pt-4 space-y-3">
-        <div><h4 className="font-medium text-sm text-content">一次性传输</h4><p className="text-xs text-content-tertiary mt-1">只处理你选择的条目，不开启持续同步。</p></div>
+        <div><h4 className="font-medium text-sm text-content">一次性传输</h4><p className="text-xs text-content-tertiary mt-1">按类别和时间范围传输，不开启持续同步。</p></div>
         <div className="flex gap-2">
           <button type="button" disabled={busy} onClick={() => openTransfer('import')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50"><ArrowDownToLine size={14} />一次性导入</button>
           <button type="button" disabled={busy} onClick={() => openTransfer('export')} className="inline-flex items-center gap-1 rounded-btn border border-default px-3 py-2 text-sm text-content hover:bg-surface-2 disabled:opacity-50"><ArrowUpFromLine size={14} />一次性写入</button>
         </div>
         {transferDirection && <div className="space-y-3 rounded-btn bg-surface-2 p-3">
-          <label className="block text-sm text-content">目标{sourceTitle}
-            <select aria-label={`一次性${sourceTitle}`} value={transferSource} disabled={busy} onChange={event => { setTransferSource(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }}
+          <label className="block text-sm text-content">来源分类
+            <select aria-label="来源分类" value={sourceId} disabled={busy} onChange={event => { setSourceId(event.target.value); setBatchPreview(null) }}
               className="mt-1 block w-full rounded-btn border border-default bg-surface px-3 py-2">
-              <option value="">请选择</option>{sources.filter(source => transferDirection === 'import' || source.writable).map(source => <option key={source.id} value={source.id}>{source.title}</option>)}
+              <option value="">请选择</option>{sourceChoices.map(row => <option key={row.id} value={row.id}>{row.title}</option>)}
             </select>
           </label>
-          {calendar && <div className="flex flex-wrap gap-2 text-sm text-content">
-            <label>开始日期 <input aria-label="开始日期" type="date" value={start} disabled={busy} onChange={event => { setStart(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
-            <label>结束日期 <input aria-label="结束日期" type="date" value={end} disabled={busy} onChange={event => { setEnd(event.target.value); setItems([]); setItemIds([]); setItemPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
+          <label className="block text-sm text-content">目标分类
+            <select aria-label="目标分类" value={targetId} disabled={busy} onChange={event => { setTargetId(event.target.value); setBatchPreview(null) }}
+              className="mt-1 block w-full rounded-btn border border-default bg-surface px-3 py-2">
+              <option value="">请选择</option>{targetChoices.map(row => <option key={row.id} value={row.id}>{row.title}</option>)}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-2 text-sm text-content">
+            <label>开始日期 <input aria-label="开始日期" type="date" value={start} disabled={busy} onChange={event => { setStart(event.target.value); setBatchPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
+            <label>结束日期 <input aria-label="结束日期" type="date" value={end} disabled={busy} onChange={event => { setEnd(event.target.value); setBatchPreview(null) }} className="rounded-btn border border-default bg-surface p-1 disabled:opacity-50" /></label>
+          </div>
+          {!calendar && <div className="flex flex-wrap gap-4 text-sm text-content">
+            <label className="flex items-center gap-2"><input type="checkbox" aria-label="包含无日期事务" checked={includeUndated} disabled={busy} onChange={event => { setIncludeUndated(event.target.checked); setBatchPreview(null) }} />包含无日期事务</label>
+            <label className="flex items-center gap-2"><input type="checkbox" aria-label="包含已完成事务" checked={includeCompleted} disabled={busy} onChange={event => { setIncludeCompleted(event.target.checked); setBatchPreview(null) }} />包含已完成事务</label>
           </div>}
-          <button type="button" disabled={busy || !transferSource || (calendar && (!start || !end || start >= end))} onClick={() => void loadItems()}
-            className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">载入条目</button>
-          {items.length === 0 && <p className="text-xs text-content-tertiary">暂无已载入条目。</p>}
-          {items.length > 0 && <fieldset className="space-y-1"><legend className="text-xs text-content-secondary">选择具体条目</legend>{items.map(item => <label key={item.id} className="flex items-center gap-2 text-sm text-content py-1">
-            <input type="checkbox" checked={itemIds.includes(item.id)} disabled={busy} onChange={() => { setItemIds(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id]); setItemPreview(null) }} />{item.title}
-          </label>)}</fieldset>}
-          {items.length > 0 && <button type="button" disabled={busy || itemIds.length === 0} onClick={() => void prepareItems()}
-            className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">{transferDirection === 'import' ? '预览导入' : '预览写入'}</button>}
-          {itemPreview && <div className="space-y-2 text-sm text-content"><p>条目预览：{summarize(itemPreview.preview)}</p>
-            <button type="button" disabled={busy} onClick={confirmItems} className="rounded-btn bg-accent px-3 py-2 text-accent-contrast disabled:opacity-50">{transferDirection === 'import' ? '确认一次性导入' : '确认一次性写入'}</button>
+          <button type="button" disabled={busy || !sourceId || !targetId || !start || !end || start > end} onClick={() => void prepareBatch()}
+            className="rounded-btn border border-default px-3 py-2 text-sm text-content disabled:opacity-50">{transferDirection === 'import' ? '预计导入' : '预计写入'}</button>
+          {batchPreview && <div className="space-y-2 text-sm text-content">
+            <p>{transferDirection === 'import' ? '预计导入' : '预计写入'} {batchPreview.new} 条，跳过 {batchPreview.skipped} 条，失败 {batchPreview.failed} 条。</p>
+            <button type="button" disabled={busy} onClick={confirmBatch} className="rounded-btn bg-accent px-3 py-2 text-accent-contrast disabled:opacity-50">{transferDirection === 'import' ? '开始导入' : '开始写入'}</button>
           </div>}
         </div>}
       </div>
@@ -225,6 +266,7 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
         {connection.pending_deletions > 0 && <p>Apple 端待确认删除 {connection.pending_deletions} 条。<button type="button" className="ml-2 text-danger" onClick={() => { if (window.confirm('确认删除 Apple 中的关联条目？')) sync(true) }}>确认删除 Apple 条目</button></p>}
         {connection.pending_local_deletions > 0 && <p>Stella 端待确认删除 {connection.pending_local_deletions} 条。<button type="button" className="ml-2 text-danger" onClick={() => { if (window.confirm('确认删除 Stella 中的关联条目？')) sync(false, true) }}>确认删除 Stella 条目</button></p>}
       </div>}
+      {nameConflicts.map(link => <p key={link.apple_id} role="alert" className="text-sm text-danger">{link.apple_name}：{link.name_conflict}</p>)}
       {conflictRows.length > 0 && <div className="space-y-2 text-sm text-content"><h4 className="font-medium">待处理冲突</h4>
         {conflictRows.map(row => {
           const id = 'stella_id' in row ? row.stella_id : row.todo_id
@@ -244,7 +286,7 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
 
 export default function AppleIntegrations({ section }: { section: string | null }) {
   return <div className="space-y-5">
-    <p className="flex items-center gap-2 px-1 text-xs text-content-tertiary"><Apple size={14} />日历与提醒事项分别授权和配置。每次连接或传输前先查看预览。</p>
+    <p className="flex items-center gap-2 px-1 text-xs text-content-tertiary"><Apple size={14} />日历与提醒事项分别授权和配置。每次连接或传输前先查看数量。</p>
     <AppleConnectionSection kind="calendar" focus={section === 'apple-calendar'} />
     <AppleConnectionSection kind="todos" focus={section === 'apple-reminders'} />
   </div>

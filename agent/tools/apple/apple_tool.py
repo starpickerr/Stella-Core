@@ -11,15 +11,20 @@ from application import Application
 class AppleTool(BaseTool):
     name = "apple"
     description = (
-        "查询并管理 Apple 日历和提醒事项连接。一次性导入/写入必须先选择具体来源、条目 ID，"
-        "预览后明确确认；不会开启持续同步。不要猜测日历、列表或条目 ID。"
+        "查询并管理 Apple 日历和提醒事项连接。持续同步按分类映射保存；一次性传输按类别和时间范围预览后确认，"
+        "不会因此开启持续同步。不要猜测日历、列表或分类 ID。"
     )
     params = {
         "type": "object",
         "properties": {
             "kind": {"type": "string", "enum": ["calendar", "reminders"]},
             "action": {"type": "string", "enum": ["status", "access", "sources", "items", "lookup",
-                "preview", "preview_scope", "one_time", "configure", "sync", "resolve", "disconnect"]},
+                "preview", "preview_scope", "one_time", "configure", "sync", "resolve", "disconnect",
+                "replace_links", "preview_batch", "transfer_batch"]},
+            "links": {"type": "array", "description": "持续同步的分类映射"},
+            "selections": {"type": "array", "description": "一次性传输的来源和目标分类"},
+            "include_undated": {"type": "boolean"},
+            "include_completed": {"type": "boolean"},
             "source_id": {"type": "string", "description": "已查询到的 Apple 日历或提醒事项列表 ID"},
             "source_ids": {"type": "array", "items": {"type": "string"}},
             "item_id": {"type": "string", "description": "已查询到的 Apple 条目 ID"},
@@ -107,6 +112,31 @@ class AppleTool(BaseTool):
             elif action == "disconnect":
                 manager.stop_auto()
                 result = {"connection": manager.disconnect()}
+            elif action == "replace_links":
+                if params.get("confirm") is not True:
+                    raise ValueError("explicit confirmation is required")
+                from agent.calendar.apple_preview import confirm_links
+                confirm_links(manager, params.get("links"), params.get("preview_token"))
+                manager.replace_links(params.get("links") or [])
+                value = manager.sync(manual=True)
+                manager.resume_auto()
+                result = {"connection": manager.status(), "result": value}
+            elif action == "preview_batch":
+                kwargs = {}
+                if kind == "reminders":
+                    kwargs = {"include_undated": params.get("include_undated") is True,
+                              "include_completed": params.get("include_completed") is True}
+                result = manager.preview_batch(params.get("direction"), params.get("selections"),
+                                               params.get("start"), params.get("end"), **kwargs)
+            elif action == "transfer_batch":
+                kwargs = {}
+                if kind == "reminders":
+                    kwargs = {"include_undated": params.get("include_undated") is True,
+                              "include_completed": params.get("include_completed") is True}
+                value = manager.transfer_batch(
+                    params.get("direction"), params.get("selections"), params.get("start"), params.get("end"),
+                    params.get("preview_token"), confirm=params.get("confirm") is True, **kwargs)
+                result = {"connection": manager.status(), "result": value}
             else:
                 raise ValueError("unknown Apple action")
             return ToolResult.success(json.dumps(result, ensure_ascii=False))
