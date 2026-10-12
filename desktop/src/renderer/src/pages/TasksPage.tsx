@@ -219,6 +219,8 @@ const TaskEditModal: React.FC<{
   onDeleted: () => void
 }> = ({ task, sessionId, onClose, onSaved, onDeleted }) => {
   const projects = useSessionStore((s) => s.projects)
+  const sessions = useSessionStore((s) => s.sessions)
+  const loadSessions = useSessionStore((s) => s.loadSessions)
   const isCreate = task == null
   const isToolCall = !!task && ['tool_call', 'skill_call', 'application_command'].includes(task.action.type)
   const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
@@ -248,6 +250,10 @@ const TaskEditModal: React.FC<{
     void apiClient.getTaskDestinations().then(setDestinations).catch(() => {})
   }, [])
   useEffect(() => { refreshDestinations() }, [refreshDestinations])
+  useEffect(() => {
+    // Binding a chat uses the session list, not proactive delivery destinations.
+    void loadSessions().catch(() => {})
+  }, [loadSessions])
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -549,9 +555,10 @@ const TaskEditModal: React.FC<{
       {conversationMode === 'source' && <>
         <Field label={t('task_conversation_source_pick')}>
           <Dropdown value={sourceSessionId} onChange={setSourceSessionId}
-            options={[{ value: '', label: t('task_conversation_source_pick') }, ...(
-              destinations.find((d) => d.channel_type === 'web')?.recipients || []
-            ).map((r) => ({ value: r.receiver, label: r.name }))]} />
+            options={[{ value: '', label: t('task_conversation_source_pick') }, ...sessions.map((session) => ({
+              value: session.session_id,
+              label: session.title || session.session_id,
+            }))]} />
         </Field>
         <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_source_hint')}</p>
       </>}

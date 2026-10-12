@@ -606,7 +606,52 @@ def test_connections_use_real_service_status(tmp_path, monkeypatch):
     assert overview["summary"]["connection_count"] == 2
 
 
+def test_background_tasks_reads_live_automation_store_not_stale_json(tmp_path, monkeypatch):
+    """Desktop Security Center must list automation.db tasks, not frozen tasks.json."""
+    from agent.permission import center as security_center
+    from agent.scheduler.automation_store import AutomationStore
+    from types import SimpleNamespace
+
+    state = tmp_path / "state"
+    legacy = state / "scheduler" / "tasks.json"
+    legacy.parent.mkdir(parents=True)
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
+    monkeypatch.setattr(
+        "agent.registry.get_agent_registry",
+        lambda: SimpleNamespace(
+            default_agent_id="agent-a",
+            get=lambda *a, **k: SimpleNamespace(id="agent-a", workspace=str(state)),
+        ),
+    )
+    monkeypatch.setattr("agent.scheduler.integration.get_task_store", lambda *a, **k: None)
+
+    live = AutomationStore(legacy, "agent-a")
+    live.add_task({
+        "id": "live-task", "name": "项目检查", "enabled": True,
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": {"type": "agent_task", "task_description": "check", "conversation_mode": "reuse"},
+        "run_permission_mode": "read-only",
+    })
+    # Stale JSON left behind after migration — must not drive the Security Center list.
+    legacy.write_text(json.dumps({
+        "tasks": {
+            "old-briefing": {
+                "id": "old-briefing", "name": "morning briefing", "enabled": True,
+                "schedule": {"type": "cron", "expression": "0 8 * * *"},
+                "action": {"type": "send_message", "content": "hi", "channel_type": "web", "receiver": "x"},
+            }
+        }
+    }), encoding="utf-8")
+
+    rows = security_center.background_tasks()
+    names = {row["name"] for row in rows}
+    assert "项目检查" in names
+    assert "morning briefing" not in names
+
+
 def test_background_task_permission_independent_and_inherited(tmp_path, monkeypatch):
+
     from agent.permission import center as security_center
     from agent.workspace import project_store
     import config as config_module

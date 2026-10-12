@@ -255,9 +255,9 @@ def describe_task_permission(task: dict) -> dict:
 
 
 def background_tasks() -> list[dict]:
-    from agent.scheduler.store import TaskStore
-    from common.state_dir import scheduler_file
-    store = TaskStore(scheduler_file())
+    """List background tasks from the same live store the scheduler API uses."""
+    from agent.todos.scheduler_link import default_scheduler_store
+    store = default_scheduler_store()
     return [describe_task_permission(task) for task in store.list_tasks()]
 
 

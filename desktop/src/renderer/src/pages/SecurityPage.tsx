@@ -758,7 +758,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                                 )
                               }}
                             >
-                              <option value="inherit">{copy.decisions.inherit}</option>
+                              <option value="inherit">
+                                {task.unknown || !task.effective_mode
+                                  ? copy.backgroundInheritUnknown
+                                  : copy.backgroundInheritLabel(modeLabel(copy, task.effective_mode))}
+                              </option>
                               <option value="read-only">{copy.presets['read-only'].name}</option>
                               <option value="workspace-write">{copy.presets['workspace-write'].name}</option>
                               <option value="full-access">{copy.presets['full-access'].name}</option>
