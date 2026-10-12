@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import {
   ChevronUp,
+  X,
   Loader2,
   FolderOpen,
   Clock,
@@ -58,6 +59,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const editUserMessage = useChatStore((s) => s.editUserMessage)
   const deleteMessage = useChatStore((s) => s.deleteMessage)
   const loadHistory = useChatStore((s) => s.loadHistory)
+  const dismissPendingAdmissions = useChatStore((s) => s.dismissPendingAdmissions)
   const ensureSession = useChatStore((s) => s.ensureSession)
   const clearContext = useChatStore((s) => s.clearContext)
   const setSessionsCollapsed = useUIStore((s) => s.setSessionsCollapsed)
@@ -324,7 +326,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
       </div>
 
       {!isStreaming && (session?.pendingAdmissions?.length || 0) > 0 && <div className="mx-6 my-2 rounded-card border border-default p-3 text-sm text-content-secondary">
-        <p>{t('pending_saved')}</p>
+        <div className="flex items-start gap-3">
+          <p className="flex-1">{t('pending_saved')}</p>
+          <button type="button" aria-label={t('pending_dismiss')} title={t('pending_dismiss')}
+            className="shrink-0 rounded-lg p-1 text-content-tertiary hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={() => dismissPendingAdmissions(activeId)}><X size={16} /></button>
+        </div>
         {session?.pendingAdmissions?.map(row => <div key={row.run_id} className="mt-2">
           <span className="text-xs text-content-tertiary">{row.status === 'outcome_unknown' ? t('task_status_outcome_unknown') : row.status === 'running' ? t('pending_running') : t('pending_queued')} {row.clear_history ? '· '+t('context_cleared') : ''}</span>
           <p className="whitespace-pre-wrap select-text">{row.user_content?.map(block => block.text || '').join('\n')}</p>

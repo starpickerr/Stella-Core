@@ -25,7 +25,6 @@ from agent.briefing.models import (
 )
 from agent.briefing.store import BriefingStore, get_briefing_store
 
-_BRIEFING_KINDS = {"morning", "followup", "meeting"}
 _BRIEFING_STATUSES = {"running", "completed", "failed", "partial"}
 _ITEM_SECTIONS = {"action", "fyi"}
 _ITEM_STATUSES = {"undo", "done", "ignored", "follow_up"}
@@ -58,11 +57,9 @@ def parse_date(value: str) -> date:
         raise ValueError(f"invalid date: {value}") from exc
 
 
-def briefing_id_for(briefing_date: str, kind: str) -> str:
+def briefing_id_for(briefing_date: str) -> str:
     day = parse_date(briefing_date)
-    if kind not in _BRIEFING_KINDS:
-        raise ValueError("kind must be morning, followup, or meeting")
-    return f"brf-{day.isoformat()}-{kind}"
+    return f"brf-{day.isoformat()}"
 
 
 def _as_str(value: Any, default: str = "") -> str:
@@ -115,13 +112,11 @@ class BriefingService:
     # ------------------------------------------------------------------
 
     def list_briefings(
-        self, kind: Optional[str] = None, status: Optional[str] = None
+        self, status: Optional[str] = None
     ) -> List[Briefing]:
-        if kind is not None and kind not in _BRIEFING_KINDS:
-            raise ValueError("kind must be morning, followup, or meeting")
         if status is not None and status not in _BRIEFING_STATUSES:
             raise ValueError("status must be running, completed, failed, or partial")
-        return self.store.list_briefings(kind, status)
+        return self.store.list_briefings(status=status)
 
     def get_briefing(self, briefing_id: str) -> Optional[dict]:
         briefing = self.store.get_briefing(briefing_id)
@@ -151,23 +146,24 @@ class BriefingService:
         snapshot["preferences"] = self.actions.preferences()
         return snapshot
 
+    def briefing_for_date(self, briefing_date: str) -> Optional[Briefing]:
+        briefing_id = briefing_id_for(briefing_date)
+        return (self.store.get_briefing(briefing_id)
+                or self.store.get_briefing(briefing_id + "-morning"))
+
     def start_briefing(
         self,
-        kind: str = "morning",
         briefing_date: Optional[str] = None,
         title: str = "",
     ) -> Briefing:
-        if kind not in _BRIEFING_KINDS:
-            raise ValueError("kind must be morning, followup, or meeting")
         day = parse_date(briefing_date) if briefing_date else date.today()
-        briefing_id = briefing_id_for(day.isoformat(), kind)
+        briefing_id = briefing_id_for(day.isoformat())
         now = _now_iso()
-        existing = self.store.get_briefing(briefing_id)
+        existing = self.briefing_for_date(day.isoformat())
         if existing is None:
             return self.store.upsert_briefing(
                 Briefing(
                     id=briefing_id,
-                    kind=kind,  # type: ignore[arg-type]
                     status="running",
                     title=title.strip(),
                     body="",
@@ -183,7 +179,6 @@ class BriefingService:
         return self.store.upsert_briefing(
             Briefing(
                 id=existing.id,
-                kind=kind,  # type: ignore[arg-type]
                 status="running",
                 title=title.strip() or existing.title,
                 body=existing.body,
@@ -217,7 +212,6 @@ class BriefingService:
         now = payload.get("run_at") or _now_iso()
         finished = Briefing(
             id=existing.id,
-            kind=existing.kind,
             status=status,
             title=_as_str(payload.get("title", existing.title)),
             body=_as_str(payload.get("body", existing.body)),

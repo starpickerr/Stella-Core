@@ -68,17 +68,17 @@ def test_shared_scheduler_at_eight_catches_up_and_skips_existing(store, clock, t
     assert not service.list_briefings()
     clock[0] = datetime(2026, 9, 9, 8)
     scheduler._check_and_execute_tasks()
-    assert service.get_briefing("brf-2026-09-09-morning")["revisions"][0]["trigger"] == "scheduled"
+    assert service.get_briefing("brf-2026-09-09")["revisions"][0]["trigger"] == "scheduled"
     # Run now or an extra tick reuses today's successful document.
     assert integration._execute_tool_call(store.get_task(BRIEFING_TASK_ID), None)
     scheduler._check_and_execute_tasks()
-    assert len(service.get_briefing("brf-2026-09-09-morning")["revisions"]) == 1
+    assert len(service.get_briefing("brf-2026-09-09")["revisions"]) == 1
     # A later failed manual update still has a successful daily document.
     BriefingPipeline(service, [StaticSource(error=RuntimeError("offline"))],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))).run(operation="update")
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": False})
     assert integration._execute_tool_call(store.get_task(BRIEFING_TASK_ID), None)
-    assert len(service.get_briefing("brf-2026-09-09-morning")["revisions"]) == 2
+    assert len(service.get_briefing("brf-2026-09-09")["revisions"]) == 2
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": True})
     # Sleep across several days only generates the day we wake up.
     clock[0] = datetime(2026, 9, 12, 15)
@@ -108,12 +108,12 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
     assert not service.list_briefings()
     clock[0] = datetime(2026, 9, 9, 8, 5)
     scheduler._check_and_execute_tasks()
-    failed = service.get_briefing("brf-2026-09-09-morning")
+    failed = service.get_briefing("brf-2026-09-09")
     assert failed["briefing"].generated_at is None
     sources[0] = StaticSource([])
     clock[0] = datetime(2026, 9, 9, 8, 10)
     scheduler._check_and_execute_tasks()
-    assert service.get_briefing("brf-2026-09-09-morning")["briefing"].status == "completed"
+    assert service.get_briefing("brf-2026-09-09")["briefing"].status == "completed"
     task = store.get_task(BRIEFING_TASK_ID)
     assert task["retry_at"] is None
     assert task["last_run_at"] == "2026-09-09T08:10:00"
@@ -130,7 +130,7 @@ def test_scheduled_briefing_works_with_only_elearning(tmp_path, monkeypatch,
     tool.current_context = {"is_scheduled_task": True}
     result = tool.execute({"action": "run", "operation": "create", "briefing_date": "2026-09-09"})
     assert result.status == "success", result.result
-    detail = service.get_briefing("brf-2026-09-09-morning")
+    detail = service.get_briefing("brf-2026-09-09")
     assert detail["briefing"].updated_sources == ["elearning:school"]
     assert detail["revisions"][0]["trigger"] == "scheduled"
 
