@@ -129,7 +129,8 @@ def test_workspace_picker_and_permission_status_show_private_session_root(roots,
     assert overview("first", "alpha")["authorized_roots"][0] == expected
 
 
-def test_agent_prompt_names_private_working_directory(roots, tmp_path):
+def test_agent_prompt_names_private_working_directory(roots, tmp_path, monkeypatch):
+    monkeypatch.setattr("common.i18n._resolved_lang", "zh")
     agent = Agent("test", workspace_dir=str(tmp_path), enable_skills=False)
     agent.apply_work_context(resolve_context("first", "alpha"))
     prompt = agent.get_full_system_prompt()
