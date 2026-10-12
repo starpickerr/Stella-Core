@@ -1,0 +1,20 @@
+# Local credentials and user data must stay outside the ChatGPT connection.
+.preview_secret
+.codex/
+config.json
+config.yaml
+client_config.json
+plugins.json
+user_datas.pkl
+QR.png
+*.db
+*.sqlite
+*.sqlite3
+*.pkl
+*.log
+logs/
+workspace/
+local/
+references/
+.wrangler/
+desktop/.wrangler/
