@@ -25,19 +25,15 @@ WeCom の自建アプリを WeChat Customer Service アカウントにバイン�
 
 1. [WeCom 管理コンソール](https://work.weixin.qq.com/wework_admin/frame#apps) で **アプリ管理 → アプリ作成** をクリックします：
 
-<img src="/images/placeholder-image.svg" width="480"/>
 
 2. **自社情報** をクリックし、ページ下部で **企業ID（Corp ID）** を確認します（`wechat_kf_corp_id` に設定します）：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 3. 上で作成したアプリに入り、Secret の隣の「**表示**」をクリックします。Secret は管理者のスマートフォンの WeCom アプリに送られ、そこで確認できます：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 4. アプリの **メッセージ受信 → API 受信設定** に入り、右側の「**ランダム生成**」をクリックして **Token** と **EncodingAESKey** を生成し、保存します：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 <Note>
   プログラムがまだ起動していないため、この時点では API 受信設定を保存できません。プロジェクトが動作した後に戻って保存してください。
@@ -51,7 +47,6 @@ WeCom の自建アプリを WeChat Customer Service アカウントにバイン�
   <Tab title="デスクトップクライアント">
     Stella プロジェクトを起動した後、デスクトップクライアントを開きます。**チャネル** メニューを選択し、**接入チャネル** をクリックし、**WeChat Customer Service** を選択して、Corp ID / Secret / Token / AES Key を入力し（ポートはデフォルト 9888、変更可能）、接入をクリックします。
 
-    <img src="/images/placeholder-image.svg" width="800"/>
   </Tab>
   <Tab title="設定ファイル">
     `config.json` に以下の設定を追加します（各パラメータと WeCom コンソールの対応関係は上のスクリーンショットを参照してください）：
@@ -81,9 +76,6 @@ WeCom の自建アプリを WeChat Customer Service アカウントにバイン�
 
 続いて、WeCom 管理コンソールの **メッセージ受信 → API 受信設定** に戻り、コールバック URL に `http://<your-host>:9888/wxkf/` を入力して保存します。保存が成功したら、サーバー IP を **企業の信頼済み IP** に追加する必要もあります。追加しないとメッセージの送受信ができません：
 
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="520"/>
 
 <Warning>
   URL のコールバック検証が通らない、または設定がうまくいかない場合：
@@ -96,11 +88,6 @@ WeCom の自建アプリを WeChat Customer Service アカウントにバイン�
 
 WeCom 管理コンソールの **WeChat Customer Service** ページに入り、カスタマーサービスアカウントを作成し、上で作成した WeCom 自建アプリとバインドします：
 
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="600"/>
-
-<img src="/images/placeholder-image.svg" width="600"/>
 
 バインド完了後、**WeChat Customer Service → WeChat Customer Service アカウント詳細** に入り、「**接入リンク**」の項目で：
 
@@ -109,17 +96,14 @@ WeCom 管理コンソールの **WeChat Customer Service** ページに入り、
 
 リンクまたは QR コードを WeChat 顧客に配布してください：
 
-<img src="/images/placeholder-image.svg" width="600"/>
 
 ## 5. 使い方
 
 WeChat ユーザーがリンクや QR コードからカスタマーサービス対話に入った後、AI とテキスト・画像・音声などのマルチターン対話が可能です：
 
-<img src="/images/placeholder-image.svg" width="900"/>
 
 これに加え、WeChat 公式エコシステムの機能に基づき、WeChat Customer Service を公式アカウント、ミニプログラム、ビデオチャンネルなどの場面でも使用できます。詳細は [WeCom 管理コンソール](https://work.weixin.qq.com/wework_admin/frame#/app/servicer) の **WeChat Customer Service → 接入シナリオ** を参照してください：
 
-<img src="/images/placeholder-image.svg" width="800"/>
 
 ## FAQ
 

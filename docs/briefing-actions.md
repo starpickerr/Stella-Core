@@ -66,11 +66,10 @@ to the same service. All HTTP operations require authentication; read-only Agent
 cannot make decisions or authorizations. For example, use `get` to find an item ID,
 then `decide` with `{"operation":"create","kind":"todo"}` to create only a task.
 
-## Daily checks and Full Audit
+## Quality checks
 
-Install project dependencies with `.venv/bin/python -m pip install -r requirements-dev.txt`
-and `npm --prefix desktop ci`. The five upstream development skills and Stella's
-audit skill are in `.agents/skills/`; they are discovered by Codex in this project.
+Follow [CONTRIBUTING.md](../CONTRIBUTING.md) to install runtime and test dependencies,
+Chromium and desktop packages.
 
 Use `.venv/bin/python scripts/quality_check.py incremental` during development.
 `--files` selects an explicit scope. The runner maps changed modules to Ruff,
@@ -80,12 +79,9 @@ are isolated in temporary directories. UI checks launch a private renderer and
 exercise login rejection plus real React briefing interactions with a mocked backend.
 Python handler tests exercise actual isolated SQLite services.
 
-Say **Full Audit** or **全项目体检** to invoke the report workflow. Its automated
-portion is `.venv/bin/python scripts/quality_check.py full`; a timestamped report
-appears in `.agents/audits/code-review/`, preserving previous reports. Source review completes
-the domain matrix and separates reproduced issues from potential risks and skips.
-Audits do not repair business code. Request fixes explicitly after reviewing a
-report. Historical static failures remain failures and are not hidden or relabeled.
+Run `.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md`
+for the complete automated suite and a saved report. Automated checks complement
+manual review; they do not verify live account integrations or packaged builds.
 
 On Windows use `.venv\Scripts\python.exe` for the commands above. The check runner
 redirects HOME, USERPROFILE, APPDATA, LOCALAPPDATA and temporary directories, resolves

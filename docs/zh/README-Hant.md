@@ -2,15 +2,10 @@
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
   <a href="https://github.com/starpickerr/Stella/tree/main/docs"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-Stella-blue?style=flat&logo=readthedocs&logoColor=white" alt="文件" /></a>
   <a href="https://github.com/starpickerr/Stella/issues"><img src="https://img.shields.io/badge/%E7%A4%BE%E5%8D%80-GitHub-2F93F0?style=flat&logo=github&logoColor=white" alt="社區" /></a>
-  <a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" /></a>
-</p>
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/25763" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25763" alt="zhayujie%2FStella | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -27,15 +22,6 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，透過桌�
   <a href="guide/quick-start.mdx">🚀 快速開始</a> &nbsp;·&nbsp;
   <a href="https://www.skill-marketplace.com/">🧩 skill廣場</a> &nbsp;·&nbsp;
   <a href="https://github.com/starpickerr/Stella/releases">💻 下載客戶端</a> &nbsp;·&nbsp;
-  <a href="https://github.com/starpickerr/Stella">☁️ 線上體驗</a>
-</p>
-
-<br/>
-
-## 🎬 示範
-
-<p align="center">
-  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -59,8 +45,6 @@ Stella 輕量、易部署、可擴充，自由接入主流大模型，透過桌�
 
 ## 🏗️ 架構總覽
 
-<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
-
 Stella 是一個完整的 **Agent Harness**：訊息從各類**通道**進入，**Agent Core** 結合記憶、知識庫與可用工具/技能進行任務規劃與決策，呼叫**模型**生成結果，再回傳至原通道。各模組解耦清晰，按需擴充。
 
 詳見 [專案架構](intro/architecture.mdx)。
@@ -71,12 +55,15 @@ Stella 是一個完整的 **Agent Harness**：訊息從各類**通道**進入，
 
 從 [GitHub Releases](https://github.com/starpickerr/Stella/releases/latest) 下載並開啟 Electron 桌面客戶端。開發者可從原始碼執行：
 
+需要 Python 3.9+ 和 Node.js 22.13+。Windows 命令見[原始碼建置](guide/manual-install.mdx)。
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
@@ -88,21 +75,21 @@ npm run dev
 
 Stella 支援國內外主流廠商的大語言模型。**文字對話、影像理解、影像生成、語音識別/合成、向量** 等能力均可獨立設定廠商。
 
-| 廠商 | 代表模型 | 文字 | 影像理解 | 影像生成 | 語音識別 | 語音合成 | 向量 |
-| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](models/openai.mdx) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [智譜 GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [通義千問](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
-| [豆包 Doubao](models/doubao.mdx) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [百度ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
-| [小米 MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](models/linkai.mdx) | 一個 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定義](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
+| 廠商 | 文字 | 影像理解 | 影像生成 | 語音識別 | 語音合成 | 向量 |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| [DeepSeek](models/deepseek.mdx) | ✅ | | | | | |
+| [Claude](models/claude.mdx) | ✅ | ✅ | | | | |
+| [OpenAI](models/openai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](models/gemini.mdx) | ✅ | ✅ | ✅ | | | |
+| [MiniMax](models/minimax.mdx) | ✅ | ✅ | ✅ | | ✅ | |
+| [智譜 GLM](models/glm.mdx) | ✅ | ✅ | | ✅ | | ✅ |
+| [通義千問](models/qwen.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](models/kimi.mdx) | ✅ | ✅ | | | | |
+| [豆包 Doubao](models/doubao.mdx) | ✅ | ✅ | ✅ | | | ✅ |
+| [百度ERNIE](models/qianfan.mdx) | ✅ | ✅ | | | | |
+| [小米 MiMo](models/mimo.mdx) | ✅ | ✅ | | | ✅ | |
+| [LinkAI](models/linkai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [自定義](models/custom.mdx) | ✅ | | | | | |
 
 > 推薦透過 桌面客户端線上設定，無需手動編輯檔案。手動設定請參考各廠商文件，詳見 [模型概覽](models/index.mdx)。
 
@@ -129,8 +116,6 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 > 飛書、企微智慧機器人支援在桌面客户端內**掃碼一鍵接入**，無需公有 IP。詳見 [通道概覽](channels/index.mdx)。
 
-<img src="../images/placeholder-image.svg" alt="Stella 桌面客户端" width="800"/>
-
 *桌面客户端是預設通道，也是統一的 Agent 設定和管理入口*
 
 <br/>
@@ -141,21 +126,7 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 **個人知識庫** 與按時間記錄的記憶不同，以**主題為維度**組織結構化知識。Agent 在對話中自動整理有價值資訊，維護交叉引用與索引，桌面客户端可視覺化瀏覽知識圖譜。詳見 [個人知識庫](knowledge/index.mdx)。
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="長期記憶" />
-      <p align="center"><em>長期記憶 · 三層記憶 + 夢境蒸餾</em></p>
-    </td>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="個人知識庫" />
-      <p align="center"><em>個人知識庫 · 自動整理的 Markdown Wiki</em></p>
-    </td>
-  </tr>
-</table>
-
 <br/>
-
 
 ## 🔧 工具與技能
 
@@ -193,23 +164,6 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 <br/>
 
-## 🤝 社群與支援
-
-加入 [**Discord 伺服器**](https://discord.gg/9U8eA8v9TR) 提問、分享技能、追蹤開發進度：
-
-<a href="https://discord.gg/9U8eA8v9TR"><img src="https://img.shields.io/badge/Discord-加入社群-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Discord" /></a>
-
-也歡迎在 GitHub [提交 Issue](https://github.com/starpickerr/Stella/issues)，或掃碼加入微信開源交流群：
-
-<img width="130" src="../images/placeholder-image.svg" />
-
-也可透過以下方式獲取支援：
-
-- 🐛 [提交 Issue](https://github.com/starpickerr/Stella/issues)
-- 🤖 線上 AI 助手：[專案小助手](https://link-ai.tech/app/Kv2fXJcH)（基於專案知識庫）
-
-<br/>
-
 ## 🔗 相關專案
 
 - **[skill廣場](https://www.skill-marketplace.com/)** — AI Agent 技能市場
@@ -218,25 +172,9 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 <br/>
 
-## 🏢 企業服務
-
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="../images/placeholder-image.svg" /></a>
-
-> [LinkAI](https://link-ai.tech/) 是面向企業和個人的一站式 AI 智慧體平臺，為 Stella 提供雲端託管和企業級支援：
->
-> - **🚀 免部署線上執行**：無需伺服器即可建立 [Stella 線上助理](https://github.com/starpickerr/Stella)，1 分鐘擁有專屬 Agent
-> - **🧠 Agent 基礎設施**：聚合主流大模型、知識庫、資料庫、技能、工作流，提供開箱即用的 Agent 能力擴充
-> - **🏢 企業級協作**：提供團隊協作、許可權分級、審計日誌、私有化部署等能力，讓 Agent 安全落地企業場景
-
-**產品諮詢和企業服務** 可聯絡產品客服：
-
-<img width="130" src="../images/placeholder-image.svg" />
-
-<br/>
-
 ## 🛠️ 開發與貢獻
 
-歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [skill廣場](https://www.skill-marketplace.com/) 分享你的技能。請先閱讀 [CONTRIBUTING.md](/CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
+歡迎各種形式的貢獻：新功能、Bug 修復、效能最佳化、文件完善，或向 [skill廣場](https://www.skill-marketplace.com/) 分享你的技能。請先閱讀 [CONTRIBUTING.md](../../CONTRIBUTING.md) 瞭解如何開始，然後提交 Issue 討論或直接發起 PR。
 
 歡迎 ⭐ Star 支援專案，並透過 Watch → Custom → Releases 訂閱新版本通知。也歡迎提交 PR、Issue 進行反饋。
 
@@ -248,12 +186,8 @@ Stella 支援國內外主流廠商的大語言模型。**文字對話、影像�
 
 ## ⚠️ 宣告
 
-1. 本專案遵循 [MIT 開源協議](/LICENSE)，主要用於技術研究和學習。使用時請遵守所在地法律法規及相關政策，因使用本專案所產生的一切後果由使用者自行承擔。
+1. 本專案遵循 [MIT 開源協議](../../LICENSE)，主要用於技術研究和學習。使用時請遵守所在地法律法規及相關政策，因使用本專案所產生的一切後果由使用者自行承擔。
 2. **成本與安全：** Agent 模式 Token 消耗顯著高於普通對話，請根據效果與成本權衡選擇模型；Agent 具備訪問本地作業系統的能力，請謹慎選擇部署環境。
 3. Stella 專案專注於開源技術開發，不會參與、授權或發行任何加密貨幣。
 
 <br/>
-
-## 📌 專案更名說明
-
-本專案原名 `chatgpt-on-wechat`，於 2026.04.13 正式更名為 **Stella**。原 GitHub 地址已自動重定向，老使用者可選擇執行 `git remote set-url origin https://github.com/starpickerr/Stella.git` 更新本地遠端地址。

@@ -3,12 +3,19 @@ title: Build from Source
 description: Build the Electron desktop client
 ---
 
+Requires Python 3.9+ and Node.js 22.13+. On Windows, use `python -m venv .venv` and `.venv\Scripts\python.exe` instead of the Unix commands below.
+
+On macOS, install Xcode Command Line Tools (`xcode-select --install`) or a compatible Xcode toolchain to build the Swift/EventKit calendar bridge.
+
 Install Python dependencies and Node.js dependencies, then build the desktop client:
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/starpickerr/Stella.git
+cd Stella
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
