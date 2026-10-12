@@ -101,7 +101,7 @@ with sync_playwright() as playwright:
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.add_init_script("""localStorage.setItem('stella_lang','zh');
-          window.electronAPI = {
+          window.electronAPI = {platform: 'darwin',
           getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
@@ -200,7 +200,7 @@ with sync_playwright() as playwright:
         english = browser.new_page(viewport={'width': 1280, 'height': 900})
         english.on('pageerror', lambda error: errors.append(str(error)))
         english.add_init_script("""localStorage.setItem('stella_lang','en');
-          localStorage.setItem('cow_theme','dark'); window.electronAPI = {
+          localStorage.setItem('cow_theme','dark'); window.electronAPI = {platform: 'darwin',
           getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
         };""")
         english.route('http://127.0.0.1:9876/**', backend)
