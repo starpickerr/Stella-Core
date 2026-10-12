@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release"></a>
-  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars"></a>
 </p>
 
@@ -18,14 +18,6 @@ The codebase is an Agent Harness: plug in any major LLM, run it through the Elec
   <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
   <a href="docs/intro/index.mdx">📖 Docs</a> &nbsp;·&nbsp;
   <a href="docs/guide/quick-start.mdx">🚀 Quick Start</a>
-</p>
-
-<br/>
-
-## 🎬 Demo
-
-<p align="center">
-  <img src="docs/images/placeholder-video.svg" alt="Stella video placeholder" />
 </p>
 
 <br/>
@@ -49,8 +41,6 @@ The codebase is an Agent Harness: plug in any major LLM, run it through the Elec
 
 ## 🏗️ Architecture
 
-<img src="docs/images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
-
 Stella is a complete **Agent Harness**: messages flow in through **Channels**; the **Agent Core** plans and reasons over memory, knowledge, and the available tools and skills; **Models** generate the response, which is sent back through the originating channel. Every layer is decoupled and independently extensible.
 
 Read more in [Architecture](docs/intro/architecture.mdx).
@@ -61,12 +51,15 @@ Read more in [Architecture](docs/intro/architecture.mdx).
 
 Download the desktop app from [Releases](https://github.com/starpickerr/Stella/releases/latest), or run the current source locally:
 
+Requires Python 3.9+ and Node.js 22.13+. Windows commands are in [Build from Source](docs/guide/manual-install.mdx).
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 npm run dev
 ```
 
@@ -80,21 +73,21 @@ npm run dev
 
 Stella supports all mainstream LLM providers. **Chat, vision, image generation, ASR/TTS, and embeddings** can each be routed to a different vendor. Providers are configured in the desktop client.
 
-| Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
-| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](docs/models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](docs/models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](docs/models/openai.mdx) | gpt-5.6 series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](docs/models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](docs/models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [GLM](docs/models/glm.mdx) | glm-5.3, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [Qwen](docs/models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](docs/models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
-| [Doubao](docs/models/doubao.mdx) | doubao-seed-2.1 series | ✅ | ✅ | ✅ | | | ✅ |
-| [ERNIE](docs/models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
-| [MiMo](docs/models/mimo.mdx) | mimo-v2.5 / pro | ✅ | ✅ | | | ✅ | |
-| [LinkAI](docs/models/linkai.mdx) | One key for 100+ models | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Custom](docs/models/custom.mdx) | Local models / third-party proxy | ✅ | | | | | |
+| Provider | Chat | Vision | Image Gen | ASR | TTS | Embedding |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| [DeepSeek](docs/models/deepseek.mdx) | ✅ | | | | | |
+| [Claude](docs/models/claude.mdx) | ✅ | ✅ | | | | |
+| [OpenAI](docs/models/openai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](docs/models/gemini.mdx) | ✅ | ✅ | ✅ | | | |
+| [MiniMax](docs/models/minimax.mdx) | ✅ | ✅ | ✅ | | ✅ | |
+| [GLM](docs/models/glm.mdx) | ✅ | ✅ | | ✅ | | ✅ |
+| [Qwen](docs/models/qwen.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kimi](docs/models/kimi.mdx) | ✅ | ✅ | | | | |
+| [Doubao](docs/models/doubao.mdx) | ✅ | ✅ | ✅ | | | ✅ |
+| [ERNIE](docs/models/qianfan.mdx) | ✅ | ✅ | | | | |
+| [MiMo](docs/models/mimo.mdx) | ✅ | ✅ | | | ✅ | |
+| [LinkAI](docs/models/linkai.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Custom](docs/models/custom.mdx) | ✅ | | | | | |
 
 > For details on each provider, see the [Models overview](docs/models/index.mdx).
 
@@ -121,8 +114,6 @@ A single Agent instance can serve multiple channels in parallel. Channels can be
 
 > See the [Channels overview](docs/channels/index.mdx) for setup details.
 
-<img src="docs/images/placeholder-image.svg" alt="Stella desktop client" width="800"/>
-
 *The desktop client is the entry point for chat, models, channels, skills, memory, and more.*
 
 <br/>
@@ -132,19 +123,6 @@ A single Agent instance can serve multiple channels in parallel. Channels can be
 **Long-term memory** uses a three-tier architecture: conversation context (short-term) → daily memory (mid-term) → MEMORY.md (long-term). A nightly **Deep Dream** pass distills scattered memories into refined long-term entries and a narrative journal. See [Long-term Memory](docs/memory/index.mdx) · [Deep Dream](docs/memory/deep-dream.mdx).
 
 **Personal knowledge base** complements the time-ordered memory by organizing structured knowledge **by topic**. The Agent automatically curates valuable information from conversations, maintains cross-references and indexes, and the desktop client offers an interactive knowledge-graph view. See [Personal Knowledge Base](docs/knowledge/index.mdx).
-
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/images/placeholder-image.svg" alt="Long-term Memory" />
-      <p align="center"><em>Long-term Memory · Three-tier architecture + Deep Dream</em></p>
-    </td>
-    <td width="50%">
-      <img src="docs/images/placeholder-image.svg" alt="Personal Knowledge Base" />
-      <p align="center"><em>Knowledge Base · Auto-curated Markdown wiki</em></p>
-    </td>
-  </tr>
-</table>
 
 <br/>
 
@@ -180,21 +158,17 @@ Learn more: [Skills overview](docs/skills/index.mdx) · [Creating Skills](docs/s
 
 > **2026.09.07:** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — First Stella test release. Desktop updates prompt you to download a GitHub Release (macOS `.dmg` only). Product version lives in the repo-root `VERSION` file.
 
-How to publish a desktop build: see [desktop/README.md](desktop/README.md#publish-a-github-release-v001-and-later). Full notes: [Release Notes](docs/releases/overview.mdx)
+How to publish a desktop build: see [desktop/README.md](desktop/README.md#version-numbers). Full notes: [Release Notes](docs/releases/overview.mdx)
 
 <br/>
 
 ## 🛠️ Development
 
-See [CONTRIBUTING.md](/CONTRIBUTING.md). The remote for this project is:
-
-```bash
-git remote set-url origin https://github.com/starpickerr/Stella.git
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution instructions.
 
 ## ⚠️ Disclaimer
 
-1. This project is licensed under the [MIT License](/LICENSE). You are responsible for complying with applicable laws and regulations; the maintainers assume no liability for consequences arising from use of this project.
+1. This project is licensed under the [MIT License](LICENSE). You are responsible for complying with applicable laws and regulations; the maintainers assume no liability for consequences arising from use of this project.
 2. **Cost & safety:** Agent mode consumes substantially more tokens than regular chat. Stella can access the local operating system — only deploy it in trusted environments.
 
 ## 📌 Origin

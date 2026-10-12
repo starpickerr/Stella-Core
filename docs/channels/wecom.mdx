@@ -23,15 +23,12 @@ Required resources:
 
 2. Switch to **Application Management** and click Create Application:
 
-<img src="/images/placeholder-image.svg" width="480"/>
 
 3. On the application creation page, record the `AgentId` and `Secret`:
 
-<img src="/images/placeholder-image.svg" width="580"/>
 
 4. Click **Set API Reception** to configure the application interface:
 
-<img src="/images/placeholder-image.svg" width="520"/>
 
 - URL format: `http://ip:port/wxcomapp` (certified enterprises must use a filed domain)
 - Generate random `Token` and `EncodingAESKey` and save them for the configuration file
@@ -70,7 +67,6 @@ After configuration, start the program. When the log shows `http://0.0.0.0:9898/
 
 After the program starts, return to the WeCom Admin Console to save the **Message Server Configuration**. After saving successfully, you also need to add the server IP to **Enterprise Trusted IPs**, otherwise messages cannot be sent or received:
 
-<img src="/images/placeholder-image.svg" width="520"/>
 
 <Warning>
   If the URL configuration callback fails or the configuration is unsuccessful:
@@ -83,11 +79,9 @@ After the program starts, return to the WeCom Admin Console to save the **Messag
 
 Search for the app name you just created in WeCom to start chatting directly. You can run multiple instances listening on different ports to create multiple WeCom apps:
 
-<img src="/images/placeholder-image.svg" width="720"/>
 
 To allow external personal WeChat users to use the app, go to **My Enterprise → WeChat Plugin**, share the invite QR code. After scanning and following, personal WeChat users can join and chat with the app:
 
-<img src="/images/placeholder-image.svg" width="520"/>
 
 ## FAQ
 
