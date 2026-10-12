@@ -125,7 +125,8 @@ with sync_playwright() as playwright:
         assert any(body.get('confirm_deletions') for path, body in calls if path.endswith('/sync'))
         panel.get_by_role('button', name='确认删除 Stella 条目').click()
         assert any(body.get('confirm_local_deletions') for path, body in calls if path.endswith('/sync'))
-        panel.get_by_role('button', name='保留 Stella').click()
+        with page.expect_response('**/api/calendar/apple/resolve'):
+            panel.get_by_role('button', name='保留 Stella').click()
         assert any(path.endswith('/resolve') for path, _ in calls)
         page.goto(test_url + '/#/calendar', wait_until='networkidle')
         page.get_by_role('button', name='列表', exact=True).click()
