@@ -185,7 +185,9 @@ func recurrenceRule(_ payload: [String: Any]) throws -> EKRecurrenceRule? {
 
 func run(_ request: [String: Any]) throws -> [String: Any] {
     let op = try required(request, "op")
-    if op.hasPrefix("reminder_") && op != "reminder_watch" { return try runReminder(request) }
+    if op == "reminders" || (op.hasPrefix("reminder_") && op != "reminder_watch") {
+        return try runReminder(request)
+    }
     if op == "status" { return ["supported": true, "authorization": auth()] }
     let store = EKEventStore()
     if op == "request_access" {

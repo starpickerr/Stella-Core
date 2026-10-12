@@ -4,6 +4,12 @@ import secrets
 import time
 
 
+def _inventory(preview):
+    """Counts that a confirmation must still match. The scan window moves with
+    the clock and is not itself an inventory change."""
+    return {key: value for key, value in preview.items() if key != "window"}
+
+
 def prepare_scope(manager, source_ids, direction):
     with manager._lock:
         preview = manager.preview(source_ids, direction)
@@ -22,7 +28,7 @@ def confirm_scope(manager, source_ids, direction, token):
                 tuple(source_ids or ()) != pending[1] or direction != pending[2] or
                 time.monotonic() > pending[4]):
             raise ValueError("matching Apple sync preview and confirmation are required")
-        if manager.preview(source_ids, direction) != pending[3]:
+        if _inventory(manager.preview(source_ids, direction)) != _inventory(pending[3]):
             manager._scope_preview = None
             raise ValueError("Apple sync inventory changed; preview again")
         manager._scope_preview = None
