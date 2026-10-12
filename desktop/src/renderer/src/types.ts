@@ -943,7 +943,6 @@ export interface UncertainReminder {
   title: string
 }
 
-export type BriefingKind = 'morning' | 'followup' | 'meeting'
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
@@ -955,7 +954,6 @@ export interface Briefing {
   window_start: string | null
   window_end: string | null
   id: string
-  kind: BriefingKind
   status: BriefingStatus
   title: string
   body: string

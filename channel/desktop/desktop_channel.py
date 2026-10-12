@@ -6739,9 +6739,9 @@ def _briefing_response(operation):
 class BriefingsHandler:
     def GET(self):
         def operation():
-            params = web.input(kind='', status='')
+            params = web.input(status='')
             return {"briefings": _briefing_service().list_briefings(
-                params.kind or None, params.status or None,
+                status=params.status or None,
             )}
         return _briefing_response(operation)
 
@@ -6769,7 +6769,6 @@ class BriefingRunHandler:
             body = _briefing_body()
             service = _briefing_service()
             return _briefing_pipeline(service).run(
-                kind=body.get("kind") or "morning",
                 briefing_date=body.get("briefing_date"),
                 operation=body.get("operation", "upsert"),
                 sources=body.get("sources"),

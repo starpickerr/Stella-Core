@@ -28,7 +28,7 @@ _TABLES = {
 }
 
 _BRIEFING_COLS = """
-    id, kind, status, title, body,
+    id, status, title, body,
     fetched_count, kept_count, filtered_count, error_message,
     generated_at, created_at, updated_at
 """
@@ -46,7 +46,7 @@ def _insert_briefing(conn, briefing_id="brf-2026-09-09-morning"):
     conn.execute(
         f"""
         INSERT INTO briefings ({_BRIEFING_COLS}) VALUES (
-            ?, 'morning', 'completed',
+            ?, 'completed',
             '晨报', '', 2, 1, 1, '',
             ?, ?, ?
         )
@@ -115,7 +115,7 @@ def test_reuses_existing_database_without_recreating(tmp_path):
     sqlite3.connect(str(db)).execute(
         f"""
         INSERT INTO briefings ({_BRIEFING_COLS}) VALUES (
-            'brf-2026-09-09-morning', 'morning', 'completed',
+            'brf-2026-09-09-morning', 'completed',
             '', '', 0, 0, 0, '',
             ?, ?, ?
         )
@@ -291,7 +291,7 @@ def test_schema_indexes_exist(tmp_path):
     assert {
         "idx_source_items_occurred",
         "idx_source_items_thread",
-        "idx_briefings_kind_generated",
+        "idx_briefings_generated",
         "idx_briefings_status",
         "idx_briefing_items_briefing",
         "idx_briefing_items_status",
@@ -329,7 +329,6 @@ def _email(item_id="src-1"):
 def _briefing(briefing_id="brf-2026-09-09-morning", status="completed", title="晨报"):
     return Briefing(
         id=briefing_id,
-        kind="morning",
         status=status,
         title=title,
         body="# hello",
@@ -414,7 +413,7 @@ def test_briefing_snapshot_replace_and_status(tmp_path):
     again = store.upsert_briefing(_briefing(status="partial", title="补跑"))
     assert again.created_at == _TS
     assert again.status == "partial"
-    listed = store.list_briefings(kind="morning")
+    listed = store.list_briefings()
     assert [row.id for row in listed] == ["brf-2026-09-09-morning"]
 
 
