@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, React Router, Playwright.
 
-**Spec:** `.agents/task/requirements.md` section 5.
+**Spec:** `.agents/tasks/active/security-center/requirements.md` section 5.
 
 ## Global Constraints
 

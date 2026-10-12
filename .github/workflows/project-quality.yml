@@ -40,8 +40,10 @@ jobs:
           echo "STELLA_CHECK_BASE=$BASE_SHA" >> "$GITHUB_ENV"
       - name: Run the shared incremental gate
         run: make check
-      - name: Run deterministic agent and policy evals
+      - name: Run Stella product agent evals
         run: make eval
+      - name: Check development-agent policy
+        run: .venv/bin/python scripts/check_dev_policy.py
       - name: Generate a full audit report on manual request
         if: github.event_name == 'workflow_dispatch'
         run: make audit
@@ -51,6 +53,6 @@ jobs:
         with:
           name: stella-quality-report
           path: |
-            audit-reports/Full-Audit-*.md
+            .agents/audits/code-review/Full-Audit-*.md
             evals/reports/latest.json
           if-no-files-found: ignore

@@ -28,7 +28,6 @@ test-e2e:
 
 eval:
 	$(ISOLATED) $(PYTHON) evals/run.py
-	$(ISOLATED) $(PYTHON) scripts/check_dev_policy.py
 
 audit:
 	$(PYTHON) scripts/quality_check.py full

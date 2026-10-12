@@ -76,8 +76,8 @@ def affected_checks(files):
     if (changed & {"AGENTS.md", "scripts/quality_check.py"}
             or any(path.startswith(".agents/skills/") for path in changed)):
         tests.add("tests/test_quality_check.py")
-    if (changed & {"AGENTS.md", ".agents/AGENTS.md", "scripts/check_dev_policy.py"}
-            or any(path.startswith((".agents/rules/", ".cursor/rules/")) for path in changed)):
+    if (changed & {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml", "scripts/check_dev_policy.py"}
+            or any(path.startswith((".agents/rules/", ".agents/workflows/", ".cursor/rules/")) for path in changed)):
         tests.add("tests/test_dev_policy.py")
     if any(path.startswith(("agent/briefing/", "agent/tools/briefing/")) for path in changed):
         tests.update(("tests/test_todos.py", "tests/test_calendar.py"))
@@ -107,7 +107,7 @@ def affected_checks(files):
         "eslint": desktop,
         "build": desktop,
         "policy": any(path in {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml", "scripts/check_dev_policy.py"}
-                      or path.startswith((".agents/rules/", ".agents/skills/", ".cursor/rules/")) for path in changed),
+                      or path.startswith((".agents/rules/", ".agents/skills/", ".agents/workflows/", ".cursor/rules/")) for path in changed),
     }
 
 
@@ -219,7 +219,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["incremental", "full"])
     parser.add_argument("--files", nargs="*", help="Explicit changed paths for incremental checks")
-    parser.add_argument("--report", type=Path, default=ROOT / "audit-reports" / f"Full-Audit-{date.today().isoformat()}.md")
+    parser.add_argument("--report", type=Path, default=ROOT / ".agents/audits/code-review" / f"Full-Audit-{date.today().isoformat()}.md")
     args = parser.parse_args()
     if not PYTHON.is_file():
         parser.error(".venv/bin/python is required; create the project virtual environment first")

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python scheduler/permission services, task JSON store, React/TypeScript, pytest, Playwright.
 
-**Spec:** [Stella current requirements](../../../.agents/task/requirements.md#4-定时任务运行权限).
+**Spec:** [Stella current requirements](../active/security-center/requirements.md#4-定时任务运行权限).
 
 ## Global Constraints
 

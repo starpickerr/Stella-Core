@@ -1,4 +1,4 @@
-# Trusted-project Codex settings only. Root AGENTS.md is the shared Codex and
-# Cursor entry and links to .agents/AGENTS.md. Fallback filenames are basenames,
-# so a nested path is not configured here.
+# Codex reads the repository-root AGENTS.md as the only development-agent
+# instruction entry. That file points into the .agents/ management center.
+# Do not add a second rule set in this file.
 project_doc_max_bytes = 32768

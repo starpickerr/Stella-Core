@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, TypeScript, node:test, Playwright.
 
-**Spec:** [Stella current requirements](../../../.agents/task/requirements.md#2-知识库索引跳转).
+**Spec:** [Stella current requirements](../active/security-center/requirements.md#2-知识库索引跳转).
 
 ## Global Constraints
 

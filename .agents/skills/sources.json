@@ -40,7 +40,7 @@
     "commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
     "sha256": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a",
     "license": "MIT",
-    "local_changes": "Uses docs/plans/active, project Skills and isolated test commands; continues already authorized work without an extra approval."
+    "local_changes": "Uses .agents/tasks/active, project Skills and isolated test commands; continues already authorized work without an extra approval."
   },
   {
     "skill": "executing-plans",

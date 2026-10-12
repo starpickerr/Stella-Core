@@ -33,7 +33,7 @@ def main():
         failures.append("missing always-on Cursor development rule")
     else:
         cursor_guide = "\n".join(always)
-        for target in ("AGENTS.md", "develop", "scripts/quality_check.py incremental"):
+        for target in ("AGENTS.md", ".agents/", "develop", "scripts/quality_check.py incremental"):
             if target not in cursor_guide:
                 failures.append(f"Cursor rule missing {target}")
     for name in ("architecture", "testing", "security", "git", "ui-design", "skill-coordination"):
@@ -56,12 +56,28 @@ def main():
             failures.append(f"invalid skill metadata {name}")
     if installed != documented:
         failures.append(f"skill inventory mismatch: installed={sorted(installed)} documented={sorted(documented)}")
-    if not (ROOT / "docs/plans/active").is_dir():
-        failures.append("missing active plan directory")
+    for relative in (
+        ".agents/tasks/active", ".agents/tasks/completed",
+        ".agents/audits/code-review", ".agents/audits/security", ".agents/audits/product",
+        ".agents/runs", "evals/datasets",
+    ):
+        if not (ROOT / relative).is_dir():
+            failures.append(f"missing directory {relative}")
+    for relative in (
+        ".agents/workflows/development.md",
+        ".agents/workflows/skill-management.md",
+        ".agents/workflows/development-evaluation.md",
+        "evals/README.md", "evals/run.py",
+    ):
+        path = ROOT / relative
+        if not path.is_file() or path.stat().st_size == 0:
+            failures.append(f"missing {relative}")
+    if (ROOT / "evals/codex-development.md").exists():
+        failures.append("development-agent eval must not live in evals/")
     for failure in failures:
         print(f"FAIL policy: {failure}")
     if not failures:
-        print(f"PASS policy: root/core guides, TOML, six rule files, {len(installed)} project skills and plan directory")
+        print(f"PASS policy: root/core guides, TOML, six rule files, {len(installed)} project skills and agent directories")
     return int(bool(failures))
 
 

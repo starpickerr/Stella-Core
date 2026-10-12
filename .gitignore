@@ -70,4 +70,4 @@ desktop/resources/bin/
 
 .wrangler/
 evals/reports/
-audit-reports/Full-Audit-*.md
+.agents/audits/code-review/Full-Audit-*.md

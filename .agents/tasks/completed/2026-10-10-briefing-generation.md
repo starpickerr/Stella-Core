@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python, SQLite, pytest, scripted model fixtures.
 
-**Spec:** [Stella current requirements](../../../.agents/task/requirements.md#1-简报生成).
+**Spec:** [Stella current requirements](../active/security-center/requirements.md#1-简报生成).
 
 ## Global Constraints
 
