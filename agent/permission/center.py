@@ -66,6 +66,7 @@ def _env_keys() -> set[str]:
 def secrets() -> list[dict]:
     from config import MODEL_CONFIG_TO_ENV, conf
     names = {name: "credential store" for name in _env_keys()}
+    display_names = {}
     cfg = conf()
     for key, value in cfg.items():
         if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
@@ -78,8 +79,16 @@ def secrets() -> list[dict]:
         provider_id = str(entry.get("id") or "").strip()
         if not key or not provider_id:
             continue
-        names[f"CUSTOM:{provider_id}"] = "custom model provider"
-    return [{"name": name, "source": source, "configured": True} for name, source in sorted(names.items())]
+        name = f"CUSTOM:{provider_id}"
+        names[name] = "custom model provider"
+        display_name = entry.get("name")
+        if isinstance(display_name, str) and display_name.strip():
+            display_names[name] = display_name.strip()
+    return [
+        {"name": name, "source": source, "configured": True,
+         **({"display_name": display_names[name]} if name in display_names else {})}
+        for name, source in sorted(names.items())
+    ]
 
 
 def set_secret(name: str, value: str | None) -> None:
