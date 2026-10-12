@@ -29,6 +29,9 @@ def backend(route):
     elif path == '/api/models':
         data.update(providers=[{'id': 'test', 'configured': True}],
                     capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
+    elif path in ('/api/calendar/apple/status', '/api/todos/apple/status'):
+        data['connection'] = dict(supported=False, authorization='unsupported', connected=False,
+                                  auto_enabled=False, links=[], calendars=[], lists=[], conflicts=[])
     elif path == '/api/history':
         if hold_todo_history[0]:
             held_history[0] = route
@@ -51,7 +54,7 @@ def backend(route):
     elif path == '/api/calendar/events':
         event_reads.append(path)
         data['events'] = []
-    elif path == '/api/calendar/categories':
+    elif path in ('/api/calendar/categories', '/api/todos/categories'):
         data['categories'] = []
     elif path == '/api/todos':
         if route.request.method == 'POST':

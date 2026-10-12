@@ -19,6 +19,11 @@ def backend(route):
         data = {'status': 'ok'}
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
+    elif path in ('/api/calendar/apple/status', '/api/todos/apple/status'):
+        data['connection'] = dict(supported=False, authorization='unsupported', connected=False,
+                                  auto_enabled=False, links=[], calendars=[], lists=[], conflicts=[])
+    elif path in ('/api/calendar/categories', '/api/todos/categories'):
+        data['categories'] = []
     elif path == '/config':
         if route.request.method == 'POST':
             saved.append(json.loads(route.request.post_data or '{}').get('updates', {}))
