@@ -1,4 +1,0 @@
-# Codex reads the repository-root AGENTS.md as the only development-agent
-# instruction entry. That file points into the .agents/ management center.
-# Do not add a second rule set in this file.
-project_doc_max_bytes = 32768
