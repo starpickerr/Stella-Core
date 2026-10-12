@@ -10,7 +10,7 @@ with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     try:
         page = browser.new_page()
-        page.add_init_script("""window.electronAPI = {
+        page.add_init_script("""window.electronAPI = {platform: 'darwin',
             getBackendPort: async () => 9876,
             onBackendStatus: () => () => {},
             getBackendError: async () => null

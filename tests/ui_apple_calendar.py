@@ -91,7 +91,7 @@ with sync_playwright() as playwright:
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('dialog', lambda dialog: dialog.accept())
-        page.add_init_script("""localStorage.setItem('stella_lang','zh'); window.electronAPI = {
+        page.add_init_script("""localStorage.setItem('stella_lang','zh'); window.electronAPI = {platform: 'darwin',
             getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
