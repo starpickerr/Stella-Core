@@ -124,6 +124,42 @@ def test_global_policy_rejects_custom_preset():
                         "rules": {"network": "deny"}}, global_policy=True)
 
 
+def test_global_policy_switch_strips_legacy_custom_fields(tmp_path, monkeypatch):
+    """Old installs stored custom global defaults; switching to a product preset must succeed."""
+    from agent.permission import center as security_center
+    import config as config_module
+
+    state = tmp_path / "state"
+    state.mkdir()
+    config_path = state / "config.json"
+    config_path.write_text(json.dumps({
+        "security_policy": {
+            "preset": "custom",
+            "base_preset": "workspace-write",
+            "rules": {"network": "deny"},
+            "connections": {"browser": {"allowed": False}},
+        },
+    }), encoding="utf-8")
+    live = json.loads(config_path.read_text(encoding="utf-8"))
+    monkeypatch.setattr(config_module, "get_data_root", lambda: str(state))
+    monkeypatch.setattr(config_module, "conf", lambda: live)
+    monkeypatch.setattr(config_module, "read_config_template", lambda: {})
+
+    saved = security_center.save_global_policy({
+        "preset": "read-only",
+        "base_preset": "workspace-write",
+        "rules": {},
+        "connections": {"browser": {"allowed": False}},
+    })
+    assert saved == {
+        "preset": "read-only",
+        "rules": {},
+        "connections": {"browser": {"allowed": False}},
+    }
+    assert "base_preset" not in saved
+    assert live["security_policy"]["preset"] == "read-only"
+
+
 def test_project_policy_ignores_later_global_default_change(tmp_path, monkeypatch):
     state = tmp_path / "state"
     project = tmp_path / "project"

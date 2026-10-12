@@ -149,10 +149,13 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
         result["preset"] = value["preset"]
     if "base_preset" in value:
         if global_policy:
-            raise ValueError("global security policy cannot store a custom base preset")
-        if value["base_preset"] not in PRESETS or value["base_preset"] == "custom":
+            # Legacy custom global snapshots may still send base_preset when the
+            # user switches to a product default; drop it instead of blocking save.
+            pass
+        elif value["base_preset"] not in PRESETS or value["base_preset"] == "custom":
             raise ValueError("unknown custom base preset")
-        result["base_preset"] = value["base_preset"]
+        else:
+            result["base_preset"] = value["base_preset"]
     if "rules" in value:
         rules = value["rules"]
         if not isinstance(rules, dict) or any(k not in RULES or v not in VALUES for k, v in rules.items()):
