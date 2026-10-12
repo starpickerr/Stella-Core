@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
-BriefingKind = Literal["morning", "followup", "meeting"]
 BriefingStatus = Literal["running", "completed", "failed", "partial"]
 ItemSection = Literal["action", "fyi"]
 ItemStatus = Literal["undo", "done", "ignored", "follow_up"]
@@ -56,7 +55,6 @@ class EmailMessage:
 @dataclass
 class Briefing:
     id: str
-    kind: BriefingKind
     status: BriefingStatus
     title: str
     body: str

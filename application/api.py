@@ -54,7 +54,7 @@ _METHODS = {
         "update_ledger", "delete_ledger", "list_statements", "get_statement",
     }),
     "briefing": frozenset({
-        "list_briefings", "get_briefing", "get_revision", "start_briefing",
+        "list_briefings", "get_briefing", "get_revision", "start_briefing", "briefing_for_date",
         "complete_briefing", "update_item_status", "upsert_source_item", "list_rules",
         "get_rule", "create_rule", "update_rule", "delete_rule", "get_cursor", "set_cursor",
         "build_source_item", "update_action", "list_action_rules", "create_action_rule", "delete_action_rule",

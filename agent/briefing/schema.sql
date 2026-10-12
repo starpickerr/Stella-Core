@@ -4,7 +4,7 @@
 -- Envelope catalog + per-source extension + briefing snapshot:
 --   source_items      Shared envelope for every fetched item (email, sms, …)
 --   email_messages    Email-private columns (1:1 with source_items)
---   briefings         One briefing document per day/kind
+--   briefings         One briefing document per day
 --   briefing_items    Snapshot cards on a briefing (copy envelope; optional link)
 --   briefing_candidates Historical candidate links; classified snapshots live in briefing_mail
 --   filter_rules      User-authored rules (legacy field columns retained)
@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS email_messages (
 );
 
 -- -----------------------------------------------------------------------------
--- Briefing document: one row per user/day/kind (id convention, e.g.
--- brf-2026-09-09-morning). Source windows track successful refresh boundaries.
+-- Briefing document: one row per user/day (id convention, e.g.
+-- brf-2026-09-09). Source windows track successful refresh boundaries.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS briefings (
     window_start     TEXT,
@@ -68,13 +68,7 @@ CREATE TABLE IF NOT EXISTS briefings (
     rule_text        TEXT    NOT NULL DEFAULT '',
     source_windows   TEXT    NOT NULL DEFAULT '{}',
     updated_sources  TEXT    NOT NULL DEFAULT '[]',
-    id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09-morning
-    kind             TEXT    NOT NULL DEFAULT 'morning'
-                             CHECK (kind IN (
-                                 'morning',                     -- daily main briefing (legacy key)
-                                 'followup',                    -- follow-up (reserved)
-                                 'meeting'                      -- pre-meeting (reserved)
-                             )),
+    id               TEXT    PRIMARY KEY,                       -- e.g. brf-2026-09-09
     status           TEXT    NOT NULL DEFAULT 'running'
                              CHECK (status IN (
                                 'running',                     -- in progress
@@ -96,9 +90,9 @@ CREATE TABLE IF NOT EXISTS briefings (
     updated_at       TEXT    NOT NULL
 );
 
--- List view: browse by kind + compose time
-CREATE INDEX IF NOT EXISTS idx_briefings_kind_generated
-    ON briefings(kind, generated_at);
+-- List view: browse by compose time
+CREATE INDEX IF NOT EXISTS idx_briefings_generated
+    ON briefings(generated_at);
 
 -- Scheduler / recovery: find running or failed rows
 CREATE INDEX IF NOT EXISTS idx_briefings_status

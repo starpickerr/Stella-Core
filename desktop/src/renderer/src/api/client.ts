@@ -1024,7 +1024,7 @@ class ApiClient {
   }
 
   async getBriefings(): Promise<Briefing[]> {
-    return (await this.briefingRequest<{ briefings: Briefing[] }>('/api/briefings?kind=morning')).briefings
+    return (await this.briefingRequest<{ briefings: Briefing[] }>('/api/briefings')).briefings
   }
 
   async getBriefing(id: string): Promise<BriefingDetail> {
@@ -1068,7 +1068,7 @@ class ApiClient {
   }
 
   async runBriefing(operation: 'create' | 'update', briefingDate?: string, sources?: string[]): Promise<BriefingDetail> {
-    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate, sources })
+    return this.briefingRequest('/api/briefings/run', { operation, briefing_date: briefingDate, sources })
   }
 
   async getBriefingRunProgress(): Promise<BriefingRunProgress | null> {

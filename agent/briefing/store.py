@@ -86,7 +86,6 @@ def _source_from_row(row: sqlite3.Row) -> Tuple[SourceItem, Optional[EmailMessag
 def _briefing_from_row(row: sqlite3.Row) -> Briefing:
     return Briefing(
         id=row["id"],
-        kind=row["kind"],
         status=row["status"],
         title=row["title"],
         body=row["body"],
@@ -214,18 +213,24 @@ class BriefingStore:
             rule_columns = {row[1] for row in conn.execute("PRAGMA table_info(filter_rules)")}
             if "text" not in rule_columns:
                 conn.execute("ALTER TABLE filter_rules ADD COLUMN text TEXT NOT NULL DEFAULT ''")
+            # Retire the legacy type without rewriting IDs, foreign keys or
+            # immutable snapshots. SQLite rolls back this migration on failure.
+            if "kind" in columns:
+                conn.execute("BEGIN")
+                conn.execute("DROP INDEX IF EXISTS idx_briefings_kind_generated")
+                conn.execute("ALTER TABLE briefings DROP COLUMN kind")
             # Preserve the surviving pre-upgrade snapshot; older overwritten runs
             # cannot be reconstructed. Normalize titles without changing ids.
             for row in conn.execute("SELECT * FROM briefings ORDER BY generated_at").fetchall():
-                if row["kind"] == "morning":
+                if row["id"].endswith("-morning"):
                     day = datetime.strptime(row["id"][4:14], "%Y-%m-%d")
                     conn.execute("UPDATE briefings SET title=? WHERE id=?",
                                  (f"{day.year}年{day.month}月{day.day}日·简报", row["id"]))
                 if not row["generated_at"]:
                     continue
                 if not row["window_end"]:
-                    prior = conn.execute("SELECT window_end FROM briefings WHERE kind=? AND substr(id,5,10) < ? AND window_end IS NOT NULL ORDER BY julianday(window_end) DESC LIMIT 1",
-                                         (row["kind"], row["id"][4:14])).fetchone()
+                    prior = conn.execute("SELECT window_end FROM briefings WHERE substr(id,5,10) < ? AND window_end IS NOT NULL ORDER BY julianday(window_end) DESC LIMIT 1",
+                                         (row["id"][4:14],)).fetchone()
                     start = prior[0] if prior else (datetime.fromisoformat(row["generated_at"].replace("Z", "+00:00")) - timedelta(days=2)).isoformat()
                     conn.execute("UPDATE briefings SET window_start=?,window_end=? WHERE id=?", (start,row["generated_at"],row["id"]))
                 if not conn.execute("SELECT 1 FROM briefing_revisions WHERE briefing_id=?", (row["id"],)).fetchone():
@@ -432,12 +437,11 @@ class BriefingStore:
         conn.execute(
             """
             INSERT INTO briefings (
-                id, kind, status, title, body,
+                id, status, title, body,
                 fetched_count, kept_count, filtered_count, error_message,
                 generated_at, created_at, updated_at, window_start, window_end, mail_snapshot_available, rule_text, source_windows, updated_sources
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                kind = excluded.kind,
                 status = excluded.status,
                 title = excluded.title,
                 body = excluded.body,
@@ -456,7 +460,6 @@ class BriefingStore:
             """,
             (
                 briefing.id,
-                briefing.kind,
                 briefing.status,
                 briefing.title,
                 briefing.body,
@@ -484,13 +487,10 @@ class BriefingStore:
             return _briefing_from_row(row) if row else None
 
     def list_briefings(
-        self, kind: Optional[str] = None, status: Optional[str] = None
+        self, status: Optional[str] = None
     ) -> List[Briefing]:
         clauses: List[str] = []
         args: list = []
-        if kind is not None:
-            clauses.append("kind = ?")
-            args.append(kind)
         if status is not None:
             clauses.append("status = ?")
             args.append(status)

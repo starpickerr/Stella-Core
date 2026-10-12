@@ -36,6 +36,8 @@ def test_daily_updates_and_next_day_continue_at_last_update(service):
     service.update_item_status(card.id, "done")
     second = run(service, "2026-09-06T13:00:00+08:00", [item("noon", "2026-09-06T12:00:00+08:00")], operation="update")
     assert first["briefing"].id == second["briefing"].id
+    assert first["briefing"].id == "brf-2026-09-06"
+    assert "kind" not in asdict(first["briefing"])
     assert second["briefing"].title == "2026年9月6日·简报"
     assert second["briefing"].window_start == first["briefing"].window_start
     assert second["briefing"].window_end == "2026-09-06T05:00:00Z"
@@ -145,6 +147,8 @@ def test_migration_preserves_previous_snapshot(tmp_path):
     conn.executescript(load_schema_sql().split('-- Immutable generation')[0]
         .replace("    window_start     TEXT,\n    window_end       TEXT,\n", "")
         .replace("    mail_snapshot_available INTEGER NOT NULL DEFAULT 0,\n", ""))
+    conn.execute("ALTER TABLE briefings ADD COLUMN kind TEXT NOT NULL DEFAULT 'morning' CHECK (kind IN ('morning','followup','meeting'))")
+    conn.execute("CREATE INDEX idx_briefings_kind_generated ON briefings(kind,generated_at)")
     conn.execute("INSERT INTO briefings (id,kind,status,title,body,generated_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", ("brf-2026-09-06-morning","morning","completed","9 月 6 日晨报","saved content","2026-09-06T05:00:00Z","2026-09-06T00:00:00Z","2026-09-06T05:00:00Z"))
     conn.commit()
     conn.close()
@@ -153,5 +157,12 @@ def test_migration_preserves_previous_snapshot(tmp_path):
     assert old.title == "2026年9月6日·简报"
     assert old.window_end == old.generated_at
     assert old.mail_snapshot_available is False
+    assert old.id == "brf-2026-09-06-morning"
+    with store._conn() as conn:
+        assert "kind" not in {row[1] for row in conn.execute("PRAGMA table_info(briefings)")}
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert store.get_revision(old.id, 1)["briefing"]["body"] == "saved content"
     assert len(BriefingStore(path).list_revisions(old.id)) == 1
+    updated = run(BriefingService(store), "2026-09-06T20:00:00+08:00", operation="update")
+    assert updated["briefing"].id == old.id
+    assert len(store.list_briefings()) == 1

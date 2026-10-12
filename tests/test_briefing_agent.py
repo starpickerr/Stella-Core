@@ -164,10 +164,10 @@ def test_tool_supports_markdown_rules_and_uses_calling_agents_model(service, mon
     result = tool.execute({"action": "run"})
     assert result.status == "success"
     assert "Agent 撰写" in result.result
-    mailbox = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09-morning", "category": "selected"}).result)
+    mailbox = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09", "category": "selected"}).result)
     assert mailbox["total"] == 1
     row = mailbox["mail"][0]
-    full = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09-morning", "source_item_id": row["id"]}).result)
+    full = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09", "source_item_id": row["id"]}).result)
     assert full["body"] == "课程作业通知"
     assert tool.model.requests
 
@@ -242,7 +242,7 @@ def test_cancelled_generation_does_not_call_model():
     event.set()
     generator = AgentBriefingGenerator(model=ScriptedModel(), cancel_event=event)
     with pytest.raises(AgentCancelledError):
-        generator.generate([], [], briefing_date="2026-09-09", kind="morning", window_start="a", window_end="b")
+        generator.generate([], [], briefing_date="2026-09-09", window_start="a", window_end="b")
     assert generator.model.requests == []
 
 

@@ -87,7 +87,7 @@ def test_generation_starts_once_after_every_source_finishes(tmp_path):
         snapshot = briefing_progress.snapshot()
         assert snapshot and "邮件课程通知" not in snapshot["body"] and "课程作业公告" not in snapshot["body"]
         assert service.get_cursor("elearning", "school", "elearning_state") is None
-        assert service.get_briefing("brf-2026-09-09-morning")["briefing"].body == ""
+        assert service.get_briefing("brf-2026-09-09")["briefing"].body == ""
     finally:
         release_sync.set()
         worker.join(10)
@@ -132,7 +132,7 @@ def test_pipeline_filters_composes_and_advances_cursor(tmp_path):
         cursors={"imap_uid": "42"},
     )
     detail = BriefingPipeline(svc, [source]).run(
-        kind="morning", briefing_date="2026-09-09"
+        briefing_date="2026-09-09"
     )
     briefing = detail["briefing"]
     assert briefing.status == "completed"

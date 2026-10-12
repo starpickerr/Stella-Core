@@ -14,12 +14,12 @@ class BriefingTool(BaseTool):
     name: str = "briefing"
     description: str = (
         "每日简报工具：拉取多来源候选，由 Agent 按规则文稿筛选、撰写简报，查看历史、邮件详情和管理规则。\n\n"
-        "当用户提到晨报、今日简报、邮件摘要、eLearning 课程事项、标记已处理、不看某发件人时使用。\n"
+        "当用户提到简报、今日简报、邮件摘要、eLearning 课程事项、标记已处理、不看某发件人时使用。\n"
         "使用方法：\n"
         "- 生成今日简报：action='run'（可选 briefing_date='2026-09-09'）\n"
         "- 更新来源：action='sources' 查询可用 ID；run 的 sources 不填或 ['all'] 更新全部，也可 ['email']、['elearning'] 或指定来源 ID\n"
-        "- 列表：action='list'（可选 kind='morning', status='completed'）\n"
-        "- 详情：action='get', briefing_id='brf-2026-09-09-morning'\n"
+        "- 列表：action='list'（可选 status='completed'）\n"
+        "- 详情：action='get', briefing_id='brf-2026-09-09'\n"
         "- 事务/日程决策：先 get 获取 item_id 和真实建议，再 decide，decision={operation:'create',kind:'todo'}；只创建指定类型。未授权的信息只能提出建议。\n"
         "- 关联已有：targets 搜索，decide 的 operation='link'、target_id；解绑 operation='unlink'。设置提醒 kind='reminder',operation='remind',remind_at 含时区。\n"
         "- 授权管理：action_rules 查看，authorize 保存严格来源/账户/类型范围，revoke_authorization 按 rule_id 撤销；必须获得明确持续授权。\n"
@@ -60,11 +60,6 @@ class BriefingTool(BaseTool):
             },
             "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1,
                         "description": "run：来源 ID 或类型；省略/['all'] 为全部。未选来源保留原内容；sources 操作查询可选 ID"},
-            "kind": {
-                "type": "string",
-                "enum": ["morning", "followup", "meeting"],
-                "description": "简报类型，默认 morning",
-            },
             "status": {
                 "type": "string",
                 "description": "list 过滤简报状态，或 item_status 的条目状态",
@@ -158,16 +153,15 @@ class BriefingTool(BaseTool):
         scheduled = bool(getattr(self, "current_context", None) and self.current_context.get("is_scheduled_task"))
         pipeline = self._get_pipeline(service)
         if scheduled:
-            from agent.briefing.service import briefing_id_for
             if params.get("operation", "upsert") == "create":
                 day = params.get("briefing_date") or pipeline.clock().date().isoformat()
-                existing = service.get_briefing(briefing_id_for(day, params.get("kind") or "morning"))
+                row = service.briefing_for_date(day)
+                existing = service.get_briefing(row.id) if row else None
                 if existing and existing["briefing"].generated_at:
                     return ToolResult.success("当日简报已生成，跳过定时生成。\n" + self._format_detail(existing, existing["briefing"]))
             if not pipeline.sources:
                 return ToolResult.fail("请先在简报设置中配置来源，定时任务稍后重试")
         detail = pipeline.run(
-            kind=params.get("kind") or "morning",
             briefing_date=params.get("briefing_date"),
             operation=params.get("operation", "upsert"),
             trigger="scheduled" if scheduled else "manual",
@@ -185,7 +179,7 @@ class BriefingTool(BaseTool):
 
     def _list(self, service, params: dict) -> ToolResult:
         rows = service.list_briefings(
-            kind=params.get("kind"), status=params.get("status")
+            status=params.get("status")
         )
         if not rows:
             return ToolResult.success("暂无简报")

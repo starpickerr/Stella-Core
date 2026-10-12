@@ -121,6 +121,7 @@ def test_old_database_gains_source_windows_without_changing_old_revision(tmp_pat
     sql = load_schema_sql().replace("    source_windows   TEXT    NOT NULL DEFAULT '{}',\n", "").replace("    updated_sources  TEXT    NOT NULL DEFAULT '[]',\n", "")
     conn = sqlite3.connect(path)
     conn.executescript(sql)
+    conn.execute("ALTER TABLE briefings ADD COLUMN kind TEXT NOT NULL DEFAULT 'morning'")
     conn.execute("INSERT INTO briefings (id,kind,status,title,body,generated_at,created_at,updated_at,window_start,window_end) VALUES (?,?,?,?,?,?,?,?,?,?)",
         ("brf-2026-09-09-morning", "morning", "completed", "简报", "旧正文", "2026-09-09T00:00:00Z",
          "2026-09-09T00:00:00Z", "2026-09-09T00:00:00Z", "2026-09-08T12:00:00Z", "2026-09-09T00:00:00Z"))

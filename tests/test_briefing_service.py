@@ -24,8 +24,8 @@ def _mail(**extra):
 
 def test_start_and_complete_briefing_copies_catalog_envelope(tmp_path):
     svc = _service(tmp_path)
-    started = svc.start_briefing(kind="morning", briefing_date="2026-09-09")
-    assert started.id == "brf-2026-09-09-morning"
+    started = svc.start_briefing(briefing_date="2026-09-09")
+    assert started.id == "brf-2026-09-09"
     assert started.status == "running"
     assert started.generated_at is None
 
@@ -105,7 +105,7 @@ def test_update_item_status_and_list(tmp_path):
     )
     card = svc.update_item_status(detail["items"][0].id, "done")
     assert card.status == "done"
-    listed = svc.list_briefings(kind="morning", status="completed")
+    listed = svc.list_briefings(status="completed")
     assert [row.id for row in listed] == [started.id]
 
 
@@ -141,10 +141,8 @@ def test_rules_and_cursors(tmp_path):
 
 def test_validation_rejects_bad_payloads(tmp_path):
     svc = _service(tmp_path)
-    with pytest.raises(ValueError, match="kind"):
-        svc.start_briefing(kind="weekly")
     with pytest.raises(ValueError, match="date"):
-        briefing_id_for("09-09", "morning")
+        briefing_id_for("09-09")
     with pytest.raises(ValueError, match="source_id"):
         svc.upsert_source_item({"source": "email", "occurred_at": "2026-09-08T22:00:00Z"})
     with pytest.raises(KeyError):
