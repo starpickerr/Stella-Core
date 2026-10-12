@@ -33,9 +33,15 @@ def backend(route):
     elif path == '/api/scheduler':
         data['tasks'] = tasks
     elif path == '/api/scheduler/destinations':
-        data['destinations'] = [dict(channel_type='web', configured=True, ready=True, status='ready', recipients=[]),
-                                dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
+        data['destinations'] = [dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
                                 dict(channel_type='weixin', configured=True, ready=False, status='no_recipient', recipients=[])]
+    elif path == '/api/sessions':
+        data.update(sessions=[
+            dict(session_id='chat-a', title='对话 A', created_at=0, last_active=1, msg_count=1),
+            dict(session_id='chat-b', title='对话 B', created_at=0, last_active=2, msg_count=2),
+        ], total=2, page=1, page_size=50, has_more=False)
+    elif path == '/api/projects':
+        data.update(projects=[], current=None)
     elif path == '/api/todos':
         data['todos'] = [dict(
             id='todo-1', title='Linked todo', notes='', status='todo', parent_id=None, sort_order=0,
