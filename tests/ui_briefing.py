@@ -178,7 +178,13 @@ with sync_playwright() as playwright:
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/briefing', wait_until='networkidle')
-        page.get_by_text('今日简报', exact=True).first.click()
+        try:
+            page.get_by_text('今日简报', exact=True).first.click()
+        except Exception:
+            print('Briefing page errors:', errors)
+            print('Briefing page state:', page.locator('body').inner_text())
+            print('Briefing language:', page.evaluate("localStorage.getItem('stella_lang')"))
+            raise
 
         report = page.get_by_role('region', name='AI 报告')
         create = report.get_by_role('button', name='建立事务', exact=False)
