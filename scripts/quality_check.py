@@ -234,8 +234,9 @@ def main():
             ("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180),
             ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs", "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs", "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs"], 60),
             ("ui", [str(PYTHON), "scripts/ui_check.py"], 120),
-            ("policy", [str(PYTHON), "scripts/check_dev_policy.py"], 60),
         ]
+        if (ROOT / "AGENTS.md").is_file():
+            commands.append(("policy", [str(PYTHON), "scripts/check_dev_policy.py"], 60))
     else:
         if selected["ruff"]:
             commands.append(("ruff", [str(PYTHON), "-m", "ruff", "check", "--select", "E4,E7,E9,F", *selected["ruff"]], 60))

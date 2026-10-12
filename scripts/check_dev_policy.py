@@ -17,6 +17,9 @@ def _toml_load(path):
 
 
 def main():
+    if not (ROOT / "AGENTS.md").is_file():
+        print("SKIP policy: development-agent specifications are local and not present")
+        return 0
     failures = []
     root_guide = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     core_guide = (ROOT / ".agents/AGENTS.md").read_text(encoding="utf-8")
