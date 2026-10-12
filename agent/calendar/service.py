@@ -162,6 +162,15 @@ class CalendarService:
             raise KeyError("category not found")
         return dict(row)
 
+    def set_event_category(self, event_id, category_id):
+        """Move an event between categories without treating that as a content edit."""
+        self.get_event(event_id)
+        if category_id is not None:
+            self.get_category(category_id)
+        with self._connect() as db:
+            db.execute("UPDATE calendar_events SET category_id=? WHERE id=?", (category_id, event_id))
+        return self.get_event(event_id)
+
     def update_category(self, category_id, payload):
         old = self.get_category(category_id)
         name = _text(payload.get("name", old["name"]), "name", 40)

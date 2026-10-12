@@ -9,6 +9,7 @@ from tests.test_apple_reminder_sync import manager, reminder
 
 def test_agent_reminders_lookup_preview_and_one_time_share_manager(tmp_path, monkeypatch):
     sync, todos, _, _ = manager(tmp_path, [reminder()])
+    monkeypatch.setattr(sync, "start_auto", lambda *args, **kwargs: None)
     monkeypatch.setattr(Application, "apple_reminders", staticmethod(lambda: sync))
     tool = AppleTool()
 
@@ -25,10 +26,24 @@ def test_agent_reminders_lookup_preview_and_one_time_share_manager(tmp_path, mon
     assert preview["preview"]["new"] == 1
     assert tool.execute({"kind": "reminders", "action": "one_time", "direction": "import",
                          "source_id": "a", "item_ids": ["r1"], "confirm": True}).status == "error"
-    assert call(kind="reminders", action="one_time", direction="import", source_id="a",
-                item_ids=["r1"], confirm=True, preview_token=preview["preview_token"])["result"]["imported"] == 1
+    category = todos.create_category({"name": "学习"})
+    batch = call(kind="reminders", action="preview_batch", direction="import",
+                 selections=[{"apple_id": "a", "stella_id": category["id"]}],
+                 start="2026-10-01", end="2026-10-31")
+    transferred = call(kind="reminders", action="transfer_batch", direction="import",
+                       selections=[{"apple_id": "a", "stella_id": category["id"]}],
+                       start="2026-10-01", end="2026-10-31", confirm=True,
+                       preview_token=batch["preview_token"])
+    assert transferred["result"]["imported"] == 1
+    assert transferred["connection"]["connected"] is False
+    links = [{"apple_id": "a", "stella_id": category["id"], "direction": "import", "enabled": True}]
+    from agent.calendar.apple_preview import prepare_links
+    link_token = prepare_links(sync, links)["preview_token"]
+    linked = call(kind="reminders", action="replace_links", links=links, confirm=True, preview_token=link_token)
+    assert linked["connection"]["connected"] is True
     assert todos.list_todos()[0]["title"] == "Homework"
-    assert sync.status()["connected"] is False
+    assert todos.list_todos()[0]["category_id"] == category["id"]
+    assert sync.status()["connected"] is True
     assert tool.execute({"kind": "reminders", "action": "lookup", "source_id": "a",
                          "item_id": "fiction"}).status == "error"
 

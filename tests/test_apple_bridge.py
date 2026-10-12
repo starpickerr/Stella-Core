@@ -52,7 +52,7 @@ def test_bridge_uses_json_stdin_and_rejects_malformed_output(tmp_path):
         "op": "events", "calendar_ids": ["a; touch /tmp/nope"]}
     assert bridge.call("lookup", calendar_id="a", event_id="e")["echo"]["op"] == "lookup"
     for op in ("reminder_status", "reminder_request_access", "reminder_lists", "reminders",
-               "reminder_lookup", "reminder_upsert", "reminder_delete"):
+               "reminder_lookup", "reminder_upsert", "reminder_delete", "rename", "reminder_rename"):
         assert bridge.call(op, list_id="test-list")["echo"]["op"] == op
     bad = helper(tmp_path, "print('private calendar contents')\n")
     with pytest.raises(BridgeError, match="invalid response"):
@@ -110,6 +110,17 @@ def test_native_reminders_operation_is_not_handled_as_calendar(tmp_path):
     assert payload.get('error') != 'Unknown operation'
     assert 'Calendar full access' not in str(payload.get('error', ''))
     assert payload.get('ok') is True or 'Reminder' in str(payload.get('error', ''))
+    renamed = subprocess.run([str(tmp_path / 'StellaCalendarBridge')],
+                             input='{"op":"rename","calendar_id":"missing","title":"课程"}\n',
+                             text=True, capture_output=True, check=False)
+    rename_payload = json.loads(renamed.stdout)
+    assert rename_payload.get('error') != 'Unknown operation'
+    reminder_renamed = subprocess.run([str(tmp_path / 'StellaCalendarBridge')],
+                                      input='{"op":"reminder_rename","list_id":"missing","title":"课程"}\n',
+                                      text=True, capture_output=True, check=False)
+    reminder_payload = json.loads(reminder_renamed.stdout)
+    assert reminder_payload.get('error') not in ('Unknown operation', 'Unknown reminder operation')
+    assert 'Calendar full access' not in str(reminder_payload.get('error', ''))
 
 
 @pytest.mark.skipif(platform.system() != 'Darwin', reason='Swift compiler requires macOS')

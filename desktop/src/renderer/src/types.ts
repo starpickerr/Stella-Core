@@ -882,6 +882,16 @@ export interface CalendarEvent {
 export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
   { all_day: boolean; category_id: string | null; repeat_frequency: CalendarEvent['repeat_frequency']; repeat_days: number[]; repeat_until: string | null; repeat_timezone: string }
 
+export interface AppleCategoryLink {
+  apple_id: string
+  stella_id: string
+  direction: 'import' | 'export' | 'bidirectional'
+  enabled: boolean
+  apple_name: string
+  stella_name: string
+  name_conflict: string
+}
+
 export interface AppleCalendarConnection {
   supported: boolean
   authorization: 'unsupported' | 'helper_missing' | 'not_determined' | 'denied' | 'restricted' | 'write_only' | 'full_access' | 'unknown'
@@ -890,6 +900,7 @@ export interface AppleCalendarConnection {
   calendar_ids: string[]
   direction: 'import' | 'export' | 'bidirectional'
   calendars: { id: string; title: string; source: string; writable: boolean }[]
+  links?: AppleCategoryLink[]
   last_success: string | null
   error: string
   conflicts: { stella_id: string; reason: string }[]

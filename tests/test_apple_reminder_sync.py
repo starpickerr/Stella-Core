@@ -31,6 +31,8 @@ class FakeBridge:
         self.writes = []
         self.deletes = []
         self.fail_next_scan = False
+        self.titles = {}
+        self.read_only = set()
 
     def call(self, op, **payload):
         if op == "reminder_status":
@@ -40,8 +42,17 @@ class FakeBridge:
         if self.authorization != "full_access":
             raise PermissionError("Reminders full access is required")
         if op == "reminder_lists":
-            return {"lists": [dict(id=key, title=key, source="iCloud", writable=True)
+            return {"lists": [dict(id=key, title=self.titles.get(key, key), source="iCloud",
+                                   writable=key not in self.read_only)
                               for key in sorted(self.available)]}
+        if op == "reminder_rename":
+            if payload["list_id"] not in self.available:
+                raise RuntimeError("Reminder list is unavailable")
+            if payload["list_id"] in self.read_only:
+                raise RuntimeError("Reminder list is read only")
+            self.titles[payload["list_id"]] = payload["title"]
+            self.writes.append((op, payload["list_id"], payload["title"]))
+            return {"list": {"id": payload["list_id"], "title": payload["title"]}}
         if op == "reminders":
             if self.fail_next_scan:
                 self.fail_next_scan = False

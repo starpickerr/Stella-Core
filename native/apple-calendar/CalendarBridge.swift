@@ -245,6 +245,16 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
         try store.save(event, span: span, commit: true)
         return ["event": serialize(event)]
     }
+    if op == "rename" {
+        let calendarID = try required(request, "calendar_id")
+        guard let calendar = store.calendars(for: .event).first(where: { $0.calendarIdentifier == calendarID }) else {
+            throw BridgeFailure("Calendar is unavailable")
+        }
+        guard calendar.allowsContentModifications else { throw BridgeFailure("Calendar is read only") }
+        calendar.title = try required(request, "title")
+        try store.saveCalendar(calendar, commit: true)
+        return ["calendar": ["id": calendar.calendarIdentifier, "title": calendar.title]]
+    }
     if op == "delete" {
         guard let event = try findEvent(store, request) else { throw BridgeFailure("Linked event is unavailable") }
         guard event.calendar.allowsContentModifications else { throw BridgeFailure("Calendar is read only") }
