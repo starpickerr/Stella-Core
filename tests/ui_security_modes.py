@@ -44,15 +44,28 @@ def backend(route):
             effective_mode='workspace-write', effective_rules={}, policy_source='global',
             mode_definitions=DEFINITIONS, authorized_roots=['/isolated/work'],
             process_isolation={'status': 'enabled', 'reason': 'Seatbelt is active. 完全访问仍拦截其他会话的私有工作区。'},
-            connections=[], secrets=[], pending=[],
+            connections=[], secrets=[], pending=[], background_tasks=[],
+            privacy={'available': True, 'categories': [], 'external_transfers': []},
             summary={'status': 'normal', 'app_password_set': False, 'connection_count': 0,
-                     'secret_count': 0, 'recent_high_risk': [], 'recent_denials': []},
+                     'secret_count': 0, 'recent_high_risk': [], 'recent_denials': [],
+                     'activity_counts': {'auto_allow': 0, 'user_authorized': 0, 'denied': 0,
+                                         'uncertain': False, 'since': 0, 'until': 1},
+                     'background_tasks': {'total': 0, 'enabled': 0, 'paused': 0,
+                                          'modes': {'read-only': 0, 'workspace-write': 0,
+                                                    'full-access': 0, 'custom': 0},
+                                          'unknown': 0, 'available': True}},
             project=None, project_policy={}, projects=[], conversation_policy={},
         )
     elif path == '/api/security/confirmations':
         data['pending'] = []
     elif path == '/api/security/activity':
         data['records'] = []
+        data['counts'] = {'auto_allow': 0, 'user_authorized': 0, 'denied': 0,
+                          'uncertain': False, 'since': 0, 'until': 1}
+    elif path == '/api/tools':
+        data['tools'] = []
+    elif path == '/api/security/privacy':
+        data.update(available=True, categories=[], external_transfers=[])
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true',
                            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -73,17 +86,18 @@ with sync_playwright() as playwright:
         page.goto(url + '/#/security', wait_until='networkidle')
         expect(page.get_by_role('heading', name='安全中心')).to_be_visible()
         expect(page.get_by_text('工作区写入', exact=True).first).to_be_visible()
-        page.get_by_role('button', name='默认权限').click()
-        expect(page.get_by_role('button', name='只读')).to_be_visible()
-        page.get_by_role('button', name='完全访问').click()
+        page.get_by_role('button', name='权限管理').click()
+        default_card = page.get_by_role('heading', name='默认权限').locator('xpath=..')
+        expect(default_card).to_be_visible()
+        expect(default_card.get_by_role('button', name='只读')).to_be_visible()
+        expect(default_card.get_by_role('button', name='自定义')).to_have_count(0)
+        before = len(saved)
+        default_card.get_by_role('button', name='完全访问').click()
         expect(page.get_by_role('button', name='启用完全访问')).to_have_count(0)
-        expect(page.get_by_text('破坏性操作仍需审批')).to_have_count(0)
-        assert saved and saved[-1]['policy']['preset'] == 'full-access'
-        page.get_by_role('button', name='自定义').click()
-        expect(page.get_by_role('heading', name='逐项调整权限')).to_be_visible()
-        expect(page.get_by_role('button', name='保存自定义')).to_be_visible()
-        assert saved[-1]['policy']['preset'] == 'custom'
+        assert len(saved) > before and saved[-1]['policy']['preset'] == 'full-access'
+        assert not any(item.get('policy', {}).get('preset') == 'custom' for item in saved)
+        expect(page.get_by_role('heading', name='项目权限')).to_be_visible()
         assert not errors, errors
-        print('Security modes UI: immediate Full Access and on-page custom editor passed')
+        print('Security modes UI: default three presets, no immediate custom save, merged permissions tab passed')
     finally:
         browser.close()

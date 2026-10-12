@@ -25,14 +25,14 @@ def _known_project(path):
 
 
 def validate_conversation_action(action, *, allow_pending_source=False):
-    """Require an explicit conversation choice for desktop tasks."""
+    """Require an explicit conversation choice when execution context is configured."""
     action = dict(action)
     if "conversation_mode" not in action:
+        # Delivery-only legacy actions may omit execution context. Desktop
+        # web-channel agent tasks still require an explicit conversation mode.
         if action.get("channel_type") == "web":
             raise ValueError("Choose a conversation mode for this desktop task")
         return action
-    if action.get("channel_type") != "web":
-        raise ValueError("Conversation choices require desktop delivery")
     mode = action.get("conversation_mode")
     space = action.get("conversation_space")
     if mode not in ("source", "reuse", "new"):

@@ -155,6 +155,36 @@ def test_bound_chat_supplies_recent_visible_context(scope, monkeypatch):
     assert "tool_use" not in context
 
 
+def test_telegram_delivery_keeps_bound_conversation(scope):
+    from agent.scheduler.mutations import SchedulerMutations
+    from agent.scheduler import TaskStore
+    from datetime import datetime, timedelta
+
+    sessions, bindings, project = scope
+    bindings["chat_a"] = str(project)
+    store = TaskStore(str(project.parent / "scheduler" / "tasks.json"))
+    mutations = SchedulerMutations(store)
+    with identity_scope(agent_id="agent-a"):
+        action = conversation.validate_conversation_action({
+            "type": "agent_task", "channel_type": "web", "conversation_mode": "source",
+            "source_session_id": "chat_a", "task_description": "daily brief",
+        })
+        task = {
+            "id": "task-channel", "name": "brief", "enabled": True,
+            "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat(),
+            "next_run_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+            "schedule": {"type": "interval", "seconds": 3600}, "action": action,
+        }
+        mutations.create(task)
+        updated = mutations.update("task-channel", {
+            "notification_route": {"primary": {"channel_type": "telegram", "receiver": "123", "is_group": False}},
+        })
+        assert updated["action"]["conversation_mode"] == "source"
+        assert updated["action"]["source_session_id"] == "chat_a"
+        assert updated["action"]["execution_project_dir"] == str(project)
+        assert updated["action"]["channel_type"] == "telegram"
+
+
 def test_scoped_output_persists_full_text_and_does_not_recreate_deleted_chat():
     from bridge.agent_bridge import AgentBridge
     written = []
