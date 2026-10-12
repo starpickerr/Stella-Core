@@ -1,30 +1,24 @@
-# Documentation
+# Stella documentation
 
-This directory contains the Mintlify documentation site for the project.
+Practical guides for the current desktop application:
 
-## Prerequisites
+- [English guide](guide.md)
+- [简体中文指南](zh/guide.md)
+- [繁體中文指南](zh/guide-Hant.md)
+- [日本語ガイド](ja/guide.md)
 
-- Node.js v20.17.0 or higher (LTS recommended)
+## Developer reference
 
-## Install the CLI (one-time, global)
+- [Contributing](../CONTRIBUTING.md)
+- [Desktop builds and packaging](../desktop/README.md)
+- [Architecture](architecture/overview.md)
+- [Agent execution](architecture/agent-runtime.md)
+- [Data flow](architecture/data-flow.md)
+- [Data and security](architecture/security-and-storage.md)
+- [Business modules](modules/core-business.md)
+- [Desktop workflows](desktop-workflows.md)
+- [Briefing decisions and recovery](briefing-actions.md)
+- [Permission modes and platform limits](security-permission-modes.md)
+- [Source attribution](../THIRD_PARTY_NOTICES.md)
 
-```bash
-npm i -g mint
-```
-
-## Run the docs locally
-
-From this `docs/` directory:
-
-```bash
-mint dev
-```
-
-Then open http://localhost:3000 (or the port Mint reports if 3000 is in use).
-
-> The first run downloads the Mint preview framework (~90 MB) into `~/.mintlify/`.
-> Subsequent runs start instantly from the local cache.
-
-## More
-
-- Mintlify docs: https://www.mintlify.com/docs
+The guides describe Stella's current implementation. Upstream history and original project documentation are available from [CowAgent](https://github.com/zhayujie/CowAgent).

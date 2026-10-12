@@ -1,3 +1,4 @@
+-c requirements-security.txt
 tiktoken>=0.3.2 # openai calculate token
 
 #voice
@@ -10,7 +11,7 @@ gTTS>=2.3.1 # google text to speech
 dulwich
 
 # xunfei spark
-websocket-client==1.2.0
+websocket-client>=1.9.2
 
 # google
 google-generativeai

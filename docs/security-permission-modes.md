@@ -33,4 +33,4 @@ The browser gate separately checks navigation, local files, and interactions. A 
 
 ## Verification
 
-Run `python -m pytest tests -q --ignore=tests/test_briefing_elearning.py` in the repository's virtual environment, and `npm run build` in `desktop`. The eLearning test file is excluded here because it contained unrelated local changes before this feature branch was created. The process sandbox tests execute a real project write and a blocked outside write when the platform backend is available.
+Run `.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md` from the repository root. Checks run with temporary HOME and STELLA_DATA_DIR. The process sandbox tests execute a real project write and a blocked outside write when the platform backend is available.

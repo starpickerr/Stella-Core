@@ -36,13 +36,12 @@ const isDev = !app.isPackaged
 const VITE_DEV_PORT = 5173
 const useHotRenderer = isDev && process.argv.includes('--hot-renderer')
 
-// Launched by the OS at login (Windows passes --hidden; macOS reports it via
-// getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
-// autostart is unobtrusive.
+// Windows passes --hidden; macOS reports a login launch via wasOpenedAtLogin.
+// Start minimized to the tray so autostart is unobtrusive.
 function launchedHidden(): boolean {
   if (process.argv.includes('--hidden')) return true
   try {
-    return app.getLoginItemSettings().wasOpenedAsHidden === true
+    return process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin === true
   } catch {
     return false
   }
@@ -468,7 +467,6 @@ function setupIPC() {
         openAtLogin: !!enabled,
         // Start hidden/minimized so autostart is unobtrusive; the window can
         // still be brought up from the Dock/tray.
-        openAsHidden: isMac ? true : undefined,
         args: isWin ? WIN_LOGIN_ARGS : undefined,
       })
     } catch (err) {
@@ -568,7 +566,7 @@ if (gotTheLock) app.whenReady().then(async () => {
     if (pngPath) {
       const icon = nativeImage.createFromPath(pngPath)
       if (!icon.isEmpty()) {
-        app.dock.setIcon(icon)
+        app.dock?.setIcon(icon)
         console.log('[Electron] Dock icon set:', pngPath)
       } else {
         console.warn('[Electron] Dock icon loaded but empty:', pngPath)

@@ -12,7 +12,7 @@ The **Briefing** page supports IMAP mailbox setup, briefings from configured sou
 
 - Node.js 22.13+
 - npm (use the checked-in lockfile)
-- Python 3.9+ (for the backend)
+- Python 3.10+ (for the backend)
 - macOS: Xcode Command Line Tools (`xcode-select --install`) or a compatible Xcode toolchain, for the Swift/EventKit calendar bridge
 
 ### Setup
@@ -21,6 +21,7 @@ From the repository root:
 
 ```bash
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools
 .venv/bin/python -m pip install -r requirements.txt
 npm --prefix desktop ci
 cd desktop
@@ -122,14 +123,12 @@ One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix).
 
 **Do not run `npm version`.** `npm run build` / `npm run dist:mac` run `scripts/sync-version.mjs`, which overwrites `desktop/package.json` (and the lockfile version fields) from `VERSION`. Bumping only `package.json` is discarded.
 
-
-| Place                            | Form                           | Example                  |
-| -------------------------------- | ------------------------------ | ------------------------ |
-| `VERSION`                        | `X.Y.Z`                        | `0.0.4`                  |
-| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.4`                  |
-| git tag                          | `v` + that number              | `v0.0.4`                 |
-| dmg name                         | `Stella-<X.Y.Z>-<arch>.dmg`    | `Stella-0.0.4-arm64.dmg` |
-
+| Place | Form | Example |
+| --- | --- | --- |
+| `VERSION` | `X.Y.Z` | `0.0.4` |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.4` |
+| git tag | `v` + that number | `v0.0.4` |
+| dmg name | `Stella-<X.Y.Z>-<arch>.dmg` | `Stella-0.0.4-arm64.dmg` |
 
 The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release tags (`vX.Y.Z`). Drafts, GitHub prereleases, and tags that are not exactly `vX.Y.Z` are ignored.
 

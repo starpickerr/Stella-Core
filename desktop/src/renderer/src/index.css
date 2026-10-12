@@ -1,7 +1,19 @@
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../../tailwind.config.js";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Preserve the v3 class names used by the existing renderer. */
+@utility flex-shrink-0 {
+  flex-shrink: 0;
+}
+@utility flex-grow {
+  flex-grow: 1;
+}
+@utility outline-none {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
 
 /* ============================================================
    Design tokens — semantic CSS variables driving both themes.

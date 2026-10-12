@@ -18,11 +18,11 @@ body:
       label: Environment
       description: "Version (`stella status`), OS, Python version, install method, model & channel."
       placeholder: |
-        Version: v1.2.0
-        OS: macOS / Linux / Windows / Docker
+        Version: see Settings → About
+        OS: macOS / Windows / Linux
         Python: 3.11
-        Install: installer / Docker / source
-        Model & channel: deepseek-v4-flash, web
+        Install: desktop installer / source
+        Model & channel: configured model, desktop
     validations:
       required: true
   - type: textarea
