@@ -56,7 +56,8 @@ class EmptyResponseFallbackTest(unittest.TestCase):
         self.assertEqual(response, "")
 
     def test_empty_reply_gets_fallback_text_for_user_facing_run(self):
-        response = _run_with_silent_model(_make_executor(allow_empty_response=False))
+        with patch("common.i18n._resolved_lang", "zh"):
+            response = _run_with_silent_model(_make_executor(allow_empty_response=False))
 
         self.assertTrue(response)
         self.assertIn("无法生成回复", response)

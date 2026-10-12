@@ -1433,15 +1433,18 @@ class ConversationStore:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _init_db(self) -> None:
+    def _init_db(self, conn: Optional[sqlite3.Connection] = None) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = self._raw_connect()
+        own_connection = conn is None
+        if conn is None:
+            conn = self._raw_connect()
         try:
             conn.executescript(_DDL)
             conn.commit()
             self._migrate(conn)
         finally:
-            conn.close()
+            if own_connection:
+                conn.close()
         self._schema_identity = self._db_identity()
 
     def _db_identity(self) -> tuple:
@@ -1452,7 +1455,7 @@ class ConversationStore:
             return ()
         return (st.st_dev, st.st_ino)
 
-    def _ensure_schema(self) -> None:
+    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         """Recreate the conversation tables when the shared DB file was swapped.
 
         The long-term memory index lives in the same file and may quarantine and
@@ -1460,12 +1463,16 @@ class ConversationStore:
         keep failing with "no such table: sessions" for the whole process
         lifetime, so new messages would silently stop being persisted.
         """
-        if self._db_identity() == self._schema_identity:
+        tables = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+            "AND name IN ('sessions', 'messages', 'run_admissions')"
+        ).fetchone()[0]
+        if self._db_identity() == self._schema_identity and tables == 3:
             return
         logger.warning(
             "[ConversationStore] Shared DB file was replaced; recreating conversation schema"
         )
-        self._init_db()
+        self._init_db(conn)
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         """Apply incremental schema migrations on existing databases."""
@@ -1528,8 +1535,13 @@ class ConversationStore:
 
     def _connect(self) -> sqlite3.Connection:
         with self._lock:
-            self._ensure_schema()
-        return self._raw_connect()
+            conn = self._raw_connect()
+            try:
+                self._ensure_schema(conn)
+            except Exception:
+                conn.close()
+                raise
+            return conn
 
     def _raw_connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path), timeout=10)
