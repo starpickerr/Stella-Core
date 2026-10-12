@@ -136,11 +136,20 @@ class TestSharedDbRecovery(unittest.TestCase):
             Path(f"{self.db}{name}").unlink(missing_ok=True)
         MemoryStorage(self.db).close()  # recreates the file with memory tables only
 
-        store.append_messages(
-            "s2", [{"role": "user", "content": "after"}], channel_type="web"
-        )
-        self.assertEqual(len(store.load_messages("s2")), 1)
-        self.assertEqual(store.list_sessions()["total"], 1)
+        # A filesystem can reuse the deleted inode immediately. Pin that
+        # identity so this regression also reproduces on macOS.
+        with unittest.mock.patch.object(store, "_db_identity", return_value=store._schema_identity), \
+                unittest.mock.patch.object(store, "_init_db", wraps=store._init_db) as initialize:
+            store.append_messages(
+                "s2", [{"role": "user", "content": "after"}], channel_type="web"
+            )
+            self.assertEqual(len(store.load_messages("s2")), 1)
+            self.assertEqual(store.list_sessions()["total"], 1)
+            self.assertEqual(initialize.call_count, 1)
+            MemoryStorage(self.db).close()
+            store.append_messages("s2", [{"role": "assistant", "content": "still here"}])
+            self.assertEqual(len(store.load_messages("s2")), 2)
+            self.assertEqual(initialize.call_count, 1)
 
     def test_transient_error_is_not_treated_as_corruption(self):
         """sqlite3.OperationalError subclasses DatabaseError, so "database is
