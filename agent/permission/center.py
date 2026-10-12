@@ -213,7 +213,7 @@ def connections(policy: dict | None = None) -> list[dict]:
         resource = row.get("resource")
         if resource in entries and entries[resource]["last_access"] is None:
             entries[resource]["last_access"] = row.get("at")
-    return list(entries.values())
+    return sorted(entries.values(), key=lambda item: not item["connected"])
 
 
 def describe_task_permission(task: dict) -> dict:
@@ -357,10 +357,7 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
         "privacy": privacy,
         "summary": {"status": "attention" if denials or active_pending else "normal",
                     "app_password_set": bool(__import__("config").conf().get("web_password")),
-                    "connection_count": sum(
-                        1 for item in all_connections
-                        if item.get("available", item.get("connected")) and item.get("allowed", True)
-                    ),
+                    "connection_count": sum(1 for item in all_connections if item.get("connected")),
                     "secret_count": len(all_secrets), "recent_high_risk": high[:5], "recent_denials": denials[:5],
                     "activity_counts": counts,
                     "background_tasks": task_summary},
