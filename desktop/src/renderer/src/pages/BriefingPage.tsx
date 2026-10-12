@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Loader2, RefreshCw, Settings, Sun } from 'lucide-react'
+import { Loader2, RefreshCw, Settings, FileText } from 'lucide-react'
 import apiClient from '../api/client'
 import { t } from '../i18n'
 import type { Briefing, BriefingDetail as Detail, BriefingDecision, BriefingRunProgress, BriefingSource } from '../types'
@@ -38,7 +38,8 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [error, setError] = useState('')
   const [version, setVersion] = useState<number | null>(null)
   const [today, setToday] = useState(() => localDay())
-  const todayRow = briefings.find((row) => row.id === `brf-${today}-morning`)
+  const todayRow = briefings.find((row) => row.id === `brf-${today}`)
+    ?? briefings.find((row) => row.id === `brf-${today}-morning`)
   const todayBriefing = todayRow?.generated_at ? todayRow : undefined
   const [revision, setRevision] = useState(0)
   const [runProgress, setRunProgress] = useState<BriefingRunProgress | null>(null)
@@ -180,7 +181,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2"><Settings size={15} /></button>
         <button type="button" disabled={loading || sourcesLoading || generating || marking || !sources.length} onClick={() => void generate()}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm font-medium disabled:opacity-50">
-          {generating ? <Loader2 size={14} className="animate-spin" /> : <Sun size={14} />}{t(generating ? 'briefing_generating' : todayBriefing ? 'briefing_update' : 'briefing_generate')}
+          {generating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}{t(generating ? 'briefing_generating' : todayBriefing ? 'briefing_update' : 'briefing_generate')}
         </button>
       </div>
     </PageHeader>

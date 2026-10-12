@@ -35,6 +35,7 @@ interface ChatState {
   deleteMessage: (sid: string, userSeq: number, cascade: boolean) => Promise<void>
 
   loadHistory: (sid: string, page?: number) => Promise<void>
+  dismissPendingAdmissions: (sid: string) => void
   clearContext: (sid: string) => Promise<boolean>
   clearLocal: (sid: string) => void
 
@@ -45,6 +46,15 @@ interface ChatState {
 
 // EventSource instances kept outside the store (not serializable).
 const streams: Record<string, EventSource> = {}
+
+function dismissedAdmissions(sid: string): string[] {
+  try {
+    const rows: unknown = JSON.parse(localStorage.getItem(`stella_pending_dismissed:${sid}`) || '[]')
+    return Array.isArray(rows) ? rows.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
 
 const EMPTY: SessionRuntime = {
   messages: [],
@@ -573,8 +583,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       try {
         const res = await apiClient.getHistory(sid, page, 20)
         const uiMsgs = res.messages.map(historyToMessage)
+        const dismissed = new Set(dismissedAdmissions(sid))
         patchSession(sid, {
-          pendingAdmissions: res.pending_admissions || [],
+          pendingAdmissions: (res.pending_admissions || []).filter((row) => !dismissed.has(row.run_id)),
           historyPage: res.page,
           historyHasMore: res.has_more,
           historyLoaded: true,
@@ -588,6 +599,16 @@ export const useChatStore = create<ChatState>((set, get) => {
       } catch {
         patchSession(sid, { historyLoaded: true })
       }
+    },
+
+    dismissPendingAdmissions: (sid) => {
+      const rows = get().sessions[sid]?.pendingAdmissions || []
+      try {
+        localStorage.setItem(`stella_pending_dismissed:${sid}`, JSON.stringify(
+          [...new Set([...dismissedAdmissions(sid), ...rows.map((row) => row.run_id)])],
+        ))
+      } catch { /* Closing still works when browser storage is unavailable. */ }
+      patchSession(sid, { pendingAdmissions: [] })
     },
 
     clearContext: async (sid) => {

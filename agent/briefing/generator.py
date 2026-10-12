@@ -39,15 +39,9 @@ class SelectedCandidate:
     score: int
 
 
-def briefing_title(briefing_date: str, kind: str) -> str:
+def briefing_title(briefing_date: str) -> str:
     day = date.fromisoformat(briefing_date)
-    if kind == "morning":
-        return f"{day.year}年{day.month}月{day.day}日·简报"
-    if kind == "followup":
-        return f"{day.month} 月 {day.day} 日跟进"
-    if kind == "meeting":
-        return f"{day.month} 月 {day.day} 日会前准备"
-    return f"{day.isoformat()} {kind}"
+    return f"{day.year}年{day.month}月{day.day}日·简报"
 
 
 def _sort_key(candidate: SelectedCandidate) -> tuple:
@@ -249,7 +243,7 @@ class AgentBriefingGenerator:
             raise ValueError("简报 Agent 未提交完整结果，请检查模型配置或重试")
         return tool.submission
 
-    def generate(self, rows, rules, *, briefing_date, kind, window_start, window_end, preserved_decisions=None):
+    def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None):
         self._check_cancelled()
         documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]
         rule_text = DEFAULT_RULE_TEXT + ("\n\n## 用户规则文稿（优先于默认原则）\n\n" + "\n\n---\n\n".join(documents) if documents else "")
@@ -348,6 +342,6 @@ class AgentBriefingGenerator:
         self._check_cancelled()
         for card in cards:
             card["payload"]["_briefing_report"] = reports[card["source_item_id"]]
-        return {"title": briefing_title(briefing_date, kind),
+        return {"title": briefing_title(briefing_date),
                 "body": "\n\n".join(parts),
                 "items": cards, "mail": mail, "rule_text": rule_text}

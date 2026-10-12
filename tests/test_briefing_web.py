@@ -56,7 +56,7 @@ def test_run_list_detail_and_mark(api):
     assert ran["briefing"]["mail_snapshot_available"] is True
     assert ran["mail"][0]["title"] == "请确认合同"
     assert ran["mail"][0]["category"] == "selected"
-    listed = call(web_channel.BriefingsHandler, "GET", params={"kind": "morning", "status": ""})
+    listed = call(web_channel.BriefingsHandler, "GET", params={"status": ""})
     assert len(listed["briefings"]) == 1
     detail = call(web_channel.BriefingDetailHandler, "GET", args=(ran["briefing"]["id"],))
     assert detail == ran
@@ -103,14 +103,14 @@ def test_run_progress_is_authenticated_and_exposes_only_active_draft(api):
     _, auth = api
     from agent.briefing import progress
     assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
-    progress.begin("brf-2026-09-09-morning", 2)
+    progress.begin("brf-2026-09-09", 2)
     try:
-        progress.update("brf-2026-09-09-morning", body="## 已有信息", completed_sources=1)
+        progress.update("brf-2026-09-09", body="## 已有信息", completed_sources=1)
         result = call(web_channel.BriefingRunProgressHandler, "GET")
         assert result["progress"]["body"] == "## 已有信息"
         assert result["progress"]["completed_sources"] == 1
     finally:
-        progress.finish("brf-2026-09-09-morning")
+        progress.finish("brf-2026-09-09")
     assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
     assert auth.call_count == 3
 
@@ -219,7 +219,7 @@ def test_validation(api, handler, body):
 
 def test_missing_detail_and_invalid_filter(api):
     assert call(web_channel.BriefingDetailHandler, "GET", args=("missing",))["status"] == "error"
-    assert call(web_channel.BriefingsHandler, "GET", params={"kind": "bad", "status": ""})["status"] == "error"
+    assert call(web_channel.BriefingsHandler, "GET", params={"status": "bad"})["status"] == "error"
 
 
 @pytest.mark.parametrize("body", [b"[1]", b"invalid", b"null"])
