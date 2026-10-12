@@ -115,10 +115,12 @@ class TodoService:
                 ("checklist", "TEXT NOT NULL DEFAULT '[]'"),
                 ("status", "TEXT NOT NULL DEFAULT 'todo'"), ("parent_id", "TEXT"),
                 ("sort_order", "INTEGER NOT NULL DEFAULT 0"), ("remind_at", "TEXT"),
-                ("reminder_delivery", "TEXT"),
+                ("reminder_delivery", "TEXT"), ("category_id", "TEXT"),
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE todos ADD COLUMN {name} {definition}")
+            db.execute("""CREATE TABLE IF NOT EXISTS todo_categories (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL, created_at TEXT NOT NULL)""")
             db.execute("CREATE INDEX IF NOT EXISTS todos_parent_order ON todos(parent_id,sort_order,created_at)")
             if "status" not in columns:
                 db.execute("UPDATE todos SET status='completed' WHERE completed_at IS NOT NULL")
@@ -522,6 +524,61 @@ class TodoService:
                     values = [{**item, "completed": False} for item in values]
             row[field] = json.dumps(values, ensure_ascii=False)
         return row
+
+    def categories(self):
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM todo_categories ORDER BY created_at, name")]
+
+    def create_category(self, payload):
+        name = _text(payload.get("name"), "name", 40)
+        color = payload.get("color", "#6B8AF7")
+        if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
+            raise ValueError("color must be #RRGGBB")
+        category_id = str(uuid.uuid4())
+        try:
+            with self._connect() as db:
+                db.execute("INSERT INTO todo_categories VALUES (?,?,?,?)", (category_id, name, color, _now()))
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("category name already exists") from exc
+        return self.get_category(category_id)
+
+    def get_category(self, category_id):
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM todo_categories WHERE id=?", (category_id,)).fetchone()
+        if row is None:
+            raise KeyError("category not found")
+        return dict(row)
+
+    def update_category(self, category_id, payload):
+        old = self.get_category(category_id)
+        name = _text(payload.get("name", old["name"]), "name", 40)
+        color = payload.get("color", old["color"])
+        if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
+            raise ValueError("color must be #RRGGBB")
+        try:
+            with self._connect() as db:
+                db.execute("UPDATE todo_categories SET name=?, color=? WHERE id=?", (name, color, category_id))
+                db.execute("UPDATE todos SET list_name=? WHERE category_id=?", (name, category_id))
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("category name already exists") from exc
+        return self.get_category(category_id)
+
+    def delete_category(self, category_id):
+        self.get_category(category_id)
+        with self._connect() as db:
+            db.execute("UPDATE todos SET category_id=NULL WHERE category_id=?", (category_id,))
+            db.execute("DELETE FROM todo_categories WHERE id=?", (category_id,))
+        return {"deleted": category_id}
+
+    def set_todo_category(self, todo_id, category_id):
+        """Assign a category without marking the task as locally edited."""
+        self.get_todo(todo_id)
+        name = ""
+        if category_id is not None:
+            name = self.get_category(category_id)["name"]
+        with self._connect() as db:
+            db.execute("UPDATE todos SET category_id=?, list_name=? WHERE id=?", (category_id, name, todo_id))
+        return self.get_todo(todo_id)
 
     def create_todo(self, payload, *, _briefing_key=None, _external_source_key=None):
         self._ensure_migrations()

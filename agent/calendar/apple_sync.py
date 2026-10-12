@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from agent.apple.category_links import reconcile_names, validate_links
 from application import Application, RequestContext
 from .apple_bridge import AppleCalendarBridge
 
@@ -90,6 +93,16 @@ class AppleCalendarSync:
                     updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS apple_map_calendar ON mappings(calendar_id);
+                CREATE TABLE IF NOT EXISTS category_links (
+                    apple_id TEXT PRIMARY KEY,
+                    stella_id TEXT NOT NULL UNIQUE,
+                    direction TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    apple_name TEXT NOT NULL,
+                    stella_name TEXT NOT NULL,
+                    name_conflict TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(mappings)")}
             if "missing_since" not in columns:
@@ -169,7 +182,8 @@ class AppleCalendarSync:
                 "conflicts": [{"stella_id": row["stella_id"], "reason": row["conflict"]}
                               for row in maps if row["state"] == "conflict"],
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
-                "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps)}
+                "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps),
+                "links": [self._public_link(row) for row in self._stored_links()]}
 
     def request_access(self):
         result = self.bridge.call("request_access")
@@ -197,6 +211,122 @@ class AppleCalendarSync:
             self._set("direction", direction)
             self._set("connected", True)
         return self.status()
+
+    def _stored_links(self):
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM category_links ORDER BY apple_id")]
+
+    @staticmethod
+    def _public_link(row):
+        return {"apple_id": row["apple_id"], "stella_id": row["stella_id"], "direction": row["direction"],
+                "enabled": bool(row["enabled"]), "apple_name": row["apple_name"], "stella_name": row["stella_name"],
+                "name_conflict": row["name_conflict"]}
+
+    def _save_link(self, link):
+        with self._connect() as db:
+            db.execute("""UPDATE category_links SET apple_name=?, stella_name=?, name_conflict=?, updated_at=?
+                WHERE apple_id=?""", (link["apple_name"], link["stella_name"], link["name_conflict"],
+                                      self.clock(), link["apple_id"]))
+
+    def replace_links(self, links):
+        """Replace ongoing category mappings. Unlisted mappings are removed; events stay."""
+        if not isinstance(links, list):
+            raise ValueError("links must be a list")
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
+        prepared = []
+        for raw in links:
+            if not isinstance(raw, dict):
+                raise ValueError("link must be an object")
+            item = {"apple_id": str(raw.get("apple_id") or "").strip(),
+                    "stella_id": str(raw.get("stella_id") or "").strip(),
+                    "direction": str(raw.get("direction") or "").strip(),
+                    "enabled": raw.get("enabled")}
+            create_name = str(raw.get("create_name") or "").strip()
+            if not item["stella_id"] and create_name:
+                existing = next((row for row in self.calendar.categories() if row["name"] == create_name), None)
+                item["stella_id"] = existing["id"] if existing else self.calendar.create_category({"name": create_name})["id"]
+            prepared.append(item)
+        validate_links(prepared)
+        rows = []
+        for item in prepared:
+            calendar = available.get(item["apple_id"])
+            if calendar is None:
+                raise ValueError("selected calendar is unavailable")
+            category = self.calendar.get_category(item["stella_id"])
+            rows.append({**item, "apple_name": calendar["title"], "stella_name": category["name"],
+                         "enabled": 1 if item["enabled"] else 0})
+        with self._lock:
+            now = self.clock()
+            with self._connect() as db:
+                db.execute("DELETE FROM category_links")
+                db.executemany("""INSERT INTO category_links
+                    (apple_id, stella_id, direction, enabled, apple_name, stella_name, name_conflict, updated_at)
+                    VALUES (:apple_id, :stella_id, :direction, :enabled, :apple_name, :stella_name, '', :updated_at)""",
+                    [{**row, "updated_at": now} for row in rows])
+            enabled = [row for row in rows if row["enabled"]]
+            if enabled and not self._get("ever_connected", False):
+                with self._connect() as db:
+                    db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
+                                   [(row["id"],) for row in self.calendar.list_events() if row["source_type"] is None])
+                self._set("ever_connected", True)
+            directions = {row["direction"] for row in enabled}
+            self._set("calendar_ids", [row["apple_id"] for row in enabled])
+            if len(directions) == 1:
+                self._set("direction", directions.pop())
+            self._set("connected", bool(enabled))
+        return self.status()
+
+    def _reconcile_category_names(self):
+        """Bidirectional category names for enabled links. Returns errors that block success."""
+        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
+        errors = []
+        for link in self._stored_links():
+            if not link["enabled"]:
+                continue
+            apple = available.get(link["apple_id"])
+            if apple is None:
+                continue
+            try:
+                category = self.calendar.get_category(link["stella_id"])
+            except KeyError:
+                link["name_conflict"] = "Stella category is missing"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            action, name = reconcile_names(link["apple_name"], link["stella_name"], apple["title"], category["name"])
+            if action == "unchanged":
+                continue
+            if action == "conflict":
+                link["name_conflict"] = "Both Apple and Stella renamed this category"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            if action == "aligned":
+                link.update(apple_name=name, stella_name=name, name_conflict="")
+                self._save_link(link)
+                continue
+            if action == "apple_to_stella":
+                self.calendar.update_category(link["stella_id"], {"name": name})
+                link.update(apple_name=name, stella_name=name, name_conflict="")
+                self._save_link(link)
+                continue
+            if not apple.get("writable"):
+                link["name_conflict"] = "Calendar is read only"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            try:
+                self.bridge.call("rename", calendar_id=link["apple_id"], title=name)
+            except Exception as exc:
+                link["name_conflict"] = str(exc)
+                self._save_link(link)
+                errors.append(str(exc))
+                continue
+            link.update(apple_name=name, stella_name=name, name_conflict="")
+            self._save_link(link)
+        return errors
 
     def disconnect(self):
         self._set("connected", False)
@@ -385,6 +515,146 @@ class AppleCalendarSync:
                     counts["exported"] += 1
             return counts
 
+    def _batch_bounds(self, start, end):
+        try:
+            start_day = date.fromisoformat(start)
+            end_day = date.fromisoformat(end)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("time range must be YYYY-MM-DD") from exc
+        zone = ZoneInfo("Asia/Shanghai")
+        start_at = datetime.combine(start_day, clock_time.min, zone)
+        end_at = datetime.combine(end_day + timedelta(days=1), clock_time.min, zone)
+        if end_at <= start_at:
+            raise ValueError("time range must include at least one day")
+        return start_at, end_at
+
+    def _batch_selections(self, selections):
+        if not isinstance(selections, list) or not selections:
+            raise ValueError("select at least one category")
+        rows = []
+        seen_apple, seen_stella = set(), set()
+        for raw in selections:
+            if not isinstance(raw, dict):
+                raise ValueError("selection must be an object")
+            apple_id = str(raw.get("apple_id") or "").strip()
+            stella_id = str(raw.get("stella_id") or "").strip()
+            if not apple_id or not stella_id:
+                raise ValueError("apple_id and stella_id are required")
+            if apple_id in seen_apple or stella_id in seen_stella:
+                raise ValueError("category links must be one-to-one")
+            seen_apple.add(apple_id)
+            seen_stella.add(stella_id)
+            rows.append({"apple_id": apple_id, "stella_id": stella_id})
+        return rows
+
+    def _batch_events(self, direction, selections, start, end):
+        if direction not in ("import", "export"):
+            raise ValueError("one-time direction must be import or export")
+        rows = self._batch_selections(selections)
+        bounds = self._batch_bounds(start, end)
+        if self.bridge.call("status").get("authorization") != "full_access":
+            raise PermissionError("Calendar full access is required")
+        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
+        for row in rows:
+            if row["apple_id"] not in available:
+                raise ValueError("selected calendar is unavailable")
+            self.calendar.get_category(row["stella_id"])
+            if direction == "export" and not available[row["apple_id"]]["writable"]:
+                raise ValueError("selected calendar is read only")
+        failed = 0
+        chosen = []
+        if direction == "import":
+            inventory = self.bridge.call("events", calendar_ids=[row["apple_id"] for row in rows],
+                                         start=bounds[0].isoformat(), end=bounds[1].isoformat())
+            successful = set(inventory["successful_calendar_ids"])
+            failed = len([row for row in rows if row["apple_id"] not in successful])
+            targets = {row["apple_id"]: row["stella_id"] for row in rows}
+            for remote in inventory["events"]:
+                if remote["calendar_id"] not in targets:
+                    continue
+                moment = datetime.fromisoformat(remote["start_at"].replace("Z", "+00:00"))
+                if not (bounds[0] <= moment < bounds[1]):
+                    continue
+                chosen.append((remote, targets[remote["calendar_id"]]))
+        else:
+            by_category = {row["stella_id"]: row["apple_id"] for row in rows}
+            for local in self.calendar.list_events():
+                apple_id = by_category.get(local.get("category_id"))
+                if apple_id is None or local["source_type"] is not None:
+                    continue
+                moment = datetime.fromisoformat(local["start_at"].replace("Z", "+00:00"))
+                if bounds[0] <= moment < bounds[1]:
+                    chosen.append((local, apple_id))
+        return chosen, failed, bounds
+
+    def preview_batch(self, direction, selections, start, end):
+        """Count a category-and-range transfer without connecting ongoing sync."""
+        with self._lock:
+            chosen, failed, _bounds = self._batch_events(direction, selections, start, end)
+            maps = self._maps()
+            new = skipped = 0
+            identities = []
+            for item, target in chosen:
+                if direction == "import":
+                    mapped = self._match(item, maps) is not None
+                    identities.append(("import", item["calendar_id"], item.get("event_id"), target))
+                else:
+                    mapped = any(row["stella_id"] == item["id"] for row in maps)
+                    identities.append(("export", item["id"], target))
+                if mapped:
+                    skipped += 1
+                else:
+                    new += 1
+            preview = {"new": new, "skipped": skipped, "failed": failed}
+            token = secrets.token_urlsafe(24)
+            self._batch_preview = (token, direction, json.dumps(self._batch_selections(selections), sort_keys=True),
+                                   start, end, tuple(identities), preview, time.monotonic() + 600)
+            return {"preview": preview, "preview_token": token}
+
+    def transfer_batch(self, direction, selections, start, end, token, *, confirm=False):
+        if confirm is not True:
+            raise ValueError("explicit confirmation is required")
+        with self._lock:
+            pending = getattr(self, "_batch_preview", None)
+            selection_key = json.dumps(self._batch_selections(selections), sort_keys=True)
+            if (not isinstance(token, str) or not pending or not secrets.compare_digest(token, pending[0]) or
+                    direction != pending[1] or selection_key != pending[2] or start != pending[3] or
+                    end != pending[4] or time.monotonic() > pending[7]):
+                raise ValueError("matching Apple category preview and confirmation are required")
+            chosen, failed, bounds = self._batch_events(direction, selections, start, end)
+            identities = []
+            for item, target in chosen:
+                if direction == "import":
+                    identities.append(("import", item["calendar_id"], item.get("event_id"), target))
+                else:
+                    identities.append(("export", item["id"], target))
+            if tuple(identities) != pending[5] or failed != pending[6]["failed"]:
+                self._batch_preview = None
+                raise ValueError("Apple sync inventory changed; preview again")
+            self._batch_preview = None
+            counts = {"status": "success", "imported": 0, "exported": 0, "skipped": 0, "failed": failed}
+            for item, target in chosen:
+                if direction == "import":
+                    if self._match(item, self._maps()):
+                        counts["skipped"] += 1
+                        continue
+                    anchor = datetime.fromisoformat(item["start_at"].replace("Z", "+00:00"))
+                    window = ((anchor - timedelta(days=2)).isoformat(), (anchor + timedelta(days=2)).isoformat())
+                    before = counts["imported"]
+                    self._process_remote(item, self._maps(), "import", window, counts, category_id=target)
+                    if counts["imported"] == before:
+                        counts["skipped"] += 1
+                else:
+                    mapping = next((row for row in self._maps() if row["stella_id"] == item["id"]), None)
+                    if mapping:
+                        counts["skipped"] += 1
+                        continue
+                    window = ((bounds[0] - timedelta(days=2)).isoformat(), (bounds[1] + timedelta(days=2)).isoformat())
+                    remote = self.bridge.call("upsert", **self._write_payload(item, calendar_id=target, window=window))["event"]
+                    self._save_map(self._new_map(item, remote, "stella"))
+                    counts["exported"] += 1
+            return counts
+
     def is_connected(self):
         return bool(self._get("connected", False))
 
@@ -433,7 +703,13 @@ class AppleCalendarSync:
             data.update(scan_start=window[0], scan_end=window[1])
         return data
 
-    def _process_remote(self, remote, maps, direction, window, counts, ambiguous=False, moved_candidate=None):
+    def _place_in_category(self, local, category_id, direction):
+        if local and category_id and direction in ("import", "bidirectional") and local.get("category_id") != category_id:
+            return self.calendar.set_event_category(local["id"], category_id)
+        return local
+
+    def _process_remote(self, remote, maps, direction, window, counts, ambiguous=False, moved_candidate=None,
+                        category_id=None):
         mapping = self._match(remote, maps, ambiguous) or moved_candidate
         if moved_candidate is not None:
             mapping["calendar_id"] = remote["calendar_id"]
@@ -450,7 +726,9 @@ class AppleCalendarSync:
                         day = day.astimezone(ZoneInfo(series["repeat_timezone"] or "UTC")).date().isoformat()
                         self.calendar.exclude_occurrence(series["id"], day)
                         key = _source_key(remote)
-                        local = self.calendar.upsert_external_event("apple_calendar", key, _payload(remote))
+                        local = self._place_in_category(
+                            self.calendar.upsert_external_event("apple_calendar", key, _payload(remote)),
+                            category_id, direction)
                         exception_map = self._new_map(local, remote, "apple", key)
                         self._save_map(exception_map)
                         maps.append(exception_map)
@@ -470,7 +748,8 @@ class AppleCalendarSync:
             if direction == "export":
                 return
             key = _source_key(remote)
-            local = self.calendar.upsert_external_event("apple_calendar", key, _payload(remote))
+            local = self._place_in_category(
+                self.calendar.upsert_external_event("apple_calendar", key, _payload(remote)), category_id, direction)
             mapping = self._new_map(local, remote, "apple", key)
             self._save_map(mapping)
             maps.append(mapping)
@@ -498,8 +777,9 @@ class AppleCalendarSync:
                 self._conflict(mapping, "Apple changed an export-only event")
                 counts["conflicts"] += 1
             elif mapping["origin"] == "apple":
-                local = self.calendar.upsert_external_event("apple_calendar", mapping["source_key"], _payload(remote),
-                                                            event_id=local["id"], reconciled=True)
+                local = self._place_in_category(self.calendar.upsert_external_event(
+                    "apple_calendar", mapping["source_key"], _payload(remote),
+                    event_id=local["id"], reconciled=True), category_id, direction)
                 self._refresh_map(mapping, local, remote)
                 counts["updated"] += 1
             else:
@@ -507,7 +787,8 @@ class AppleCalendarSync:
                 if local["repeat_frequency"] != "none":
                     counts["conflicts"] += 1
                 else:
-                    local = self.calendar.update_event(local["id"], _payload(remote))
+                    local = self._place_in_category(
+                        self.calendar.update_event(local["id"], _payload(remote)), category_id, direction)
                     self._refresh_map(mapping, local, remote)
                     counts["updated"] += 1
         elif local_changed:
@@ -528,6 +809,7 @@ class AppleCalendarSync:
             mapping["missing_since"] = ""
             mapping["updated_at"] = self.clock()
             self._save_map(mapping)
+            self._place_in_category(local, category_id, direction)
 
     def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
         with self._lock:
@@ -542,8 +824,12 @@ class AppleCalendarSync:
             if native.get("authorization") != "full_access":
                 counts["status"] = native.get("authorization", "unavailable")
                 return counts
+            stored_links = self._stored_links()
+            using_links = bool(stored_links)
+            name_errors = self._reconcile_category_names() if using_links else []
+            enabled_links = [row for row in self._stored_links() if row["enabled"]] if using_links else []
             direction = self._get("direction", "bidirectional")
-            selected = self._get("calendar_ids", [])
+            selected = [row["apple_id"] for row in enabled_links] if using_links else self._get("calendar_ids", [])
             now = datetime.fromisoformat(self.clock().replace("Z", "+00:00"))
             window = ((now - timedelta(days=365)).isoformat(), (now + timedelta(days=730)).isoformat())
             try:
@@ -583,6 +869,14 @@ class AppleCalendarSync:
                     try:
                         identity = (remote["calendar_id"], remote.get("external_id"), remote.get("occurrence_date"))
                         ambiguous = identity_counts[identity] > 1
+                        event_direction = direction
+                        category_id = None
+                        if using_links:
+                            link = next((row for row in enabled_links if row["apple_id"] == remote["calendar_id"]), None)
+                            if link is None:
+                                continue
+                            event_direction = link["direction"]
+                            category_id = link["stella_id"]
                         moved = None
                         cross = (remote.get("external_id"), remote.get("occurrence_date"))
                         if remote.get("external_id") and cross_counts[cross] == 1 and not self._match(remote, maps, ambiguous):
@@ -592,7 +886,7 @@ class AppleCalendarSync:
                                 (row["calendar_id"], row["event_id"], row["occurrence_date"]) not in inventory_keys]
                             if len(candidates) == 1:
                                 moved = candidates[0]
-                        self._process_remote(remote, maps, direction, window, counts, ambiguous, moved)
+                        self._process_remote(remote, maps, event_direction, window, counts, ambiguous, moved, category_id)
                         found = self._match(remote, maps, ambiguous)
                         if found:
                             seen.add(found["stella_id"])
@@ -615,7 +909,17 @@ class AppleCalendarSync:
                             ("calendar_id", "event_id", "external_id", "occurrence_date")},
                             scan_start=window[0], scan_end=window[1]).get("event")
                         if found:
-                            self._process_remote(found, maps, direction, window, counts)
+                            found_direction = direction
+                            found_category = None
+                            if using_links:
+                                found_link = next((row for row in enabled_links
+                                                   if row["apple_id"] == found["calendar_id"]), None)
+                                if found_link is None:
+                                    continue
+                                found_direction = found_link["direction"]
+                                found_category = found_link["stella_id"]
+                            self._process_remote(found, maps, found_direction, window, counts,
+                                                 category_id=found_category)
                             continue
                         if not mapping["missing_since"]:
                             mapping["missing_since"] = self.clock()
@@ -640,18 +944,26 @@ class AppleCalendarSync:
                         self._save_map(mapping)
                     except Exception:
                         counts["status"] = "error"
-                if direction in ("export", "bidirectional") and successful:
+                if successful and (using_links or direction in ("export", "bidirectional")):
                     calendars = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
                     targets = [key for key in selected if key in successful and calendars.get(key, {}).get("writable")]
-                    if targets:
+                    export_targets = [(row["apple_id"], row["stella_id"]) for row in enabled_links
+                                      if row["direction"] in ("export", "bidirectional") and row["apple_id"] in targets]
+                    if not using_links and targets:
+                        export_targets = [(targets[0], None)]
+                    if export_targets:
                         with self._connect() as db:
                             baseline = {row[0] for row in db.execute("SELECT stella_id FROM baseline_local")}
                         mapped = {row["stella_id"] for row in self._maps()}
                         for local in self.calendar.list_events():
                             if local["source_type"] is not None or local["id"] in mapped or local["id"] in baseline:
                                 continue
+                            match = next((item for item in export_targets
+                                          if item[1] is None or local.get("category_id") == item[1]), None)
+                            if match is None:
+                                continue
                             try:
-                                remote = self.bridge.call("upsert", **self._write_payload(local, calendar_id=targets[0], window=window))["event"]
+                                remote = self.bridge.call("upsert", **self._write_payload(local, calendar_id=match[0], window=window))["event"]
                                 self._save_map(self._new_map(local, remote, "stella"))
                                 counts["exported"] += 1
                             except Exception:
@@ -675,11 +987,14 @@ class AppleCalendarSync:
                     row["state"] == "pending_local_delete" for row in self._maps())
                 if counts["failed_calendar_ids"]:
                     counts["status"] = "partial" if counts["status"] == "success" else counts["status"]
+                if name_errors and counts["status"] == "success":
+                    counts["status"] = "error"
                 if counts["status"] == "success":
                     self._set("last_success", self.clock())
                     self._set("error", "")
                 else:
-                    self._set("error", "Calendar sync needs another attempt" if counts["status"] == "error" else "Some calendars are unavailable")
+                    self._set("error", name_errors[0] if name_errors else (
+                        "Calendar sync needs another attempt" if counts["status"] == "error" else "Some calendars are unavailable"))
             except Exception:
                 counts["status"] = "error"
                 self._set("error", "Calendar sync needs another attempt")

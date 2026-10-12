@@ -45,17 +45,15 @@ def backend(route):
             connection.update(supported=True, authorization='full_access',
                               calendars=[{'id':'a','title':'私人','source':'iCloud','writable':True},
                                          {'id':'b','title':'课程','source':'本机','writable':False}])
-        elif path.endswith('/scope-preview'):
-            data.update(preview={'new': 2, 'updated': 0, 'skipped': 0, 'conflicts': 0,
-                                 'failed_calendar_ids': [], 'window': []}, preview_token='reviewed-scope')
-        elif path.endswith('/configure'):
+        elif path.endswith('/links-preview'):
+            data = {'status': 'success', 'preview_token': 'reviewed-scope'}
+        elif path.endswith('/links'):
             if not body.get('confirm') or body.get('preview_token') != 'reviewed-scope':
                 data = {'status': 'error', 'message': 'Preview and confirmation required'}
                 route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                               headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
                 return
-            connection.update(connected=True, calendar_ids=body['calendar_ids'], direction=body['direction'],
-                              last_success='2026-10-10T08:00:00Z')
+            connection.update(connected=True, links=body['links'], last_success='2026-10-10T08:00:00Z')
             data['result'] = dict(status='success', imported=2, updated=0, exported=0,
                                   deleted_local=0, deleted_remote=0, conflicts=0, pending_deletions=0, failed_calendar_ids=[])
         elif path.endswith('/sync'):
@@ -75,6 +73,8 @@ def backend(route):
         elif path.endswith('/disconnect'):
             connection['connected'] = False
         data['connection'] = connection
+    elif path == '/api/todos/categories':
+        data = {'categories': []}
     elif path.startswith('/api/todos/apple/'):
         data['connection'] = dict(supported=False, authorization='unsupported', connected=False,
                                   auto_enabled=True, list_ids=[], direction='bidirectional', lists=[],
@@ -102,14 +102,20 @@ with sync_playwright() as playwright:
         panel.get_by_role('button', name='重新检查').click()
         expect(panel.get_by_text('请在系统设置中允许 Stella 访问日历，然后重新检查。')).to_be_visible()
         panel.get_by_role('button', name='请求访问权限').click()
-        panel.get_by_role('checkbox', name='私人').check()
-        panel.get_by_role('checkbox', name='课程').check()
-        panel.get_by_label('Apple 日历同步方向').select_option('bidirectional')
+        panel.get_by_role('button', name='添加映射').click()
+        panel.get_by_role('button', name='添加映射').click()
+        panel.get_by_label('Apple 日历 1').select_option('a')
+        panel.get_by_label('Stella 分类 1').select_option('__create__')
+        panel.get_by_label('内容方向 1').select_option('bidirectional')
+        panel.get_by_label('Apple 日历 2').select_option('b')
+        panel.get_by_label('Stella 分类 2').select_option('__create__')
+        panel.get_by_label('内容方向 2').select_option('import')
         panel.get_by_role('button', name='预览同步').click()
-        expect(panel.get_by_text('同步预览：新增 2', exact=False)).to_be_visible()
+        expect(panel.get_by_text('将保存 2 条分类映射')).to_be_visible()
         panel.get_by_role('button', name='确认连接并同步').click()
         expect(panel.get_by_text('已连接', exact=False)).to_be_visible()
-        assert next(body for path, body in calls if path.endswith('/configure'))['calendar_ids'] == ['a', 'b']
+        saved = next(body for path, body in calls if path.endswith('/links'))
+        assert [row['apple_id'] for row in saved['links']] == ['a', 'b']
         panel.get_by_role('button', name='立即同步').click()
         connection['pending_deletions'] = 1
         connection['pending_local_deletions'] = 1
@@ -139,8 +145,8 @@ with sync_playwright() as playwright:
         panel.get_by_role('button', name='断开连接').click()
         expect(panel.get_by_text('未连接', exact=False)).to_be_visible()
         assert errors == [], errors
-        assert any(path.endswith('/scope-preview') for path, _ in calls)
-        assert any(body.get('preview_token') == 'reviewed-scope' for path, body in calls if path.endswith('/configure'))
+        assert any(path.endswith('/links-preview') for path, _ in calls)
+        assert any(body.get('preview_token') == 'reviewed-scope' for path, body in calls if path.endswith('/links'))
         print('Apple Calendar UI: unsupported, permission, connect, sync, conflict and disconnect passed')
     finally:
         browser.close()

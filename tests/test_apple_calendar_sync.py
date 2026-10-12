@@ -79,6 +79,8 @@ class FakeBridge:
         self.writes = []
         self.upsert_requests = []
         self.fail_next_write = False
+        self.titles = {}
+        self.read_only = set()
 
     def call(self, op, **payload):
         if op == "status":
@@ -88,8 +90,17 @@ class FakeBridge:
         if self.authorization != "full_access":
             raise RuntimeError("Calendar full access is required")
         if op == "calendars":
-            return {"calendars": [{"id": key, "title": key, "source": "iCloud", "writable": True}
+            return {"calendars": [{"id": key, "title": self.titles.get(key, key), "source": "iCloud",
+                                   "writable": key not in self.read_only}
                                   for key in sorted(self.available)]}
+        if op == "rename":
+            if payload["calendar_id"] not in self.available:
+                raise RuntimeError("Calendar is unavailable")
+            if payload["calendar_id"] in self.read_only:
+                raise RuntimeError("Calendar is read only")
+            self.titles[payload["calendar_id"]] = payload["title"]
+            self.writes.append((op, payload["calendar_id"], payload["title"]))
+            return {"calendar": {"id": payload["calendar_id"], "title": payload["title"]}}
         if op == "events":
             success = set(payload["calendar_ids"]) & self.available
             start = datetime.fromisoformat(payload["start"].replace("Z", "+00:00"))

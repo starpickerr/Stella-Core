@@ -188,3 +188,38 @@ def test_calendar_auto_route_updates_shared_manager(tmp_path, monkeypatch):
          patch.object(sync, "stop_auto"):
         result = json.loads(web_channel.AppleCalendarAutoHandler().POST())
     assert result["connection"]["auto_enabled"] is False
+
+
+def test_category_links_connect_and_batch_transfer_stays_disconnected(tmp_path, monkeypatch):
+    from channel.desktop import desktop_channel as web_channel
+    from application import Application
+
+    monkeypatch.setattr("common.state_dir.calendar_db", lambda **_kwargs: tmp_path / "calendar.db")
+    port = Application.port("calendar")
+    sync = AppleCalendarSync(bridge=FakeBridge([remote_event()]), db_path=tmp_path / "apple.db",
+                             calendar_port=port, clock=lambda: "2026-10-10T00:00:00+00:00")
+    monkeypatch.setattr(web_channel, "_apple_calendar_sync", lambda: sync)
+    monkeypatch.setattr(sync, "resume_auto", lambda: None)
+    study = next(row for row in port.categories() if row["id"] == "study")
+
+    def call(handler, body):
+        with patch.object(web_channel, "_require_auth"), patch.object(web_channel.web, "header"), \
+             patch.object(web_channel.web, "data", return_value=json.dumps(body).encode()):
+            return json.loads(handler().POST())
+
+    preview = call(web_channel.AppleCalendarBatchPreviewHandler, {
+        "direction": "import", "selections": [{"apple_id": "a", "stella_id": study["id"]}],
+        "start": "2026-09-01", "end": "2027-01-31",
+    })
+    transferred = call(web_channel.AppleCalendarBatchHandler, {
+        "direction": "import", "selections": [{"apple_id": "a", "stella_id": study["id"]}],
+        "start": "2026-09-01", "end": "2027-01-31",
+        "preview_token": preview["preview_token"], "confirm": True,
+    })
+    assert transferred["result"]["imported"] == 1
+    assert transferred["connection"]["connected"] is False
+    links = [{"apple_id": "a", "create_name": "课程", "direction": "import", "enabled": True}]
+    token = call(web_channel.AppleCalendarLinksPreviewHandler, {"links": links})["preview_token"]
+    connected = call(web_channel.AppleCalendarLinksHandler, {"links": links, "preview_token": token, "confirm": True})
+    assert connected["connection"]["connected"] is True
+    assert connected["connection"]["links"][0]["stella_id"]
