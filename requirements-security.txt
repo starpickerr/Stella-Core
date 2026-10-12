@@ -1,0 +1,12 @@
+# Minimum patched versions shared by source, tests and packaged builds.
+# Keep installation on Python 3.10+; review these floors when advisories change.
+requests>=2.33.0
+urllib3>=2.8.0
+Pillow>=12.3.0
+anyio>=4.14.2
+json-repair>=0.60.1
+python-dotenv>=1.2.2
+pip>=26.2
+setuptools>=83.0.0
+pytest>=9.0.3
+pypdf>=6.19.0
