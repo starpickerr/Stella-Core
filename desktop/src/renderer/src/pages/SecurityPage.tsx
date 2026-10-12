@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck, RefreshCw, ChevronRight, SlidersHorizontal, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
@@ -52,6 +52,8 @@ const permissionSourceLabel = (
 const DEFAULT_PRESETS = ['read-only', 'workspace-write', 'full-access'] as const
 const SCOPED_PRESETS = ['read-only', 'workspace-write', 'full-access', 'custom'] as const
 const card = 'min-w-0 rounded-card border border-default bg-surface p-5 sm:p-6'
+const overviewCard = `${card} shadow-sm`
+const metricValue = 'text-3xl font-semibold tracking-tight tabular-nums leading-none'
 const heading = 'text-base font-semibold text-content leading-snug'
 const input =
   'min-w-0 min-h-10 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content hover:border-strong focus-visible:outline-2 focus-visible:outline-accent'
@@ -59,13 +61,27 @@ const action =
   'min-h-10 shrink-0 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
 const faded = 'text-sm leading-relaxed text-content-secondary'
 
-const SectionTitle: React.FC<{ icon: LucideIcon; children: React.ReactNode }> = ({ icon: Icon, children }) => (
-  <h2 className={`${heading} flex items-center gap-2.5`}>
+const SectionTitle: React.FC<{ icon: LucideIcon; to?: string; children: React.ReactNode }> = ({ icon: Icon, to, children }) => {
+  const title = <>
     <span className="flex size-8 shrink-0 items-center justify-center rounded-btn bg-accent-soft text-accent">
       <Icon size={17} aria-hidden="true" />
     </span>
-    {children}
+    <span className="min-w-0 flex-1">{children}</span>
+    {to && <ChevronRight size={17} aria-hidden="true" className="shrink-0 text-content-tertiary group-hover:text-accent-active" />}
+  </>
+  return <h2 className={heading}>
+    {to ? <Link to={to} className="group flex min-h-10 items-center gap-2.5 rounded-btn hover:text-accent-active dark:hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">{title}</Link>
+      : <span className="flex items-center gap-2.5">{title}</span>}
   </h2>
+}
+
+const OverviewMetrics: React.FC<{ items: { label: string; value: React.ReactNode }[] }> = ({ items }) => (
+  <dl className="grid grid-cols-3 divide-x divide-default">
+    {items.map(item => <div key={item.label} className="min-w-0 px-3 first:pl-0 last:pr-0">
+      <dt className="min-h-10 text-xs leading-5 text-content-secondary">{item.label}</dt>
+      <dd className={`${typeof item.value === 'number' ? metricValue : 'text-sm font-medium leading-5'} mt-1`}>{item.value}</dd>
+    </div>)}
+  </dl>
 )
 
 const PolicyEditor: React.FC<{
@@ -121,9 +137,11 @@ const PolicyEditor: React.FC<{
 const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const copy = securityCopy(getLang())
   const sid = useSessionStore((s) => s.activeId)
-  const [tab, setTab] = useState<Tab>(
-    new URLSearchParams(window.location.search).get('tab') === 'activity' ? 'activity' : 'overview',
-  )
+  const location = useLocation()
+  const navigate = useNavigate()
+  const requestedTab = new URLSearchParams(location.search).get('tab')
+  const tab: Tab = (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
+  const setTab = (next: Tab) => navigate(next === 'overview' ? '/security' : `/security?tab=${next}`)
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
   const [records, setRecords] = useState<SecurityRecord[]>([])
   const [availableEvents, setAvailableEvents] = useState<SecurityRecord[]>([])
@@ -466,41 +484,33 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 ? null
                 : (center.privacy?.categories || []).slice(0, 4)
               return (
-              <div className="grid md:grid-cols-2 gap-4">
-                <section className={`${card} md:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5`}>
-                  <div>
-                    <SectionTitle icon={ShieldCheck}>{copy.presetsTitle}</SectionTitle>
+              <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
+                <section className={`${overviewCard} lg:col-span-2 flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8`}>
+                  <div className="min-w-0 flex-1">
+                    <SectionTitle icon={ShieldCheck} to="/security?tab=permissions">{copy.presetsTitle}</SectionTitle>
                     <p className={`${faded} mt-3`}>{copy.overviewDefaultHelp}</p>
-                    <p className="text-2xl font-semibold tracking-tight mt-3">{modeLabel(copy, globalMode)}</p>
                   </div>
-                  <button type="button" className={`${input} flex items-center justify-center gap-2 self-start sm:self-center`}
-                    onClick={() => setTab('permissions')}>
-                    {copy.tabs.permissions}<ChevronRight size={16} aria-hidden="true" />
-                  </button>
+                  <div className="shrink-0 rounded-btn bg-accent-soft px-5 py-4 lg:min-w-52">
+                    <p className="text-xs text-content-secondary">{copy.currentProtection}</p>
+                    <p className="text-2xl font-semibold tracking-tight mt-1.5">{modeLabel(copy, globalMode)}</p>
+                  </div>
                 </section>
-                <section className={card}>
-                  <SectionTitle icon={Clock3}>{copy.overviewBackgroundTitle}</SectionTitle>
+                <section className={overviewCard}>
+                  <SectionTitle icon={Clock3} to="/security?tab=background">{copy.overviewBackgroundTitle}</SectionTitle>
                   {!taskSummary || taskSummary.available === false ? (
-                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <span className="text-content-secondary">{copy.backgroundTitle}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.total ?? copy.overviewUnavailable}</p>
-                      </div>
-                      <div>
-                        <span className="text-content-secondary">{copy.backgroundEnabled}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.enabled ?? copy.overviewUnavailable}</p>
-                      </div>
-                      <div>
-                        <span className="text-content-secondary">{copy.backgroundPaused}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{taskSummary.paused ?? copy.overviewUnavailable}</p>
-                      </div>
+                    <div className="mt-5">
+                      <OverviewMetrics items={[
+                        { label: copy.overviewTotalTasks, value: taskSummary.total ?? copy.overviewUnavailable },
+                        { label: copy.backgroundEnabled, value: taskSummary.enabled ?? copy.overviewUnavailable },
+                        { label: copy.backgroundPaused, value: taskSummary.paused ?? copy.overviewUnavailable },
+                      ]} />
                       {taskSummary.modes && (
-                        <div className="col-span-3 border-t border-default pt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-content-secondary">
+                        <div className="mt-5 border-t border-default pt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs leading-5 text-content-secondary">
                           {(['read-only', 'workspace-write', 'full-access', 'custom'] as const).map((mode) => (
                             <span key={mode}>
-                              {modeLabel(copy, mode)}：{taskSummary.modes?.[mode] ?? 0}
+                              {modeLabel(copy, mode)} <span className="font-medium tabular-nums text-content">{taskSummary.modes?.[mode] ?? 0}</span>
                             </span>
                           ))}
                           {(taskSummary.unknown || 0) > 0 && (
@@ -511,91 +521,87 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     </div>
                   )}
                 </section>
-                <section className={card}>
-                  <SectionTitle icon={Link2}>{copy.overviewConnectionsTitle}</SectionTitle>
-                  <p className="text-2xl font-semibold tabular-nums mt-4">
-                    {typeof center.summary.connection_count === 'number'
-                      ? center.summary.connection_count
-                      : copy.overviewUnavailable}
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
+                <section className={overviewCard}>
+                  <SectionTitle icon={Link2} to="/security?tab=connections">{copy.overviewConnectionsTitle}</SectionTitle>
+                  <div className="mt-5 mb-4 flex items-end gap-2">
+                    <p className={metricValue}>
+                      {typeof center.summary.connection_count === 'number'
+                        ? center.summary.connection_count
+                        : copy.overviewUnavailable}
+                    </p>
+                    <span className="pb-0.5 text-xs text-content-secondary">{copy.connectionsCount}</span>
+                  </div>
+                  <div className="divide-y divide-default border-t border-default text-sm">
                     {connectionPreview.map((item) => (
-                      <div key={item.id} className="flex flex-wrap justify-between gap-x-3 gap-y-1">
-                        <span className="font-medium break-words">{item.name}</span>
-                        <span className="text-xs text-content-secondary">
-                          {(item.available ?? item.connected)
-                            ? (getLang() === 'en' ? 'Connected' : '已连接')
-                            : (getLang() === 'en' ? 'Unavailable' : '不可用')}
-                          {' · '}
-                          {item.allowed === false
-                            ? (getLang() === 'en' ? 'Paused' : '已暂停')
-                            : (getLang() === 'en' ? 'Allowed' : '允许使用')}
+                      <div key={item.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
+                        <span className="min-w-0 font-medium break-words">{(copy.connectionNames as Record<string, string>)[item.id] || item.name}</span>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-content-secondary">
+                          <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${item.connected ? 'bg-accent' : 'bg-content-tertiary'}`} />
+                          {item.connected ? copy.connected : copy.disconnected}
+                          {item.connected && item.allowed === false && <> · {copy.accessRevoked}</>}
                         </span>
                       </div>
                     ))}
+                    {center.connections.length === 0 && <p className={`${faded} py-3`}>{copy.noConnections}</p>}
                     {center.connections.length > 3 && (
-                      <p className="text-xs text-content-secondary">{copy.overviewMoreItems(center.connections.length - 3)}</p>
+                      <p className="pt-3 text-xs text-content-secondary">{copy.overviewMoreItems(center.connections.length - 3)}</p>
                     )}
                   </div>
                 </section>
-                <section className={card}>
-                  <SectionTitle icon={KeyRound}>{copy.overviewSecretsTitle}</SectionTitle>
-                  <p className="text-2xl font-semibold tabular-nums mt-4">
-                    {typeof center.summary.secret_count === 'number'
-                      ? center.summary.secret_count
-                      : copy.overviewUnavailable}
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
+                <section className={overviewCard}>
+                  <SectionTitle icon={KeyRound} to="/security?tab=secrets">{copy.overviewSecretsTitle}</SectionTitle>
+                  <div className="mt-5 mb-4 flex items-end gap-2">
+                    <p className={metricValue}>
+                      {typeof center.summary.secret_count === 'number'
+                        ? center.summary.secret_count
+                        : copy.overviewUnavailable}
+                    </p>
+                    <span className="pb-0.5 text-xs text-content-secondary">{copy.overviewSecretCountLabel}</span>
+                  </div>
+                  <div className="divide-y divide-default border-t border-default text-sm">
                     {secretPreview.map((item) => (
-                      <div key={item.name} className="flex justify-between gap-3">
+                      <div key={item.name} className="flex items-center justify-between gap-3 py-2.5">
                         <span className="font-medium break-words min-w-0">{securitySecretName(copy, item.name, item.display_name)}</span>
-                        <span className="text-xs text-content-secondary shrink-0">
-                          {item.configured
-                            ? (getLang() === 'en' ? 'Configured' : '已配置')
-                            : (getLang() === 'en' ? 'Missing' : '未配置')}
+                        <span className="inline-flex items-center gap-1.5 text-xs text-content-secondary shrink-0">
+                          <span aria-hidden="true" className={`size-1.5 rounded-full ${item.configured ? 'bg-accent' : 'bg-content-tertiary'}`} />
+                          {item.configured ? copy.configured : copy.notConfigured}
                         </span>
                       </div>
                     ))}
+                    {center.secrets.length === 0 && <p className={`${faded} py-3`}>{copy.noSecrets}</p>}
                     {center.secrets.length > 4 && (
-                      <p className="text-xs text-content-secondary">{copy.overviewMoreItems(center.secrets.length - 4)}</p>
+                      <p className="pt-3 text-xs text-content-secondary">{copy.overviewMoreItems(center.secrets.length - 4)}</p>
                     )}
                   </div>
                 </section>
-                <section className={card}>
-                  <SectionTitle icon={Activity}>{copy.overviewActivityTitle}</SectionTitle>
-                  <p className={`${faded} mt-1`}>{copy.activityStatsTitle}</p>
+                <section className={overviewCard}>
+                  <SectionTitle icon={Activity} to="/security?tab=activity">{copy.overviewActivityTitle}</SectionTitle>
+                  <p className="text-xs text-content-secondary mt-3">{copy.activityStatsTitle}</p>
                   {!activityCounts ? (
-                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <span className="text-content-secondary">{copy.autoAllow}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.auto_allow}</p>
-                      </div>
-                      <div>
-                        <span className="text-content-secondary">{copy.userAuthorized}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.user_authorized}</p>
-                      </div>
-                      <div>
-                        <span className="text-content-secondary">{copy.deniedCount}</span>
-                        <p className="text-2xl font-semibold tabular-nums mt-1">{activityCounts.denied}</p>
-                      </div>
+                    <div className="mt-5">
+                      <OverviewMetrics items={[
+                        { label: copy.autoAllow, value: activityCounts.auto_allow },
+                        { label: copy.userAuthorized, value: activityCounts.user_authorized },
+                        { label: copy.deniedCount, value: activityCounts.denied },
+                      ]} />
                       {activityCounts.uncertain && (
-                        <p className="col-span-3 text-xs text-content-secondary">{copy.activityStatsUncertain}</p>
+                        <p className="mt-5 border-t border-default pt-3 text-xs leading-5 text-content-secondary">{copy.activityStatsUncertain}</p>
                       )}
                     </div>
                   )}
                 </section>
-                <section className={`${card} md:col-span-2`}>
-                  <SectionTitle icon={Database}>{copy.overviewPrivacyTitle}</SectionTitle>
+                <section className={`${overviewCard} lg:col-span-2`}>
+                  <SectionTitle icon={Database} to="/security?tab=privacy">{copy.overviewPrivacyTitle}</SectionTitle>
                   {!privacyCats ? (
-                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
                   ) : (
-                    <div className="mt-4 grid sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                    <div className="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
                       {privacyCats.map((item) => (
-                        <div key={item.id} className="flex justify-between gap-3">
-                          <span>{item.name[lang]}</span>
-                          <span className="text-content-secondary">{copy.privacyBytes(item.bytes)}</span>
+                        <div key={item.id} className="rounded-btn bg-surface-2 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{item.name[lang]}</span>
+                          <span className="tabular-nums text-content-secondary">{copy.privacyBytes(item.bytes)}</span>
                         </div>
                       ))}
                     </div>

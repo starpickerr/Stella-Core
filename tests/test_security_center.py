@@ -578,7 +578,7 @@ def test_connections_use_real_service_status(tmp_path, monkeypatch):
     monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
     monkeypatch.setattr("common.state_dir.mcp_config_file", lambda: state / "mcp.json")
     monkeypatch.setattr(config_module, "conf", lambda: {
-        "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {}},
+        "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {"email": {"allowed": False}}},
         "github_token": "ghp_test",
     })
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {
@@ -591,10 +591,13 @@ def test_connections_use_real_service_status(tmp_path, monkeypatch):
         "agent.tools.browser.browser_env.capability_summary",
         lambda config=None: {"ready": False},
     )
-    rows = {item["id"]: item for item in security_center.connections()}
+    ordered = security_center.connections()
+    assert [item["id"] for item in ordered[:2]] == ["email", "calendar"]
+    rows = {item["id"]: item for item in ordered}
     assert rows["email"]["configured"] is True
     assert rows["email"]["available"] is True
     assert rows["email"]["connected"] is True
+    assert rows["email"]["allowed"] is False
     assert rows["calendar"]["connected"] is True
     assert rows["browser"]["connected"] is False
     assert rows["browser"]["available"] is False
