@@ -107,6 +107,24 @@ def test_apple_calendar_routes_use_authenticated_shared_sync(tmp_path, monkeypat
         assert auth.call_count == 6
 
 
+def test_scope_confirm_ignores_scan_clock_and_rejects_real_inventory_changes(tmp_path):
+    from agent.calendar.apple_preview import confirm_scope, prepare_scope
+
+    moments = iter(["2026-10-10T00:00:00+00:00", "2026-10-10T00:00:02+00:00",
+                    "2026-10-10T00:00:04+00:00", "2026-10-10T00:00:06+00:00"])
+    bridge = FakeBridge([remote_event()])
+    sync = AppleCalendarSync(bridge=bridge, db_path=tmp_path / "apple.db",
+                             calendar_port=__import__("application").Application.port("calendar"),
+                             clock=lambda: next(moments))
+    prepared = prepare_scope(sync, ["a"], "import")
+    assert prepared["preview"]["new"] == 1
+    confirm_scope(sync, ["a"], "import", prepared["preview_token"])
+    changed = prepare_scope(sync, ["a"], "import")
+    bridge.rows.append(remote_event(identifier="event-2", title="Seminar"))
+    with __import__("pytest").raises(ValueError, match="inventory changed"):
+        confirm_scope(sync, ["a"], "import", changed["preview_token"])
+
+
 def test_local_calendar_delete_confirmation_reaches_sync_service(tmp_path, monkeypatch):
     from channel.desktop import desktop_channel as web_channel
     from application import Application
