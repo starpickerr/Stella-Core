@@ -116,6 +116,23 @@ def _migrate_legacy(value: dict) -> dict:
     return {**value, "preset": "custom", "base_preset": _DEFAULT_BASE, "rules": snapshot}
 
 
+def snapshot_policy(policy: dict) -> dict:
+    """Materialize a complete storeable policy that no longer depends on a parent layer."""
+    mode = effective_mode(policy)
+    connections = deepcopy(policy.get("connections") or {})
+    if mode == "custom":
+        base = policy.get("base_preset", _DEFAULT_BASE)
+        if base not in PRESETS or base == "custom":
+            base = _DEFAULT_BASE
+        result = {"preset": "custom", "base_preset": base,
+                  "rules": effective_rules(policy), "connections": connections}
+    else:
+        result = {"preset": mode, "rules": {}, "connections": connections}
+    if "extra_roots" in policy:
+        result["extra_roots"] = list(policy["extra_roots"])
+    return result
+
+
 def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ValueError("security policy must be an object")
@@ -127,8 +144,12 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if "preset" in value:
         if value["preset"] not in PRESETS:
             raise ValueError("unknown security preset")
+        if global_policy and value["preset"] == "custom":
+            raise ValueError("global security policy cannot use the custom preset")
         result["preset"] = value["preset"]
     if "base_preset" in value:
+        if global_policy:
+            raise ValueError("global security policy cannot store a custom base preset")
         if value["base_preset"] not in PRESETS or value["base_preset"] == "custom":
             raise ValueError("unknown custom base preset")
         result["base_preset"] = value["base_preset"]
@@ -136,6 +157,8 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
         rules = value["rules"]
         if not isinstance(rules, dict) or any(k not in RULES or v not in VALUES for k, v in rules.items()):
             raise ValueError("invalid security rule")
+        if global_policy and rules:
+            raise ValueError("global security policy cannot store custom rules")
         result["rules"] = dict(rules)
     if "connections" in value:
         connections = value["connections"]
@@ -174,27 +197,66 @@ def merge(base: dict, patch: dict) -> dict:
     return result
 
 
-def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
-            agent_id: str | None = None, global_value: dict | None = None) -> dict:
-    """Persisted security_policy wins; `mode` is the legacy fallback only."""
+def _load_global(mode: str, global_value: dict | None) -> dict:
     if global_value is None:
         from config import conf
         global_value = conf().get("security_policy")
     if not isinstance(global_value, dict):
-        base = legacy_policy(mode)
-    else:
-        try:
-            base = merge(default_policy(), validate_patch(global_value, global_policy=True))
-        except ValueError:
-            return {"preset": "custom", "rules": {name: "deny" for name in RULES},
-                    "connections": {}, "error": "Global security policy is invalid."}
+        return legacy_policy(mode)
+    try:
+        # Existing installs may still store a custom global snapshot; read it, but
+        # validate_patch(..., global_policy=True) rejects new custom defaults.
+        if global_value.get("preset") == "custom" or global_value.get("preset") in LEGACY_PRESETS:
+            return merge(default_policy(), validate_patch(global_value, global_policy=False))
+        return merge(default_policy(), validate_patch(global_value, global_policy=True))
+    except ValueError:
+        return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                "connections": {}, "error": "Global security policy is invalid."}
+
+
+def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
+            agent_id: str | None = None, global_value: dict | None = None) -> dict:
+    """Complete project or standalone-conversation policies win; global is only the default seed."""
+    global_base = _load_global(mode, global_value)
     if project_dir:
         from agent.workspace import project_store
         try:
-            base = merge(base, validate_patch(project_store.get_security_policy(project_dir)))
+            stored = project_store.get_security_policy(project_dir)
         except ValueError:
             return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                     "connections": {}, "error": "Project security policy is invalid."}
+        if stored:
+            try:
+                patch = validate_patch(stored)
+            except ValueError:
+                return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                        "connections": {}, "error": "Project security policy is invalid."}
+            # Only a complete project snapshot replaces the global seed. Paths-only
+            # records keep inheriting the current global default.
+            if any(key in patch for key in ("preset", "base_preset", "rules", "connections")):
+                base = merge(default_policy(), patch)
+            else:
+                base = deepcopy(global_base)
+                if "extra_roots" in patch:
+                    base["extra_roots"] = list(patch["extra_roots"])
+        else:
+            base = deepcopy(global_base)
+        if session_id:
+            from agent.workspace import session_prefs
+            try:
+                pref = session_prefs.get_prefs(session_id, agent_id)
+            except ValueError:
+                return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                        "connections": {}, "error": "Conversation security preferences are invalid."}
+            roots = (pref.get("security_policy") or {}).get("extra_roots")
+            if roots is not None:
+                try:
+                    validated = validate_patch({"extra_roots": roots})
+                except ValueError:
+                    return {"preset": "custom", "rules": {name: "deny" for name in RULES},
+                            "connections": {}, "error": "Conversation security policy is invalid."}
+                base["extra_roots"] = list(validated["extra_roots"])
+        return base
     if session_id:
         from agent.workspace import session_prefs
         try:
@@ -202,13 +264,47 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
         except ValueError:
             return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                     "connections": {}, "error": "Conversation security preferences are invalid."}
-        if pref.get("security_policy"):
+        stored = pref.get("security_policy")
+        if stored:
             try:
-                base = merge(base, validate_patch(pref["security_policy"]))
+                return merge(default_policy(), validate_patch(stored))
             except ValueError:
                 return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                         "connections": {}, "error": "Conversation security policy is invalid."}
-    return base
+    return global_base
+
+
+def migrate_project_conversation_policies(project_dir: str, *, global_value: dict | None = None,
+                                          mode: str = WORKSPACE_WRITE) -> dict:
+    """Unify project-internal conversation overrides into one complete project policy."""
+    from agent.workspace import project_store, session_prefs
+
+    stored = project_store.get_security_policy(project_dir)
+    if stored:
+        try:
+            current = merge(default_policy(), validate_patch(stored))
+        except ValueError as error:
+            raise ValueError("Project security policy is invalid.") from error
+    else:
+        current = _load_global(mode, global_value)
+        # Preserve pre-migration conversation overlays when the project had no snapshot yet.
+        for session_id in project_store.list_project_session_ids(project_dir):
+            pref = session_prefs.get_prefs(session_id)
+            patch = pref.get("security_policy") or {}
+            rule_patch = {key: value for key, value in patch.items() if key != "extra_roots"}
+            if rule_patch:
+                current = merge(current, validate_patch(rule_patch))
+    snapshot = snapshot_policy(current)
+    project_store.set_security_policy(project_dir, snapshot)
+    for session_id in project_store.list_project_session_ids(project_dir):
+        pref = session_prefs.get_prefs(session_id)
+        patch = dict(pref.get("security_policy") or {})
+        roots = patch.get("extra_roots")
+        if patch:
+            session_prefs.set_prefs(session_id, security_policy=(
+                {"extra_roots": roots} if roots is not None else None
+            ))
+    return snapshot
 
 
 def rule(policy: dict, name: str) -> str:

@@ -64,9 +64,6 @@ class SchedulerMutations:
         if primary is None:
             raise ValueError("An explicit notification route requires a primary recipient")
         action = patch_destination(action, primary, agent_id)
-        if action.get("channel_type") != "web":
-            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
-                action.pop(field, None)
         return validate_conversation_action(action), normalized
 
     def create(self, task, *, notification_route=None, agent_id=None, origin="user"):
@@ -128,9 +125,6 @@ class SchedulerMutations:
                     action.get("source_session_id") != (original.get("action") or {}).get("source_session_id")):
                 action.pop("conversation_space", None)
                 action.pop("execution_project_dir", None)
-            if action.get("channel_type") != "web":
-                for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
-                    action.pop(field, None)
             action = validate_conversation_action(action)
             if action.get("type") == "send_message":
                 action.pop("task_description", None)

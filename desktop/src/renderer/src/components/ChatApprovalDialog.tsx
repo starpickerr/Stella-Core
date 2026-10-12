@@ -2,15 +2,26 @@ import React, { useEffect, useState } from 'react'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import apiClient from '../api/client'
 import { getLang } from '../i18n'
+import type { ToolInfo } from '../types'
 
 type Approval = Awaited<ReturnType<typeof apiClient.getSecurityConfirmations>>[number]
+
+const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
+  const lang = getLang() === 'en' ? 'en' : 'zh'
+  const match = catalog.find((item) => item.id === toolId)
+  return match?.title?.[lang] || match?.title?.zh || toolId
+}
 
 export default function ChatApprovalDialog({ sessionId, isStreaming, onStop }: {
   sessionId: string; isStreaming: boolean; onStop: () => void
 }) {
   const [approval, setApproval] = useState<Approval | null>(null)
+  const [toolCatalog, setToolCatalog] = useState<ToolInfo[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => {
+    void apiClient.getTools().then(setToolCatalog).catch(() => setToolCatalog([]))
+  }, [])
   useEffect(() => {
     if (!isStreaming || !sessionId) { setApproval(null); return }
     let active = true
@@ -45,7 +56,7 @@ export default function ChatApprovalDialog({ sessionId, isStreaming, onStop }: {
       <div className="flex items-center gap-2 text-content font-semibold"><ShieldCheck size={20} className="text-accent" />{getLang() === 'en' ? 'Approve this operation?' : '确认这次操作？'}</div>
       <p className="mt-2 text-sm text-content-secondary">{getLang() === 'en' ? 'The conversation is paused. It will continue after your decision.' : '对话已暂停。审批后会从当前步骤继续，无需重新发送消息。'}</p>
       <div className="mt-4 rounded-xl border border-default bg-surface-2 p-3 text-sm text-content break-words">
-        <div className="font-medium">{approval.tool}</div>
+        <div className="font-medium">{toolTitle(approval.tool, toolCatalog)}</div>
         <div className="mt-1 whitespace-pre-wrap">{approval.summary}</div>
         <div className="mt-2 text-xs text-content-tertiary">{approval.resource} · {approval.risk}</div>
         <div className="mt-2 text-xs text-content-secondary">{approval.reason}</div>

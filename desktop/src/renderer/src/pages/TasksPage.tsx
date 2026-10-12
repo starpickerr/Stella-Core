@@ -283,24 +283,17 @@ const TaskEditModal: React.FC<{
     a.is_group = channel === 'feishu' && receiveIdType === 'chat_id'
     if (channel === 'feishu') a.receive_id_type = receiveIdType
     a.execution_session_id = task?.action.execution_session_id || task?.action.notify_session_id || sessionId
-    if (channel === 'web') {
-      a.conversation_mode = conversationMode
-      if (conversationMode === 'source') {
-        a.source_session_id = sourceSessionId
-        if (sourceSessionId !== task?.action.source_session_id) {
-          delete a.conversation_space
-          delete a.execution_project_dir
-        }
-      } else {
-        delete a.source_session_id
-        a.conversation_space = conversationSpace
-        a.execution_project_dir = conversationSpace === 'project' ? projectDir : ''
+    a.conversation_mode = conversationMode
+    if (conversationMode === 'source') {
+      a.source_session_id = sourceSessionId
+      if (sourceSessionId !== task?.action.source_session_id) {
+        delete a.conversation_space
+        delete a.execution_project_dir
       }
     } else {
-      delete a.conversation_mode
       delete a.source_session_id
-      delete a.conversation_space
-      delete a.execution_project_dir
+      a.conversation_space = conversationSpace
+      a.execution_project_dir = conversationSpace === 'project' ? projectDir : ''
     }
     if (isToolCall) return a
     if (actionType === 'send_message') a.content = content
@@ -352,11 +345,11 @@ const TaskEditModal: React.FC<{
       setError(t('task_channel_reselect'))
       return
     }
-    if (channel === 'web' && conversationMode === 'source' && !sourceSessionId) {
+    if (conversationMode === 'source' && !sourceSessionId) {
       setError(t('task_conversation_source_required'))
       return
     }
-    if (channel === 'web' && (conversationMode === 'reuse' || conversationMode === 'new') && conversationSpace === 'project' && !projectDir) {
+    if ((conversationMode === 'reuse' || conversationMode === 'new') && conversationSpace === 'project' && !projectDir) {
       setError(t('task_conversation_project_required'))
       return
     }
@@ -545,36 +538,34 @@ const TaskEditModal: React.FC<{
           {!PROACTIVE_CHANNELS.has(channel) && <p className="text-xs text-content-tertiary mt-1">{t('task_channel_reselect')}</p>}
         </Field>
       </>}
-      {channel === 'web' && <>
-          <Field label={t('task_conversation_mode')}>
-            <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'source' | 'reuse' | 'new')}
-              options={[
-                { value: 'source', label: t('task_conversation_source') },
-                { value: 'reuse', label: t('task_conversation_reuse') },
-                { value: 'new', label: t('task_conversation_new') },
-              ]} />
-          </Field>
-          {conversationMode === 'source' && <>
-            <Field label={t('task_conversation_source_pick')}>
-              <Dropdown value={sourceSessionId} onChange={setSourceSessionId}
-                options={[{ value: '', label: t('task_conversation_source_pick') }, ...(
-                  destinations.find((d) => d.channel_type === 'web')?.recipients || []
-                ).map((r) => ({ value: r.receiver, label: r.name }))]} />
-            </Field>
-            <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_source_hint')}</p>
-          </>}
-          {(conversationMode === 'reuse' || conversationMode === 'new') && <>
-            <Field label={t('task_conversation_space')}>
-              <Dropdown value={conversationSpace} onChange={(value) => { setConversationSpace(value as 'personal' | 'project'); if (value === 'personal') setProjectDir('') }}
-                options={[{ value: 'personal', label: t('task_conversation_personal') }, { value: 'project', label: t('task_conversation_project') }]} />
-            </Field>
-            {conversationSpace === 'project' && <Field label={t('task_conversation_project_pick')}>
-              <Dropdown value={projectDir} onChange={setProjectDir}
-                options={[{ value: '', label: t('task_conversation_project_pick') }, ...projects.map((project) => ({ value: project.path, label: project.name }))]} />
-            </Field>}
-            <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_hint')}</p>
-            {conversationSpace === 'project' && !projectDir && <p className="text-xs text-danger">{t('task_conversation_project_required')}</p>}
-          </>}
+      <Field label={t('task_conversation_mode')}>
+        <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'source' | 'reuse' | 'new')}
+          options={[
+            { value: 'source', label: t('task_conversation_source') },
+            { value: 'reuse', label: t('task_conversation_reuse') },
+            { value: 'new', label: t('task_conversation_new') },
+          ]} />
+      </Field>
+      {conversationMode === 'source' && <>
+        <Field label={t('task_conversation_source_pick')}>
+          <Dropdown value={sourceSessionId} onChange={setSourceSessionId}
+            options={[{ value: '', label: t('task_conversation_source_pick') }, ...(
+              destinations.find((d) => d.channel_type === 'web')?.recipients || []
+            ).map((r) => ({ value: r.receiver, label: r.name }))]} />
+        </Field>
+        <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_source_hint')}</p>
+      </>}
+      {(conversationMode === 'reuse' || conversationMode === 'new') && <>
+        <Field label={t('task_conversation_space')}>
+          <Dropdown value={conversationSpace} onChange={(value) => { setConversationSpace(value as 'personal' | 'project'); if (value === 'personal') setProjectDir('') }}
+            options={[{ value: 'personal', label: t('task_conversation_personal') }, { value: 'project', label: t('task_conversation_project') }]} />
+        </Field>
+        {conversationSpace === 'project' && <Field label={t('task_conversation_project_pick')}>
+          <Dropdown value={projectDir} onChange={setProjectDir}
+            options={[{ value: '', label: t('task_conversation_project_pick') }, ...projects.map((project) => ({ value: project.path, label: project.name }))]} />
+        </Field>}
+        <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_hint')}</p>
+        {conversationSpace === 'project' && !projectDir && <p className="text-xs text-danger">{t('task_conversation_project_required')}</p>}
       </>}
       {!task?.action.silent && task?.action.type !== 'application_command' && <>
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
@@ -584,7 +575,6 @@ const TaskEditModal: React.FC<{
           <TextInput value={receiver} onChange={event => setReceiver(event.target.value)} list="task-recipients" />
           <datalist id="task-recipients">{destinations.find(d => d.channel_type === channel)?.recipients.map(r => <option key={r.receiver} value={r.receiver}>{r.name}</option>)}</datalist>
         </Field>}
-        {channel !== 'web' && <p className="text-xs text-content-tertiary">{t('task_execution_source')}</p>}
         <button type="button" className="text-xs text-accent hover:underline disabled:opacity-40" disabled={testing || !PROACTIVE_CHANNELS.has(channel) || ((channel === 'telegram' || channel === 'wecom_bot') && !receiver.trim())}
           onClick={() => void testSend()}>{testing ? (getLang() === 'en' ? 'Sending…' : '发送中…') : (getLang() === 'en' ? 'Send test' : '测试发送')}</button>
         {testStatus && <p role="status" className="text-xs text-content-secondary">{testStatus}</p>}

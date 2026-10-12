@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck, RefreshCw, ChevronRight } from 'lucide-react'
 import apiClient from '../api/client'
-import type { SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
+import type { SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
+import type { ToolInfo } from '../types'
 import {
   commonCredentials,
   ruleGroups,
@@ -16,8 +17,35 @@ import {
   securityTrace,
 } from './securityLocale'
 
-const tabs = ['overview', 'permissions', 'projects', 'connections', 'secrets', 'activity'] as const
+const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
+  const lang = getLang() === 'en' ? 'en' : 'zh'
+  const match = catalog.find((item) => item.id === toolId)
+  return match?.title?.[lang] || match?.title?.zh || toolId
+}
+
+const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy'] as const
 type Tab = (typeof tabs)[number]
+
+const modeLabel = (
+  copy: ReturnType<typeof securityCopy>,
+  mode: string | null | undefined,
+) => {
+  if (!mode) return copy.overviewUnavailable
+  return (copy.presets as Record<string, { name: string }>)[mode]?.name || mode
+}
+
+const permissionSourceLabel = (
+  copy: ReturnType<typeof securityCopy>,
+  source: string | undefined,
+) => {
+  if (source === 'independent') return copy.backgroundSourceIndependent
+  if (source === 'project') return copy.backgroundSourceProject
+  if (source === 'conversation') return copy.backgroundSourceConversation
+  if (source === 'unspecified') return copy.backgroundSourceUnspecified
+  return copy.backgroundSourceUnknown
+}
+const DEFAULT_PRESETS = ['read-only', 'workspace-write', 'full-access'] as const
+const SCOPED_PRESETS = ['read-only', 'workspace-write', 'full-access', 'custom'] as const
 const card = 'rounded-card border border-default bg-surface p-5'
 const input =
   'rounded-btn border border-default bg-surface-2 px-3 py-2 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent'
@@ -84,6 +112,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
   const [records, setRecords] = useState<SecurityRecord[]>([])
   const [availableEvents, setAvailableEvents] = useState<SecurityRecord[]>([])
+  const [activityCounts, setActivityCounts] = useState<SecurityActivityCounts | null>(null)
+  const [toolCatalog, setToolCatalog] = useState<ToolInfo[]>([])
   const [pending, setPending] = useState<
     {
       id: string
@@ -108,7 +138,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [customSecretName, setCustomSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
-  const [showGlobalEditor, setShowGlobalEditor] = useState(false)
+  const [projectDraft, setProjectDraft] = useState<SecurityPolicy | null>(null)
+  const [conversationDraft, setConversationDraft] = useState<SecurityPolicy | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -116,16 +147,19 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       if (queryFilters.since)
         queryFilters.since = String(Math.floor(new Date(queryFilters.since + 'T00:00:00').getTime() / 1000))
       const filtered = Object.values(filters).some(Boolean)
-      const [state, events, confirmations, allEvents] = await Promise.all([
+      const [state, events, confirmations, allEvents, tools] = await Promise.all([
         apiClient.getSecurityCenter(sid || undefined),
         apiClient.getSecurityRecords(queryFilters),
         apiClient.getSecurityConfirmations(),
         filtered ? apiClient.getSecurityRecords() : Promise.resolve(null),
+        apiClient.getTools().catch(() => [] as ToolInfo[]),
       ])
       if (state.status !== 'success') throw new Error(copy.loading)
       setCenter(state)
-      setRecords(events)
-      setAvailableEvents(allEvents || events)
+      setRecords(events.records)
+      setAvailableEvents(allEvents?.records || events.records)
+      setActivityCounts(state.summary.activity_counts || events.counts || null)
+      setToolCatalog(tools)
       setPending(confirmations as typeof pending)
       setError('')
       setSelectedProject((previous) =>
@@ -164,24 +198,97 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
+  useEffect(() => {
+    setProjectDraft(project ? { ...project.policy, rules: { ...(project.policy.rules || {}) } } : null)
+  }, [project?.path, project?.policy])
+  useEffect(() => {
+    if (!center) return
+    const policy = center.project ? center.project_policy : center.conversation_policy
+    setConversationDraft({ ...policy, rules: { ...(policy.rules || {}) } })
+  }, [center?.project, center?.project_policy, center?.conversation_policy])
   const saveProject = (patch: SecurityPolicy) => {
-    if (!project) return
-    void mutate(() =>
+    if (!project) return Promise.resolve(false)
+    return mutate(() =>
       apiClient.saveSecurityPolicy(
         'project',
-        { ...project.policy, ...patch },
+        patch.preset === 'custom' ? patch : { preset: patch.preset, rules: {}, connections: patch.connections || {} },
         { project: project.path, session: sid || undefined },
       ),
+      center?.project ? copy.projectAffectsAll : copy.saved,
     )
   }
   const saveConversation = (patch: SecurityPolicy) => {
-    if (!sid || !center) return
-    void mutate(() =>
-      apiClient.saveSecurityPolicy(
-        'conversation',
-        { ...center.conversation_policy, ...patch },
-        { session: sid },
-      ),
+    if (!sid || !center) return Promise.resolve(false)
+    const targetPolicy =
+      patch.preset === 'custom' ? patch : { preset: patch.preset, rules: {}, connections: patch.connections || {} }
+    return mutate(
+      () => apiClient.saveSecurityPolicy('conversation', targetPolicy, { session: sid }),
+      center.project ? copy.projectAffectsAll : copy.saved,
+    )
+  }
+  const renderScopedPresets = (
+    draft: SecurityPolicy | null,
+    setDraft: (value: SecurityPolicy) => void,
+    onSave: (patch: SecurityPolicy) => void | Promise<boolean>,
+    help: string,
+  ) => {
+    if (!draft || !center) return null
+    const active = draft.preset === 'custom' ? 'custom' : draft.preset
+    return (
+      <div className="mt-4 space-y-4">
+        <p className={faded}>{help}</p>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">
+          {center.mode_definitions
+            .filter((entry) => (SCOPED_PRESETS as readonly string[]).includes(entry.id))
+            .map((entry) => (
+              <button
+                type="button"
+                key={entry.id}
+                disabled={busy}
+                onClick={() => {
+                  if (entry.id === 'custom') {
+                    const base = draft.base_preset || (draft.preset !== 'custom' ? draft.preset : 'workspace-write')
+                    const baseRules =
+                      center.mode_definitions.find((row) => row.id === base)?.rules || center.effective_rules
+                    setDraft({
+                      preset: 'custom',
+                      base_preset: base,
+                      rules: { ...(Object.keys(draft.rules || {}).length ? draft.rules : baseRules) },
+                      connections: draft.connections || {},
+                      extra_roots: draft.extra_roots,
+                    })
+                    return
+                  }
+                  setDraft({ preset: entry.id, rules: {}, connections: draft.connections || {}, extra_roots: draft.extra_roots })
+                }}
+                aria-pressed={active === entry.id}
+                className={`px-4 py-3 rounded-btn text-left border min-h-24 ${active === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
+              >
+                <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
+                <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
+                  {entry.description[getLang() === 'en' ? 'en' : 'zh']}
+                </span>
+              </button>
+            ))}
+        </div>
+        {draft.preset === 'custom' ? (
+          <PolicyEditor
+            policy={draft}
+            definitions={center.mode_definitions}
+            copy={copy}
+            busy={busy}
+            inherit={false}
+            onSave={(patch) => {
+              void onSave(patch)
+            }}
+            onCancel={() => void load()}
+          />
+        ) : (
+          <button type="button" disabled={busy} className={action} onClick={() => void onSave(draft)}>
+            {copy.savePermission}
+          </button>
+        )}
+      </div>
     )
   }
   const overrideSummary = (policy: SecurityPolicy) => {
@@ -203,10 +310,12 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div className="divide-y divide-default">
         {items.map((item, index) => {
           const outcome = (copy.outcomes as Record<string, string>)[item.decision] || copy.reasonFallback
+          const eventLabel = (copy.events as Record<string, string>)[item.event]
+          const namedTool = toolTitle(item.tool, toolCatalog)
           const event =
-            (copy.events as Record<string, string>)[item.event] ||
-            (copy.tools as Record<string, string>)[item.tool] ||
-            copy.events.tool_decision
+            item.event === 'tool_decision' || !eventLabel
+              ? namedTool
+              : eventLabel
           const risk = (copy.risk as Record<string, string>)[item.risk] || copy.risk.L2
           const trace = securityTrace(copy, item.trace || [])
           return (
@@ -318,139 +427,166 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           <p className={faded}>{copy.loading}</p>
         ) : (
           <>
-            {tab === 'overview' && (
+            {tab === 'overview' && (() => {
+              const lang = getLang() === 'en' ? 'en' : 'zh'
+              const globalMode = center.global_policy?.preset || 'workspace-write'
+              const taskSummary = center.summary.background_tasks
+              const connectionPreview = center.connections.slice(0, 3)
+              const secretPreview = center.secrets.slice(0, 4)
+              const privacyCats = center.privacy?.available === false
+                ? null
+                : (center.privacy?.categories || []).slice(0, 4)
+              return (
               <div className="space-y-5">
                 <section className={card}>
-                  <div className="flex items-start gap-3">
-                    <span
-                      className={`mt-1 size-3 rounded-full shrink-0 ${center.summary.status === 'normal' ? 'bg-accent' : 'bg-amber-500'}`}
-                    />
-                    <div className="min-w-0">
-                      <h2 className="text-lg font-semibold">
-                        {center.process_isolation.status === 'unavailable'
-                          ? (getLang() === 'en' ? 'Process isolation unavailable' : '不支持进程隔离')
-                          : center.summary.status === 'normal' ? copy.statusNormal : copy.statusAttention}
-                      </h2>
-                      <p className={faded}>
-                        {center.process_isolation.reason}
-                      </p>
-                      {center.policy_error && <p role="alert" className="text-danger text-sm mt-2">{center.policy_error}</p>}
-                    </div>
-                  </div>
-                  <div className="mt-5 pt-4 border-t border-default grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <span className="text-content-secondary">{copy.currentProtection}</span>
-                      <p className="font-medium mt-1">
-                        {center.mode_definitions.find(row => row.id === center.effective_mode)?.name[getLang() === 'en' ? 'en' : 'zh'] || center.effective_mode}
-                      </p>
-                      <p className="text-xs text-content-secondary">{getLang() === 'en' ? 'Source' : '来源'}：{center.policy_source}</p>
-                    </div>
-                    <div>
-                      <span className="text-content-secondary">{copy.connectionsCount}</span>
-                      <p className="font-medium mt-1">{center.summary.connection_count}</p>
-                    </div>
-                    <div>
-                      <span className="text-content-secondary">{copy.secretsCount}</span>
-                      <p className="font-medium mt-1">{center.summary.secret_count}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-xs text-content-secondary break-all">{getLang() === 'en' ? 'Authorized directories' : '授权目录'}：{center.authorized_roots.join(' · ')}</div>
+                  <h2 className="font-semibold">{copy.presetsTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.overviewDefaultHelp}</p>
+                  <p className="font-medium mt-3">{modeLabel(copy, globalMode)}</p>
                 </section>
-                {pending.length > 0 && (
-                  <section className={card}>
-                    <h2 className="font-semibold">{copy.reviewActions}</h2>
-                    <p className={`${faded} mt-1 mb-3`}>{copy.reviewHelp}</p>
-                    {pending.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3 border-t border-default text-sm"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-medium">
-                            {(copy.tools as Record<string, string>)[item.tool] || copy.events.tool_decision}
-                          </p>
-                          <p className="text-content-secondary mt-0.5">
-                            {securityResource(copy, item.resource) !==
-                              ((copy.tools as Record<string, string>)[item.tool] ||
-                                copy.events.tool_decision) && (
-                              <>
-                                {securityResource(copy, item.resource)}
-                                {' · '}
-                              </>
-                            )}
-                            {(copy.risk as Record<string, string>)[item.risk] || copy.risk.L3}
-                          </p>
-                          {item.summary && (
-                            <code className="block text-xs text-content-secondary break-all mt-1">
-                              {item.summary}
-                            </code>
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.overviewBackgroundTitle}</h2>
+                  {!taskSummary || taskSummary.available === false ? (
+                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                      <div>
+                        <span className="text-content-secondary">{copy.backgroundTitle}</span>
+                        <p className="font-medium mt-1">{taskSummary.total ?? copy.overviewUnavailable}</p>
+                      </div>
+                      <div>
+                        <span className="text-content-secondary">{copy.backgroundEnabled}</span>
+                        <p className="font-medium mt-1">{taskSummary.enabled ?? copy.overviewUnavailable}</p>
+                      </div>
+                      <div>
+                        <span className="text-content-secondary">{copy.backgroundPaused}</span>
+                        <p className="font-medium mt-1">{taskSummary.paused ?? copy.overviewUnavailable}</p>
+                      </div>
+                      {taskSummary.modes && (
+                        <div className="sm:col-span-3 text-xs text-content-secondary">
+                          {(['read-only', 'workspace-write', 'full-access', 'custom'] as const).map((mode) => (
+                            <span key={mode} className="mr-3">
+                              {modeLabel(copy, mode)}：{taskSummary.modes?.[mode] ?? 0}
+                            </span>
+                          ))}
+                          {(taskSummary.unknown || 0) > 0 && (
+                            <span>{copy.overviewUnknownPermissions(taskSummary.unknown || 0)}</span>
                           )}
-                          <p className="text-xs text-content-secondary mt-1">{item.reason} · {item.effect}</p>
-                          {item.expanded_scope && <p className="text-xs text-content-secondary break-all mt-1">{getLang() === 'en' ? 'Expanded scope' : '扩大范围'}：{item.expanded_scope}</p>}
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                          <button
-                            disabled={busy}
-                            className={action}
-                            onClick={() =>
-                              void mutate(() => apiClient.approveSecurityConfirmation(item.id, item.session), copy.approved)
-                            }
-                          >
-                            {copy.allowOnce}
-                          </button>
-                          <button
-                            disabled={busy}
-                            className={`${input} text-danger`}
-                            onClick={() =>
-                              void mutate(() => apiClient.rejectSecurityConfirmation(item.id, item.session), copy.rejected)
-                            }
-                          >
-                            {copy.deny}
-                          </button>
-                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.overviewConnectionsTitle}</h2>
+                  <p className="font-medium mt-2">
+                    {typeof center.summary.connection_count === 'number'
+                      ? center.summary.connection_count
+                      : copy.overviewUnavailable}
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {connectionPreview.map((item) => (
+                      <div key={item.id} className="flex justify-between gap-3">
+                        <span>{item.name}</span>
+                        <span className="text-content-secondary">
+                          {(item.available ?? item.connected)
+                            ? (getLang() === 'en' ? 'Connected' : '已连接')
+                            : (getLang() === 'en' ? 'Unavailable' : '不可用')}
+                          {' · '}
+                          {item.allowed === false
+                            ? (getLang() === 'en' ? 'Paused' : '已暂停')
+                            : (getLang() === 'en' ? 'Allowed' : '允许使用')}
+                        </span>
                       </div>
                     ))}
-                  </section>
-                )}
-                <section className={card}>
-                  <h2 className="font-semibold mb-3">{copy.recentHighRisk}</h2>
-                  {eventList(center.summary.recent_high_risk)}
+                    {center.connections.length > 3 && (
+                      <p className="text-xs text-content-secondary">{copy.overviewMoreItems(center.connections.length - 3)}</p>
+                    )}
+                  </div>
                 </section>
                 <section className={card}>
-                  <h2 className="font-semibold mb-3">{copy.recentDenials}</h2>
-                  {eventList(center.summary.recent_denials)}
+                  <h2 className="font-semibold">{copy.overviewSecretsTitle}</h2>
+                  <p className="font-medium mt-2">
+                    {typeof center.summary.secret_count === 'number'
+                      ? center.summary.secret_count
+                      : copy.overviewUnavailable}
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {secretPreview.map((item) => (
+                      <div key={item.name} className="flex justify-between gap-3">
+                        <span>{securitySecretName(copy, item.name)}</span>
+                        <span className="text-content-secondary">
+                          {item.configured
+                            ? (getLang() === 'en' ? 'Configured' : '已配置')
+                            : (getLang() === 'en' ? 'Missing' : '未配置')}
+                        </span>
+                      </div>
+                    ))}
+                    {center.secrets.length > 4 && (
+                      <p className="text-xs text-content-secondary">{copy.overviewMoreItems(center.secrets.length - 4)}</p>
+                    )}
+                  </div>
                 </section>
-                <button type="button" className="text-sm text-accent" onClick={() => setTab('activity')}>
-                  {copy.seeActivity}
-                </button>
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.overviewActivityTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.activityStatsTitle}</p>
+                  {!activityCounts ? (
+                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                      <div>
+                        <span className="text-content-secondary">{copy.autoAllow}</span>
+                        <p className="font-medium mt-1">{activityCounts.auto_allow}</p>
+                      </div>
+                      <div>
+                        <span className="text-content-secondary">{copy.userAuthorized}</span>
+                        <p className="font-medium mt-1">{activityCounts.user_authorized}</p>
+                      </div>
+                      <div>
+                        <span className="text-content-secondary">{copy.deniedCount}</span>
+                        <p className="font-medium mt-1">{activityCounts.denied}</p>
+                      </div>
+                      {activityCounts.uncertain && (
+                        <p className="sm:col-span-3 text-xs text-content-secondary">{copy.activityStatsUncertain}</p>
+                      )}
+                    </div>
+                  )}
+                </section>
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.overviewPrivacyTitle}</h2>
+                  {!privacyCats ? (
+                    <p className={`${faded} mt-2`}>{copy.overviewUnavailable}</p>
+                  ) : (
+                    <div className="mt-3 space-y-2 text-sm">
+                      {privacyCats.map((item) => (
+                        <div key={item.id} className="flex justify-between gap-3">
+                          <span>{item.name[lang]}</span>
+                          <span className="text-content-secondary">{copy.privacyBytes(item.bytes)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
-            )}
+              )
+            })()}
             {tab === 'permissions' && (
               <div className="space-y-5">
                 <section className={card}>
                   <h2 className="font-semibold">{copy.presetsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
-                  <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-4 gap-2">
-                    {center.mode_definitions.map((entry) => (
+                  <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {center.mode_definitions
+                      .filter((entry) => (DEFAULT_PRESETS as readonly string[]).includes(entry.id))
+                      .map((entry) => (
                       <button
                         type="button"
                         key={entry.id}
                         disabled={busy}
                         onClick={() => {
-                          if (entry.id === 'custom') {
-                            setShowGlobalEditor(true)
-                            const current = center.global_policy
-                            const base = current.base_preset || (current.preset !== 'custom' ? current.preset : 'workspace-write')
-                            if (current.preset !== 'custom') {
-                              saveGlobal({ preset: 'custom', base_preset: base, rules: { ...center.effective_rules } })
-                            }
-                            return
-                          }
-                          setShowGlobalEditor(false)
-                          saveGlobal({ preset: entry.id, rules: {} })
+                          void saveGlobal({ preset: entry.id, rules: {} })
                         }}
-                        aria-pressed={center.effective_mode === entry.id}
-                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.effective_mode === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
+                        aria-pressed={center.global_policy.preset === entry.id}
+                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.global_policy.preset === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
                       >
                         <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
                         {entry.id === 'workspace-write' && (
@@ -463,16 +599,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     ))}
                   </div>
                 </section>
-                {(showGlobalEditor || center.global_policy.preset === 'custom') && <section className={card}>
-                  <h3 className="font-semibold mb-3">{copy.advanced}</h3>
-                  <PolicyEditor policy={center.global_policy} definitions={center.mode_definitions} copy={copy}
-                    busy={busy} inherit={false} onSave={(patch) => { void saveGlobal(patch).then(ok => { if (ok) setShowGlobalEditor(false) }) }}
-                    onCancel={() => setShowGlobalEditor(false)} />
-                </section>}
-              </div>
-            )}
-            {tab === 'projects' && (
-              <div className="space-y-5">
                 <section className={card}>
                   <h2 className="font-semibold">{copy.projectsTitle}</h2>
                   <p className={`${faded} mt-1 mb-3`}>{copy.projectsHelp}</p>
@@ -492,13 +618,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   {project ? (
                     <>
                       {overrideSummary(project.policy)}
-                      <details className="mt-4 border-t border-default pt-3">
-                        <summary className="cursor-pointer text-sm font-medium text-accent">
-                          {copy.projectAdjust}
-                        </summary>
-                        <div className="mt-4"><PolicyEditor policy={project.policy} definitions={center.mode_definitions}
-                          copy={copy} busy={busy} inherit onSave={saveProject} /></div>
-                      </details>
+                      {renderScopedPresets(projectDraft, setProjectDraft, saveProject, copy.projectSharedHelp)}
                     </>
                   ) : (
                     <p className={`${faded} mt-3`}>{copy.noProject}</p>
@@ -511,16 +631,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     <p className="text-xs text-content-tertiary mt-1 break-all">
                       {center.project || copy.defaultWorkspace}
                     </p>
-                    {overrideSummary(center.conversation_policy)}
-                    <details className="mt-4 border-t border-default pt-3">
-                      <summary className="cursor-pointer text-sm font-medium text-accent">
-                        {copy.conversationAdjust}
-                      </summary>
-                      <div className="mt-4">
-                        <PolicyEditor policy={center.conversation_policy} definitions={center.mode_definitions}
-                          copy={copy} busy={busy} inherit onSave={saveConversation} />
-                      </div>
-                    </details>
+                    {overrideSummary(center.project ? center.project_policy : center.conversation_policy)}
+                    {renderScopedPresets(
+                      conversationDraft,
+                      setConversationDraft,
+                      saveConversation,
+                      center.project ? copy.projectSharedHelp : copy.standaloneConversationHelp,
+                    )}
                     <label className="block text-sm mt-4">
                       {copy.extraRoot}
                       <span className="block text-xs text-content-secondary mt-1">{copy.extraRootHelp}</span>
@@ -535,7 +652,9 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                           disabled={busy || !extraRoot.trim()}
                           className={action}
                           onClick={() => {
-                            saveConversation({
+                            const base = center.project ? center.project_policy : center.conversation_policy
+                            void saveConversation({
+                              ...base,
                               extra_roots: [
                                 ...(center.conversation_policy.extra_roots || []),
                                 extraRoot.trim(),
@@ -554,13 +673,15 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                         <button
                           disabled={busy}
                           className="text-danger"
-                          onClick={() =>
-                            saveConversation({
+                          onClick={() => {
+                            const base = center.project ? center.project_policy : center.conversation_policy
+                            void saveConversation({
+                              ...base,
                               extra_roots: (center.conversation_policy.extra_roots || []).filter(
                                 (item) => item !== root,
                               ),
                             })
-                          }
+                          }}
                         >
                           {copy.remove}
                         </button>
@@ -569,6 +690,75 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </section>
                 )}
               </div>
+            )}
+            {tab === 'background' && (
+              <section className={card}>
+                <h2 className="font-semibold">{copy.backgroundTitle}</h2>
+                <p className={`${faded} mt-1`}>{copy.backgroundHelp}</p>
+                {(center.background_tasks || []).length === 0 ? (
+                  <p className={`${faded} mt-4`}>{copy.backgroundEmpty}</p>
+                ) : (
+                  <div className="mt-4 divide-y divide-default">
+                    {(center.background_tasks || []).map((task) => (
+                      <div key={task.id} className="py-4 space-y-3 text-sm">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{task.name}</p>
+                            <p className="text-content-secondary mt-1">
+                              {task.enabled ? copy.backgroundEnabled : copy.backgroundPaused}
+                              {' · '}
+                              {permissionSourceLabel(copy, task.permission_source)}
+                              {' · '}
+                              {task.unknown
+                                ? copy.backgroundSourceUnknown
+                                : modeLabel(copy, task.effective_mode)}
+                            </p>
+                            <p className="text-xs text-content-secondary mt-1">
+                              {task.conversation_mode === 'source'
+                                ? copy.backgroundContextSource
+                                : task.conversation_mode === 'reuse'
+                                  ? copy.backgroundContextReuse
+                                  : task.conversation_mode === 'new'
+                                    ? copy.backgroundContextNew
+                                    : copy.backgroundSourceUnspecified}
+                            </p>
+                            {task.policy_error && (
+                              <p className="text-xs text-danger mt-1">{task.policy_error}</p>
+                            )}
+                          </div>
+                          <label className="text-xs text-content-secondary shrink-0">
+                            {copy.backgroundSavePermission}
+                            <select
+                              className={`${input} block mt-1`}
+                              disabled={busy}
+                              value={task.run_permission_mode || 'inherit'}
+                              onChange={(event) => {
+                                const value = event.target.value
+                                if (!window.confirm(copy.backgroundConfirmChange)) {
+                                  event.target.value = task.run_permission_mode || 'inherit'
+                                  return
+                                }
+                                void mutate(
+                                  () =>
+                                    apiClient.updateTask(task.id, {
+                                      run_permission_mode: value as 'read-only' | 'workspace-write' | 'full-access' | 'inherit',
+                                    }),
+                                  copy.saved,
+                                )
+                              }}
+                            >
+                              <option value="inherit">{copy.decisions.inherit}</option>
+                              <option value="read-only">{copy.presets['read-only'].name}</option>
+                              <option value="workspace-write">{copy.presets['workspace-write'].name}</option>
+                              <option value="full-access">{copy.presets['full-access'].name}</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
             {tab === 'connections' && (
               <div className="space-y-3">
@@ -604,7 +794,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                               ? connection.scopes
                                   .map((scope) => (copy.operations as Record<string, string>)[scope] || scope)
                                   .join(copy.listSeparator)
-                              : copy.allOperations}
+                              : copy.undeclaredScopes}
                         </p>
                       )}
                       {connection.connected && (
@@ -768,6 +958,25 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     {copy.clearFilters}
                   </button>
                 </div>
+                {activityCounts && (
+                  <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-btn bg-surface-2 px-3 py-2">
+                      <span className="text-content-secondary">{copy.autoAllow}</span>
+                      <p className="font-medium mt-1">{activityCounts.auto_allow}</p>
+                    </div>
+                    <div className="rounded-btn bg-surface-2 px-3 py-2">
+                      <span className="text-content-secondary">{copy.userAuthorized}</span>
+                      <p className="font-medium mt-1">{activityCounts.user_authorized}</p>
+                    </div>
+                    <div className="rounded-btn bg-surface-2 px-3 py-2">
+                      <span className="text-content-secondary">{copy.deniedCount}</span>
+                      <p className="font-medium mt-1">{activityCounts.denied}</p>
+                    </div>
+                    {activityCounts.uncertain && (
+                      <p className="sm:col-span-3 text-xs text-content-secondary">{copy.activityStatsUncertain}</p>
+                    )}
+                  </div>
+                )}
                 <div className="grid sm:grid-cols-3 gap-3 mb-4">
                   <label className="text-xs text-content-secondary">
                     {copy.filterAgent}
@@ -809,7 +1018,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       <option value="">{copy.all}</option>
                       {[...new Set(availableEvents.map((event) => event.tool))].map((tool) => (
                         <option key={tool} value={tool}>
-                          {(copy.tools as Record<string, string>)[tool] || tool}
+                          {toolTitle(tool, toolCatalog)}
                         </option>
                       ))}
                     </select>
@@ -877,6 +1086,100 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </div>
                 {eventList(records)}
               </section>
+            )}
+            {tab === 'privacy' && (
+              <div className="space-y-5">
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.privacyTitle}</h2>
+                  <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
+                  {center.privacy?.available === false ? (
+                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
+                  ) : (
+                    <div className="mt-4 divide-y divide-default">
+                      {(center.privacy?.categories || []).map((item) => {
+                        const lang = getLang() === 'en' ? 'en' : 'zh'
+                        return (
+                          <div key={item.id} className="py-4 text-sm space-y-2">
+                            <p className="font-medium">{item.name[lang]}</p>
+                            <p className="text-content-secondary break-all">
+                              {copy.privacyPath}
+                              {copy.fieldSeparator}
+                              {item.path}
+                            </p>
+                            <p className="text-content-secondary">
+                              {copy.privacySize}
+                              {copy.fieldSeparator}
+                              {copy.privacyBytes(item.bytes)}
+                            </p>
+                            <p className="text-content-secondary">
+                              {copy.privacyRetention}
+                              {copy.fieldSeparator}
+                              {item.retention[lang]}
+                            </p>
+                            {item.id === 'conversations' && (
+                              <p className="text-xs text-content-secondary">{copy.privacyManageSessions}</p>
+                            )}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {item.actions.includes('clear_temporary') && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  className={action}
+                                  onClick={() => {
+                                    if (!window.confirm(copy.privacyConfirmClear)) return
+                                    void mutate(() => apiClient.cleanupPrivacy('clear_temporary'), copy.saved)
+                                  }}
+                                >
+                                  {copy.privacyClearTemp}
+                                </button>
+                              )}
+                              {item.actions.includes('clear_security_activity') && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  className={`${input} text-danger`}
+                                  onClick={() => {
+                                    if (!window.confirm(copy.privacyConfirmClear)) return
+                                    void mutate(() => apiClient.cleanupPrivacy('clear_security_activity'), copy.saved)
+                                  }}
+                                >
+                                  {copy.privacyClearActivity}
+                                </button>
+                              )}
+                              {item.actions.includes('clear_runs') && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  className={`${input} text-danger`}
+                                  onClick={() => {
+                                    if (!window.confirm(copy.privacyConfirmClear)) return
+                                    void mutate(() => apiClient.cleanupPrivacy('clear_runs'), copy.saved)
+                                  }}
+                                >
+                                  {copy.privacyClearRuns}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+                <section className={card}>
+                  <h2 className="font-semibold">{copy.privacyExternalTitle}</h2>
+                  <div className="mt-3 space-y-3 text-sm">
+                    {(center.privacy?.external_transfers || []).map((item) => (
+                      <div key={item.id}>
+                        <p className="font-medium">{item.name}</p>
+                        <p className="text-content-secondary mt-1">
+                          {item.note[getLang() === 'en' ? 'en' : 'zh']}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
             )}
           </>
         )}
