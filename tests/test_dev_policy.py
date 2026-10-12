@@ -3,6 +3,13 @@
 from scripts import check_dev_policy
 
 
+def test_absent_development_spec_skips_policy(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(check_dev_policy, "ROOT", tmp_path)
+
+    assert check_dev_policy.main() == 0
+    assert "SKIP policy" in capsys.readouterr().out
+
+
 def test_missing_skill_coordination_rule_fails_policy(tmp_path, monkeypatch, capsys):
     (tmp_path / "AGENTS.md").write_text(
         "Codex Cursor .agents/AGENTS.md .agents/rules/git.md .agents/rules/skill-coordination.md develop main",

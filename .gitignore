@@ -70,4 +70,9 @@ desktop/resources/bin/
 
 .wrangler/
 evals/reports/
-.agents/audits/code-review/Full-Audit-*.md
+
+# Development-agent specifications stay on this machine and are not product source.
+/AGENTS.md
+/.agents/
+/.cursor/
+/.codex/

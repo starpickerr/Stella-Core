@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".agents/skills/executing-plans/scripts"
 
@@ -13,6 +15,8 @@ def _run(*args, cwd):
 
 
 def test_inline_plan_skill_uses_its_own_scripts(tmp_path, monkeypatch):
+    if not (SCRIPTS / "task-start").is_file():
+        pytest.skip("development-agent skills are local and not in this checkout")
     _run("git", "init", "-q", str(tmp_path), cwd=tmp_path)
     _run("git", "config", "user.name", "Skill Test", cwd=tmp_path)
     _run("git", "config", "user.email", "skill-test@example.invalid", cwd=tmp_path)
