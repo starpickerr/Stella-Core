@@ -43,6 +43,28 @@ def prepare_items(manager, direction, source_id, item_ids):
         return {"preview": preview, "preview_token": token}
 
 
+def prepare_links(manager, links):
+    import json
+    if not isinstance(links, list):
+        raise ValueError("links must be a list")
+    with manager._lock:
+        token = secrets.token_urlsafe(24)
+        manager._links_preview = (token, json.dumps(links, sort_keys=True, ensure_ascii=False),
+                                  time.monotonic() + 600)
+        return {"preview_token": token}
+
+
+def confirm_links(manager, links, token):
+    import json
+    with manager._lock:
+        pending = getattr(manager, "_links_preview", None)
+        current = json.dumps(links, sort_keys=True, ensure_ascii=False) if isinstance(links, list) else ""
+        if (not isinstance(token, str) or not pending or not secrets.compare_digest(token, pending[0]) or
+                current != pending[1] or time.monotonic() > pending[2]):
+            raise ValueError("matching Apple category preview and confirmation are required")
+        manager._links_preview = None
+
+
 def confirm_items(manager, direction, source_id, item_ids, token):
     with manager._lock:
         pending = getattr(manager, "_item_preview", None)

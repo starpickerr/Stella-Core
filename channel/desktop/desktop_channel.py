@@ -2087,6 +2087,10 @@ class DesktopChannel(ChatChannel):
             '/api/calendar/apple/scope-preview', 'AppleCalendarScopePreviewHandler',
             '/api/calendar/apple/items', 'AppleCalendarItemsHandler',
             '/api/calendar/apple/one-time', 'AppleCalendarOneTimeHandler',
+            '/api/calendar/apple/links-preview', 'AppleCalendarLinksPreviewHandler',
+            '/api/calendar/apple/links', 'AppleCalendarLinksHandler',
+            '/api/calendar/apple/batch-preview', 'AppleCalendarBatchPreviewHandler',
+            '/api/calendar/apple/batch', 'AppleCalendarBatchHandler',
             '/api/todos/apple/status', 'AppleReminderStatusHandler',
             '/api/todos/apple/access', 'AppleReminderAccessHandler',
             '/api/todos/apple/configure', 'AppleReminderConfigureHandler',
@@ -2098,6 +2102,11 @@ class DesktopChannel(ChatChannel):
             '/api/todos/apple/scope-preview', 'AppleReminderScopePreviewHandler',
             '/api/todos/apple/items', 'AppleReminderItemsHandler',
             '/api/todos/apple/one-time', 'AppleReminderOneTimeHandler',
+            '/api/todos/apple/links-preview', 'AppleReminderLinksPreviewHandler',
+            '/api/todos/apple/links', 'AppleReminderLinksHandler',
+            '/api/todos/apple/batch-preview', 'AppleReminderBatchPreviewHandler',
+            '/api/todos/apple/batch', 'AppleReminderBatchHandler',
+            '/api/todos/categories', 'TodoCategoriesHandler',
             '/api/todos', 'TodosHandler',
             '/api/todos/update', 'TodoUpdateHandler',
             '/api/todos/status', 'TodoStatusHandler',
@@ -6419,6 +6428,51 @@ class AppleCalendarOneTimeHandler:
         return _calendar_response(operation)
 
 
+class AppleCalendarLinksPreviewHandler:
+    def POST(self):
+        def operation():
+            from agent.calendar.apple_preview import prepare_links
+            return prepare_links(_apple_calendar_sync(), _calendar_body().get("links"))
+        return _calendar_response(operation)
+
+
+class AppleCalendarLinksHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_calendar_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_links
+            confirm_links(manager, body.get("links"), body.get("preview_token"))
+            manager.replace_links(body.get("links") or [])
+            result = manager.sync(manual=True)
+            manager.resume_auto()
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleCalendarBatchPreviewHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return _apple_calendar_sync().preview_batch(
+                body.get("direction"), body.get("selections"), body.get("start"), body.get("end"))
+        return _calendar_response(operation)
+
+
+class AppleCalendarBatchHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_calendar_sync()
+            result = manager.transfer_batch(
+                body.get("direction"), body.get("selections"), body.get("start"), body.get("end"),
+                body.get("preview_token"), confirm=body.get("confirm") is True)
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
 def _apple_reminder_sync():
     from application import Application
     return Application.apple_reminders()
@@ -6519,6 +6573,63 @@ class AppleReminderOneTimeHandler:
                                       body.get("item_ids"), confirm=True)
             return {"connection": manager.status(), "result": result}
         return _calendar_response(operation)
+
+
+class AppleReminderLinksPreviewHandler:
+    def POST(self):
+        def operation():
+            from agent.calendar.apple_preview import prepare_links
+            return prepare_links(_apple_reminder_sync(), _calendar_body().get("links"))
+        return _calendar_response(operation)
+
+
+class AppleReminderLinksHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_reminder_sync()
+            if body.get("confirm") is not True:
+                raise ValueError("explicit confirmation is required")
+            from agent.calendar.apple_preview import confirm_links
+            confirm_links(manager, body.get("links"), body.get("preview_token"))
+            manager.replace_links(body.get("links") or [])
+            result = manager.sync(manual=True)
+            manager.resume_auto()
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class AppleReminderBatchPreviewHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            return _apple_reminder_sync().preview_batch(
+                body.get("direction"), body.get("selections"), body.get("start"), body.get("end"),
+                include_undated=body.get("include_undated") is True,
+                include_completed=body.get("include_completed") is True)
+        return _calendar_response(operation)
+
+
+class AppleReminderBatchHandler:
+    def POST(self):
+        def operation():
+            body = _calendar_body()
+            manager = _apple_reminder_sync()
+            result = manager.transfer_batch(
+                body.get("direction"), body.get("selections"), body.get("start"), body.get("end"),
+                body.get("preview_token"), confirm=body.get("confirm") is True,
+                include_undated=body.get("include_undated") is True,
+                include_completed=body.get("include_completed") is True)
+            return {"connection": manager.status(), "result": result}
+        return _calendar_response(operation)
+
+
+class TodoCategoriesHandler:
+    def GET(self):
+        return _todo_response(lambda: {"categories": _todo_service().categories()})
+
+    def POST(self):
+        return _todo_response(lambda: {"category": _todo_service().create_category(_todo_body())})
 
 
 def _todo_service():

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agent.apple.category_links import reconcile_names, validate_links
 from agent.calendar.apple_bridge import AppleCalendarBridge
 from application import Application, RequestContext
 
@@ -96,7 +99,11 @@ class AppleReminderSync:
                     origin TEXT NOT NULL,local_hash TEXT NOT NULL,remote_hash TEXT NOT NULL,
                     state TEXT NOT NULL DEFAULT 'active',conflict TEXT NOT NULL DEFAULT '',
                     missing_since TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL);
-                CREATE INDEX IF NOT EXISTS reminder_map_list ON mappings(list_id);""")
+                CREATE INDEX IF NOT EXISTS reminder_map_list ON mappings(list_id);
+                CREATE TABLE IF NOT EXISTS category_links (
+                    apple_id TEXT PRIMARY KEY, stella_id TEXT NOT NULL UNIQUE, direction TEXT NOT NULL,
+                    enabled INTEGER NOT NULL, apple_name TEXT NOT NULL, stella_name TEXT NOT NULL,
+                    name_conflict TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);""")
 
     @contextmanager
     def _connect(self):
@@ -189,7 +196,8 @@ class AppleReminderSync:
                 "conflicts": [{"todo_id": row["todo_id"], "reason": row["conflict"]}
                               for row in maps if row["conflict"]],
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
-                "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps)}
+                "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps),
+                "links": [self._public_link(row) for row in self._stored_links()]}
 
     def request_access(self):
         result = self.bridge.call("reminder_request_access")
@@ -221,6 +229,125 @@ class AppleReminderSync:
             self._set("direction", direction)
             self._set("connected", True)
         return self.status()
+
+    def _stored_links(self):
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM category_links ORDER BY apple_id")]
+
+    @staticmethod
+    def _public_link(row):
+        return {"apple_id": row["apple_id"], "stella_id": row["stella_id"], "direction": row["direction"],
+                "enabled": bool(row["enabled"]), "apple_name": row["apple_name"], "stella_name": row["stella_name"],
+                "name_conflict": row["name_conflict"]}
+
+    def _save_link(self, link):
+        with self._connect() as db:
+            db.execute("""UPDATE category_links SET apple_name=?, stella_name=?, name_conflict=?, updated_at=?
+                WHERE apple_id=?""", (link["apple_name"], link["stella_name"], link["name_conflict"],
+                                      self.clock(), link["apple_id"]))
+
+    def replace_links(self, links):
+        if not isinstance(links, list):
+            raise ValueError("links must be a list")
+        if self.bridge.call("reminder_status").get("authorization") != "full_access":
+            raise PermissionError("Reminders full access is required")
+        available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
+        prepared = []
+        for raw in links:
+            if not isinstance(raw, dict):
+                raise ValueError("link must be an object")
+            item = {"apple_id": str(raw.get("apple_id") or "").strip(),
+                    "stella_id": str(raw.get("stella_id") or "").strip(),
+                    "direction": str(raw.get("direction") or "").strip(),
+                    "enabled": raw.get("enabled")}
+            create_name = str(raw.get("create_name") or "").strip()
+            if not item["stella_id"] and create_name:
+                existing = next((row for row in self.todos.categories() if row["name"] == create_name), None)
+                item["stella_id"] = existing["id"] if existing else self.todos.create_category({"name": create_name})["id"]
+            prepared.append(item)
+        validate_links(prepared)
+        rows = []
+        for item in prepared:
+            apple = available.get(item["apple_id"])
+            if apple is None:
+                raise ValueError("selected reminder list is unavailable")
+            category = self.todos.get_category(item["stella_id"])
+            rows.append({**item, "apple_name": apple["title"], "stella_name": category["name"],
+                         "enabled": 1 if item["enabled"] else 0})
+        with self._lock:
+            now = self.clock()
+            with self._connect() as db:
+                db.execute("DELETE FROM category_links")
+                db.executemany("""INSERT INTO category_links
+                    (apple_id, stella_id, direction, enabled, apple_name, stella_name, name_conflict, updated_at)
+                    VALUES (:apple_id, :stella_id, :direction, :enabled, :apple_name, :stella_name, '', :updated_at)""",
+                    [{**row, "updated_at": now} for row in rows])
+            enabled = [row for row in rows if row["enabled"]]
+            if enabled and not self._get("ever_connected", False):
+                with self._connect() as db:
+                    db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
+                                   [(row["id"],) for row in self.todos.list_todos() if row["source_type"] is None])
+                self._set("ever_connected", True)
+            directions = {row["direction"] for row in enabled}
+            self._set("list_ids", [row["apple_id"] for row in enabled])
+            if len(directions) == 1:
+                self._set("direction", directions.pop())
+            self._set("connected", bool(enabled))
+        return self.status()
+
+    def _reconcile_category_names(self):
+        available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
+        errors = []
+        for link in self._stored_links():
+            if not link["enabled"]:
+                continue
+            apple = available.get(link["apple_id"])
+            if apple is None:
+                continue
+            try:
+                category = self.todos.get_category(link["stella_id"])
+            except KeyError:
+                link["name_conflict"] = "Stella category is missing"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            action, name = reconcile_names(link["apple_name"], link["stella_name"], apple["title"], category["name"])
+            if action in ("unchanged",):
+                continue
+            if action == "conflict":
+                link["name_conflict"] = "Both Apple and Stella renamed this category"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            if action == "aligned":
+                link.update(apple_name=name, stella_name=name, name_conflict="")
+                self._save_link(link)
+                continue
+            if action == "apple_to_stella":
+                self.todos.update_category(link["stella_id"], {"name": name})
+                link.update(apple_name=name, stella_name=name, name_conflict="")
+                self._save_link(link)
+                continue
+            if not apple.get("writable"):
+                link["name_conflict"] = "Reminder list is read only"
+                self._save_link(link)
+                errors.append(link["name_conflict"])
+                continue
+            try:
+                self.bridge.call("reminder_rename", list_id=link["apple_id"], title=name)
+            except Exception as exc:
+                link["name_conflict"] = str(exc)
+                self._save_link(link)
+                errors.append(str(exc))
+                continue
+            link.update(apple_name=name, stella_name=name, name_conflict="")
+            self._save_link(link)
+        return errors
+
+    def _place_todo(self, local, category_id, direction):
+        if local and category_id and direction in ("import", "bidirectional") and local.get("category_id") != category_id:
+            return self.todos.set_todo_category(local["id"], category_id)
+        return local
 
     def disconnect(self):
         self._set("connected", False)
@@ -302,7 +429,7 @@ class AppleReminderSync:
                 updated = self.todos.change_todo_status(local["id"], wanted)
         return updated
 
-    def _process_remote(self, remote, mapping, direction, counts):
+    def _process_remote(self, remote, mapping, direction, counts, category_id=None):
         if not _supported(remote):
             self._conflict(mapping, "Apple reminder has unsupported alarms or recurrence")
             counts["conflicts"] += 1
@@ -323,7 +450,7 @@ class AppleReminderSync:
                 self._conflict(mapping, "Apple changed an export-only reminder")
                 counts["conflicts"] += 1
                 return
-            local = self._apply_remote(mapping, local, remote)
+            local = self._place_todo(self._apply_remote(mapping, local, remote), category_id, direction)
             counts["updated"] += 1
         elif local_changed:
             if direction not in ("export", "bidirectional") or not remote.get("writable", False):
@@ -332,6 +459,8 @@ class AppleReminderSync:
                 return
             remote = self.bridge.call("reminder_upsert", **self._write_payload(local, mapping))["reminder"]
             counts["exported"] += 1
+        else:
+            local = self._place_todo(local, category_id, direction)
         self._refresh_map(mapping, local, remote)
 
     def preview(self, list_ids, direction):
@@ -488,7 +617,11 @@ class AppleReminderSync:
             if self.bridge.call("reminder_status").get("authorization") != "full_access":
                 counts["status"] = "permission_required"
                 return counts
-            selected = self._get("list_ids", [])
+            stored_links = self._stored_links()
+            using_links = bool(stored_links)
+            name_errors = self._reconcile_category_names() if using_links else []
+            enabled_links = [row for row in self._stored_links() if row["enabled"]] if using_links else []
+            selected = [row["apple_id"] for row in enabled_links] if using_links else self._get("list_ids", [])
             direction = self._get("direction", "bidirectional")
             try:
                 inventory = self.bridge.call("reminders", list_ids=selected)
@@ -506,6 +639,14 @@ class AppleReminderSync:
                 seen = set()
                 for remote in rows:
                     try:
+                        item_direction = direction
+                        category_id = None
+                        if using_links:
+                            link = next((row for row in enabled_links if row["apple_id"] == remote["list_id"]), None)
+                            if link is None:
+                                continue
+                            item_direction = link["direction"]
+                            category_id = link["stella_id"]
                         if (not _supported(remote) or remote.get("external_id") and
                                 external_counts[remote["external_id"]] > 1):
                             mapping = self._match(remote, maps, rows)
@@ -517,13 +658,14 @@ class AppleReminderSync:
                         mapping = self._match(remote, maps, rows)
                         if mapping:
                             seen.add(mapping["todo_id"])
-                            self._process_remote(remote, mapping, direction, counts)
+                            self._process_remote(remote, mapping, item_direction, counts, category_id)
                         elif self._recover_marked(remote, maps, counts):
                             if remote.get("stella_id"):
                                 seen.add(remote["stella_id"])
-                        elif direction in ("import", "bidirectional") and _supported(remote):
+                        elif item_direction in ("import", "bidirectional") and _supported(remote):
                             key = _source_key(remote)
-                            local = self.todos.upsert_external_todo(key, _payload(remote))
+                            local = self._place_todo(self.todos.upsert_external_todo(key, _payload(remote)),
+                                                     category_id, item_direction)
                             mapping = self._new_map(local, remote, "apple", key)
                             self._save_map(mapping)
                             maps.append(mapping)
@@ -559,10 +701,14 @@ class AppleReminderSync:
                         self._save_map(mapping)
                     except Exception:
                         counts["status"] = "error"
-                if direction in ("export", "bidirectional") and successful:
+                if successful and (using_links or direction in ("export", "bidirectional")):
                     available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
                     targets = [key for key in selected if key in successful and available.get(key, {}).get("writable")]
-                    if targets:
+                    export_targets = [(row["apple_id"], row["stella_id"]) for row in enabled_links
+                                      if row["direction"] in ("export", "bidirectional") and row["apple_id"] in targets]
+                    if not using_links and targets:
+                        export_targets = [(targets[0], None)]
+                    if export_targets:
                         with self._connect() as db:
                             baseline = {row[0] for row in db.execute("SELECT todo_id FROM baseline_local")}
                         mapped = {row["todo_id"] for row in self._maps()}
@@ -570,9 +716,13 @@ class AppleReminderSync:
                             if (local["source_type"] is not None or local["id"] in mapped or
                                     local["id"] in baseline or local["status"] == "cancelled"):
                                 continue
+                            match = next((item for item in export_targets
+                                          if item[1] is None or local.get("category_id") == item[1]), None)
+                            if match is None:
+                                continue
                             try:
                                 remote = self.bridge.call("reminder_upsert", **self._write_payload(
-                                    local, list_id=targets[0]))["reminder"]
+                                    local, list_id=match[0]))["reminder"]
                                 self._save_map(self._new_map(local, remote, "stella"))
                                 counts["exported"] += 1
                             except Exception:
@@ -613,11 +763,13 @@ class AppleReminderSync:
                                 counts["pending_deletions"] -= 1
                             except Exception:
                                 counts["status"] = "error"
+                if name_errors and counts["status"] == "success":
+                    counts["status"] = "error"
                 if counts["status"] == "success":
                     self._set("last_success", self.clock())
                     self._set("error", "")
                 else:
-                    self._set("error", "Reminders sync needs review or another attempt")
+                    self._set("error", name_errors[0] if name_errors else "Reminders sync needs review or another attempt")
             except Exception:
                 counts["status"] = "error"
                 self._set("error", "Reminders sync needs another attempt")
@@ -644,6 +796,187 @@ class AppleReminderSync:
             local = self._apply_remote(mapping, local, remote)
         self._refresh_map(mapping, local, remote)
         return self.status()
+
+    def _batch_selections(self, selections):
+        if not isinstance(selections, list) or not selections:
+            raise ValueError("select at least one category")
+        rows, seen_apple, seen_stella = [], set(), set()
+        for raw in selections:
+            if not isinstance(raw, dict):
+                raise ValueError("selection must be an object")
+            apple_id = str(raw.get("apple_id") or "").strip()
+            stella_id = str(raw.get("stella_id") or "").strip()
+            if not apple_id or not stella_id:
+                raise ValueError("apple_id and stella_id are required")
+            if apple_id in seen_apple or stella_id in seen_stella:
+                raise ValueError("category links must be one-to-one")
+            seen_apple.add(apple_id)
+            seen_stella.add(stella_id)
+            rows.append({"apple_id": apple_id, "stella_id": stella_id})
+        return rows
+
+    @staticmethod
+    def _in_dates(value, start, end):
+        text = str(value or "")[:10]
+        return len(text) == 10 and start <= text <= end
+
+    def _reminder_kept(self, remote, start, end, include_undated, include_completed):
+        if remote.get("completed") and not include_completed:
+            return False
+        due = remote.get("due_on") or ""
+        planned = remote.get("planned_on") or ""
+        if not due and not planned:
+            return include_undated
+        return self._in_dates(due, start, end) or self._in_dates(planned, start, end)
+
+    def _expand_todo_tree(self, rows, start, end, include_undated, include_completed):
+        by_id = {row["id"]: row for row in rows}
+        chosen = set()
+        for row in rows:
+            if row["status"] == "cancelled":
+                continue
+            if row["status"] == "completed" and not include_completed:
+                continue
+            dated = self._in_dates(row.get("due_on"), start, end) or self._in_dates(row.get("planned_on"), start, end)
+            undated = not row.get("due_on") and not row.get("planned_on")
+            if dated or (undated and include_undated):
+                chosen.add(row["id"])
+        changed = True
+        while changed:
+            changed = False
+            for row in rows:
+                parent = row.get("parent_id")
+                if row["id"] in chosen and parent in by_id and parent not in chosen:
+                    if by_id[parent]["status"] != "cancelled" and (
+                            include_completed or by_id[parent]["status"] != "completed"):
+                        chosen.add(parent)
+                        changed = True
+        pending = list(chosen)
+        while pending:
+            parent_id = pending.pop()
+            for row in rows:
+                if row.get("parent_id") != parent_id or row["id"] in chosen or row["status"] == "cancelled":
+                    continue
+                if row["status"] == "completed" and not include_completed:
+                    continue
+                chosen.add(row["id"])
+                pending.append(row["id"])
+        return [by_id[key] for key in chosen]
+
+    def _batch_items(self, direction, selections, start, end, include_undated, include_completed):
+        if direction not in ("import", "export"):
+            raise ValueError("one-time direction must be import or export")
+        try:
+            datetime.fromisoformat(start)
+            datetime.fromisoformat(end)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("time range must be YYYY-MM-DD") from exc
+        if end < start:
+            raise ValueError("time range must include at least one day")
+        rows = self._batch_selections(selections)
+        if self.bridge.call("reminder_status").get("authorization") != "full_access":
+            raise PermissionError("Reminders full access is required")
+        available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
+        for row in rows:
+            if row["apple_id"] not in available:
+                raise ValueError("selected reminder list is unavailable")
+            self.todos.get_category(row["stella_id"])
+            if direction == "export" and not available[row["apple_id"]]["writable"]:
+                raise ValueError("selected reminder list is read only")
+        chosen = []
+        failed = 0
+        if direction == "import":
+            inventory = self.bridge.call("reminders", list_ids=[row["apple_id"] for row in rows])
+            successful = set(inventory["successful_list_ids"])
+            failed = len([row for row in rows if row["apple_id"] not in successful])
+            targets = {row["apple_id"]: row["stella_id"] for row in rows}
+            for remote in inventory["reminders"]:
+                if remote["list_id"] in targets and self._reminder_kept(
+                        remote, start, end, include_undated, include_completed):
+                    chosen.append((remote, targets[remote["list_id"]]))
+        else:
+            by_category = {row["stella_id"]: row["apple_id"] for row in rows}
+            locals_only = [row for row in self.todos.list_todos() if row["source_type"] is None]
+            for stella_id, apple_id in by_category.items():
+                members = [row for row in locals_only if row.get("category_id") == stella_id]
+                ids = {row["id"] for row in members}
+                pending = list(ids)
+                while pending:
+                    parent_id = pending.pop()
+                    for row in locals_only:
+                        if row.get("parent_id") == parent_id and row["id"] not in ids:
+                            members.append(row)
+                            ids.add(row["id"])
+                            pending.append(row["id"])
+                for local in self._expand_todo_tree(members, start, end, include_undated, include_completed):
+                    chosen.append((local, apple_id))
+        return chosen, failed
+
+    def preview_batch(self, direction, selections, start, end, *, include_undated=False, include_completed=False):
+        with self._lock:
+            chosen, failed = self._batch_items(direction, selections, start, end, include_undated, include_completed)
+            maps = self._maps()
+            new = skipped = 0
+            identities = []
+            for item, target in chosen:
+                if direction == "import":
+                    mapped = self._match(item, maps, [row for row, _target in chosen]) is not None
+                    identities.append(("import", item["list_id"], item["reminder_id"], target))
+                else:
+                    mapped = any(row["todo_id"] == item["id"] for row in maps)
+                    identities.append(("export", item["id"], target))
+                if mapped:
+                    skipped += 1
+                else:
+                    new += 1
+            preview = {"new": new, "skipped": skipped, "failed": failed}
+            token = secrets.token_urlsafe(24)
+            self._batch_preview = (token, direction, json.dumps(self._batch_selections(selections), sort_keys=True),
+                                   start, end, bool(include_undated), bool(include_completed),
+                                   tuple(identities), preview, time.monotonic() + 600)
+            return {"preview": preview, "preview_token": token}
+
+    def transfer_batch(self, direction, selections, start, end, token, *, confirm=False,
+                       include_undated=False, include_completed=False):
+        if confirm is not True:
+            raise ValueError("explicit confirmation is required")
+        with self._lock:
+            pending = getattr(self, "_batch_preview", None)
+            selection_key = json.dumps(self._batch_selections(selections), sort_keys=True)
+            if (not isinstance(token, str) or not pending or not secrets.compare_digest(token, pending[0]) or
+                    direction != pending[1] or selection_key != pending[2] or start != pending[3] or end != pending[4] or
+                    bool(include_undated) != pending[5] or bool(include_completed) != pending[6] or
+                    time.monotonic() > pending[9]):
+                raise ValueError("matching Apple category preview and confirmation are required")
+            chosen, failed = self._batch_items(direction, selections, start, end, include_undated, include_completed)
+            identities = []
+            for item, target in chosen:
+                if direction == "import":
+                    identities.append(("import", item["list_id"], item["reminder_id"], target))
+                else:
+                    identities.append(("export", item["id"], target))
+            if tuple(identities) != pending[7] or failed != pending[8]["failed"]:
+                self._batch_preview = None
+                raise ValueError("Apple sync inventory changed; preview again")
+            self._batch_preview = None
+            counts = {"status": "success", "imported": 0, "exported": 0, "skipped": 0, "failed": failed}
+            for item, target in chosen:
+                if direction == "import":
+                    if self._match(item, self._maps(), [row for row, _target in chosen]):
+                        counts["skipped"] += 1
+                        continue
+                    local = self._place_todo(self.todos.upsert_external_todo(_source_key(item), _payload(item)),
+                                             target, "import")
+                    self._save_map(self._new_map(local, item, "apple"))
+                    counts["imported"] += 1
+                else:
+                    if any(row["todo_id"] == item["id"] for row in self._maps()):
+                        counts["skipped"] += 1
+                        continue
+                    remote = self.bridge.call("reminder_upsert", **self._write_payload(item, list_id=target))["reminder"]
+                    self._save_map(self._new_map(item, remote, "stella"))
+                    counts["exported"] += 1
+            return counts
 
     def start_auto(self, interval=300):
         if self._auto_started:

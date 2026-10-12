@@ -203,6 +203,16 @@ func runReminder(_ request: [String: Any]) throws -> [String: Any] {
         try store.save(reminder, commit: true)
         return ["reminder": serializeReminder(reminder)]
     }
+    if op == "reminder_rename" {
+        let listID = try required(request, "list_id")
+        guard let list = store.calendars(for: .reminder).first(where: { $0.calendarIdentifier == listID }) else {
+            throw BridgeFailure("Reminder list is unavailable")
+        }
+        guard list.allowsContentModifications else { throw BridgeFailure("Reminder list is read only") }
+        list.title = try required(request, "title")
+        try store.saveCalendar(list, commit: true)
+        return ["list": ["id": list.calendarIdentifier, "title": list.title]]
+    }
     if op == "reminder_delete" {
         guard let reminder = try findReminder(store, request) else {
             throw BridgeFailure("Linked reminder is unavailable")
