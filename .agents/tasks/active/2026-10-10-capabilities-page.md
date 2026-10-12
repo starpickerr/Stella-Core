@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python tool registry, React, node tests, Playwright.
 
-**Spec:** `.agents/task/requirements.md` section 6 and `.agents/task/capabilities.md`.
+**Spec:** `.agents/tasks/active/security-center/requirements.md` section 6 and `.agents/tasks/active/security-center/capabilities.md`.
 
 ## Global Constraints
 

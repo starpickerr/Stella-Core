@@ -59,8 +59,9 @@ def test_skill_reference_change_validates_skills_without_linting_vendored_exampl
 
 def test_project_policy_change_selects_policy_preflight():
     for path in ("AGENTS.md", ".agents/AGENTS.md", ".agents/rules/git.md",
-                 ".codex/config.toml", ".agents/skills/sources.json",
-                 ".cursor/rules/stella-development.mdc", "scripts/check_dev_policy.py"):
+                 ".agents/workflows/development.md", ".codex/config.toml",
+                 ".agents/skills/sources.json", ".cursor/rules/stella-development.mdc",
+                 "scripts/check_dev_policy.py"):
         assert affected_checks([path])["policy"], path
 
 

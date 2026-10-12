@@ -19,7 +19,19 @@ def test_missing_skill_coordination_rule_fails_policy(tmp_path, monkeypatch, cap
     (tmp_path / ".agents/skills/sources.json").write_text("[]", encoding="utf-8")
     (tmp_path / ".codex").mkdir()
     (tmp_path / ".codex/config.toml").write_text("project_doc_max_bytes = 32768\n", encoding="utf-8")
-    (tmp_path / "docs/plans/active").mkdir(parents=True)
+    for relative in (
+        ".agents/tasks/active", ".agents/tasks/completed",
+        ".agents/audits/code-review", ".agents/audits/security", ".agents/audits/product",
+        ".agents/runs", "evals/datasets", ".agents/workflows",
+    ):
+        (tmp_path / relative).mkdir(parents=True)
+    for relative in (
+        ".agents/workflows/development.md",
+        ".agents/workflows/skill-management.md",
+        ".agents/workflows/development-evaluation.md",
+        "evals/README.md", "evals/run.py",
+    ):
+        (tmp_path / relative).write_text("present\n", encoding="utf-8")
     monkeypatch.setattr(check_dev_policy, "ROOT", tmp_path)
 
     assert check_dev_policy.main() == 1
@@ -28,7 +40,7 @@ def test_missing_skill_coordination_rule_fails_policy(tmp_path, monkeypatch, cap
     (rules / "skill-coordination.md").write_text("workflow\n", encoding="utf-8")
     cursor_rule = tmp_path / ".cursor/rules/stella-development.mdc"
     cursor_rule.parent.mkdir(parents=True)
-    cursor_rule.write_text("alwaysApply: true\nAGENTS.md develop scripts/quality_check.py incremental\n", encoding="utf-8")
+    cursor_rule.write_text("alwaysApply: true\nAGENTS.md .agents/ develop scripts/quality_check.py incremental\n", encoding="utf-8")
     assert check_dev_policy.main() == 0
 
     skill_guide = tmp_path / ".agents/skills/example/AGENTS.md"

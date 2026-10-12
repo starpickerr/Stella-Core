@@ -7,7 +7,7 @@
 | 任务 | 步骤 | 进入条件 |
 | --- | --- | --- |
 | 简单修改或说明 | 省略规划，按下列任务步骤直接处理 → `verification-before-completion` | 范围清楚、影响局部，不需要跨模块决策；纯答疑只验证所引用的事实 |
-| 复杂开发 | `writing-plans` → `executing-plans` | 涉及多个模块、迁移、依赖顺序或较长任务；计划记入 `docs/plans/active/`，完成后归档 |
+| 复杂开发 | `writing-plans` → `executing-plans` | 涉及多个模块、迁移、依赖顺序或较长任务；计划记入 `.agents/tasks/active/`，完成后移入 `.agents/tasks/completed/` |
 | Bug 或异常 | `systematic-debugging` → 复现与根因 → `test-driven-development` → 修复 | 先定位；需要修改可观察行为时先写失败的回归测试 |
 | 新功能或行为修改 | `test-driven-development` → 实现 | 先定义可观察行为，运行失败测试后再写实现 |
 | 明确要求完整审计 | `software-audit` | 用户说 `Full Audit`、`全项目体检` 或明确点名该 Skill；只读审查并交付证据报告 |

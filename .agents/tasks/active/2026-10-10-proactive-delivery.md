@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.9, existing scheduler and todo stores, Electron `Notification`, pytest, Playwright.
 
-**Spec:** `.agents/task/requirements.md` sections 1–4.
+**Spec:** `.agents/tasks/active/security-center/requirements.md` sections 1–4.
 
 ## Global Constraints
 

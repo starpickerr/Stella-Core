@@ -13,7 +13,7 @@ Write implementation plans for an engineer who has not seen this codebase or thi
 
 **Context:** Work on a dedicated branch from `develop`; preserve existing edits and use an isolated worktree only when needed.
 
-**Save plans to:** `docs/plans/active/YYYY-MM-DD-<feature-name>.md`
+**Save plans to:** `.agents/tasks/active/YYYY-MM-DD-<feature-name>.md`
 - (User preferences for plan location override this default)
 
 ## Scope Check

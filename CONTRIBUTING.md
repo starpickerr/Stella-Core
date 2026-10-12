@@ -75,4 +75,4 @@ During development, run `.venv/bin/python scripts/quality_check.py incremental`.
 
 On Windows, invoke the same scripts with `.venv\Scripts\python.exe` and install dependencies through that interpreter. The runner resolves native npm and Python executables, redirects Windows profile/temp directories, and terminates its private renderer process tree.
 
-Say `Full Audit` or `全项目体检` to Codex for an evidence-based report without automatic business-code changes. The repeatable automated portion is `.venv/bin/python scripts/quality_check.py full`; its report is written to `audit-reports/` and requires the manual review described in `.agents/skills/software-audit/SKILL.md`.
+Say `Full Audit` or `全项目体检` to Codex for an evidence-based report without automatic business-code changes. The repeatable automated portion is `.venv/bin/python scripts/quality_check.py full`; its report is written to `.agents/audits/code-review/` and requires the manual review described in `.agents/skills/software-audit/SKILL.md`.

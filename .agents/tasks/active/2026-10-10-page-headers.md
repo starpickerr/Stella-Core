@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, Playwright.
 
-**Spec:** `.agents/task/requirements.md` section 7 and `.agents/task/ui-consistency.md`.
+**Spec:** `.agents/tasks/active/security-center/requirements.md` section 7 and `.agents/tasks/active/security-center/ui-consistency.md`.
 
 ## Global Constraints
 
@@ -41,7 +41,7 @@
 ### Task 2: Remaining titled pages
 
 **Files:**
-- Modify the pages already listed in `.agents/task/ui-consistency.md` that have a header but still wrap the title with content width.
+- Modify the pages already listed in `.agents/tasks/active/security-center/ui-consistency.md` that have a header but still wrap the title with content width.
 - Test: `tests/ui_page_headers.py`
 
 - [ ] Extend the measurement to briefing, calendar, bills, memory, knowledge, channels, and `/skills`.

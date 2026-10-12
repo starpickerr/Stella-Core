@@ -82,7 +82,7 @@ Python handler tests exercise actual isolated SQLite services.
 
 Say **Full Audit** or **全项目体检** to invoke the report workflow. Its automated
 portion is `.venv/bin/python scripts/quality_check.py full`; a timestamped report
-appears in `audit-reports/`, preserving previous reports. Source review completes
+appears in `.agents/audits/code-review/`, preserving previous reports. Source review completes
 the domain matrix and separates reproduced issues from potential risks and skips.
 Audits do not repair business code. Request fixes explicitly after reviewing a
 report. Historical static failures remain failures and are not hidden or relabeled.

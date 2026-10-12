@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python policy gateway, React/TypeScript, pytest, Playwright.
 
-**Spec:** [Stella current requirements](../../../.agents/task/requirements.md#3-会话安全模式).
+**Spec:** [Stella current requirements](../active/security-center/requirements.md#3-会话安全模式).
 
 ## Global Constraints
 
