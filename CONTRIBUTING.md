@@ -50,10 +50,11 @@ docs: clarify desktop setup
 
 ## Development setup
 
-See [Build from Source](docs/guide/manual-install.mdx) for prerequisites and Windows commands. From a source checkout:
+See [Build from Source](docs/guide.md) for prerequisites and Windows commands. From a source checkout:
 
 ```bash
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools
 .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/python -m playwright install chromium
 npm --prefix desktop ci

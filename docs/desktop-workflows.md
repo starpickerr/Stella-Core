@@ -10,7 +10,7 @@ Stella 的桌面页面通过本机 Python API 操作业务库。事务、日程�
 
 ## 定时任务与投递
 
-任务页支持 cron、interval（至少60秒）和 once，动作可以是固定消息或 Agent 任务。已有 tool_call、skill_call、application_command 和静默每日简报的完整 action 元数据保留可读；修改名称、时间或开关不会丢弃工具参数。
+任务页支持 cron、interval（至少60秒）和 once，动作可以是固定消息或 Agent 任务。已有 tool_call、skill_call、application_command 和用户设置的简报动作的完整 action 元数据保留可读；修改名称、时间或开关不会丢弃工具参数。
 
 选择已配置的客户端、飞书或微信渠道，再设置接收人。执行来源与投递目标独立：修改目标不会改动来源会话的模型、项目和权限。切换渠道会移除旧渠道的接收标识元数据。
 
@@ -22,7 +22,7 @@ Stella 的桌面页面通过本机 Python API 操作业务库。事务、日程�
 
 ## 保存但未运行的聊天输入
 
-同会话输入先持久入队，再依照 FIFO 顺序获得执行权。录入失败不调用模型；排队的清空历史请求等待前一条完成。页面在重新加载历史时显示未执行或待核查的输入，可复制内容以恢复工作；不会自动重放模型和工具。首次输入在运行前退出也会保留会话记录。只读恢复查询为 `GET /api/runs/pending?session_id=<id>`。
+同会话输入先持久入队，再依照 FIFO 顺序获得执行权。录入失败不调用模型；排队的清空历史请求等待前一条完成。页面在重新加载历史时显示未执行或待核查的输入，可复制内容以恢复工作；不会自动重放模型和工具。主动关闭此提示后，同一会话的后续输入也不会重新显示该提示。首次输入在运行前退出也会保留会话记录。只读恢复查询为 `GET /api/runs/pending?session_id=<id>`。
 
 参考：[飞书发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[腾讯 OpenClaw 微信协议](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md)、[Apple 提醒事项标签](https://support.apple.com/en-ie/guide/iphone/iph474a6685c/ios)。
 
