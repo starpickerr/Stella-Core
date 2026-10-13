@@ -6,6 +6,7 @@ import type { SecurityActivityCounts, SecurityCenterState, SecurityPolicy, Secur
 import { getLang } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
+import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
 import {
   commonCredentials,
@@ -208,6 +209,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     apiClient.setBaseUrl(baseUrl)
     void load()
   }, [baseUrl, load])
+  useEffect(() => {
+    const onPolicyChanged = () => { void load() }
+    window.addEventListener(SECURITY_POLICY_CHANGED, onPolicyChanged)
+    return () => window.removeEventListener(SECURITY_POLICY_CHANGED, onPolicyChanged)
+  }, [load])
   const mutate = async (fn: () => Promise<{ status: string; message?: string }>, success = copy.saved) => {
     setBusy(true)
     setError('')

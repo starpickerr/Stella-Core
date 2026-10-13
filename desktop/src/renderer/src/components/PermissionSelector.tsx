@@ -32,9 +32,13 @@ const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const definition = (id: Mode) => definitions.find(row => row.id === id)
   const name = (id: Mode) => definition(id)?.name[en ? 'en' : 'zh'] || id
   const applyPolicy = async (policy: SecurityPolicy | null) => {
+    if (busy) return
+    setBusy(true)
     setLocalError('')
-    const ok = await apply(sessionId, { security_policy: policy })
-    if (ok) close()
+    try {
+      const ok = await apply(sessionId, { security_policy: policy })
+      if (ok) close()
+    } finally { setBusy(false) }
   }
   const select = (next: Mode) => {
     if (!state) return
@@ -64,10 +68,11 @@ const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     tip={state ? `${state.source} · ${state.authorized_roots.join(', ')}` : (en ? 'Access state could not be verified' : '无法确认有效权限')}
     open={open} onToggle={() => { if (open) close(); else { setOpenMenu('permission'); void refresh(sessionId) } }} onClose={close}>
     <div className="w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-2 space-y-2">
-      <div className="px-1 text-xs text-content-secondary">{en ? 'Current conversation' : '当前对话'} · {state?.source || '—'}</div>
+      <div className="px-1 text-xs text-content-secondary">{state?.project ? (en ? 'Current project' : '当前项目') : (en ? 'Current conversation' : '当前对话')}</div>
+      {state?.project && <p className="px-1 text-xs text-content-tertiary">{en ? 'Changes apply to other conversations in this project.' : '切换将同步此项目的其他对话。'}</p>}
       {(storeError || localError || state?.error) && <p role="alert" className="px-2 text-xs text-danger">{storeError || localError || state?.error}</p>}
       {state && <>
-        {definitions.map(item => <button key={item.id} type="button" onClick={() => select(item.id)}
+        {definitions.map(item => <button key={item.id} type="button" disabled={busy} aria-pressed={mode === item.id} onClick={() => select(item.id)}
           className={`w-full flex gap-2 rounded-btn p-2 text-left hover:bg-surface-2 ${mode === item.id ? 'bg-accent-soft text-accent' : 'text-content'}`}>
           <span className="mt-0.5">{icons[item.id]}</span><span className="flex-1 min-w-0">
             <span className="block text-sm font-medium">{item.name[en ? 'en' : 'zh']}</span>
@@ -75,7 +80,7 @@ const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           </span>{mode === item.id && <Check size={14} />}
         </button>)}
         <div className="border-t border-default pt-2 flex flex-wrap gap-2 text-xs">
-          <button type="button" onClick={() => void applyPolicy(null)} className="text-accent">{en ? 'Restore inheritance' : '恢复继承'}</button>
+          <button type="button" disabled={busy} onClick={() => void applyPolicy(null)} className="text-accent disabled:opacity-40">{en ? 'Restore inheritance' : '恢复继承'}</button>
           <button type="button" disabled={!state.project || busy} title={!state.project ? (en ? 'Open a project first' : '请先打开项目') : undefined}
             onClick={() => void saveDefault('project')} className="text-accent disabled:opacity-40">{en ? 'Set project default' : '设为项目默认'}</button>
           <button type="button" disabled={busy} onClick={() => void saveDefault('global')} className="text-accent disabled:opacity-40">{en ? 'Set global default' : '设为全局默认'}</button>

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from agent.apple.category_links import reconcile_names, validate_links
 from agent.calendar.apple_bridge import AppleCalendarBridge
+from agent.calendar.apple_runtime import report_sync_error
 from application import Application, RequestContext
 
 
@@ -181,18 +182,19 @@ class AppleReminderSync:
         return True
 
     def status(self):
+        listing_error = ""
         native = self.bridge.call("reminder_status")
         lists = []
         if native.get("authorization") == "full_access":
             try:
                 lists = self.bridge.call("reminder_lists")["lists"]
-            except Exception:
-                pass
+            except Exception as exc:
+                listing_error = report_sync_error("reminder", "读取提醒事项列表", exc)
         maps = self._maps()
         return {**native, "connected": bool(self._get("connected", False)),
                 "auto_enabled": bool(self._get("auto_enabled", True)),
                 "list_ids": self._get("list_ids", []), "direction": self._get("direction", "bidirectional"),
-                "lists": lists, "last_success": self._get("last_success"), "error": self._get("error", ""),
+                "lists": lists, "last_success": self._get("last_success"), "error": listing_error or self._get("error", ""),
                 "conflicts": [{"todo_id": row["todo_id"], "reason": row["conflict"]}
                               for row in maps if row["conflict"]],
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
@@ -336,6 +338,7 @@ class AppleReminderSync:
             try:
                 self.bridge.call("reminder_rename", list_id=link["apple_id"], title=name)
             except Exception as exc:
+                report_sync_error("reminder", "同步分类名称", exc)
                 link["name_conflict"] = str(exc)
                 self._save_link(link)
                 errors.append(str(exc))
@@ -608,6 +611,7 @@ class AppleReminderSync:
 
     def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
         with self._lock:
+            failures = []
             counts = {"status": "success", "imported": 0, "updated": 0, "exported": 0,
                       "deleted_local": 0, "deleted_remote": 0, "conflicts": 0,
                       "pending_deletions": 0, "pending_local_deletions": 0, "failed_list_ids": []}
@@ -671,7 +675,8 @@ class AppleReminderSync:
                             maps.append(mapping)
                             seen.add(local["id"])
                             counts["imported"] += 1
-                    except Exception:
+                    except Exception as exc:
+                        failures.append(report_sync_error("reminder", "导入提醒事项", exc))
                         counts["status"] = "error"
                 now = datetime.fromisoformat(self.clock().replace("Z", "+00:00"))
                 for mapping in self._maps():
@@ -699,7 +704,8 @@ class AppleReminderSync:
                                 continue
                         mapping["updated_at"] = self.clock()
                         self._save_map(mapping)
-                    except Exception:
+                    except Exception as exc:
+                        failures.append(report_sync_error("reminder", "核对已同步提醒事项", exc))
                         counts["status"] = "error"
                 if successful and (using_links or direction in ("export", "bidirectional")):
                     available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
@@ -725,7 +731,8 @@ class AppleReminderSync:
                                     local, list_id=match[0]))["reminder"]
                                 self._save_map(self._new_map(local, remote, "stella"))
                                 counts["exported"] += 1
-                            except Exception:
+                            except Exception as exc:
+                                failures.append(report_sync_error("reminder", "写入 Apple 提醒事项", exc))
                                 counts["status"] = "error"
                 for mapping in self._maps():
                     if mapping["state"] == "pending_local_delete":
@@ -748,7 +755,8 @@ class AppleReminderSync:
                                 self._save_map(mapping)
                                 counts["conflicts"] += 1
                                 counts["status"] = "partial"
-                            except Exception:
+                            except Exception as exc:
+                                failures.append(report_sync_error("reminder", "删除 Stella 提醒事项", exc))
                                 counts["status"] = "error"
                     elif mapping["state"] == "pending_delete":
                         counts["pending_deletions"] += 1
@@ -761,7 +769,8 @@ class AppleReminderSync:
                                 self._save_map(mapping)
                                 counts["deleted_remote"] += 1
                                 counts["pending_deletions"] -= 1
-                            except Exception:
+                            except Exception as exc:
+                                failures.append(report_sync_error("reminder", "删除 Apple 提醒事项", exc))
                                 counts["status"] = "error"
                 if name_errors and counts["status"] == "success":
                     counts["status"] = "error"
@@ -769,10 +778,11 @@ class AppleReminderSync:
                     self._set("last_success", self.clock())
                     self._set("error", "")
                 else:
-                    self._set("error", name_errors[0] if name_errors else "Reminders sync needs review or another attempt")
-            except Exception:
+                    self._set("error", failures[0] if failures else name_errors[0] if name_errors else "Reminders sync needs review or another attempt")
+            except Exception as exc:
+                failures.append(report_sync_error("reminder", "同步提醒事项", exc))
                 counts["status"] = "error"
-                self._set("error", "Reminders sync needs another attempt")
+                self._set("error", failures[-1])
             return counts
 
     def resolve_conflict(self, todo_id, choice):
