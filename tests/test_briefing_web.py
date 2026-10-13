@@ -217,6 +217,20 @@ def test_validation(api, handler, body):
     assert call(handler, body=body)["status"] == "error"
 
 
+def test_briefing_reject_writes_warning_log(api, caplog):
+    from common.log import logger
+
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level("WARNING", logger=logger.name):
+            result = call(web_channel.BriefingRunHandler, body={"briefing_date": "invalid"})
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert result["status"] == "error"
+    assert "Briefing request rejected" in caplog.text
+
+
 def test_missing_detail_and_invalid_filter(api):
     assert call(web_channel.BriefingDetailHandler, "GET", args=("missing",))["status"] == "error"
     assert call(web_channel.BriefingsHandler, "GET", params={"status": "bad"})["status"] == "error"

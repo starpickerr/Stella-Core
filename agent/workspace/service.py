@@ -299,11 +299,14 @@ class WorkspaceService:
             return self._ok(action, result)
 
         except FileNotFoundError as e:
+            logger.warning("[Workspace] dispatch %s → 404: %s", action, e)
             return self._err(action, 404, str(e))
         except ValueError as e:
             # Path escapes, wrong entry type, oversized file.
+            logger.warning("[Workspace] dispatch %s → 403: %s", action, e)
             return self._err(action, 403, str(e))
         except PermissionError:
+            logger.warning("[Workspace] dispatch %s → 403: permission denied", action)
             return self._err(action, 403, "permission denied")
         except Exception as e:
             logger.error(f"[WorkspaceService] dispatch error: action={action}, error={e}")

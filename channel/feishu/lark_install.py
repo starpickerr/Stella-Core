@@ -34,7 +34,8 @@ import urllib.request
 import zipfile
 
 try:
-    from common.log import logger
+    from common.log import get_logger
+    logger = get_logger("feishu_lark_install")
 except Exception:  # pragma: no cover - common may be unavailable in isolation
     logger = logging.getLogger("feishu_lark_install")
 

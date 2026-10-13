@@ -812,4 +812,4 @@ def test_todo_api_validation_errors_are_written_to_logs(service, monkeypatch):
         response = json.loads(web_channel.TodosHandler().GET())
     assert response == {"status": "error", "message": "invalid todo range"}
     log_warning.assert_called_once()
-    assert "invalid todo range" in log_warning.call_args.args[0]
+    assert "invalid todo range" in log_warning.call_args.args[-1]

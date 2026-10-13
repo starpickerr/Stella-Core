@@ -638,6 +638,10 @@ def _execute_application_command(task, agent_id=None):
             record.event(run_id, "permission_denied")
         record.event(run_id, "tool_execution_end")
         record.transition(run_id, status, str(exc))
+        logger.warning(
+            "[Scheduler] Scheduled command failed: %s.%s %s",
+            action.get("domain"), action.get("command"), exc,
+        )
         return ExecutionOutcome(status, str(exc))
 
 
@@ -671,11 +675,14 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
             if denial:
                 record.event(run_id, "permission_denied")
                 record.transition(run_id, "failed", denial)
+                logger.warning("[Permission] Scheduled deny tool=%s: %s", tool_name, denial)
                 return ExecutionOutcome("failed", denial)
             tool = ToolManager().create_tool(tool_name)
             if not tool:
-                record.transition(run_id, "failed", f"Tool '{tool_name}' not found")
-                return ExecutionOutcome("failed", f"Tool '{tool_name}' not found")
+                error = f"Tool '{tool_name}' not found"
+                record.transition(run_id, "failed", error)
+                logger.warning("[Scheduler] Scheduled tool not found: %s", tool_name)
+                return ExecutionOutcome("failed", error)
             from agent.runtime.tool_invocation import execution_workspace
             cwd, _ = execution_workspace(source_session, agent_id, _resolve_working_dir(agent_id=agent_id))
             setter = getattr(tool, "set_cwd", None)
@@ -698,6 +705,7 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
                 record.transition(run_id, "failed", str(content))
                 retryable = (tool_name == "briefing" and tool_params.get("action") == "run" and
                              tool_params.get("operation", "create") == "create")
+                logger.warning("[Scheduler] Scheduled tool failed: %s %s", tool_name, content)
                 return ExecutionOutcome("failed", str(content), retryable=retryable)
             save_output(store, task.get("job_run_id"), content)
             record.transition(run_id, "completed")
@@ -705,6 +713,7 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     except Exception as exc:
         status = "outcome_unknown" if invoked else "failed"
         record.transition(run_id, status, str(exc))
+        logger.warning("[Scheduler] Scheduled tool raised: %s %s", tool_name, exc)
         return ExecutionOutcome(status, str(exc))
 
 

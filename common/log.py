@@ -10,6 +10,7 @@ _SECRET_FIELD = re.compile(
     r'(?i)(["\']?(?:password|token|api[_-]?key|cookie|authorization|client[_-]?secret|access[_-]?token)["\']?\s*[:=]\s*)(["\']?)([^\s,}"\']+)',
 )
 _BEARER = re.compile(r'(?i)\bBearer\s+[^\s,;]+')
+_SK_TOKEN = re.compile(r'(?i)\bsk-[A-Za-z0-9_\-]{16,}')
 
 
 class _SecretFilter(logging.Filter):
@@ -25,6 +26,7 @@ class _SecretFilter(logging.Filter):
 
 def _redact(message):
     message = _BEARER.sub('Bearer [REDACTED]', message)
+    message = _SK_TOKEN.sub('sk-[REDACTED]', message)
     return _SECRET_FIELD.sub(r'\1\2[REDACTED]', message)
 
 
@@ -96,3 +98,18 @@ def _get_logger():
 
 # 日志句柄
 logger = _get_logger()
+
+
+def get_logger(name: str | None = None) -> logging.Logger:
+    """Return the Stella logger, or a child that shares its handlers and redaction.
+
+    Named loggers propagate to ``log`` so FileHandler / StreamHandler and
+    ``_SecretFilter`` are applied once. Prefer this over bare ``logging.getLogger``
+    for product diagnostics.
+    """
+    if not name or name == "log":
+        return logger
+    child = logging.getLogger(f"log.{name}")
+    child.setLevel(logger.level)
+    child.propagate = True
+    return child
