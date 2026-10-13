@@ -35,6 +35,39 @@ def save_global_policy(value: dict) -> dict:
     return clean
 
 
+def save_conversation_policy(session: str, value: dict | None, agent: str | None = None) -> dict:
+    """Use the same project or standalone policy for every human-facing editor."""
+    from agent.workspace import project_store, session_prefs
+    from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
+
+    patch = validate_patch(value) if value is not None else {}
+    project = project_store.get_project_dir(session, agent)
+    roots = patch.get("extra_roots")
+    fields = {key: patch[key] for key in ("preset", "base_preset", "rules", "connections") if key in patch}
+    if project and fields:
+        previous = project_store.get_security_policy(project)
+        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
+        saved = project_store.set_security_policy(project, snapshot_policy({**retained, **fields}))
+        migrate_project_conversation_policies(project)
+        if roots is not None:
+            session_prefs.set_prefs(session, agent, security_policy={"extra_roots": roots})
+        record(operation="update", resource="project policy", project=project, conversation=session,
+               decision="policy_change", reason="Project security policy updated from a project conversation.")
+    elif project:
+        saved = {"extra_roots": roots} if roots is not None else {}
+        session_prefs.set_prefs(session, agent, security_policy=saved or None)
+        record(operation="update", resource="conversation policy", conversation=session,
+               decision="policy_change", reason="Conversation authorized paths updated.")
+    else:
+        previous = session_prefs.get_prefs(session, agent).get("security_policy") or {}
+        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
+        saved = snapshot_policy({**retained, **patch}) if patch else {}
+        session_prefs.set_prefs(session, agent, security_policy=saved or None)
+        record(operation="update", resource="conversation policy", conversation=session,
+               decision="policy_change", reason="Standalone conversation security policy updated.")
+    return saved
+
+
 def _write_config(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".security-tmp")

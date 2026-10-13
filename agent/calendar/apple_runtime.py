@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 import threading
 
-logger = logging.getLogger(__name__)
+from common.log import logger
+
+
+def report_sync_error(kind, phase, error):
+    """Keep a caught EventKit failure visible in both the UI and desktop log."""
+    logger.exception("[AppleSync] %s failed during %s", kind, phase)
+    return f"{phase}失败：{error or type(error).__name__}"
 
 
 class EventKitAutoRunner:

@@ -8,6 +8,38 @@ from agent.permission.security_policy import (MODE_DEFINITIONS, copy_custom, def
 from agent.workspace import project_store, session_prefs
 
 
+def test_chat_mode_switch_updates_shared_project_policy(tmp_path, monkeypatch):
+    from channel.desktop import desktop_channel as channel
+    import config as config_module
+
+    state = tmp_path / "state"
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
+    settings = {"security_policy": {"preset": "read-only", "rules": {}, "connections": {}}}
+    monkeypatch.setattr(config_module, "conf", lambda: settings)
+    monkeypatch.setattr(channel, "conf", lambda: settings)
+    monkeypatch.setattr(channel.web, "header", lambda *a, **kw: None)
+    monkeypatch.setattr(channel.web, "data", lambda: b'{"security_policy":{"preset":"full-access"}}')
+    project_store.set_project_dir("chat-a", str(project))
+    project_store.set_project_dir("chat-b", str(project))
+    project_store.set_security_policy(str(project), {
+        "preset": "read-only", "rules": {},
+        "connections": {"email": {"allowed": False, "scopes": []}},
+        "extra_roots": [str(tmp_path / "authorized")],
+    })
+
+    result = json.loads(channel.SessionSettingsHandler().POST("chat-a"))
+
+    assert result["status"] == "success", result
+    assert result["permission"]["mode"] == "full-access"
+    peer = resolve("read-only", project_dir=str(project), session_id="chat-b", global_value=settings["security_policy"])
+    assert effective_mode(peer) == "full-access"
+    assert peer["connections"]["email"]["allowed"] is False
+    assert peer["extra_roots"] == [str(tmp_path / "authorized")]
+    assert settings["security_policy"]["preset"] == "read-only"
+
+
 def test_managed_skills_require_dedicated_settings_flow(tmp_path, monkeypatch):
     state = tmp_path / "state"
     skills = state / "skills"

@@ -75,7 +75,11 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
     try {
       const response = await action()
       apply(response.connection as Connection)
-      if (response.result) setNotice(`已完成：导入 ${response.result.imported}，更新 ${response.result.updated}，写入 ${response.result.exported}`)
+      if (response.result?.status === 'success' || response.result?.status === 'partial') {
+        setNotice(`${response.result.status === 'partial' ? '部分完成' : '已完成'}：导入 ${response.result.imported}，更新 ${response.result.updated}，写入 ${response.result.exported}`)
+      } else if (response.result && !response.connection.error) {
+        setError('同步未完成，请检查访问权限和连接状态。')
+      }
     } catch (reason) { setError(readableError(reason)) }
     finally { setBusy(false) }
   }
@@ -175,6 +179,8 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
         className="rounded-btn bg-accent px-3 py-2 text-sm text-accent-contrast disabled:opacity-50">请求访问权限</button>
     </div>}
     {connection && supported && authorized && <>
+      {!connection.connected && links.length === 0 && !connection.error && <p role="status" className="text-sm text-content-secondary">已获得系统访问权限。添加分类映射并预览确认后，才会开始持续同步。</p>}
+      {sources.length === 0 && !connection.error && <p role="status" className="text-sm text-content-secondary">暂未读取到可用{sourceTitle}，请确认系统{calendar ? '日历' : '提醒事项'}已加载后重新检查。</p>}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h4 className="text-sm font-medium text-content">持续同步</h4>

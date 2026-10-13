@@ -5841,7 +5841,7 @@ class SecurityPolicyHandler:
         from agent.permission.audit import record
         from agent.permission.center import save_global_policy, overview
         from agent.permission.security_policy import validate_patch
-        from agent.workspace import project_store, session_prefs
+        from agent.workspace import project_store
         try:
             body = json.loads(web.data() or b"{}")
             target = body.get("target")
@@ -5861,28 +5861,8 @@ class SecurityPolicyHandler:
                 session = str(body.get("session") or "")
                 if not session:
                     raise ValueError("conversation required")
-                agent = body.get("agent")
-                project = project_store.get_project_dir(session, agent)
-                patch = validate_patch(policy)
-                roots = patch.get("extra_roots")
-                rule_fields = {key: patch[key] for key in ("preset", "base_preset", "rules", "connections") if key in patch}
-                if project and rule_fields:
-                    saved = project_store.set_security_policy(project, snapshot_policy(rule_fields))
-                    migrate_project_conversation_policies(project)
-                    if roots is not None:
-                        session_prefs.set_prefs(session, agent, security_policy={"extra_roots": roots})
-                    record(operation="update", resource="project policy", project=project, conversation=session,
-                           decision="policy_change", reason="Project security policy updated from a project conversation.")
-                elif project:
-                    saved = {"extra_roots": roots} if roots is not None else {}
-                    session_prefs.set_prefs(session, agent, security_policy=saved or None)
-                    record(operation="update", resource="conversation policy", conversation=session,
-                           decision="policy_change", reason="Conversation authorized paths updated.")
-                else:
-                    saved = snapshot_policy(patch)
-                    session_prefs.set_prefs(session, agent, security_policy=saved or None)
-                    record(operation="update", resource="conversation policy", conversation=session,
-                           decision="policy_change", reason="Standalone conversation security policy updated.")
+                from agent.permission.center import save_conversation_policy
+                saved = save_conversation_policy(session, policy, body.get("agent"))
             else:
                 raise ValueError("invalid policy target")
             return json.dumps({"status": "success", "policy": saved,
@@ -7472,7 +7452,12 @@ class SessionSettingsHandler:
                     "message": "security_policy, model or provider required",
                 })
 
-            session_prefs.set_prefs(session_id, agent_id, **updates)
+            if "security_policy" in updates:
+                from agent.permission.center import save_conversation_policy
+                save_conversation_policy(session_id, updates["security_policy"], agent_id)
+            other_updates = {key: value for key, value in updates.items() if key != "security_policy"}
+            if other_updates:
+                session_prefs.set_prefs(session_id, agent_id, **other_updates)
 
             # Retarget the live agent so the change lands on the next message
             # without waiting for a fresh get_agent.

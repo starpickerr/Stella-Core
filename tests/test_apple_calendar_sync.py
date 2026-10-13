@@ -165,6 +165,30 @@ def connect(sync, calendars=("a",), direction="bidirectional"):
     return sync.sync(manual=True)
 
 
+def test_sync_failure_keeps_cause_and_writes_diagnostic_log(sync_env, monkeypatch, caplog):
+    from common.log import logger
+    sync, bridge, _, _ = sync_env
+    sync.configure(["a"], "import")
+    call = bridge.call
+
+    def failing(op, **payload):
+        if op == "events":
+            raise RuntimeError("EventKit inventory unavailable")
+        return call(op, **payload)
+
+    monkeypatch.setattr(bridge, "call", failing)
+    logger.addHandler(caplog.handler)
+    try:
+        result = sync.sync(manual=True)
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert result["status"] == "error"
+    assert "EventKit inventory unavailable" in sync.status()["error"]
+    assert "EventKit inventory unavailable" in caplog.text
+    assert "Traceback" in caplog.text
+
+
 def test_first_import_multiple_calendars_and_repeat_is_idempotent(sync_env):
     sync, bridge, port, _ = sync_env
     bridge.rows.append(remote_event("b", "event-2", "Tutorial"))
