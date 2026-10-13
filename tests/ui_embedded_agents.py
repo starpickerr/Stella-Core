@@ -127,7 +127,7 @@ with sync_playwright() as playwright:
         embedded.locator('textarea').fill('长任务')
         embedded.locator('textarea').press('Enter')
         expect(page.get_by_role('dialog', name='审批操作')).to_be_visible()
-        expect(embedded.get_by_text('AppleTool')).to_be_visible()
+        expect(embedded.get_by_role('log').get_by_text('AppleTool')).to_be_visible()
         page.get_by_role('dialog', name='审批操作').get_by_role('button', name='允许一次').click()
         assert approvals[0]['action'] == 'approve'
         page.evaluate("""async () => {
