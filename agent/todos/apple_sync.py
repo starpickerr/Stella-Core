@@ -32,10 +32,11 @@ def _priority(value, *, remote=False):
 
 
 def _payload(remote):
+    from agent.calendar.timezones import normalize_timezone
     rule = remote.get("recurrence") or {}
     return {"title": remote["title"], "notes": remote.get("notes") or "",
             "due_on": remote.get("due_on"), "due_time": remote.get("due_time"),
-            "timezone": remote.get("timezone") or "UTC", "planned_on": remote.get("planned_on"),
+            "timezone": normalize_timezone(remote.get("timezone")), "planned_on": remote.get("planned_on"),
             "remind_at": remote.get("remind_at"), "priority": _priority(remote.get("priority"), remote=True),
             "repeat_frequency": rule.get("frequency") or "none", "repeat_days": rule.get("days") or [],
             "repeat_until": (rule.get("until") or "")[:10] or None,

@@ -165,6 +165,15 @@ def connect(sync, calendars=("a",), direction="bidirectional"):
     return sync.sync(manual=True)
 
 
+def test_import_accepts_eventkit_fixed_offset_timezone(sync_env):
+    sync, bridge, port, _ = sync_env
+    bridge.rows = [remote_event(timezone="GMT+0800")]
+    result = connect(sync, direction="import")
+    assert result["status"] == "success"
+    assert result["imported"] == 1
+    assert port.list_events()[0]["repeat_timezone"] == "Etc/GMT-8"
+
+
 def test_sync_failure_keeps_cause_and_writes_diagnostic_log(sync_env, monkeypatch, caplog):
     from common.log import logger
     sync, bridge, _, _ = sync_env
