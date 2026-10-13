@@ -42,6 +42,9 @@ def workspace_out_of_the_way():
         # that loads config on import can leave a registry or a store already
         # resolved against the real path. Drop those.
         _forget_resolved_paths()
+        # Standalone tool tests bypass Agent startup, which creates Work.
+        from common.state_dir import personal_work_dir
+        personal_work_dir(base=workspace)
         try:
             yield workspace
         finally:
