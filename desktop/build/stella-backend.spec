@@ -94,6 +94,14 @@ hiddenimports += [
 # stops being true — without it every HTTPS call through urllib/websockets fails.
 hiddenimports += ['certifi']
 
+# zoneinfo falls back to the tzdata package when the OS has no IANA database
+# (frozen Windows builds, minimal Linux images). Without these files even UTC
+# fails and Apple calendar import surfaces as "invalid repeat_timezone".
+hiddenimports += ['tzdata']
+
+# agent.tools.search_files does `import regex as re` at module import time.
+hiddenimports += ['regex']
+
 # Third-party SDKs that use lazy/conditional imports internally.
 hiddenimports += collect_submodules('dashscope')
 hiddenimports += [
@@ -141,10 +149,18 @@ datas = [
     (rp('agent', 'bills', 'schema.sql'), 'agent/bills'),
     (rp('agent', 'briefing', 'schema.sql'), 'agent/briefing'),
     (rp('agent', 'briefing', 'actions.sql'), 'agent/briefing'),
+    # Scaffold templates for first-run subagent assets (README + example).
+    (rp('agent', 'subagent', 'assets'), 'agent/subagent/assets'),
 ]
 
 # Some libraries (tiktoken encodings, etc.) ship data files.
 datas += collect_data_files('tiktoken_ext', include_py_files=False)
+
+# tzdata's zoneinfo trees are package data, not importable modules.
+datas += collect_data_files('tzdata')
+
+# Explicit CA bundle path for frozen OpenSSL (belt-and-suspenders with hook-certifi).
+datas += collect_data_files('certifi')
 
 # python-docx / python-pptx bundle template files (default.docx / default.pptx,
 # content-type XML) inside their packages; they're loaded at import/parse time,

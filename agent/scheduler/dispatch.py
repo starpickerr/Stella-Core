@@ -9,6 +9,7 @@ import requests
 
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
+from common.log import logger
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,15 @@ class DeliveryOutcome:
     status: str
     error: str = ""
     retryable: bool = False
+
+
+def _log_delivery_outcome(delivery_id, leg, outcome: DeliveryOutcome) -> DeliveryOutcome:
+    if outcome.status not in ("accepted", "waiting"):
+        logger.warning(
+            "[Scheduler] Delivery %s/%s → %s: %s",
+            delivery_id, leg, outcome.status, outcome.error or "(no detail)",
+        )
+    return outcome
 
 
 def _channel_for(channel_type):
@@ -45,8 +55,9 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
     decision = store.begin_delivery(delivery_id, leg, channel_type, receiver)
     if decision != "send":
         row = store.get_delivery(delivery_id, leg)
-        return DeliveryOutcome(decision, row.get("error") or "" if row else "",
-                               bool(row and row.get("retryable") and row.get("attempts", 0) < 3))
+        return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome(
+            decision, row.get("error") or "" if row else "",
+            bool(row and row.get("retryable") and row.get("attempts", 0) < 3)))
 
     if channel_type == "desktop":
         from agent.scheduler.desktop_notify import enqueue_desktop_notification
@@ -59,17 +70,17 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
     if channel is None:
         error = f"{channel_type} is unavailable"
         store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
-        return DeliveryOutcome("failed", error, retryable=True)
+        return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("failed", error, retryable=True))
     if channel_type == "weixin":
         if getattr(channel, "login_status", "logged_in") != "logged_in":
             error = "Weixin login is required"
             store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
-            return DeliveryOutcome("failed", error, retryable=True)
+            return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("failed", error, retryable=True))
         tokens = getattr(channel, "_context_tokens", None)
         if tokens is not None and not tokens.get(receiver):
             error = "Weixin conversation context expired"
             store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=True)
-            return DeliveryOutcome("failed", error, retryable=True)
+            return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("failed", error, retryable=True))
 
     context = Context(ContextType.TEXT, content)
     context["receiver"] = receiver
@@ -100,7 +111,7 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
             error = "Channel rejected scheduled delivery"
             store.finish_delivery(delivery_id, leg, "failed", error=error,
                                   platform_response=details)
-            return DeliveryOutcome("failed", error)
+            return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("failed", error))
         store.finish_delivery(delivery_id, leg, "accepted", platform_response=details)
         return DeliveryOutcome("accepted")
     except requests.exceptions.ConnectTimeout as exc:
@@ -108,12 +119,12 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
         row = store.get_delivery(delivery_id, leg)
         retryable = row["attempts"] < 3
         store.finish_delivery(delivery_id, leg, "failed", error=error, retryable=retryable)
-        return DeliveryOutcome("failed", error, retryable)
+        return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("failed", error, retryable))
     except (requests.exceptions.Timeout, TimeoutError, requests.exceptions.ConnectionError,
             ConnectionError) as exc:
         error = str(exc)[:500]
         store.finish_delivery(delivery_id, leg, "unknown", error=error)
-        return DeliveryOutcome("unknown", error)
+        return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome("unknown", error))
     except Exception as exc:
         error = str(exc)[:500]
         if getattr(exc, "delivery_uncertain", False):
@@ -125,7 +136,7 @@ def _one_delivery(store, delivery_id, leg, destination, content, *, agent_id, ch
         row = store.get_delivery(delivery_id, leg)
         retryable = retryable and row["attempts"] < 3
         store.finish_delivery(delivery_id, leg, status, error=error, retryable=retryable)
-        return DeliveryOutcome(status, error, retryable)
+        return _log_delivery_outcome(delivery_id, leg, DeliveryOutcome(status, error, retryable))
 
 
 def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, expires_at=None,
@@ -143,7 +154,7 @@ def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, 
         error = "需要重新选择渠道"
         if store.begin_delivery(delivery_id, "primary", channel_type, receiver) == "send":
             store.finish_delivery(delivery_id, "primary", "failed", error=error)
-        return DeliveryOutcome("failed", error)
+        return _log_delivery_outcome(delivery_id, "primary", DeliveryOutcome("failed", error))
     store.queue_delivery(delivery_id, "primary", primary["channel_type"], primary["receiver"])
     recorded = store.get_delivery(delivery_id, "primary")
     if recorded and recorded["status"] == "accepted":
@@ -151,11 +162,16 @@ def dispatch_notification(store, delivery_id, route, content, *, agent_id=None, 
     if recorded and recorded["status"] in ("unknown", "sending"):
         if recorded["status"] == "sending":
             store.begin_delivery(delivery_id, "primary", primary["channel_type"], primary["receiver"])
-        return DeliveryOutcome("unknown", recorded.get("error") or "Previous send outcome is unknown")
+        return _log_delivery_outcome(
+            delivery_id, "primary",
+            DeliveryOutcome("unknown", recorded.get("error") or "Previous send outcome is unknown"),
+        )
     instant = now or datetime.now(timezone.utc)
     if expires_at is not None and instant >= expires_at:
         store.expire_delivery(delivery_id, "primary", primary["channel_type"], primary["receiver"])
-        return DeliveryOutcome("expired", "Notification is past its useful time")
+        return _log_delivery_outcome(
+            delivery_id, "primary", DeliveryOutcome("expired", "Notification is past its useful time"),
+        )
     provider = channel_provider or _channel_for
     result = _one_delivery(store, delivery_id, "primary", primary, content,
                            agent_id=agent_id, channel_provider=provider)

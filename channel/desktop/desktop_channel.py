@@ -5831,7 +5831,7 @@ class SecurityCenterHandler:
         try:
             return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
         except (ValueError, OSError) as error:
-            return json.dumps({"status": "error", "message": str(error)}, ensure_ascii=False)
+            return _api_reject("Security", error)
 
 
 class SecurityPolicyHandler:
@@ -5868,7 +5868,7 @@ class SecurityPolicyHandler:
             return json.dumps({"status": "success", "policy": saved,
                                "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
         except (ValueError, FileNotFoundError, OSError) as error:
-            return json.dumps({"status": "error", "message": str(error)})
+            return _api_reject("Security", error)
 
 
 class SecurityConnectionsHandler:
@@ -5902,7 +5902,7 @@ class SecurityConnectionsHandler:
                 save_global_policy(stored)
             return json.dumps({"status": "success", "connections": connections()}, ensure_ascii=False)
         except ValueError as error:
-            return json.dumps({"status": "error", "message": str(error)})
+            return _api_reject("Security", error)
 
 
 class SecuritySecretsHandler:
@@ -5917,7 +5917,7 @@ class SecuritySecretsHandler:
             set_secret(str(body.get("name") or ""), body["value"])
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
         except ValueError as error:
-            return json.dumps({"status": "error", "message": str(error)})
+            return _api_reject("Security", error)
 
     def DELETE(self):
         _require_auth()
@@ -5928,7 +5928,7 @@ class SecuritySecretsHandler:
             set_secret(str(body.get("name") or ""), None)
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
         except ValueError as error:
-            return json.dumps({"status": "error", "message": str(error)})
+            return _api_reject("Security", error)
 
 
 class SecurityPrivacyHandler:
@@ -5940,7 +5940,7 @@ class SecurityPrivacyHandler:
         try:
             return json.dumps({"status": "success", **inventory()}, ensure_ascii=False)
         except (ValueError, OSError) as error:
-            return json.dumps({"status": "error", "message": str(error), "available": False})
+            return _api_reject("Security", error, available=False)
 
     def POST(self):
         _require_auth()
@@ -5951,7 +5951,7 @@ class SecurityPrivacyHandler:
             result = cleanup(str(body.get("action") or ""))
             return json.dumps({**result, **inventory()}, ensure_ascii=False)
         except ValueError as error:
-            return json.dumps({"status": "error", "message": str(error)})
+            return _api_reject("Security", error)
 
 
 class SecurityConfirmationsHandler:
@@ -6093,7 +6093,7 @@ class SchedulerHandler:
                                                        agent_id=current_identity().agent_id)
             return json.dumps({"status": "success", "task": task}, ensure_ascii=False)
         except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Scheduler", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -6207,6 +6207,20 @@ class SchedulerDeleteHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _api_reject(domain, exc, **extra):
+    """Return a client error while keeping the reason in run.log."""
+    message = str(exc.args[0]) if getattr(exc, "args", None) else str(exc)
+    logger.warning("[DesktopChannel] %s request rejected (%s): %s", domain, type(exc).__name__, message)
+    payload = {"status": "error", "message": message, **extra}
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _api_fail(domain, message=None):
+    """Return a generic failure after logging the traceback."""
+    logger.exception("[DesktopChannel] %s request failed", domain)
+    return json.dumps({"status": "error", "message": message or f"{domain} request failed"}, ensure_ascii=False)
+
+
 def _calendar_response(operation):
     _require_auth()
     web.header('Content-Type', 'application/json; charset=utf-8')
@@ -6214,11 +6228,9 @@ def _calendar_response(operation):
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
     except (ValueError, KeyError, PermissionError) as exc:
-        logger.warning(f"[DesktopChannel] Calendar request rejected ({type(exc).__name__}): {exc}")
-        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+        return _api_reject("Calendar", exc)
     except Exception:
-        logger.exception("[DesktopChannel] Calendar request failed")
-        return json.dumps({"status": "error", "message": "Calendar request failed"})
+        return _api_fail("Calendar")
 
 
 def _calendar_service():
@@ -6630,12 +6642,10 @@ def _todo_response(operation):
     web.header('Cache-Control', 'no-store')
     try:
         return json.dumps({"status": "success", **operation()}, ensure_ascii=False)
-    except (ValueError, KeyError) as exc:
-        logger.warning(f"[DesktopChannel] Todo request rejected ({type(exc).__name__}): {exc}")
-        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+    except (ValueError, KeyError, PermissionError) as exc:
+        return _api_reject("Todo", exc)
     except Exception:
-        logger.exception("[DesktopChannel] Todo request failed")
-        return json.dumps({"status": "error", "message": "Todo request failed"})
+        return _api_fail("Todo")
 
 
 class TodosHandler:
@@ -6821,10 +6831,9 @@ def _briefing_response(operation):
             default=lambda value: asdict(value) if is_dataclass(value) else str(value),
         )
     except (ValueError, KeyError) as exc:
-        return json.dumps({"status": "error", "message": str(exc.args[0])}, ensure_ascii=False)
+        return _api_reject("Briefing", exc)
     except Exception:
-        logger.exception("[DesktopChannel] Briefing request failed")
-        return json.dumps({"status": "error", "message": "Briefing request failed"})
+        return _api_fail("Briefing")
 
 
 class BriefingsHandler:
@@ -7005,7 +7014,7 @@ class BillsLedgerHandler:
             entries = _bills_service().list_ledger(year, month)
             return json.dumps({"status": "success", "entries": entries}, ensure_ascii=False)
         except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills ledger GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7018,7 +7027,7 @@ class BillsLedgerHandler:
             entry = _bills_service().create_ledger(body)
             return json.dumps({"status": "success", "entry": entry}, ensure_ascii=False)
         except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills ledger POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7049,7 +7058,7 @@ class BillsLedgerExportHandler:
             return data
         except ValueError as e:
             web.header('Content-Type', 'application/json; charset=utf-8')
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills ledger export error: {e}")
             web.header('Content-Type', 'application/json; charset=utf-8')
@@ -7068,9 +7077,9 @@ class BillsLedgerUpdateHandler:
             entry = _bills_service().update_ledger(entry_id, body)
             return json.dumps({"status": "success", "entry": entry}, ensure_ascii=False)
         except KeyError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills ledger update error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7088,7 +7097,7 @@ class BillsLedgerDeleteHandler:
             _bills_service().delete_ledger(entry_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except KeyError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills ledger delete error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7105,7 +7114,7 @@ class BillsStatementsHandler:
             statements = _bills_service().list_statements(period_type, year)
             return json.dumps({"status": "success", "statements": statements}, ensure_ascii=False)
         except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Bills", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Bills statements GET error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7747,7 +7756,7 @@ class WorkspaceTreeHandler:
             result["entries"] = [_decorate_entry(svc, e, params.session, params.agent) for e in result["entries"]]
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Workspace", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Workspace tree error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7827,7 +7836,7 @@ class WorkspaceResolveHandler:
                 entry["preview_url"] = _build_preview_url(entry["abs_path"], params.session, params.agent)
             return json.dumps({"status": "success", "file": entry}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
-            return json.dumps({"status": "error", "message": str(e)})
+            return _api_reject("Workspace", e)
         except Exception as e:
             logger.error(f"[DesktopChannel] Workspace resolve error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -7858,7 +7867,7 @@ class WorkspaceSharesHandler:
             return json.dumps({"status": "success", "shares": list_shares(params.session, agent_id)},
                               ensure_ascii=False)
         except (ValueError, FileNotFoundError) as exc:
-            return json.dumps({"status": "error", "message": str(exc)})
+            return _api_reject("Workspace", exc)
 
     def POST(self):
         _require_auth()
@@ -7872,7 +7881,7 @@ class WorkspaceSharesHandler:
                                  body.get("recipient"), body.get("access"))
             return json.dumps({"status": "success", "share": share}, ensure_ascii=False)
         except (ValueError, FileNotFoundError, PermissionError) as exc:
-            return json.dumps({"status": "error", "message": str(exc)})
+            return _api_reject("Workspace", exc)
 
 
 class WorkspaceShareRevokeHandler:
@@ -7887,7 +7896,7 @@ class WorkspaceShareRevokeHandler:
             share = revoke_share(body.get("id"), body.get("session"), agent_id)
             return json.dumps({"status": "success", "share": share}, ensure_ascii=False)
         except (ValueError, PermissionError) as exc:
-            return json.dumps({"status": "error", "message": str(exc)})
+            return _api_reject("Workspace", exc)
 
 
 def _project_state(session_id: str, agent_id: str = None) -> dict:
@@ -8306,7 +8315,7 @@ class SchedulerTestDeliveryHandler:
                 body.get("notification_route"), agent_id=current_identity().agent_id)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, TypeError) as exc:
-            return json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False)
+            return _api_reject("Scheduler", exc)
 
 
 def _pending_admissions(rows):

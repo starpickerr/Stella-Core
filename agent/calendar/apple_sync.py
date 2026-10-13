@@ -17,6 +17,7 @@ from agent.apple.category_links import reconcile_names, validate_links
 from application import Application, RequestContext
 from .apple_bridge import AppleCalendarBridge
 from agent.calendar.apple_runtime import report_sync_error
+from agent.calendar.timezones import normalize_timezone
 
 
 def _instant(value):
@@ -63,7 +64,8 @@ def _source_key(remote):
 def _payload(remote):
     data = _content(remote)
     data["repeat_frequency"] = "none"
-    data["repeat_timezone"] = remote.get("timezone") or "UTC"
+    # EventKit may emit fixed-offset labels (GMT+0800) that ZoneInfo rejects.
+    data["repeat_timezone"] = normalize_timezone(remote.get("timezone"))
     return data
 
 

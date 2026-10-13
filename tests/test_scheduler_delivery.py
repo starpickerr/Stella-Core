@@ -81,18 +81,27 @@ def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
     assert readonly.status == 'failed'
 
 
-def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, monkeypatch):
+def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, monkeypatch, caplog):
     from agent.runtime.run_record import RunRecord
+    from common.log import logger
+
     monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial',
                         lambda *_args, **_kwargs: 'Authorization required. Adjust the policy and rerun manually.')
     monkeypatch.setattr(integration, '_resolve_working_dir', lambda **_: str(tmp_path))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',
                         lambda: SimpleNamespace(create_tool=lambda _: pytest.fail('tool must not run')))
-    result = integration._run_scheduled_tool({'id':'pending', 'action':{}}, 'bash', {'command':'echo hi'},
-                                             None, None, None)
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level("WARNING", logger=logger.name):
+            result = integration._run_scheduled_tool(
+                {'id': 'pending', 'action': {}}, 'bash', {'command': 'echo hi'},
+                None, None, None)
+    finally:
+        logger.removeHandler(caplog.handler)
     assert result.status == 'failed' and not result.retryable
     assert 'Authorization required' in result.error
+    assert 'Scheduled deny tool=bash' in caplog.text
 
 
 def test_destination_change_preserves_source_and_cleans_old_fields(monkeypatch):
