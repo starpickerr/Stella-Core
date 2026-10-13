@@ -10,6 +10,8 @@ croniter>=2.0.0
 click>=8.0
 qrcode
 json-repair
+# IANA zones for zoneinfo on hosts without a system tz database (esp. Windows)
+tzdata
 # search_files tool: regex.search() supports a real per-call timeout, stdlib re does not
 regex>=2019.3.12
 playwright==1.52.0  # eLearning automatic login and browser tool

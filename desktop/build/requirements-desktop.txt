@@ -23,6 +23,11 @@ croniter>=2.0.0
 click>=8.0
 qrcode
 json-repair
+# IANA zones for zoneinfo. Packaged apps (and many Windows hosts) have no
+# system tz database; without this, ZoneInfo("UTC") fails at calendar import.
+tzdata
+# search_files imports the third-party regex module (not stdlib re).
+regex>=2019.3.12
 
 # ---- web framework (web channel) ----
 # web.py 0.62 fails to build on Python 3.13+ (cgi removed); use the GitHub fix.
