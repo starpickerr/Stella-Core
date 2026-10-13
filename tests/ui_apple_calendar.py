@@ -12,6 +12,7 @@ connection = dict(supported=False, authorization='unsupported', connected=False,
                   direction='bidirectional', calendars=[], last_success=None, error='', conflicts=[],
                   pending_deletions=0, pending_local_deletions=0)
 calls = []
+sync_failure = [False]
 
 
 def backend(route):
@@ -66,6 +67,11 @@ def backend(route):
                                   deleted_remote=int(bool(body.get('confirm_deletions'))),
                                   conflicts=0, pending_deletions=connection['pending_deletions'],
                                   pending_local_deletions=connection['pending_local_deletions'], failed_calendar_ids=[])
+            if sync_failure[0]:
+                data['result']['status'] = 'error'
+                connection['error'] = '读取日历失败：EventKit inventory unavailable'
+            else:
+                connection['error'] = ''
         elif path.endswith('/resolve'):
             connection['conflicts'] = []
         elif path.endswith('/auto'):
@@ -116,6 +122,12 @@ with sync_playwright() as playwright:
         expect(panel.get_by_text('已连接', exact=False)).to_be_visible()
         saved = next(body for path, body in calls if path.endswith('/links'))
         assert [row['apple_id'] for row in saved['links']] == ['a', 'b']
+        sync_failure[0] = True
+        panel.get_by_role('button', name='立即同步').click()
+        expect(panel.get_by_role('alert')).to_contain_text('EventKit inventory unavailable')
+        expect(panel.get_by_text('已完成：', exact=False)).to_have_count(0)
+        expect(panel.get_by_text('已连接', exact=False)).to_be_visible()
+        sync_failure[0] = False
         panel.get_by_role('button', name='立即同步').click()
         connection['pending_deletions'] = 1
         connection['pending_local_deletions'] = 1

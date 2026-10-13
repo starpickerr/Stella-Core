@@ -149,6 +149,29 @@ def test_new_local_export_and_both_sides_edit_conflict(tmp_path):
     assert sync.status()["conflicts"][0]["todo_id"] == imported["id"]
 
 
+def test_export_failure_reports_correct_phase(tmp_path, monkeypatch, caplog):
+    from common.log import logger
+    sync, todos, bridge, _ = manager(tmp_path)
+    sync.configure(["a"], "bidirectional")
+    todos.create_todo({"title": "New Stella task"})
+    original = bridge.call
+
+    def fail_export(op, **payload):
+        if op == "reminder_upsert":
+            raise RuntimeError("EventKit write interrupted")
+        return original(op, **payload)
+
+    monkeypatch.setattr(bridge, "call", fail_export)
+    logger.addHandler(caplog.handler)
+    try:
+        assert sync.sync()["status"] == "error"
+    finally:
+        logger.removeHandler(caplog.handler)
+    assert sync.status()["error"] == "写入 Apple 提醒事项失败：EventKit write interrupted"
+    assert "写入 Apple 提醒事项" in caplog.text
+    assert "EventKit write interrupted" in caplog.text
+
+
 def test_partial_and_empty_scans_preserve_local_data_and_confirmed_delete(tmp_path):
     sync, todos, bridge, current = manager(tmp_path, [reminder(), reminder("r2")])
     sync.configure(["a"], "import")
