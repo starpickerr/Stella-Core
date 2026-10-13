@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Download } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 interface LogsPageProps {
   baseUrl: string
@@ -82,23 +83,24 @@ const LogsPage: React.FC<LogsPageProps> = ({ baseUrl }) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t('logs_title')}</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t('logs_desc')}</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={downloading}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download size={13} />
-            {t('logs_download')}
-          </button>
+    <div className="flex-1 flex flex-col min-h-0">
+      <PageHeader className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-content">{t('logs_title')}</h2>
+          <p className="text-sm text-content-tertiary mt-1">{t('logs_desc')}</p>
         </div>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="inline-flex items-center gap-1 rounded-btn border border-default bg-surface px-2 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download size={13} />
+          {t('logs_download')}
+        </button>
+      </PageHeader>
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+        <div className="max-w-5xl mx-auto">
 
         {/* Terminal-style log viewer */}
         <div className="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
@@ -133,6 +135,7 @@ const LogsPage: React.FC<LogsPageProps> = ({ baseUrl }) => {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

@@ -131,8 +131,10 @@ def _build_child(parent, template, task: SubagentTask):
     # Same working directory and same permission mode as the parent: the tool
     # copies already point at the parent's cwd, and delegating to a sub agent
     # must not become a way around the session's permissions.
-    child.project_dir = parent.project_dir
-    child.permission_mode = parent.permission_mode
+    if hasattr(parent, "project_dir"):
+        child.project_dir = parent.project_dir
+    if hasattr(parent, "permission_mode"):
+        child.permission_mode = parent.permission_mode
     return child
 
 
@@ -148,7 +150,7 @@ def _notify(on_state, index: int, state: Dict[str, Any]) -> None:
 
 
 def _run_one(parent, template, task: SubagentTask, index: int, cancel_event,
-             on_state=None, on_event=None) -> Dict[str, Any]:
+             on_state=None, on_event=None, permission_limit=None) -> Dict[str, Any]:
     started = time.time()
     run_id = uuid.uuid4().hex[:12]
     result: Dict[str, Any] = {"task_index": index, "subagent_type": template.name}
@@ -171,10 +173,14 @@ def _run_one(parent, template, task: SubagentTask, index: int, cancel_event,
         with identity_scope(run_id=run_id):
             _depth.set(_depth.get() + 1)
             child = _build_child(parent, template, task)
-            summary = child.run_stream(
-                task.goal, clear_history=True, cancel_event=cancel_event,
-                on_event=child_events,
-            )
+            from agent.runtime.tool_invocation import permission_limit_scope
+            from contextlib import nullcontext
+            boundary = permission_limit_scope(*permission_limit) if permission_limit else nullcontext()
+            with boundary:
+                summary = child.run_stream(
+                    task.goal, clear_history=True, cancel_event=cancel_event,
+                    on_event=child_events,
+                )
         result["status"] = "cancelled" if cancel_event.is_set() else "completed"
         result["summary"] = summary or ""
     except Exception as e:
@@ -212,6 +218,12 @@ def run_tasks(
     it takes looking at a spinner.
     """
     cancel_events = [threading.Event() for _ in tasks]
+    from agent.runtime.tool_invocation import _current_authorization
+    from common.runtime_identity import current_identity
+    identity = current_identity()
+    _, parent_context, _ = _current_authorization(
+        parent, identity.agent_id, identity.session_id, None, False)
+    permission_limit = (parent_context["policy"], parent_context["scope"].write_roots)
     resolved = []
     for task in tasks:
         name = task.subagent_type or ""
@@ -231,7 +243,7 @@ def run_tasks(
             futures.append(
                 pool.submit(
                     ctx.run, _run_one, parent, template, task, index,
-                    cancel_events[index], on_state, on_event,
+                    cancel_events[index], on_state, on_event, permission_limit,
                 )
             )
 

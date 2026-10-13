@@ -1,7 +1,10 @@
 import { create } from 'zustand'
+import type { ViteHotContext } from 'vite/types/hot.d.ts'
 import apiClient from '../api/client'
 import { t } from '../i18n'
 import type { SessionSettingsState } from '../types'
+import type { SecurityPolicy } from '../api/client'
+import { notifySecurityPolicyChanged, SECURITY_POLICY_CHANGED } from './securityPolicyEvents'
 
 /**
  * Per-session model + permission overrides, mirroring the web console's
@@ -13,8 +16,7 @@ export type ComposerMenu = 'workspace' | 'permission' | 'model' | null
 interface SessionSettingsStore {
   /** Settings for the currently loaded session, or null before the first fetch. */
   cfg: SessionSettingsState | null
-  /** Which session `cfg` describes, so a stale response for a switched-away
-   *  session is ignored. */
+  /** Latest requested session; cfg is cleared when switching sessions. */
   sessionId: string | null
   loading: boolean
   /** Last apply failure, shown inline in the open menu; cleared on the next
@@ -29,7 +31,7 @@ interface SessionSettingsStore {
   /** Apply a model / permission change, then repaint from the server echo. */
   apply: (
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; permission?: string | null }
+    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
   ) => Promise<boolean>
   /** Drop cached settings (e.g. on a brand-new chat) so chips fall back to global. */
   reset: () => void
@@ -54,18 +56,18 @@ export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) =
   refresh: async (sessionId) => {
     if (!sessionId) return
     const token = ++requestSeq
-    set({ loading: true })
+    set({ sessionId, cfg: get().sessionId === sessionId ? get().cfg : null, loading: true })
     try {
       const data = await apiClient.getSessionSettings(sessionId)
       // A newer request has superseded this one: drop the response entirely.
       if (token !== requestSeq) return
       if (data.status !== 'success') {
-        set({ loading: false })
+        set({ cfg: null, sessionId, loading: false, error: data.message || t('session_settings_failed') })
         return
       }
-      set({ cfg: { model: data.model, permission: data.permission }, sessionId, loading: false })
-    } catch {
-      if (token === requestSeq) set({ loading: false })
+      set({ cfg: { model: data.model, permission: data.permission }, sessionId, loading: false, error: null })
+    } catch (cause) {
+      if (token === requestSeq) set({ cfg: null, sessionId, loading: false, error: cause instanceof Error ? cause.message : t('session_settings_failed') })
     }
   },
 
@@ -77,20 +79,33 @@ export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) =
     try {
       const data = await apiClient.updateSessionSettings(sessionId, body)
       if (data.status !== 'success' || !data.model || !data.permission) {
-        set({ error: t('session_settings_failed') })
+        if (token === requestSeq) set({ error: data.message || t('session_settings_failed') })
         return false
       }
-      if (token !== requestSeq) return true
-      set({ cfg: { model: data.model, permission: data.permission }, sessionId })
+      if (token === requestSeq) set({ cfg: { model: data.model, permission: data.permission }, sessionId })
+      if ('security_policy' in body) notifySecurityPolicyChanged()
       return true
-    } catch {
-      set({ error: t('session_settings_failed') })
+    } catch (cause) {
+      if (token === requestSeq) set({ error: cause instanceof Error ? cause.message : t('session_settings_failed') })
       return false
     }
   },
 
-  reset: () => set({ cfg: null, sessionId: null, openMenu: null, error: null }),
+  reset: () => {
+    ++requestSeq
+    set({ cfg: null, sessionId: null, loading: false, openMenu: null, error: null })
+  },
 }))
+
+if (typeof window !== 'undefined') {
+  const onPolicyChanged = () => {
+    const state = useSessionSettingsStore.getState()
+    if (state.sessionId) void state.refresh(state.sessionId)
+  }
+  window.addEventListener(SECURITY_POLICY_CHANGED, onPolicyChanged)
+  const hot = (import.meta as ImportMeta & { hot?: ViteHotContext }).hot
+  hot?.dispose(() => window.removeEventListener(SECURITY_POLICY_CHANGED, onPolicyChanged))
+}
 
 /** True when `cfg` is loaded and belongs to the given session. */
 export function cfgFor(sessionId: string): SessionSettingsState | null {

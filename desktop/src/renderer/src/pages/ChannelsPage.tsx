@@ -22,6 +22,7 @@ import { t, localizedLabel, getLang } from '../i18n'
 import apiClient from '../api/client'
 import type { ChannelInfo, ChannelField } from '../types'
 import { Toggle, Btn } from './settings/primitives'
+import PageHeader from '../components/PageHeader'
 import QrScanPanel from '../components/QrScanPanel'
 import { PaperPlaneIcon } from '../components/icons'
 
@@ -154,7 +155,7 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-6 pt-5 pb-3 flex-shrink-0 flex items-start justify-between gap-4">
+      <PageHeader className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-content">{t('channels_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('channels_desc')}</p>
@@ -167,9 +168,9 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
             </span>
           </Btn>
         )}
-      </div>
+      </PageHeader>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto border-t border-default">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-5">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-content-tertiary">
@@ -486,11 +487,6 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
           </Btn>
         )}
       </div>
-
-      {/* QR-login channels with no desktop support fall back to the web console. */}
-      {isQrLogin && !channel.active && !qrProvider && (
-        <p className="text-xs text-content-tertiary mt-3 pl-12">{t('channels_qr_hint')}</p>
-      )}
 
       {/* WeChat: the QR is the whole flow, so show it right away. The amber
           "waiting for scan" badge is what tells a live card why it reappeared. */}

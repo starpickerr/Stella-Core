@@ -90,8 +90,43 @@ def user_root(identity: Optional[RuntimeIdentity] = None) -> Path:
     """
     ident = _resolve(identity)
     if ident.user_id:
+        if ident.user_id in (".", "..") or "/" in ident.user_id or "\\" in ident.user_id or "\x00" in ident.user_id:
+            raise StateDirError("invalid user id")
+    from agent.registry import get_agent_registry
+
+    registry = get_agent_registry()
+    canonical = shared_root() / "users" / "local-default"
+    if ident.user_id and ident.user_id != "local-default":
         return shared_root() / "users" / ident.user_id
+    if (canonical / ".migration.json").is_file():
+        return canonical
+    if ident.agent_id and ident.agent_id != registry.default_agent_id:
+        raise StateDirError(
+            "local-default user data is not migrated; stop Stella and run "
+            "python -m scripts.migrate_user_data --confirm-offline before using a second Agent")
     return state_root(ident)
+
+
+def user_root_for_workspace(workspace: Path, user_id: Optional[str] = None) -> Path:
+    """Resolve user files for a component holding an Agent workspace path.
+
+    Older memory and prompt components carry a workspace instead of an Agent
+    identity. Match registered workspaces here so they cannot bypass the
+    local-default migration guard or read another Agent's user files. An
+    unregistered path is kept for standalone callers and tests.
+    """
+    from agent.registry import get_agent_registry
+
+    root = Path(workspace)
+    current_user = current_identity().user_id
+    resolved_user = user_id or current_user
+    if resolved_user and (resolved_user in (".", "..") or "/" in resolved_user
+                          or "\\" in resolved_user or "\x00" in resolved_user):
+        raise StateDirError("invalid user id")
+    for profile in get_agent_registry().list():
+        if root.resolve() == Path(profile.workspace).resolve():
+            return user_root(RuntimeIdentity(agent_id=profile.id, user_id=resolved_user))
+    return root / "users" / resolved_user if resolved_user else root
 
 
 def state_path(*parts: str, identity: Optional[RuntimeIdentity] = None) -> Path:
@@ -214,6 +249,26 @@ def memory_file(identity=None, base=None) -> Path:
 
 def output_dir(identity=None, ensure: bool = False, base=None) -> Path:
     return _ensure(_user_base(identity, base) / "output", ensure)
+
+
+def personal_work_dir(identity=None, ensure: bool = True, base=None) -> Path:
+    """Files made in a chat without a project; separate from Agent control data."""
+    return _ensure(_user_base(identity, base) / "work", ensure)
+
+
+def session_work_dir(session_id: str, agent_id: str, *, identity=None, ensure: bool = False) -> Path:
+    """Private user Work folder for one Agent conversation."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "sessions" / agent_id / session_id, ensure)
+
+
+def automation_work_dir(task_id: str, agent_id: str, *, identity=None, ensure: bool = False) -> Path:
+    """Stable user Work folder for one scheduled task."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "automations" / agent_id / task_id, ensure)
+
+
+def shared_work_dir(*, identity=None, ensure: bool = False) -> Path:
+    """User Work folder for explicitly shared files."""
+    return _ensure(personal_work_dir(identity, ensure=False) / "shared", ensure)
 
 
 def bills_db(identity=None, ensure: bool = True, base=None) -> Path:

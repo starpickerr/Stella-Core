@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Optional
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
@@ -171,9 +170,8 @@ class BillsTool(BaseTool):
     def _get_service(self):
         if self._service is not None:
             return self._service
-        from agent.bills.service import BillsService
-
-        return BillsService()
+        from application import Application, RequestContext
+        return Application.port("bills", RequestContext.ambient("agent"))
 
     def execute(self, params: dict) -> ToolResult:
         action = (params or {}).get("action")

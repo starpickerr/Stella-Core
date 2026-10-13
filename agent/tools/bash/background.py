@@ -16,6 +16,7 @@ one on purpose.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -24,6 +25,7 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 
 from agent.tools.bash.decode import decode_output
+from common.runtime_identity import current_identity
 
 _IS_WIN = sys.platform == "win32"
 
@@ -39,11 +41,15 @@ _MAX_JOBS = 20
 
 class _Job:
     def __init__(self, job_id: str, command: str, process: subprocess.Popen,
-                 temp_script: Optional[str] = None):
+                 temp_script: Optional[str] = None, temp_dir: Optional[str] = None):
         self.id = job_id
         self.command = command
         self.process = process
         self.temp_script = temp_script
+        self.temp_dir = temp_dir
+        identity = current_identity()
+        self.owner = (identity.user_id, identity.agent_id, identity.session_id)
+        self.run_id = identity.run_id
         self.started_at = time.time()
         self.buffer = bytearray()
         self.cursor = 0
@@ -75,6 +81,12 @@ class _Job:
 
 _lock = threading.Lock()
 _jobs: Dict[str, _Job] = {}
+_inflight = 0
+
+
+def _owned(job: _Job) -> bool:
+    identity = current_identity()
+    return job.owner == (identity.user_id, identity.agent_id, identity.session_id)
 
 
 def _drain(job: _Job, stream) -> None:
@@ -102,19 +114,44 @@ def _evict_finished() -> None:
 
 
 def _cleanup(job: _Job) -> None:
+    from agent.permission.process_sandbox import unregister_share_process
+    unregister_share_process(job.process)
     if job.temp_script:
         try:
             os.remove(job.temp_script)
         except OSError:
             pass
         job.temp_script = None
+    if job.temp_dir:
+        shutil.rmtree(job.temp_dir, ignore_errors=True)
+        job.temp_dir = None
 
 
-def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None) -> str:
+def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None,
+          *, argv=None, shell=True, temp_dir: Optional[str] = None, plan=None) -> str:
     """Launch *command* in the background and return its job id."""
+    global _inflight
+    with _lock:
+        _evict_finished()
+        running = sum(1 for job in _jobs.values() if job.running)
+        if running + _inflight >= _MAX_JOBS:
+            raise RuntimeError(f"background job limit reached ({_MAX_JOBS})")
+        _inflight += 1
+    reserved = True
+    try:
+        return _launch(command, cwd, env, temp_script, argv=argv, shell=shell,
+                       temp_dir=temp_dir, plan=plan)
+    finally:
+        if reserved:
+            with _lock:
+                _inflight -= 1
+
+
+def _launch(command: str, cwd: str, env: dict, temp_script: Optional[str],
+            *, argv, shell: bool, temp_dir: Optional[str], plan) -> str:
     process = subprocess.Popen(
-        command,
-        shell=True,
+        argv if argv is not None else command,
+        shell=shell,
         cwd=cwd,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -122,7 +159,16 @@ def start(command: str, cwd: str, env: dict, temp_script: Optional[str] = None) 
         env=env,
         start_new_session=not _IS_WIN,
     )
-    job = _Job(f"bash_{uuid.uuid4().hex[:8]}", command, process, temp_script)
+    from agent.permission.process_sandbox import register_share_process
+    try:
+        if plan is not None:
+            register_share_process(process, plan)
+    except Exception:
+        if process.poll() is None:
+            _kill_process(process)
+        process.wait()
+        raise
+    job = _Job(f"bash_{uuid.uuid4().hex[:8]}", command, process, temp_script, temp_dir)
     reader = threading.Thread(target=_drain, args=(job, process.stdout), daemon=True)
     job.readers.append(reader)
     reader.start()
@@ -140,7 +186,7 @@ def read(job_id: str) -> Optional[dict]:
     """
     with _lock:
         job = _jobs.get(job_id)
-    if job is None:
+    if job is None or not _owned(job):
         return None
 
     output, dropped = job.take_new_output()
@@ -169,7 +215,7 @@ def kill(job_id: str) -> Optional[bool]:
     """Terminate a background job. Returns None when *job_id* is unknown."""
     with _lock:
         job = _jobs.get(job_id)
-    if job is None:
+    if job is None or not _owned(job):
         return None
     if job.running:
         _kill_process(job.process)
@@ -180,7 +226,7 @@ def kill(job_id: str) -> Optional[bool]:
 
 def list_jobs() -> List[dict]:
     with _lock:
-        jobs = list(_jobs.values())
+        jobs = [job for job in _jobs.values() if _owned(job)]
     return [
         {
             "id": j.id,

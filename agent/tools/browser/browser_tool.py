@@ -19,6 +19,8 @@ import ipaddress
 import json
 import os
 import socket
+import threading
+from contextlib import nullcontext
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 
@@ -117,6 +119,7 @@ class BrowserTool(BaseTool):
     }
 
     _shared_service: Optional[BrowserService] = None
+    _access_lock = threading.RLock()
 
     def __init__(self, config: dict = None):
         self.config = config or {}
@@ -183,10 +186,13 @@ class BrowserTool(BaseTool):
         for family, _, _, _, sockaddr in addr_infos:
             ip_str = sockaddr[0]
             ip = ipaddress.ip_address(ip_str)
+            mapped = getattr(ip, "ipv4_mapped", None)
             # Block only the high-risk targets — link-local (incl. the
-            # 169.254.169.254 cloud-metadata endpoint) and the IPv6 metadata
+            # 169.254.169.254 cloud-metadata endpoint), the same address
+            # written as an IPv4-mapped IPv6 literal, and the IPv6 metadata
             # address. Loopback and RFC1918/LAN stay reachable for local dev.
-            if ip.is_link_local or ip in _CLOUD_METADATA_IPS:
+            if (ip.is_link_local or ip in _CLOUD_METADATA_IPS
+                    or (mapped is not None and (mapped.is_link_local or mapped in _CLOUD_METADATA_IPS))):
                 raise ValueError(
                     f"URL resolves to a link-local / cloud-metadata address "
                     f"({ip_str}), request blocked for security"
@@ -270,6 +276,8 @@ class BrowserTool(BaseTool):
         )
 
     def execute(self, args: Dict[str, Any]) -> ToolResult:
+        if self.is_cancelled():
+            return ToolResult.fail("Browser operation cancelled")
         action = args.get("action", "").strip().lower()
         if not action:
             return ToolResult.fail("Error: 'action' parameter is required")
@@ -293,7 +301,28 @@ class BrowserTool(BaseTool):
             return no_budget
 
         try:
-            return handler(self, args)
+            service = self._get_service()
+            scope = service.cancel_scope(self.cancel_event) if hasattr(service, "cancel_scope") else nullcontext()
+            with self._access_lock, scope:
+                if hasattr(service, "set_authorized_roots"):
+                    from agent.permission.process_sandbox import current_policy_and_roots
+                    from agent.runtime.tool_invocation import approved_browser_file
+                    from agent.workspace.context import resolve_context
+                    from common.runtime_identity import current_identity
+                    identity = current_identity()
+                    private_context = resolve_context(identity.execution_session_id or identity.session_id,
+                                                      identity.agent_id, task_id=identity.task_id)
+                    _, roots = current_policy_and_roots(self.cwd)
+                    selected = approved_browser_file(str(args.get("url") or ""))
+                    service.set_authorized_roots(roots, [selected] if selected else [], private_context)
+                try:
+                    result = handler(self, args)
+                finally:
+                    if hasattr(service, "set_authorized_roots"):
+                        service.set_authorized_roots((), ())
+            if self.is_cancelled():
+                return ToolResult.fail("Browser operation cancelled")
+            return result
         except Exception as e:
             logger.error(f"[Browser] Action '{action}' error: {e}")
             return ToolResult.fail(f"Browser error ({action}): {e}")
@@ -343,7 +372,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().click(ref=ref, selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Clicked successfully. Use 'snapshot' to see updated page.")
+        return ToolResult.success("Clicked successfully. Use 'snapshot' to see updated page.")
 
     def _do_fill(self, args: Dict[str, Any]) -> ToolResult:
         text = args.get("text", "")
@@ -355,7 +384,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().fill(text, ref=ref, selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Filled text into element. Use 'snapshot' to verify.")
+        return ToolResult.success("Filled text into element. Use 'snapshot' to verify.")
 
     def _do_select(self, args: Dict[str, Any]) -> ToolResult:
         value = args.get("value", "")
@@ -391,7 +420,7 @@ class BrowserTool(BaseTool):
         result = self._get_service().wait(selector=selector, timeout=timeout)
         if "error" in result:
             return ToolResult.fail(result["error"])
-        return ToolResult.success(f"Wait completed.")
+        return ToolResult.success("Wait completed.")
 
     def _do_back(self, args: Dict[str, Any]) -> ToolResult:
         result = self._get_service().go_back()

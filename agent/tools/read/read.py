@@ -8,7 +8,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
-from agent.tools.utils.credentials import DENIED_MESSAGE, is_credential_path
+from agent.tools.utils.credentials import credential_denial_message, is_credential_path
 from agent.tools.utils.file_state import note_read
 from agent.tools.utils.truncate import truncate_head, format_size, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES
 from common.utils import expand_path
@@ -152,7 +152,7 @@ class Read(BaseTool):
         # Security check: block credential files and their aliases.
         # See issue #2913 (/proc/self/environ bypass) and #2863 (scope).
         if self._is_credential_path(absolute_path):
-            return ToolResult.fail(DENIED_MESSAGE)
+            return ToolResult.fail(credential_denial_message(absolute_path))
         
         # Check if file exists. Both misses below name the tool that answers
         # the question instead - otherwise the model tends to guess at nearby

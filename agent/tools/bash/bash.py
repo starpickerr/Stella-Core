@@ -4,6 +4,7 @@ Bash tool - Execute bash commands
 
 import os
 import re
+import shutil
 import signal
 import sys
 import subprocess
@@ -44,7 +45,7 @@ class Bash(BaseTool):
 {'''
 PLATFORM: Windows (cmd.exe), not Bash, WSL, PowerShell, or Windows Terminal. Use cmd.exe syntax: double quotes (single quotes are literal), `>nul 2>&1` instead of `/dev/null`, `&&` instead of `;`, and `findstr /I "pattern"` without grep-style `-i`/`-e` flags. Do not invoke `bash script.sh` or use Unix-only commands such as grep, head, tail, sed, or awk. Use the search_files tool for file/content search and Python for portable scripting.
 ''' if _IS_WIN else ''}
-ENVIRONMENT: All API keys from env_config are auto-injected. Use $VAR_NAME directly.
+ENVIRONMENT: Credentials are supplied only to authorized integrations; shell commands do not receive Stella secrets.
 
 SAFETY:
 - Freely create/modify/delete files within the workspace
@@ -190,19 +191,20 @@ SAFETY:
             except Exception:
                 pass
 
-            # Load environment variables from ~/.stella/.env if it exists
+            # Shell commands must not inherit backend credentials.
             env_file = expand_path("~/.stella/.env")
             dotenv_vars = {}
             if os.path.exists(env_file):
                 try:
                     from dotenv import dotenv_values
                     dotenv_vars = dotenv_values(env_file)
-                    env.update(dotenv_vars)
-                    logger.debug(f"[Bash] Loaded {len(dotenv_vars)} variables from {env_file}")
                 except ImportError:
-                    logger.debug("[Bash] python-dotenv not installed, skipping .env loading")
+                    pass
                 except Exception as e:
-                    logger.debug(f"[Bash] Failed to load .env: {e}")
+                    logger.debug(f"[Bash] Could not inspect credential names: {e}")
+            for key in list(env):
+                if key in dotenv_vars or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
+                    env.pop(key, None)
 
             # getuid() only exists on Unix-like systems
             if hasattr(os, 'getuid'):
@@ -217,7 +219,7 @@ SAFETY:
             # On Windows, convert $VAR references to %VAR% for cmd.exe
             if self._IS_WIN:
                 env["PYTHONIOENCODING"] = "utf-8"
-                command = self._convert_env_vars_for_windows(command, dotenv_vars)
+                command = self._convert_env_vars_for_windows(command, {})
                 # cmd.exe has an ~8191 char command line limit. Long
                 # `python -c "..."` commands silently fail, so spill the inline
                 # code into a temp .py file and run that instead.
@@ -226,10 +228,26 @@ SAFETY:
                 if command and not command.strip().lower().startswith("chcp"):
                     command = f"chcp 65001 >nul 2>&1 && {command}"
 
+            from agent.permission.process_sandbox import SandboxUnavailable, current_policy_and_roots, prepare
+            from agent.runtime.tool_invocation import approved_shell_target
+            try:
+                policy, roots = current_policy_and_roots(self.cwd)
+                plan = prepare(command, self.cwd, roots, policy, env,
+                               approved_target=approved_shell_target(command))
+            except SandboxUnavailable as error:
+                return ToolResult.fail(f"进程隔离不可用，命令未执行：{error}")
+
             if run_in_background:
                 # Ownership of temp_script_path passes to the registry - the
                 # process is still reading it, so it can only go once the job does.
-                job_id = background.start(command, self.cwd, env, temp_script_path)
+                try:
+                    job_id = background.start(command, self.cwd, env, temp_script_path,
+                                              argv=plan.argv, shell=plan.shell, temp_dir=plan.temp_dir,
+                                              plan=plan)
+                except Exception:
+                    if plan.temp_dir:
+                        shutil.rmtree(plan.temp_dir, ignore_errors=True)
+                    raise
                 return ToolResult.success({
                     "output": (
                         f"Started in background (bash_id: {job_id}). "
@@ -241,12 +259,16 @@ SAFETY:
 
             try:
                 result = self._run_streaming(
-                    command,
+                    plan.argv,
                     timeout,
                     env,
                     dotenv_vars,
+                    shell=plan.shell,
+                    plan=plan,
                 )
             finally:
+                if plan.temp_dir:
+                    shutil.rmtree(plan.temp_dir, ignore_errors=True)
                 if temp_script_path:
                     try:
                         os.remove(temp_script_path)
@@ -258,8 +280,8 @@ SAFETY:
             logger.debug(f"[Bash] Stderr length: {len(result.stderr)}")
             
             # Workaround for exit code 126 with no output
-            if result.returncode == 126 and not result.stdout and not result.stderr:
-                logger.warning(f"[Bash] Exit 126 with no output - trying alternative execution method")
+            if plan.status != "enabled" and result.returncode == 126 and not result.stdout and not result.stderr:
+                logger.warning("[Bash] Exit 126 with no output - trying alternative execution method")
                 # Try using argument list instead of shell=True
                 import shlex
                 try:
@@ -295,7 +317,7 @@ SAFETY:
                                     stdout='{"error": "图片无法解析", "reason": "该图片格式可能不受支持，或图片文件存在问题", "suggestion": "请尝试其他图片"}',
                                     stderr=''
                                 )
-                                logger.info(f"[Bash] Converted exit 126 to user-friendly image error message for vision skill")
+                                logger.info("[Bash] Converted exit 126 to user-friendly image error message for vision skill")
                 except Exception as retry_err:
                     logger.warning(f"[Bash] Retry failed: {retry_err}")
 
@@ -419,10 +441,10 @@ SAFETY:
         known = ", ".join(j["id"] for j in jobs)
         return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
-    def _run_streaming(self, command: str, timeout: int, env: dict, dotenv_vars: dict):
+    def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True, plan=None):
         process = subprocess.Popen(
             command,
-            shell=True,
+            shell=shell,
             cwd=self.cwd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -430,6 +452,14 @@ SAFETY:
             env=env,
             start_new_session=not self._IS_WIN,
         )
+        from agent.permission.process_sandbox import register_share_process, unregister_share_process
+        try:
+            if plan is not None:
+                register_share_process(process, plan)
+        except Exception:
+            self._kill_process(process)
+            process.wait()
+            raise
         stdout_chunks, stderr_chunks = [], []
         recent = bytearray()
         recent_lock = threading.Lock()
@@ -475,6 +505,7 @@ SAFETY:
                     last_reported_at = now
                 time.sleep(0.1)
         finally:
+            unregister_share_process(process)
             if process.poll() is None:
                 self._kill_process(process)
             process.wait()

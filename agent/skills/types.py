@@ -25,6 +25,17 @@ class SkillInstallSpec:
     target_dir: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ToolBinding:
+    """A tool call that must load this skill before it runs.
+
+    ``actions`` is None when every call of the tool needs the skill. A set
+    limits the gate to those ``action`` argument values.
+    """
+    tool: str
+    actions: Optional[frozenset] = None
+
+
 @dataclass
 class SkillMetadata:
     """Metadata for a skill from frontmatter."""
@@ -37,6 +48,7 @@ class SkillMetadata:
     os: List[str] = field(default_factory=list)  # Supported OS platforms
     requires: Dict[str, List[str]] = field(default_factory=dict)  # Requirements
     install: List[SkillInstallSpec] = field(default_factory=list)
+    tool_bindings: List[ToolBinding] = field(default_factory=list)
 
 
 @dataclass

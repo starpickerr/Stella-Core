@@ -1,6 +1,5 @@
 import time
 
-import pip
 from pip._internal import main as pipmain
 
 from common.log import _reset_logger, logger
@@ -22,8 +21,8 @@ def check_dulwich():
             time.sleep(3)
             needwait = False
         try:
-            import dulwich
-
+            import importlib
+            importlib.import_module("dulwich")
             return
         except ImportError:
             try:
@@ -31,6 +30,7 @@ def check_dulwich():
             except Exception:
                 needwait = True
     try:
-        import dulwich
+        import importlib
+        importlib.import_module("dulwich")
     except ImportError:
         raise ImportError("Unable to import dulwich")

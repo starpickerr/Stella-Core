@@ -6,7 +6,7 @@ import type { ElearningSettings as Config, ElearningSettingsInput } from '../../
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const initial: Config = { enabled: true, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '' }
+const initial: Config = { enabled: false, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '', file_sync_enabled: false, file_sync_root: '' }
 const courseName = (value: string): string | null => {
   const name = value.trim().replace(/^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+/, '')
   return name && !/^\d+$/.test(name) ? name : null
@@ -24,7 +24,7 @@ export const ElearningSettings: React.FC = () => {
   const [connected, setConnected] = useState(false)
 
   const open = (cfg: Config) => {
-    setConfig({ ...cfg, enabled: cfg.username ? cfg.enabled : true })
+    setConfig(cfg)
     setPassword(cfg.password_masked)
     setChosen(cfg.courses)
     setSaved(false); setConnected(false); setCourses(cfg.course_options ?? [])
@@ -67,7 +67,7 @@ export const ElearningSettings: React.FC = () => {
       <label className="text-xs text-content-secondary">{t('briefing_elearning_password')}<input type="password" autoComplete="new-password" disabled={busy || loading} value={password} className={`${fieldClass} block w-full mt-1`}
         onFocus={() => { if (password === '********') setPassword('') }} onBlur={() => { if (!password && config.password_set) setPassword('********') }}
         onChange={(e) => { setPassword(e.target.value); setSaved(false); setConnected(false) }} /></label>
-      <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={config.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_source_enabled')}</label>
+      <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={config.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_elearning_include_briefing')}</label>
       <fieldset className="sm:col-span-2 rounded-card border border-default p-3 space-y-3">
         <legend className="px-1 text-xs text-content-secondary">{t('briefing_elearning_courses')} · {chosen.length}</legend>
         <p className="text-xs text-content-tertiary">{t('briefing_elearning_courses_help')}</p>
@@ -96,7 +96,7 @@ export const ElearningSettings: React.FC = () => {
           setConnected(true)
         })}>
           {busy && <Loader2 size={13} className="animate-spin" />}{t('briefing_elearning_test')}</button>
-        {connected && <span role="status" className="inline-flex items-center gap-1 text-xs text-success"><Check size={13} />{t('briefing_mail_connected')}</span>}
+        {connected && <span role="status" className="inline-flex items-center gap-1 text-xs text-success"><Check size={13} />{t('briefing_elearning_connected')}</span>}
         {saved && <span role="status" className="text-xs text-success">{t('briefing_source_saved')}</span>}
       </div>
     </form>

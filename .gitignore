@@ -1,8 +1,9 @@
-ToDoList.md
+重构方案.md
 .DS_Store
 .idea
 .vscode
 .venv
+/.venv 2/
 .vs
 __pycache__/
 venv*
@@ -37,9 +38,11 @@ plugins/banwords/lib/__pycache__
 client_config.json
 # HMAC key for signing /preview URLs; generated per install.
 .preview_secret
-ref/
+/references/
 **/.dev.vars
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 local/
 node_modules/
 
@@ -67,3 +70,10 @@ desktop/resources/.icon-work/
 desktop/resources/bin/
 
 .wrangler/
+evals/reports/
+
+# Development-agent specifications stay on this machine and are not product source.
+/AGENTS.md
+/.agents/
+/.cursor/
+/.codex/

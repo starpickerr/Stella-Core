@@ -44,6 +44,7 @@ class PromptBuilder:
         memory_manager: Any = None,
         runtime_info: Optional[Dict[str, Any]] = None,
         project_dir: Optional[str] = None,
+        work_dir: Optional[str] = None,
         permission_mode: Optional[str] = None,
         **kwargs
     ) -> str:
@@ -74,6 +75,7 @@ class PromptBuilder:
             memory_manager=memory_manager,
             runtime_info=runtime_info,
             project_dir=project_dir,
+            work_dir=work_dir,
             permission_mode=permission_mode,
             **kwargs
         )
@@ -90,6 +92,7 @@ def build_agent_system_prompt(
     memory_manager: Any = None,
     runtime_info: Optional[Dict[str, Any]] = None,
     project_dir: Optional[str] = None,
+    work_dir: Optional[str] = None,
     permission_mode: Optional[str] = None,
     **kwargs
 ) -> str:
@@ -102,7 +105,7 @@ def build_agent_system_prompt(
     3. Memory - memory recall and writing guidance
     3.5 Knowledge - structured knowledge base (injects knowledge/index.md)
     4. Workspace - working environment description
-    4.5 Permissions - what this session may change (omitted for full access)
+    4.5 Permissions - effective rules and resource grants for this session
     5. User identity - user info (optional)
     6. Project context - AGENT.md, USER.md, RULE.md, MEMORY.md, BOOTSTRAP.md
     7. Runtime info - meta info (time, model, etc.)
@@ -146,26 +149,46 @@ def build_agent_system_prompt(
     # hold when the context files were actually loaded, which sub agents skip.
     sections.extend(
         _build_workspace_section(
-            workspace_dir, language, bool(context_files), project_dir=project_dir
+            workspace_dir, language, bool(context_files), project_dir=project_dir, work_dir=work_dir
         )
     )
 
-    # 4.5 Permissions. Right after the workspace, because what the model may
-    # change only means something once it knows where it is working. Emits
-    # nothing in full-access mode, leaving the prompt as it has always been.
+    # 4.5 Permissions. Generated from the same resolved policy as the gateway,
+    # not an editable Skill that might be disabled or become stale.
     if permission_mode:
         try:
-            from agent.permission import describe_mode
-
-            sections.extend(
-                describe_mode(
-                    permission_mode,
-                    language,
-                    cwd=project_dir or workspace_dir,
-                )
-            )
+            from agent.permission.security_policy import describe, resolve
+            from common.runtime_identity import current_identity
+            identity = current_identity()
+            policy = resolve(permission_mode, project_dir=project_dir,
+                             session_id=identity.execution_session_id or identity.session_id,
+                             agent_id=identity.agent_id)
+            available_names = {getattr(tool, "name", "") for tool in (tools or [])}
+            elearning_sync = None
+            if "elearning" in available_names:
+                try:
+                    from agent.briefing.elearning_settings import public_settings
+                    settings = public_settings()
+                    elearning_sync = {"enabled": bool(settings.get("configured") and
+                                                     settings.get("file_sync_enabled") and
+                                                     settings.get("file_sync_root")),
+                                      "root": settings["file_sync_root"]}
+                except Exception:
+                    pass
+            allowlist = conf().get("agent_tool_allowlist")
+            sections.extend(describe(
+                policy, language, workspace=work_dir or project_dir or workspace_dir,
+                tool_allowlist=allowlist if isinstance(allowlist, list) else None,
+                elearning_sync=elearning_sync,
+            ))
         except Exception as e:
-            logger.debug(f"Permission prompt section skipped: {e}")
+            logger.warning(f"Permission prompt section unavailable: {e}")
+            sections.extend([
+                "## Security context" if language == "en" else "## 安全边界",
+                "Current rules are unavailable. Tool execution still checks the current policy; do not bypass a refusal."
+                if language == "en" else "当前规则暂不可读取。工具执行仍会检查实时策略；不要绕过拒绝。",
+                "",
+            ])
 
     # 5. User identity (if present)
     if user_identity:
@@ -181,6 +204,10 @@ def build_agent_system_prompt(
 
     # 8. Response language (always appended, independent of the skeleton language)
     sections.extend(_build_response_language_section(language))
+
+    # 9. Final-answer relevance. This also applies when tools, memory and
+    # workspace context are absent (for example, a freshly created Agent).
+    sections.extend(_build_response_relevance_section(language))
 
     return "\n".join(sections)
 
@@ -203,6 +230,29 @@ def _build_response_language_section(language: str) -> List[str]:
         "## 🌐 回复语言",
         "",
         "默认使用与用户输入相同的语言回复，除非用户明确要求使用其他语言。",
+        "",
+    ]
+
+
+def _build_response_relevance_section(language: str) -> List[str]:
+    """Keep user exclusions as generation boundaries, not answer topics."""
+    if language == "en":
+        return [
+            "## Response relevance",
+            "",
+            "Treat exclusions in a user request as boundaries on what to produce. First decide whether the excluded content would otherwise belong in the requested result.",
+            "Focus the final answer on the requested result. Do not repeat an exclusion merely to show compliance, or make it a title, theme, aside, or summary point.",
+            "Mention an exclusion only when it materially changes the result, conflicts with the goal, is needed for clarity or safety, or the user asks you to discuss it.",
+            "Before replying, remove any detail whose only reason for appearing is that the user excluded it.",
+            "",
+        ]
+    return [
+        "## 回复相关性",
+        "",
+        "将用户请求中的排除条件用于限定生成内容。先判断被排除的内容是否原本就会出现在所需结果中。",
+        "最终回答聚焦用户要的结果。不要仅为证明遵守要求而复述排除条件，也不要把它放进标题、主题、补充说明或总结。",
+        "只有当排除条件实质改变结果、与目标冲突、关系到澄清或安全，或者用户明确要求讨论时，才在回答中提及。",
+        "回复前删除那些仅因用户提出排除条件才出现的信息。",
         "",
     ]
 
@@ -315,7 +365,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             # belong in the description, which it reads once it looks.
             lines.insert(
                 -1,
-                "- Hand a self-contained task that needs research, search or information gathering to `subagent`: one task, or several at once via tasks running in parallel; it brings back the conclusion",
+                "- Independent work: hand a self-contained task to `subagent`; one task or several can run in parallel and bring back conclusions",
             )
     else:
         lines = [
@@ -335,7 +385,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         if has_subagent:
             lines.insert(
                 -1,
-                "- 需要深入调研、搜索或信息采集的独立任务，交给 `subagent`：可以单个任务，也可以用 tasks 同时执行多个任务，`subagent` 负责把结论带回来",
+                "- 能整块交出去的独立工作可交给 `subagent`：单个任务或多个并行任务都能带回结论",
             )
 
     return lines
@@ -368,6 +418,7 @@ def _build_skills_section(skill_manager: Any, tools: Optional[List[Any]], langua
             "",
             f"**Important**: skills are not tools and cannot be called directly. The only way to use a skill is to read its SKILL.md with `{read_tool_name}`, then act on the file's content. "
             "Never read multiple skills at once — only read one after selecting it.",
+            "If a skill declares tool_bindings, calling that tool first returns the skill and does not run the call. Follow it, then call the tool again.",
             "",
             "Available skills:"
         ]
@@ -384,6 +435,7 @@ def _build_skills_section(skill_manager: Any, tools: Optional[List[Any]], langua
             "",
             f"**重要**: 技能不是工具，不能直接调用。使用技能的唯一方式是用 `{read_tool_name}` 读取 SKILL.md 文件，然后按文件内容操作。"
             "永远不要一次性读取多个技能，只在选择后再读取。",
+            "技能若声明了 tool_bindings，调用对应工具时会先返回技能正文，该次调用不会执行。遵循正文后再次调用才会执行。",
             "",
             "以下是可用技能："
         ]
@@ -476,7 +528,7 @@ def _build_memory_section(
             "",
             "In the following cases, **proactively** write info to memory files (no need to tell the user):",
             "",
-            "- The user asks you to remember something, or uses words like \"remember\", \"from now on\", \"always\", \"never\", \"prefer\"",
+            "- The user explicitly asks you to remember an enduring rule, or states a durable preference; a one-off exclusion for the current request is not a long-term memory",
             "- The user shares important personal preferences, habits or decisions",
             "- The conversation produces an important conclusion, plan or agreement",
             "- A complex task is completed and the key steps and results are worth recording",
@@ -514,7 +566,7 @@ def _build_memory_section(
             "",
             "遇到以下情况时，**主动**将信息写入记忆文件（无需告知用户）：",
             "",
-            "- 用户要求记住某些信息，或使用了「记住」「以后」「总是」「不要」「偏好」等表达",
+            "- 用户明确要求长期记住某项规则，或表达了稳定偏好；仅适用于当前请求的排除条件不构成长期记忆",
             "- 用户分享了重要的个人偏好、习惯、决策",
             "- 对话中产生了重要的结论、方案、约定",
             "- 完成了复杂任务，值得记录关键步骤和结果",
@@ -650,6 +702,7 @@ def _build_docs_section(workspace_dir: str, language: str) -> List[str]:
 def _build_workspace_section(
     workspace_dir: str, language: str, context_files_loaded: bool = True,
     project_dir: Optional[str] = None,
+    work_dir: Optional[str] = None,
 ) -> List[str]:
     """Build the workspace section.
 
@@ -675,6 +728,14 @@ def _build_workspace_section(
         return _build_project_workspace_section(
             workspace_dir, normalized_project, language, context_files_loaded
         )
+
+    if work_dir and os.path.realpath(work_dir) != os.path.realpath(workspace_dir):
+        if language == "en":
+            return ["## 📂 Workspace", "", f"Current working directory: `{work_dir}`",
+                    f"System directory (memory and skills): `{workspace_dir}`",
+                    "Relative file paths use the current working directory."]
+        return ["## 📂 工作空间", "", f"当前工作目录：`{work_dir}`",
+                f"系统目录（记忆与技能）：`{workspace_dir}`", "相对文件路径以当前工作目录为基准。"]
 
     if language == "en":
         lines = [
@@ -705,7 +766,7 @@ def _build_workspace_section(
                 "",
                 "The following files are **already auto-loaded** into the system prompt at session start, so you **don't need to read them again with the read tool**:",
                 "",
-                "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. When your name, personality or style changes, proactively `edit` this file",
+                "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. Proactively `edit` it when the user establishes an enduring change to your name, personality or style; a one-task request is not a persona change",
                 "- ✅ `USER.md`: loaded - the user's identity info. When the user changes how they're addressed, their name, etc., `edit` this file",
                 "- ✅ `RULE.md`: loaded - workspace guide and rules; follow them strictly",
                 "- ✅ `MEMORY.md`: loaded - long-term memory index",
@@ -728,16 +789,16 @@ def _build_workspace_section(
             "**路径使用规则** (非常重要):",
             "",
             f"1. **相对路径的基准目录**: 所有相对路径都是相对于 `{workspace_dir}` 而言的",
-            f"   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
+            "   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
             f"   - ❌ 错误: 用相对路径访问其他目录的文件 (如果它不在 `{workspace_dir}` 内)",
             "",
             "2. **访问其他目录**: 如果要访问工作空间之外的目录（如项目代码、系统文件），**必须使用绝对路径**",
-            f"   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
-            f"   - ❌ 错误: 假设相对路径会指向其他目录",
+            "   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
+            "   - ❌ 错误: 假设相对路径会指向其他目录",
             "",
             "3. **路径解析示例**:",
             f"   - 相对路径 `memory/` → 实际路径 `{workspace_dir}/memory/`",
-            f"   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
+            "   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
             "",
             "4. **不确定时**: 先用 `bash pwd` 确认当前目录，或用 `ls .` 查看当前位置",
             "",
@@ -748,7 +809,7 @@ def _build_workspace_section(
                 "",
                 "以下文件在会话启动时**已经自动加载**到系统提示词中，你**无需再用 read 工具读取**：",
                 "",
-                "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当你的名字、性格或交流风格发生变化时，主动用 `edit` 更新此文件",
+                "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当用户明确对你的名字、性格或交流风格提出长期变更时，主动用 `edit` 更新此文件；单次任务要求不构成人格变更",
                 "- ✅ `USER.md`: 已加载 - 用户的身份信息。当用户修改称呼、姓名等身份信息时，用 `edit` 更新此文件",
                 "- ✅ `RULE.md`: 已加载 - 工作空间使用指南和规则，请严格遵循",
                 "- ✅ `MEMORY.md`: 已加载 - 长期记忆索引",
@@ -796,9 +857,9 @@ def _build_project_workspace_section(
             f"1. **Relative paths are based on the project directory** `{project_dir}`. Put your work products here (documents, code, generated files, etc.).",
             f"   - ✅ relative `output/report.html` → `{project_dir}/output/report.html`",
             "",
-            f"2. **Memory and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Memory tools handle this for you; if you ever touch these files directly, use **absolute paths** under the system directory.",
+            f"2. **Memory and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Use memory tools for memory and the `skill` tool to create or update skills; generic file and shell writes to the skill store are blocked.",
             f"   - ✅ absolute `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
+            "   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
             "",
             "3. **Accessing any other directory**: use absolute paths.",
             "",
@@ -819,9 +880,9 @@ def _build_project_workspace_section(
             f"1. **相对路径基于项目目录** `{project_dir}`。你的工作产物（文档、代码、生成的文件等）都放在这里。",
             f"   - ✅ 相对路径 `output/report.html` → `{project_dir}/output/report.html`",
             "",
-            f"2. **记忆和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。记忆操作由记忆工具自动完成；若确需直接访问这些文件，请使用系统目录下的**绝对路径**。",
+            f"2. **记忆和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。记忆使用记忆工具，创建或更新技能使用 `skill` 工具；普通文件工具和终端不能写入技能库。",
             f"   - ✅ 绝对路径 `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
+            "   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
             "",
             "3. **访问其他任意目录**：使用绝对路径。",
             "",
@@ -886,10 +947,10 @@ def _build_context_files_section(context_files: List[ContextFile], language: str
     if has_agent:
         if is_en:
             lines.append("**`AGENT.md` is your soul file** 🪞: strictly follow the persona, tone and settings it defines. Be your real self, avoid stiff, template-like replies.")
-            lines.append("When the user reveals new expectations about your personality, style, responsibilities or capability boundaries, proactively `edit` AGENT.md to reflect that evolution.")
+            lines.append("Proactively `edit` AGENT.md only when the user explicitly asks for an enduring change to your personality, style, responsibilities or capability boundaries, or the context clearly establishes a stable preference. Keep one-task constraints within that task.")
         else:
             lines.append("**`AGENT.md` 是你的灵魂文件** 🪞：严格遵循其中定义的人格、语气和设定，做真实的自己，避免僵硬、模板化的回复。")
-            lines.append("当用户通过对话透露了对你性格、风格、职责、能力边界的新期望，你应该主动用 `edit` 更新 AGENT.md 以反映这些演变。")
+            lines.append("只有当用户明确要求长期改变你的性格、风格、职责或能力边界，或者上下文充分表明是稳定偏好时，才主动用 `edit` 更新 AGENT.md。单次任务的限制条件只用于该任务。")
         lines.append("")
     
     # Append the content of each file

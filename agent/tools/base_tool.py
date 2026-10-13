@@ -1,7 +1,6 @@
 from enum import Enum
 from typing import Any, Optional
 from common.log import logger
-import copy
 
 
 class ToolStage(Enum):
@@ -65,6 +64,7 @@ class BaseTool:
 
     # Default decision stage is pre-process
     stage = ToolStage.PRE_PROCESS
+    required_capability = "external"
 
     # Class attributes must be inherited
     name: str = "base_tool"
@@ -161,6 +161,11 @@ class BaseTool:
         }
 
     def execute_tool(self, params: dict) -> ToolResult:
+        from agent.runtime.tool_invocation import current_tool_call_id, permission_denial
+        if current_tool_call_id() is None:
+            denial = permission_denial(self.name, params, agent=getattr(self, "context", None))
+            if denial:
+                return ToolResult.fail(denial)
         try:
             return self.execute(params)
         except Exception as e:

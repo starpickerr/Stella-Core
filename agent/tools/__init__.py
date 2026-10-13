@@ -27,8 +27,10 @@ from agent.tools.bills.bills_tool import BillsTool
 # Import briefing tool (SQLite + stdlib imaplib)
 from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.calendar.calendar_tool import CalendarTool
+from agent.tools.apple.apple_tool import AppleTool
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.elearning.elearning_tool import ElearningTool
+from agent.tools.skill.skill_tool import SkillTool
 
 # Import tools with optional dependencies
 def _import_optional_tools():
@@ -151,8 +153,10 @@ __all__ = [
     'BillsTool',
     'BriefingTool',
     'CalendarTool',
+    'AppleTool',
     'TodosTool',
     'ElearningTool',
+    'SkillTool',
     'EnvConfig',
     'SchedulerTool',
     'WebSearch',

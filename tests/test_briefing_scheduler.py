@@ -1,5 +1,4 @@
 """Briefings use the existing scheduler and tool dispatch, never a private loop."""
-import json
 import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -7,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.scheduler import DAILY_BRIEFING_TASK_ID, ensure_daily_briefing_task
 from agent.briefing.service import BriefingService
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
@@ -36,29 +34,24 @@ def store(tmp_path):
     return TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
 
 
-def test_default_is_once_only_and_preserves_edits_pause_and_deletion(store):
-    now = datetime(2026, 9, 9, 10)
-    assert ensure_daily_briefing_task(store, now)
-    task = store.get_task(DAILY_BRIEFING_TASK_ID)
-    assert task["next_run_at"] == "2026-09-09T08:00:00"
-    assert task["action"] == {"type": "tool_call", "call_name": "briefing",
-                              "call_params": {"action": "run", "operation": "create"}, "silent": True}
-    store.update_task(task["id"], {"enabled": False, "schedule": {"type": "cron", "expression": "0 9 * * *"}})
-    assert not ensure_daily_briefing_task(store, now)
-    assert store.get_task(task["id"])["enabled"] is False
-    assert store.get_task(task["id"])["schedule"]["expression"] == "0 9 * * *"
-    store.add_task({"id": "other", "name": "other task"})
-    store.delete_task(task["id"])
-    reopened = TaskStore(store.store_path)
-    assert not ensure_daily_briefing_task(reopened, now + timedelta(days=1))
-    assert [task["id"] for task in reopened.list_tasks()] == ["other"]
-    assert json.loads(open(store.store_path).read())["initialized_defaults"] == [DAILY_BRIEFING_TASK_ID]
+BRIEFING_TASK_ID = "scheduled-briefing"
 
 
-def test_default_keeps_an_existing_task_without_replacing_it(store):
-    store.add_task({"id": DAILY_BRIEFING_TASK_ID, "name": "custom", "enabled": False})
-    assert not ensure_daily_briefing_task(store, datetime(2026, 9, 9, 7))
-    assert store.get_task(DAILY_BRIEFING_TASK_ID)["name"] == "custom"
+def add_briefing_task(store, now):
+    """Create the briefing schedule explicitly, as a user would."""
+    store.add_task({
+        "id": BRIEFING_TASK_ID,
+        "name": "Briefing",
+        "enabled": True,
+        "schedule": {"type": "cron", "expression": "0 8 * * *"},
+        "next_run_at": now.replace(hour=8, minute=0, second=0, microsecond=0).isoformat(),
+        "catch_up": "same_day",
+        "retry_interval_seconds": 300,
+        "action": {"type": "tool_call", "call_name": "briefing",
+                   "call_params": {"action": "run", "operation": "create"},
+                   "silent": True, "channel_type": "web", "conversation_mode": "reuse",
+                   "conversation_space": "personal", "execution_project_dir": ""},
+    })
 
 
 def test_shared_scheduler_at_eight_catches_up_and_skips_existing(store, clock, tmp_path, monkeypatch,
@@ -69,29 +62,29 @@ def test_shared_scheduler_at_eight_catches_up_and_skips_existing(store, clock, t
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": True})
-    ensure_daily_briefing_task(store, clock[0])
+    add_briefing_task(store, clock[0])
     scheduler = SchedulerService(store, lambda task: integration._execute_tool_call(task, None))
     scheduler._check_and_execute_tasks()
     assert not service.list_briefings()
     clock[0] = datetime(2026, 9, 9, 8)
     scheduler._check_and_execute_tasks()
-    assert service.get_briefing("brf-2026-09-09-morning")["revisions"][0]["trigger"] == "scheduled"
+    assert service.get_briefing("brf-2026-09-09")["revisions"][0]["trigger"] == "scheduled"
     # Run now or an extra tick reuses today's successful document.
-    assert integration._execute_tool_call(store.get_task(DAILY_BRIEFING_TASK_ID), None)
+    assert integration._execute_tool_call(store.get_task(BRIEFING_TASK_ID), None)
     scheduler._check_and_execute_tasks()
-    assert len(service.get_briefing("brf-2026-09-09-morning")["revisions"]) == 1
+    assert len(service.get_briefing("brf-2026-09-09")["revisions"]) == 1
     # A later failed manual update still has a successful daily document.
     BriefingPipeline(service, [StaticSource(error=RuntimeError("offline"))],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))).run(operation="update")
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": False})
-    assert integration._execute_tool_call(store.get_task(DAILY_BRIEFING_TASK_ID), None)
-    assert len(service.get_briefing("brf-2026-09-09-morning")["revisions"]) == 2
+    assert integration._execute_tool_call(store.get_task(BRIEFING_TASK_ID), None)
+    assert len(service.get_briefing("brf-2026-09-09")["revisions"]) == 2
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": True})
     # Sleep across several days only generates the day we wake up.
     clock[0] = datetime(2026, 9, 12, 15)
     scheduler._check_and_execute_tasks()
     assert len(service.list_briefings()) == 2
-    assert store.get_task(DAILY_BRIEFING_TASK_ID)["next_run_at"] == "2026-09-13T08:00:00"
+    assert store.get_task(BRIEFING_TASK_ID)["next_run_at"] == "2026-09-13T08:00:00"
 
 
 def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock, tmp_path, monkeypatch,
@@ -105,7 +98,7 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
     monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": configured[0]})
-    ensure_daily_briefing_task(store, clock[0])
+    add_briefing_task(store, clock[0])
     scheduler = SchedulerService(store, lambda task: integration._execute_tool_call(task, None))
     scheduler._check_and_execute_tasks()
     assert not service.list_briefings()
@@ -115,13 +108,13 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
     assert not service.list_briefings()
     clock[0] = datetime(2026, 9, 9, 8, 5)
     scheduler._check_and_execute_tasks()
-    failed = service.get_briefing("brf-2026-09-09-morning")
+    failed = service.get_briefing("brf-2026-09-09")
     assert failed["briefing"].generated_at is None
     sources[0] = StaticSource([])
     clock[0] = datetime(2026, 9, 9, 8, 10)
     scheduler._check_and_execute_tasks()
-    assert service.get_briefing("brf-2026-09-09-morning")["briefing"].status == "completed"
-    task = store.get_task(DAILY_BRIEFING_TASK_ID)
+    assert service.get_briefing("brf-2026-09-09")["briefing"].status == "completed"
+    task = store.get_task(BRIEFING_TASK_ID)
     assert task["retry_at"] is None
     assert task["last_run_at"] == "2026-09-09T08:10:00"
 
@@ -137,15 +130,15 @@ def test_scheduled_briefing_works_with_only_elearning(tmp_path, monkeypatch,
     tool.current_context = {"is_scheduled_task": True}
     result = tool.execute({"action": "run", "operation": "create", "briefing_date": "2026-09-09"})
     assert result.status == "success", result.result
-    detail = service.get_briefing("brf-2026-09-09-morning")
+    detail = service.get_briefing("brf-2026-09-09")
     assert detail["briefing"].updated_sources == ["elearning:school"]
     assert detail["revisions"][0]["trigger"] == "scheduled"
 
 
 def test_overdue_before_eight_waits_until_today_and_ordinary_tasks_keep_grace_period(store):
-    ensure_daily_briefing_task(store, datetime(2026, 9, 8, 8))
+    add_briefing_task(store, datetime(2026, 9, 8, 8))
     scheduler = SchedulerService(store, lambda task: True)
-    task = store.get_task(DAILY_BRIEFING_TASK_ID)
+    task = store.get_task(BRIEFING_TASK_ID)
     assert not scheduler._is_task_due(task, datetime(2026, 9, 12, 7))
     assert store.get_task(task["id"])["next_run_at"] == "2026-09-12T08:00:00"
     assert scheduler._is_task_due(store.get_task(task["id"]), datetime(2026, 9, 12, 16))
@@ -168,7 +161,28 @@ def test_silent_tool_dispatch_has_no_delivery_and_propagates_errors(monkeypatch)
     assert not integration._execute_tool_call(task, None)
 
 
-def test_desktop_boot_registers_in_existing_scheduler_and_bypasses_delivery_readiness(tmp_path, monkeypatch):
+def test_agent_explanation_does_not_hide_a_failed_briefing(monkeypatch):
+    from bridge.agent_bridge import reply_for_run
+    from bridge.reply import Reply, ReplyType
+    agent = SimpleNamespace(_scheduled_business_failure="简报没有写入")
+    reply = reply_for_run(agent, "邮箱暂时不可用，这次没有生成简报", True)
+    assert reply.type == ReplyType.ERROR
+    assert reply.content == "简报没有写入"
+    assert agent._scheduled_business_failure is None
+    kept = reply_for_run(SimpleNamespace(), "今天没有新邮件", True)
+    assert kept.type == ReplyType.TEXT and kept.content == "今天没有新邮件"
+    monkeypatch.setattr(integration, "get_task_store", lambda **kwargs: SimpleNamespace())
+    monkeypatch.setattr("agent.scheduler.result_cache.load_output", lambda *args, **kwargs: None)
+    monkeypatch.setattr("agent.scheduler.result_cache.save_output", lambda *args, **kwargs: None)
+    bridge = SimpleNamespace(agent_reply=lambda *args, **kwargs: Reply(ReplyType.ERROR, "简报没有写入"))
+    task = {"id": "briefing", "action": {"type": "agent_task", "task_description": "生成简报",
+            "receiver": "session", "channel_type": "web", "silent": True}}
+    outcome = integration._execute_agent_task(task, bridge, "alpha")
+    assert outcome.status == "failed"
+    assert "简报没有写入" in outcome.error
+
+
+def test_desktop_boot_starts_empty_and_manual_silent_task_runs(tmp_path, monkeypatch):
     bridge = SimpleNamespace(agent_registry=SimpleNamespace(
         get=lambda agent_id: SimpleNamespace(id="default"), default_agent_id="default"))
     monkeypatch.setenv("STELLA_DESKTOP", "1")
@@ -179,7 +193,9 @@ def test_desktop_boot_registers_in_existing_scheduler_and_bypasses_delivery_read
     try:
         assert integration.init_scheduler(bridge, str(tmp_path), "default")
         scheduler = integration.get_scheduler_service(str(tmp_path))
-        task = scheduler.task_store.get_task(DAILY_BRIEFING_TASK_ID)
+        assert scheduler.task_store.list_tasks() == []
+        add_briefing_task(scheduler.task_store, datetime(2026, 9, 9, 8))
+        task = scheduler.task_store.get_task(BRIEFING_TASK_ID)
         assert scheduler.execute_callback(task)
         assert integration.init_scheduler(bridge, str(tmp_path), "default")
         assert integration.get_scheduler_service(str(tmp_path)) is scheduler

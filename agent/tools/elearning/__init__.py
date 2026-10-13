@@ -1,1 +1,1 @@
-from .elearning_tool import ElearningTool
+from .elearning_tool import ElearningTool as ElearningTool

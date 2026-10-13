@@ -1,7 +1,6 @@
 """Text and date helpers adapted from elearning_crawler/src/utils.py."""
 import datetime as dt
 import re
-import urllib.parse
 from html.parser import HTMLParser
 
 SHANGHAI = dt.timezone(dt.timedelta(hours=8))

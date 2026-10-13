@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
 import {
-  Plus,
   Paperclip,
   Square,
   X,
@@ -13,7 +12,7 @@ import {
 } from 'lucide-react'
 import { t } from '../i18n'
 import type { Attachment, WorkspaceEntry } from '../types'
-import { chatDraft } from '../store/draftStore'
+import { getChatDraft } from '../store/draftStore'
 import apiClient from '../api/client'
 import { PaperPlaneIcon } from './icons'
 import { WORKSPACE_DRAG_TYPE } from './FileTree'
@@ -47,17 +46,18 @@ interface ChatInputProps {
   onClearContext: () => void
   isStreaming: boolean
   sessionId: string
+  draftKey?: string
 }
 
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { onSend, onNewChat, onStop, onClearContext, isStreaming, sessionId },
+  { onSend, onNewChat, onStop, onClearContext, isStreaming, sessionId, draftKey = 'main' },
   ref
 ) {
   // Restore the draft saved in `chatDraft` on mount (lazy init: the very first
   // render must already show it, otherwise the write-through effect below would
   // overwrite the saved draft with the initial empty state).
-  const [text, setText] = useState(() => chatDraft.text)
-  const [attachments, setAttachments] = useState(() => chatDraft.attachments)
+  const [text, setText] = useState(() => getChatDraft(draftKey).text)
+  const [attachments, setAttachments] = useState(() => getChatDraft(draftKey).attachments)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -264,9 +264,10 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   // unmounts ChatPage; see store/draftStore.ts). Sending clears the input, which
   // therefore also clears the saved draft.
   useEffect(() => {
-    chatDraft.text = text
-    chatDraft.attachments = attachments
-  }, [text, attachments])
+    const draft = getChatDraft(draftKey)
+    draft.text = text
+    draft.attachments = attachments
+  }, [text, attachments, draftKey])
 
   // Allow the parent to load a draft (e.g. when editing a past user message).
   useImperativeHandle(ref, () => (draft: string, atts: Attachment[]) => {
@@ -760,14 +761,6 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             The middle chip group shrinks/truncates so a narrow composer (right
             panel open) never overflows the card. */}
         <div className="composer-toolbar flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
-          <Tooltip label={t('session_new')}>
-            <button
-              onClick={onNewChat}
-              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors"
-            >
-              <Plus size={17} />
-            </button>
-          </Tooltip>
           <Tooltip label={t('chat_attach')}>
             <button
               onClick={() => fileInputRef.current?.click()}

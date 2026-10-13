@@ -15,8 +15,8 @@ What lives where:
   creates folders. Browsing/opening an arbitrary directory is also allowed;
   the projects root is just a convenient default home.
 
-Selecting nothing keeps ``project_dir == state_root``, so a session that never
-picks a project behaves exactly as before.
+Selecting nothing uses the user's personal work folder, while Agent state
+remains under ``state_root``.
 """
 
 from __future__ import annotations
@@ -32,11 +32,6 @@ from common.log import logger
 # Recents cap: enough to be useful in the picker, small enough that the file
 # stays trivial to read and write on every selection.
 MAX_RECENTS = 20
-
-# Sentinel standing for "the default workspace" in the sidebar ordering, so the
-# default space can be dragged among real projects instead of being pinned.
-DEFAULT_SPACE_KEY = "__default__"
-
 
 def _store_file() -> str:
     from common.state_dir import shared_root
@@ -70,16 +65,20 @@ def _load() -> Dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f) or {}
+        if not isinstance(data, dict) or any(
+            key in data and not isinstance(data[key], expected)
+            for key, expected in (("sessions", dict), ("recents", list), ("meta", dict), ("order", list))
+        ):
+            raise ValueError("invalid project store structure")
     except Exception as e:
         logger.warning(f"[ProjectStore] Could not read {path}: {e}")
-        return {"sessions": {}, "recents": [], "meta": {}, "order": []}
+        raise ValueError(f"Project store is invalid: {e}") from e
     data.setdefault("sessions", {})
     data.setdefault("recents", [])
     # ``meta``: path -> {"display_name": str}. A rename lives here, never on
     # disk, so the folder keeps its name and existing bindings stay valid.
     data.setdefault("meta", {})
-    # ``order``: user-chosen sidebar order of spaces (project paths and the
-    # DEFAULT_SPACE_KEY sentinel). Absent entries fall back to recency order.
+    # ``order``: user-chosen sidebar order of project paths.
     data.setdefault("order", [])
     return data
 
@@ -94,6 +93,7 @@ def _save(data: Dict) -> None:
         os.replace(tmp, path)
     except Exception as e:
         logger.warning(f"[ProjectStore] Could not write {path}: {e}")
+        raise
 
 
 def _normalize(path: str) -> str:
@@ -113,17 +113,21 @@ def get_project_dir(session_id: str, agent_id: Optional[str] = None) -> Optional
     ``state_root``. A path that no longer exists on disk also returns None so a
     deleted project silently reverts to the default instead of erroring.
     """
-    if not session_id:
-        return None
-    with _lock:
-        data = _load()
-        entry = data["sessions"].get(_session_key(session_id, agent_id))
-    if not entry:
-        return None
-    path = entry.get("path") if isinstance(entry, dict) else entry
+    path = get_project_binding(session_id, agent_id)
     if path and os.path.isdir(path):
         return path
     return None
+
+
+def get_project_binding(session_id: str, agent_id: Optional[str] = None) -> Optional[str]:
+    """Return the recorded path even when the project has disappeared."""
+    if not session_id:
+        return None
+    with _lock:
+        entry = _load()["sessions"].get(_session_key(session_id, agent_id))
+    if not entry:
+        return None
+    return entry.get("path") if isinstance(entry, dict) else entry
 
 
 def get_project_map(agent_id: Optional[str] = None) -> Dict[str, str]:
@@ -145,6 +149,22 @@ def get_project_map(agent_id: Optional[str] = None) -> Dict[str, str]:
         path = entry.get("path") if isinstance(entry, dict) else entry
         if path and os.path.isdir(path):
             out[key[len(prefix):]] = path
+    return out
+
+
+def list_project_session_ids(project_dir: str, agent_id: Optional[str] = None) -> List[str]:
+    """Session ids currently bound to ``project_dir`` for one agent."""
+    real = _normalize(project_dir)
+    prefix = f"{agent_id or 'default'}::"
+    with _lock:
+        sessions = dict(_load().get("sessions") or {})
+    out: List[str] = []
+    for key, entry in sessions.items():
+        if not key.startswith(prefix):
+            continue
+        path = entry.get("path") if isinstance(entry, dict) else entry
+        if path and _normalize(path) == real:
+            out.append(key[len(prefix):])
     return out
 
 
@@ -192,6 +212,9 @@ def set_project_dir(
 
 
 def _touch_recent(data: Dict, real_path: str) -> None:
+    # A project is a durable sidebar entry, even before its first conversation
+    # and after it falls out of the short recent-project picker list.
+    data.setdefault("meta", {}).setdefault(real_path, {}).setdefault("added_at", time.time())
     recents: List[Dict] = [
         r for r in data.get("recents", [])
         if (r.get("path") if isinstance(r, dict) else r) != real_path
@@ -218,6 +241,35 @@ def display_name_for(path: str) -> str:
     return _display_name(data, os.path.realpath(path))
 
 
+def get_security_policy(path: str) -> Dict:
+    """Only project-specific differences from the global security policy."""
+    with _lock:
+        entry = (_load().get("meta") or {}).get(_normalize(path)) or {}
+    return dict(entry.get("security_policy") or {})
+
+
+def set_security_policy(path: str, patch: Dict) -> Dict:
+    from agent.permission.security_policy import validate_patch
+    real = _normalize(path)
+    if not os.path.isdir(real):
+        raise FileNotFoundError(real)
+    clean = validate_patch(patch)
+    with _lock:
+        data = _load()
+        meta = data.setdefault("meta", {})
+        entry = dict(meta.get(real) or {})
+        if clean:
+            entry["security_policy"] = clean
+        else:
+            entry.pop("security_policy", None)
+        if entry:
+            meta[real] = entry
+        else:
+            meta.pop(real, None)
+        _save(data)
+    return clean
+
+
 def list_recents() -> List[Dict]:
     """Recently used projects, most recent first, pruning ones now gone."""
     with _lock:
@@ -229,6 +281,25 @@ def list_recents() -> List[Dict]:
             if path and os.path.isdir(path):
                 out.append({"path": path, "name": _display_name(data, path)})
     return out
+
+
+def list_known_projects() -> List[Dict]:
+    """Projects with a saved entry, policy, or live conversation binding."""
+    with _lock:
+        data = _load()
+    paths = []
+    for item in data.get("recents", []):
+        paths.append(item.get("path") if isinstance(item, dict) else item)
+    paths.extend((data.get("meta") or {}).keys())
+    for item in (data.get("sessions") or {}).values():
+        paths.append(item.get("path") if isinstance(item, dict) else item)
+    seen = set()
+    result = []
+    for path in paths:
+        if path and path not in seen and os.path.isdir(path):
+            seen.add(path)
+            result.append({"path": path, "name": _display_name(data, path)})
+    return result
 
 
 def rename_project(path: str, display_name: str) -> str:
@@ -290,24 +361,23 @@ def delete_project(path: str, agent_id: Optional[str] = None) -> int:
 
 
 def get_order() -> List[str]:
-    """User-chosen sidebar order of spaces (paths + DEFAULT_SPACE_KEY)."""
+    """User-chosen sidebar order of project paths."""
     with _lock:
         data = _load()
-        return list(data.get("order") or [])
+        return [path for path in data.get("order") or [] if path != "__default__"]
 
 
 def set_order(order: List[str]) -> List[str]:
-    """Persist the sidebar order of spaces. Unknown/blank entries are dropped."""
+    """Persist the sidebar order of projects. Unknown/blank entries are dropped."""
     cleaned: List[str] = []
     seen = set()
     for key in order or []:
         if not isinstance(key, str):
             continue
         k = key.strip()
-        if not k or k in seen:
+        if not k or k == "__default__" or k in seen:
             continue
-        # Real project paths are normalized; the default sentinel is kept as-is.
-        norm = k if k == DEFAULT_SPACE_KEY else _normalize(k)
+        norm = _normalize(k)
         if norm in seen:
             continue
         seen.add(norm)
@@ -340,5 +410,16 @@ def create_project(name: str) -> str:
     if os.path.exists(target):
         raise FileExistsError(f"Project already exists: {name}")
     os.makedirs(target)
+    with _lock:
+        data = _load()
+        _touch_recent(data, target)
+        _save(data)
+    try:
+        from agent.permission import global_mode
+        from agent.permission.security_policy import resolve, snapshot_policy
+        seed = snapshot_policy(resolve(global_mode()))
+        set_security_policy(target, seed)
+    except Exception as error:
+        logger.warning(f"[ProjectStore] Could not seed security policy for {target}: {error}")
     logger.info(f"[ProjectStore] Created project: {target}")
     return target

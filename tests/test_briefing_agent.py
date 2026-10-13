@@ -7,17 +7,20 @@ from datetime import datetime
 import pytest
 
 from agent.briefing.generator import (AgentBriefingGenerator, BriefingAgent, ReadSourceTool,
-                                      ResultTool, validate_body, validate_decisions)
+                                      ResultTool, decision_schema, validate_body, validate_decisions)
 from agent.briefing.instructions import DEFAULT_RULE_TEXT
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.tool_manager import ToolManager
+from application import Application
+
+check_tool_call = SecurityGateway.check
 
 
 class ScriptedModel:
@@ -49,7 +52,8 @@ class ScriptedModel:
             name = "briefing_decisions_result"
         else:
             arguments = {"body": "## Agent 撰写的课程简报\n" + "\n".join(f"- {row['summary']}" for row in data["items"]),
-                         "source_item_ids": [row["id"] for row in data["items"]]}
+                         "source_item_ids": [row["id"] for row in data["items"]],
+                         "reports": [{"id": row["id"], "content": f"完整分析：{row['summary']}"} for row in data["items"]]}
             name = "briefing_body_result"
         yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": f"call-{len(self.requests)}",
             "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}}]}, "finish_reason": "tool_calls"}]}
@@ -70,6 +74,14 @@ def pipeline(service, model, items=(), at="2026-09-09T08:00:00+08:00", cursor="9
         clock=lambda: datetime.fromisoformat(at), generator=AgentBriefingGenerator(model=model))
 
 
+def test_pipeline_accepts_application_briefing_port(service, monkeypatch):
+    monkeypatch.setattr("agent.briefing.service.BriefingService", lambda: service)
+    port = Application.port("briefing")
+    detail = pipeline(port, ScriptedModel(), [item("课程")]).run()
+    assert detail["briefing"].status == "completed"
+    assert detail["items"][0].title == "课程"
+
+
 def test_agent_reads_markdown_rules_and_writes_all_batches(service):
     text = "# 筛选\n排除发件地址以 @promo.example 结尾的邮件。\n# 简报\n保留课程通知，写清下一步行动。"
     service.create_rule({"text": text})
@@ -80,9 +92,19 @@ def test_agent_reads_markdown_rules_and_writes_all_batches(service):
     assert detail["briefing"].kept_count == len(detail["items"]) == 47
     assert detail["briefing"].filtered_count == 1
     assert all("Agent 摘要" in row.snippet for row in detail["items"])
+    assert all(row.payload.get("_briefing_reason") == "课程通知需要关注" for row in detail["items"])
+    assert all("完整分析" in row.payload.get("_briefing_report", "") for row in detail["items"])
     assert detail["briefing"].body.count("Agent 摘要") == 47
     assert "@promo.example" in detail["briefing"].rule_text
     assert all(text in request.system for request in model.requests)
+    report_requests = [request for request in model.requests if any(tool['name'] == 'briefing_body_result' for tool in request.tools)]
+    assert report_requests
+    for request in report_requests:
+        prompt = next(block['text'] for message in request.messages for block in message['content']
+                      if block['type'] == 'text' and '依据规则撰写' in block['text'])
+        assert '完整报告' in prompt and '3至5行精简概览' not in prompt
+        assert any(tool['name'] == 'read_briefing_source' for tool in request.tools)
+        assert all(row['body_preview'] == '课程作业通知' for row in json.loads(prompt[prompt.index('{'):])['items'])
     assert any(row["filter_reason"] == "发件地址匹配排除后缀" for row in detail["mail"])
     assert service.get_revision(detail["briefing"].id, 1)["briefing"]["rule_text"] == detail["briefing"].rule_text
     assert service.get_cursor("email", "default", "imap_uid").cursor_value == "9"
@@ -103,12 +125,22 @@ def test_incomplete_agent_result_keeps_previous_snapshot_and_cursor(service):
 
 
 def test_thread_card_keeps_each_agents_summary(service):
-    detail = pipeline(service, ScriptedModel(), [item("原通知"), item("修订通知", thread_id="原通知")]).run()
+    model = ScriptedModel()
+    detail = pipeline(service, model, [item("原通知"), item("修订通知", thread_id="原通知")]).run()
     assert detail["briefing"].kept_count == 2
     assert len(detail["items"]) == 1
     assert "原通知" in detail["items"][0].snippet
     assert "修订通知" in detail["items"][0].snippet
     assert "原通知" in detail["briefing"].body and "修订通知" in detail["briefing"].body
+    members = detail["items"][0].payload["_briefing_members"]
+    assert {row["title"] for row in members} == {"原通知", "修订通知"}
+    assert all(row["body"] == "课程作业通知" for row in members)
+    assert all(row["reason"] == "课程通知需要关注" for row in members)
+    report_request = next(request for request in model.requests if any(tool["name"] == "briefing_body_result" for tool in request.tools))
+    report_prompt = next(block["text"] for message in report_request.messages for block in message["content"]
+                         if block["type"] == "text" and "依据规则撰写" in block["text"])
+    prompt_members = json.loads(report_prompt[report_prompt.index("{"):])["items"][0]["members"]
+    assert {row["id"] for row in prompt_members} == {row["id"] for row in members}
 
 
 @pytest.mark.parametrize("items", [[], [item("广告", "bot@promo.example")]])
@@ -132,12 +164,48 @@ def test_tool_supports_markdown_rules_and_uses_calling_agents_model(service, mon
     result = tool.execute({"action": "run"})
     assert result.status == "success"
     assert "Agent 撰写" in result.result
-    mailbox = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09-morning", "category": "selected"}).result)
+    mailbox = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09", "category": "selected"}).result)
     assert mailbox["total"] == 1
     row = mailbox["mail"][0]
-    full = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09-morning", "source_item_id": row["id"]}).result)
+    full = json.loads(tool.execute({"action": "mail", "briefing_id": "brf-2026-09-09", "source_item_id": row["id"]}).result)
     assert full["body"] == "课程作业通知"
     assert tool.model.requests
+
+
+def test_decision_request_states_every_id_and_hard_rule_before_submission(service):
+    model = ScriptedModel()
+    pipeline = BriefingPipeline(service, [StaticSource([item("course"), item("notice")])], generator=AgentBriefingGenerator(model=model))
+    pipeline.run(briefing_date="2026-09-09")
+    texts = [block.get("text", "") for request in model.requests for message in request.messages
+             for block in (message["content"] if isinstance(message["content"], list) else [])
+             if isinstance(block, dict)]
+    text = next(value for value in texts if "expected_ids" in value)
+    payload = json.loads(text[text.index("{"):])
+    ids = [row["id"] for row in payload["candidates"]]
+    assert "expected_ids: " + json.dumps(ids, ensure_ascii=False) in text
+    for rule in ("不能遗漏、重复或加入未知 ID", "selected 必须是布尔值", "reason 必须是非空字符串",
+                 "selected 为 false", "section 必须是 action 或 fyi", "score 必须是 0 至 100 的整数",
+                 "summary 必须是非空字符串", "category", "information_type"):
+        assert rule in text
+    schema = next(tool["input_schema"] for request in model.requests for tool in request.tools
+                  if tool["name"] == "briefing_decisions_result")
+    item_schema = schema["properties"]["decisions"]["items"]
+    assert item_schema["required"] == ["id", "selected", "reason"]
+    assert item_schema["allOf"][0]["then"]["required"] == ["section", "score", "summary"]
+    assert decision_schema()["properties"]["decisions"]["items"]["required"] == item_schema["required"]
+    excluded = validate_decisions({"decisions": [
+        {"id": ids[0], "selected": False, "reason": "排除"},
+        {"id": ids[1], "selected": True, "reason": "保留", "section": "fyi", "score": 10, "summary": "摘要"},
+    ]}, ids)
+    assert excluded is None
+    rejected = ResultTool("result", {}, lambda data: validate_decisions(data, ids)).execute(
+        {"decisions": [
+            {"id": ids[0], "selected": True, "reason": "保留"},
+            {"id": ids[1], "selected": False, "reason": "排除"},
+        ]})
+    assert rejected.status == "error"
+    assert ids[0] in rejected.result and "section" in rejected.result
+    assert "body" not in rejected.result
 
 
 def test_result_tools_reject_unknown_missing_duplicate_and_bad_values():
@@ -152,6 +220,11 @@ def test_result_tools_reject_unknown_missing_duplicate_and_bad_values():
     assert tool.execute(valid).status == "success"
     with pytest.raises(ValueError):
         validate_body({"body": "draft", "source_item_ids": []}, ["a"])
+    with pytest.raises(ValueError, match="逐条"):
+        validate_body({"body": "draft", "source_item_ids": ["a"]}, ["a"])
+    with pytest.raises(ValueError, match="具体内容"):
+        validate_body({"body": "draft", "source_item_ids": ["a"],
+                       "reports": [{"id": "a", "content": " "}]}, ["a"])
 
 
 def test_full_source_read_is_paged_and_confined_to_this_batch():
@@ -165,10 +238,11 @@ def test_full_source_read_is_paged_and_confined_to_this_batch():
 
 
 def test_cancelled_generation_does_not_call_model():
-    event = threading.Event(); event.set()
+    event = threading.Event()
+    event.set()
     generator = AgentBriefingGenerator(model=ScriptedModel(), cancel_event=event)
     with pytest.raises(AgentCancelledError):
-        generator.generate([], [], briefing_date="2026-09-09", kind="morning", window_start="a", window_end="b")
+        generator.generate([], [], briefing_date="2026-09-09", window_start="a", window_end="b")
     assert generator.model.requests == []
 
 
@@ -186,7 +260,8 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
         occurred_at="2026-09-08T23:00:00Z", payload={"body": "原课程公告正文"})
     canvas = StaticSource([original], name="elearning")
     first_model = ScriptedModel()
-    at = lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")
+    def at():
+        return datetime.fromisoformat("2026-09-09T08:00:00+08:00")
     first = BriefingPipeline(service, [email, canvas], clock=at,
         generator=AgentBriefingGenerator(model=first_model)).run()
     old_snapshot = next(row for row in first["mail"] if row["source"] == "elearning")
@@ -216,7 +291,7 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
 
 
 def test_manual_and_tool_factories_use_agent_generator(service, monkeypatch):
-    from channel.web.web_channel import _briefing_pipeline
+    from channel.desktop.desktop_channel import _briefing_pipeline
     monkeypatch.setattr("agent.briefing.settings.email_sources", lambda path=None: [])
     tool = BriefingTool(service=service)
     tool.model = ScriptedModel()
@@ -245,7 +320,8 @@ def test_markdown_rules_crud_and_legacy_migration(tmp_path):
     conn.executescript(sql)
     conn.execute("INSERT INTO filter_rules (id,source,action,match_field,match_op,match_value,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
         ("old", "email", "exclude", "sender_domain", "eq", "spam.example", "old rule", "a", "a"))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     service = BriefingService(BriefingStore(path))
     assert "排除发件域名等于“spam.example”" in service.get_rule("old").text
     saved = service.create_rule({"text": DEFAULT_RULE_TEXT})

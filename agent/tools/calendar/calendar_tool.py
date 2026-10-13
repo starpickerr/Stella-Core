@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 from agent.tools.base_tool import BaseTool, ToolResult
-from agent.calendar import CalendarService
 
 
 class CalendarTool(BaseTool):
@@ -43,7 +42,11 @@ class CalendarTool(BaseTool):
             if not isinstance(params, dict):
                 raise ValueError("parameters must be an object")
             action = params.get("action")
-            service = self.service or CalendarService()
+            if self.service is None:
+                from application import Application, RequestContext
+                service = Application.port("calendar", RequestContext.ambient("agent"))
+            else:
+                service = self.service
             event_fields = ("title", "description", "start_at", "end_at", "all_day", "location", "category_id",
                             "repeat_frequency", "repeat_days", "repeat_until", "repeat_timezone")
             category_fields = ("name", "color")

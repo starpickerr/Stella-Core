@@ -28,7 +28,7 @@ if "web" not in sys.modules:
 
 
 def _catalog_with(config):
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     with patch.object(web_channel, "conf", return_value=config), \
             patch("models.custom_provider.conf", return_value=config):
@@ -63,6 +63,18 @@ class TestSessionModelCatalog(unittest.TestCase):
         self.assertIsNotNone(cust)
         self.assertEqual(cust["label"], {"zh": "MyVendor", "en": "MyVendor"})
         self.assertIn("my-model-x", cust["models"])
+
+    def test_multiple_custom_providers_include_all_their_models(self):
+        catalog = _catalog_with({
+            "bot_type": "openai", "open_ai_api_key": "sk-xxx", "model": "gpt-4o",
+            "custom_providers": [
+                {"id": "vendor_a", "name": "A", "api_key": "ak", "models": ["a1", "a2"], "model": "a2"},
+                {"id": "vendor_b", "name": "B", "api_key": "bk", "models": ["b1", "b2"]},
+            ],
+        })
+        custom = {row["id"]: row["models"] for row in catalog if row["id"].startswith("custom:")}
+        self.assertEqual(custom["custom:vendor_a"], ["a2", "a1"])
+        self.assertEqual(custom["custom:vendor_b"], ["b1", "b2"])
 
     def test_active_custom_provider_without_default_model_uses_global_model(self):
         """A custom provider added via the UI (no `model` field) but active still

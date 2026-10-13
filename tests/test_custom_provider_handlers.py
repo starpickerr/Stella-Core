@@ -30,7 +30,7 @@ if "web" not in sys.modules:
 
 import config as config_module
 from config import Config
-from channel.web.web_channel import ModelsHandler
+from channel.desktop.desktop_channel import ModelsHandler
 
 
 def set_conf(d):
@@ -98,6 +98,21 @@ class TestSetCustomProvider(unittest.TestCase):
         bot_type = config_module.conf().get("bot_type")
         self.assertEqual(bot_type, f"custom:{res['id']}")
 
+    def test_provider_protocol_is_explicit_and_preserved_on_edit(self):
+        res = self.h.call(action="set_custom_provider", name="proxy",
+                          api_base="https://example.com/v1", api_key="key",
+                          protocol_id="anthropic_messages")
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(config_module.conf()["custom_providers"][0]["protocol_id"],
+                         "anthropic_messages")
+        self.h.call(action="set_custom_provider", id=res["id"], name="renamed",
+                    api_base="https://example.com/v1")
+        self.assertEqual(config_module.conf()["custom_providers"][0]["protocol_id"],
+                         "anthropic_messages")
+        rejected = self.h.call(action="set_custom_provider", name="bad",
+                               api_base="https://example.com/v1", protocol_id="unknown")
+        self.assertEqual(rejected["status"], "error")
+
     def test_create_requires_api_base(self):
         res = self.h.call(action="set_custom_provider", name="x", api_key="k")
         self.assertEqual(res["status"], "error")
@@ -159,6 +174,26 @@ class TestSetCustomProvider(unittest.TestCase):
         self.h.call(action="set_custom_provider", name="a", id=pid,
                     api_base="https://a/v1", model="")
         self.assertNotIn("model", config_module.conf().get("custom_providers")[0])
+
+    def test_multiple_models_and_default_are_saved_and_updated(self):
+        result = self.h.call(action="set_custom_provider", name="a",
+                             api_base="https://a/v1", api_key="ak",
+                             models=["m1", "m2", "m1"], model="m2", make_active=True)
+        self.assertEqual(result["status"], "success")
+        provider = config_module.conf()["custom_providers"][0]
+        self.assertEqual(provider["models"], ["m1", "m2"])
+        self.assertEqual(provider["model"], "m2")
+        self.assertEqual(config_module.conf()["model"], "m2")
+        self.h.call(action="set_custom_provider", id=result["id"], name="a",
+                    api_base="https://a/v1", models=["m3", "m4"])
+        provider = config_module.conf()["custom_providers"][0]
+        self.assertEqual(provider["model"], "m3")
+        self.assertEqual(config_module.conf()["model"], "m3")
+
+    def test_default_must_belong_to_model_list(self):
+        result = self.h.call(action="set_custom_provider", name="a",
+                             api_base="https://a/v1", models=["m1"], model="m2")
+        self.assertEqual(result["status"], "error")
 
 
 class TestDeleteCustomProvider(unittest.TestCase):

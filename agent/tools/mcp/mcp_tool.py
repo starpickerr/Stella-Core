@@ -1,5 +1,7 @@
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
+import hashlib
+import re
 
 
 class McpTool(BaseTool):
@@ -17,14 +19,26 @@ class McpTool(BaseTool):
         """
         self.client = client
         self.server_name = server_name
-        self.name = tool_schema["name"]
+        self.remote_name = tool_schema["name"]
+        slug = re.sub(r"[^A-Za-z0-9_-]", "_", self.remote_name)[:55].strip("_") or "tool"
+        digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
+        tool_digest = hashlib.sha256(self.remote_name.encode()).hexdigest()[:8]
+        self.name = f"mcp_{digest}_{slug}_{tool_digest}"
+        self.read_only = (tool_schema.get("annotations") or {}).get("readOnlyHint") is True
         self.description = tool_schema.get("description", "")
         self.params = tool_schema.get("inputSchema", {})
 
     def execute(self, params: dict) -> ToolResult:
-        logger.info(f"[McpTool] server={self.server_name} tool={self.name} params={params}")
+        if self.is_cancelled():
+            return ToolResult.fail("MCP call cancelled")
+        logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
-            result = self.client.call_tool(self.name, params)
+            if self.cancel_event is None:
+                result = self.client.call_tool(self.remote_name, params)
+            else:
+                result = self.client.call_tool(self.remote_name, params, cancel_event=self.cancel_event)
+            if self.is_cancelled():
+                return ToolResult.fail("MCP call cancelled")
             return ToolResult.success(result)
         except Exception as e:
             logger.error(f"[McpTool] server={self.server_name} tool={self.name} error: {e}")

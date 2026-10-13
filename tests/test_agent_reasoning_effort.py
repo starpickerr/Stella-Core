@@ -1,11 +1,7 @@
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-sys.modules.setdefault("regex", re)
-
 
 class _Bot:
     def __init__(self):
@@ -34,6 +30,8 @@ def _model_with_bot(monkeypatch, bot_type, model_name, use_linkai=False):
 
     model = AgentLLMModel(None)
     bot = _Bot()
+    monkeypatch.setattr("models.protocols.create_protocol_adapter", lambda *_args: bot)
+    monkeypatch.setattr("models.bot_factory.create_bot", lambda *_args: bot)
     model._bot = bot
     model._bot_model = model_name
     model._bot_type = model._resolve_bot_type(model_name)

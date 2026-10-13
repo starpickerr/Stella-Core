@@ -268,7 +268,7 @@ def strip_line_number_prefixes(text: str) -> Optional[str]:
     """
     lines = text.split('\n')
     numbered = [line for line in lines if line.strip()]
-    if not numbered or not all(_LINE_NUMBER_PREFIX_RE.match(l) for l in numbered):
+    if not numbered or not all(_LINE_NUMBER_PREFIX_RE.match(row) for row in numbered):
         return None
     stripped = '\n'.join(
         _LINE_NUMBER_PREFIX_RE.sub('', line, count=1) if line.strip() else line

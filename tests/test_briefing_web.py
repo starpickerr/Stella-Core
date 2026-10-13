@@ -7,13 +7,14 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 @pytest.fixture(autouse=True)
@@ -55,13 +56,63 @@ def test_run_list_detail_and_mark(api):
     assert ran["briefing"]["mail_snapshot_available"] is True
     assert ran["mail"][0]["title"] == "请确认合同"
     assert ran["mail"][0]["category"] == "selected"
-    listed = call(web_channel.BriefingsHandler, "GET", params={"kind": "morning", "status": ""})
+    listed = call(web_channel.BriefingsHandler, "GET", params={"status": ""})
     assert len(listed["briefings"]) == 1
     detail = call(web_channel.BriefingDetailHandler, "GET", args=(ran["briefing"]["id"],))
     assert detail == ran
     marked = call(web_channel.BriefingItemStatusHandler, body={"id": ran["items"][0]["id"], "status": "done"})
     assert marked["item"]["status"] == "done"
     assert auth.call_count == 4
+
+
+def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path):
+    service, auth = api
+    from agent.briefing.actions import BriefingActions
+    from agent.todos.service import TodoService
+    from agent.calendar.service import CalendarService
+    service._actions = BriefingActions(service.store, TodoService(tmp_path/'todos.db',tmp_path/'calendar.db'), CalendarService(tmp_path/'calendar.db'))
+    ran = call(web_channel.BriefingRunHandler, body={'briefing_date':'2026-09-09'})
+    item_id = ran['items'][0]['id']
+    receipt = call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'create','kind':'todo'}})['receipt']
+    assert receipt['state'] == 'succeeded'
+    targets = call(web_channel.BriefingActionTargetsHandler,'GET',params={'kind':'todo','query':'合同'})
+    assert targets['targets'][0]['id'] == receipt['target_id']
+    overview = call(web_channel.BriefingOverviewHandler,'GET')
+    assert overview['actions'][item_id]['todo']['target_id'] == receipt['target_id']
+    rule = call(web_channel.BriefingAuthorizationsHandler,body={'source':'email','account_id':'default','information_type':'action','course_id':'','kind':'todo','mode':'auto'})['rule']
+    assert call(web_channel.BriefingAuthorizationsHandler,'GET')['rules'][0]['id'] == rule['id']
+    assert call(web_channel.BriefingAuthorizationDeleteHandler,body={'id':rule['id']})['deleted'] is True
+    preferences = call(web_channel.BriefingPreferencesHandler,body={'show_low_priority':False})['preferences']
+    assert preferences['show_low_priority'] is False
+    assert call(web_channel.BriefingPreferencesHandler,'GET')['preferences'] == preferences
+    assert call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'link','kind':'todo','target_id':'missing'}})['status'] == 'error'
+    assert auth.call_count == 10
+
+
+def test_briefing_decision_routes_cannot_bypass_authentication(api):
+    _, auth = api
+    auth.side_effect = RuntimeError('unauthorized')
+    for handler, method in [(web_channel.BriefingActionsHandler,'POST'),(web_channel.BriefingAuthorizationsHandler,'POST'),
+                            (web_channel.BriefingOverviewHandler,'GET'),(web_channel.BriefingPreferencesHandler,'POST')]:
+        with pytest.raises(RuntimeError, match='unauthorized'):
+            call(handler, method)
+    assert auth.call_count == 4
+
+
+def test_run_progress_is_authenticated_and_exposes_only_active_draft(api):
+    _, auth = api
+    from agent.briefing import progress
+    assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
+    progress.begin("brf-2026-09-09", 2)
+    try:
+        progress.update("brf-2026-09-09", body="## 已有信息", completed_sources=1)
+        result = call(web_channel.BriefingRunProgressHandler, "GET")
+        assert result["progress"]["body"] == "## 已有信息"
+        assert result["progress"]["completed_sources"] == 1
+    finally:
+        progress.finish("brf-2026-09-09")
+    assert call(web_channel.BriefingRunProgressHandler, "GET")["progress"] is None
+    assert auth.call_count == 3
 
 
 def test_rule_crud(api):
@@ -123,6 +174,37 @@ def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test
         assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
 
 
+def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path):
+    from agent.briefing import elearning_settings
+    root = tmp_path / "course-files"
+    root.mkdir()
+    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
+        created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
+            "base_url": "https://elearning.fudan.edu.cn", "username": "student",
+            "password": "campus-secret", "courses": ["42"]})
+        assert created["status"] == "success"
+        forbidden = call(web_channel.BriefingElearningHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        assert forbidden["status"] == "error"
+        assert elearning_settings.load_settings()["file_sync_enabled"] is False
+
+        granted = call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        assert granted["status"] == "success"
+        assert granted["settings"]["file_sync_root"] == str(root)
+        saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
+        assert saved["settings"]["file_sync_enabled"] is True
+        call(web_channel.BriefingElearningHandler, body={"enabled": False})
+        assert elearning_settings.load_settings()["file_sync_enabled"] is True
+        call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
+        assert elearning_settings.load_settings()["file_sync_enabled"] is False
+        call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": True, "file_sync_root": str(root)})
+        revoked = call(web_channel.ElearningFileSyncSettingsHandler,
+            body={"file_sync_enabled": False, "file_sync_root": str(root)})
+        assert revoked["settings"]["file_sync_enabled"] is False
+
+
 @pytest.mark.parametrize("handler,body", [
     (web_channel.BriefingRunHandler, {"briefing_date": "invalid"}),
     (web_channel.BriefingRulesHandler, {"match_value": ""}),
@@ -137,7 +219,7 @@ def test_validation(api, handler, body):
 
 def test_missing_detail_and_invalid_filter(api):
     assert call(web_channel.BriefingDetailHandler, "GET", args=("missing",))["status"] == "error"
-    assert call(web_channel.BriefingsHandler, "GET", params={"kind": "bad", "status": ""})["status"] == "error"
+    assert call(web_channel.BriefingsHandler, "GET", params={"status": "bad"})["status"] == "error"
 
 
 @pytest.mark.parametrize("body", [b"[1]", b"invalid", b"null"])

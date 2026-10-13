@@ -10,6 +10,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 import urllib.request
 import urllib.error
 from typing import Optional
@@ -19,6 +20,16 @@ from common.log import logger
 
 # Aliases accepted for the Streamable HTTP transport type
 _STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
+_CANCEL_SOCKET_TIMEOUT = 5
+
+
+class McpCancelledError(Exception):
+    """A caller cancelled one in-flight MCP request."""
+
+
+def _check_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise McpCancelledError("MCP call cancelled")
 
 
 # System env vars a stdio MCP subprocess legitimately needs to run
@@ -61,20 +72,15 @@ def notify_server_authorized(server_name: str) -> None:
 
 
 def _oauth_redirect_uri() -> str:
-    """Build the OAuth redirect URI served by the web console callback.
-
-    Priority: explicit mcp_oauth_redirect_base config, otherwise the local
-    web console address (127.0.0.1:<web_port>). Both point at the shared
-    /mcp/oauth/callback route.
-    """
+    """Build the OAuth callback URI served by the desktop backend."""
     try:
         from config import conf
         base = (conf().get("mcp_oauth_redirect_base") or "").strip().rstrip("/")
         if not base:
-            port = int(os.environ.get("STELLA_WEB_PORT") or conf().get("web_port", 9899))
+            port = int(os.environ.get("STELLA_BACKEND_PORT") or 9876)
             base = f"http://127.0.0.1:{port}"
     except Exception:
-        base = "http://127.0.0.1:9899"
+        base = "http://127.0.0.1:9876"
     return f"{base}/mcp/oauth/callback"
 
 
@@ -172,10 +178,12 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] list_tools failed: {e}")
             return []
 
-    def call_tool(self, name: str, arguments: dict) -> str:
+    def call_tool(self, name: str, arguments: dict, cancel_event=None) -> str:
         """Call a tool and return the result as a string."""
         try:
-            resp = self._send_request("tools/call", {"name": name, "arguments": arguments})
+            params = {"name": name, "arguments": arguments}
+            resp = (self._send_request("tools/call", params) if cancel_event is None else
+                    self._send_request("tools/call", params, cancel_event=cancel_event))
             content = resp.get("result", {}).get("content", [])
             parts = [item.get("text", "") for item in content if item.get("type") == "text"]
             return "\n".join(parts)
@@ -334,30 +342,47 @@ class McpClient:
             except Exception:
                 pass
 
-    def _readline_with_timeout(self, timeout: Optional[int] = None) -> str:
+    def _readline_with_timeout(self, timeout: Optional[int] = None, cancel_event=None) -> str:
         """Read one line from stdio stdout with a hard timeout (cross-platform).
 
         Uses the per-server timeout from mcp.json config when no explicit
         timeout is provided.
         """
         effective = timeout if timeout is not None else self._timeout
-        try:
-            line = self._read_queue.get(timeout=effective)
-        except queue.Empty:
-            raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {effective}s")
+        deadline = time.monotonic() + effective
+        while True:
+            _check_cancelled(cancel_event)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {effective}s")
+            try:
+                line = self._read_queue.get(timeout=min(remaining, 0.1) if cancel_event is not None else remaining)
+                break
+            except queue.Empty:
+                continue
         if not line:
             raise IOError(f"[MCP:{self.name}] stdio process closed unexpectedly")
         return line
 
-    def _stdio_send(self, message: dict) -> dict:
+    def _stdio_send(self, message: dict, cancel_event=None) -> dict:
         """Send a JSON-RPC message over stdio and read the response."""
+        _check_cancelled(cancel_event)
         raw = json.dumps(message) + "\n"
         self._proc.stdin.write(raw)
         self._proc.stdin.flush()
 
         expected_id = message.get("id")
         while True:
-            line = self._readline_with_timeout()
+            try:
+                line = self._readline_with_timeout(cancel_event=cancel_event)
+            except McpCancelledError:
+                try:
+                    self._send_notification("notifications/cancelled", {
+                        "requestId": expected_id, "reason": "User cancelled"
+                    })
+                except Exception:
+                    pass
+                raise
             if not line:
                 raise IOError(f"[MCP:{self.name}] stdio process closed unexpectedly")
             line = line.strip()
@@ -436,8 +461,9 @@ class McpClient:
         validate_url_safe(endpoint)
         return endpoint
 
-    def _sse_send(self, message: dict) -> dict:
+    def _sse_send(self, message: dict, cancel_event=None) -> dict:
         """POST a JSON-RPC message to the server and return the response."""
+        _check_cancelled(cancel_event)
         body = json.dumps(message).encode("utf-8")
         req = urllib.request.Request(
             self._post_url,
@@ -445,8 +471,10 @@ class McpClient:
             method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
+            _check_cancelled(cancel_event)
             raw = resp.read().decode("utf-8")
+            _check_cancelled(cancel_event)
             return json.loads(raw)
 
     # ------------------------------------------------------------------
@@ -551,11 +579,11 @@ class McpClient:
             except Exception:
                 pass
 
-    def _streamable_http_send(self, message: dict) -> dict:
+    def _streamable_http_send(self, message: dict, cancel_event=None) -> dict:
         """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
-        return self._streamable_http_post(message, expect_response=True)
+        return self._streamable_http_post(message, expect_response=True, cancel_event=cancel_event)
 
-    def _handle_401(self, err, message: dict, expect_response: bool, retried: bool) -> dict:
+    def _handle_401(self, err, message: dict, expect_response: bool, retried: bool, cancel_event=None) -> dict:
         """Handle a 401: refresh the token and retry once, else begin OAuth."""
         www_auth = ""
         try:
@@ -568,9 +596,12 @@ class McpClient:
             pass
 
         # First try a silent refresh with the stored refresh token.
+        _check_cancelled(cancel_event)
         if not retried and self._oauth is not None and self._oauth.refresh():
+            _check_cancelled(cancel_event)
             logger.info(f"[MCP:{self.name}] Token refreshed after 401, retrying")
-            return self._streamable_http_post(message, expect_response, _retried=True)
+            return self._streamable_http_post(message, expect_response, _retried=True,
+                                              cancel_event=cancel_event)
 
         # No usable token — start (or restart) the interactive OAuth flow.
         self._begin_oauth(www_auth)
@@ -579,7 +610,8 @@ class McpClient:
             f"(complete the OAuth flow to enable this server)"
         )
 
-    def _streamable_http_post(self, message: dict, expect_response: bool, _retried: bool = False) -> dict:
+    def _streamable_http_post(self, message: dict, expect_response: bool, _retried: bool = False,
+                              cancel_event=None) -> dict:
         """
         POST a JSON-RPC message over Streamable HTTP.
 
@@ -587,6 +619,7 @@ class McpClient:
           - application/json   -> single JSON-RPC response in body
           - text/event-stream  -> SSE stream; we read until we get a matching response
         """
+        _check_cancelled(cancel_event)
         body = json.dumps(message).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
@@ -614,11 +647,11 @@ class McpClient:
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=30)
+            resp = urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30)
         except urllib.error.HTTPError as e:
             # 401 is the spec-compliant "needs authorization" signal.
             if e.code == 401 and not self._has_static_auth():
-                return self._handle_401(e, message, expect_response, _retried)
+                return self._handle_401(e, message, expect_response, _retried, cancel_event=cancel_event)
             # Surface the server-provided error body for easier debugging
             detail = ""
             try:
@@ -630,6 +663,7 @@ class McpClient:
             )
 
         with resp:
+            _check_cancelled(cancel_event)
             # Capture session id assigned by the server (if any)
             session_id = resp.headers.get("Mcp-Session-Id")
             # Double-checked lock: only the first response sets the
@@ -654,17 +688,19 @@ class McpClient:
             expected_id = message.get("id")
 
             if "text/event-stream" in content_type:
-                return self._read_sse_response(resp, expected_id)
+                return self._read_sse_response(resp, expected_id, cancel_event=cancel_event)
 
             raw = resp.read().decode("utf-8")
+            _check_cancelled(cancel_event)
             if not raw:
                 return {}
             return json.loads(raw)
 
-    def _read_sse_response(self, resp, expected_id) -> dict:
+    def _read_sse_response(self, resp, expected_id, cancel_event=None) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""
         data_buf: list = []
         for raw_line in resp:
+            _check_cancelled(cancel_event)
             line = raw_line.decode("utf-8").rstrip("\n\r")
             if line == "":
                 # End of an SSE event, attempt to parse accumulated data
@@ -710,8 +746,9 @@ class McpClient:
     def _build_notification(self, method: str, params: dict) -> dict:
         return {"jsonrpc": "2.0", "method": method, "params": params}
 
-    def _send_request(self, method: str, params: dict) -> dict:
+    def _send_request(self, method: str, params: dict, cancel_event=None) -> dict:
         """Send a request and return the full response dict."""
+        _check_cancelled(cancel_event)
         if not self._initialized and method != "initialize":
             raise RuntimeError(f"[MCP:{self.name}] Client not initialized")
 
@@ -721,12 +758,21 @@ class McpClient:
         # SSE and streamable-http use independent HTTP requests and
         # can safely run concurrently across sessions.
         if self.transport == "stdio":
-            with self._call_lock:
-                return self._stdio_send(message)
+            if cancel_event is None:
+                with self._call_lock:
+                    return self._stdio_send(message)
+            while not self._call_lock.acquire(timeout=0.1):
+                _check_cancelled(cancel_event)
+            try:
+                return self._stdio_send(message, cancel_event=cancel_event)
+            finally:
+                self._call_lock.release()
         elif self.transport == "sse":
-            return self._sse_send(message)
+            return (self._sse_send(message) if cancel_event is None else
+                    self._sse_send(message, cancel_event=cancel_event))
         elif self.transport == "streamable-http":
-            return self._streamable_http_send(message)
+            return (self._streamable_http_send(message) if cancel_event is None else
+                    self._streamable_http_send(message, cancel_event=cancel_event))
         else:
             raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
 
@@ -775,7 +821,7 @@ class McpClient:
 
         if "error" in resp:
             self._initialized = False
-            logger.warning(f"[MCP:{self.name}] Handshake error: {resp['error']}")
+            logger.warning(f"[MCP:{self.name}] Handshake error")
             return False
 
         self._send_notification("notifications/initialized", {})

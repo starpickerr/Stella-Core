@@ -2,10 +2,11 @@
 
 import os
 import threading
-from typing import Dict, Optional
+from typing import Dict
 from config import conf
 from common.log import logger
 from common.utils import expand_path
+from agent.scheduler.outcome import ExecutionOutcome
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 
@@ -32,6 +33,12 @@ def _resolve_workspace(workspace_root: str = None, agent_id: str = None):
     if agent_id:
         identity = identity.derive(agent_id=agent_id)
     return str(state_root(identity))
+
+
+def _resolve_working_dir(agent_id: str = None):
+    from common.runtime_identity import current_identity
+    from common.state_dir import personal_work_dir
+    return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
 
 
 def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = None) -> bool:
@@ -66,6 +73,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
 
         try:
             from agent.scheduler.store import TaskStore
+            from agent.scheduler.automation_store import AutomationStore
             from agent.scheduler.service import SchedulerService
 
             from common.state_dir import scheduler_file
@@ -75,13 +83,11 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
             # Create task store (reuse if already created)
             task_store = _task_stores.get(workspace_root)
             if task_store is None:
-                task_store = TaskStore(store_path)
+                task_store = (AutomationStore(store_path, agent_id)
+                              if os.environ.get("STELLA_DESKTOP") == "1"
+                              else TaskStore(store_path))
                 _task_stores[workspace_root] = task_store
                 logger.debug(f"[Scheduler] Task store initialized: {store_path}")
-
-            if os.environ.get("STELLA_DESKTOP") == "1":
-                from agent.briefing.scheduler import ensure_daily_briefing_task
-                ensure_daily_briefing_task(task_store)
 
             # Create execute callback. Returns True on success, False to ask
             # the scheduler to retry on the next tick (e.g. channel not yet
@@ -92,16 +98,29 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                 # reached from a task (ToolManager, tmp_dir, memory) then lands
                 # in this Agent's workspace rather than the default one's.
                 from common.runtime_identity import identity_scope
+                from agent.scheduler.conversation import prepare_run
+                from agent.scheduler.outcome import ExecutionOutcome
 
                 try:
-                    with identity_scope(agent_id=agent_id):
+                    owner_user_id = task.get("owner_user_id") or None
+                    with identity_scope(agent_id=agent_id, user_id=owner_user_id):
+                        task = prepare_run(task, agent_id)
+                    owner_session_id = ((task.get("action") or {}).get("execution_session_id") or
+                                        (task.get("action") or {}).get("notify_session_id"))
+                    from agent.runtime.tool_invocation import scheduled_permission_scope
+                    with identity_scope(agent_id=agent_id, user_id=owner_user_id,
+                                        session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
+                                        execution_session_id=owner_session_id), scheduled_permission_scope(
+                                            task.get("run_permission_mode")):
                         action = task.get("action", {})
                         action_type = action.get("type")
                         channel_type = action.get("channel_type", "unknown")
                         receiver = action.get("receiver", "")
 
-                        silent = action_type in ("agent_task", "tool_call") and action.get("silent", False)
-                        if not silent and not _is_channel_ready(channel_type, receiver, agent_id):
+                        silent = (action_type == "application_command" or
+                                  action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
+                        persist_in_chat = "conversation_mode" in action
+                        if not silent and not task.get("notification_route") and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "
@@ -111,6 +130,8 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
 
                         if action_type == "agent_task":
                             return _execute_agent_task(task, agent_bridge, agent_id)
+                        elif action_type == "application_command":
+                            return _execute_application_command(task, agent_id)
                         elif action_type == "send_message":
                             return _execute_send_message(task, agent_bridge, agent_id)
                         elif action_type == "tool_call":
@@ -119,7 +140,10 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                             return _execute_skill_call(task, agent_bridge, agent_id)
                         else:
                             logger.warning(f"[Scheduler] Unknown action type: {action_type}")
-                            return True
+                            return ExecutionOutcome("failed", f"Unknown action type: {action_type}")
+                except ValueError as e:
+                    logger.warning(f"[Scheduler] Task {task.get('id')} has no valid conversation scope: {e}")
+                    return ExecutionOutcome("failed", str(e))
                 except Exception as e:
                     logger.error(f"[Scheduler] Error executing task {task.get('id')}: {e}")
                     return False
@@ -154,14 +178,20 @@ def _is_channel_ready(
     to preserve previous behaviour.
     """
     if not channel_type or channel_type == "unknown":
-        return True
+        return False
     try:
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        if channel_type == "weixin":
+            from agent.scheduler.delivery import runtime_channel
+            channel = runtime_channel(channel_type)
+        else:
+            from channel.channel_factory import create_channel
+            channel = create_channel(channel_type)
         if channel is None:
             return False
 
         if channel_type == "weixin":
+            if getattr(channel, "login_status", None) != "logged_in":
+                return False
             tokens = getattr(channel, "_context_tokens", None)
             if not tokens or receiver not in tokens:
                 return False
@@ -178,7 +208,7 @@ def _is_channel_ready(
         return True
     except Exception as e:
         logger.warning(f"[Scheduler] Channel readiness check failed for {channel_type}: {e}")
-        return True
+        return False
 
 
 def get_task_store(workspace_root: str = None, agent_id: str = None):
@@ -215,8 +245,8 @@ def _remember_delivered_output(
     channel_type: str,
     content: str,
     agent_id: str = None,
-) -> None:
-    """Best-effort persistence of the message the scheduler sent to a user.
+) -> bool:
+    """Persist desktop output; message channels keep best-effort injection.
 
     Uses notify_session_id (the real chat session_id stored at task creation time)
     so that group chats correctly associate the output with the user's conversation.
@@ -225,26 +255,34 @@ def _remember_delivered_output(
     Per-action-type behaviour:
         - agent_task / tool_call / skill_call: gated by ``scheduler_inject_to_session``
           (default True). These produce AI-generated content worth remembering.
-        - send_message: additionally gated by ``scheduler_inject_send_message``
-          (default False). Fixed reminder text rarely benefits follow-up Q&A and
-          would just consume context tokens.
+        - send_message: other channels additionally use
+          ``scheduler_inject_send_message`` (default False). Desktop task
+          conversations always keep the delivered text.
     """
     if not content:
-        return
+        return True
     action = task.get("action", {})
     action_type = action.get("type", "")
 
     # send_message defaults to NOT being injected; explicit opt-in via config.
-    if action_type == "send_message":
+    if action_type == "send_message" and "conversation_mode" not in action:
         if not conf().get("scheduler_inject_send_message", False):
-            return
+            return True
 
     session_id = action.get("notify_session_id") or action.get("receiver")
     if not session_id:
-        return
+        return False
     try:
         remember = getattr(agent_bridge, "remember_scheduled_output", None)
         if remember:
+            conversation_store = None
+            is_new = False
+            if "conversation_mode" in action:
+                from agent.memory import get_conversation_store
+                from agent.registry import get_agent_registry
+                profile = get_agent_registry().get(agent_id)
+                conversation_store = get_conversation_store(profile.workspace)
+                is_new = session_id not in conversation_store.list_session_ids(channel_type="web")
             task_desc = action.get("task_description") or action.get("content", "")
             kwargs = {
                 "channel_type": channel_type,
@@ -252,11 +290,71 @@ def _remember_delivered_output(
             }
             if hasattr(agent_bridge, "agent_registry"):
                 kwargs["agent_id"] = agent_id
+                if "conversation_mode" in action:
+                    kwargs["force"] = True
+                    kwargs["require_existing"] = action.get("conversation_mode") == "source"
             remember(session_id, str(content), **kwargs)
+            if is_new and conversation_store and action.get("conversation_mode") in ("reuse", "new"):
+                title = task.get("name") or "Scheduled task"
+                if action.get("conversation_mode") == "new":
+                    from datetime import datetime
+                    title += " · " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                conversation_store.rename_session(session_id, title)
+            return True
     except Exception as e:
         logger.warning(
             f"[Scheduler] Failed to remember delivered output for {session_id}: {e}"
         )
+    return False
+
+
+def _send_checked(channel, reply, context):
+    context["scheduled_delivery"] = True
+    result = channel.send(reply, context)
+    if result is False or (isinstance(result, dict) and result.get("success") is False):
+        raise RuntimeError("Channel rejected scheduled delivery")
+    return result
+
+
+def _channel_for_delivery(channel_type):
+    if channel_type == "weixin":
+        from agent.scheduler.delivery import runtime_channel
+        return runtime_channel(channel_type)
+    from channel.channel_factory import create_channel
+    return create_channel(channel_type)
+
+
+def _dispatch_explicit_route(task, content, agent_id=None, store=None):
+    """Send cached output through a persisted, user selected route."""
+    from datetime import datetime, timedelta
+    from agent.scheduler.dispatch import dispatch_notification
+    route = task.get("notification_route")
+    job_run_id = task.get("job_run_id")
+    store = store or get_task_store(agent_id=agent_id)
+    if not job_run_id or not store or not hasattr(store, "begin_delivery"):
+        return ExecutionOutcome("failed", "Durable notification delivery requires an active job run")
+    expires_at = None
+    scheduled_at = task.get("next_run_at")
+    if scheduled_at and not task.get("manual_run"):
+        due = datetime.fromisoformat(scheduled_at)
+        expires_at = due.astimezone() + timedelta(hours=24)
+    result = dispatch_notification(store, job_run_id, route, content, agent_id=agent_id,
+                                   expires_at=expires_at)
+    return _delivery_execution_outcome(result)
+
+
+def _delivery_execution_outcome(result):
+    if result is None:
+        return True
+    if result.status == "accepted":
+        return True
+    if result.status == "waiting" and result.error == "等待客户端确认通知":
+        return True
+    if result.status == "waiting" or (result.status == "failed" and result.retryable):
+        return False
+    if result.status == "unknown":
+        return ExecutionOutcome("outcome_unknown", result.error)
+    return ExecutionOutcome("failed", result.error or result.status)
 
 
 def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
@@ -273,11 +371,11 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         
         if not task_description:
             logger.error(f"[Scheduler] Task {task['id']}: No task_description specified")
-            return True  # malformed task, don't loop forever
+            return ExecutionOutcome("failed", "task_description is required")
         
-        if not receiver:
+        if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
         
         # Check for unsupported channels
         if channel_type == "dingtalk":
@@ -296,10 +394,16 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             "若执行失败，返回简洁明确的失败说明。\n\n"
             f"任务描述：\n{task_description}"
         )
+        if action.get("conversation_mode") == "source":
+            from agent.scheduler.conversation import source_context
+            recent = source_context(action, agent_id)
+            if recent:
+                execution_prompt += "\n\n绑定对话的最近上下文（供参考）：\n" + recent
 
         # Create a unique session_id for this scheduled task to avoid polluting user's conversation
         # Format: scheduler_<receiver>_<task_id> to ensure isolation
-        scheduler_session_id = f"scheduler_{receiver}_{task['id']}"
+        from agent.scheduler.conversation import agent_session_id
+        scheduler_session_id = agent_session_id(task)
         
         # Create context for Agent
         context = Context(ContextType.TEXT, execution_prompt)
@@ -307,6 +411,11 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
+        context["task_id"] = str(task["id"])
+        if task.get("job_run_id"):
+            context["job_run_id"] = task["job_run_id"]
         
         # Channel-specific setup
         if channel_type == "web":
@@ -314,7 +423,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "dingtalk":
             # DingTalk requires msg object, set to None for scheduled tasks
@@ -331,8 +440,19 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         context["is_scheduled_task"] = True
         
         try:
-            # Don't clear history - scheduler tasks use isolated session_id so they won't pollute user conversations
-            reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=False)
+            from agent.scheduler.result_cache import load_output, save_output
+            store = get_task_store(agent_id=agent_id)
+            job_run_id = task.get("job_run_id")
+            content = load_output(store, job_run_id)
+            if content is None:
+                # Scheduler sessions are isolated from the user's conversation.
+                reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=False)
+                if getattr(reply, "type", None) == ReplyType.ERROR:
+                    logger.error(f"[Scheduler] Task {task['id']}: Agent run failed; outcome needs review")
+                    return ExecutionOutcome("failed", str(reply.content))
+                content = reply.content if reply else ""
+                save_output(store, job_run_id, content)
+            reply = Reply(ReplyType.TEXT, content)
 
             if not (reply and reply.content):
                 # Empty is a valid outcome: the task ran and decided there was
@@ -349,8 +469,14 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 )
                 return True
 
-            from channel.channel_factory import create_channel
-            channel = create_channel(channel_type)
+            if task.get("notification_route"):
+                result = _dispatch_explicit_route(task, reply.content, agent_id, store)
+                if result is not True:
+                    return result
+                _remember_delivered_output(agent_bridge, task, channel_type, reply.content, agent_id)
+                return True
+
+            channel = _channel_for_delivery(channel_type)
             if not channel:
                 logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
                 return False
@@ -361,14 +487,16 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                     channel.request_to_session[request_id] = receiver
 
             try:
-                channel.send(reply, context)
+                _send_checked(channel, reply, context)
             except Exception as e:
                 logger.error(f"[Scheduler] Failed to send result: {e}")
                 return False
 
-            _remember_delivered_output(
+            persisted = _remember_delivered_output(
                 agent_bridge, task, channel_type, reply.content, agent_id
             )
+            if "conversation_mode" in action and not persisted:
+                return False
             logger.info(f"[Scheduler] Task {task['id']} executed successfully, result sent to {receiver}")
             return True
 
@@ -376,13 +504,13 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Failed to execute task via Agent: {e}")
             import traceback
             logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-            return False
+            return ExecutionOutcome("outcome_unknown", str(e))
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in _execute_agent_task: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return False
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> bool:
@@ -396,7 +524,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         
         if not receiver:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
         
         # Create context for sending message
         context = Context(ContextType.TEXT, content)
@@ -404,6 +532,9 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         context["isgroup"] = is_group
         context["session_id"] = receiver
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
+        context["task_id"] = str(task["id"])
         
         # Channel-specific context setup
         if channel_type == "web":
@@ -415,7 +546,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         elif channel_type == "feishu":
             # Feishu channel: for scheduled tasks, send as new message (no msg_id to reply to)
             # Use chat_id for groups, open_id for private chats
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             # Keep isgroup as is, but set msg to None (no original message to reply to)
             # Feishu channel will detect this and send as new message instead of reply
             context["msg"] = None
@@ -438,11 +569,15 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
 
         # Create reply
         reply = Reply(ReplyType.TEXT, content)
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
         
         # Get channel and send
-        from channel.channel_factory import create_channel
-        
-        channel = create_channel(channel_type)
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
@@ -451,14 +586,16 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
             channel.request_to_session[request_id] = receiver
 
         try:
-            channel.send(reply, context)
+            _send_checked(channel, reply, context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send message: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent message to {receiver}")
         return True
 
@@ -467,6 +604,108 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
         return False
+
+
+def _execute_application_command(task, agent_id=None):
+    from application import Application, RequestContext
+    from agent.runtime.run_record import RunRecord
+    from agent.scheduler.outcome import ExecutionOutcome
+    from common.runtime_identity import identity_scope
+    import uuid
+    action = task.get("action", {})
+    base = RequestContext.ambient("scheduler")
+    run_id = uuid.uuid4().hex
+    record = RunRecord()
+    record.create(run_id, job_run_id=task.get("job_run_id"), user_id=base.user_id,
+                  agent_id=agent_id, session_id=base.session_id, source="scheduler")
+    record.transition(run_id, "running")
+    try:
+        with identity_scope(run_id=run_id):
+            context = RequestContext(user_id=base.user_id, agent_id=agent_id, session_id=base.session_id,
+                source="scheduler", idempotency_key=task.get("job_run_id"))
+            record.event(run_id, "tool_execution_start", operation_id=context.idempotency_key)
+            result = Application.command(action.get("domain"), action.get("command"), action.get("params"), context)
+            record.event(run_id, "tool_execution_end", operation_id=result["operation_id"])
+            record.transition(run_id, "completed")
+            if action.get("domain") == "todos" and action.get("command") == "QueueTodoReminder":
+                todo_id, expected_at = action.get("params", [None, None])
+                delivery = Application.dispatch_todo_reminder(todo_id, expected_at, context)
+                return _delivery_execution_outcome(delivery)
+            return True
+    except Exception as exc:
+        status = "failed" if isinstance(exc, (PermissionError, ValueError)) else "outcome_unknown"
+        if isinstance(exc, PermissionError):
+            record.event(run_id, "permission_denied")
+        record.event(run_id, "tool_execution_end")
+        record.transition(run_id, status, str(exc))
+        return ExecutionOutcome(status, str(exc))
+
+
+def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store):
+    """Record execution independently of the result's delivery attempts."""
+    from agent.runtime.run_record import RunRecord
+    from agent.runtime.tool_invocation import permission_denial
+    from agent.scheduler.outcome import ExecutionOutcome
+    from agent.scheduler.result_cache import save_output
+    from agent.tools.tool_manager import ToolManager
+    from common.runtime_identity import current_identity, identity_scope
+    import uuid
+    identity = current_identity()
+    run_id = uuid.uuid4().hex
+    record = RunRecord()
+    action = task.get("action", {})
+    source_session = action.get("execution_session_id") or action.get("notify_session_id")
+    record.create(run_id, job_run_id=task.get("job_run_id"), user_id=identity.user_id,
+                  agent_id=agent_id or identity.agent_id, session_id=source_session, source="scheduler")
+    record.transition(run_id, "running")
+    invoked = False
+    tool_call_id = uuid.uuid4().hex
+    try:
+        from agent.runtime.tool_invocation import scheduled_permission_scope
+        with identity_scope(run_id=run_id, session_id=source_session,
+                            task_id=str(task["id"]), execution_session_id=source_session), scheduled_permission_scope(
+                                task.get("run_permission_mode")):
+            denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
+                session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
+                noninteractive=True)
+            if denial:
+                record.event(run_id, "permission_denied")
+                record.transition(run_id, "failed", denial)
+                return ExecutionOutcome("failed", denial)
+            tool = ToolManager().create_tool(tool_name)
+            if not tool:
+                record.transition(run_id, "failed", f"Tool '{tool_name}' not found")
+                return ExecutionOutcome("failed", f"Tool '{tool_name}' not found")
+            from agent.runtime.tool_invocation import execution_workspace
+            cwd, _ = execution_workspace(source_session, agent_id, _resolve_working_dir(agent_id=agent_id))
+            setter = getattr(tool, "set_cwd", None)
+            if callable(setter):
+                setter(cwd)
+            else:
+                tool.cwd = cwd
+            tool.config = dict(getattr(tool, "config", {}) or {}, cwd=cwd)
+            tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True,
+                "agent_id": agent_id, "session_id": source_session, "job_run_id": task.get("job_run_id")})
+            tool.cancel_event = cancel_event
+            record.event(run_id, "tool_execution_start", tool_call_id=tool_call_id)
+            invoked = True
+            from agent.runtime.tool_invocation import invocation_scope
+            with invocation_scope(tool_call_id):
+                result = tool.execute(tool_params)
+            record.event(run_id, "tool_execution_end", tool_call_id=tool_call_id)
+            content = result.result if hasattr(result, "result") else str(result)
+            if getattr(result, "status", None) == "error":
+                record.transition(run_id, "failed", str(content))
+                retryable = (tool_name == "briefing" and tool_params.get("action") == "run" and
+                             tool_params.get("operation", "create") == "create")
+                return ExecutionOutcome("failed", str(content), retryable=retryable)
+            save_output(store, task.get("job_run_id"), content)
+            record.transition(run_id, "completed")
+            return content
+    except Exception as exc:
+        status = "outcome_unknown" if invoked else "failed"
+        record.transition(run_id, status, str(exc))
+        return ExecutionOutcome(status, str(exc))
 
 
 def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_event=None) -> bool:
@@ -483,35 +722,48 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
 
         if not tool_name:
             logger.error(f"[Scheduler] Task {task['id']}: No tool_name specified")
-            return True
+            return ExecutionOutcome("failed", "tool name is required")
         if not receiver and not silent:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
 
-        from agent.tools.tool_manager import ToolManager
-        tool = ToolManager().create_tool(tool_name)
-        if not tool:
-            logger.error(f"[Scheduler] Task {task['id']}: Tool '{tool_name}' not found")
-            return True
-
-        logger.info(f"[Scheduler] Task {task['id']}: Executing tool '{tool_name}' with params {tool_params}")
-        tool.current_context = Context(ContextType.TEXT, "", {"is_scheduled_task": True, "agent_id": agent_id})
-        tool.cancel_event = cancel_event
-        result = tool.execute(tool_params)
-        content = result.result if hasattr(result, 'result') else str(result)
-        if getattr(result, "status", None) == "error":
-            logger.error(f"[Scheduler] Task {task['id']}: Tool failed: {content}")
-            return False
+        from agent.scheduler.result_cache import load_output
+        store = get_task_store(agent_id=agent_id)
+        job_run_id = task.get("job_run_id")
+        content = load_output(store, job_run_id)
+        if content is None:
+            from agent.runtime.session_run import SessionRun
+            from common.runtime_identity import current_identity
+            manager = getattr(agent_bridge, "_session_run", None)
+            if manager is None:
+                manager = SessionRun()
+                if agent_bridge is not None:
+                    agent_bridge._session_run = manager
+            source = action.get("execution_session_id") or action.get("notify_session_id")
+            with manager.enter(current_identity().user_id, agent_id, source or f"scheduler_{task['id']}"):
+                content = _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, store)
+            from agent.scheduler.outcome import ExecutionOutcome
+            if isinstance(content, ExecutionOutcome):
+                return content
         if silent:
             return True
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
+
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id, store)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
 
         context = Context(ContextType.TEXT, content)
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = receiver
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
 
         request_id = None
         if channel_type == "web":
@@ -519,15 +771,14 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "wecom_bot":
             context["msg"] = None
 
         reply = Reply(ReplyType.TEXT, content)
 
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
@@ -536,24 +787,27 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             channel.request_to_session[request_id] = receiver
 
         try:
-            channel.send(reply, context)
+            _send_checked(channel, reply, context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send tool result: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: sent tool result to {receiver}")
         return True
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in _execute_tool_call: {e}")
-        return False
+        from agent.scheduler.outcome import ExecutionOutcome
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
-    """Execute a skill_call action by asking Agent to run the skill.
+    """Execute a resolved skill under the scheduled Agent's tool gate.
     Returns True/False for delivery."""
     try:
         action = task.get("action", {})
@@ -561,58 +815,78 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         skill_params = action.get("call_params") or action.get("skill_params", {})
         result_prefix = action.get("result_prefix", "")
         receiver = action.get("receiver")
-        is_group = action.get("isgroup", False)
+        is_group = action.get("is_group", False)
         channel_type = action.get("channel_type", "unknown")
 
         if not skill_name:
             logger.error(f"[Scheduler] Task {task['id']}: No skill_name specified")
-            return True
-        if not receiver:
+            return ExecutionOutcome("failed", "skill name is required")
+        if not receiver and not action.get("silent", False):
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
-            return True
+            return ExecutionOutcome("failed", "receiver is required")
 
-        logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}' with params {skill_params}")
+        logger.info(f"[Scheduler] Task {task['id']}: Executing skill '{skill_name}'")
 
-        scheduler_session_id = f"scheduler_{receiver}_{task['id']}"
-        param_str = ", ".join([f"{k}={v}" for k, v in skill_params.items()])
-        query = f"Use {skill_name} skill"
-        if param_str:
-            query += f" with {param_str}"
-
-        context = Context(ContextType.TEXT, query)
+        from agent.scheduler.conversation import agent_session_id
+        scheduler_session_id = agent_session_id(task)
+        context = Context(ContextType.TEXT, "Scheduled skill execution")
         context["receiver"] = receiver
         context["isgroup"] = is_group
         context["session_id"] = scheduler_session_id
         context["agent_id"] = agent_id
+        context["channel_type"] = channel_type
+        context["execution_session_id"] = action.get("execution_session_id") or action.get("notify_session_id")
+        context["is_scheduled_task"] = True
+        context["task_id"] = str(task["id"])
+        if task.get("job_run_id"):
+            context["job_run_id"] = task["job_run_id"]
 
         if channel_type == "web":
             import uuid
             request_id = f"scheduler_{task['id']}_{uuid.uuid4().hex[:8]}"
             context["request_id"] = request_id
         elif channel_type == "feishu":
-            context["receive_id_type"] = "chat_id" if is_group else "open_id"
+            context["receive_id_type"] = action.get("receive_id_type") or ("chat_id" if is_group else "open_id")
             context["msg"] = None
         elif channel_type == "wecom_bot":
             context["msg"] = None
 
-        try:
-            reply = agent_bridge.agent_reply(query, context=context, on_event=None, clear_history=False)
-        except Exception as e:
-            logger.error(f"[Scheduler] Failed to execute skill via Agent: {e}")
-            import traceback
-            logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-            return False
+        from agent.scheduler.result_cache import load_output, save_output
+        store = get_task_store(agent_id=agent_id)
+        job_run_id = task.get("job_run_id")
+        content = load_output(store, job_run_id)
+        if content is None:
+            try:
+                from agent.scheduler.skill_executor import SkillExecutor
+                reply = SkillExecutor(agent_bridge).execute(
+                    skill_name, skill_params, context, agent_id)
+            except Exception as e:
+                logger.error(f"[Scheduler] Failed to execute skill via Agent: {e}")
+                return ExecutionOutcome("outcome_unknown", str(e))
+            if getattr(reply, "type", None) == ReplyType.ERROR:
+                logger.error(f"[Scheduler] Task {task['id']}: Skill run failed; outcome needs review")
+                return ExecutionOutcome("failed", str(reply.content))
+            content = reply.content if reply else ""
+            save_output(store, job_run_id, content)
 
-        if not (reply and reply.content):
+        if not content:
             logger.error(f"[Scheduler] Task {task['id']}: No result from skill execution")
             return True
 
-        content = reply.content
+        if action.get("silent", False):
+            return True
+
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
 
-        from channel.channel_factory import create_channel
-        channel = create_channel(channel_type)
+        if task.get("notification_route"):
+            result = _dispatch_explicit_route(task, content, agent_id, store)
+            if result is not True:
+                return result
+            _remember_delivered_output(agent_bridge, task, channel_type, content, agent_id)
+            return True
+
+        channel = _channel_for_delivery(channel_type)
         if not channel:
             logger.error(f"[Scheduler] Failed to create channel: {channel_type}")
             return False
@@ -623,14 +897,16 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 channel.request_to_session[req_id] = receiver
 
         try:
-            channel.send(Reply(ReplyType.TEXT, content), context)
+            _send_checked(channel, Reply(ReplyType.TEXT, content), context)
         except Exception as e:
             logger.error(f"[Scheduler] Failed to send skill result: {e}")
             return False
 
-        _remember_delivered_output(
+        persisted = _remember_delivered_output(
             agent_bridge, task, channel_type, content, agent_id
         )
+        if "conversation_mode" in action and not persisted:
+            return False
         logger.info(f"[Scheduler] Task {task['id']} executed: skill result sent to {receiver}")
         return True
 
@@ -638,7 +914,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         logger.error(f"[Scheduler] Error in _execute_skill_call: {e}")
         import traceback
         logger.error(f"[Scheduler] Traceback: {traceback.format_exc()}")
-        return False
+        return ExecutionOutcome("outcome_unknown", str(e))
 
 
 def attach_scheduler_to_tool(tool, context: Context = None):

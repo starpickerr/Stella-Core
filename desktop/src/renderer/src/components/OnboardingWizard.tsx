@@ -84,7 +84,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
     setLang(next)
     setLangState(next)
     // Mirror the choice to the backend so the agent/logs use the same language
-    // (matches BasicSettings). Non-blocking: the UI already switched locally.
+    // (matches GeneralSettings). Non-blocking: the UI already switched locally.
     apiClient.updateConfig({ stella_lang: next }).catch(() => {})
   }
 

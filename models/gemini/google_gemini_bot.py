@@ -22,7 +22,6 @@ from bridge.reply import Reply, ReplyType
 from common.log import logger
 from config import conf
 from models.chatgpt.chat_gpt_session import ChatGPTSession
-from models.baidu.baidu_wenxin_session import BaiduWenxinSession
 
 
 # OpenAI对话模型API (可用)
@@ -34,7 +33,7 @@ class GoogleGeminiBot(Bot):
 
     @property
     def api_key(self):
-        return conf().get("gemini_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("gemini_api_key")
 
     @property
     def model(self):
@@ -45,7 +44,8 @@ class GoogleGeminiBot(Bot):
 
     @property
     def api_base(self):
-        base = conf().get("gemini_api_base", "").strip()
+        base = ((self._stella_api_base or "") if hasattr(self, "_stella_api_base")
+                else conf().get("gemini_api_base", "")).strip()
         if base:
             return base.rstrip('/')
         return "https://generativelanguage.googleapis.com"

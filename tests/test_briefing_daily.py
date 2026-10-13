@@ -4,13 +4,13 @@ from dataclasses import asdict
 import sqlite3
 import pytest
 
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
-
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
 from agent.briefing.store import BriefingStore, load_schema_sql
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 def dt(value):
@@ -36,6 +36,8 @@ def test_daily_updates_and_next_day_continue_at_last_update(service):
     service.update_item_status(card.id, "done")
     second = run(service, "2026-09-06T13:00:00+08:00", [item("noon", "2026-09-06T12:00:00+08:00")], operation="update")
     assert first["briefing"].id == second["briefing"].id
+    assert first["briefing"].id == "brf-2026-09-06"
+    assert "kind" not in asdict(first["briefing"])
     assert second["briefing"].title == "2026年9月6日·简报"
     assert second["briefing"].window_start == first["briefing"].window_start
     assert second["briefing"].window_end == "2026-09-06T05:00:00Z"
@@ -51,9 +53,9 @@ def test_daily_updates_and_next_day_continue_at_last_update(service):
         item("future", "2026-09-07T08:00:01+08:00"),
     ])
     assert third["briefing"].window_start == second["briefing"].window_end
-    assert {row.source_id for row in third["items"]} == {"evening", "end"}
+    assert {row.source_id for row in third["items"]} == {"old", "boundary", "evening", "end"}
     updated = run(service, "2026-09-07T09:00:00+08:00", operation="update")
-    assert {row.source_id for row in updated["items"]} == {"evening", "end", "future"}
+    assert {row.source_id for row in updated["items"]} == {"old", "boundary", "evening", "end", "future"}
     assert len(service.list_briefings()) == 2
 
 
@@ -64,7 +66,7 @@ def test_night_window_extends_in_same_day_and_restarts_at_last_update(service):
         item("night", "2026-09-06T20:00:01+08:00"),
     ])
     assert first["briefing"].window_start == "2026-09-06T12:00:00Z"
-    assert {row["source_id"] for row in first["mail"]} == {"night"}
+    assert {row["source_id"] for row in first["mail"]} == {"before", "boundary", "night"}
     afternoon = run(service, "2026-09-07T15:00:00+08:00", operation="update")
     assert afternoon["briefing"].window_start == first["briefing"].window_start
     assert afternoon["briefing"].window_end == "2026-09-07T07:00:00Z"
@@ -145,12 +147,22 @@ def test_migration_preserves_previous_snapshot(tmp_path):
     conn.executescript(load_schema_sql().split('-- Immutable generation')[0]
         .replace("    window_start     TEXT,\n    window_end       TEXT,\n", "")
         .replace("    mail_snapshot_available INTEGER NOT NULL DEFAULT 0,\n", ""))
+    conn.execute("ALTER TABLE briefings ADD COLUMN kind TEXT NOT NULL DEFAULT 'morning' CHECK (kind IN ('morning','followup','meeting'))")
+    conn.execute("CREATE INDEX idx_briefings_kind_generated ON briefings(kind,generated_at)")
     conn.execute("INSERT INTO briefings (id,kind,status,title,body,generated_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", ("brf-2026-09-06-morning","morning","completed","9 月 6 日晨报","saved content","2026-09-06T05:00:00Z","2026-09-06T00:00:00Z","2026-09-06T05:00:00Z"))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     store = BriefingStore(path)
     old = store.get_briefing("brf-2026-09-06-morning")
     assert old.title == "2026年9月6日·简报"
     assert old.window_end == old.generated_at
     assert old.mail_snapshot_available is False
+    assert old.id == "brf-2026-09-06-morning"
+    with store._conn() as conn:
+        assert "kind" not in {row[1] for row in conn.execute("PRAGMA table_info(briefings)")}
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert store.get_revision(old.id, 1)["briefing"]["body"] == "saved content"
     assert len(BriefingStore(path).list_revisions(old.id)) == 1
+    updated = run(BriefingService(store), "2026-09-06T20:00:00+08:00", operation="update")
+    assert updated["briefing"].id == old.id
+    assert len(store.list_briefings()) == 1

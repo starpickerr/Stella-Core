@@ -1,12 +1,17 @@
 from datetime import datetime, timezone
+import threading
 import pytest
 
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from agent.briefing.pipeline import BriefingPipeline
+from agent.briefing import progress as briefing_progress
+from agent.briefing.generator import AgentBriefingGenerator
 from agent.briefing.service import BriefingService
-from agent.briefing.sources.base import FetchedItem
+from agent.briefing.sources.base import FetchResult, FetchedItem
 from briefing_fakes import StaticSource
+from briefing_fakes import DeterministicBriefingModel
 from agent.briefing.store import BriefingStore
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +24,80 @@ def fixed_briefing_clock(monkeypatch):
 
 def _svc(tmp_path) -> BriefingService:
     return BriefingService(BriefingStore(tmp_path / "briefing.db"))
+
+
+def test_concurrent_run_reports_active_briefing_instead_of_waiting(tmp_path):
+    service = _svc(tmp_path)
+    source = StaticSource([])
+    assert service.store.run_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(ValueError, match="正在生成"):
+            BriefingPipeline(service, [source]).run(briefing_date="2026-09-09")
+    finally:
+        service.store.run_lock.release()
+
+
+def test_generation_starts_once_after_every_source_finishes(tmp_path):
+    service = _svc(tmp_path)
+    metadata_started = threading.Event()
+    release_metadata = threading.Event()
+    sync_started = threading.Event()
+    release_sync = threading.Event()
+
+    class RecordingModel(DeterministicBriefingModel):
+        def __init__(self):
+            self.classification_calls = 0
+
+        def call_stream(self, request):
+            if any('"candidates"' in part.get("text", "") for part in request.messages[-1]["content"]):
+                self.classification_calls += 1
+            yield from super().call_stream(request)
+
+    model = RecordingModel()
+
+    class SlowElearningSource:
+        name = "elearning"
+        account_id = "school"
+
+        def fetch(self, cursors):
+            metadata_started.set()
+            assert release_metadata.wait(10), "simulated metadata read was not released"
+            rows = [FetchedItem(source="elearning", account_id="school", source_id="announcement:1",
+                title="课程作业公告", occurred_at="2026-09-08T22:00:00Z", payload={"body": "明天交作业"})]
+            sync_started.set()
+            assert release_sync.wait(10), "simulated file sync was not released"
+            return FetchResult(rows, {"elearning_state": "updated"})
+
+    outcome = {}
+    email = StaticSource([_item("<mail@x>", "邮件课程通知")])
+    def run():
+        try:
+            outcome["detail"] = BriefingPipeline(service, [email, SlowElearningSource()],
+                generator=AgentBriefingGenerator(model=model)).run()
+        except Exception as exc:
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    try:
+        assert metadata_started.wait(5)
+        release_metadata.set()
+        assert sync_started.wait(5)
+        assert model.classification_calls == 0
+        snapshot = briefing_progress.snapshot()
+        assert snapshot and "邮件课程通知" not in snapshot["body"] and "课程作业公告" not in snapshot["body"]
+        assert service.get_cursor("elearning", "school", "elearning_state") is None
+        assert service.get_briefing("brf-2026-09-09")["briefing"].body == ""
+    finally:
+        release_sync.set()
+        worker.join(10)
+    assert not worker.is_alive()
+    assert "error" not in outcome, outcome.get("error")
+    assert "课程作业公告" in outcome["detail"]["briefing"].body
+    assert "邮件课程通知" in outcome["detail"]["briefing"].body
+    assert model.classification_calls == 1
+    assert service.get_cursor("elearning", "school", "elearning_state").cursor_value == "updated"
+    assert briefing_progress.snapshot() is None
 
 
 def _item(source_id, title, sender="Ada", email="ada@example.com", **extra):
@@ -53,7 +132,7 @@ def test_pipeline_filters_composes_and_advances_cursor(tmp_path):
         cursors={"imap_uid": "42"},
     )
     detail = BriefingPipeline(svc, [source]).run(
-        kind="morning", briefing_date="2026-09-09"
+        briefing_date="2026-09-09"
     )
     briefing = detail["briefing"]
     assert briefing.status == "completed"
@@ -107,6 +186,27 @@ def test_pipeline_partial_advances_only_successful_source(tmp_path):
     assert "sms" in detail["briefing"].error_message
     assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "7"
     assert svc.get_cursor("sms", "default", "since") is None
+
+
+def test_partial_source_keeps_previous_candidates_and_window(tmp_path):
+    svc = _svc(tmp_path)
+    first = BriefingPipeline(svc, [StaticSource([
+        _item("<old@x>", "旧事项"),
+    ], cursors={"imap_uid": "1"})]).run()
+
+    class PartialSource(StaticSource):
+        def fetch(self, cursors):
+            return FetchResult([_item("<new@x>", "新事项")], {}, ["one folder failed"])
+
+    # Another successful source makes this a partial revision rather than a
+    # fully failed run; the email source must keep its previous projection.
+    ok = StaticSource([], name="sms", cursors={"since": "2"})
+    updated = BriefingPipeline(svc, [PartialSource(), ok]).run(operation="update")
+    assert updated["briefing"].status == "partial"
+    assert "email:default" not in updated["briefing"].updated_sources
+    assert updated["briefing"].source_windows["email:default"] == first["briefing"].source_windows["email:default"]
+    assert "<old@x>" in {row["source_id"] for row in updated["mail"]}
+    assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "1"
 
 
 def test_pipeline_all_sources_failed_does_not_advance_cursor(tmp_path):
@@ -171,6 +271,50 @@ def test_mail_snapshots_do_not_follow_catalog_changes(tmp_path):
     assert second["mail"][0]["title"] == "新标题"
     assert second["mail"][0]["body"] == "新正文"
     assert svc.get_revision(first["briefing"].id, 1)["mail"] == first["mail"]
+
+
+def test_failed_generation_keeps_catalog_and_cursor_unchanged(tmp_path):
+    svc = _svc(tmp_path)
+    source_id = "<a@x>"
+    first = BriefingPipeline(svc, [StaticSource([
+        _item(source_id, "旧标题"),
+    ], cursors={"imap_uid": "1"})]).run()
+
+    class BrokenGenerator:
+        def generate(self, *_args, **_kwargs):
+            raise RuntimeError("model unavailable")
+
+    with pytest.raises(RuntimeError, match="model unavailable"):
+        BriefingPipeline(svc, [StaticSource([
+            _item(source_id, "未提交的新标题"),
+        ], cursors={"imap_uid": "2"})], generator=BrokenGenerator()).run(operation="update")
+
+    item, _ = svc.store.get_source_item_by_key("email", "default", source_id)
+    assert item.title == "旧标题"
+    assert svc.get_cursor("email", "default", "imap_uid").cursor_value == "1"
+    assert svc.get_revision(first["briefing"].id, 1)["mail"] == first["mail"]
+
+
+def test_snapshot_failure_rolls_back_candidate_and_cursor_promotion(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    archive = svc.store._archive
+    failed_once = False
+
+    def fail_once(*args):
+        nonlocal failed_once
+        if not failed_once:
+            failed_once = True
+            raise RuntimeError("snapshot failed")
+        return archive(*args)
+
+    monkeypatch.setattr(svc.store, "_archive", fail_once)
+    with pytest.raises(RuntimeError, match="snapshot failed"):
+        BriefingPipeline(svc, [StaticSource([
+            _item("<new@x>", "待提交"),
+        ], cursors={"imap_uid": "7"})]).run()
+    assert svc.store.get_source_item_by_key("email", "default", "<new@x>") is None
+    assert svc.get_cursor("email", "default", "imap_uid") is None
+    assert svc.store.pending_projection_events() == []
 
 
 def test_thread_merge_includes_original_message_and_uses_latest(tmp_path):

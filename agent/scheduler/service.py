@@ -74,6 +74,12 @@ class SchedulerService:
         while self.running:
             try:
                 self._check_and_execute_tasks()
+                if hasattr(self.task_store, "agent_id"):
+                    from common.runtime_identity import identity_scope
+                    from agent.briefing.service import BriefingService
+                    from agent.briefing.outbox import dispatch_pending
+                    with identity_scope(agent_id=self.task_store.agent_id):
+                        dispatch_pending(BriefingService().store)
             except Exception as e:
                 logger.error(f"[Scheduler] Error in scheduler loop: {e}")
 
@@ -82,47 +88,82 @@ class SchedulerService:
     def _check_and_execute_tasks(self):
         """Check for due tasks and execute them"""
         now = datetime.now()
-        tasks = self.task_store.list_tasks(enabled_only=True)
+        tasks = (self.task_store.list_tasks(enabled_only=True, include_all=True)
+                 if hasattr(self.task_store, "claim_occurrence") else
+                 self.task_store.list_tasks(enabled_only=True))
         
         for task in tasks:
-            try:
-                if self._is_task_due(task, now):
-                    logger.info(f"[Scheduler] Executing task: {task['id']} - {task['name']}")
-                    if not self._claim_task(task['id']):
-                        logger.info(
-                            f"[Scheduler] Task {task['id']} is already running; skipping this tick"
-                        )
-                        continue
-                    try:
-                        ok = self._execute_task(task)
-                    finally:
-                        self._release_task(task['id'])
-                    if not ok:
-                        retry_seconds = task.get("retry_interval_seconds", 0)
-                        if retry_seconds:
-                            self.task_store.update_task(task['id'], {
-                                "retry_at": (datetime.now() + timedelta(seconds=retry_seconds)).isoformat(),
-                            })
-                        # Leave next_run_at as-is so the next loop retries.
-                        # Cron tasks within the catch-up window will keep
-                        # firing; beyond it _is_task_due will reschedule.
-                        logger.warning(
-                            f"[Scheduler] Task {task['id']} delivery failed, will retry next tick"
-                        )
-                        continue
+            if hasattr(self.task_store, "claim_occurrence"):
+                from common.runtime_identity import identity_scope
+                with identity_scope(agent_id=self.task_store.agent_id,
+                                    user_id=task.get("owner_user_id") or None):
+                    self._check_one_task(task, now)
+            else:
+                self._check_one_task(task, now)
 
-                    next_run = self._calculate_next_run(task, now)
-                    if next_run:
-                        self.task_store.update_task(task['id'], {
-                            "next_run_at": next_run.isoformat(),
-                            "last_run_at": now.isoformat(),
-                            "retry_at": None,
-                        })
-                    else:
-                        self.task_store.delete_task(task['id'])
-                        logger.info(f"[Scheduler] One-time task completed and removed: {task['id']}")
-            except Exception as e:
-                logger.error(f"[Scheduler] Error processing task {task.get('id')}: {e}")
+    def _check_one_task(self, task, now):
+        try:
+            if not self._is_task_due(task, now):
+                return
+            logger.info(f"[Scheduler] Executing task: {task['id']} - {task['name']}")
+            if not self._claim_task(task['id']):
+                logger.info(f"[Scheduler] Task {task['id']} is already running; skipping this tick")
+                return
+            job_run_id = None
+            try:
+                if hasattr(self.task_store, "claim_occurrence"):
+                    job_run_id = self.task_store.claim_occurrence(task['id'], task.get("next_run_at"))
+                    if job_run_id is None:
+                        if self.task_store.occurrence_status(
+                            task['id'], task.get("next_run_at")) == "completed":
+                            # The action finished before a crash, but advancing
+                            # next_run_at did not. Finish that transition now.
+                            self._advance_completed_task(task, now)
+                        return
+                run_task = dict(task, job_run_id=job_run_id) if job_run_id else task
+                ok = self._execute_task(run_task)
+                if job_run_id:
+                    self.task_store.finish_occurrence(job_run_id, ok)
+            finally:
+                self._release_task(task['id'])
+            if not ok:
+                from agent.scheduler.outcome import ExecutionOutcome
+                if isinstance(ok, ExecutionOutcome) and not ok.retryable:
+                    self.task_store.update_task(task['id'], {"enabled": False, "retry_at": None,
+                        "last_error": ok.error, "last_run_status": ok.status,
+                        "last_error_at": datetime.now().isoformat()})
+                    return
+                self.task_store.update_task(task['id'], {
+                    "last_run_status": ok.status if isinstance(ok, ExecutionOutcome) else "delivery_pending",
+                    "last_error": ok.error if isinstance(ok, ExecutionOutcome) else "Delivery pending; the saved execution output will be reused",
+                    "last_error_at": datetime.now().isoformat(),
+                })
+                retry_seconds = task.get("retry_interval_seconds", 0)
+                if retry_seconds:
+                    self.task_store.update_task(task['id'], {
+                        "retry_at": (datetime.now() + timedelta(seconds=retry_seconds)).isoformat(),
+                    })
+                logger.warning(f"[Scheduler] Task {task['id']} delivery failed, will retry next tick")
+                return
+            self._advance_completed_task(task, now)
+        except Exception as e:
+            logger.error(f"[Scheduler] Error processing task {task.get('id')}: {e}")
+
+    def _advance_completed_task(self, task, now):
+        self.task_store.update_task(task['id'], {"last_run_status": "completed", "last_error": None})
+        next_run = self._calculate_next_run(task, now)
+        if next_run:
+            self.task_store.update_task(task['id'], {
+                "next_run_at": next_run.isoformat(), "last_run_at": now.isoformat(),
+                "retry_at": None,
+            })
+        else:
+            self.task_store.update_task(task['id'], {
+                "enabled": False, "next_run_at": None, "retry_at": None,
+                "last_run_at": now.isoformat(),
+                "completed_at" if task.get("schedule", {}).get("type") == "once" else "stopped_at": now.isoformat(),
+            })
+            logger.info(f"[Scheduler] Task {task['id']} completed with no next run")
 
     def run_task_now(self, task_id: str) -> None:
         """Queue one immediate execution without changing the task schedule.
@@ -145,20 +186,32 @@ class SchedulerService:
             now = datetime.now()
             try:
                 logger.info(f"[Scheduler] Manually executing task: {task_id} - {task.get('name', '')}")
-                ok = self._execute_task(task)
+                job_run_id = (self.task_store.claim_occurrence(task_id, manual=True)
+                              if hasattr(self.task_store, "claim_occurrence") else None)
+                run_task = dict(task, job_run_id=job_run_id, manual_run=True)
+                ok = self._execute_task(run_task)
+                if job_run_id:
+                    self.task_store.finish_occurrence(job_run_id, ok)
                 if ok:
                     self.task_store.update_task(task_id, {
                         "last_run_at": now.isoformat(),
                         "last_manual_run_at": now.isoformat(),
+                        "last_run_status": "completed", "last_error": None,
                     })
                     logger.info(f"[Scheduler] Manual execution completed: {task_id}")
                 else:
+                    from agent.scheduler.outcome import ExecutionOutcome
+                    if isinstance(ok, ExecutionOutcome):
+                        self.task_store.update_task(task_id, {"last_error": ok.error,
+                            "last_run_status": ok.status, "last_error_at": now.isoformat(),
+                            **({"enabled": False} if not ok.retryable else {})})
                     logger.warning(f"[Scheduler] Manual execution failed: {task_id}")
             finally:
                 self._release_task(task_id)
 
+        from common.runtime_identity import wrap
         threading.Thread(
-            target=_run,
+            target=wrap(_run),
             daemon=True,
             name=f"scheduler-manual-{task_id}",
         ).start()
@@ -231,8 +284,11 @@ class SchedulerService:
                 )
 
                 if schedule_type == "once":
-                    self.task_store.delete_task(task['id'])
-                    logger.info(f"[Scheduler] One-time task {task['id']} expired, removed")
+                    self.task_store.update_task(task['id'], {
+                        "enabled": False, "next_run_at": None,
+                        "expired_at": now.isoformat(),
+                    })
+                    logger.info(f"[Scheduler] One-time task {task['id']} expired")
                     return False
 
                 next_next_run = self._calculate_next_run(task, now)
@@ -315,6 +371,9 @@ class SchedulerService:
         """
         try:
             result = self.execute_callback(task)
+            from agent.scheduler.outcome import ExecutionOutcome
+            if isinstance(result, ExecutionOutcome):
+                return result
             return False if result is False else True
         except Exception as e:
             logger.error(f"[Scheduler] Error executing task {task['id']}: {e}")

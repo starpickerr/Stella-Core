@@ -69,7 +69,7 @@ source "$VENV_DIR/bin/activate"
 echo "==> Using Python: $(python --version 2>&1) ($(command -v python))"
 
 echo "==> Installing build dependencies"
-pip install -q --upgrade pip
+pip install -q --upgrade -c "$ROOT/requirements-security.txt" pip setuptools
 # Don't leave a half-populated venv behind if deps fail (e.g. flaky network):
 # the next run would otherwise reuse a broken venv.
 if ! pip install -q -r "$BUILD_DIR/requirements-desktop.txt"; then
@@ -78,7 +78,7 @@ if ! pip install -q -r "$BUILD_DIR/requirements-desktop.txt"; then
   rm -rf "$VENV_DIR"
   exit 1
 fi
-pip install -q pyinstaller
+pip install -q -c "$ROOT/requirements-security.txt" pyinstaller
 
 # --- run pyinstaller from repo root so relative datas resolve -------------
 cd "$ROOT"
@@ -90,5 +90,8 @@ pyinstaller "$BUILD_DIR/stella-backend.spec" \
 
 echo ""
 echo "==> Done. Bundle at: $BUILD_DIR/dist/stella-backend/"
+if [ "$(uname -s)" = "Darwin" ]; then
+  bash "$ROOT/native/apple-calendar/build.sh"
+fi
 du -sh "$BUILD_DIR/dist/stella-backend/" 2>/dev/null || true
 echo "==> Smoke test: STELLA_DESKTOP=1 \"$BUILD_DIR/dist/stella-backend/stella-backend\""

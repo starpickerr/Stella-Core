@@ -12,10 +12,10 @@ from wechatpy.crypto import WeChatCrypto
 from wechatpy.exceptions import WeChatClientException
 from collections import defaultdict
 
-from bridge.context import *
-from bridge.reply import *
+from bridge.context import Context
+from bridge.reply import ReplyType, Reply
 from channel.chat_channel import ChatChannel
-from channel.wechatmp.common import *
+from channel.wechatmp.common import MAX_UTF8_LEN
 from channel.wechatmp.wechatmp_client import WechatMPClient
 from common.log import logger
 from common.singleton import singleton

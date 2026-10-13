@@ -1,6 +1,5 @@
 # encoding:utf-8
 
-import base64
 import json
 import re
 import time
@@ -66,10 +65,12 @@ class ClaudeAPIBot(Bot, OpenAIImage):
 
     @property
     def api_key(self):
-        return conf().get("claude_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("claude_api_key")
 
     @property
     def api_base(self):
+        if hasattr(self, "_stella_api_base"):
+            return self._stella_api_base or "https://api.anthropic.com/v1"
         return conf().get("claude_api_base") or "https://api.anthropic.com/v1"
 
     @property
@@ -430,10 +431,11 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             logger.error(f"Claude API call error: {e}")
             if stream:
                 # Return error generator for stream
+                error_message = str(e)
                 def error_generator():
                     yield {
                         "error": True,
-                        "message": str(e),
+                        "message": error_message,
                         "status_code": 500
                     }
 

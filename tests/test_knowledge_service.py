@@ -1,6 +1,5 @@
 import asyncio
 import os
-import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -314,7 +313,7 @@ def test_build_graph_resolves_encoded_and_anchored_links(tmp_path):
     )
 
     graph = svc.build_graph()
-    edges = {(l["source"], l["target"]) for l in graph["links"]}
+    edges = {(link["source"], link["target"]) for link in graph["links"]}
     assert ("concepts/health.md", "sources/训练记录 07.md") in edges
     assert ("concepts/health.md", "concepts/rag.md") in edges
     assert len(edges) == 2

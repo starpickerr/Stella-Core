@@ -3,7 +3,6 @@
 import click
 from cli import __version__
 from cli.commands.skill import skill
-from cli.commands.process import start, stop, restart, self_restart, update, status, logs
 from cli.commands.context import context
 from cli.commands.install import install_browser
 from cli.commands.knowledge import knowledge
@@ -17,12 +16,6 @@ HELP_TEXT = """Usage: stella COMMAND [ARGS]...
 Commands:
   help     Show this message.
   version  Show the version.
-  start    Start Stella.
-  stop     Stop Stella.
-  restart  Restart Stella.
-  update   Update Stella and restart.
-  status   Show Stella running status.
-  logs     View Stella logs.
   skill    Manage Stella skills.
   knowledge  Manage knowledge base.
   backup   Back up config and agent workspace.
@@ -30,7 +23,8 @@ Commands:
   install-browser  Install browser tool (Playwright + Chromium).
 
 Tip: Memory index management lives in chat — send /memory status or
-/memory rebuild-index to the running agent."""
+/memory rebuild-index to the running agent. The Electron client manages the
+backend process."""
 
 
 class StellaCLI(click.Group):
@@ -68,13 +62,6 @@ def help_cmd(ctx):
 
 
 main.add_command(skill)
-main.add_command(start)
-main.add_command(stop)
-main.add_command(restart)
-main.add_command(self_restart)
-main.add_command(update)
-main.add_command(status)
-main.add_command(logs)
 main.add_command(context)
 main.add_command(knowledge)
 main.add_command(backup_command)

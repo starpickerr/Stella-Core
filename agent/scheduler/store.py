@@ -5,7 +5,6 @@ import os
 import threading
 from datetime import datetime
 from typing import Dict, List, Optional
-from pathlib import Path
 from common.utils import expand_path
 
 
@@ -49,12 +48,16 @@ class TaskStore:
             try:
                 with open(self.store_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get("tasks", {})
-            except Exception as e:
-                print(f"Error loading tasks: {e}")
-                return {}
+            except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+                raise ValueError(f"Task file is unreadable: {self.store_path}") from exc
+            if not isinstance(data, dict):
+                raise ValueError(f"Task file is unreadable: {self.store_path}")
+            tasks = data.get("tasks", {})
+            if not isinstance(tasks, dict):
+                raise ValueError(f"Task file is unreadable: {self.store_path}")
+            return tasks
     
-    def save_tasks(self, tasks: Dict[str, dict], initialized_defaults=None):
+    def save_tasks(self, tasks: Dict[str, dict]):
         """
         Save all tasks to storage
         
@@ -73,18 +76,11 @@ class TaskStore:
                     except Exception:
                         pass
                 
-                # Preserve provision markers across edits and deletions.
-                data = {}
-                if os.path.exists(self.store_path):
-                    with open(self.store_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                data.update({
+                data = {
                     "version": 1,
                     "updated_at": datetime.now().isoformat(),
                     "tasks": tasks
-                })
-                if initialized_defaults is not None:
-                    data["initialized_defaults"] = initialized_defaults
+                }
                 
                 with open(self.store_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
@@ -92,23 +88,6 @@ class TaskStore:
                 print(f"Error saving tasks: {e}")
                 raise
 
-    def ensure_default_task(self, task: dict) -> bool:
-        """Add a default once. A deleted default stays deleted on restart."""
-        with self.lock:
-            defaults = []
-            if os.path.exists(self.store_path):
-                with open(self.store_path, 'r', encoding='utf-8') as f:
-                    defaults = json.load(f).get("initialized_defaults", [])
-            task_id = task["id"]
-            if task_id in defaults:
-                return False
-            tasks = self.load_tasks()
-            added = task_id not in tasks
-            if added:
-                tasks[task_id] = task
-            self.save_tasks(tasks, initialized_defaults=[*defaults, task_id])
-            return added
-    
     def add_task(self, task: dict) -> bool:
         """
         Add a new task
@@ -148,8 +127,11 @@ class TaskStore:
         if task_id not in tasks:
             raise ValueError(f"Task '{task_id}' not found")
         
-        # Update fields
-        tasks[task_id].update(updates)
+        for key, value in updates.items():
+            if key == "run_permission_mode" and value is None:
+                tasks[task_id].pop(key, None)
+            else:
+                tasks[task_id][key] = value
         tasks[task_id]["updated_at"] = datetime.now().isoformat()
         
         self.save_tasks(tasks)

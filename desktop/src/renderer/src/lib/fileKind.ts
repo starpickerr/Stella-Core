@@ -59,7 +59,7 @@ export function workspaceHrefOf(href: string): string | null {
   if (href.startsWith('//') || href.startsWith('#') || href.startsWith('/')) return null
 
   let path = href.split('#')[0].split('?')[0].trim()
-  // markdown-it percent-encodes non-ASCII hrefs; the API wants them raw.
+  // Markdown renderers percent-encode non-ASCII hrefs; the API wants them raw.
   try {
     path = decodeURI(path)
   } catch {

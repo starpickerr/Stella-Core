@@ -2,34 +2,43 @@
 
 Cross-platform desktop client for Stella, built with Electron + React + TypeScript.
 
-New feature development targets the desktop client. The Python HTTP service remains the desktop backend; the Web console is no longer maintained.
+Stella uses the Electron client and its private loopback Python API. The old Web frontend is removed.
 
-The **Briefing** page supports IMAP mailbox setup, daily email briefings, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
+The **Briefing** page supports IMAP mailbox setup, briefings from configured sources, history, item status updates, and filter rules. See [the briefing guide](../agent/briefing/README.md) for setup, scheduling, and development checks.
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Python 3.7+ (for the backend)
+- Node.js 22.13+
+- npm (use the checked-in lockfile)
+- Python 3.10+ (for the backend)
+- macOS: Xcode Command Line Tools (`xcode-select --install`) or a compatible Xcode toolchain, for the Swift/EventKit calendar bridge
 
 ### Setup
 
+From the repository root:
+
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
 cd desktop
-npm install
 ```
+
+On Windows, use `python -m venv .venv` and `.venv\Scripts\python.exe`.
+For browser automation, install Chromium with `.venv/bin/python -m playwright install chromium` from the repository root.
 
 ### Run in Development
 
-Start the renderer dev server and Electron together:
+Build the current renderer and main process, then start Electron:
 
 ```bash
 npm run dev
 ```
 
-Or run them separately:
+For hot renderer reload, run:
 
 ```bash
 # Terminal 1: Start Vite dev server
@@ -39,7 +48,23 @@ npm run dev:renderer
 npm run dev:main
 ```
 
-The app will automatically start the Python backend from the parent directory.
+The app starts the Python backend from the parent directory. `npm run dev` always loads the freshly built renderer; only `dev:main` opts into Vite on port 5173. Development and installed builds use the same `~/.stella` settings and workspace data. Starting either build replaces the running desktop instance before opening that data store. Existing `~/.stella-dev` files remain on disk but are no longer read.
+
+### Adding a second Agent to an existing installation
+
+The original local user's business data stays in the default Agent workspace
+until it is copied to the canonical `users/local-default` directory. Before
+enabling a second Agent, quit Stella and stop its Python backend, then run from
+the repository root:
+
+```bash
+python -m scripts.migrate_user_data --confirm-offline
+```
+
+The migration copies user data, uses SQLite backups for databases, and retains
+the original files. It activates the new path only after the copy completes.
+If the copy has not been activated, a second Agent cannot open the legacy
+local user's business data.
 
 ### Checks
 
@@ -67,15 +92,15 @@ Build outputs are placed in the `release/` directory.
 ### Build Stella.app from source (macOS)
 
 Run the complete build from the repository root so the packaged application
-contains the latest Python backend, Web console, and Electron UI:
+contains the latest Python backend and Electron UI:
 
 ```bash
 # 1. Install Electron dependencies (first build, or after package changes)
 cd desktop
-npm install
+npm ci
 cd ..
 
-# 2. Freeze the Python backend and Web assets
+# 2. Freeze the Python backend
 bash desktop/build/build-backend.sh
 
 # 3. Build Stella.app and the .dmg installer
@@ -98,14 +123,12 @@ One source: the repo-root `VERSION` file (`X.Y.Z`, no `v` prefix).
 
 **Do not run `npm version`.** `npm run build` / `npm run dist:mac` run `scripts/sync-version.mjs`, which overwrites `desktop/package.json` (and the lockfile version fields) from `VERSION`. Bumping only `package.json` is discarded.
 
-
-| Place                            | Form                           | Example                  |
-| -------------------------------- | ------------------------------ | ------------------------ |
-| `VERSION`                        | `X.Y.Z`                        | `0.0.1`                  |
-| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.1`                  |
-| git tag                          | `v` + that number              | `v0.0.1`                 |
-| dmg name                         | `Stella-<X.Y.Z>-<arch>.dmg`    | `Stella-0.0.1-arm64.dmg` |
-
+| Place | Form | Example |
+| --- | --- | --- |
+| `VERSION` | `X.Y.Z` | `0.0.4` |
+| `desktop/package.json` `version` | same `X.Y.Z` (copied at build) | `0.0.4` |
+| git tag | `v` + that number | `v0.0.4` |
+| dmg name | `Stella-<X.Y.Z>-<arch>.dmg` | `Stella-0.0.4-arm64.dmg` |
 
 The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release tags (`vX.Y.Z`). Drafts, GitHub prereleases, and tags that are not exactly `vX.Y.Z` are ignored.
 
@@ -114,7 +137,7 @@ The packaged app compares `app.getVersion()` (`X.Y.Z`) against GitHub Release ta
 echo 0.0.2 > VERSION
 
 # 2. First build, or after desktop dependency changes
-cd desktop && npm install && cd ..
+cd desktop && npm ci && cd ..
 
 # 3. Freeze the Python backend, then package the macOS dmg (dmg only; no zip)
 bash desktop/build/build-backend.sh
@@ -169,4 +192,3 @@ desktop/
 2. It spawns the Python backend (`app.py`) as a child process
 3. The React UI communicates with the Python backend via HTTP APIs
 4. SSE (Server-Sent Events) is used for streaming chat responses and live logs
-

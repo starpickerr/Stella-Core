@@ -96,7 +96,7 @@ class MemoryGetTool(BaseTool):
             real_file = os.path.realpath(str(file_path))
             real_workspace = os.path.realpath(str(workspace_resolved))
             if real_file != real_workspace and not real_file.startswith(real_workspace + os.sep):
-                return ToolResult.fail(f"Error: Access denied: path outside workspace")
+                return ToolResult.fail("Error: Access denied: path outside workspace")
             
             if not file_path.exists():
                 return ToolResult.fail(f"Error: File not found: {path}")

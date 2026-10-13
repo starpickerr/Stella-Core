@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Loader2, Check, X, Lightbulb, Shield } from 'lucide-react'
 import type { MessageStep, SubStep } from '../types'
 import { t } from '../i18n'
+import { getLang } from '../i18n'
+import { useNavigate } from 'react-router-dom'
 import Markdown from './Markdown'
-import { permLabel } from '../lib/permission'
-import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 
 /**
  * Assistant reasoning / tool steps, styled to match the web console: small,
@@ -35,7 +35,7 @@ const ThinkingStep: React.FC<{ content: string; streaming?: boolean }> = ({ cont
 /** One tool call a sub agent made, in the list under its step. */
 const SubStepRow: React.FC<{ sub: SubStep }> = ({ sub }) => {
   const running = sub.status === 'running'
-  const failed = !running && sub.status !== 'success'
+  const failed = !running && sub.status !== 'success' && sub.status !== 'skill_required'
   return (
     <div className="flex items-center gap-1.5 py-0.5 min-w-0" title={sub.error}>
       {running ? (
@@ -72,7 +72,7 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
     setExpanded(true)
   }, [step.display, substeps.length])
   const running = step.status === 'running'
-  const isError = step.is_error || (!!step.status && step.status !== 'success' && !running)
+  const isError = step.status !== 'skill_required' && (step.is_error || (!!step.status && step.status !== 'success' && !running))
 
   const icon = running ? (
     <Loader2 size={12} className="text-accent animate-spin" />
@@ -149,25 +149,26 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
           )}
         </div>
       )}
-      {step.permission_denied && <PermissionDeniedHint mode={step.permission_mode} />}
+      {step.permission_denied && <PermissionDeniedHint />}
     </div>
   )
 }
 
-const PermissionDeniedHint: React.FC<{ mode?: string }> = ({ mode }) => {
-  const label = permLabel(mode)
+const PermissionDeniedHint: React.FC = () => {
+  const navigate = useNavigate()
+  const en = getLang() === 'en'
   return (
     <div className="mt-1.5 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-default bg-inset text-[12px] text-content-secondary">
       <Shield size={13} className="shrink-0 text-content-tertiary" />
       <span className="flex-1 min-w-0">
-        {t('perm_denied_hint').replace('{name}', label)}
+        {en ? 'Security policy blocked this action. View the reason in Security Center.' : '安全策略已拦截此操作，可在安全中心查看具体原因。'}
       </span>
       <button
         type="button"
-        onClick={() => useSessionSettingsStore.getState().setOpenMenu('permission')}
+        onClick={() => navigate('/security?tab=activity')}
         className="shrink-0 px-2 py-0.5 rounded-md text-[12px] font-medium text-accent-contrast bg-accent hover:bg-accent-hover cursor-pointer transition-colors"
       >
-        {t('perm_denied_action')}
+        {en ? 'View reason' : '查看原因'}
       </button>
     </div>
   )

@@ -11,8 +11,6 @@ import threading
 import time
 from pathlib import Path
 
-ASSET_DIR = Path(__file__).resolve().parent.parent / "agent" / "subagent" / "assets"
-
 import pytest
 
 from agent.subagent import (
@@ -25,6 +23,22 @@ from agent.subagent import (
     run_tasks,
 )
 from agent.tools.subagent import SubagentTool
+
+ASSET_DIR = Path(__file__).resolve().parent.parent / "agent" / "subagent" / "assets"
+
+
+def test_nested_permission_limit_never_widens_parent(tmp_path):
+    from agent.permission.security_policy import PRESETS, rule, validate_patch
+    from agent.runtime.tool_invocation import _permission_limit, permission_limit_scope
+    work = str(tmp_path / "project")
+    outside = str(tmp_path / "outside")
+    with permission_limit_scope(validate_patch({"preset": "approval"}), (work,)):
+        with permission_limit_scope({"preset": "full-access", "rules": PRESETS["full-access"]},
+                                    (work, outside)):
+            policy, roots = _permission_limit.get()
+            assert rule(policy, "shell") == "confirm"
+            assert rule(policy, "workspace_outside") == "confirm"
+            assert roots == (work,)
 
 
 class _Tool:
@@ -45,6 +59,16 @@ class _FakeParent:
         self.enable_skills = False
         self.runtime_info = None
         self.messages = []
+
+    def effective_permission_mode(self):
+        from agent.permission import global_mode
+        return global_mode()
+
+    def effective_cwd(self):
+        return self.workspace_dir
+
+    def write_roots(self):
+        return [self.workspace_dir]
 
 
 @pytest.fixture

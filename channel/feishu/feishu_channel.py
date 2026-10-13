@@ -28,6 +28,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.feishu.feishu_message import FeishuMessage
+from channel.feishu import lark_install
 from channel.feishu.feishu_static_card import (
     build_text_delivery,
     resolve_markdown_images,
@@ -54,7 +55,6 @@ URL_VERIFICATION = "url_verification"
 # files and takes 4-10s, so we defer the actual import to where it is needed.
 # In desktop mode the SDK is not bundled; the first import downloads a trimmed
 # bundle into a writable per-user dir (see channel/feishu/lark_install.py).
-from channel.feishu import lark_install
 
 lark = None  # will be populated on first use via _ensure_lark_imported()
 
@@ -287,9 +287,8 @@ class FeiShuChanel(ChatChannel):
         self.feishu_token = conf().get('feishu_token')
         self.feishu_event_mode = conf().get('feishu_event_mode', 'websocket')
 
-        # 命令行启动场景：缺少凭据时尝试通过 lark.register_app 在终端弹二维码
-        # 引导用户扫码创建应用。Web 控制台启动同样会走到这里，但控制台用户通常
-        # 已经通过 /api/feishu/register 完成了创建并写回 config.json。
+        # 缺少凭据时尝试通过 lark.register_app 在终端弹二维码。
+        # 桌面客户端通常通过 /api/feishu/register 创建并保存凭据。
         if not self.feishu_app_id or not self.feishu_app_secret:
             if _register_via_qr_in_terminal():
                 self.feishu_app_id = conf().get('feishu_app_id')
@@ -328,7 +327,6 @@ class FeiShuChanel(ChatChannel):
     def stop(self):
         import ctypes
         logger.info("[FeiShu] stop() called")
-        ws_client = self._ws_client
         self._ws_client = None
         ws_thread = self._ws_thread
         self._ws_thread = None
@@ -919,9 +917,10 @@ class FeiShuChanel(ChatChannel):
                 "content": content_json
             }
             res = requests.post(url=url, headers=headers, params=params, json=data, timeout=(5, 10))
+        res.raise_for_status()
         res = res.json()
         if res.get("code") == 0:
-            logger.info(f"[FeiShu] send message success")
+            logger.info("[FeiShu] send message success")
         elif msg_type == "interactive" and reply.type == ReplyType.TEXT:
             logger.warning(
                 "[FeiShu] Markdown card failed, falling back to text, "
@@ -947,16 +946,22 @@ class FeiShuChanel(ChatChannel):
                     json=fallback_data,
                     timeout=(5, 10),
                 )
+            fallback_res.raise_for_status()
             fallback_body = fallback_res.json()
             if fallback_body.get("code") == 0:
                 logger.info("[FeiShu] text fallback sent successfully")
+                res = fallback_body
             else:
                 logger.error(
                     "[FeiShu] text fallback failed, "
                     f"code={fallback_body.get('code')}, msg={fallback_body.get('msg')}"
                 )
+                raise RuntimeError(f"Feishu delivery failed: {fallback_body.get('code')}")
         else:
             logger.error(f"[FeiShu] send message failed, code={res.get('code')}, msg={res.get('msg')}")
+            raise RuntimeError(f"Feishu delivery failed: {res.get('code')}")
+        if context.get("scheduled_delivery"):
+            return res
 
     def _make_feishu_stream_callback(self, context, access_token):
         """Route to detailed or plain streaming callback based on config.

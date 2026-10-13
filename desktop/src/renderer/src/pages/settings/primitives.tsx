@@ -164,13 +164,95 @@ export const Dropdown: React.FC<{
   )
 }
 
-export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => (
+/** A titled block of settings rows that share one outline. */
+export const Group: React.FC<{ title?: string; description?: string; footer?: React.ReactNode; children: React.ReactNode }> = ({
+  title,
+  description,
+  footer,
+  children,
+}) => (
+  <section className="space-y-2">
+    {title && (
+      <div className="px-1">
+        <h3 className="text-sm font-semibold text-content">{title}</h3>
+        {description && <p className="text-xs text-content-tertiary mt-0.5">{description}</p>}
+      </div>
+    )}
+    <div className="rounded-card border border-default bg-surface divide-y divide-default">
+      {children}
+    </div>
+    {footer && <div className="px-1">{footer}</div>}
+  </section>
+)
+
+/** One setting: what it is on the left, its control on the right, optional detail below. */
+export const Row: React.FC<{
+  label: string
+  hint?: React.ReactNode
+  control?: React.ReactNode
+  children?: React.ReactNode
+  htmlFor?: string
+}> = ({ label, hint, control, children, htmlFor }) => (
+  <div className="px-4 py-3.5">
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2.5">
+      <div className="min-w-[12rem] flex-1">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="block text-sm font-medium text-content">{label}</label>
+        ) : (
+          <div className="text-sm font-medium text-content">{label}</div>
+        )}
+        {hint && <div className="text-xs text-content-tertiary mt-0.5 leading-relaxed">{hint}</div>}
+      </div>
+      {control && <div className="flex-shrink-0">{control}</div>}
+    </div>
+    {children && <div className="mt-3">{children}</div>}
+  </div>
+)
+
+export const Segmented = <T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string; icon?: React.ReactNode }[]
+  onChange: (value: T) => void
+}) => (
+  <div role="radiogroup" aria-label={label} className="inline-flex rounded-btn border border-default bg-inset p-0.5">
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type="button"
+        role="radio"
+        aria-checked={value === option.value}
+        onClick={() => onChange(option.value)}
+        className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-sm text-xs font-medium cursor-pointer transition-colors ${
+          value === option.value ? 'bg-surface text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
+        }`}
+      >
+        {option.icon}
+        {option.label}
+      </button>
+    ))}
+  </div>
+)
+
+export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }> = ({
+  checked,
+  onChange,
+  label,
+  disabled,
+}) => (
   <button
     type="button"
     role="switch"
     aria-checked={checked}
+    aria-label={label}
+    disabled={disabled}
     onClick={() => onChange(!checked)}
-    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
       checked ? 'bg-accent' : 'bg-surface-2 border border-strong'
     }`}
   >
@@ -219,6 +301,9 @@ export const Modal: React.FC<{
   if (!open) return null
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()

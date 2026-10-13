@@ -13,6 +13,7 @@ import {
   Pencil,
   Eye as EyeIcon,
   EyeOff,
+  X,
   ExternalLink,
 } from 'lucide-react'
 import { t, localizedLabel } from '../../i18n'
@@ -47,6 +48,15 @@ const REPLY_MODES: { value: 'off' | 'voice_if_voice' | 'always'; key: string }[]
   { value: 'voice_if_voice', key: 'models_tts_mode_if_voice' },
   { value: 'always', key: 'models_tts_mode_always' },
 ]
+
+const UPSTREAM_PROTOCOLS = [
+  { value: 'openai_chat', label: 'OpenAI Chat Completions' },
+  { value: 'openai_responses', label: 'OpenAI Responses' },
+  { value: 'anthropic_messages', label: 'Anthropic Messages' },
+  { value: 'gemini_native', label: 'Gemini Native' },
+]
+const canSelectProtocol = (id?: string) =>
+  id === 'openai' || id === 'claudeAPI' || id === 'gemini' || id === 'custom' || !!id?.startsWith('custom:')
 
 const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
   const [data, setData] = useState<ModelsData | null>(null)
@@ -123,6 +133,20 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         status={statusMap.chat}
         onSave={(p, m) => run('chat', { action: 'set_capability', capability: 'chat', provider_id: p, model: m })}
       />
+      {canSelectProtocol(caps.chat.current_provider) && (
+        <Card icon={<Database size={16} />}
+          title={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}
+          subtitle={localizedLabel({ zh: '仅改变模型接口格式，不改变桌面本地连接', en: 'Changes the model API format only' })}>
+          <Field label={localizedLabel({ zh: '当前聊天绑定', en: 'Current chat binding' })}>
+            <Dropdown value={caps.chat.protocol_id || 'openai_chat'} options={UPSTREAM_PROTOCOLS}
+              onChange={(protocol_id) => run('chat_protocol', {
+                action: 'set_capability', capability: 'chat',
+                provider_id: caps.chat.current_provider, model: caps.chat.current_model, protocol_id,
+              })} />
+          </Field>
+          {statusMap.chat_protocol && <p className="text-xs text-content-secondary">{statusMap.chat_protocol}</p>}
+        </Card>
+      )}
 
       {/* Vision */}
       <CapabilityCard
@@ -321,6 +345,8 @@ const VendorModal: React.FC<{
   const [keyDirty, setKeyDirty] = useState(false)
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
+  const [protocolId, setProtocolId] = useState('openai_chat')
+  const [protocolDirty, setProtocolDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -331,6 +357,8 @@ const VendorModal: React.FC<{
     setPickId(provider ? provider.id : firstUnconfigured?.id || '')
     setApiKey(init?.api_key_masked || '')
     setApiBase(init?.api_base || '')
+    setProtocolId(init?.protocol_id || 'openai_chat')
+    setProtocolDirty(false)
     setKeyDirty(false)
     setKeyVisible(false)
     setSaveError('')
@@ -359,6 +387,8 @@ const VendorModal: React.FC<{
     const p = builtins.find((x) => x.id === val)
     setApiKey(p?.api_key_masked || '')
     setApiBase(p?.api_base || '')
+    setProtocolId(p?.protocol_id || 'openai_chat')
+    setProtocolDirty(false)
     setKeyDirty(false)
   }
 
@@ -369,12 +399,13 @@ const VendorModal: React.FC<{
     setSaving(true)
     setSaveError('')
     try {
-      const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string } = {
+      const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string } = {
         action: 'set_provider',
         provider_id: effective.id,
       }
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
+      if (canSelectProtocol(effective.id) && protocolDirty) payload.protocol_id = protocolId
       const result = await apiClient.modelsAction(payload)
       if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
@@ -468,6 +499,14 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
+      {canSelectProtocol(effective?.id) && (
+        <Field label={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}>
+          <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={(value) => {
+            setProtocolId(value)
+            setProtocolDirty(true)
+          }} />
+        </Field>
+      )}
       {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>
   )
@@ -482,6 +521,9 @@ const CustomProviderModal: React.FC<{
   const [name, setName] = useState('')
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [protocolId, setProtocolId] = useState('openai_chat')
+  const [modelRows, setModelRows] = useState<string[]>([''])
+  const [defaultIndex, setDefaultIndex] = useState(0)
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -492,10 +534,17 @@ const CustomProviderModal: React.FC<{
       setName(editing.custom_name || localizedLabel(editing.label))
       setApiBase(editing.api_base || '')
       setApiKey(editing.api_key_masked || '')
+      setProtocolId(editing.protocol_id || 'openai_chat')
+      const models = normEntries(editing.models).map((entry) => entry.value)
+      setModelRows(models.length ? models : [''])
+      setDefaultIndex(Math.max(0, models.indexOf(editing.model || '')))
     } else {
       setName('')
       setApiBase('')
       setApiKey('')
+      setProtocolId('openai_chat')
+      setModelRows([''])
+      setDefaultIndex(0)
     }
     setKeyDirty(false)
     setSaveError('')
@@ -505,6 +554,8 @@ const CustomProviderModal: React.FC<{
 
   const save = async () => {
     if (!name.trim()) return
+    const models = [...new Set(modelRows.map((row) => row.trim()).filter(Boolean))]
+    if (!models.length) { setSaveError(t('models_custom_models_required')); return }
     setSaving(true)
     setSaveError('')
     try {
@@ -514,10 +565,16 @@ const CustomProviderModal: React.FC<{
         id?: string
         api_base: string
         api_key?: string
+        protocol_id: string
+        model: string
+        models: string[]
       } = {
         action: 'set_custom_provider',
         name: name.trim(),
         api_base: apiBase.trim(),
+        protocol_id: protocolId,
+        model: models.includes(modelRows[defaultIndex]?.trim()) ? modelRows[defaultIndex].trim() : models[0],
+        models,
       }
       if (editing) payload.id = editing.custom_id
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
@@ -580,6 +637,9 @@ const CustomProviderModal: React.FC<{
           placeholder="https://...../v1"
         />
       </Field>
+      <Field label={localizedLabel({ zh: '上游模型协议', en: 'Upstream model protocol' })}>
+        <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={setProtocolId} />
+      </Field>
       <Field label="API Key">
         <TextInput
           type="text"
@@ -594,6 +654,23 @@ const CustomProviderModal: React.FC<{
             setKeyDirty(true)
           }}
         />
+      </Field>
+      <Field label={t('models_custom_models')} hint={t('models_custom_models_hint')}>
+        <div className="space-y-2">
+          {modelRows.map((value, index) => <div key={index} className="flex items-center gap-2">
+            <input type="radio" name="custom-default-model" checked={defaultIndex === index}
+              onChange={() => setDefaultIndex(index)} aria-label={`${t('models_default_model')} ${value || index + 1}`}
+              className="accent-accent shrink-0" />
+            <TextInput className="font-mono flex-1 min-w-0" value={value}
+              onChange={(event) => setModelRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? event.target.value : row))}
+              placeholder={t('config_custom_model_hint')} />
+            <button type="button" disabled={modelRows.length === 1} aria-label={t('models_delete')}
+              onClick={() => { setModelRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index)); setDefaultIndex((current) => current > index ? current - 1 : current === index ? 0 : current) }}
+              className="p-2 text-content-tertiary hover:text-danger disabled:opacity-30"><X size={15} /></button>
+          </div>)}
+          <button type="button" onClick={() => setModelRows((rows) => [...rows, ''])}
+            className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-hover"><Plus size={13} />{t('models_add_model')}</button>
+        </div>
       </Field>
       {saveError && <p role="alert" className="text-sm text-red-500">{saveError}</p>}
     </Modal>

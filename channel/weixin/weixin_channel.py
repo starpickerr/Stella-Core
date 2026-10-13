@@ -28,15 +28,27 @@ from config import conf, get_weixin_credentials_path
 
 MAX_CONSECUTIVE_FAILURES = 3
 BACKOFF_DELAY = 30
+MAX_BACKOFF_DELAY = 300
 RETRY_DELAY = 2
 SESSION_EXPIRED_ERRCODE = -14
 TEXT_CHUNK_LIMIT = 4000
+
+
+class PartialDeliveryError(RuntimeError):
+    delivery_uncertain = True
 # How long a text message will wait for a concurrently-sent image/file to
 # finish downloading into the cache before being handled without it.
 PENDING_MEDIA_WAIT_S = 3.0
 PENDING_MEDIA_POLL_S = 0.1
 QR_LOGIN_TIMEOUT_S = 480
 QR_MAX_REFRESHES = 10
+
+
+def _poll_failure_delay(failures: int) -> int:
+    if failures < MAX_CONSECUTIVE_FAILURES:
+        return RETRY_DELAY
+    cycles = min(4, (failures - MAX_CONSECUTIVE_FAILURES) // MAX_CONSECUTIVE_FAILURES)
+    return min(MAX_BACKOFF_DELAY, BACKOFF_DELAY * (2 ** cycles))
 
 
 def _load_credentials(cred_path: str) -> dict:
@@ -66,6 +78,11 @@ def _save_credentials(cred_path: str, data: dict):
 @singleton
 class WeixinChannel(ChatChannel):
 
+    # A retry here would create a new client_id and can duplicate a message
+    # already accepted by Weixin. WeixinApi retries transport errors with the
+    # same request body and client_id instead.
+    SEND_RETRY_LIMIT = 0
+
     # ilink bot protocol has no outbound voice item; deliver TTS as a file.
     NOT_SUPPORT_REPLYTYPE = []
 
@@ -82,6 +99,7 @@ class WeixinChannel(ChatChannel):
         # user_id -> context_token. Guarded by _context_tokens_lock for any
         # mutation that races with disk persistence.
         self._context_tokens = {}
+        self._expired_context_recipients = set()
         self._context_tokens_lock = threading.Lock()
         self._received_msgs = ExpiredDict(60 * 60 * 7.1)
         # session_id -> deadline(ts) until which an inbound image/file is
@@ -221,6 +239,7 @@ class WeixinChannel(ChatChannel):
         if not user_id or not token:
             return
         with self._context_tokens_lock:
+            self._expired_context_recipients.discard(user_id)
             if self._context_tokens.get(user_id) == token:
                 return
             self._context_tokens[user_id] = token
@@ -231,6 +250,7 @@ class WeixinChannel(ChatChannel):
         if not user_id:
             return
         with self._context_tokens_lock:
+            self._expired_context_recipients.add(user_id)
             if user_id not in self._context_tokens:
                 return
             del self._context_tokens[user_id]
@@ -257,7 +277,7 @@ class WeixinChannel(ChatChannel):
                 print(buf.getvalue())
             except UnicodeEncodeError:
                 # Windows GBK terminals cannot render Unicode block characters
-                print(f"\n  (终端不支持显示二维码，请使用链接扫码)")
+                print("\n  (终端不支持显示二维码，请使用链接扫码)")
                 print(f"  二维码链接: {qrcode_url}\n")
         except ImportError:
             print(f"\n  二维码链接: {qrcode_url}")
@@ -416,13 +436,10 @@ class WeixinChannel(ChatChannel):
 
                     consecutive_failures += 1
                     errmsg = resp.get("errmsg", "")
+                    delay = _poll_failure_delay(consecutive_failures)
                     logger.error(f"[Weixin] getUpdates error: ret={ret} errcode={errcode} "
-                                 f"errmsg={errmsg} ({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES})")
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        consecutive_failures = 0
-                        self._stop_event.wait(BACKOFF_DELAY)
-                    else:
-                        self._stop_event.wait(RETRY_DELAY)
+                                 f"errmsg={errmsg} ({consecutive_failures} failures; retry in {delay}s)")
+                    self._stop_event.wait(delay)
                     continue
 
                 consecutive_failures = 0
@@ -448,13 +465,10 @@ class WeixinChannel(ChatChannel):
                 if self._stop_event.is_set():
                     break
                 consecutive_failures += 1
+                delay = _poll_failure_delay(consecutive_failures)
                 logger.error(f"[Weixin] getUpdates exception: {e} "
-                             f"({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES})")
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    consecutive_failures = 0
-                    self._stop_event.wait(BACKOFF_DELAY)
-                else:
-                    self._stop_event.wait(RETRY_DELAY)
+                             f"({consecutive_failures} failures; retry in {delay}s)")
+                self._stop_event.wait(delay)
 
         logger.info("[Weixin] Long-poll loop ended")
 
@@ -640,7 +654,7 @@ class WeixinChannel(ChatChannel):
 
         if not context_token:
             logger.error(f"[Weixin] No context_token for receiver={receiver}, cannot send")
-            return
+            raise RuntimeError("Weixin recipient has no context token; send a message to the bot first")
 
         # A media reply can carry an accompanying message (the agent's summary of
         # the file it just sent). ilink has no caption field, so it goes out as a
@@ -653,7 +667,9 @@ class WeixinChannel(ChatChannel):
             time.sleep(0.3)
 
         if reply.type == ReplyType.TEXT:
-            self._send_text(reply.content, receiver, context_token)
+            response = self._send_text(reply.content, receiver, context_token)
+            if context.get("scheduled_delivery"):
+                return response
         elif reply.type in (ReplyType.IMAGE_URL, ReplyType.IMAGE):
             self._send_image(reply.content, receiver, context_token)
         elif reply.type == ReplyType.FILE:
@@ -682,7 +698,9 @@ class WeixinChannel(ChatChannel):
         per-user token so the next push won't retry forever.
         """
         if not isinstance(resp, dict):
-            return
+            raise RuntimeError("Invalid Weixin send response")
+        # sendMessage can return an empty JSON object on HTTP 200. Only an
+        # explicit non-zero business code means failure.
         ret = resp.get("ret")
         errcode = resp.get("errcode")
         if ret == -14 or errcode == -14:
@@ -691,6 +709,8 @@ class WeixinChannel(ChatChannel):
                 f"receiver={receiver}; dropping cached context_token"
             )
             self._invalidate_context_token(receiver)
+        if ret not in (None, 0) or errcode not in (None, 0):
+            raise RuntimeError(f"Weixin send failed: {ret or errcode}")
 
     def _send_text(self, text: str, receiver: str, context_token: str):
         if len(text) <= TEXT_CHUNK_LIMIT:
@@ -700,7 +720,8 @@ class WeixinChannel(ChatChannel):
                 logger.debug(f"[Weixin] Text sent to {receiver}, len={len(text)}")
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text: {e}")
-            return
+                raise
+            return resp
 
         chunks = self._split_text(text, TEXT_CHUNK_LIMIT)
         for i, chunk in enumerate(chunks):
@@ -710,9 +731,12 @@ class WeixinChannel(ChatChannel):
                 logger.debug(f"[Weixin] Text chunk {i+1}/{len(chunks)} sent to {receiver}, len={len(chunk)}")
             except Exception as e:
                 logger.error(f"[Weixin] Failed to send text chunk {i+1}/{len(chunks)}: {e}")
-                break
+                if i > 0:
+                    raise PartialDeliveryError("Some Weixin text chunks may have been sent") from e
+                raise
             if i < len(chunks) - 1:
                 time.sleep(0.5)
+        return resp
 
     @staticmethod
     def _split_text(text: str, limit: int) -> list:

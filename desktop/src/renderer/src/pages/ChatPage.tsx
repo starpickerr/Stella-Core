@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import {
   ChevronUp,
+  X,
   Loader2,
   FolderOpen,
   Clock,
@@ -12,14 +13,16 @@ import {
 } from 'lucide-react'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
+import ChatApprovalDialog from '../components/ChatApprovalDialog'
 import { product } from '@product'
-import { t } from '../i18n'
+import { t, getLang } from '../i18n'
 import apiClient from '../api/client'
 import type { Attachment, ChatMessage } from '../types'
 import { useChatStore } from '../store/chatStore'
 import { useSessionStore } from '../store/sessionStore'
 import { useUIStore } from '../store/uiStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import brandLogo from '../assets/logo.png'
 
 interface ChatPageProps {
   baseUrl: string
@@ -56,6 +59,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const editUserMessage = useChatStore((s) => s.editUserMessage)
   const deleteMessage = useChatStore((s) => s.deleteMessage)
   const loadHistory = useChatStore((s) => s.loadHistory)
+  const dismissPendingAdmissions = useChatStore((s) => s.dismissPendingAdmissions)
   const ensureSession = useChatStore((s) => s.ensureSession)
   const clearContext = useChatStore((s) => s.clearContext)
   const setSessionsCollapsed = useUIStore((s) => s.setSessionsCollapsed)
@@ -78,7 +82,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   useEffect(() => {
     ensureSession(activeId)
     const s = useChatStore.getState().sessions[activeId]
-    if (s && !s.historyLoaded && !s.isStreaming) {
+    if (s && !s.historyLoaded && !s.isStreaming && s.messages.length === 0) {
       loadHistory(activeId, 1)
     }
   }, [activeId, ensureSession, loadHistory])
@@ -178,17 +182,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   )
 
   const handleNewChat = useCallback(() => {
-    // Inherit the current session's project so a new chat stays in the same
-    // space; fall back to the default workspace when none is bound.
-    const inherited = useSessionStore.getState().currentProject()
     const id = newSession()
     ensureSession(id)
     loadHistory(id, 1)
-    // Show the fresh chat in the list immediately (under the inherited space),
-    // and expand the session list so the user sees the new session.
-    useSessionStore.getState().addOptimistic(id, inherited)
+    useSessionStore.getState().addOptimistic(id, null)
     setSessionsCollapsed(false)
-    if (inherited) apiClient.selectProject(id, inherited.path).catch(() => {})
   }, [newSession, ensureSession, loadHistory, setSessionsCollapsed])
 
   const handleClearContext = useCallback(async () => {
@@ -261,7 +259,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                 <product.slots.HomeLogo />
               </div>
             ) : (
-              <img src="./logo.jpg" alt="Stella" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
+              <img src={brandLogo} alt="Stella" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
             )}
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8 leading-relaxed whitespace-pre-line">
@@ -327,6 +325,20 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         )}
       </div>
 
+      {!isStreaming && (session?.pendingAdmissions?.length || 0) > 0 && <div className="mx-6 my-2 rounded-card border border-default p-3 text-sm text-content-secondary">
+        <div className="flex items-start gap-3">
+          <p className="flex-1">{t('pending_saved')}</p>
+          <button type="button" aria-label={t('pending_dismiss')} title={t('pending_dismiss')}
+            className="shrink-0 rounded-lg p-1 text-content-tertiary hover:bg-surface-hover hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={() => dismissPendingAdmissions(activeId)}><X size={16} /></button>
+        </div>
+        {session?.pendingAdmissions?.map(row => <div key={row.run_id} className="mt-2">
+          <span className="text-xs text-content-tertiary">{row.status === 'outcome_unknown' ? t('task_status_outcome_unknown') : row.status === 'running' ? t('pending_running') : t('pending_queued')} {row.clear_history ? '· '+t('context_cleared') : ''}</span>
+          <p className="whitespace-pre-wrap select-text">{row.user_content?.map(block => block.text || '').join('\n')}</p>
+          <button className="text-accent text-xs" onClick={() => navigator.clipboard.writeText(row.user_content?.map(block => block.text || '').join('\n') || '')}>{t('copy')}</button>
+        </div>)}
+      </div>}
+
       {/* Jump-to-bottom affordance could go here in a later pass */}
 
       <ChatInput
@@ -338,6 +350,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         sessionId={activeId}
         ref={inputResetRef}
       />
+      <ChatApprovalDialog sessionId={activeId} isStreaming={isStreaming} onStop={handleStop} />
     </div>
   )
 }

@@ -16,7 +16,6 @@
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 import websocket
-import datetime
 import hashlib
 import base64
 import hmac
@@ -28,7 +27,6 @@ from wsgiref.handlers import format_date_time
 from datetime import datetime
 from time import mktime
 import _thread as thread
-import os
 import wave
 
 

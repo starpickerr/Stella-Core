@@ -52,7 +52,10 @@ def generate_session_title(user_message: str, assistant_reply: str = "",
         session.messages = [
             {"role": "user", "content": (
                 "Generate a very short title (max 15 characters for Chinese, max 6 words for English) "
-                "summarizing this conversation. Return ONLY the title text, nothing else.\n\n"
+                "summarizing the main requested task, topic, or actual result of this conversation. "
+                "Treat exclusions and output constraints as boundaries, not title topics; "
+                "mention an excluded subject only if discussing it is the actual goal. "
+                "Return ONLY the title text, nothing else.\n\n"
                 + "\n".join(prompt_parts)
             )}
         ]

@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -98,6 +99,107 @@ def test_a_user_sits_beside_the_agents_not_under_one(registry, tmp_path):
         assert state_dir.tmp_dir(ensure=False) == tmp_path / "beta" / "tmp"
 
 
+def test_second_agent_cannot_open_legacy_local_user_data_before_migration(registry):
+    with identity_scope(agent_id="alpha", user_id="local-default"):
+        assert state_dir.user_root() == Path(registry.get("alpha").workspace)
+    with identity_scope(agent_id="beta"):
+        with pytest.raises(state_dir.StateDirError, match="not migrated"):
+            state_dir.todos_db(ensure=False)
+    with identity_scope(agent_id="beta", user_id="local-default"):
+        with pytest.raises(state_dir.StateDirError, match="not migrated"):
+            state_dir.todos_db(ensure=False)
+
+
+def test_offline_migration_copies_business_data_and_switches_local_user_path(registry, tmp_path):
+    from common.user_data_migration import migrate_local_default
+
+    root = tmp_path / "alpha"
+    (root / "bills").mkdir(parents=True)
+    legacy_db = root / "bills" / "bills.db"
+    with sqlite3.connect(legacy_db) as db:
+        db.execute("CREATE TABLE entries (amount INTEGER)")
+        db.execute("INSERT INTO entries VALUES (42)")
+    (root / "MEMORY.md").write_text("remember this", encoding="utf-8")
+    (root / "USER.md").write_text("local profile", encoding="utf-8")
+
+    canonical = migrate_local_default(root)
+    assert migrate_local_default(root) == canonical
+    assert legacy_db.exists()
+    with sqlite3.connect(canonical / "bills" / "bills.db") as db:
+        assert db.execute("SELECT amount FROM entries").fetchone()[0] == 42
+    assert (canonical / "MEMORY.md").read_text(encoding="utf-8") == "remember this"
+    assert (canonical / "USER.md").read_text(encoding="utf-8") == "local profile"
+    with identity_scope(agent_id="alpha"):
+        assert state_dir.user_root() == canonical
+    with identity_scope(agent_id="beta"):
+        assert state_dir.user_root() == canonical
+        from agent.memory.config import MemoryConfig
+        assert MemoryConfig(workspace_root=str(tmp_path / "beta")).get_memory_dir() == canonical / "memory"
+
+
+def test_memory_entrypoints_use_migrated_user_path(registry, tmp_path):
+    from agent.memory.service import MemoryService
+    from agent.memory.summarizer import MemoryFlushManager, ensure_daily_memory_file
+    from agent.prompt.workspace import ensure_workspace, load_context_files
+    from common.user_data_migration import migrate_local_default
+
+    root = tmp_path / "alpha"
+    root.mkdir()
+    (root / "MEMORY.md").write_text("shared fact", encoding="utf-8")
+    canonical = migrate_local_default(root)
+    beta = tmp_path / "beta"
+    with identity_scope(agent_id="beta"):
+        paths = ensure_workspace(str(beta))
+        assert paths.memory_path == str(canonical / "MEMORY.md")
+        assert paths.user_path == str(canonical / "USER.md")
+        assert not (beta / "MEMORY.md").exists()
+        assert any(item.path == "MEMORY.md" and item.content == "shared fact"
+                   for item in load_context_files(str(beta)))
+        assert MemoryService(str(beta)).get_content("MEMORY.md")["content"] == "shared fact"
+        assert MemoryFlushManager(beta).get_main_memory_file() == canonical / "MEMORY.md"
+        assert ensure_daily_memory_file(beta).parent == canonical / "memory"
+
+
+def test_prompt_scaffolding_blocks_second_agent_before_migration(registry, tmp_path):
+    from agent.prompt.workspace import ensure_workspace
+
+    beta = tmp_path / "beta"
+    with identity_scope(agent_id="beta"):
+        with pytest.raises(state_dir.StateDirError, match="not migrated"):
+            ensure_workspace(str(beta))
+    assert not beta.exists()
+
+
+def test_evolution_backup_restores_canonical_memory(registry, tmp_path):
+    from agent.evolution.backup import create_backup, restore_backup
+    from agent.evolution.executor import _denied_evolution_path, _workspace_snapshot
+    from common.user_data_migration import migrate_local_default
+
+    root = tmp_path / "alpha"
+    root.mkdir()
+    (root / "MEMORY.md").write_text("original", encoding="utf-8")
+    canonical = migrate_local_default(root)
+    beta = tmp_path / "beta"
+    beta.mkdir()
+    memory = canonical / "MEMORY.md"
+    with identity_scope(agent_id="beta"):
+        before = _workspace_snapshot(beta)
+        backup_id = create_backup(beta, [memory])
+        assert backup_id
+        assert not _denied_evolution_path(beta, memory, set(), canonical)
+        assert _denied_evolution_path(beta, root / "MEMORY.md", set(), canonical)
+        memory.write_text("changed", encoding="utf-8")
+        assert _workspace_snapshot(beta) != before
+        assert restore_backup(beta, backup_id)
+    assert memory.read_text(encoding="utf-8") == "original"
+
+
+def test_user_id_cannot_escape_canonical_user_root(registry):
+    with identity_scope(user_id="../other"):
+        with pytest.raises(state_dir.StateDirError, match="invalid user id"):
+            state_dir.user_root()
+
+
 def test_a_second_agent_reads_the_shared_assets(registry, tmp_path):
     """Nothing to configure and nothing to copy: beta gets alpha's skills,
     knowledge and credentials, because they belong to whoever runs the
@@ -115,8 +217,10 @@ def test_scaffolding_a_second_agent_does_not_opt_it_out(registry, tmp_path):
     directories on the Agent's behalf, and presence-based opt-out reads that as
     a deliberate choice. Booting beta has to leave the shared copy in charge."""
     from agent.prompt import ensure_workspace
+    from common.user_data_migration import migrate_local_default
 
     ensure_workspace(str(tmp_path / "alpha"), create_templates=False)
+    migrate_local_default(tmp_path / "alpha")
     ensure_workspace(str(tmp_path / "beta"), create_templates=False)
 
     for name in ("skills", "knowledge", "websites"):
@@ -207,9 +311,9 @@ def test_consumers_follow_the_routed_agent(registry, tmp_path):
     from agent.protocol.artifact import get_workspace_root
     from common.tmp_dir import TmpDir
 
-    with identity_scope(agent_id="beta"):
+    with identity_scope(agent_id="beta", user_id="u1"):
         assert TmpDir().path().startswith(str(tmp_path / "beta"))
-        assert get_workspace_root() == os.path.realpath(str(tmp_path / "beta"))
+        assert get_workspace_root() == os.path.realpath(str(tmp_path / "alpha" / "users" / "u1" / "work"))
         assert MemoryConfig().workspace_root == str(tmp_path / "beta")
 
 
@@ -269,3 +373,25 @@ def test_a_single_agent_install_keeps_every_path_it_has_today(tmp_path, prepopul
             assert accessor(**kwargs) == resolved.joinpath(*parts), name
     finally:
         set_agent_registry(None)
+
+
+def test_offline_migration_preserves_operation_admission_and_health(tmp_path, monkeypatch):
+    from application.operations import OperationStore, OutcomeUnknown
+    from common.user_data_migration import migrate_local_default
+    import pytest
+    root = tmp_path / 'legacy'
+    root.mkdir()
+    monkeypatch.setattr('application.operations.user_root', lambda: root)
+    ledger = OperationStore()
+    ledger.admit('completed', 'hash-one')
+    ledger.finish('completed', {'id': 'existing'})
+    ledger.admit('unknown', 'hash-two')
+    (root / 'health').mkdir()
+    (root / 'health' / 'source.txt').write_text('local')
+    canonical = migrate_local_default(root)
+    monkeypatch.setattr('application.operations.user_root', lambda: canonical)
+    migrated = OperationStore()
+    assert migrated.admit('completed', 'hash-one') == (True, {'id': 'existing'})
+    with pytest.raises(OutcomeUnknown):
+        migrated.admit('unknown', 'hash-two')
+    assert (canonical / 'health' / 'source.txt').read_text() == 'local'

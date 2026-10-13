@@ -9,9 +9,11 @@ from types import SimpleNamespace
 import pytest
 
 from agent.calendar import CalendarService
-from agent.permission.policy import check_tool_call
+from agent.permission.gateway import SecurityGateway
 from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.tool_manager import ToolManager
+
+check_tool_call = SecurityGateway.check
 
 
 @pytest.fixture
@@ -166,30 +168,37 @@ def test_briefing_handoff_is_idempotent_and_preserves_user_edits(service):
         id="item-1")
     detail = {"briefing": SimpleNamespace(id="briefing-1"), "items": [item], "mail": [
         {"id": "src-1", "decision": {"calendar": {"start_at": "2026-10-02T09:00:00+08:00"}}}]}
-    assert service.ingest_briefing(detail) == 1
-    assert service.ingest_briefing(detail) == 1
+    assert service.ingest_briefing(detail) == 0
+    assert service.list_events() == []
+    key = json.dumps([item.source, item.account_id, item.source_id], separators=(',', ':'))
+    service._upsert_sourced_event(key, item, '2026-10-02T09:00:00+08:00', '2026-10-02T10:00:00+08:00', False)
+    service._upsert_sourced_event(key, item, '2026-10-02T09:00:00+08:00', '2026-10-02T10:00:00+08:00', False)
     assert len(service.list_events()) == 1
     event = service.list_events()[0]
     assert event["category_id"] == "study"
     with sqlite3.connect(service.db_path) as db:
-        assert db.execute("SELECT destination FROM agenda_handoffs ORDER BY destination").fetchall() == [("calendar",)]
+        assert db.execute("SELECT destination FROM agenda_handoffs ORDER BY destination").fetchall() == []
     service.update_event(event["id"], {"title": "我修改的标题"})
     item.title = "来源的新标题"
     service.ingest_briefing(detail)
+    service._upsert_sourced_event(key, item, '2026-10-02T09:00:00+08:00', '2026-10-02T10:00:00+08:00', False)
     assert service.get_event(event["id"])["title"] == "我修改的标题"
 
 
-def test_briefing_reclassification_removes_unmodified_handoffs(service):
+def test_briefing_reclassification_preserves_existing_business_object(service):
     item = SimpleNamespace(source="elearning", account_id="student", source_id="quiz-2",
         source_item_id="src-2", section="action", title="旧截止", snippet="截止",
         payload={"due_at": "2026-10-02T20:00:00+08:00"}, url="", id="item-2")
     detail = {"briefing": SimpleNamespace(id="briefing-2"), "items": [item], "mail": []}
     service.ingest_briefing(detail)
     assert service.list_events() == []
+    key = json.dumps([item.source, item.account_id, item.source_id], separators=(',', ':'))
+    event = service._upsert_sourced_event(key, item, '2026-10-02T09:00:00+08:00', '2026-10-02T10:00:00+08:00', False)
     item.section = "fyi"
     item.payload = {}
     service.ingest_briefing(detail)
-    assert service.list_events() == []
+    assert len(service.list_events()) == 1
+    assert service.get_event(event['id'])['title'] == '旧截止'
     with sqlite3.connect(service.db_path) as db:
         assert db.execute("SELECT count(*) FROM agenda_handoffs").fetchone()[0] == 0
 
@@ -202,6 +211,9 @@ def test_deleted_default_category_does_not_block_briefing_import(service):
         payload={"due_at": "2026-10-02T20:00:00+08:00"}, url="", id="item-3")
     service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-4"), "items": [item], "mail": [
         {"id": "src-3", "decision": {"calendar": {"start_at": "2026-10-02T09:00:00+08:00"}}}]})
+    assert service.list_events() == []
+    key = json.dumps([item.source, item.account_id, item.source_id], separators=(',', ':'))
+    service._upsert_sourced_event(key, item, '2026-10-02T09:00:00+08:00', '2026-10-02T10:00:00+08:00', False)
     assert service.list_events()[0]["category_id"] is None
 
 
@@ -217,8 +229,8 @@ def test_merged_briefing_thread_routes_each_selected_source(service):
          "metadata": {}, "url": "", "decision": {"section": "action", "calendar": {
              "start_at": "2026-10-03T10:00:00+08:00"}}},
     ]
-    assert service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-3"), "items": [card], "mail": mail}) == 1
-    assert service.list_events()[0]["title"] == "会议改期"
+    assert service.ingest_briefing({"briefing": SimpleNamespace(id="briefing-3"), "items": [card], "mail": mail}) == 0
+    assert service.list_events() == []
     with sqlite3.connect(service.db_path) as db:
         assert db.execute("SELECT count(*) FROM agenda_handoffs WHERE destination='task'").fetchone()[0] == 0
 
@@ -262,13 +274,19 @@ def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch):
     events = CalendarService(calendar_path).list_events()
     assert events == []
     todos = TodoService(todos_path, calendar_path).list_todos()
-    assert len(todos) == 1 and todos[0]["title"] == "测验"
+    assert todos == []
+    assert detail['actions'][detail['items'][0].id]['todo']['state'] == 'pending'
+    receipt = briefing.update_action(detail['items'][0].id, {'operation':'create', 'kind':'todo'})
+    assert receipt['state'] == 'succeeded'
+    todos = TodoService(todos_path, calendar_path).list_todos()
+    assert len(todos) == 1 and todos[0]['title'] == '测验'
+    assert CalendarService(calendar_path).list_events() == []
 
 
 def test_web_calendar_handlers_share_service_and_require_auth(service, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import patch
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     def call(handler, method="POST", body=None, params=None):
         with patch.object(web_channel.web, "data", return_value=json.dumps(body or {}).encode()), \
@@ -289,7 +307,7 @@ def test_web_calendar_handlers_share_service_and_require_auth(service, monkeypat
 
 def test_web_calendar_import_handlers_use_the_same_event_store(service, monkeypatch):
     from unittest.mock import patch
-    from channel.web import web_channel
+    from channel.desktop import desktop_channel as web_channel
 
     def call(handler, body):
         with patch.object(web_channel.web, "data", return_value=json.dumps(body).encode()):

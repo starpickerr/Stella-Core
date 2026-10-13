@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from agent.scheduler import TaskStore
 
 # Keep this unit test independent from the optional web.py dependency.
@@ -29,7 +31,7 @@ if "web" not in sys.modules:
     )
     sys.modules["web"] = web_stub
 
-from channel.web import web_channel
+from channel.desktop import desktop_channel as web_channel
 
 SchedulerUpdateHandler = web_channel.SchedulerUpdateHandler
 
@@ -50,43 +52,56 @@ def _store_task(tmp_path, action):
 
 
 def _post_update(tmp_path, payload):
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
+         patch("channel.desktop.desktop_channel._get_state_root", return_value=str(tmp_path)):
         return json.loads(SchedulerUpdateHandler().POST())
 
 
-def test_desktop_can_edit_silent_briefing_task_without_receiver(tmp_path):
-    from agent.briefing.scheduler import DAILY_BRIEFING_TASK_ID, ensure_daily_briefing_task
-    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
-    ensure_daily_briefing_task(store)
-    action = store.get_task(DAILY_BRIEFING_TASK_ID)["action"]
+def test_desktop_can_edit_silent_tool_task_without_receiver(tmp_path):
+    action = {"type": "tool_call", "call_name": "briefing",
+              "call_params": {"action": "run", "operation": "create"},
+              "silent": True, "channel_type": "web", "conversation_mode": "reuse",
+              "conversation_space": "personal", "execution_project_dir": ""}
+    store = _store_task(tmp_path, action)
     result = _post_update(tmp_path, {
-        "task_id": DAILY_BRIEFING_TASK_ID,
+        "task_id": "task-1",
         "name": "课程简报", "enabled": False,
         "schedule": {"type": "cron", "expression": "0 9 * * *"},
         "action": action,
     })
     assert result["status"] == "success"
-    task = store.get_task(DAILY_BRIEFING_TASK_ID)
+    task = store.get_task("task-1")
     assert task["enabled"] is False
     assert task["schedule"]["expression"] == "0 9 * * *"
     assert task["action"]["call_params"] == {"action": "run", "operation": "create"}
     assert task["action"]["silent"] is True
-    assert task["catch_up"] == "same_day"
-    assert task["retry_interval_seconds"] == 300
-    store.delete_task(DAILY_BRIEFING_TASK_ID)
-    assert not ensure_daily_briefing_task(store)
+    assert task["action"]["conversation_mode"] == "reuse"
+
+
+def test_linked_todo_reminder_cannot_be_edited_as_an_independent_scheduler_task(tmp_path):
+    store = _store_task(tmp_path, {"type": "application_command", "domain": "todos",
+                                   "command": "QueueTodoReminder", "params": ["todo-1", "time"]})
+    store.update_task("task-1", {"linked_todo_id": "todo-1"})
+    result = _post_update(tmp_path, {"task_id": "task-1", "name": "detached"})
+    assert result["status"] == "error" and store.get_task("task-1")["name"] == "maintenance"
+    with patch.object(web_channel, "_require_auth"), patch.object(web_channel.web, "header"), \
+         patch.object(web_channel.web, "data", return_value=b'{"task_id":"task-1","enabled":false}'), \
+         patch.object(web_channel, "_scheduler_store", return_value=store):
+        assert json.loads(web_channel.SchedulerToggleHandler().POST())["status"] == "error"
+        assert json.loads(web_channel.SchedulerDeleteHandler().POST())["status"] == "error"
+        assert json.loads(web_channel.SchedulerRunHandler().POST())["status"] == "error"
+    assert store.get_task("task-1")["enabled"]
 
 
 def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 
     service = Mock()
-    with patch("channel.web.web_channel._require_auth") as require_auth, \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
+    with patch("channel.desktop.desktop_channel._require_auth") as require_auth, \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
          patch("agent.scheduler.get_scheduler_service", return_value=service):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
@@ -101,9 +116,9 @@ def test_web_manual_run_is_authenticated_and_delegates_to_scheduler():
 def test_web_manual_run_rejects_unavailable_scheduler():
     assert hasattr(web_channel, "SchedulerRunHandler")
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=b'{"task_id":"task-1"}'), \
          patch("agent.scheduler.get_scheduler_service", return_value=None):
         response = json.loads(web_channel.SchedulerRunHandler().POST())
 
@@ -113,18 +128,13 @@ def test_web_manual_run_rejects_unavailable_scheduler():
     }
 
 
-def test_manual_run_is_exposed_by_explicit_web_and_desktop_controls():
+def test_manual_run_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
-    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    web_source = (root / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 
     assert "'/api/scheduler/run', 'SchedulerRunHandler'" in web_source
-    assert "function runTaskNow(task, button)" in web_console
-    assert "fetch('/api/scheduler/run'" in web_console
-    web_run = web_console[web_console.index("function runTaskNow(task, button)"):]
-    assert "showConfirmDialog({" in web_run[:2500]
     assert "async runTask(taskId: string)" in desktop_client
     assert "'/api/scheduler/run'" in desktop_client
     assert "const runNow = async ()" in desktop_page
@@ -169,6 +179,8 @@ def test_switch_to_message_drops_agent_only_fields(tmp_path):
         "task_description": "refresh the index",
         "receiver": "user-1",
         "channel_type": "web",
+        "conversation_mode": "reuse",
+        "conversation_space": "personal",
         "notify_session_id": "session-1",
         "silent": True,
     })
@@ -195,10 +207,10 @@ SchedulerHandler = web_channel.SchedulerHandler
 
 
 def _post_create(tmp_path, payload):
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data", return_value=json.dumps(payload).encode()), \
-         patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.desktop.desktop_channel._require_auth"), \
+         patch("channel.desktop.desktop_channel.web.header"), \
+         patch("channel.desktop.desktop_channel.web.data", return_value=json.dumps(payload).encode()), \
+         patch("channel.desktop.desktop_channel._get_state_root", return_value=str(tmp_path)):
         return json.loads(SchedulerHandler().POST())
 
 
@@ -207,7 +219,8 @@ def test_web_create_persists_task_for_current_session(tmp_path):
         "name": "morning briefing",
         "enabled": True,
         "schedule": {"type": "cron", "expression": "0 9 * * *"},
-        "action": {"type": "send_message", "content": "good morning"},
+        "action": {"type": "send_message", "content": "good morning",
+                   "conversation_mode": "reuse", "conversation_space": "personal"},
         "session_id": "session-web-1",
     })
 
@@ -218,6 +231,7 @@ def test_web_create_persists_task_for_current_session(tmp_path):
     assert task["action"]["type"] == "send_message"
     assert task["action"]["content"] == "good morning"
     assert task["action"]["channel_type"] == "web"
+    assert task["action"]["conversation_mode"] == "reuse"
     assert task["action"]["receiver"] == "session-web-1"
     assert task["action"]["notify_session_id"] == "session-web-1"
     assert task["next_run_at"]
@@ -237,18 +251,85 @@ def test_web_create_rejects_missing_session(tmp_path):
     assert "session_id" in result["message"]
 
 
-def test_create_is_exposed_by_web_and_desktop_controls():
+def test_web_create_rejects_missing_conversation_mode(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "orphan",
+        "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": {"type": "send_message", "content": "hi"},
+        "session_id": "session-web-1",
+    })
+    assert result["status"] == "error"
+    assert "conversation mode" in result["message"]
+
+
+def _web_action():
+    return {"type": "send_message", "content": "hello",
+            "conversation_mode": "reuse", "conversation_space": "personal"}
+
+
+def test_desktop_persists_run_permission_and_reload_keeps_it(tmp_path):
+    created = _post_create(tmp_path, {
+        "name": "briefing", "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": _web_action(), "session_id": "session-web-1",
+        "run_permission_mode": "full-access",
+    })
+    assert created["status"] == "success", created
+    task_id = created["task"]["id"]
+    assert created["task"]["run_permission_mode"] == "full-access"
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    assert store.get_task(task_id)["run_permission_mode"] == "full-access"
+    updated = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "read-only"})
+    assert updated["status"] == "success", updated
+    assert store.get_task(task_id)["run_permission_mode"] == "read-only"
+    inherited = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "inherit"})
+    assert inherited["status"] == "success", inherited
+    assert "run_permission_mode" not in store.get_task(task_id)
+
+
+def test_old_task_without_permission_field_stays_inherited(tmp_path):
+    store = _store_task(tmp_path, _web_action())
+    assert "run_permission_mode" not in store.get_task("task-1")
+    listed = store.list_tasks()
+    assert all("run_permission_mode" not in task for task in listed)
+
+
+def test_desktop_rejects_invalid_run_permission(tmp_path):
+    result = _post_create(tmp_path, {
+        "name": "briefing", "schedule": {"type": "cron", "expression": "0 9 * * *"},
+        "action": _web_action(), "session_id": "session-web-1",
+        "run_permission_mode": "root",
+    })
+    assert result["status"] == "error"
+    assert "permission" in result["message"].lower() or "权限" in result["message"]
+
+
+def test_shared_mutation_refuses_agent_elevation(tmp_path):
+    from agent.scheduler.mutations import SchedulerMutations
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    mutations = SchedulerMutations(store)
+    task = {"id": "agent-task", "name": "daily", "enabled": True,
+            "schedule": {"type": "interval", "seconds": 3600},
+            "action": {"type": "send_message", "content": "hi", "channel_type": "feishu", "receiver": "u"},
+            "next_run_at": "2099-01-01T00:00:00", "run_permission_mode": "full-access"}
+    with pytest.raises(ValueError, match="运行权限"):
+        mutations.create(task, origin="agent")
+    assert store.get_task("agent-task") is None
+    saved = mutations.create({key: value for key, value in task.items() if key != "run_permission_mode"}, origin="agent")
+    assert "run_permission_mode" not in saved
+    user = mutations.create({**task, "id": "user-task"}, origin="user")
+    assert user["run_permission_mode"] == "full-access"
+    with pytest.raises(ValueError, match="运行权限"):
+        mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
+    assert store.get_task("user-task")["run_permission_mode"] == "full-access"
+
+
+def test_create_is_exposed_by_desktop_controls():
     root = Path(__file__).parents[1]
-    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
-    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    web_source = (root / "channel/desktop/desktop_channel.py").read_text(encoding="utf-8")
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 
     handler = web_source[web_source.index("class SchedulerHandler"):]
     assert "def POST(self):" in handler
-    assert 'onclick="openTaskCreateModal()"' in web_html
-    assert "function openTaskCreateModal()" in web_console
-    assert "const url = isCreate ? '/api/scheduler'" in web_console
     assert "async createTask" in desktop_client
     assert "setEditing('new')" in desktop_page

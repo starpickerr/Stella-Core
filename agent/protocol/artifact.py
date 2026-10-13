@@ -60,10 +60,10 @@ _KIND_BY_EXT: Dict[str, str] = {
 
 
 def get_workspace_root() -> str:
-    """Absolute path of the routed Agent's workspace."""
-    from common.state_dir import real_state_root
+    """Working files for a chat without an opened project."""
+    from common.state_dir import personal_work_dir
 
-    return real_state_root()
+    return os.path.realpath(personal_work_dir())
 
 
 def classify_kind(path: str) -> str:

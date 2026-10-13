@@ -198,13 +198,23 @@ class _EvolutionWriteTransaction:
 
 
 def _denied_evolution_path(
-    workspace: Path, resolved: Path, protected_skills: set
+    workspace: Path, resolved: Path, protected_skills: set, user_root: Optional[Path] = None
 ) -> bool:
     """Block only workspace paths Self-Evolution must never modify."""
     try:
         relative = resolved.relative_to(workspace)
     except ValueError:
-        return True
+        if user_root is None:
+            return True
+        try:
+            user_relative = resolved.relative_to(user_root)
+        except ValueError:
+            return True
+        parts = tuple(part.casefold() for part in user_relative.parts)
+        return not (parts == ("memory.md",) or (
+            len(parts) >= 2 and parts[0] in ("memory", "output")
+            and parts[1] != ".evolution_backups"
+        ))
     parts = relative.parts
     if not parts:
         return True
@@ -222,19 +232,21 @@ def _denied_evolution_path(
 
 
 class _WorkspaceWriteGuard:
-    """Wraps a write/edit tool so it can ONLY write inside the workspace.
+    """Wraps a write/edit tool with scoped Agent and user file permissions.
 
-    Hard engineering guard (not prompt-based): any write resolving outside the
-    workspace — e.g. the project's bundled ``skills/`` dir — is rejected. This
-    protects built-in skills regardless of what the model attempts.
+    Writes outside the Agent workspace are limited to the routed user's memory
+    and output. This protects built-in skills regardless of model output.
     """
 
     def __init__(
         self, inner, workspace_dir: str, protected_skills: set,
-        transaction: _EvolutionWriteTransaction,
+        transaction: _EvolutionWriteTransaction, user_id: Optional[str] = None,
     ):
         self._inner = inner
         self._ws = Path(workspace_dir).resolve()
+        from common.state_dir import user_root_for_workspace
+
+        self._user_root = user_root_for_workspace(self._ws, user_id).resolve()
         self._protected_skills = protected_skills
         self._transaction = transaction
         # Mirror the attributes the agent runtime reads off a tool.
@@ -265,10 +277,11 @@ class _WorkspaceWriteGuard:
         except Exception as e:
             return ToolResult.fail(f"Error: invalid evolution write path '{path}': {e}")
         if _denied_evolution_path(
-            self._ws, resolved, self._protected_skills
+            self._ws, resolved, self._protected_skills, self._user_root
         ):
             return ToolResult.fail(
-                "Error: evolution cannot write outside the workspace or modify "
+                "Error: evolution cannot write outside the Agent workspace or "
+                "user memory/output, or modify "
                 "protected skills and bookkeeping files; "
                 f"path '{path}' was blocked."
             )
@@ -281,7 +294,7 @@ class _WorkspaceWriteGuard:
 
 def _guard_tools(
     tools: list, workspace_dir: str, protected_skills: set,
-    transaction: _EvolutionWriteTransaction,
+    transaction: _EvolutionWriteTransaction, user_id: Optional[str] = None,
 ) -> list:
     """Wrap evolution write tools with path and transaction guards."""
     guarded = []
@@ -289,7 +302,7 @@ def _guard_tools(
         name = getattr(t, "name", None)
         if name in _WRITE_TOOLS:
             guarded.append(_WorkspaceWriteGuard(
-                t, workspace_dir, protected_skills, transaction
+                t, workspace_dir, protected_skills, transaction, user_id
             ))
         else:
             guarded.append(t)
@@ -307,7 +320,7 @@ _MEMORY_IGNORE = (".evolution_backups", "dreams", "evolution")
 _WATCH_IGNORE_NAMES = ("skills_config.json",)
 
 
-def _workspace_snapshot(workspace_dir) -> dict:
+def _workspace_snapshot(workspace_dir, user_id: Optional[str] = None) -> dict:
     """Map relative path -> (mtime, size) for watched files. Cheap, no reads."""
     ws = Path(workspace_dir)
     snap: dict = {}
@@ -346,12 +359,33 @@ def _workspace_snapshot(workspace_dir) -> dict:
                 snap[str(p.relative_to(ws))] = (st.st_mtime, st.st_size)
             except OSError:
                 pass
+    from common.state_dir import user_root_for_workspace
+
+    user_root = user_root_for_workspace(ws, user_id)
+    if user_root != ws:
+        for name in ("MEMORY.md", "USER.md"):
+            path = user_root / name
+            if path.is_file():
+                st = path.stat()
+                snap[f"user/{name}"] = (st.st_mtime, st.st_size)
+        for name in ("memory", "output"):
+            root = user_root / name
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(root)
+                if name == "memory" and rel.parts[0] in _MEMORY_IGNORE:
+                    continue
+                st = path.stat()
+                snap[f"user/{name}/{rel}"] = (st.st_mtime, st.st_size)
     return snap
 
 
-def _workspace_changed(workspace_dir, pre: dict) -> bool:
+def _workspace_changed(workspace_dir, pre: dict, user_id: Optional[str] = None) -> bool:
     """True if any watched file was added, removed, or modified since ``pre``."""
-    return _workspace_snapshot(workspace_dir) != pre
+    return _workspace_snapshot(workspace_dir, user_id) != pre
 
 
 _MAX_EVOLUTION_SUMMARY_CHARS = 4000
@@ -448,10 +482,10 @@ def run_evolution_for_session(
         workspace_dir = mem_cfg.get_workspace()
         workspace_lock = _get_workspace_lock(Path(workspace_dir))
         workspace_lock.acquire()
-        if user_id:
-            memory_file = Path(workspace_dir) / "memory" / "users" / user_id / "MEMORY.md"
-        else:
-            memory_file = Path(workspace_dir) / "MEMORY.md"
+        from common.state_dir import user_root_for_workspace
+
+        user_root = user_root_for_workspace(workspace_dir, user_id)
+        memory_file = user_root / "MEMORY.md"
         skills_dir = mem_cfg.get_skills_dir()
 
         # Snapshot MEMORY.md + every NON-protected skill's SKILL.md. Protected
@@ -462,13 +496,9 @@ def run_evolution_for_session(
         # Back up both MEMORY.md and today's daily file: evolution now writes to
         # the daily file, but MEMORY.md is cheap to snapshot and keeps undo safe
         # if the model ever edits it.
-        today_daily = Path(workspace_dir) / "memory" / (
+        today_daily = user_root / "memory" / (
             datetime.now().strftime("%Y-%m-%d") + ".md"
         )
-        if user_id:
-            today_daily = Path(workspace_dir) / "memory" / "users" / user_id / (
-                datetime.now().strftime("%Y-%m-%d") + ".md"
-            )
         # AGENT.md (persona) is backed up too so a rare persona edit is undoable.
         # Persona is workspace-global (not per-user): it always lives at the
         # workspace root, regardless of user_id.
@@ -485,13 +515,13 @@ def run_evolution_for_session(
                 if top in protected_names:
                     continue
                 backup_files.append(skill_md)
-        backup_id = create_backup(workspace_dir, backup_files)
+        backup_id = create_backup(workspace_dir, backup_files, user_id=user_id)
         _backup_n = sum(1 for f in backup_files if Path(f).exists())
 
         # Snapshot the whole workspace (path -> mtime/size) so we can reliably
         # detect ANY file change — including new output files written when
         # finishing an unfinished task, which are not in backup_files.
-        pre_snapshot = _workspace_snapshot(workspace_dir)
+        pre_snapshot = _workspace_snapshot(workspace_dir, user_id)
 
         # Build the isolated review agent: same model, restricted tools, with a
         # hard guard that confines all writes to the workspace (protects the
@@ -501,6 +531,7 @@ def run_evolution_for_session(
             str(workspace_dir),
             protected_names,
             transaction,
+            user_id,
         )
         review_agent = agent_bridge.create_agent(
             system_prompt="",
@@ -548,7 +579,7 @@ def run_evolution_for_session(
         # If neither changed, never notify about work that did not happen.
         if not (
             transaction.has_changes()
-            or _workspace_changed(workspace_dir, pre_snapshot)
+            or _workspace_changed(workspace_dir, pre_snapshot, user_id)
         ):
             logger.info(
                 f"[Evolution] ✗ session={session_id}: text produced but no file "

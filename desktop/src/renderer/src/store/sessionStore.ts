@@ -1,10 +1,9 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { t } from '../i18n'
-import type { SessionItem } from '../types'
+import type { ProjectRef, SessionItem } from '../types'
 
 const ACTIVE_KEY = 'cow_session_id'
-export const DEFAULT_SPACE_KEY = '__default__'
 
 interface SessionState {
   sessions: SessionItem[]
@@ -13,7 +12,7 @@ interface SessionState {
   hasMore: boolean
   loading: boolean
   activeId: string
-  groupMode: 'project' | 'time'
+  projects: ProjectRef[]
   projectOrder: string[]
   /** Bumped whenever project records change (rename/delete), so other views
    *  (e.g. the workspace selector's recents) can refresh in lockstep. */
@@ -21,9 +20,11 @@ interface SessionState {
   bumpProjects: () => void
 
   loadSessions: (page?: number) => Promise<void>
+  refreshSessions: () => Promise<void>
   loadMore: () => Promise<void>
   setActive: (id: string) => void
   newSession: () => string
+  createDetachedSession: () => string
   /** The project the currently-active session is bound to, or null (default). */
   currentProject: () => { path: string; name: string } | null
   /**
@@ -62,7 +63,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   hasMore: false,
   loading: false,
   activeId: readActive(),
-  groupMode: 'time',
+  projects: [],
   projectOrder: [],
   projectsRev: 0,
 
@@ -77,12 +78,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         total: res.total,
         page: res.page,
         hasMore: res.has_more,
-        groupMode: res.group_mode || 'time',
+        projects: res.projects || s.projects,
         projectOrder: res.project_order || s.projectOrder,
         loading: false,
       }))
     } catch {
       set({ loading: false })
+    }
+  },
+
+  refreshSessions: async () => {
+    try {
+      const res = await apiClient.getSessions(1, 50)
+      set((s) => {
+        const latest = new Set(res.sessions.map((item) => item.session_id))
+        return {
+          sessions: sortSessions([...res.sessions, ...s.sessions.filter((item) => !latest.has(item.session_id))]),
+          total: res.total,
+          projects: res.projects || s.projects,
+          projectOrder: res.project_order || s.projectOrder,
+        }
+      })
+    } catch {
+      /* The next poll will retry. */
     }
   },
 
@@ -101,6 +119,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const id = genId()
     localStorage.setItem(ACTIVE_KEY, id)
     set({ activeId: id })
+    return id
+  },
+
+  createDetachedSession: () => {
+    const id = genId()
+    get().addOptimistic(id)
     return id
   },
 
@@ -167,7 +191,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   reorderSpaces: (fromKey, beforeKey, currentOrder) => {
-    const { projectOrder, sessions, groupMode } = get()
+    const { projectOrder, projects } = get()
     // Prefer the caller's currently-displayed group order (already stable via
     // buildGroups) so dragging matches what the user sees, and is never skewed
     // by a freshly created session sitting at the top of the array. Fall back
@@ -177,18 +201,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         ? [...currentOrder]
         : projectOrder.length
           ? [...projectOrder]
-          : Array.from(
-              new Set(sessions.map((s) => s.project?.path || DEFAULT_SPACE_KEY))
-            )
-    // Include any visible keys the saved order does not yet know about.
-    if (groupMode === 'project') {
-      for (const s of sessions) {
-        const k = s.project?.path || DEFAULT_SPACE_KEY
-        if (!current.includes(k)) current.push(k)
-      }
-      if (!current.includes(DEFAULT_SPACE_KEY) && sessions.some((s) => !s.project?.path)) {
-        current.unshift(DEFAULT_SPACE_KEY)
-      }
+          : projects.map((project) => project.path)
+    for (const project of projects) {
+      if (!current.includes(project.path)) current.push(project.path)
     }
     const order = current.filter((k) => k !== fromKey)
     const idx = order.indexOf(beforeKey)

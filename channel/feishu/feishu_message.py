@@ -4,9 +4,7 @@ import json
 import os
 import requests
 from common.log import logger
-from common.tmp_dir import TmpDir
 from common import state_dir, utils
-from config import conf
 
 
 class FeishuMessage(ChatMessage):

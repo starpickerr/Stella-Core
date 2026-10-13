@@ -12,6 +12,7 @@ import type {
   TaskAction,
   Attachment,
   SessionsPage,
+  WorkspaceShare,
   SessionSettingsState,
   HistoryPage,
   ModelsData,
@@ -27,17 +28,122 @@ import type {
   PeriodStatement,
   PeriodStatementItem,
   PeriodType,
-  Briefing, BriefingDetail, BriefingItem, BriefingItemStatus,
+  Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
+  BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
   BriefingSource, ElearningSettings, ElearningSettingsInput,
-  CalendarCategory, CalendarEvent, CalendarEventInput,
-  Todo, TodoInput,
+  CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection,
+  Todo, TodoInput, UncertainReminder,
 } from '../types'
 import { getLang } from '../i18n'
+import { notifySecurityPolicyChanged } from '../store/securityPolicyEvents'
 
 interface ApiResult {
   status: string
   message?: string
+}
+
+export interface SecurityPolicy {
+  preset?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  base_preset?: 'read-only' | 'workspace-write' | 'full-access'
+  rules?: Record<string, 'allow' | 'confirm' | 'deny'>
+  connections?: Record<string, { allowed: boolean; scopes: string[] }>
+  extra_roots?: string[]
+}
+
+export interface SecurityRecord {
+  at: number
+  agent: string
+  conversation: string | null
+  project: string | null
+  tool: string
+  operation: string
+  event: string
+  resource: string
+  risk: string
+  decision: string
+  reason: string
+  trace: string[]
+}
+
+export interface SecurityCenterState extends ApiResult {
+  global_policy: SecurityPolicy
+  effective_policy: SecurityPolicy
+  effective_mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  effective_rules: Record<string, 'allow' | 'confirm' | 'deny'>
+  policy_source: 'global' | 'project' | 'session' | 'mixed'
+  mode_definitions: SecurityModeDefinition[]
+  authorized_roots: string[]
+  policy_error?: string | null
+  process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
+  project: string | null
+  project_policy: SecurityPolicy
+  projects: { path: string; name: string; policy: SecurityPolicy }[]
+  conversation_policy: SecurityPolicy
+  connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null }[]
+  secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
+  background_tasks?: SecurityBackgroundTask[]
+  privacy?: SecurityPrivacyInventory
+  summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
+    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[];
+    activity_counts?: SecurityActivityCounts
+    background_tasks?: SecurityBackgroundTaskSummary }
+}
+
+export interface SecurityBackgroundTask {
+  id: string
+  name: string
+  enabled: boolean
+  conversation_mode?: string | null
+  execution_session_id?: string | null
+  execution_project_dir?: string | null
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | null
+  effective_mode?: string | null
+  permission_source?: string
+  unknown?: boolean
+  policy_error?: string | null
+}
+
+export interface SecurityBackgroundTaskSummary {
+  total: number | null
+  enabled: number | null
+  paused: number | null
+  modes: Record<string, number> | null
+  unknown: number | null
+  available: boolean
+}
+
+export interface SecurityPrivacyCategory {
+  id: string
+  name: { zh: string; en: string }
+  path: string
+  bytes: number
+  exists: boolean
+  retention: { zh: string; en: string }
+  actions: string[]
+  detail?: Record<string, unknown>
+}
+
+export interface SecurityPrivacyInventory {
+  available: boolean
+  categories: SecurityPrivacyCategory[]
+  external_transfers?: { id: string; name: string; available: boolean; note: { zh: string; en: string } }[]
+}
+
+export interface SecurityActivityCounts {
+  auto_allow: number
+  user_authorized: number
+  denied: number
+  uncertain: boolean
+  since: number
+  until: number
+}
+
+export interface SecurityModeDefinition {
+  id: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  name: { zh: string; en: string }
+  description: { zh: string; en: string }
+  rules: Record<string, 'allow' | 'confirm' | 'deny'>
 }
 
 const AUTH_TOKEN_KEY = 'cow_auth_token'
@@ -273,6 +379,20 @@ class ApiClient {
     return this.request(`/api/workspace/resolve?path=${encodeURIComponent(path)}${this.sessionQuery(session)}`)
   }
 
+  async workspaceShares(session: string): Promise<{ shares: WorkspaceShare[] } & ApiResult> {
+    return this.request(`/api/workspace/shares?session=${encodeURIComponent(session)}`)
+  }
+
+  async createWorkspaceShare(session: string, path: string, recipient: string, access: 'read' | 'write'):
+    Promise<{ share: WorkspaceShare } & ApiResult> {
+    return this.request('/api/workspace/shares', { method: 'POST',
+      body: JSON.stringify({ session, path, recipient, access }) })
+  }
+
+  async revokeWorkspaceShare(session: string, id: string): Promise<{ share: WorkspaceShare } & ApiResult> {
+    return this.request('/api/workspace/shares/revoke', { method: 'POST', body: JSON.stringify({ session, id }) })
+  }
+
   // ---------------------------------------------------------
   // Project workspace (per-session working directory)
   // ---------------------------------------------------------
@@ -356,7 +476,7 @@ class ApiClient {
   }
 
   /** This session's effective model + permission, with the catalog to switch. */
-  async getSessionSettings(sessionId: string): Promise<{ status: string } & SessionSettingsState> {
+  async getSessionSettings(sessionId: string): Promise<{ status: string; message?: string } & SessionSettingsState> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`)
   }
 
@@ -364,7 +484,7 @@ class ApiClient {
    *  field to drop the override and follow the global default. */
   async updateSessionSettings(
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; permission?: string | null }
+    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
   ): Promise<{ status: string } & Partial<SessionSettingsState> & { message?: string }> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
       method: 'POST',
@@ -397,11 +517,71 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
+  async getSecurityCenter(session?: string): Promise<SecurityCenterState> {
+    return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
+  }
+
+  async getSecurityRecords(filters: Record<string, string> = {}): Promise<{
+    records: SecurityRecord[]
+    counts?: SecurityActivityCounts
+  }> {
+    const query = new URLSearchParams(filters).toString()
+    const result = await this.request<{ status: string; records: SecurityRecord[]; counts?: SecurityActivityCounts }>(
+      `/api/security/activity${query ? `?${query}` : ''}`,
+    )
+    if (result.status !== 'success') throw new Error('Unable to load security activity')
+    return { records: result.records || [], counts: result.counts }
+  }
+
+  async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
+    options: { project?: string; session?: string } = {}): Promise<{ status: string; message?: string }> {
+    const result = await this.request<ApiResult>('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
+    if (result.status === 'success') notifySecurityPolicyChanged()
+    return result
+  }
+
+  async updateSecurityConnection(id: string, allowed: boolean, scopes: string[]): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, allowed, scopes }) })
+  }
+
+  async saveSecuritySecret(name: string, value: string): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/secrets', { method: 'POST', body: JSON.stringify({ name, value }) })
+  }
+
+  async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
+  }
+
+  async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
+    return this.request('/api/security/privacy', { method: 'POST', body: JSON.stringify({ action }) })
+  }
+
+  async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[]> {
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/security/confirmations')
+    return result.pending || []
+  }
+
+  async approveSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
+  }
+
+  async rejectSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
+    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
+  }
+
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {
-    return this.request('/config', {
+    const result = await this.request<{ status: string; applied: Record<string, unknown> }>('/config', {
       method: 'POST',
       body: JSON.stringify({ updates }),
     })
+    if (result.status === 'success' && typeof result.applied?.web_password === 'string') {
+      const password = String(updates.web_password || '')
+      if (password) {
+        const login = await this.authLogin(password)
+        if (login.status !== 'success') throw new Error(login.message || 'Password saved; sign in again to continue')
+      } else this.setAuthToken(null)
+    }
+    return result
   }
 
   // ---------------------------------------------------------
@@ -472,12 +652,14 @@ class ApiClient {
   // ---------------------------------------------------------
 
   async getTools(): Promise<ToolInfo[]> {
-    const data = await this.request<{ status: string; tools: ToolInfo[] }>('/api/tools')
+    const data = await this.request<{ status: string; tools?: ToolInfo[]; message?: string }>('/api/tools')
+    if (data.status !== 'success' || !Array.isArray(data.tools)) throw new Error(data.message || 'Could not load tools')
     return data.tools
   }
 
   async getSkills(): Promise<SkillInfo[]> {
-    const data = await this.request<{ status: string; skills: SkillInfo[] }>('/api/skills')
+    const data = await this.request<{ status: string; skills?: SkillInfo[]; message?: string }>('/api/skills')
+    if (data.status !== 'success' || !Array.isArray(data.skills)) throw new Error(data.message || 'Could not load skills')
     return data.skills
   }
 
@@ -544,6 +726,11 @@ class ApiClient {
   // Scheduler
   // ---------------------------------------------------------
 
+  async getTaskDestinations(): Promise<{channel_type: string; configured: boolean; ready: boolean; status: string; recipients: {receiver: string; name: string}[]}[]> {
+    const result = await this.request<{destinations: {channel_type: string; configured: boolean; ready: boolean; status: string; recipients: {receiver: string; name: string}[]}[]}>('/api/scheduler/destinations')
+    return result.destinations
+  }
+
   async getSchedulerTasks(): Promise<SchedulerTask[]> {
     const data = await this.request<{ status: string; tasks: SchedulerTask[] }>('/api/scheduler')
     return data.tasks
@@ -553,8 +740,10 @@ class ApiClient {
     name: string
     enabled?: boolean
     schedule: TaskSchedule
-    action: Pick<TaskAction, 'type' | 'content' | 'task_description'>
+    action: TaskAction
     session_id: string
+    notification_route?: SchedulerTask['notification_route']
+    run_permission_mode?: SchedulerTask['run_permission_mode'] | 'inherit'
   }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler', {
       method: 'POST',
@@ -576,10 +765,16 @@ class ApiClient {
     })
   }
 
-  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action'>>): Promise<{ status: string; task: SchedulerTask }> {
+  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action' | 'notification_route'>> & { run_permission_mode?: NonNullable<SchedulerTask['run_permission_mode']> | 'inherit' }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler/update', {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId, ...updates }),
+    })
+  }
+
+  async testNotificationRoute(notification_route: SchedulerTask['notification_route']): Promise<{status: string; delivery_status?: string; message?: string; error?: string}> {
+    return this.request('/api/scheduler/test-delivery', {
+      method: 'POST', body: JSON.stringify({ notification_route }),
     })
   }
 
@@ -622,6 +817,165 @@ class ApiClient {
     await this.briefingRequest('/api/calendar/events/delete', { id })
   }
 
+  async getTodoCategories(): Promise<CalendarCategory[]> {
+    return (await this.briefingRequest<{ categories: CalendarCategory[] }>('/api/todos/categories')).categories
+  }
+
+  async createTodoCategory(name: string): Promise<CalendarCategory> {
+    return (await this.briefingRequest<{ category: CalendarCategory }>('/api/todos/categories', { name })).category
+  }
+
+  async previewAppleCategoryLinks(kind: 'calendar' | 'todos', links: unknown[]): Promise<{ preview_token: string }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/links-preview' : '/api/todos/apple/links-preview'
+    return this.briefingRequest(path, { links })
+  }
+
+  async saveAppleCategoryLinks(kind: 'calendar' | 'todos', links: unknown[], previewToken: string): Promise<{ connection: AppleCalendarConnection | AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/links' : '/api/todos/apple/links'
+    return this.briefingRequest(path, { links, preview_token: previewToken, confirm: true })
+  }
+
+  async previewAppleCategoryBatch(kind: 'calendar' | 'todos', payload: {
+    direction: 'import' | 'export'
+    selections: { apple_id: string; stella_id: string }[]
+    start: string
+    end: string
+    include_undated?: boolean
+    include_completed?: boolean
+  }): Promise<{ preview: { new: number; skipped: number; failed: number }; preview_token: string }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/batch-preview' : '/api/todos/apple/batch-preview'
+    return this.briefingRequest(path, payload)
+  }
+
+  async transferAppleCategoryBatch(kind: 'calendar' | 'todos', payload: {
+    direction: 'import' | 'export'
+    selections: { apple_id: string; stella_id: string }[]
+    start: string
+    end: string
+    preview_token: string
+    include_undated?: boolean
+    include_completed?: boolean
+  }): Promise<{ connection: AppleCalendarConnection | AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    const path = kind === 'calendar' ? '/api/calendar/apple/batch' : '/api/todos/apple/batch'
+    return this.briefingRequest(path, { ...payload, confirm: true })
+  }
+
+  async getAppleCalendar(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/status')).connection
+  }
+
+  async requestAppleCalendarAccess(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/access', {})).connection
+  }
+
+  async setAppleCalendarAuto(enabled: boolean): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/auto', { enabled })).connection
+  }
+
+  async getAppleReminders(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/status')).connection
+  }
+
+  async setAppleRemindersAuto(enabled: boolean): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/auto', { enabled })).connection
+  }
+
+  async requestAppleRemindersAccess(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/access', {})).connection
+  }
+
+  async previewAppleRemindersScope(listIds: string[], direction: AppleReminderConnection['direction']): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }
+    preview_token: string
+  }> {
+    return this.briefingRequest('/api/todos/apple/scope-preview', { list_ids: listIds, direction })
+  }
+
+  async configureAppleReminders(listIds: string[], direction: AppleReminderConnection['direction'], previewToken: string): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/configure', { list_ids: listIds, direction,
+      preview_token: previewToken, confirm: true })
+  }
+
+  async syncAppleReminders(confirmDeletions = false, confirmLocalDeletions = false): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/sync', {
+      confirm_deletions: confirmDeletions, confirm_local_deletions: confirmLocalDeletions,
+    })
+  }
+
+  async disconnectAppleReminders(): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/disconnect', {})).connection
+  }
+
+  async resolveAppleRemindersConflict(todoId: string, choice: 'keep_stella' | 'keep_apple'): Promise<AppleReminderConnection> {
+    return (await this.briefingRequest<{ connection: AppleReminderConnection }>('/api/todos/apple/resolve', { todo_id: todoId, choice })).connection
+  }
+
+  async getAppleCalendarItems(calendarId: string, start: string, end: string): Promise<{ event_id: string; title: string }[]> {
+    return (await this.briefingRequest<{ items: { event_id: string; title: string }[] }>('/api/calendar/apple/items', {
+      calendar_id: calendarId, start, end,
+    })).items
+  }
+
+  async getAppleRemindersItems(listId: string): Promise<{ reminder_id: string; title: string }[]> {
+    return (await this.briefingRequest<{ items: { reminder_id: string; title: string }[] }>('/api/todos/apple/items', {
+      list_id: listId,
+    })).items
+  }
+
+  async previewAppleCalendarItems(direction: 'import' | 'export', calendarId: string, itemIds: string[]): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }; preview_token: string
+  }> {
+    return this.briefingRequest('/api/calendar/apple/preview', {
+      direction, calendar_id: calendarId, item_ids: itemIds,
+    })
+  }
+
+  async previewAppleRemindersItems(direction: 'import' | 'export', listId: string, itemIds: string[]): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number }; preview_token: string
+  }> {
+    return this.briefingRequest('/api/todos/apple/preview', {
+      direction, list_id: listId, item_ids: itemIds,
+    })
+  }
+
+  async transferAppleCalendarItems(direction: 'import' | 'export', calendarId: string, itemIds: string[], previewToken: string): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/one-time', {
+      direction, calendar_id: calendarId, item_ids: itemIds, preview_token: previewToken, confirm: true,
+    })
+  }
+
+  async transferAppleRemindersItems(direction: 'import' | 'export', listId: string, itemIds: string[], previewToken: string): Promise<{ connection: AppleReminderConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/todos/apple/one-time', {
+      direction, list_id: listId, item_ids: itemIds, preview_token: previewToken, confirm: true,
+    })
+  }
+
+  async previewAppleCalendarScope(calendarIds: string[], direction: AppleCalendarConnection['direction']): Promise<{
+    preview: { new: number; updated: number; skipped: number; conflicts: number; failed_calendar_ids: string[] }
+    preview_token: string
+  }> {
+    return this.briefingRequest('/api/calendar/apple/scope-preview', { calendar_ids: calendarIds, direction })
+  }
+
+  async configureAppleCalendar(calendarIds: string[], direction: AppleCalendarConnection['direction'], previewToken: string): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/configure', { calendar_ids: calendarIds, direction,
+      preview_token: previewToken, confirm: true })
+  }
+
+  async syncAppleCalendar(confirmDeletions = false, confirmLocalDeletions = false): Promise<{ connection: AppleCalendarConnection; result: AppleCalendarSyncResult }> {
+    return this.briefingRequest('/api/calendar/apple/sync', {
+      confirm_deletions: confirmDeletions, confirm_local_deletions: confirmLocalDeletions,
+    })
+  }
+
+  async disconnectAppleCalendar(): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/disconnect', {})).connection
+  }
+
+  async resolveAppleCalendarConflict(stellaId: string, choice: 'keep_stella' | 'keep_apple'): Promise<AppleCalendarConnection> {
+    return (await this.briefingRequest<{ connection: AppleCalendarConnection }>('/api/calendar/apple/resolve', { stella_id: stellaId, choice })).connection
+  }
+
   async getTodos(start?: string, end?: string, includeCompleted = true): Promise<Todo[]> {
     const query = new URLSearchParams()
     if (start) query.set('start', start)
@@ -634,21 +988,58 @@ class ApiClient {
     return (await this.briefingRequest<{ todo: Todo }>('/api/todos', payload)).todo
   }
 
+  async getTodoFocus(today: string): Promise<Todo[]> {
+    return (await this.briefingRequest<{ todos: Todo[] }>(`/api/todos?mode=focus&today=${encodeURIComponent(today)}`)).todos
+  }
+
+  async completeTodoChecklist(id: string, itemId: string, completed: boolean): Promise<void> {
+    await this.briefingRequest('/api/todos/checklist/complete', { id, item_id: itemId, completed })
+  }
+
   async updateTodo(id: string, payload: TodoInput): Promise<Todo> {
     return (await this.briefingRequest<{ todo: Todo }>('/api/todos/update', { id, ...payload })).todo
   }
 
-  async completeTodo(id: string, completed: boolean): Promise<void> {
-    await this.briefingRequest('/api/todos/complete', { id, completed })
+  async changeTodoStatus(id: string, status: Todo['status'], force = false): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/status', { id, status, force })).todo
+  }
+
+  async addSubtask(parentId: string, payload: TodoInput): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/subtasks', { parent_id: parentId, ...payload })).todo
+  }
+
+  async moveTodo(id: string, parentId: string | null, position?: number): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/move', { id, parent_id: parentId, position })).todo
+  }
+
+  async addTodoDependency(id: string, prerequisiteId: string): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/dependencies/add',
+      { id, prerequisite_id: prerequisiteId })).todo
+  }
+
+  async removeTodoDependency(id: string, prerequisiteId: string): Promise<Todo> {
+    return (await this.briefingRequest<{ todo: Todo }>('/api/todos/dependencies/remove',
+      { id, prerequisite_id: prerequisiteId })).todo
+  }
+
+  async completeTodo(id: string, completed: boolean, force = false): Promise<void> {
+    await this.briefingRequest('/api/todos/complete', { id, completed, force })
   }
 
   async deleteTodo(id: string): Promise<void> {
     await this.briefingRequest('/api/todos/delete', { id })
   }
 
-  async claimTodoNotifications(): Promise<Todo[]> {
-    return (await this.briefingRequest<{ todos: Todo[] }>('/api/todos/notifications', {})).todos
+  async getUncertainReminders(): Promise<UncertainReminder[]> {
+    return (await this.briefingRequest<{ reminders: UncertainReminder[] }>(
+      '/api/todos/reminders/uncertain')).reminders
   }
+
+  async retryUncertainReminder(deliveryId: string): Promise<boolean> {
+    return (await this.briefingRequest<{ queued: boolean }>(
+      '/api/todos/reminders/retry', { delivery_id: deliveryId })).queued
+  }
+
 
   async importChinaHolidays(year: number): Promise<{ year: number; added: number; total: number }> {
     return this.briefingRequest('/api/calendar/import/holidays', { year })
@@ -679,11 +1070,43 @@ class ApiClient {
   }
 
   async getBriefings(): Promise<Briefing[]> {
-    return (await this.briefingRequest<{ briefings: Briefing[] }>('/api/briefings?kind=morning')).briefings
+    return (await this.briefingRequest<{ briefings: Briefing[] }>('/api/briefings')).briefings
   }
 
   async getBriefing(id: string): Promise<BriefingDetail> {
     return this.briefingRequest(`/api/briefings/${encodeURIComponent(id)}`)
+  }
+
+  async getBriefingOverview(): Promise<Pick<BriefingDetail, 'items' | 'actions' | 'preferences'>> {
+    return this.briefingRequest('/api/briefings/overview')
+  }
+
+  async decideBriefing(id: string, decision: BriefingDecision): Promise<BriefingActionReceipt> {
+    return (await this.briefingRequest<{ receipt: BriefingActionReceipt }>('/api/briefings/actions', { id, decision })).receipt
+  }
+
+  async getBriefingTargets(kind: 'todo' | 'calendar', query = ''): Promise<(Todo | CalendarEvent)[]> {
+    return (await this.briefingRequest<{ targets: (Todo | CalendarEvent)[] }>(`/api/briefings/actions/targets?${new URLSearchParams({ kind, query })}`)).targets
+  }
+
+  async getBriefingAuthorizations(): Promise<BriefingAuthorization[]> {
+    return (await this.briefingRequest<{ rules: BriefingAuthorization[] }>('/api/briefings/authorizations')).rules
+  }
+
+  async saveBriefingAuthorization(rule: Omit<BriefingAuthorization, 'id'>): Promise<BriefingAuthorization> {
+    return (await this.briefingRequest<{ rule: BriefingAuthorization }>('/api/briefings/authorizations', rule)).rule
+  }
+
+  async deleteBriefingAuthorization(id: string): Promise<void> {
+    await this.briefingRequest('/api/briefings/authorizations/delete', { id })
+  }
+
+  async getBriefingPreferences(): Promise<BriefingPreferences> {
+    return (await this.briefingRequest<{ preferences: BriefingPreferences }>('/api/briefings/preferences')).preferences
+  }
+
+  async saveBriefingPreferences(preferences: BriefingPreferences): Promise<BriefingPreferences> {
+    return (await this.briefingRequest<{ preferences: BriefingPreferences }>('/api/briefings/preferences', preferences)).preferences
   }
 
   async getBriefingRevision(id: string, number: number): Promise<BriefingDetail> {
@@ -691,7 +1114,12 @@ class ApiClient {
   }
 
   async runBriefing(operation: 'create' | 'update', briefingDate?: string, sources?: string[]): Promise<BriefingDetail> {
-    return this.briefingRequest('/api/briefings/run', { kind: 'morning', operation, briefing_date: briefingDate, sources })
+    return this.briefingRequest('/api/briefings/run', { operation, briefing_date: briefingDate, sources })
+  }
+
+  async getBriefingRunProgress(): Promise<BriefingRunProgress | null> {
+    return (await this.briefingRequest<{ progress: BriefingRunProgress | null }>(
+      '/api/briefings/run/progress')).progress
   }
 
   async getBriefingSources(): Promise<BriefingSource[]> {
@@ -704,6 +1132,15 @@ class ApiClient {
 
   async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
+  }
+
+  async getElearningFileSyncSettings(): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/elearning/file-sync')).settings
+  }
+
+  async saveElearningFileSyncSettings(enabled: boolean, root: string): Promise<ElearningSettings> {
+    return (await this.briefingRequest<{ settings: ElearningSettings }>(
+      '/api/elearning/file-sync', { file_sync_enabled: enabled, file_sync_root: root })).settings
   }
 
   async deleteElearningSource(): Promise<void> {

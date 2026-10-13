@@ -6,7 +6,6 @@ import threading
 from dataclasses import dataclass
 from typing import Iterable, List, Mapping, Optional
 
-from common.log import logger
 
 from agent.registry import AgentRegistry
 

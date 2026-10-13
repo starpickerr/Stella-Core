@@ -4,8 +4,6 @@ from datetime import datetime
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
-
 from agent.briefing import settings
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
@@ -13,7 +11,9 @@ from agent.briefing.sources.base import FetchedItem, FetchResult
 from agent.briefing.sources.email import EmailSource
 from agent.briefing.store import BriefingStore
 from agent.tools.briefing.briefing_tool import BriefingTool
-from channel.web.web_channel import _briefing_pipeline
+from channel.desktop.desktop_channel import _briefing_pipeline
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 @pytest.fixture
@@ -119,7 +119,8 @@ def test_shared_message_ids_and_uids_remain_separate_and_failed_account_is_named
     add("ada@example.com", "ada-secret")
     add("bob@example.com", "bob-secret")
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
-    now = lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00")
+    def now():
+        return datetime.fromisoformat("2026-09-09T08:00:00+08:00")
     calls = []
 
     def fetch(source, cursors):

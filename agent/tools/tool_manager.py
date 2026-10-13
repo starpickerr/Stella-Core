@@ -1,8 +1,9 @@
 import importlib
+import copy
 import importlib.util
 import threading
 from pathlib import Path
-from typing import Dict, Any, Type
+from typing import Dict
 from agent.tools.base_tool import BaseTool
 from common.log import logger
 from config import conf
@@ -279,9 +280,9 @@ class ToolManager:
                 for tool_name in missing_tools:
                     if tool_name == "google_search":
                         logger.warning(
-                            f"[ToolManager] Google Search tool is configured but may need API key.\n"
-                            f"  Get API key from: https://serper.dev\n"
-                            f"  Configure in config.json: tools.google_search.api_key"
+                            "[ToolManager] Google Search tool is configured but may need API key.\n"
+                            "  Get API key from: https://serper.dev\n"
+                            "  Configure in config.json: tools.google_search.api_key"
                         )
                     else:
                         logger.warning(f"[ToolManager] Tool '{tool_name}' is configured but could not be loaded.")
@@ -511,10 +512,19 @@ class ToolManager:
                         if not tool_name:
                             continue
                         mcp_tool = McpTool(client, schema, server_name)
+                        public_name = mcp_tool.name
                         # Atomic dict assignment is GIL-safe; readers iterate
                         # over a list() snapshot to avoid concurrent mutation.
-                        self._mcp_tool_instances[tool_name] = mcp_tool
-                        added.append(tool_name)
+                        self._mcp_tool_instances[public_name] = mcp_tool
+                        from agent.permission.gateway import Capability, register_tool
+                        try:
+                            register_tool(public_name, Capability.EXTERNAL, connection=f"mcp:{server_name}",
+                                          read_only=mcp_tool.read_only)
+                        except ValueError:
+                            logger.warning("[MCP] Skipped a tool with an invalid security declaration")
+                            self._mcp_tool_instances.pop(public_name, None)
+                            continue
+                        added.append(public_name)
 
                     # Register client into the shared registry only after its
                     # tools are visible, so callers never see a half-loaded server.
@@ -608,7 +618,7 @@ class ToolManager:
             if not (added or removed):
                 return ([], [])
             for name in added:
-                agent_tools[name] = current[name]
+                agent_tools[name] = copy.copy(current[name])
             for name in removed:
                 agent_tools.pop(name, None)
 
@@ -626,7 +636,7 @@ class ToolManager:
                     if not (isinstance(t, McpTool) and t.name in removed)
                 ]
             for name in added:
-                agent.tools.append(current[name])
+                agent.tools.append(copy.copy(current[name]))
 
         else:
             return ([], [])
@@ -732,14 +742,15 @@ class ToolManager:
 
             # Apply configuration if available
             if hasattr(self, 'tool_configs') and name in self.tool_configs:
-                tool_instance.config = self.tool_configs[name]
+                tool_instance.config = dict(self.tool_configs[name])
 
             return tool_instance
 
         # Fall back to MCP tool instances
         mcp_tool = self._mcp_tool_instances.get(name)
         if mcp_tool:
-            return mcp_tool
+            # Per-call fields (context, cwd, cancellation) belong to one Agent.
+            return copy.copy(mcp_tool)
 
         return None
 

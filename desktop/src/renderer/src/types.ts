@@ -238,11 +238,12 @@ export interface ProjectRef {
   name: string
   /** Unix seconds of last use; present on recents. */
   ts?: number
+  conversation_count?: number
 }
 
 /** Project picker state for a session (from /api/projects). */
 export interface ProjectState {
-  /** null when the session uses the default workspace (~/stella). */
+  /** null when the session uses the default workspace. */
   current: ProjectRef | null
   default_workspace: string
   projects_root?: string
@@ -356,13 +357,21 @@ export interface SessionsPage {
   page: number
   page_size: number
   has_more: boolean
-  /** "project" once more than one distinct workspace is in play, else "time". */
-  group_mode?: 'project' | 'time'
-  /** Number of distinct project spaces across all sessions (decides group_mode). */
-  space_count?: number
-  default_workspace?: string
-  /** User-defined order of project spaces; "__default__" marks the default one. */
+  /** Durable project entries, including projects without conversations. */
+  projects: ProjectRef[]
+  /** User-defined order of project entries. */
   project_order?: string[]
+}
+
+export interface WorkspaceShare {
+  id: string
+  path: string
+  name: string
+  owner_agent: string
+  owner_session: string
+  recipient_session: string
+  access: 'read' | 'write'
+  active: boolean
 }
 
 /** Per-session model + permission overrides (from /api/sessions/{id}/settings). */
@@ -381,10 +390,19 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    mode: 'read-only' | 'workspace-write' | 'full-access'
-    source: 'session' | 'global'
-    global: string
-    modes: string[]
+    source: 'session' | 'project' | 'global' | 'mixed'
+    preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    global_preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+    base_preset: 'read-only' | 'workspace-write' | 'full-access'
+    rules: Record<string, 'allow' | 'confirm' | 'deny'>
+    policy: import('./api/client').SecurityPolicy
+    mode_definitions: import('./api/client').SecurityModeDefinition[]
+    authorized_roots: string[]
+    project: string | null
+    error?: string | null
+    process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
+    presets: string[]
   }
 }
 
@@ -404,7 +422,15 @@ export interface HistoryMessage {
   _seq?: number
 }
 
+export interface PendingAdmission {
+  run_id: string
+  user_content: {type: string; text?: string}[]
+  status: string
+  clear_history: boolean
+}
+
 export interface HistoryPage {
+  pending_admissions?: PendingAdmission[]
   messages: HistoryMessage[]
   total: number
   page: number
@@ -455,9 +481,6 @@ export interface ConfigData {
   agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
-  /** Global default permission for sessions that have not picked one. */
-  agent_permission_mode?: string
-  permission_modes?: string[]
   enable_thinking?: boolean
   reasoning_effort?: string
   reasoning_effort_by_model?: Record<string, string>
@@ -467,9 +490,6 @@ export interface ConfigData {
   api_keys: Record<string, string>
   providers: Record<string, ProviderMeta>
   web_password_masked?: string
-  // Real password, only returned to the desktop app (trusted local machine) so
-  // it can be edited in place. Undefined for browser access.
-  web_password?: string
 }
 
 // ============================================================
@@ -490,11 +510,13 @@ export interface ModelProvider {
   is_custom: boolean
   custom_id?: string
   custom_name?: string
+  model?: string
   active?: boolean
   api_key_field?: string | null
   api_base_field?: string | null
   api_key_masked?: string
   api_base?: string
+  protocol_id?: string
   api_base_default?: string
   api_base_placeholder?: string
   models: ModelEntry[]
@@ -516,6 +538,7 @@ export interface CapabilityState {
   editable?: boolean
   current_provider?: string
   current_model?: string
+  protocol_id?: string
   current_voice?: string
   current_dim?: number | null
   suggested_provider?: string
@@ -568,12 +591,12 @@ export interface ModelsData {
 }
 
 export type ModelsAction =
-  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string }
+  | { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string }
   | { action: 'delete_provider'; provider_id: string }
-  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
+  | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; models?: string[]; protocol_id?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
-  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string }
+  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; protocol_id?: string; voice?: string; strategy?: string; provider?: string }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 
@@ -605,9 +628,18 @@ export type ChannelAction = 'save' | 'connect' | 'disconnect'
 // Tools / skills
 // ============================================================
 
+export interface LocalizedCopy {
+  zh: string
+  en: string
+}
+
 export interface ToolInfo {
-  name: string
-  description: string
+  id: string
+  title: LocalizedCopy
+  intro: LocalizedCopy
+  detail: LocalizedCopy
+  available: boolean
+  reason?: LocalizedCopy | null
 }
 
 export interface SkillInfo {
@@ -703,7 +735,7 @@ export interface TaskSchedule {
 }
 
 export interface TaskAction {
-  type: 'send_message' | 'agent_task' | 'tool_call'
+  type: 'send_message' | 'agent_task' | 'tool_call' | 'skill_call' | 'application_command'
   content?: string
   task_description?: string
   receiver?: string
@@ -715,17 +747,55 @@ export interface TaskAction {
   call_params?: Record<string, unknown>
   tool_name?: string
   tool_params?: Record<string, unknown>
+  skill_name?: string
+  skill_params?: Record<string, unknown>
+  domain?: string
+  command?: string
+  params?: Record<string, unknown> | unknown[]
+  execution_session_id?: string
+  notify_session_id?: string
+  conversation_mode?: 'source' | 'reuse' | 'new'
+  source_session_id?: string
+  conversation_space?: 'personal' | 'project'
+  execution_project_dir?: string
+  receive_id_type?: string
 }
 
 export interface SchedulerTask {
   id: string
+  linked_todo_id?: string
   name: string
   enabled: boolean
   created_at: string
   updated_at: string
   schedule: TaskSchedule
   action: TaskAction
+  notification_route?: NotificationRoute | null
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
+  notification_delivery_status?: NotificationDeliveryStatus | null
   next_run_at?: string
+  last_run_status?: string
+  last_error?: string
+}
+
+export interface NotificationDestination {
+  channel_type: 'desktop' | 'telegram' | 'wecom_bot' | 'web' | 'feishu' | 'weixin'
+  receiver: string
+  receive_id_type?: string
+  is_group?: boolean
+  receiver_name?: string
+}
+
+export interface NotificationRoute {
+  primary: NotificationDestination | null
+  needs_reselect?: boolean
+}
+
+export interface NotificationDeliveryStatus {
+  status: string
+  error?: string
+  channel_type?: string
+  receiver?: string
 }
 
 // ============================================================
@@ -812,18 +882,78 @@ export interface CalendarEvent {
 export type CalendarEventInput = Pick<CalendarEvent, 'title' | 'description' | 'start_at' | 'end_at' | 'location'> &
   { all_day: boolean; category_id: string | null; repeat_frequency: CalendarEvent['repeat_frequency']; repeat_days: number[]; repeat_until: string | null; repeat_timezone: string }
 
+export interface AppleCategoryLink {
+  apple_id: string
+  stella_id: string
+  direction: 'import' | 'export' | 'bidirectional'
+  enabled: boolean
+  apple_name: string
+  stella_name: string
+  name_conflict: string
+}
+
+export interface AppleCalendarConnection {
+  supported: boolean
+  authorization: 'unsupported' | 'helper_missing' | 'not_determined' | 'denied' | 'restricted' | 'write_only' | 'full_access' | 'unknown'
+  connected: boolean
+  auto_enabled: boolean
+  calendar_ids: string[]
+  direction: 'import' | 'export' | 'bidirectional'
+  calendars: { id: string; title: string; source: string; writable: boolean }[]
+  links?: AppleCategoryLink[]
+  last_success: string | null
+  error: string
+  conflicts: { stella_id: string; reason: string }[]
+  pending_deletions: number
+  pending_local_deletions: number
+}
+
+export interface AppleCalendarSyncResult {
+  status: string
+  imported: number
+  updated: number
+  exported: number
+  deleted_local: number
+  deleted_remote: number
+  conflicts: number
+  pending_deletions: number
+  pending_local_deletions: number
+  failed_calendar_ids: string[]
+}
+
+export interface AppleReminderConnection extends Omit<AppleCalendarConnection, 'calendar_ids' | 'calendars' | 'conflicts'> {
+  list_ids: string[]
+  lists: { id: string; title: string; source: string; writable: boolean }[]
+  conflicts: { todo_id: string; reason: string }[]
+}
+
 export interface Todo {
   id: string; series_id?: string; title: string; notes: string
+  status: 'todo' | 'in_progress' | 'waiting' | 'blocked' | 'completed' | 'cancelled'
+  parent_id: string | null; sort_order: number; remind_at: string | null
+  scheduler_task_id: string | null; reminder_sync_pending: boolean; reminder_sync_error: string
+  reminder_delivery?: NotificationRoute | null; reminder_delivery_status?: NotificationDeliveryStatus | null
+  subtask_count: number; progress_completed: number; progress_total: number; progress_percent: number
+  dependency_ids: string[]; blocked_by: string[]
   due_on: string | null; due_time: string | null; timezone: string; priority: number
   completed_at: string | null; repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
   repeat_days: string; repeat_until: string | null
+  planned_on: string | null; list_name: string; tags: string; flagged: number; checklist: string
   source_type: string | null; source_key: string | null; source_url: string
   user_modified: number; briefing_id: string | null; created_at: string; updated_at: string
 }
-export type TodoInput = Pick<Todo, 'title' | 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until'> &
-  { repeat_days: number[] }
+export interface TodoChecklistItem { id: string; title: string; completed: boolean }
+export type TodoInput = Pick<Todo, 'title'> & Partial<Pick<Todo, 'notes' | 'due_on' | 'due_time' | 'timezone' | 'priority' | 'repeat_frequency' | 'repeat_until' | 'status' | 'parent_id' | 'remind_at' | 'reminder_delivery'>> &
+  { repeat_days?: number[]; planned_on?: string | null; list_name?: string; tags?: string[];
+    flagged?: boolean | number; checklist?: TodoChecklistItem[] }
 
-export type BriefingKind = 'morning' | 'followup' | 'meeting'
+export interface UncertainReminder {
+  delivery_id: string
+  todo_id: string
+  occurrence_on: string
+  title: string
+}
+
 export type BriefingStatus = 'running' | 'completed' | 'failed' | 'partial'
 export type BriefingItemStatus = 'undo' | 'done' | 'ignored' | 'follow_up'
 
@@ -835,7 +965,6 @@ export interface Briefing {
   window_start: string | null
   window_end: string | null
   id: string
-  kind: BriefingKind
   status: BriefingStatus
   title: string
   body: string
@@ -893,6 +1022,68 @@ export interface BriefingDetail {
   items: BriefingItem[]
   mail: BriefingMail[]
   revisions: { number: number; trigger: string; created_at: string; status: BriefingStatus }[]
+  actions?: Record<string, BriefingActionView>
+  preferences?: BriefingPreferences
+}
+
+export type BriefingActionKind = 'todo' | 'calendar' | 'reminder'
+export interface BriefingDecision {
+  operation: 'create' | 'link' | 'unlink' | 'ignore' | 'defer' | 'keep' | 'retry' | 'confirm_update' | 'keep_current' | 'remind'
+  kind: BriefingActionKind
+  target_id?: string
+  title?: string
+  due_at?: string | null
+  planned_on?: string | null
+  parent_id?: string | null
+  remind_at?: string | null
+  start_at?: string
+  end_at?: string
+  remember?: boolean
+}
+export interface BriefingActionReceipt {
+  kind: BriefingActionKind
+  state: 'pending' | 'succeeded' | 'failed' | 'conflict' | 'deleted' | 'detached' | 'ignored' | 'deferred' | 'briefing_only'
+  target_id: string | null
+  business: Todo | CalendarEvent | null
+  error: string
+  result: { operation?: string; changes?: Record<string, { current: unknown; source: unknown }>; remind_at?: string }
+}
+export interface BriefingActionView {
+  entity_key: string
+  category: 'needs_action' | 'attention' | 'status_update' | 'other'
+  information_type: string
+  change_type: 'new' | 'changed' | 'unchanged'
+  facts: Record<string, unknown>
+  todo: BriefingActionReceipt | null
+  calendar: BriefingActionReceipt | null
+  reminder: BriefingActionReceipt | null
+}
+export interface BriefingAuthorization {
+  id: string
+  source: string
+  account_id: string
+  information_type: string
+  course_id: string
+  kind: BriefingActionKind | 'sync'
+  mode: 'auto' | 'suggest' | 'briefing_only'
+  reminder_minutes?: number
+}
+export interface BriefingPreferences {
+  show_low_priority: boolean
+  show_ongoing: boolean
+  important_types: string[]
+  reminder_frequency: 'daily' | 'changes' | 'deadline'
+  summary_detail: 'brief' | 'full'
+}
+
+export interface BriefingRunProgress {
+  briefing_id: string
+  body: string
+  stage: 'fetching' | 'finalizing'
+  completed_sources: number
+  total_sources: number
+  candidate_count: number
+  updated_at: string | null
 }
 
 export interface BriefingRule {
@@ -952,6 +1143,8 @@ export interface BriefingSource {
 
 export interface ElearningSettings {
   enabled: boolean
+  file_sync_enabled: boolean
+  file_sync_root: string
   configured: boolean
   base_url: string
   username: string

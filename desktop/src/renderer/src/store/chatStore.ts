@@ -3,7 +3,7 @@ import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
 import { notifyRunDone } from '../lib/taskNotify'
 import { parseAttachmentMarkers } from '../lib/fileKind'
-import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
+import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage, PendingAdmission } from '../types'
 
 /**
  * Per-session chat state. Supports parallel sessions: each session keeps its
@@ -13,6 +13,7 @@ import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, Histo
 
 interface SessionRuntime {
   messages: ChatMessage[]
+  pendingAdmissions?: PendingAdmission[]
   isStreaming: boolean
   requestId: string | null
   // history pagination
@@ -34,6 +35,7 @@ interface ChatState {
   deleteMessage: (sid: string, userSeq: number, cascade: boolean) => Promise<void>
 
   loadHistory: (sid: string, page?: number) => Promise<void>
+  dismissPendingAdmissions: (sid: string) => void
   clearContext: (sid: string) => Promise<boolean>
   clearLocal: (sid: string) => void
 
@@ -44,6 +46,16 @@ interface ChatState {
 
 // EventSource instances kept outside the store (not serializable).
 const streams: Record<string, EventSource> = {}
+
+function pendingNoticeDismissed(sid: string): boolean {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(`stella_pending_dismissed:${sid}`) || 'false')
+    // Keep previous dismissals when upgrading from the per-run setting.
+    return value === true || (Array.isArray(value) && value.length > 0)
+  } catch {
+    return false
+  }
+}
 
 const EMPTY: SessionRuntime = {
   messages: [],
@@ -284,7 +296,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                     result: data.result ?? s.result,
                     display: data.display ?? s.display,
                     execution_time: data.execution_time,
-                    is_error: data.status !== 'success',
+                    is_error: data.status !== 'success' && data.status !== 'skill_required',
                     permission_denied: data.permission_denied,
                     permission_mode: data.permission_mode,
                   }
@@ -573,6 +585,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         const res = await apiClient.getHistory(sid, page, 20)
         const uiMsgs = res.messages.map(historyToMessage)
         patchSession(sid, {
+          pendingAdmissions: pendingNoticeDismissed(sid) ? [] : res.pending_admissions || [],
           historyPage: res.page,
           historyHasMore: res.has_more,
           historyLoaded: true,
@@ -586,6 +599,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       } catch {
         patchSession(sid, { historyLoaded: true })
       }
+    },
+
+    dismissPendingAdmissions: (sid) => {
+      try {
+        localStorage.setItem(`stella_pending_dismissed:${sid}`, 'true')
+      } catch { /* Closing still works when browser storage is unavailable. */ }
+      patchSession(sid, { pendingAdmissions: [] })
     },
 
     clearContext: async (sid) => {

@@ -5,7 +5,6 @@ Creates or overwrites files, automatically creates parent directories
 
 import os
 from typing import Dict, Any
-from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.credentials import is_credential_path
@@ -141,7 +140,8 @@ class Write(BaseTool):
         # behavior; enable via config.json tools.write.restrict_to_workspace.
         if self.config.get("restrict_to_workspace"):
             ws = os.path.realpath(self.cwd)
-            if os.path.commonpath([ws, real]) != ws:
+            from agent.permission.gateway import _managed
+            if os.path.commonpath([ws, real]) != ws and not _managed(real):
                 raise PermissionError(
                     f"writing outside the workspace is not allowed: {path}"
                 )

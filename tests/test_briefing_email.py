@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
-import pytest
-
-pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 from email.message import EmailMessage as RfcMessage
+
+import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing.service import BriefingService
 from agent.briefing.sources.email import parse_rfc822, EmailSource
 from agent.briefing.store import BriefingStore
 from agent.tools.briefing.briefing_tool import BriefingTool
+
+pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 
 
 @pytest.fixture(autouse=True)
@@ -154,11 +155,11 @@ def test_briefing_tool_run_and_get(tmp_path):
     ran = tool.execute({"action": "run", "briefing_date": "2026-09-09"})
     assert ran.status == "success"
     assert "请确认合同" in ran.result
-    listed = tool.execute({"action": "list", "kind": "morning"})
-    assert "brf-2026-09-09-morning" in listed.result
-    got = tool.execute({"action": "get", "briefing_id": "brf-2026-09-09-morning"})
+    listed = tool.execute({"action": "list"})
+    assert "brf-2026-09-09" in listed.result
+    got = tool.execute({"action": "get", "briefing_id": "brf-2026-09-09"})
     assert got.status == "success"
-    item_id = svc.get_briefing("brf-2026-09-09-morning")["items"][0].id
+    item_id = svc.get_briefing("brf-2026-09-09")["items"][0].id
     marked = tool.execute({"action": "item_status", "item_id": item_id, "status": "done"})
     assert marked.status == "success"
     assert "done" in marked.result

@@ -14,6 +14,7 @@ model, language and channel settings, and start passing or failing on them.
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -41,6 +42,9 @@ def workspace_out_of_the_way():
         # that loads config on import can leave a registry or a store already
         # resolved against the real path. Drop those.
         _forget_resolved_paths()
+        # Standalone tool tests bypass Agent startup, which creates Work.
+        from common.state_dir import personal_work_dir
+        personal_work_dir(base=workspace)
         try:
             yield workspace
         finally:
@@ -55,6 +59,15 @@ def _forget_resolved_paths():
     set_agent_registry(None)
     reset_memory_configs()
     clear_conversation_store_cache()
+
+
+@pytest.fixture(autouse=True)
+def security_audit_path(monkeypatch):
+    """Keep policy checks out of the real Security Center and remove them after each test."""
+    with tempfile.TemporaryDirectory(prefix="stella-security-test-") as directory:
+        path = Path(directory) / "security-activity.jsonl"
+        monkeypatch.setattr("agent.permission.audit._path", lambda: path)
+        yield path
 
 
 @pytest.fixture

@@ -25,7 +25,6 @@ from agent.briefing.models import (
 )
 from agent.briefing.store import BriefingStore, get_briefing_store
 
-_BRIEFING_KINDS = {"morning", "followup", "meeting"}
 _BRIEFING_STATUSES = {"running", "completed", "failed", "partial"}
 _ITEM_SECTIONS = {"action", "fyi"}
 _ITEM_STATUSES = {"undo", "done", "ignored", "follow_up"}
@@ -58,11 +57,9 @@ def parse_date(value: str) -> date:
         raise ValueError(f"invalid date: {value}") from exc
 
 
-def briefing_id_for(briefing_date: str, kind: str) -> str:
+def briefing_id_for(briefing_date: str) -> str:
     day = parse_date(briefing_date)
-    if kind not in _BRIEFING_KINDS:
-        raise ValueError("kind must be morning, followup, or meeting")
-    return f"brf-{day.isoformat()}-{kind}"
+    return f"brf-{day.isoformat()}"
 
 
 def _as_str(value: Any, default: str = "") -> str:
@@ -115,24 +112,25 @@ class BriefingService:
     # ------------------------------------------------------------------
 
     def list_briefings(
-        self, kind: Optional[str] = None, status: Optional[str] = None
+        self, status: Optional[str] = None
     ) -> List[Briefing]:
-        if kind is not None and kind not in _BRIEFING_KINDS:
-            raise ValueError("kind must be morning, followup, or meeting")
         if status is not None and status not in _BRIEFING_STATUSES:
             raise ValueError("status must be running, completed, failed, or partial")
-        return self.store.list_briefings(kind, status)
+        return self.store.list_briefings(status=status)
 
     def get_briefing(self, briefing_id: str) -> Optional[dict]:
         briefing = self.store.get_briefing(briefing_id)
         if briefing is None:
             return None
-        return {
+        detail = {
             "briefing": briefing,
             "items": self.store.list_briefing_items(briefing_id),
             "revisions": self.store.list_revisions(briefing_id),
             "mail": self.store.list_mail(briefing_id),
         }
+        detail["actions"] = self.actions.view(detail["items"])
+        detail["preferences"] = self.actions.preferences()
+        return detail
 
     def get_revision(self, briefing_id: str, number: int) -> dict:
         snapshot = self.store.get_revision(briefing_id, number)
@@ -144,25 +142,28 @@ class BriefingService:
         snapshot["briefing"].setdefault("source_windows", {})
         snapshot["briefing"].setdefault("updated_sources", [])
         snapshot["revisions"] = self.store.list_revisions(briefing_id)
+        snapshot["actions"] = self.actions.view(snapshot["items"])
+        snapshot["preferences"] = self.actions.preferences()
         return snapshot
+
+    def briefing_for_date(self, briefing_date: str) -> Optional[Briefing]:
+        briefing_id = briefing_id_for(briefing_date)
+        return (self.store.get_briefing(briefing_id)
+                or self.store.get_briefing(briefing_id + "-morning"))
 
     def start_briefing(
         self,
-        kind: str = "morning",
         briefing_date: Optional[str] = None,
         title: str = "",
     ) -> Briefing:
-        if kind not in _BRIEFING_KINDS:
-            raise ValueError("kind must be morning, followup, or meeting")
         day = parse_date(briefing_date) if briefing_date else date.today()
-        briefing_id = briefing_id_for(day.isoformat(), kind)
+        briefing_id = briefing_id_for(day.isoformat())
         now = _now_iso()
-        existing = self.store.get_briefing(briefing_id)
+        existing = self.briefing_for_date(day.isoformat())
         if existing is None:
             return self.store.upsert_briefing(
                 Briefing(
                     id=briefing_id,
-                    kind=kind,  # type: ignore[arg-type]
                     status="running",
                     title=title.strip(),
                     body="",
@@ -178,7 +179,6 @@ class BriefingService:
         return self.store.upsert_briefing(
             Briefing(
                 id=existing.id,
-                kind=kind,  # type: ignore[arg-type]
                 status="running",
                 title=title.strip() or existing.title,
                 body=existing.body,
@@ -212,7 +212,6 @@ class BriefingService:
         now = payload.get("run_at") or _now_iso()
         finished = Briefing(
             id=existing.id,
-            kind=existing.kind,
             status=status,
             title=_as_str(payload.get("title", existing.title)),
             body=_as_str(payload.get("body", existing.body)),
@@ -241,12 +240,14 @@ class BriefingService:
             updated_sources=payload.get("updated_sources", existing.updated_sources) if status != "failed" else existing.updated_sources,
         )
         snapshots = None
+        staged_run_id = payload.get("staged_run_id") if status != "failed" else None
+        staged_sources = self.store.staged_source_map(staged_run_id) if staged_run_id else {}
         if "items" in payload:
             raw_items = payload.get("items")
             if not isinstance(raw_items, list):
                 raise ValueError("items must be a list")
             snapshots = [
-                self._build_snapshot_item(briefing_id, raw, index, now)
+                self._build_snapshot_item(briefing_id, raw, index, now, staged_sources)
                 for index, raw in enumerate(raw_items)
             ]
             previous = {
@@ -267,9 +268,13 @@ class BriefingService:
                 or row.get("category") not in {"selected", "filtered"} for row in mail
             ):
                 raise ValueError("mail must be a list of classified candidate snapshots")
-        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail)
+        self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail,
+                                 payload.get("cursor_updates"), staged_run_id)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
+        if status != "failed":
+            self.actions.prepare(detail)
+            detail["actions"] = self.actions.view(detail["items"])
         return detail
 
     def update_item_status(self, item_id: str, status: str) -> BriefingItem:
@@ -289,6 +294,9 @@ class BriefingService:
     ) -> Tuple[SourceItem, Optional[EmailMessage]]:
         item, email = self._build_source_item(payload)
         return self.store.upsert_source_item(item, email)
+
+    def build_source_item(self, payload: dict) -> Tuple[SourceItem, Optional[EmailMessage]]:
+        return self._build_source_item(payload)
 
     # ------------------------------------------------------------------
     # Filter rules
@@ -406,17 +414,19 @@ class BriefingService:
         return item, email
 
     def _build_snapshot_item(
-        self, briefing_id: str, payload: Any, index: int, now: str
+        self, briefing_id: str, payload: Any, index: int, now: str,
+        staged_sources=None,
     ) -> BriefingItem:
         if not isinstance(payload, dict):
             raise ValueError("each briefing item must be an object")
         catalog: Optional[SourceItem] = None
         source_item_id = payload.get("source_item_id")
         if source_item_id:
-            found = self.store.get_source_item(str(source_item_id))
-            if found is None:
+            catalog = (staged_sources or {}).get(str(source_item_id))
+            found = None if catalog else self.store.get_source_item(str(source_item_id))
+            if catalog is None and found is None:
                 raise ValueError(f"source item not found: {source_item_id}")
-            catalog = found[0]
+            catalog = catalog or found[0]
             source_item_id = catalog.id
         else:
             source_item_id = None
@@ -532,3 +542,45 @@ class BriefingService:
             created_at=existing.created_at if existing else now,
             updated_at=now,
         )
+
+
+    @property
+    def actions(self):
+        if not hasattr(self, "_actions"):
+            from agent.briefing.actions import BriefingActions
+            self._actions = BriefingActions(self.store)
+        return self._actions
+
+    def update_action(self, item_id, payload):
+        return self.actions.decide(item_id, payload)
+
+    def get_overview(self):
+        actions = self.actions
+        items = self.store.latest_tracked_items()
+        return {'items': items, 'actions': actions.view(items), 'preferences': actions.preferences()}
+
+    def list_action_rules(self):
+        return self.actions.list_rules()
+
+    def create_action_rule(self, payload):
+        return self.actions.save_rule(payload)
+
+    def delete_action_rule(self, rule_id):
+        return self.actions.delete_rule(rule_id)
+
+    def get_preferences(self):
+        return self.actions.preferences()
+
+    def update_preferences(self, payload):
+        return self.actions.preferences(payload)
+
+    def get_action_targets(self, kind, query=""):
+        if kind not in {"todo", "calendar"}:
+            raise ValueError("invalid target type")
+        if not isinstance(query, str) or len(query) > 300:
+            raise ValueError("invalid search query")
+        if kind == "todo":
+            rows = self.actions.todos.list_todos(include_completed=True)
+        else:
+            rows = self.actions.calendar.list_events()
+        return [row for row in rows if query.casefold() in row["title"].casefold()][:50]

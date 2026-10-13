@@ -24,8 +24,8 @@ def _mail(**extra):
 
 def test_start_and_complete_briefing_copies_catalog_envelope(tmp_path):
     svc = _service(tmp_path)
-    started = svc.start_briefing(kind="morning", briefing_date="2026-09-09")
-    assert started.id == "brf-2026-09-09-morning"
+    started = svc.start_briefing(briefing_date="2026-09-09")
+    assert started.id == "brf-2026-09-09"
     assert started.status == "running"
     assert started.generated_at is None
 
@@ -74,6 +74,25 @@ def test_rerun_keeps_created_at(tmp_path):
     assert second.body == "v1"
 
 
+def test_outbox_keeps_each_revision_and_independent_acks(tmp_path):
+    svc = _service(tmp_path)
+    first = svc.start_briefing(briefing_date="2026-09-09")
+    svc.complete_briefing(first.id, {"status": "completed", "body": "v1", "items": [],
+                                     "cursor_updates": [("email", "default", "uid", "1")]})
+    svc.start_briefing(briefing_date="2026-09-09")
+    svc.complete_briefing(first.id, {"status": "completed", "body": "v2", "items": [],
+                                     "cursor_updates": [("email", "default", "uid", "2")]})
+    events = svc.store.pending_projection_events()
+    assert [row["revision"] for row in events] == [1, 2]
+    assert '"body":"v1"' in events[0]["snapshot"]
+    assert '"body":"v2"' in events[1]["snapshot"]
+    assert svc.get_cursor("email", "default", "uid").cursor_value == "2"
+    svc.store.ack_projection(first.id, 1, "calendar")
+    pending = svc.store.pending_projection_events()
+    assert pending[0]["calendar_ack_at"] is not None
+    assert pending[0]["todo_ack_at"] is None
+
+
 def test_update_item_status_and_list(tmp_path):
     svc = _service(tmp_path)
     started = svc.start_briefing(briefing_date="2026-09-09")
@@ -86,7 +105,7 @@ def test_update_item_status_and_list(tmp_path):
     )
     card = svc.update_item_status(detail["items"][0].id, "done")
     assert card.status == "done"
-    listed = svc.list_briefings(kind="morning", status="completed")
+    listed = svc.list_briefings(status="completed")
     assert [row.id for row in listed] == [started.id]
 
 
@@ -122,10 +141,8 @@ def test_rules_and_cursors(tmp_path):
 
 def test_validation_rejects_bad_payloads(tmp_path):
     svc = _service(tmp_path)
-    with pytest.raises(ValueError, match="kind"):
-        svc.start_briefing(kind="weekly")
     with pytest.raises(ValueError, match="date"):
-        briefing_id_for("09-09", "morning")
+        briefing_id_for("09-09")
     with pytest.raises(ValueError, match="source_id"):
         svc.upsert_source_item({"source": "email", "occurred_at": "2026-09-08T22:00:00Z"})
     with pytest.raises(KeyError):

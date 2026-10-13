@@ -28,18 +28,10 @@ tool would create is replaced with a stub, and DNS resolution is mocked.
 """
 import os
 import sys
-import types
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-# Stub 'requests' if not installed so sibling tool imports don't fail.
-if "requests" not in sys.modules:
-    _requests_stub = types.ModuleType("requests")
-    _requests_stub.get = lambda *a, **k: None
-    sys.modules["requests"] = _requests_stub
-
 
 def _gai(ip_str):
     """Build a socket.getaddrinfo return value for a single IPv4 address."""
@@ -72,6 +64,12 @@ class TestBrowserNavigateSSRF(unittest.TestCase):
         patcher = patch.object(BrowserTool, "_get_service", return_value=self.stub)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # This suite supplies a browser service stub, so no local browser
+        # engine or memory budget is needed to exercise URL validation.
+        for method in ("_check_engine_ready", "_check_memory_budget"):
+            patcher = patch.object(BrowserTool, method, return_value=None)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     # --- Link-local / cloud-metadata: rejected before any service call ---
 
@@ -103,6 +101,14 @@ class TestBrowserNavigateSSRF(unittest.TestCase):
             result = self.tool.execute(
                 {"action": "navigate", "url": "http://metadata.internal/latest/meta-data/"}
             )
+        self.assertEqual(result.status, "error")
+        self.assertIn("blocked for security", str(result.result))
+        self.assertEqual(self.stub.navigated, [])
+
+    def test_ipv4_mapped_metadata_literal_blocked(self):
+        result = self.tool.execute(
+            {"action": "navigate", "url": "http://[::ffff:169.254.169.254]/latest/meta-data/"}
+        )
         self.assertEqual(result.status, "error")
         self.assertIn("blocked for security", str(result.result))
         self.assertEqual(self.stub.navigated, [])

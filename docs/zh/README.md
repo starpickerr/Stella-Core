@@ -1,220 +1,98 @@
-<p align="center"><img src= "../images/logo.jpg" alt="Stella" width="420" /></p>
+<p align="center"><img src="../images/logo.jpg" alt="Stella" width="160" /></p>
 
-<p align="center">
-  <a href="https://github.com/starpickerr/Stella/releases/latest"><img src="https://img.shields.io/github/v/release/starpickerr/Stella?cacheSeconds=3600" alt="Latest release" /></a>
-  <a href="https://github.com/starpickerr/Stella/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/starpickerr/Stella"><img src="https://img.shields.io/github/stars/starpickerr/Stella?style=flat-square&cacheSeconds=3600" alt="Stars" /></a>
-</p>
+# Stella
 
-<p align="center">
-  [<a href="../../README.md">English</a>] | [中文] | [<a href="README-Hant.md">繁體中文</a>] | [<a href="../ja/README.md">日本語</a>]
-</p>
+[English](../../README.md) · [中文](README.md) · [繁體中文](README-Hant.md) · [日本語](../ja/README.md)
 
-**Stella** 是一个 AI 私人秘书。它能规划任务、操作电脑和外部服务、记住重要信息，并逐步积累你的个人知识库，在网页、桌面和各类即时通讯里替你处理日常事务。
+**Stella 是一款桌面端私人 AI 助理**，以智能对话为核心，将事务、日程、账单、智能简报和自动化任务集中在一个工作空间中。
 
-项目基于可扩展的 Agent Harness：可接入主流大模型，7×24 运行在个人电脑或服务器上，并用工具、技能和消息通道继续扩展。
+## 主要功能
 
-<p align="center">
-  <a href="https://github.com/starpickerr/Stella">🐙 GitHub</a> &nbsp;·&nbsp;
-  <a href="intro/index.mdx">📖 文档</a> &nbsp;·&nbsp;
-  <a href="guide/quick-start.mdx">🚀 快速开始</a>
-</p>
+### 对话
 
-<br/>
+通过自然语言与 AI 交互，支持问题解答、内容创作、信息检索和复杂任务执行，并提供项目与会话管理。
 
-## 🎬 演示
+### 应用
 
-<p align="center">
-  <img src="../images/placeholder-video.svg" alt="Stella video placeholder" />
-</p>
+| 模块 | 功能说明 |
+| ---- | -------- |
+| **事务** | 管理个人事务及多级子事务，设置截止时间、优先级和提醒，跟踪进展，支持与 Apple 提醒事项同步。 |
+| **日程** | 管理日程与时间安排，提供日历视图、分类和提醒，支持与 Apple 日历同步。 |
+| **简报** | 汇总邮箱、eLearning、日程和事务信息，提取重要事项、待办任务及临近截止时间，生成个性化智能简报。 |
+| **账单** | 记录收入与支出，支持账单分类、查询和统计分析。 |
+| **健康** | 个人健康信息管理与分析，**规划中**。 |
+| **定时** | 管理自动化任务，按指定时间执行，查看执行记录，并通过已配置的消息通道推送结果。 |
 
-<br/>
+### 信息
 
-## 🌟 核心能力
+| 模块 | 功能说明 |
+| ---- | -------- |
+| **记忆** | 管理 AI 长期记忆，保存用户偏好和重要上下文，支持个性化交互。 |
+| **知识** | 管理个人知识库，支持知识存储、检索和引用，为 AI 提供知识来源。 |
 
-| 能力 | 说明 |
-| :--- | :--- |
-| [任务规划](intro/architecture.mdx) | 理解复杂任务并自主分解执行，循环调用工具直到完成目标 |
-| [长期记忆](memory/index.mdx) | 三层记忆架构（上下文 → 天级 → 核心），梦境蒸馏自动整理，支持关键词与向量混合检索 |
-| [知识库](knowledge/index.mdx) | 自动整理结构化知识为 Markdown Wiki，构建持续增长的知识图谱，可视化浏览 |
-| [自主进化](memory/self-evolution.mdx) | 自动复盘对话，优化技能、处理未完成事项、沉淀记忆与知识，在使用中持续成长 |
-| [技能](skills/index.mdx) | 从 [skill广场](https://www.skill-marketplace.com/)、GitHub、ClawHub 等一键安装；也可通过对话创造自定义技能 |
-| [工具](tools/index.mdx) | 内置文件读写、终端、浏览器、定时任务、记忆检索、联网搜索等 10+ 工具，支持 MCP 协议 |
-| [通道](channels/index.mdx) | 一个 Agent 同时接入 Web、微信、飞书、钉钉、企微、QQ、公众号、Telegram、Slack 等多个渠道 |
-| 多模态 | 文本、图片、语音、文件全消息类型支持，覆盖识别、生成、收发 |
-| [模型](models/index.mdx) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流厂商，配置一行切换 |
-| [部署](guide/quick-start.mdx) | 一键脚本安装，Web 控制台统一管理；本地、Docker、服务器多种部署方式 |
+### 通道
 
-<br/>
+连接和管理微信、飞书、Telegram 等外部消息平台，支持跨平台交互与消息通知。
 
-## 🏗️ 架构总览
+### 系统
 
-<img src="../images/placeholder-image.svg" alt="Stella Architecture" width="750"/>
+| 模块 | 功能说明 |
+| ---- | -------- |
+| **能力** | 查看和管理 AI 工具、Skills 等扩展能力，增强信息获取与任务执行能力。 |
+| **安全** | 管理全局、项目、会话及后台任务权限，控制工具调用和敏感操作，查看安全活动。 |
+| **设置** | 配置 AI 模型厂商、自定义模型、模型能力分配、Apple 集成、简报及其他应用设置。 |
+| **日志** | 查看运行日志、错误信息和执行记录，辅助故障排查与运行状态分析。 |
 
-Stella 是一个完整的 **Agent Harness**：消息从各类**通道**进入，**Agent Core** 结合记忆、知识库与可用工具/技能进行任务规划与决策，调用**模型**生成结果，再回传至原通道。各模块解耦清晰，按需扩展。
+## 开始使用
 
-详见 [项目架构](intro/architecture.mdx)。
+### 下载安装包
 
-<br/>
+可用安装包见 [GitHub Releases](https://github.com/starpickerr/Stella/releases)。安装、首次配置及日常使用见[使用指南](guide.md)。
 
-## 🚀 快速开始
+### 从源码运行
 
-克隆本仓库，安装依赖后启动 Stella：
+环境要求：
+
+- **Python 3.10+**
+- **Node.js 22.13+**
+- **macOS**：还需安装 Xcode 命令行工具，执行 `xcode-select --install`。
+
+以下命令适用于 macOS；Windows 命令见[使用指南](guide.md)。
 
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-pip install -r requirements.txt
-pip install -e .
-stella start
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix desktop ci
+npm --prefix desktop run dev
 ```
 
-**Docker：**
+开发时启用界面热更新：
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+npm --prefix desktop run dev:hot
 ```
 
-启动成功后访问 `http://localhost:9899` 进入 **Web 控制台**，即可对话、配置模型、接入通道和安装技能。
+浏览器准备和本地数据说明见[使用指南](guide.md)。
 
-> 服务器部署且需要公网访问控制台时，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（同时强烈建议设置 `web_password` 启用鉴权），然后访问 `http://<server-ip>:9899`，并确保防火墙/安全组放行 `9899` 端口。
+模型调用可能产生厂商费用。工具可以访问本地文件和外部服务，使用前请先配置权限。
 
-> 📖 仓库内指南：[快速开始](guide/quick-start.mdx) · [源码安装](guide/manual-install.mdx) · [升级](guide/upgrade.mdx)
+## 文档与开发
 
-安装后可使用 `stella` CLI 管理服务：
+- [使用指南](guide.md)：安装、配置与日常使用。
+- [文档索引](../README.md)：架构、业务模块与安全边界。
+- [桌面开发](../../desktop/README.md)：构建和打包。
+- [贡献指南](../../CONTRIBUTING.md)：开发环境与检查要求；开发以 `develop` 为基线，`main` 用于发布。
+- [问题反馈](https://github.com/starpickerr/Stella/issues)：提交问题前，请从日志中删除凭据和个人信息。
 
-```bash
-stella start | stop | restart        # 服务管理
-stella status | logs                  # 状态和日志
-stella update                         # 拉取最新代码并重启
-stella skill install <名称>           # 安装技能
-stella install-browser                # 安装浏览器工具
-```
+## 项目来源与许可
 
-<br/>
+Stella 基于 zhayujie 及贡献者开发的 [CowAgent](https://github.com/zhayujie/CowAgent)（原 `chatgpt-on-wechat`）独立开发，复用上游的 Agent、模型、工具、技能、记忆和消息通道基础，并增加桌面工作流，以及事务、日程、账单、简报和安全管理等共享业务服务。
 
-## 🤖 模型支持
+来源与版权说明见[第三方声明](../../THIRD_PARTY_NOTICES.md)，许可条款见 [MIT 许可证](../../LICENSE)。
 
-Stella 支持国内外主流厂商的大语言模型。**文本对话、图像理解、图像生成、语音识别/合成、向量** 等能力均可独立配置厂商。
+## 作者的话
 
-| 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
-| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](models/deepseek.mdx) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](models/claude.mdx) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](models/openai.mdx) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](models/gemini.mdx) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
-| [MiniMax](models/minimax.mdx) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
-| [智谱 GLM](models/glm.mdx) | glm-5.3、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
-| [通义千问](models/qwen.mdx) | qwen3.8-max | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](models/kimi.mdx) | kimi-k3 | ✅ | ✅ | | | | |
-| [豆包 Doubao](models/doubao.mdx) | doubao-seed-2.1 系列 | ✅ | ✅ | ✅ | | | ✅ |
-| [百度ERNIE](models/qianfan.mdx) | ernie-5.1 | ✅ | ✅ | | | | |
-| [小米 MiMo](models/mimo.mdx) | mimo-v2.5-pro / v2.5 | ✅ | ✅ | | | ✅ | |
-| [LinkAI](models/linkai.mdx) | 一个 Key 接入 100+ 模型 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定义](models/custom.mdx) | 本地模型 / 三方代理 | ✅ | | | | | |
-
-> 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](models/index.mdx)。
-
-<br/>
-
-## 💬 通道接入
-
-一个 Agent 实例可同时接入多个渠道，启动时通过 `channel_type` 切换或并行运行。
-
-| 通道 | 文本 | 图片 | 文件 | 语音 | 群聊 |
-| --- | :-: | :-: | :-: | :-: | :-: |
-| [Web 控制台](channels/web.mdx)（默认） | ✅ | ✅ | ✅ | ✅ | |
-| [微信](channels/weixin.mdx) | ✅ | ✅ | ✅ | ✅ | |
-| [飞书](channels/feishu.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [钉钉](channels/dingtalk.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [企微智能机器人](channels/wecom-bot.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [QQ](channels/qq.mdx) | ✅ | ✅ | ✅ | | ✅ |
-| [企业微信应用](channels/wecom.mdx) | ✅ | ✅ | ✅ | ✅ | |
-| [微信客服](channels/wechat-kf.mdx) | ✅ | ✅ | ✅ | ✅ | |
-| [微信公众号](channels/wechatmp.mdx) | ✅ | ✅ | | ✅ | |
-| [Telegram](channels/telegram.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Slack](channels/slack.mdx) | ✅ | ✅ | ✅ | | ✅ |
-| [Discord](channels/discord.mdx) | ✅ | ✅ | ✅ | | ✅ |
-
-> 飞书、企微智能机器人支持在 Web 控制台内**扫码一键接入**，无需公网 IP。详见 [通道概览](channels/index.mdx)。
-
-<img src="../images/placeholder-image.svg" alt="Stella Web 控制台" width="800"/>
-
-*Web 控制台是默认通道，也是统一的 Agent 配置和管理入口*
-
-<br/>
-
-## 🧠 记忆与知识库
-
-**长期记忆**采用三层架构：对话上下文（短期）→ 天级记忆（中期）→ MEMORY.md（长期）。每日自动执行**梦境蒸馏（Deep Dream）**，将分散记忆整合为精炼的长期记忆并生成叙事日记。详见 [长期记忆](memory/index.mdx) · [梦境蒸馏](memory/deep-dream.mdx)。
-
-**个人知识库** 与按时间记录的记忆不同，以**主题为维度**组织结构化知识。Agent 在对话中自动整理有价值信息，维护交叉引用与索引，Web 控制台可可视化浏览知识图谱。详见 [个人知识库](knowledge/index.mdx)。
-
-<table>
-  <tr>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="长期记忆" />
-      <p align="center"><em>长期记忆 · 三层记忆 + 梦境蒸馏</em></p>
-    </td>
-    <td width="50%">
-      <img src="../images/placeholder-image.svg" alt="个人知识库" />
-      <p align="center"><em>个人知识库 · 自动整理的 Markdown Wiki</em></p>
-    </td>
-  </tr>
-</table>
-
-<br/>
-
-
-## 🔧 工具与技能
-
-**工具（Tools）** 是 Agent 操作系统资源的原子能力，**技能（Skills）** 是基于说明文件的高级工作流，可组合多个工具完成复杂任务。
-
-### 工具系统
-
-**内置工具** 涵盖文件读写（`read` / `write` / `edit` / `ls`）、终端（`bash`）、文件发送（`send`）、记忆检索（`memory`）、环境变量（`env_config`）、网页获取（`web_fetch`）、定时任务（`scheduler`）、联网搜索（`web_search`）、图像识别（`vision`）、浏览器自动化（`browser`）等常用能力。
-
-**MCP 协议** 通过 [Model Context Protocol](https://modelcontextprotocol.io) 接入开放生态中的各种 MCP 服务，配置一次 `mcp.json` 即用即得，支持 stdio / SSE 协议、热更新、零代码接入。
-
-详见 [工具概览](tools/index.mdx) · [MCP 集成](tools/mcp.mdx)。
-
-### 技能系统
-
-- **[skill广场](https://www.skill-marketplace.com/)** — 浏览、搜索、一键安装
-- **GitHub / ClawHub / URL 等** — 任意来源一键安装
-- **对话创造** — 通过 `skill-creator` 用对话快速生成自定义技能，可将工作流程或第三方接口直接固化为技能
-
-```bash
-/skill list                   # 查看当前技能
-/skill search <关键词>         # 在 skill广场搜索
-/skill install <名称>          # 一键安装
-```
-
-详见 [技能概览](skills/index.mdx) · [创建技能](skills/create.mdx)。
-
-<br/>
-
-## 🏷 更新日志
-
-> **2026.09.07：** [v0.0.1](https://github.com/starpickerr/Stella/releases/tag/v0.0.1) — Stella 首个测试版。桌面端发现新版本后提示并打开 GitHub Release 手动下载（macOS 只提供 `.dmg`）。产品版本号以仓库根目录 `VERSION` 为准。
-
-发版步骤见 [desktop/README.md](../../desktop/README.md)。完整说明：[Release Notes](releases/overview.mdx)
-
-<br/>
-
-## 🛠️ 开发
-
-开发说明见 [CONTRIBUTING.md](/CONTRIBUTING.md)。本项目远程仓库为：
-
-```bash
-git remote set-url origin https://github.com/starpickerr/Stella.git
-```
-
-## ⚠️ 声明
-
-1. 本项目遵循 [MIT 开源协议](/LICENSE)。使用时请遵守所在地法律法规，因使用本项目所产生的一切后果由使用者自行承担。
-2. **成本与安全：** Agent 模式 Token 消耗显著高于普通对话。Stella 可以访问本地操作系统，请只在可信环境中部署。
-
-## 📌 来源
-
-Stella 是在 MIT 开源 Agent Harness 基础上改造的个人 AI 私人秘书项目。仓库地址：[github.com/starpickerr/Stella](https://github.com/starpickerr/Stella)。
+这是我第一次独立完成的开源项目，感谢 Codex 和 Cursor 在开发过程中提供的帮助。项目仍有需要完善的地方，欢迎通过[问题反馈](https://github.com/starpickerr/Stella/issues)提交建议和缺陷报告。

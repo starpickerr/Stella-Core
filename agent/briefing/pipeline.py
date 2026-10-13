@@ -1,4 +1,4 @@
-"""Daily run: fetch → catalog upsert → Agent decisions and draft → persist.
+"""Daily run: fetch every source, then draft once and persist.
 
 Cursors advance only after a non-failed briefing is saved. Source adapters
 are injected; IMAP lives in sources.email.
@@ -7,19 +7,45 @@ are injected; IMAP lives in sources.email.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from contextlib import contextmanager
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+import uuid
+import time
+import threading
 
 from common.log import logger
+from agent.protocol.cancel import AgentCancelledError
+from agent.briefing.elearning.errors import SyncCancelled
 
 from agent.briefing.generator import AgentBriefingGenerator, briefing_title
+from agent.briefing import progress as briefing_progress
 from agent.briefing.models import EmailMessage, SourceItem
-from agent.briefing.service import BriefingService, briefing_id_for
+from agent.briefing.service import BriefingService
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
 from agent.briefing.sources.registry import select_sources, source_key
 
 
 def _now():
     return datetime.now().astimezone()
+
+
+@contextmanager
+def _stage_heartbeat(day: str, stage: str):
+    stopped = threading.Event()
+    started = time.monotonic()
+
+    def report():
+        while not stopped.wait(30):
+            logger.info("[BriefingPipeline] still running date=%s stage=%s elapsed=%.0fs",
+                        day, stage, time.monotonic() - started)
+
+    worker = threading.Thread(target=report, name="briefing-progress", daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        worker.join(timeout=1)
 
 
 class BriefingPipeline:
@@ -29,20 +55,26 @@ class BriefingPipeline:
         sources: Optional[Sequence[Source]] = None,
         clock=None,
         generator=None,
+        cancel_event=None,
     ):
         self.service = service if service is not None else BriefingService()
         self.sources = list(sources or [])
         self.clock = clock or _now
         self.generator = generator if generator is not None else AgentBriefingGenerator()
+        self.cancel_event = cancel_event
+
+    def _check_cancelled(self):
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise AgentCancelledError("briefing cancelled by user")
 
     def run(
         self,
-        kind: str = "morning",
         briefing_date: Optional[str] = None,
         operation: str = "upsert",
         trigger: str = "manual",
         sources=None,
     ) -> dict:
+        self._check_cancelled()
         selected = select_sources(self.sources, sources)
         if not selected:
             raise ValueError("no briefing sources configured")
@@ -50,21 +82,26 @@ class BriefingPipeline:
             raise ValueError("operation must be create or update")
         if trigger not in {"manual", "scheduled"}:
             raise ValueError("invalid briefing trigger")
-        # Serialize shared-store runs so two requests cannot race the same cursor.
-        with self.service.store.run_lock:
+        # A second request must report the active run instead of waiting behind
+        # an unbounded source or model call with no response to its caller.
+        if not self.service.store.run_lock.acquire(blocking=False):
+            raise ValueError("简报正在生成，请等待当前运行完成后刷新")
+        try:
             day = briefing_date or self.clock().date().isoformat()
-            existing = self.service.store.get_briefing(briefing_id_for(day, kind))
+            existing = self.service.briefing_for_date(day)
             if operation == "create" and existing and existing.generated_at:
                 return self.service.get_briefing(existing.id)
             if operation == "update" and (not existing or not existing.generated_at):
                 raise ValueError("generate this day's briefing before updating it")
-            return self._run(kind, day, trigger, selected)
+            return self._run(day, trigger, selected)
+        finally:
+            self.service.store.run_lock.release()
 
-    def _run(self, kind: str, day: str, trigger: str, selected) -> dict:
+    def _run(self, day: str, trigger: str, selected) -> dict:
         local_now = self.clock()
         end = local_now.astimezone(timezone.utc).replace(microsecond=0)
-        existing = self.service.store.get_briefing(briefing_id_for(day, kind))
-        previous = [row for row in self.service.list_briefings(kind=kind)
+        existing = self.service.briefing_for_date(day)
+        previous = [row for row in self.service.list_briefings()
                     if row.id[4:14] < day and row.generated_at]
         boundary = max((row.window_end or row.generated_at for row in previous),
                        key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00")), default=None)
@@ -88,7 +125,9 @@ class BriefingPipeline:
         finish = end.isoformat().replace("+00:00", "Z")
         if datetime.fromisoformat(start.replace("Z", "+00:00")) > end:
             raise ValueError("briefing end precedes the previous successful update")
-        briefing = self.service.start_briefing(kind=kind, briefing_date=day)
+        briefing = self.service.start_briefing(briefing_date=day)
+        run_started = time.monotonic()
+        logger.info("[BriefingPipeline] started date=%s trigger=%s sources=%d", day, trigger, len(selected))
         prior_detail = self.service.get_briefing(briefing.id)
         source_windows = {key: dict(value) for key, value in briefing.source_windows.items()}
         starts = {}
@@ -100,45 +139,79 @@ class BriefingPipeline:
             current_legacy_start = start if briefing.window_start and source.name == "email" and not briefing.source_windows else None
             starts[key] = source_windows.get(key, {}).get("start") or current_legacy_start or max(prior, default=None) or legacy or default_start
         pending_cursors: List[Tuple[Source, Dict[str, str]]] = []
+        staged_run_id = uuid.uuid4().hex
         errors: List[str] = []
         refreshed = []
         fully_refreshed = set()
+        completed_sources = 0
 
         try:
+            rules = self.service.list_rules(enabled_only=True)
+            briefing_progress.begin(briefing.id, len(selected))
             for source in selected:
+                self._check_cancelled()
+                source_started = time.monotonic()
+                logger.info("[BriefingPipeline] fetching date=%s source=%s", day, source.name)
                 try:
-                    result = self._fetch_source(source, starts[source_key(source)], finish)
+                    with _stage_heartbeat(day, f"fetch:{source.name}"):
+                        result = self._fetch_source(source, starts[source_key(source)], finish)
+                    self._check_cancelled()
+                except (AgentCancelledError, SyncCancelled):
+                    raise
                 except Exception as exc:
                     label = getattr(source, "display_name", source.name)
                     logger.warning(
                         f"[BriefingPipeline] source {label} failed: {exc}"
                     )
                     errors.append(f"{label}: {exc}")
+                    self.service.store.stage_source_errors(
+                        staged_run_id, source.name, source.account_id, [str(exc)])
+                    completed_sources += 1
+                    briefing_progress.update(briefing.id, completed_sources=completed_sources)
                     continue
                 pending_cursors.append((source, result.cursors))
-                self._upsert_fetched(result.items)
+                logger.info("[BriefingPipeline] fetched date=%s source=%s items=%d errors=%d elapsed=%.1fs",
+                            day, source.name, len(result.items), len(result.errors),
+                            time.monotonic() - source_started)
+                self._stage_fetched(staged_run_id, result.items)
                 refreshed.append(source)
                 errors.extend(result.errors)
+                if result.errors:
+                    self.service.store.stage_source_errors(
+                        staged_run_id, source.name, source.account_id, result.errors)
                 if not result.errors:
                     fully_refreshed.add(source_key(source))
                     source_windows[source_key(source)] = {"source": source.name, "account_id": source.account_id,
                         "name": getattr(source, "display_name", source.name), "start": starts[source_key(source)], "end": finish}
+                completed_sources += 1
+                briefing_progress.update(briefing.id, completed_sources=completed_sources)
 
+            briefing_progress.update(briefing.id, stage="finalizing")
             finish = self.clock().astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             catalog_rows = []
             for source in refreshed:
                 key = source_key(source)
-                catalog_rows.extend(self.service.store.window_candidates(starts[key], finish, [(source.name, source.account_id)]))
+                catalog_rows.extend(self.service.store.staged_window_candidates(
+                    staged_run_id, starts[key], finish, [(source.name, source.account_id)]))
                 if key in fully_refreshed:
                     source_windows[key]["end"] = finish
-            refreshed_keys = {source_key(source) for source in refreshed}
+            # A source that returned errors may have an incomplete snapshot.
+            # Keep its prior decisions and do not authorize projection removal.
+            refreshed_keys = fully_refreshed
             preserved_decisions = {}
+            catalog_keys = {(item.source, item.account_id, item.source_id)
+                            for item, _email in catalog_rows}
             for snapshot in prior_detail.get("mail", []):
                 key = snapshot["source"] + ":" + snapshot["account_id"]
-                if key in refreshed_keys:
+                occurred = datetime.fromisoformat(snapshot['occurred_at'].replace('Z', '+00:00'))
+                lower = datetime.fromisoformat(starts[key].replace('Z', '+00:00')) if key in refreshed_keys else None
+                if key in refreshed_keys and occurred > lower:
                     continue
                 item, email = self._restore_candidate(snapshot)
-                catalog_rows.append((item, email))
+                item_key = (item.source, item.account_id, item.source_id)
+                if item_key not in catalog_keys:
+                    catalog_rows.append((item, email))
+                    catalog_keys.add(item_key)
                 decision = snapshot.get("decision") or self._legacy_decision(snapshot, prior_detail["items"])
                 preserved_decisions[item.id] = decision
             windows = [window for window in source_windows.values() if window.get("end")]
@@ -154,13 +227,28 @@ class BriefingPipeline:
 
             drafted, mail = {}, []
             if status != "failed":
-                drafted = self.generator.generate(catalog_rows, self.service.list_rules(enabled_only=True),
-                    briefing_date=day, kind=kind, window_start=start, window_end=finish,
-                    preserved_decisions=preserved_decisions)
+                self._check_cancelled()
+                logger.info("[BriefingPipeline] drafting date=%s candidates=%d", day, fetched_count)
+                progress = getattr(self.generator, "progress", None)
+                if hasattr(self.generator, "progress"):
+                    def report(stage):
+                        logger.info("[BriefingPipeline] date=%s %s", day, stage)
+                        if progress:
+                            progress(stage)
+                    self.generator.progress = report
+                try:
+                    with _stage_heartbeat(day, "draft"):
+                        drafted = self.generator.generate(catalog_rows, rules,
+                            briefing_date=day, window_start=start, window_end=finish,
+                            preserved_decisions=preserved_decisions)
+                finally:
+                    if hasattr(self.generator, "progress"):
+                        self.generator.progress = progress
                 mail = drafted["mail"]
+                self._check_cancelled()
             filtered_count = sum(row["category"] == "filtered" for row in mail)
 
-            detail = self.service.complete_briefing(
+            self.service.complete_briefing(
                 briefing.id,
                 {
                     "status": status,
@@ -168,29 +256,30 @@ class BriefingPipeline:
                     "window_start": start,
                     "window_end": finish,
                     "trigger": trigger,
-                    "title": (briefing.title or briefing_title(day, kind)) if status == "failed" else drafted["title"],
+                    "title": (briefing.title or briefing_title(day)) if status == "failed" else drafted["title"],
                     "body": drafted["body"] if status != "failed" else briefing.body,
                     "fetched_count": fetched_count if status != "failed" else briefing.fetched_count,
                     "kept_count": len(mail) - filtered_count if status != "failed" else briefing.kept_count,
                     "filtered_count": filtered_count if status != "failed" else briefing.filtered_count,
                     "error_message": "; ".join(errors),
+                    "cursor_updates": [
+                        (source.name, source.account_id, key, value)
+                        for source, cursors in pending_cursors
+                        if source_key(source) in fully_refreshed
+                        for key, value in cursors.items()
+                    ],
+                    "staged_run_id": staged_run_id,
                     **({"items": drafted["items"], "mail": mail, "rule_text": drafted.get("rule_text", ""),
-                        "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed]} if status != "failed" else {}),
+                        "source_windows": source_windows, "updated_sources": [source_key(source) for source in refreshed
+                            if source_key(source) in fully_refreshed]} if status != "failed" else {}),
                 },
             )
             if status != "failed":
-                self._commit_cursors(pending_cursors)
-                try:
-                    from agent.calendar import CalendarService
-                    CalendarService().ingest_briefing(detail)
-                except Exception:
-                    logger.exception("[BriefingPipeline] calendar handoff failed")
-                try:
-                    from agent.todos import TodoService
-                    TodoService().ingest_briefing(detail)
-                except Exception:
-                    logger.exception("[BriefingPipeline] todo handoff failed")
-            return detail
+                from agent.briefing.outbox import dispatch_pending
+                dispatch_pending(self.service.store)
+            logger.info("[BriefingPipeline] finished date=%s status=%s elapsed=%.1fs",
+                        day, status, time.monotonic() - run_started)
+            return self.service.get_briefing(briefing.id)
         except Exception as exc:
             logger.error(f"[BriefingPipeline] run failed: {exc}")
             self.service.complete_briefing(
@@ -203,6 +292,8 @@ class BriefingPipeline:
                 },
             )
             raise
+        finally:
+            briefing_progress.finish(briefing.id)
 
     @staticmethod
     def _restore_candidate(snapshot):
@@ -224,6 +315,9 @@ class BriefingPipeline:
                 "summary": card.snippet if card else snapshot.get("snippet") or snapshot["title"]}
 
     def _fetch_source(self, source: Source, start: str, end: str) -> FetchResult:
+        self._check_cancelled()
+        if hasattr(source, "cancel_event"):
+            source.cancel_event = self.cancel_event
         cursors: Dict[str, str] = {}
         # Adapters may use several keys; we pass known values and ignore misses.
         for key in ("imap_uid", "imap_uidvalidity", "sync_token", "since", "elearning_state"):
@@ -237,15 +331,6 @@ class BriefingPipeline:
                 cursors["refresh_existing_content"] = "1"
         return source.fetch(cursors)
 
-    def _upsert_fetched(
-        self, items: Iterable[FetchedItem]
-    ) -> List[Tuple[SourceItem, Optional[EmailMessage]]]:
-        rows = []
-        for fetched in items:
-            rows.append(self.service.upsert_source_item(fetched.to_catalog_payload()))
-        return rows
-
-    def _commit_cursors(self, pending: Sequence[Tuple[Source, Dict[str, str]]]) -> None:
-        for source, cursors in pending:
-            for key, value in cursors.items():
-                self.service.set_cursor(source.name, key, value, source.account_id)
+    def _stage_fetched(self, run_id: str, items: Iterable[FetchedItem]) -> None:
+        rows = [self.service.build_source_item(fetched.to_catalog_payload()) for fetched in items]
+        self.service.store.stage_source_items(run_id, rows)

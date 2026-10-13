@@ -28,6 +28,13 @@ class TestSharedDbRecovery(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.db = self.tmp / "index.db"
+        # These cases exercise the opt-in full integrity scan. Production
+        # startup skips that expensive scan unless explicitly requested.
+        from config import conf
+        self._integrity_flag = unittest.mock.patch.dict(
+            conf(), {"memory_integrity_check": True}
+        )
+        self._integrity_flag.start()
         # These cases corrupt databases on purpose. Their recovery logging is
         # indistinguishable from a real incident, and pytest shares run.log
         # with the running app, so keep it out of the file.
@@ -36,6 +43,7 @@ class TestSharedDbRecovery(unittest.TestCase):
         self._log.setLevel(logging.CRITICAL + 1)
 
     def tearDown(self):
+        self._integrity_flag.stop()
         self._log.setLevel(self._log_level)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -62,7 +70,7 @@ class TestSharedDbRecovery(unittest.TestCase):
         return storage
 
     def _quarantined(self):
-        return [p.name for p in self.tmp.iterdir() if ".corrupt-" in p.name]
+        return [p.name for p in self.tmp.iterdir() if p.name.startswith("index.db.corrupt-")]
 
     # -- tests ---------------------------------------------------------
 
@@ -74,13 +82,10 @@ class TestSharedDbRecovery(unittest.TestCase):
         storage.close()
 
         raw = sqlite3.connect(self.db)
-        raw.execute(
-            "DELETE FROM chunks_fts_data WHERE id=(SELECT MAX(id) FROM chunks_fts_data)"
-        )
+        raw.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('delete-all')")
         raw.commit()
-        self.assertNotEqual(
-            raw.execute("PRAGMA integrity_check").fetchone()[0], "ok"
-        )
+        with self.assertRaises(sqlite3.DatabaseError):
+            raw.execute("INSERT INTO chunks_fts(chunks_fts, rank) VALUES('integrity-check', 1)")
         raw.close()
 
         recovered = MemoryStorage(self.db)
@@ -131,11 +136,20 @@ class TestSharedDbRecovery(unittest.TestCase):
             Path(f"{self.db}{name}").unlink(missing_ok=True)
         MemoryStorage(self.db).close()  # recreates the file with memory tables only
 
-        store.append_messages(
-            "s2", [{"role": "user", "content": "after"}], channel_type="web"
-        )
-        self.assertEqual(len(store.load_messages("s2")), 1)
-        self.assertEqual(store.list_sessions()["total"], 1)
+        # A filesystem can reuse the deleted inode immediately. Pin that
+        # identity so this regression also reproduces on macOS.
+        with unittest.mock.patch.object(store, "_db_identity", return_value=store._schema_identity), \
+                unittest.mock.patch.object(store, "_init_db", wraps=store._init_db) as initialize:
+            store.append_messages(
+                "s2", [{"role": "user", "content": "after"}], channel_type="web"
+            )
+            self.assertEqual(len(store.load_messages("s2")), 1)
+            self.assertEqual(store.list_sessions()["total"], 1)
+            self.assertEqual(initialize.call_count, 1)
+            MemoryStorage(self.db).close()
+            store.append_messages("s2", [{"role": "assistant", "content": "still here"}])
+            self.assertEqual(len(store.load_messages("s2")), 2)
+            self.assertEqual(initialize.call_count, 1)
 
     def test_transient_error_is_not_treated_as_corruption(self):
         """sqlite3.OperationalError subclasses DatabaseError, so "database is
