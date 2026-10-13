@@ -3,6 +3,7 @@
 .idea
 .vscode
 .venv
+/.venv 2/
 .vs
 __pycache__/
 venv*
