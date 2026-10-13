@@ -132,6 +132,10 @@ class SchedulerService:
                     self.task_store.update_task(task['id'], {"enabled": False, "retry_at": None,
                         "last_error": ok.error, "last_run_status": ok.status,
                         "last_error_at": datetime.now().isoformat()})
+                    logger.warning(
+                        "[Scheduler] Task %s disabled after non-retryable failure: %s %s",
+                        task["id"], ok.status, ok.error,
+                    )
                     return
                 self.task_store.update_task(task['id'], {
                     "last_run_status": ok.status if isinstance(ok, ExecutionOutcome) else "delivery_pending",

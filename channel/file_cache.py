@@ -3,9 +3,10 @@
 用于缓存单独发送的文件消息（图片、视频、文档等），在用户提问时自动附加
 """
 import time
-import logging
 
-logger = logging.getLogger(__name__)
+from common.log import get_logger
+
+logger = get_logger("file_cache")
 
 
 class FileCache:

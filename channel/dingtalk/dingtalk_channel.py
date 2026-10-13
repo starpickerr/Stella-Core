@@ -94,7 +94,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
     def setup_logger(self):
         # Suppress verbose logs from dingtalk_stream SDK
         logging.getLogger("dingtalk_stream").setLevel(logging.WARNING)
-        return logging.getLogger("DingTalk")
+        from common.log import get_logger
+        return get_logger("DingTalk")
 
     def __init__(self):
         super().__init__()

@@ -1,7 +1,6 @@
 """Canvas API、网络请求与浏览器登录。"""
 import http.cookiejar
 import json
-import logging
 import re
 import time
 import urllib.error
@@ -11,8 +10,9 @@ import urllib.request
 from .errors import LoginRequired, SyncCancelled, SyncError
 from .utils import next_link
 from agent.briefing.elearning_settings import session_path, save_session
+from common.log import get_logger
 
-LOGGER = logging.getLogger("elearning")
+LOGGER = get_logger("elearning")
 
 
 class SafeRedirect(urllib.request.HTTPRedirectHandler):

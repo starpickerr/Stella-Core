@@ -165,11 +165,16 @@ class BaseTool:
         if current_tool_call_id() is None:
             denial = permission_denial(self.name, params, agent=getattr(self, "context", None))
             if denial:
+                logger.warning(
+                    "[Permission] Tool %s denied outside invocation scope: %s",
+                    self.name, denial,
+                )
                 return ToolResult.fail(denial)
         try:
             return self.execute(params)
         except Exception as e:
-            logger.error(e)
+            logger.exception("[Tool] %s execute raised", self.name)
+            return ToolResult.fail(str(e))
 
     def execute(self, params: dict) -> ToolResult:
         """Specific logic to be implemented by subclasses"""

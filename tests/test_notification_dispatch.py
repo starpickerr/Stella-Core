@@ -48,7 +48,9 @@ def test_platform_acceptance_has_separate_persisted_recipient_and_attempt(tmp_pa
     assert store.latest_delivery("other") is None
 
 
-def test_failed_proactive_send_does_not_repeat_or_switch_channel(tmp_path):
+def test_failed_proactive_send_does_not_repeat_or_switch_channel(tmp_path, caplog):
+    from common.log import logger
+
     store = _store(tmp_path)
     job_id = store.claim_occurrence("scheduled", manual=True)
     calls = []
@@ -56,11 +58,20 @@ def test_failed_proactive_send_does_not_repeat_or_switch_channel(tmp_path):
         calls.append(1)
         raise RuntimeError("platform rejected the chat")
     channel = SimpleNamespace(send=expired)
-    first = dispatch_notification(store, job_id, _route(True), "Saved", channel_provider=lambda _: channel)
-    second = dispatch_notification(store, job_id, _route(True), "Saved", channel_provider=lambda _: channel)
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level("WARNING", logger=logger.name):
+            first = dispatch_notification(store, job_id, _route(True), "Saved",
+                                          channel_provider=lambda _: channel)
+            second = dispatch_notification(store, job_id, _route(True), "Saved",
+                                           channel_provider=lambda _: channel)
+    finally:
+        logger.removeHandler(caplog.handler)
     assert first.status == second.status == "failed"
     assert len(calls) == 1
     assert store.get_delivery(job_id, "backup") is None
+    assert "Delivery" in caplog.text and "failed" in caplog.text
+    assert "platform rejected the chat" in caplog.text
 
 
 def test_transient_error_retries_only_three_times_and_uses_saved_job(tmp_path):

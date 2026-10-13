@@ -266,10 +266,13 @@ def run_tasks(
                         f"Split the task or raise subagent.timeout_seconds."
                     ),
                 }
-                # The worker is still winding down and will not report this
-                # itself, so close the task out here rather than leave whoever
-                # is following it waiting on a task that is never coming back.
+                # Close the card before any other work: the cancelled worker may
+                # also report, and the first on_state claim wins.
                 _notify(on_state, index, results[index])
+                logger.warning(
+                    "[Tool] Subagent task %s timed out after %gs",
+                    index, settings.timeout_seconds,
+                )
     finally:
         # Deliberately not waiting: a `with` block would join the very threads
         # we just gave up on, so the tool call would overrun the budget it is
