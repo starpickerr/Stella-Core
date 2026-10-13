@@ -1,6 +1,6 @@
 {
   "name": "stella-desktop",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Stella Desktop Client - personal AI secretary",
   "main": "dist/main/index.js",
   "author": "Stella",
