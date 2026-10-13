@@ -36,6 +36,7 @@ import type {
   Todo, TodoInput, UncertainReminder,
 } from '../types'
 import { getLang } from '../i18n'
+import { notifySecurityPolicyChanged } from '../store/securityPolicyEvents'
 
 interface ApiResult {
   status: string
@@ -534,7 +535,9 @@ class ApiClient {
 
   async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
     options: { project?: string; session?: string } = {}): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
+    const result = await this.request<ApiResult>('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
+    if (result.status === 'success') notifySecurityPolicyChanged()
+    return result
   }
 
   async updateSecurityConnection(id: string, allowed: boolean, scopes: string[]): Promise<{ status: string; message?: string }> {

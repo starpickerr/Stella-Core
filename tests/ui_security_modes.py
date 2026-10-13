@@ -20,13 +20,18 @@ DEFINITIONS = [
 
 
 saved = []
+project_chat = [False]
+project_mode = ["full-access"]
 
 
 def backend(route):
     path = urlparse(route.request.url).path
     data = {'status': 'success'}
     if route.request.method == 'POST' and path == '/api/security/policy':
-        saved.append(json.loads(route.request.post_data or '{}'))
+        body = json.loads(route.request.post_data or '{}')
+        saved.append(body)
+        if project_chat[0] and body.get('target') in ('conversation', 'project'):
+            project_mode[0] = body['policy']['preset']
     if path == '/api/health':
         data = {'status': 'ok'}
     elif path == '/auth/check':
@@ -78,6 +83,18 @@ def backend(route):
                                           'unknown': 0, 'available': True}},
             project=None, project_policy={}, projects=[], conversation_policy={},
         )
+    elif path.endswith('/settings') and path.startswith('/api/sessions/'):
+        if route.request.method == 'POST':
+            body = route.request.post_data_json
+            if body.get('security_policy'):
+                project_mode[0] = body['security_policy']['preset']
+        data.update(model={'model': 'test', 'provider': 'test', 'source': 'global',
+                           'global': {'model': 'test', 'provider': 'test'}, 'providers': []},
+                    permission={'mode': project_mode[0], 'preset': project_mode[0], 'source': 'project',
+                                'base_preset': 'workspace-write', 'rules': {},
+                                'policy': {'preset': project_mode[0], 'rules': {}, 'connections': {}},
+                                'project': '/isolated/project', 'authorized_roots': ['/isolated/project'],
+                                'mode_definitions': DEFINITIONS})
     elif path == '/api/security/confirmations':
         data['pending'] = []
     elif path == '/api/security/activity':
@@ -88,6 +105,11 @@ def backend(route):
         data['tools'] = []
     elif path == '/api/security/privacy':
         data.update(available=True, categories=[], external_transfers=[])
+    if project_chat[0] and path == '/api/security/center':
+        policy = {'preset': project_mode[0], 'rules': {}, 'connections': {}}
+        data.update(effective_policy=policy, effective_mode=project_mode[0], policy_source='project',
+                    project='/isolated/project', project_policy=policy,
+                    projects=[{'path': '/isolated/project', 'name': 'Test project', 'policy': policy}])
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
                   headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true',
                            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -215,6 +237,66 @@ with sync_playwright() as playwright:
         expect(english.get_by_text('CUSTOM:', exact=False)).to_have_count(0)
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-dark-en.png', full_page=True, animations='disabled')
+        project_chat[0] = True
+        page.goto(url + '/#/security?tab=permissions', wait_until='networkidle')
+        page.evaluate("""async () => {
+          const { mountPermissionSelector } = await import('/src/__test__/PermissionSelectorHarness.tsx')
+          await mountPermissionSelector('project-chat')
+        }""")
+        chip = page.locator('#permission-selector-chip')
+        expect(chip.locator('.composer-chip-label')).to_have_text('完全访问')
+        project_card = page.get_by_role('heading', name='项目权限', exact=True).locator('xpath=..')
+        for label in ['只读', '工作区写入', '完全访问', '自定义']:
+            chip.locator('.composer-chip-label').click()
+            chip.get_by_role('button', name=label + ' ' + {'只读':'读取', '工作区写入':'写入', '完全访问':'放宽', '自定义':'调整'}[label], exact=True).click()
+            expect(chip.locator('.composer-chip-label')).to_have_text(label)
+            expect(project_card.get_by_role('button', name=label + ' ' + {'只读':'读取', '工作区写入':'写入', '完全访问':'放宽', '自定义':'调整'}[label], exact=True)).to_have_attribute('aria-pressed', 'true')
+        project_card.get_by_role('button', name='工作区写入 写入', exact=True).click()
+        project_card.get_by_role('button', name='保存权限', exact=True).click()
+        expect(chip.locator('.composer-chip-label')).to_have_text('工作区写入')
+        # A save finishing after switching chats must refresh the new chat.
+        race = page.evaluate("""async () => {
+          const {default: api} = await import('/src/api/client.ts')
+          const {useSessionSettingsStore: store} = await import('/src/store/sessionSettingsStore.ts')
+          const {mountPermissionSelector} = await import('/src/__test__/PermissionSelectorHarness.tsx')
+          const originalGet = api.getSessionSettings, originalSave = api.updateSessionSettings
+          const previous = await originalGet.call(api, 'project-chat')
+          const next = {...previous, permission: {...previous.permission, mode: 'read-only', preset: 'read-only'}}
+          let finishSave, finishLoad
+          const saving = new Promise(resolve => {finishSave = resolve})
+          const loading = new Promise(resolve => {finishLoad = resolve})
+          api.updateSessionSettings = () => saving
+          api.getSessionSettings = id => id === 'next-chat' ? loading : Promise.resolve(previous)
+          try {
+            const apply = store.getState().apply('project-chat', {security_policy: {preset: 'workspace-write'}})
+            const mount = mountPermissionSelector('next-chat')
+            finishSave(previous)
+            await apply
+            finishLoad(next)
+            await mount
+            await Promise.resolve()
+            return store.getState().sessionId
+          } finally {api.getSessionSettings = originalGet; api.updateSessionSettings = originalSave}
+        }""")
+        assert race == 'next-chat', race
+        expect(chip.locator('.composer-chip-label')).to_have_text('只读')
+        # Clearing a conversation must also invalidate an in-flight response.
+        cleared = page.evaluate("""async () => {
+          const {default: api} = await import('/src/api/client.ts')
+          const {useSessionSettingsStore: store} = await import('/src/store/sessionSettingsStore.ts')
+          const original = api.getSessionSettings, response = await original.call(api, 'next-chat')
+          let finish
+          api.getSessionSettings = () => new Promise(resolve => {finish = resolve})
+          try {
+            const loading = store.getState().refresh('old-chat')
+            store.getState().reset()
+            finish(response)
+            await loading
+            const state = store.getState()
+            return {session: state.sessionId, cfg: state.cfg, loading: state.loading}
+          } finally {api.getSessionSettings = original}
+        }""")
+        assert cleared == {'session': None, 'cfg': None, 'loading': False}, cleared
         assert not errors, errors
         print('Security UI: tabs, presets, provider names, keyboard management link, desktop/narrow/mobile, English dark theme passed')
     finally:

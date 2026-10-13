@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from agent.apple.category_links import reconcile_names, validate_links
 from application import Application, RequestContext
 from .apple_bridge import AppleCalendarBridge
+from agent.calendar.apple_runtime import report_sync_error
 
 
 def _instant(value):
@@ -166,19 +167,20 @@ class AppleCalendarSync:
         self._save_map(mapping)
 
     def status(self):
+        listing_error = ""
         native = self.bridge.call("status")
         selected = self._get("calendar_ids", [])
         calendars = []
         if native.get("authorization") == "full_access":
             try:
                 calendars = self.bridge.call("calendars")["calendars"]
-            except Exception:
-                pass
+            except Exception as exc:
+                listing_error = report_sync_error("calendar", "读取日历列表", exc)
         maps = self._maps()
         return {**native, "connected": bool(self._get("connected", False)),
                 "auto_enabled": bool(self._get("auto_enabled", True)), "calendar_ids": selected,
                 "direction": self._get("direction", "bidirectional"), "calendars": calendars,
-                "last_success": self._get("last_success"), "error": self._get("error", ""),
+                "last_success": self._get("last_success"), "error": listing_error or self._get("error", ""),
                 "conflicts": [{"stella_id": row["stella_id"], "reason": row["conflict"]}
                               for row in maps if row["state"] == "conflict"],
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
@@ -320,6 +322,7 @@ class AppleCalendarSync:
             try:
                 self.bridge.call("rename", calendar_id=link["apple_id"], title=name)
             except Exception as exc:
+                report_sync_error("calendar", "同步分类名称", exc)
                 link["name_conflict"] = str(exc)
                 self._save_link(link)
                 errors.append(str(exc))
@@ -813,6 +816,7 @@ class AppleCalendarSync:
 
     def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
         with self._lock:
+            failures = []
             counts = {"status": "success", "imported": 0, "updated": 0, "exported": 0,
                       "deleted_local": 0, "deleted_remote": 0, "conflicts": 0,
                       "pending_deletions": 0, "pending_local_deletions": 0,
@@ -890,7 +894,8 @@ class AppleCalendarSync:
                         found = self._match(remote, maps, ambiguous)
                         if found:
                             seen.add(found["stella_id"])
-                    except Exception:
+                    except Exception as exc:
+                        failures.append(report_sync_error("calendar", "导入日程", exc))
                         counts["status"] = "error"
                 maps = self._maps()
                 for mapping in maps:
@@ -942,7 +947,8 @@ class AppleCalendarSync:
                             counts["conflicts"] += 1
                             continue
                         self._save_map(mapping)
-                    except Exception:
+                    except Exception as exc:
+                        failures.append(report_sync_error("calendar", "核对已同步日程", exc))
                         counts["status"] = "error"
                 if successful and (using_links or direction in ("export", "bidirectional")):
                     calendars = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
@@ -966,7 +972,8 @@ class AppleCalendarSync:
                                 remote = self.bridge.call("upsert", **self._write_payload(local, calendar_id=match[0], window=window))["event"]
                                 self._save_map(self._new_map(local, remote, "stella"))
                                 counts["exported"] += 1
-                            except Exception:
+                            except Exception as exc:
+                                failures.append(report_sync_error("calendar", "写入 Apple 日历", exc))
                                 counts["status"] = "error"
                 for mapping in self._maps():
                     if mapping["state"] != "pending_delete" or mapping["calendar_id"] not in successful:
@@ -981,7 +988,8 @@ class AppleCalendarSync:
                             self._save_map(mapping)
                             counts["deleted_remote"] += 1
                             counts["pending_deletions"] -= 1
-                        except Exception:
+                        except Exception as exc:
+                            failures.append(report_sync_error("calendar", "删除 Apple 日程", exc))
                             counts["status"] = "error"
                 counts["pending_local_deletions"] = sum(
                     row["state"] == "pending_local_delete" for row in self._maps())
@@ -993,11 +1001,12 @@ class AppleCalendarSync:
                     self._set("last_success", self.clock())
                     self._set("error", "")
                 else:
-                    self._set("error", name_errors[0] if name_errors else (
+                    self._set("error", failures[0] if failures else name_errors[0] if name_errors else (
                         "Calendar sync needs another attempt" if counts["status"] == "error" else "Some calendars are unavailable"))
-            except Exception:
+            except Exception as exc:
+                failures.append(report_sync_error("calendar", "同步日历", exc))
                 counts["status"] = "error"
-                self._set("error", "Calendar sync needs another attempt")
+                self._set("error", failures[-1])
             return counts
 
     def resolve_conflict(self, stella_id, choice):
