@@ -23,16 +23,18 @@ export function findProvider(data: ModelsData | null, id: string): ModelProvider
   return data?.providers?.find((x) => x.id === id)
 }
 
-// Resolve the model list for a capability+provider, mirroring the web console:
-//   1. capability-scoped provider_models[id] (vision/image/asr/tts/embedding)
-//   2. provider_models['custom'] for expanded custom:<id> providers
-//   3. fall back to the vendor's generic models[] (chat has no provider_models)
+// Custom vendors own their catalog; the generic custom capability entry may
+// intentionally be empty. Built-in vendors keep capability-specific presets.
 export function resolveModels(
   data: ModelsData | null,
   providerId: string,
   providerModels?: Record<string, ModelEntry[]>
 ): ModelOption[] {
   if (!providerId) return []
+  if (providerId.startsWith('custom:')) {
+    const configured = normEntries(findProvider(data, providerId)?.models)
+    if (configured.length) return configured
+  }
   if (providerModels?.[providerId]) return normEntries(providerModels[providerId])
   if (providerId.startsWith('custom:') && providerModels?.['custom']) {
     return normEntries(providerModels['custom'])

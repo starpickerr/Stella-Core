@@ -21,7 +21,7 @@ import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
-import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
+import { normEntries, providerLabel, resolveModels, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
 const allowCustomProviders = product.models?.allowCustomProviders !== false
@@ -703,21 +703,24 @@ const TtsCard: React.FC<{
 }> = ({ state, data, busy, status, onSaveVoice, onSaveMode, modeStatus, modeBusy }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
-  // Custom (OpenAI-compatible) vendors have no preset catalog: type the model.
-  // Covers expanded custom:<id> cards and the legacy flat "custom" entry.
   const isCustomProvider = (id: string) => id.startsWith('custom:') || id === 'custom'
-  const [customModel, setCustomModel] = useState(
-    isCustomProvider(state.current_provider || '') ? state.current_model || '' : ''
-  )
+  const [customModel, setCustomModel] = useState('')
+  const [showCustom, setShowCustom] = useState(false)
   const [voice, setVoice] = useState(state.current_voice || '')
   const [mode, setMode] = useState<'off' | 'voice_if_voice' | 'always'>(state.reply_mode || 'off')
 
   const providerOptions = (state.providers || []).map((id) => ({ value: id, label: providerLabel(data, id) }))
-  const modelOptions = normEntries(state.provider_models?.[provider]).map((o) => ({
+  const modelOptions = resolveModels(data, provider, state.provider_models).map((o) => ({
     value: o.value,
     label: o.value,
     hint: o.hint,
   }))
+  if (model && !showCustom && !modelOptions.some((o) => o.value === model)) {
+    modelOptions.unshift({ value: model, label: model, hint: undefined })
+  }
+  if (isCustomProvider(provider)) {
+    modelOptions.push({ value: CUSTOM_OPTION, label: t('config_custom_option'), hint: undefined })
+  }
   const voiceOptions = resolveVoices(provider, model, state.provider_voices).map((o) => ({
     value: o.value,
     label: o.value,
@@ -726,24 +729,20 @@ const TtsCard: React.FC<{
 
   const handleProvider = (id: string) => {
     setProvider(id)
-    if (isCustomProvider(id)) {
-      // Prefill with the saved model when re-selecting the same provider.
-      setCustomModel(id === state.current_provider ? state.current_model || '' : '')
-      setModel('')
-      setVoice('')
-      return
-    }
+    setShowCustom(false)
     setCustomModel('')
-    const first = normEntries(state.provider_models?.[id])[0]
-    const fm = first?.value || ''
+    const first = resolveModels(data, id, state.provider_models)[0]
+    const fm = id === state.current_provider ? state.current_model || first?.value || '' : first?.value || ''
     setModel(fm)
     setVoice(resolveVoices(id, fm, state.provider_voices)[0]?.value || '')
   }
   const handleModel = (m: string) => {
-    setModel(m)
-    setVoice(resolveVoices(provider, m, state.provider_voices)[0]?.value || '')
+    setShowCustom(m === CUSTOM_OPTION)
+    setModel(m === CUSTOM_OPTION ? '' : m)
+    setCustomModel('')
+    setVoice(resolveVoices(provider, m === CUSTOM_OPTION ? '' : m, state.provider_voices)[0]?.value || '')
   }
-  const finalModel = isCustomProvider(provider) ? customModel.trim() : model
+  const finalModel = showCustom ? customModel.trim() : model
 
   return (
     <Card icon={<Volume2 size={16} />} title={t('models_cap_tts')} subtitle={t('models_cap_tts_sub')}>
@@ -774,20 +773,18 @@ const TtsCard: React.FC<{
               />
             </Field>
             <Field label={t('models_model')}>
-              {isCustomProvider(provider) ? (
-                // Custom vendors have no preset catalog: type the model directly.
+              <Dropdown
+                value={showCustom ? CUSTOM_OPTION : model}
+                options={modelOptions}
+                placeholder={t('models_select_model')}
+                onChange={handleModel}
+              />
+              {showCustom && (
                 <TextInput
-                  className="font-mono"
+                  className="mt-2 font-mono"
                   value={customModel}
                   onChange={(e) => setCustomModel(e.target.value)}
                   placeholder={t('config_custom_model_hint')}
-                />
-              ) : (
-                <Dropdown
-                  value={model}
-                  options={modelOptions}
-                  placeholder={t('models_select_model')}
-                  onChange={handleModel}
                 />
               )}
             </Field>

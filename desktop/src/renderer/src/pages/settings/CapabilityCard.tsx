@@ -39,12 +39,10 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
 }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
-  const [customModel, setCustomModel] = useState(
-    (state.current_provider || '').startsWith('custom:') ? state.current_model || '' : ''
-  )
+  const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
 
-  const isCustomProvider = provider.startsWith('custom:')
+  const isCustomProvider = provider.startsWith('custom:') || provider === 'custom'
 
   const isConfigured = (id: string): boolean => {
     const p = data?.providers?.find((x) => x.id === id)
@@ -74,22 +72,16 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     if (model && !showCustom && !list.some((o) => o.value === model)) {
       list.unshift({ value: model, label: model, hint: undefined })
     }
-    if (allowCustomModel) list.push({ value: CUSTOM_OPTION, label: t('config_custom_option'), hint: undefined })
+    if (allowCustomModel || isCustomProvider) list.push({ value: CUSTOM_OPTION, label: t('config_custom_option'), hint: undefined })
     return list
-  }, [data, state.provider_models, provider, allowCustomModel, model, showCustom])
+  }, [data, state.provider_models, provider, allowCustomModel, isCustomProvider, model, showCustom])
 
   const handleProvider = (id: string) => {
     setProvider(id)
     setShowCustom(false)
-    if (id.startsWith('custom:')) {
-      const saved = id === state.current_provider ? state.current_model || '' : ''
-      setCustomModel(saved)
-      setModel('')
-      return
-    }
     setCustomModel('')
     const first = resolveModels(data, id, state.provider_models)[0]
-    setModel(first?.value || '')
+    setModel(id === state.current_provider ? state.current_model || first?.value || '' : first?.value || '')
   }
 
   const handleModel = (val: string) => {
@@ -103,7 +95,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     }
   }
 
-  const finalModel = showCustom || isCustomProvider ? customModel.trim() : model
+  const finalModel = showCustom ? customModel.trim() : model
   const isAuto = allowAuto && !provider
 
   return (
@@ -122,37 +114,19 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
         </Field>
         {!isAuto && (
           <Field label={t('models_model')}>
-            {isCustomProvider ? (
-              <>
-                {modelOptions.length > 0 && <Dropdown
-                  value={modelOptions.some((option) => option.value === customModel) ? customModel : CUSTOM_OPTION}
-                  options={[...modelOptions, { value: CUSTOM_OPTION, label: t('config_custom_option') }]}
-                  onChange={(value) => setCustomModel(value === CUSTOM_OPTION ? '' : value)}
-                />}
-                {(!modelOptions.length || !modelOptions.some((option) => option.value === customModel)) && <TextInput
-                  className="mt-2 font-mono"
-                  value={customModel}
-                  onChange={(e) => setCustomModel(e.target.value)}
-                  placeholder={t('config_custom_model_hint')}
-                />}
-              </>
-            ) : (
-              <>
-                <Dropdown
-                  value={showCustom ? CUSTOM_OPTION : model}
-                  options={modelOptions}
-                  placeholder={t('models_select_model')}
-                  onChange={handleModel}
-                />
-                {showCustom && (
-                  <TextInput
-                    className="mt-2 font-mono"
-                    value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
-                    placeholder={t('config_custom_model_hint')}
-                  />
-                )}
-              </>
+            <Dropdown
+              value={showCustom ? CUSTOM_OPTION : model}
+              options={modelOptions}
+              placeholder={t('models_select_model')}
+              onChange={handleModel}
+            />
+            {showCustom && (
+              <TextInput
+                className="mt-2 font-mono"
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                placeholder={t('config_custom_model_hint')}
+              />
             )}
           </Field>
         )}
