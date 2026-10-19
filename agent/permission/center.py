@@ -178,9 +178,18 @@ def connections(policy: dict | None = None) -> list[dict]:
     github_token = bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token"))
     github_verified = bool(github_token and cfg.get("github_verified_at"))
     try:
-        from agent.briefing.settings import public_mailboxes
-        mail = public_mailboxes()
-        email_configured = bool(mail.get("configured"))
+        from core.services.email_gateway import email_plugin_enabled
+        if email_plugin_enabled():
+            from application import Application
+            accounts = Application.port("email").list_accounts()
+            if isinstance(accounts, dict):
+                email_configured = bool(accounts.get("configured") or accounts.get("accounts"))
+            else:
+                email_configured = bool(accounts)
+        else:
+            from agent.briefing.settings import public_mailboxes
+            mail = public_mailboxes()
+            email_configured = bool(mail.get("configured"))
     except Exception:
         email_configured = bool(cfg.get("email_password") or os.environ.get("EMAIL_PASSWORD"))
     try:
