@@ -8,9 +8,11 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -22,7 +24,7 @@ from core.plugins.contract import (
     validate_operation_result,
 )
 from core.plugins.manifest import load_manifest
-from core.plugins.protocol import FrameError, make_request, read_frame, write_frame
+from core.plugins.protocol import FrameError, make_request, make_result, make_error, read_frame, write_frame
 from core.plugins.registry import ContributionSnapshot, PluginRegistry
 
 
@@ -39,6 +41,9 @@ class PluginOutcomeUnknown(PluginHostError):
 def _platform_tag() -> str:
     return f"{sys.platform}-{platform.machine()}"
 
+
+CONFIG_METHODS = frozenset({'save_account', 'delete_account', 'save_settings', 'delete_settings',
+                            'save_file_sync_settings', 'update_preferences'})
 
 RUNNER_ENV = "STELLA_PLUGIN_RUNNER"
 RUNNER_BINARY_NAME = "stella-plugin-runner"
@@ -96,7 +101,7 @@ def _managed_boundary(function):
     @wraps(function)
     def call(self, **kwargs):
         from core.plugins.management import default_store
-        from core.plugins.caller import managed_data_lease, managed_plugin
+        from core.plugins.caller import managed_data_lease, managed_plugin, invocation_lock
         from core.plugins.locks import package_lock
 
         store = default_store()
@@ -109,8 +114,10 @@ def _managed_boundary(function):
             if not current or current['digest'] != self.package_digest:
                 self.dispose()
                 raise PermissionError('worker package selection changed; restart the session')
-            with package_lock(store.root, self.plugin_id + ':policy', exclusive=True):
-                with self._lock:
+            with invocation_lock(self._lock):
+                policy = (package_lock(store.root, self.plugin_id + ':policy', exclusive=True)
+                          if kwargs.get('method') in CONFIG_METHODS else nullcontext())
+                with policy:
                     return function(self, **kwargs)
     return call
 
@@ -152,7 +159,9 @@ class PluginSession:
 
     @property
     def is_running(self) -> bool:
-        with self._lock:
+        from core.plugins.caller import invocation_lock
+
+        with invocation_lock(self._lock):
             from core.plugins.caller import managed_plugin
             from core.plugins.management import default_store
             from core.plugins.package_ops import PackageStore
@@ -347,11 +356,18 @@ class PluginSession:
         if identity.user_id and identity.user_id != self.user_id:
             raise PermissionError("plugin session user identity mismatch")
         # A compatibility gateway cannot erase the real tool/job caller.
-        from core.plugins.caller import current_caller_origin
+        from core.plugins.caller import current_caller_origin, current_delegation
 
         if origin == "system":
             origin = current_caller_origin() or ("job" if identity.task_id else
                                                  "tool" if identity.session_id else "system")
+        delegation = current_delegation()
+        if delegation:
+            origin = delegation['origin']
+            remaining = (delegation['deadline'] - datetime.now(timezone.utc)).total_seconds()
+            if remaining <= 0:
+                raise PermissionError('delegated invocation deadline expired')
+            timeout_ms = min(timeout_ms, max(1, int(remaining * 1000)))
         agent_id = identity.agent_id or agent_id
         session_id = identity.session_id or session_id
         self.registry.require_generation(self.plugin_id, self.generation)
@@ -371,26 +387,31 @@ class PluginSession:
             if managed:
                 from core.plugins.resources import invocation_resources
 
-                purpose = 'background' if origin == 'job' or purpose == 'background' else 'interactive'
-                scope = dict(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
-                             consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
-                             required_capabilities=required or {'plugin.invoke'}, method=method, purpose=purpose)
-                # No body read is permitted merely to discover the authorization scope.
-                self.authz.check_scoped(**scope, resources=[])
+                from core.plugins.locks import package_lock
 
-                def metadata(name, values):
-                    context = build_host_context(user_id=self.user_id, instance_id=self.instance_id,
-                        generation=self.generation, origin=origin, grant_ref=grant_ref)
-                    params = build_invoke_params(contract=contract, method=name, input_payload=values, context=context,
-                        deadline=datetime.now(timezone.utc) + timedelta(seconds=10))
-                    params['_hostDataHandle'] = dict(data_handle or {})
-                    result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=10_000))
-                    if result['status'] != 'succeeded' or not isinstance(result.get('value'), dict):
-                        raise PermissionError('source metadata is unavailable')
-                    return result['value']
+                policy = (nullcontext() if method in CONFIG_METHODS else
+                          package_lock(default_store().root, self.plugin_id + ':policy', exclusive=True))
+                with policy:
+                    purpose = 'background' if origin == 'job' or purpose == 'background' else 'interactive'
+                    scope = dict(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
+                                 consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
+                                 required_capabilities=required or {'plugin.invoke'}, method=method, purpose=purpose)
+                    # No body read is permitted merely to discover the authorization scope.
+                    self.authz.check_scoped(**scope, resources=[])
 
-                resource_refs = invocation_resources(self.plugin_id, method, input_payload, self.user_id, metadata)
-                self.authz.check_scoped(**scope, resources=resource_refs)
+                    def metadata(name, values):
+                        context = build_host_context(user_id=self.user_id, instance_id=self.instance_id,
+                            generation=self.generation, origin=origin, grant_ref=grant_ref)
+                        params = build_invoke_params(contract=contract, method=name, input_payload=values, context=context,
+                            deadline=datetime.now(timezone.utc) + timedelta(seconds=10))
+                        params['_hostDataHandle'] = dict(data_handle or {})
+                        result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=10_000, allow_callbacks=False))
+                        if result['status'] != 'succeeded' or not isinstance(result.get('value'), dict):
+                            raise PermissionError('source metadata is unavailable')
+                        return result['value']
+
+                    resource_refs = invocation_resources(self.plugin_id, method, input_payload, self.user_id, metadata)
+                    self.authz.check_scoped(**scope, resources=resource_refs)
             else:
                 self.authz.check(
                     grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
@@ -418,7 +439,12 @@ class PluginSession:
             grant_ref=grant_ref,
             agent_id=agent_id,
             session_id=session_id,
+            run_id=identity.run_id, job_id=identity.task_id,
         )
+        if delegation:
+            context.update(callerPluginId=delegation['callerPluginId'], delegationChain=delegation['chain'],
+                           callerPrincipal=delegation['context']['callerPrincipal'],
+                           traceId=delegation['context']['traceId'], origin='plugin')
         invoke_params = build_invoke_params(
             contract=contract,
             method=method,
@@ -433,8 +459,7 @@ class PluginSession:
             invoke_params["_hostDataHandle"] = dict(data_handle)
             if resource_refs is not None:
                 invoke_params["_hostDataHandle"]["authorizedResources"] = resource_refs
-        if managed and method in {'save_account', 'delete_account', 'save_settings', 'delete_settings',
-                                  'save_file_sync_settings', 'update_preferences'}:
+        if managed and method in CONFIG_METHODS:
             # A timed-out mutation may have committed, so invalidate before dispatch.
             default_store().bump_source_revision(self.plugin_id, self.user_id)
         result = self._rpc("plugin.invoke", invoke_params, timeout_ms=timeout_ms)
@@ -540,7 +565,8 @@ class PluginSession:
                      self.plugin_id, self.generation, self._stderr_bytes)
 
     def _rpc(
-        self, method: str, params: dict[str, Any], *, allow_dead: bool = False, timeout_ms: int = 30_000
+        self, method: str, params: dict[str, Any], *, allow_dead: bool = False, timeout_ms: int = 30_000,
+        allow_callbacks: bool = True
     ) -> dict[str, Any]:
         with self._lock:
             if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
@@ -554,39 +580,68 @@ class PluginSession:
             self._inflight.add(request_id)
             process = self._proc
             responses = queue.Queue(maxsize=1)
+            deadline = time.monotonic() + max(timeout_ms, 1) / 1000
+            outgoing = make_request(method, params, request_id)
+            seen_callbacks = set()
+            thread = None
 
-            def exchange():
+            def exchange(frame):
                 try:
-                    write_frame(process.stdin, make_request(method, params, request_id))
+                    write_frame(process.stdin, frame)
                     responses.put((read_frame(process.stdout), None))
                 except Exception as exc:
                     responses.put((None, exc))
 
-            thread = threading.Thread(target=exchange, daemon=True)
-            thread.start()
             try:
-                response, error = responses.get(timeout=max(timeout_ms, 1) / 1000)
-                if error is not None:
-                    self._abort_transport(process, thread)
-                    if method == "plugin.invoke":
-                        raise PluginOutcomeUnknown("plugin transport failed; operation outcome unknown") from error
-                    raise PluginHostError("plugin transport failed") from error
+                while True:
+                    if time.monotonic() >= deadline:
+                        raise queue.Empty
+                    thread = threading.Thread(target=exchange, args=(outgoing,), daemon=True)
+                    thread.start()
+                    response, error = responses.get(timeout=max(.001, deadline - time.monotonic()))
+                    if error is not None:
+                        self._abort_transport(process, thread)
+                        if method == 'plugin.invoke':
+                            raise PluginOutcomeUnknown('plugin transport failed; operation outcome unknown') from error
+                        raise PluginHostError('plugin transport failed') from error
+                    if 'method' in response:
+                        callback_id = response.get('id')
+                        try:
+                            if (not allow_callbacks or method != 'plugin.invoke' or response['method'] != 'core.invoke' or
+                                    not isinstance(callback_id, str) or callback_id in seen_callbacks):
+                                raise PermissionError('callback is not bound to an active invocation')
+                            seen_callbacks.add(callback_id)
+                            from core.plugins.core_invoke import dispatch
+
+                            # Execute on the original caller thread. Thread-local identity,
+                            # policy and delegation must not be recreated from plugin input.
+                            result = dispatch(self, response.get('params'), params)
+                            outgoing = make_result(callback_id, result)
+                        except PermissionError as exc:
+                            outgoing = make_error(callback_id, -32001, str(exc))
+                        except PluginOutcomeUnknown:
+                            outgoing = make_result(callback_id, {'status': 'unknown', 'sideEffects': 'unknown'})
+                        except Exception:
+                            outgoing = make_error(callback_id, -32000, 'Core service invocation failed')
+                        continue
+                    if response.get('id') != request_id:
+                        raise PluginHostError('response id mismatch')
+                    if 'error' in response:
+                        err = response['error']
+                        if method == 'plugin.invoke' and err.get('code') == -32000:
+                            raise PluginOutcomeUnknown('plugin failed during invocation; operation outcome unknown')
+                        raise PluginHostError(f"{err.get('code')}: {err.get('message')}")
+                    result = response.get('result')
+                    if not isinstance(result, dict):
+                        raise PluginHostError('result must be an object')
+                    return result
             except queue.Empty as exc:
                 self._abort_transport(process, thread)
-                if method == "plugin.invoke":
-                    raise PluginOutcomeUnknown("plugin timed out; operation outcome unknown") from exc
-                raise PluginHostError(f"plugin transport timed out during {method}") from exc
+                if method == 'plugin.invoke':
+                    raise PluginOutcomeUnknown('plugin timed out; operation outcome unknown') from exc
+                raise PluginHostError(f'plugin transport timed out during {method}') from exc
             finally:
                 self._inflight.discard(request_id)
-            if response.get("id") != request_id:
-                raise PluginHostError("response id mismatch")
-            if "error" in response:
-                err = response["error"]
-                raise PluginHostError(f"{err.get('code')}: {err.get('message')}")
-            result = response.get("result")
-            if not isinstance(result, dict):
-                raise PluginHostError("result must be an object")
-            return result
 
 
 def _conversation_permission_denial(

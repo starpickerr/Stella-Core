@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Any
 
+from core.plugins.caller import plugin_user_id
+
 
 @dataclass(frozen=True)
 class SourceDescriptor:
@@ -21,15 +23,15 @@ class SourceDirectory:
 
     def __init__(self) -> None:
         self._lock = RLock()
-        self._items: dict[str, SourceDescriptor] = {}
+        self._items: dict[tuple[str, str], SourceDescriptor] = {}
 
     def upsert(self, descriptor: SourceDescriptor) -> None:
         with self._lock:
-            self._items[descriptor.source_id] = descriptor
+            self._items[(plugin_user_id(), descriptor.source_id)] = descriptor
 
     def remove(self, source_id: str) -> None:
         with self._lock:
-            self._items.pop(source_id, None)
+            self._items.pop((plugin_user_id(), source_id), None)
 
     def list_for_user(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -41,7 +43,7 @@ class SourceDirectory:
                     "label": item.label,
                     "status": item.status,
                 }
-                for item in self._items.values()
+                for (user, _), item in self._items.items() if user == plugin_user_id()
             ]
 
 

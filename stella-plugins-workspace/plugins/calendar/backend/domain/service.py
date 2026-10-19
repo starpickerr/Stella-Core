@@ -102,6 +102,18 @@ class CalendarService:
         finally:
             db.close()
 
+    def find_briefing_sources(self, source_keys):
+        if (not isinstance(source_keys, list) or len(source_keys) > 1000 or
+                any(not isinstance(key, str) or not key for key in source_keys)):
+            raise ValueError('source_keys must be stable source references')
+        if not source_keys:
+            return []
+        placeholders = ','.join('?' for _ in source_keys)
+        with self._connect() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT * FROM calendar_events WHERE source_type='briefing' AND source_key IN (" + placeholders + ")",
+                source_keys)]
+
     def has_source_tombstone(self, source_keys):
         """Public collaboration API: whether any source_key is tombstoned."""
         candidates = [key for key in source_keys if key]

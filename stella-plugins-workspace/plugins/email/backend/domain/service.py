@@ -83,7 +83,9 @@ class EmailService:
         legacy_mailbox_path: str | os.PathLike | None = None,
         opener: Optional[Callable[[], object]] = None,
         lookback_days: int = 2,
+        authorized_resources=None, user_id=None,
     ):
+        self.authorized_resources, self.user_id = authorized_resources, user_id
         self.db_path = Path(db_path)
         self._opener = opener
         self._lookback_days = lookback_days
@@ -167,6 +169,11 @@ class EmailService:
             raise ValueError("邮箱 ID 无效")
         for row in self._load_accounts(db):
             if row["id"] == account_id:
+                if self.authorized_resources is not None:
+                    allowed = {(ref['kind'], ref['id']) for ref in self.authorized_resources}
+                    if (('user', self.user_id) not in allowed and
+                            ('folder', _source_account_id(row)) not in allowed):
+                        raise PermissionError('actual mailbox folder is outside the approved resource scope')
                 return row
         raise KeyError("邮箱不存在，请重新打开设置")
 

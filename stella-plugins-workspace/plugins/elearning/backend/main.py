@@ -73,7 +73,8 @@ def _service(invoke_params: dict[str, Any]) -> ElearningService:
     data_dir = handle.get("dataDir")
     if not data_dir:
         raise RuntimeError("host data handle with dataDir required")
-    return ElearningService(Path(data_dir), legacy_dir=handle.get("legacyDir"))
+    return ElearningService(Path(data_dir), legacy_dir=handle.get("legacyDir"),
+                            authorized_resources=handle.get('authorizedResources'), user_id=invoke_params['context']['userId'])
 
 
 def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +89,8 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         return _fail("invalid_argument", f"unknown parameters for {method}: {', '.join(unknown)}")
     try:
         value = getattr(_service(invoke_params), method)(**params)
+    except PermissionError as exc:
+        return _fail('permission_denied', str(exc))
     except LoginRequired as exc:
         return _fail("login_required", str(exc))
     except SyncCancelled as exc:

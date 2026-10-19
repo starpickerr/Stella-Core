@@ -17,6 +17,10 @@ from zoneinfo import ZoneInfo
 CATEGORIES = {'needs_action', 'attention', 'status_update', 'other'}
 KINDS = {'todo', 'calendar', 'reminder'}
 OPERATIONS = {'create', 'link', 'unlink', 'ignore', 'defer', 'keep', 'retry', 'confirm_update', 'keep_current', 'remind'}
+class PeerOutcomeUnknown(RuntimeError):
+    side_effects = 'unknown'
+
+
 class AdapterUnavailable(RuntimeError):
     """Todo/calendar adapters are host-side; the plugin worker cannot reach them."""
 
@@ -279,9 +283,7 @@ class BriefingActions:
         key = entity['entity_key']
         stable_key = 'entity:' + hashlib.sha256(key.encode()).hexdigest()
         aliases = sorted(self._legacy_keys(db, key) | {stable_key})
-        table = 'todos' if kind == 'todo' else 'calendar_events'
-        with self._service(kind)._connect() as target_db:
-            rows = target_db.execute(f"SELECT * FROM {table} WHERE source_type='briefing' AND source_key IN ({','.join('?' for _ in aliases)})", aliases).fetchall()
+        rows = self._service(kind).find_briefing_sources(aliases)
         if len(rows) > 1:
             self._write(db, key, kind, state='pending', result={'operation':'matching_required','candidate_ids':[row['id'] for row in rows]})
             return 'ambiguous'
@@ -442,6 +444,8 @@ class BriefingActions:
             row, conflicts = service.sync_briefing_facts(business['id'], changes, action['baseline'], force=force)
             self._write(db,key,kind,state='conflict' if conflicts else 'succeeded',baseline=action['baseline'] if conflicts else row,
                 result={'operation':'conflict' if conflicts else 'synced','changes':conflicts,'source_facts':facts},error='User fields differ from source; choose confirm update or keep current' if conflicts else '')
+        except PeerOutcomeUnknown:
+            raise
         except Exception as exc:
             self._write(db,key,kind,state='failed',error=str(exc),result={'operation':'failed'})
             if propagate:

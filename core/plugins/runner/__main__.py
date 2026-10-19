@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.plugins.runner import host_api
+
 from core.plugins.contract import validate_invoke_params, validate_operation_result
 from core.plugins.protocol import (
     FrameError,
@@ -48,6 +50,7 @@ def _log(message: str) -> None:
 
 
 def _load_entry(manifest: dict[str, Any], root: Path) -> tuple[Callable[[dict[str, Any]], dict[str, Any]], Any]:
+    sys.modules["stella_host"] = host_api
     runtime = manifest.get("runtime") or {}
     entry = runtime.get("entry")
     if not entry:
@@ -207,7 +210,8 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
                 call_params["_hostDataHandle"] = params["_hostDataHandle"]
             STATE.in_flight.add(request_id)
             try:
-                result = STATE.handler(call_params)
+                with host_api.invocation_scope(call_params):
+                    result = STATE.handler(call_params)
             finally:
                 STATE.in_flight.discard(request_id)
             if not isinstance(result, dict):
@@ -263,6 +267,7 @@ class _StdoutToStderr:
 def main() -> int:
     stdin = sys.stdin.buffer
     protocol_out = sys.stdout.buffer
+    host_api.configure(stdin, protocol_out)
     sys.stdout = _StdoutToStderr()  # type: ignore[assignment]
     while True:
         try:

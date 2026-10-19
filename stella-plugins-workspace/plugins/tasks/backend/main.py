@@ -29,6 +29,7 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "list_uncertain_reminders": ("query", "tasks.read", False, ()),
     "categories": ("query", "tasks.read", False, ()),
     "get_category": ("query", "tasks.read", False, ("category_id",)),
+    "find_briefing_sources": ("query", "tasks.read", False, ("source_keys",)),
     "has_source_tombstone": ("query", "tasks.read", False, ("source_keys",)),
     "pending_scheduler_links": ("query", "tasks.read", False, ()),
     "complete_scheduler_link": (
@@ -161,7 +162,12 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
                 "value": value,
                 "operationId": invoke_params.get("idempotencyKey") or method,
             }
-        value = getattr(svc, method)(**params)
+        if method == 'create_todo':
+            body = dict(params['payload'])
+            source_key = body.pop('_briefing_key', None)
+            value = svc.create_todo(body, _briefing_key=source_key)
+        else:
+            value = getattr(svc, method)(**params)
         if method == "delete_todo":
             value = {"deleted": True, "id": params["todo_id"]}
         elif method == "sync_briefing_facts":

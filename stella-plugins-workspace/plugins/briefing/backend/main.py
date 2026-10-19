@@ -1,14 +1,7 @@
-"""Briefing plugin entry — no Stella ``agent.*`` imports, no mailbox/eLearning secrets.
+"""Briefing owner: decisions, snapshots and outbox in one worker.
 
-Host-provided capabilities arrive through ``_hostDataHandle`` (JSON only):
-  dbPath            required SQLite path for this user's briefing data
-  sourceDirectory   optional Core SourceDirectory rows (``list_for_user`` shape)
-
-Todo/calendar adapters are host-side, so action execution that must create or
-update peer business objects (``update_action`` create/link, outbox projection,
-``get_action_targets``) answers ``unsupported``; the Core facade bridges those.
-Everything else (briefings, revisions, items, rules, cursors, preferences,
-source catalog, pre-fetched pipeline runs) is fully served here.
+Peer business calls use the bound Core public channel and independent grants.
+The worker receives its own data handle and public source references only.
 """
 
 from __future__ import annotations
@@ -23,7 +16,8 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.actions import AdapterUnavailable
+from peers import PeerService
+from domain.actions import AdapterUnavailable, PeerOutcomeUnknown
 from domain.models import EmailMessage, SourceItem
 from domain.outbox import dispatch_pending
 from domain.pipeline import BriefingPipeline
@@ -119,7 +113,7 @@ def _service(invoke_params: dict[str, Any]) -> BriefingService:
     db_path = handle.get("dbPath")
     if not db_path:
         raise RuntimeError("host data handle with dbPath required")
-    return BriefingService(get_briefing_store(Path(db_path)))
+    return BriefingService(get_briefing_store(Path(db_path)), PeerService('todo'), PeerService('calendar'))
 
 
 def _sources(invoke_params: dict[str, Any]) -> list[dict]:
@@ -173,13 +167,11 @@ def _dispatch(svc: BriefingService, method: str, params: dict[str, Any], invoke_
     if method == "select_sources":
         return select_sources(_sources(invoke_params), params.get("selectors"))
     if method == "dispatch_outbox":
-        return dispatch_pending(store, int(params.get("limit") or 20))
+        return dispatch_pending(store, int(params.get("limit") or 20), svc._todos, svc._calendar)
     if method == "run_pipeline":
         return BriefingPipeline(svc).run(
             briefing_date=params.get("briefing_date"), operation=params.get("operation") or "upsert",
             trigger=params.get("trigger") or "manual", sources=params.get("sources"), draft=params.get("draft"))
-    if method == "get_action_targets":
-        svc.actions.require_adapters("get_action_targets")
     return getattr(svc, method)(**params)
 
 
@@ -196,8 +188,12 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
     try:
         svc = _service(invoke_params)
         value = _jsonable(_dispatch(svc, method, params, invoke_params))
+    except PeerOutcomeUnknown:
+        return {'status':'unknown','sideEffects':'unknown','operationId':invoke_params.get('idempotencyKey') or method}
     except AdapterUnavailable as exc:
         return _fail("unsupported", str(exc))
+    except PermissionError as exc:
+        return _fail('permission_denied', str(exc))
     except KeyError as exc:
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except sqlite3.IntegrityError as exc:

@@ -1,18 +1,7 @@
-"""Compatibility facade: same surface as BriefingService, routed to plugin RPC.
-
-Results are rebuilt into the Core ``agent.briefing.models`` dataclasses so the
-desktop handlers, the Agent tool and the Core pipeline keep working unchanged.
-
-Todo/calendar adapters live in the host. For the few operations that must touch
-those peers (``get_action_targets``, ``update_action`` create/link, outbox
-projection) the plugin answers ``unsupported`` and this facade bridges them
-host-side (``STELLA_BRIEFING_HOST_ADAPTERS``, default on) against the same
-briefing database until plugin-to-plugin calls land.
-"""
+"""Core compatibility types over the Briefing owner service; no domain writes."""
 
 from __future__ import annotations
 
-import os
 import threading
 from dataclasses import asdict
 from pathlib import Path
@@ -28,10 +17,6 @@ def _db_path() -> Path:
     from common.state_dir import briefing_db
 
     return briefing_db()
-
-
-def host_adapters_enabled() -> bool:
-    return os.environ.get("STELLA_BRIEFING_HOST_ADAPTERS", "1").strip() not in {"0", "false", "no"}
 
 
 def _models():
@@ -174,12 +159,7 @@ class _StoreProxy:
             "run_id": run_id, "source": source, "account_id": account_id, "errors": list(errors)})
 
     def dispatch_outbox(self, limit=20):
-        if host_adapters_enabled():
-            from agent.briefing.outbox import dispatch_pending
-            from agent.briefing.store import get_briefing_store
-
-            return dispatch_pending(get_briefing_store(_db_path()), limit)
-        return _call("dispatch_outbox", {"limit": limit})
+        return _call('dispatch_outbox', {'limit': limit})
 
 
 class BriefingPluginFacade:
@@ -205,40 +185,9 @@ class BriefingPluginFacade:
                     raise TypeError(f"{name}() got multiple values for argument {key!r}")
                 params[key] = value
             params = {key: _wire(value) for key, value in params.items()}
-            if name == "get_action_targets":
-                return self._action_targets(params)
-            try:
-                value = _call(name, params)
-            except BriefingPluginError as exc:
-                if exc.code == "unsupported" and name == "update_action" and host_adapters_enabled():
-                    return self._host_update_action(params)
-                raise
+            value = _call(name, params)
             convert = _RESULT.get(name)
             return convert(value) if convert else value
 
         call.__name__ = name
         return call
-
-    # -- host adapter bridge -----------------------------------------------
-    @staticmethod
-    def _host_update_action(params: dict[str, Any]) -> Any:
-        from agent.briefing.service import BriefingService
-        from agent.briefing.store import get_briefing_store
-
-        return BriefingService(get_briefing_store(_db_path())).update_action(
-            params["item_id"], params["payload"])
-
-    @staticmethod
-    def _action_targets(params: dict[str, Any]) -> list[dict]:
-        kind, query = params["kind"], params.get("query", "")
-        if kind not in {"todo", "calendar"}:
-            raise ValueError("invalid target type")
-        if not isinstance(query, str) or len(query) > 300:
-            raise ValueError("invalid search query")
-        from application import Application
-
-        if kind == "todo":
-            rows = Application.port("todos").list_todos(include_completed=True)
-        else:
-            rows = Application.port("calendar").list_events()
-        return [row for row in rows if query.casefold() in row["title"].casefold()][:50]

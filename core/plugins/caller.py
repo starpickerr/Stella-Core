@@ -10,6 +10,7 @@ from common.runtime_identity import current_identity
 
 _GATEWAY_LOCKS: dict[str, object] = {}
 _LOCKS_GUARD = RLock()
+_DELEGATION = ContextVar("approved_plugin_delegation", default=None)
 _CONSUMER_PLUGIN = ContextVar("plugin_consumer", default=None)
 _CALLER_ORIGIN = ContextVar("plugin_caller_origin", default=None)
 
@@ -102,7 +103,7 @@ def serialized_gateway(function):
 
     @wraps(function)
     def call(*args, **kwargs):
-        with lock:
+        with invocation_lock(lock):
             if function.__name__.startswith(("invoke_", "ensure_")):
                 domain = function.__module__.rsplit('.', 1)[-1].removesuffix('_gateway')
                 plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
@@ -127,3 +128,42 @@ def consumer_plugin_scope(plugin_id: str):
         yield
     finally:
         _CONSUMER_PLUGIN.reset(token)
+
+
+def current_delegation() -> dict | None:
+    return _DELEGATION.get()
+
+
+@contextmanager
+def delegation_scope(context: dict, caller_plugin: str, deadline):
+    parent = _DELEGATION.get()
+    if caller_plugin in (context.get('delegationChain') or []):
+        raise PermissionError('cyclic plugin delegation')
+    root_origin = parent['origin'] if parent else context['origin']
+    if root_origin == 'plugin':
+        raise PermissionError('delegation has no original caller')
+    token = _DELEGATION.set({'context': context, 'callerPluginId': caller_plugin,
+        'origin': root_origin, 'deadline': deadline,
+        'chain': [*(context.get('delegationChain') or []), caller_plugin]})
+    origin_token = _CALLER_ORIGIN.set(root_origin)
+    consumer_token = _CONSUMER_PLUGIN.set(_CONSUMER_PLUGIN.get() or caller_plugin)
+    try:
+        yield
+    finally:
+        _CONSUMER_PLUGIN.reset(consumer_token)
+        _CALLER_ORIGIN.reset(origin_token)
+        _DELEGATION.reset(token)
+
+
+@contextmanager
+def invocation_lock(lock):
+    """Delegated calls fail busy instead of creating a cross-worker lock cycle."""
+    delegation = current_delegation()
+    if delegation is None:
+        lock.acquire()
+    elif not lock.acquire(blocking=False):
+        raise PermissionError('public plugin service is busy; retry the operation')
+    try:
+        yield
+    finally:
+        lock.release()

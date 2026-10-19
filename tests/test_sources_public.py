@@ -23,3 +23,16 @@ def test_source_directory_lists_metadata_only():
             "status": "available",
         }
     ]
+
+
+def test_source_metadata_is_scoped_to_original_user():
+    from common.runtime_identity import identity_scope
+    directory = SourceDirectory()
+    with identity_scope(user_id='alice'):
+        directory.upsert(SourceDescriptor('email:private', 'stella.email', 'email', 'Alice private'))
+        assert len(directory.list_for_user()) == 1
+    with identity_scope(user_id='bob'):
+        assert directory.list_for_user() == []
+        directory.remove('email:private')
+    with identity_scope(user_id='alice'):
+        assert len(directory.list_for_user()) == 1

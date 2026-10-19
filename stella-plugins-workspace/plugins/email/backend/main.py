@@ -68,7 +68,8 @@ def _service(invoke_params: dict[str, Any]) -> EmailService:
     db_path = handle.get("dbPath")
     if not db_path:
         raise RuntimeError("host data handle with dbPath required")
-    return EmailService(Path(db_path), legacy_mailbox_path=handle.get("legacyMailboxPath"))
+    return EmailService(Path(db_path), legacy_mailbox_path=handle.get("legacyMailboxPath"),
+                        authorized_resources=handle.get('authorizedResources'), user_id=invoke_params['context']['userId'])
 
 
 def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +84,8 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         return _fail("invalid_argument", f"unknown parameters for {method}: {', '.join(unknown)}")
     try:
         value = getattr(_service(invoke_params), method)(**params)
+    except PermissionError as exc:
+        return _fail('permission_denied', str(exc))
     except KeyError as exc:
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except (ValueError, TypeError) as exc:

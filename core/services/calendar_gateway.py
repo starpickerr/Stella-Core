@@ -16,7 +16,7 @@ _SESSION: PluginSession | None = None
 _GRANT_REF = "calendar-default-grant"
 
 READ_METHODS = frozenset({
-    "categories", "get_category", "get_event", "list_events", "has_source_tombstone",
+    "categories", "get_category", "get_event", "list_events", "has_source_tombstone", "find_briefing_sources",
 })
 WRITE_METHODS = frozenset({
     "create_category", "update_category", "delete_category", "set_event_category",

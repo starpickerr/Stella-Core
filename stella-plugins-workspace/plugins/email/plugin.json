@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.email",
   "name": "邮件",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",

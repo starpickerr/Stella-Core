@@ -27,6 +27,7 @@ TODOS_READ_METHODS: dict[str, tuple[str, ...]] = {
     "list_uncertain_reminders": (),
     "categories": (),
     "get_category": ("category_id",),
+    "find_briefing_sources": ("source_keys",),
     "has_source_tombstone": ("source_keys",),
     "pending_scheduler_links": (),
 }

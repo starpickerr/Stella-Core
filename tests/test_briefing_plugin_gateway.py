@@ -192,7 +192,7 @@ def test_action_rules_preferences_and_adapter_bound_operations(tmp_path):
     assert _ok(db, "update_preferences", payload={"summary_detail": "full"})["summary_detail"] == "full"
     assert _call(db, "update_preferences", payload={"bogus": 1})["error"]["code"] == "invalid_argument"
     unsupported = _call(db, "get_action_targets", kind="todo", query="")
-    assert unsupported["status"] == "failed" and unsupported["error"]["code"] == "unsupported"
+    assert unsupported["status"] == "failed" and unsupported["error"]["code"] == "permission_denied"
 
     done = _complete_with_action_item(db)
     item_id = done["items"][0]["id"]
@@ -200,9 +200,11 @@ def test_action_rules_preferences_and_adapter_bound_operations(tmp_path):
     ignored = _ok(db, "update_action", item_id=item_id, payload={"operation": "ignore", "kind": "todo"})
     assert ignored["state"] == "ignored"
     create = _call(db, "update_action", item_id=item_id, payload={"operation": "create", "kind": "todo"})
-    assert create["status"] == "failed" and create["error"]["code"] == "unsupported"
+    assert create['status'] == 'succeeded'
+    assert create['value']['state'] == 'failed' and not create['value'].get('target_id')
+    assert 'not installed' in create['value']['error']
     outbox = _ok(db, "dispatch_outbox", limit=5)
-    assert outbox["reason"] == "adapters_unavailable" and outbox["pending"] == 1
+    assert outbox["pending"] == 0 and outbox["projected"] == 2
 
 
 def test_source_selection_uses_core_source_directory(tmp_path):
@@ -312,48 +314,35 @@ def test_application_port_routes_briefing_via_plugin_with_core_models(tmp_path, 
         assert port.update_item_status(item_id, "done").status == "done"
 
 
-def test_update_action_unsupported_bridges_to_host_only_when_enabled(tmp_path, monkeypatch):
-    from core.services import briefing_facade
-    from core.services.briefing_facade import BriefingPluginError, BriefingPluginFacade
-
-    _patch_paths(monkeypatch, tmp_path)
-    db = tmp_path / "briefing.db"
-    done = _complete_with_action_item(db)
-    item_id = done["items"][0]["id"]
-    facade = BriefingPluginFacade()
-    with pytest.raises(BriefingPluginError) as err:
-        facade.update_action(item_id, {"operation": "create", "kind": "todo"})
-    assert err.value.code == "unsupported"
-    seen = []
-    monkeypatch.setenv("STELLA_BRIEFING_HOST_ADAPTERS", "1")
-    monkeypatch.setattr(BriefingPluginFacade, "_host_update_action",
-                        staticmethod(lambda params: seen.append((params["item_id"], params["payload"])) or {"bridged": True}))
-    assert facade.update_action(item_id, {"operation": "create", "kind": "todo"}) == {"bridged": True}
-    assert seen == [(item_id, {"operation": "create", "kind": "todo"})]
-    assert briefing_facade.host_adapters_enabled() is True
-
-
-def test_action_targets_are_served_host_side(tmp_path, monkeypatch):
-    from application import api
+def test_failed_peer_action_never_falls_back_to_core_writer(tmp_path, monkeypatch):
     from core.services.briefing_facade import BriefingPluginFacade
 
-    class FakePort:
-        def __init__(self, rows):
-            self.rows = rows
+    _patch_paths(monkeypatch, tmp_path)
+    db = tmp_path / 'briefing.db'
+    item_id = _complete_with_action_item(db)['items'][0]['id']
+    monkeypatch.setenv('STELLA_BRIEFING_HOST_ADAPTERS', '1')
+    monkeypatch.setattr('agent.briefing.service.BriefingService',
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('Core Briefing writer used')))
+    result = BriefingPluginFacade().update_action(item_id, {'operation':'create', 'kind':'todo'})
+    assert result['state'] == 'failed' and 'not installed' in result['error']
+    assert not hasattr(BriefingPluginFacade, '_host_update_action')
 
-        def list_todos(self, include_completed=False):
-            return self.rows
 
-        def list_events(self):
-            return self.rows
+def test_action_target_query_is_owned_by_briefing_worker(tmp_path, monkeypatch):
+    from core.services.briefing_facade import BriefingPluginFacade
+    from core.services import briefing_gateway
+    from application import Application
 
-    monkeypatch.setattr(api.Application, "port", staticmethod(
-        lambda domain, *a, **k: FakePort([{"title": "写周报"}, {"title": "买菜"}])))
-    facade = BriefingPluginFacade()
-    assert facade.get_action_targets("todo", "周报") == [{"title": "写周报"}]
-    assert len(facade.get_action_targets("calendar")) == 2
-    with pytest.raises(ValueError):
-        facade.get_action_targets("bills")
+    seen = []
+    monkeypatch.setattr(Application, 'port', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('Core peer lookup used')))
+
+    def invoke(method, params, **kwargs):
+        seen.append((method, params))
+        return {'status':'succeeded','sideEffects':'none','value':[{'title':'写周报'}]}
+
+    monkeypatch.setattr(briefing_gateway, 'invoke_briefing', invoke)
+    assert BriefingPluginFacade().get_action_targets('todo', '周报') == [{'title':'写周报'}]
+    assert seen == [('get_action_targets', {'kind':'todo', 'query':'周报'})]
 
 
 def test_core_pipeline_runs_through_plugin_store_proxy(tmp_path, monkeypatch):
@@ -390,7 +379,7 @@ def test_core_pipeline_runs_through_plugin_store_proxy(tmp_path, monkeypatch):
     # The staged candidate was promoted into the plugin-owned catalog.
     rows = facade.store.window_candidates("2026-09-08T00:00:00Z", "2026-09-10T00:00:00Z", [("email", "default")])
     assert [item.source_id for item, _email in rows] == ["m1"]
-    # Outbox stays pending in the plugin until host adapters project it.
+    # Missing peer authorization keeps the durable event pending in its owner.
     assert _ok(tmp_path / "briefing.db", "dispatch_outbox", limit=5)["pending"] == 1
 
 

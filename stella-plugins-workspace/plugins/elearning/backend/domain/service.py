@@ -19,19 +19,30 @@ from .courses import course_list, list_files, select_courses
 from .errors import LoginRequired, SyncCancelled, SyncError
 from .file_sync import sync_files as _sync_files
 from .source import ElearningSource
-from .store import ElearningStore
+from .store import ElearningStore, account_id
 from .utils import parse_date
 
 
 class ElearningService:
     def __init__(self, data_dir, *, legacy_dir=None, client_factory=None, clock=None,
-                 cancel_event: threading.Event | None = None):
+                 cancel_event: threading.Event | None = None, authorized_resources=None, user_id=None):
+        self.authorized_resources, self.user_id = authorized_resources, user_id
         self.store = ElearningStore(Path(data_dir))
         self.client_factory = client_factory
         self.clock = clock or (lambda: datetime.now().astimezone())
         self.cancel_event = cancel_event
         if legacy_dir:
             self.store.import_legacy(legacy_dir)
+
+    def _authorize_courses(self, cfg, courses):
+        if self.authorized_resources is None:
+            return
+        allowed = {(ref['kind'], ref['id']) for ref in self.authorized_resources}
+        if ('user', self.user_id) in allowed:
+            return
+        account = account_id(cfg)
+        if any(('course', f'{account}:{course}') not in allowed for course in courses):
+            raise PermissionError('actual courses are outside the approved resource scope')
 
     # ----- plumbing ----------------------------------------------------
     def _check_cancelled(self):
@@ -148,6 +159,7 @@ class ElearningService:
         if not selected:
             return {"source_items": [], "total": 0, "next_offset": None, "window": window,
                     "status": "completed", "errors": []}
+        self._authorize_courses(cfg, selected)
         source = ElearningSource({**cfg, "courses": selected}, self.store, client_factory=client_factory,
                                  cancel_event=self.cancel_event)
         fetched = source.fetch({"since": window["start"], "until": window["end"]})
@@ -168,6 +180,7 @@ class ElearningService:
         cfg = self.store.load_settings()
         if not cfg["enabled"]:
             raise ValueError("eLearning 来源未启用")
+        self._authorize_courses(cfg, cfg.get("courses") or [])
         source = ElearningSource(cfg, self.store, client_factory=self.client_factory,
                                  cancel_event=self.cancel_event, briefing_only=True)
         merged = dict(self.store.get_cursors(cfg) if cursors is None else cursors)
@@ -200,6 +213,8 @@ class ElearningService:
             raise ValueError("只能同步 eLearning 设置中已授权保存文件的课程")
         if not authorized and requested_courses:
             courses = select_courses(available, list(requested_courses))
+        self._authorize_courses(cfg, [str(course['id']) for course in courses
+                                     if not authorized or not requested_courses or str(course['id']) in requested_courses])
         rows, errors = [], []
         for course in courses:
             self._check_cancelled()

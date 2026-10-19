@@ -18,6 +18,7 @@ _METHODS = (
     ("get_category", "query", "calendar.read", False),
     ("get_event", "query", "calendar.read", False),
     ("list_events", "query", "calendar.read", False),
+    ("find_briefing_sources", "query", "calendar.read", False),
     ("has_source_tombstone", "query", "calendar.read", False),
     ("create_category", "domainWrite", "calendar.write", True),
     ("update_category", "domainWrite", "calendar.write", True),
@@ -111,6 +112,8 @@ def _dispatch(svc: CalendarService, method: str, p: dict[str, Any]) -> Any:
     if method == "ingest_briefing_revision":
         detail = {"briefing": {"id": p["briefing_id"]}}
         return {"count": svc.ingest_briefing_revision(detail, int(p["revision"]))}
+    if method == "find_briefing_sources":
+        return svc.find_briefing_sources(p.get("source_keys"))
     if method == "has_source_tombstone":
         return {"tombstoned": svc.has_source_tombstone(list(p.get("source_keys") or []))}
     if method == "sync_briefing_facts":

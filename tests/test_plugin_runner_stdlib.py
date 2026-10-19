@@ -254,3 +254,25 @@ def test_worker_does_not_write_bytecode_into_immutable_package(tmp_path, monkeyp
         assert _digest_tree(root) == digest
     finally:
         session.dispose()
+
+
+def test_frozen_worker_can_call_only_the_bound_public_core_channel(frozen_runner, tmp_path, monkeypatch):
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+    from core.plugins import core_invoke
+    from core.plugins.caller import current_consumer_plugin
+
+    root = _write_sqlite_plugin(tmp_path / 'callback')
+    (root / 'backend/main.py').write_text('''from stella_host import invoke
+SERVICE_DESCRIPTORS = [{'contract':'stella.sample.sqlite@1', 'methods':[{'name':'probe', 'permissions':['sample.probe']}]}]
+def handle_invoke(params):
+    return invoke('stella.sample.target@1','read',{})
+''')
+    monkeypatch.setitem(core_invoke.PUBLIC_SERVICES, 'stella.sample.target@1',
+        lambda *_: {'status':'succeeded','sideEffects':'none','value':{'consumer':current_consumer_plugin()}})
+    session = PluginSession(root, source_label='frozen-callback', registry=PluginRegistry(), runner_command=[str(frozen_runner)])
+    try:
+        session.start()
+        assert session.invoke('probe')['value']['consumer'] == 'stella.sample.sqlite'
+    finally:
+        session.dispose()
