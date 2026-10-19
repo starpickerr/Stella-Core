@@ -42,6 +42,15 @@ def _marker(path: Path, migration_id: str, schema: int) -> bool:
         return row is not None and row[0] == schema
 
 
+def _schema_version(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with closing(sqlite3.connect(f'{path.as_uri()}?mode=ro', uri=True)) as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='_stella_migrations'").fetchone():
+            return 0
+        return db.execute('SELECT COALESCE(MAX(schema_version),0) FROM _stella_migrations').fetchone()[0]
+
+
 def _checkpoint_database(path: Path):
     with closing(sqlite3.connect(path, timeout=5)) as db:
         if db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0] != 0:
@@ -103,6 +112,9 @@ class MigrationCoordinator:
             try:
                 facts = operation['facts']
                 marker = data / '.stella-migrations.sqlite' if directory else data
+                source_schema = _schema_version(marker)
+                if source_schema > target:
+                    raise PermissionError('domain schema downgrade refused')
                 # Selection may have committed immediately before the crash.
                 if _marker(marker, migration_id, target):
                     advance('data_selected')
@@ -132,7 +144,7 @@ class MigrationCoordinator:
                         _checkpoint_database(backup)
                     advance('backed_up', {'backupRef': str(backup), 'scratchRef': str(scratch),
                                           'retiredRef': str(retired), 'sourceDigest': source_digest,
-                                          'migrationId': migration_id})
+                                          'migrationId': migration_id, 'fromSchema': source_schema})
                 facts = operation['facts']
                 # No source byte is modified while the working copy is incomplete.
                 if operation['stage'] not in {'migrated', 'selecting_data'}:
@@ -149,9 +161,9 @@ class MigrationCoordinator:
                     try:
                         session.start()
                         result = session.migrate(operation_id=op_id, migration_id=migration_id,
-                                                 from_schema=0, to_schema=target, data_handle=handle, mode='apply')
+                                                 from_schema=facts['fromSchema'], to_schema=target, data_handle=handle, mode='apply')
                         verified = session.migrate(operation_id=op_id, migration_id=migration_id,
-                                                   from_schema=0, to_schema=target, data_handle=handle, mode='verify')
+                                                   from_schema=facts['fromSchema'], to_schema=target, data_handle=handle, mode='verify')
                         if not result['committed'] or not verified['verified']:
                             raise RuntimeError('migration verification failed')
                     finally:

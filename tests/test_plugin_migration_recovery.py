@@ -72,3 +72,17 @@ def verify(mid, handle):
         assert db.execute('SELECT value FROM user_kept').fetchone()[0] == 'original user data'
         assert not db.execute("SELECT name FROM sqlite_master WHERE name='_stella_migrations'").fetchone()
     assert management.unfinished()[0]['stage'] == 'repair_required'
+
+
+def test_older_package_cannot_migrate_a_newer_domain_schema(tmp_path):
+    data = tmp_path / 'bills.sqlite'
+    _legacy(data)
+    with closing(sqlite3.connect(data)) as db, db:
+        db.execute('CREATE TABLE _stella_migrations (id TEXT PRIMARY KEY, schema_version INTEGER NOT NULL)')
+        db.execute("INSERT INTO _stella_migrations VALUES ('newer-package', 2)")
+    before = data.read_bytes()
+    store = ManagementStore(tmp_path / 'packages')
+    with pytest.raises((RuntimeError, PermissionError), match='downgrade'):
+        MigrationCoordinator(store).run(BILLS, user_id='local-default',
+            data_handle={'namespace': 'stella.bills', 'dbPath': str(data)})
+    assert data.read_bytes() == before

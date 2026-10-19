@@ -22,6 +22,8 @@ def migrate(params, state) -> dict:
     target = (state.manifest.get('data') or {}).get('schemaVersion')
     if type(params['toSchema']) is not int or params['toSchema'] != target:
         raise ValueError('migration target schema mismatch')
+    if params['fromSchema'] > target:
+        raise PermissionError('domain schema downgrade refused')
     deadline = datetime.fromisoformat(params['deadline'].replace('Z', '+00:00'))
     if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
         raise PermissionError('migration deadline expired')
