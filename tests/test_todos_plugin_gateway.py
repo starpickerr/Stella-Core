@@ -220,3 +220,60 @@ def test_vendored_service_dispatch_is_noop_without_adapter_and_uses_callback(tmp
     wired = service_module.TodoService(tmp_path / "todos.db", notification_dispatcher=dispatcher)
     assert wired.dispatch_scheduled_reminder(todo["id"], expected.isoformat()) == "sent"
     assert calls and calls[0][1] == "事务提醒：提醒"
+
+
+def _scheduler_context():
+    from application import RequestContext
+
+    return RequestContext(source="scheduler", user_id="test-user", agent_id="test-agent", session_id="s")
+
+
+def _telegram_sends(monkeypatch):
+    from types import SimpleNamespace
+
+    from agent.scheduler import delivery
+
+    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
+        login_status="logged_in", _context_tokens={}))
+    sends = []
+    monkeypatch.setattr("agent.scheduler.dispatch._channel_for", lambda name: SimpleNamespace(
+        send=lambda reply, context: sends.append((name, context["receiver"], reply.content)) or True))
+    return sends
+
+
+def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, monkeypatch):
+    from application import Application
+    from core.services.todos_facade import TodosPluginFacade
+
+    _patch_paths(monkeypatch, tmp_path)
+    sends = _telegram_sends(monkeypatch)
+    route = {"primary": {"channel_type": "telegram", "receiver": "100", "is_group": False}}
+    due = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
+    facade = TodosPluginFacade()
+    todo = facade.create_todo({"title": "Submit", "remind_at": due, "reminder_delivery": route})
+    assert facade.queue_scheduled_reminder(todo["id"], due) is True
+
+    first = Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context())
+    second = Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context())
+
+    assert first.status == "accepted" and second.status == "accepted"
+    assert sends == [("telegram", "100", "事务提醒：Submit")]
+    assert facade.claim_desktop_reminders() == []
+    assert facade.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "accepted"
+
+
+def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_path, monkeypatch):
+    from application import Application
+    from core.services.todos_facade import TodosPluginFacade
+
+    _patch_paths(monkeypatch, tmp_path)
+    sends = _telegram_sends(monkeypatch)
+    route = {"primary": {"channel_type": "telegram", "receiver": "100", "is_group": False}}
+    due = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat()
+    facade = TodosPluginFacade()
+    todo = facade.create_todo({"title": "Old", "remind_at": due, "reminder_delivery": route})
+    assert facade.queue_scheduled_reminder(todo["id"], due) is True
+
+    assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "expired"
+    assert sends == []
+    assert facade.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "expired"

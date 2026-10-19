@@ -222,8 +222,8 @@ class Application:
             raise PermissionError("todo reminder dispatch is reserved for scheduler")
         with use_identity(current_identity().derive(agent_id=context.agent_id, user_id=context.user_id,
                                                    session_id=context.session_id)), caller_origin_scope(context.source):
-            from core.services.todos_public import default_service
-            return default_service().dispatch_scheduled_reminder(todo_id, expected_at)
+            from core.services.todos_public import dispatch_scheduled_reminder
+            return dispatch_scheduled_reminder(todo_id, expected_at)
 
     @staticmethod
     def scheduler(store=None):

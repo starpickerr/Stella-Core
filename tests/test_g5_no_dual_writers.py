@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 from application import Application, RequestContext
 
@@ -19,9 +18,9 @@ def test_dispatch_todo_reminder_uses_plugin_facade_when_enabled(monkeypatch, tmp
     calls = []
 
     class _Facade:
-        def dispatch_scheduled_reminder(self, todo_id, expected_at):
+        def scheduled_reminder_delivery(self, todo_id, expected_at):
             calls.append((todo_id, expected_at))
-            return {"dispatched": True, "todoId": todo_id}
+            return None
 
     monkeypatch.setattr(
         "core.services.todos_facade.TodosPluginFacade",
@@ -37,7 +36,7 @@ def test_dispatch_todo_reminder_uses_plugin_facade_when_enabled(monkeypatch, tmp
         "2026-01-01T00:00:00+00:00",
         RequestContext(source="scheduler", user_id="u", agent_id="a", session_id="s"),
     )
-    assert result["dispatched"] is True
+    assert result is None
     assert calls == [("t1", "2026-01-01T00:00:00+00:00")]
 
 

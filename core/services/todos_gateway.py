@@ -30,6 +30,8 @@ TODOS_READ_METHODS: dict[str, tuple[str, ...]] = {
     "find_briefing_sources": ("source_keys",),
     "has_source_tombstone": ("source_keys",),
     "pending_scheduler_links": (),
+    "scheduled_reminder_delivery": ("todo_id", "expected_at"),
+    "get_delivery": ("delivery_id", "leg"),
 }
 TODOS_WRITE_METHODS: dict[str, tuple[str, ...]] = {
     "create_todo": ("payload",),
@@ -56,7 +58,13 @@ TODOS_WRITE_METHODS: dict[str, tuple[str, ...]] = {
     "delete_category": ("category_id",),
     "set_todo_category": ("todo_id", "category_id"),
     "complete_scheduler_link": ("todo_id", "desired_at", "outcome", "error"),
+    "queue_delivery": ("delivery_id", "leg", "channel_type", "receiver"),
+    "begin_delivery": ("delivery_id", "leg", "channel_type", "receiver", "max_attempts"),
+    "finish_delivery": ("delivery_id", "leg", "status", "error", "platform_response", "retryable"),
+    "expire_delivery": ("delivery_id", "leg", "channel_type", "receiver"),
 }
+# Reminder outbox legs written while Core sends; they never change scheduler links.
+TODOS_OUTBOX_METHODS = frozenset({"queue_delivery", "begin_delivery", "finish_delivery", "expire_delivery"})
 TODOS_METHOD_PARAMS = {**TODOS_READ_METHODS, **TODOS_WRITE_METHODS}
 
 

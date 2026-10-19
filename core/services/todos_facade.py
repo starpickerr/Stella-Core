@@ -74,7 +74,7 @@ class TodosPluginFacade:
             raise ValueError(message)
         if status != "succeeded":
             raise RuntimeError(f"todos plugin returned {status}")
-        if write:
+        if write and method not in todos_gateway.TODOS_OUTBOX_METHODS:
             self._reconcile_host_scheduler(db_path, calendar_path)
         return result.get("value")
 

@@ -5,6 +5,8 @@ Host-provided capabilities arrive through ``_hostDataHandle`` (JSON only):
   legacyCalendarDbPath   optional; enables one-time calendar-affairs migration
 Scheduler and notification adapters are not available across the worker boundary,
 so reminder sync is a no-op here and the host reconciles ``pending_scheduler_links``.
+Scheduled reminders are sent by the host from ``scheduled_reminder_delivery``; each
+delivery leg is recorded back through the ``*_delivery`` outbox methods.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.service import TodoService
+from domain.service import TodoService  # noqa: E402
 
 CONTRACT = "stella.tasks@1"
 
@@ -53,6 +55,15 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "acknowledge_desktop_reminder": ("domainWrite", "tasks.write", True, ("delivery_id", "claim_id", "shown", "error")),
     "retry_uncertain_reminder": ("domainWrite", "tasks.write", True, ("delivery_id",)),
     "queue_scheduled_reminder": ("domainWrite", "tasks.write", True, ("todo_id", "expected_at", "now")),
+    # Reminder outbox: Core sends through its channels and records each leg here.
+    "scheduled_reminder_delivery": ("query", "tasks.read", False, ("todo_id", "expected_at")),
+    "get_delivery": ("query", "tasks.read", False, ("delivery_id", "leg")),
+    "queue_delivery": ("domainWrite", "tasks.write", True, ("delivery_id", "leg", "channel_type", "receiver")),
+    "begin_delivery": ("domainWrite", "tasks.write", False,
+                       ("delivery_id", "leg", "channel_type", "receiver", "max_attempts")),
+    "finish_delivery": ("domainWrite", "tasks.write", False,
+                        ("delivery_id", "leg", "status", "error", "platform_response", "retryable")),
+    "expire_delivery": ("domainWrite", "tasks.write", True, ("delivery_id", "leg", "channel_type", "receiver")),
     "ingest_briefing_revision": ("domainWrite", "tasks.write", True, ("detail", "revision")),
     "sync_briefing_facts": ("domainWrite", "tasks.write", True, ("todo_id", "changes", "baseline", "force")),
     "upsert_external_todo": ("domainWrite", "tasks.write", True, ("source_key", "payload", "todo_id", "reconciled")),

@@ -1129,6 +1129,14 @@ class TodoService:
         if dispatch_notification is None:
             # Host did not provide a delivery adapter; the queued occurrence stays pending.
             return None
+        pending = self.scheduled_reminder_delivery(todo_id, expected_at)
+        if pending is None:
+            return None
+        return dispatch_notification(self, pending["delivery_id"], pending["route"], pending["content"],
+                                     expires_at=datetime.fromisoformat(pending["expires_at"]))
+
+    def scheduled_reminder_delivery(self, todo_id, expected_at):
+        """Describe the queued custom reminder a host delivery adapter should send, if any."""
         try:
             expected = datetime.fromisoformat(expected_at.replace("Z", "+00:00")).astimezone(timezone.utc)
         except (AttributeError, ValueError) as exc:
@@ -1144,8 +1152,8 @@ class TodoService:
         route = json.loads(row["reminder_delivery"]) if row["reminder_delivery"] else None
         if not route or not route.get("primary"):
             return None
-        return dispatch_notification(self, row["delivery_id"], route, "事务提醒：" + row["title"],
-                                     expires_at=expected + timedelta(hours=1))
+        return {"delivery_id": row["delivery_id"], "route": route, "content": "事务提醒：" + row["title"],
+                "expires_at": (expected + timedelta(hours=1)).isoformat()}
 
     def claim_desktop_reminders(self, now=None, limit=20):
         """Lease due reminders; repeated claims after a crash may show twice."""
