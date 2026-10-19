@@ -191,15 +191,22 @@ def fetch_and_install_from_catalog(
     if not decision.ok:
         return {"status": "incompatible", "reason": decision.reason, "pluginId": plugin_id}
 
-    source = _resolve_catalog_entry_source(Path(catalog_path), entry)
-    if entry.get("url") and (source is None or not source.exists()):
+    catalog_file = Path(catalog_path)
+    source = _resolve_catalog_entry_source(catalog_file, entry)
+    url = (entry.get("url") or "").strip()
+    if url and (source is None or not source.exists()):
         dest = package_store.staging / f"download-{plugin_id}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True)
         archive = dest / "package.bin"
-        urllib.request.urlretrieve(entry["url"], archive)  # noqa: S310 - catalog trusted URL
+        fetch_url = url
+        if "://" not in url:
+            # Relative to the catalog file (portable local/release layouts).
+            local = (catalog_file.resolve().parent / url).resolve()
+            fetch_url = local.as_uri()
+        urllib.request.urlretrieve(fetch_url, archive)  # noqa: S310 - catalog trusted URL
         try:
             from core.plugins.signing import unpack_signed_zip
 
