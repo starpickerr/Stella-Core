@@ -227,6 +227,7 @@ def test_runner_modules_import_only_runtime_deps():
         "core.plugins.runner",
         "core.plugins.runner.__main__",
         "core.plugins.runner.cli",
+        "core.plugins.runner.host_api",
     }
     code = (
         "import sys\n"

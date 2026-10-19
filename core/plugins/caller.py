@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 import os
 from threading import RLock
@@ -13,6 +14,45 @@ _LOCKS_GUARD = RLock()
 _DELEGATION = ContextVar("approved_plugin_delegation", default=None)
 _CONSUMER_PLUGIN = ContextVar("plugin_consumer", default=None)
 _CALLER_ORIGIN = ContextVar("plugin_caller_origin", default=None)
+_INVOCATION_DEADLINE = ContextVar("plugin_invocation_deadline", default=None)
+_INVOCATION_PURPOSE = ContextVar("plugin_invocation_purpose", default=None)
+
+
+@contextmanager
+def invocation_purpose_scope(purpose):
+    current = _INVOCATION_PURPOSE.get()
+    token = _INVOCATION_PURPOSE.set('background' if current == 'background' else purpose)
+    try:
+        yield
+    finally:
+        _INVOCATION_PURPOSE.reset(token)
+
+
+def current_invocation_deadline():
+    candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline')]
+    return min((value for value in candidates if value is not None), default=None)
+
+
+def remaining_invocation_seconds():
+    deadline = current_invocation_deadline()
+    if deadline is None:
+        return None
+    remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+    if remaining <= 0:
+        raise PermissionError('plugin invocation deadline expired')
+    return remaining
+
+
+@contextmanager
+def invocation_budget(timeout_ms=30_000):
+    deadline = datetime.now(timezone.utc) + timedelta(milliseconds=timeout_ms)
+    parent = current_invocation_deadline()
+    token = _INVOCATION_DEADLINE.set(min(deadline, parent) if parent else deadline)
+    try:
+        remaining_invocation_seconds()
+        yield current_invocation_deadline()
+    finally:
+        _INVOCATION_DEADLINE.reset(token)
 
 
 @contextmanager
@@ -103,12 +143,13 @@ def serialized_gateway(function):
 
     @wraps(function)
     def call(*args, **kwargs):
-        with invocation_lock(lock):
-            if function.__name__.startswith(("invoke_", "ensure_")):
+        if function.__name__.startswith(("invoke_", "ensure_")):
+            with invocation_budget(), invocation_lock(lock):
                 domain = function.__module__.rsplit('.', 1)[-1].removesuffix('_gateway')
                 plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
                 with managed_data_lease(plugin_id):
                     return function(*args, **kwargs)
+        with invocation_lock(lock, enforce_deadline=False):
             return function(*args, **kwargs)
     return call
 
@@ -144,6 +185,8 @@ def delegation_scope(context: dict, caller_plugin: str, deadline):
         raise PermissionError('delegation has no original caller')
     token = _DELEGATION.set({'context': context, 'callerPluginId': caller_plugin,
         'origin': root_origin, 'deadline': deadline,
+        'purpose': 'background' if (root_origin == 'job' or _INVOCATION_PURPOSE.get() == 'background' or
+                                    (parent or {}).get('purpose') == 'background') else 'interactive',
         'chain': [*(context.get('delegationChain') or []), caller_plugin]})
     origin_token = _CALLER_ORIGIN.set(root_origin)
     consumer_token = _CONSUMER_PLUGIN.set(_CONSUMER_PLUGIN.get() or caller_plugin)
@@ -156,14 +199,21 @@ def delegation_scope(context: dict, caller_plugin: str, deadline):
 
 
 @contextmanager
-def invocation_lock(lock):
+def invocation_lock(lock, *, enforce_deadline=True):
     """Delegated calls fail busy instead of creating a cross-worker lock cycle."""
     delegation = current_delegation()
-    if delegation is None:
+    remaining = remaining_invocation_seconds() if enforce_deadline else None
+    if delegation is not None:
+        if not lock.acquire(blocking=False):
+            raise PermissionError('public plugin service is busy; retry the operation')
+    elif remaining is not None:
+        if not lock.acquire(timeout=remaining):
+            raise PermissionError('plugin invocation deadline expired while waiting for service')
+    else:
         lock.acquire()
-    elif not lock.acquire(blocking=False):
-        raise PermissionError('public plugin service is busy; retry the operation')
     try:
+        if enforce_deadline:
+            remaining_invocation_seconds()
         yield
     finally:
         lock.release()

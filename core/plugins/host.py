@@ -98,8 +98,7 @@ def resolve_runner_command(
 
 
 def _managed_boundary(function):
-    @wraps(function)
-    def call(self, **kwargs):
+    def admit(self, **kwargs):
         from core.plugins.management import default_store
         from core.plugins.caller import managed_data_lease, managed_plugin, invocation_lock
         from core.plugins.locks import package_lock
@@ -119,6 +118,13 @@ def _managed_boundary(function):
                           if kwargs.get('method') in CONFIG_METHODS else nullcontext())
                 with policy:
                     return function(self, **kwargs)
+
+    @wraps(function)
+    def call(self, **kwargs):
+        from core.plugins.caller import invocation_budget
+
+        with invocation_budget(kwargs.get('timeout_ms', 30_000)):
+            return admit(self, **kwargs)
     return call
 
 
@@ -178,7 +184,9 @@ class PluginSession:
                     snapshot is not None and snapshot.generation == self.generation)
 
     def start(self) -> dict[str, Any]:
-        with self._lock:
+        from core.plugins.caller import invocation_budget, invocation_lock
+
+        with invocation_budget(), invocation_lock(self._lock):
             if self._proc is not None:
                 raise PluginHostError("session already started")
             try:
@@ -356,7 +364,9 @@ class PluginSession:
         if identity.user_id and identity.user_id != self.user_id:
             raise PermissionError("plugin session user identity mismatch")
         # A compatibility gateway cannot erase the real tool/job caller.
-        from core.plugins.caller import current_caller_origin, current_delegation
+        from core.plugins.caller import (current_caller_origin, current_delegation,
+                                         current_invocation_deadline, remaining_invocation_seconds,
+                                         invocation_purpose_scope)
 
         if origin == "system":
             origin = current_caller_origin() or ("job" if identity.task_id else
@@ -364,10 +374,12 @@ class PluginSession:
         delegation = current_delegation()
         if delegation:
             origin = delegation['origin']
-            remaining = (delegation['deadline'] - datetime.now(timezone.utc)).total_seconds()
-            if remaining <= 0:
-                raise PermissionError('delegated invocation deadline expired')
-            timeout_ms = min(timeout_ms, max(1, int(remaining * 1000)))
+            if delegation['purpose'] == 'background':
+                purpose = 'background'
+        if origin == 'job':
+            purpose = 'background'
+        deadline = current_invocation_deadline()
+        remaining_invocation_seconds()
         agent_id = identity.agent_id or agent_id
         session_id = identity.session_id or session_id
         self.registry.require_generation(self.plugin_id, self.generation)
@@ -403,9 +415,10 @@ class PluginSession:
                         context = build_host_context(user_id=self.user_id, instance_id=self.instance_id,
                             generation=self.generation, origin=origin, grant_ref=grant_ref)
                         params = build_invoke_params(contract=contract, method=name, input_payload=values, context=context,
-                            deadline=datetime.now(timezone.utc) + timedelta(seconds=10))
+                            deadline=min(deadline, datetime.now(timezone.utc) + timedelta(seconds=10)))
                         params['_hostDataHandle'] = dict(data_handle or {})
-                        result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=10_000, allow_callbacks=False))
+                        metadata_timeout = min(10_000, remaining_invocation_seconds() * 1000)
+                        result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=metadata_timeout, allow_callbacks=False))
                         if result['status'] != 'succeeded' or not isinstance(result.get('value'), dict):
                             raise PermissionError('source metadata is unavailable')
                         return result['value']
@@ -445,12 +458,13 @@ class PluginSession:
             context.update(callerPluginId=delegation['callerPluginId'], delegationChain=delegation['chain'],
                            callerPrincipal=delegation['context']['callerPrincipal'],
                            traceId=delegation['context']['traceId'], origin='plugin')
+        remaining_invocation_seconds()
         invoke_params = build_invoke_params(
             contract=contract,
             method=method,
             input_payload=input_payload,
             context=context,
-            deadline=datetime.now(timezone.utc) + timedelta(milliseconds=timeout_ms),
+            deadline=deadline,
             idempotency_key=idempotency_key,
         )
         # Host-bound data handle — never trust plugin-supplied paths.
@@ -462,7 +476,8 @@ class PluginSession:
         if managed and method in CONFIG_METHODS:
             # A timed-out mutation may have committed, so invalidate before dispatch.
             default_store().bump_source_revision(self.plugin_id, self.user_id)
-        result = self._rpc("plugin.invoke", invoke_params, timeout_ms=timeout_ms)
+        with invocation_purpose_scope(purpose):
+            result = self._rpc("plugin.invoke", invoke_params, timeout_ms=remaining_invocation_seconds() * 1000)
         try:
             return validate_operation_result(result)
         except ContractError as exc:
@@ -551,10 +566,11 @@ class PluginSession:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=1)
-        thread.join(timeout=1)
+        if thread is not None:
+            thread.join(timeout=1)
         if self._stderr_thread:
             self._stderr_thread.join(timeout=1)
-        if not thread.is_alive():
+        if thread is None or not thread.is_alive():
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream:
                     stream.close()
@@ -568,7 +584,13 @@ class PluginSession:
         self, method: str, params: dict[str, Any], *, allow_dead: bool = False, timeout_ms: int = 30_000,
         allow_callbacks: bool = True
     ) -> dict[str, Any]:
-        with self._lock:
+        from core.plugins.caller import invocation_lock, remaining_invocation_seconds
+
+        cleanup = method in {'runtime.drain', 'runtime.dispose'}
+        with self._lock if cleanup else invocation_lock(self._lock):
+            remaining = None if cleanup else remaining_invocation_seconds()
+            if remaining is not None:
+                timeout_ms = min(timeout_ms, remaining * 1000)
             if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
                 raise PluginHostError("worker not running")
             if self._proc.poll() is not None and not allow_dead:

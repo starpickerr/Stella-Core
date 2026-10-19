@@ -87,3 +87,33 @@ def test_direct_host_session_still_restores_its_bound_user_for_callback(tmp_path
         assert seen == ['alice']
     finally:
         session.dispose()
+
+
+def test_worker_startup_shares_the_parent_deadline(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from core.plugins.caller import delegation_scope
+
+    package = _package(tmp_path / 'slow-start')
+    entry = package / 'main.py'
+    entry.write_text('import time\ntime.sleep(0.5)\n' + entry.read_text())
+    session = PluginSession(package, source_label='test', registry=PluginRegistry())
+    try:
+        with delegation_scope({'origin': 'ui'}, 'stella.briefing',
+                              datetime.now(timezone.utc) + timedelta(milliseconds=100)):
+            with pytest.raises((PluginHostError, PermissionError), match='timed out|deadline expired'):
+                session.start()
+        assert session._proc is None
+        assert session.registry.get(session.plugin_id) is None
+    finally:
+        session.dispose()
+
+
+def test_package_lease_cannot_outlive_the_invocation_deadline(tmp_path):
+    from core.plugins.caller import invocation_budget
+    from core.plugins.locks import package_lock
+
+    with package_lock(tmp_path, 'busy-plugin', exclusive=True):
+        with invocation_budget(30):
+            with pytest.raises(PermissionError, match='deadline expired'):
+                with package_lock(tmp_path, 'busy-plugin', exclusive=False):
+                    pytest.fail('busy package was admitted')

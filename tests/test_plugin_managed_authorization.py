@@ -114,3 +114,63 @@ def test_other_process_package_selection_invalidates_existing_worker(managed, tm
     with pytest.raises(PermissionError, match='selection'):
         session.invoke_contract(contract='stella.bills@1', method='list_ledger', input_payload={},
                                 origin='ui', grant_ref='g')
+
+
+def test_metadata_cannot_refresh_a_delegated_write_deadline(managed, monkeypatch):
+    import time
+    from datetime import datetime, timedelta, timezone
+    from core.plugins.caller import delegation_scope
+
+    session, authz = managed
+    authz.issue_scoped(grant_ref='approved', parent_ref='g', plugin_id='stella.bills', user_id='local-default',
+        consumer_plugin_id='stella.briefing', capability='bills.write', methods=['delete_ledger'],
+        resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
+    calls = []
+
+    def resolve_resources(plugin_id, method, payload, user_id, metadata):
+        metadata('get_ledger', {'id': 'entry'})
+        return [{'kind': 'user', 'id': user_id}]
+
+    def slow_metadata(method, params, **kwargs):
+        calls.append(params)
+        time.sleep(.1)
+        return {'status': 'succeeded', 'sideEffects': 'none', 'value': {}}
+
+    monkeypatch.setattr('core.plugins.resources.invocation_resources', resolve_resources)
+    monkeypatch.setattr(session, '_rpc', slow_metadata)
+    deadline = datetime.now(timezone.utc) + timedelta(milliseconds=50)
+    with delegation_scope({'origin': 'ui', 'callerPrincipal': 'user:local-default', 'traceId': 'trace'},
+                          'stella.briefing', deadline):
+        with pytest.raises(PermissionError, match='deadline expired'):
+            session.invoke_contract(contract='stella.bills@1', method='delete_ledger', input_payload={'id': 'entry'},
+                                    origin='system', grant_ref='g', idempotency_key='delete-entry')
+    assert [call['method'] for call in calls] == ['get_ledger']
+    assert datetime.fromisoformat(calls[0]['deadline'].replace('Z', '+00:00')) <= deadline
+
+
+def test_background_purpose_cannot_be_downgraded_by_a_callback(managed, tmp_path, monkeypatch):
+    from test_plugin_core_invoke import _package
+    from core.plugins import core_invoke
+
+    target, authz = managed
+    root = PluginSession(_package(tmp_path / 'callback'), source_label='test', registry=PluginRegistry(), authz=authz)
+    authz.issue(grant_ref='root', plugin_id=root.plugin_id, user_id=root.user_id,
+                capabilities=['sample.call'], purposes=['background'])
+    authz.issue_scoped(grant_ref='approved', parent_ref='g', plugin_id='stella.bills', user_id=root.user_id,
+        consumer_plugin_id=root.plugin_id, capability='bills.read', methods=['list_ledger'],
+        resources=[{'kind': 'user', 'id': root.user_id}], purpose='interactive')
+
+    def target_call(method, payload):
+        return target.invoke_contract(contract='stella.bills@1', method='list_ledger',
+            input_payload={'year': 2026, 'month': 10}, origin='system', grant_ref='g',
+            data_handle={'dbPath': str(tmp_path / 'never.sqlite')})
+
+    monkeypatch.setitem(core_invoke.PUBLIC_SERVICES, 'stella.sample.target@1', target_call)
+    try:
+        root.start()
+        with pytest.raises(RuntimeError, match='background'):
+            root.invoke_contract(contract='stella.sample.callback@1', method='run', input_payload={},
+                                 origin='system', purpose='background', grant_ref='root')
+        assert not (tmp_path / 'never.sqlite').exists()
+    finally:
+        root.dispose()

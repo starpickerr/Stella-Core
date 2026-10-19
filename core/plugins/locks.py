@@ -7,6 +7,11 @@ import time
 
 @contextmanager
 def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float = 10):
+    from core.plugins.caller import remaining_invocation_seconds
+
+    remaining = remaining_invocation_seconds()
+    if remaining is not None:
+        timeout = min(timeout, remaining)
     # The first supported plugin platform is macOS arm64. Fail closed elsewhere
     # until its process-lock implementation has been validated.
     try:
@@ -19,14 +24,16 @@ def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float 
     with path.open('a+b') as stream:
         deadline = time.monotonic() + timeout
         while True:
+            remaining_invocation_seconds()
             try:
                 fcntl.flock(stream.fileno(), (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise TimeoutError('plugin data lease is busy') from None
-                time.sleep(0.02)
+                time.sleep(min(0.02, max(0, deadline - time.monotonic())))
         try:
+            remaining_invocation_seconds()
             yield
         finally:
             fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
