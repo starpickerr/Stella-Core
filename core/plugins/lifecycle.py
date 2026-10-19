@@ -83,6 +83,10 @@ class PluginManager:
         with package_lock(self.management.root, plugin_id + ':policy', exclusive=True):
             result = self.management.set_intent(plugin_id, user_id, intent)
             self.management.set_runtime(plugin_id, user_id, 'stopped')
+        if intent == 'enabled':
+            from core.plugins.first_party_grants import issue_required_grants_for_enabled_plugin
+
+            issue_required_grants_for_enabled_plugin(plugin_id=plugin_id, user_id=user_id)
         return result
 
     def install(self, plugin_id, *, user_id, data_handle: dict | None = None, checkpoint=None) -> dict:
@@ -184,6 +188,16 @@ class PluginManager:
                     self.management.bump_source_revision(plugin_id, user)
                     self.management.set_runtime(plugin_id, user, 'stopped')
                 advance('completed')
+            from core.plugins.first_party_grants import issue_required_grants_for_enabled_plugin
+
+            current = self.packages.current_package(plugin_id)
+            package_root = Path(current['path']) if current else candidate
+            for user in users:
+                if self.management.instance(plugin_id, user)['intent'] != 'enabled':
+                    continue
+                issue_required_grants_for_enabled_plugin(
+                    plugin_id=plugin_id, user_id=user, package_root=package_root,
+                )
             return operation
         except Exception as exc:
             self.management.advance(op_id, 'repair_required', error=str(exc))

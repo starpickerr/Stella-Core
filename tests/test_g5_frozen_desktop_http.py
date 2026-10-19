@@ -20,6 +20,9 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 CATALOG = REPO.parent / "Stella-Plugins" / "catalog" / "official.json"
 CANDIDATES = [
+    # Prefer the freshly built onedir so grant/bootstrap fixes are exercised
+    # without requiring a full DMG rebuild on every iteration.
+    REPO / "desktop" / "build" / "dist" / "stella-backend" / "stella-backend",
     REPO
     / "desktop"
     / "release"
@@ -30,7 +33,6 @@ CANDIDATES = [
     / "backend"
     / "stella-backend"
     / "stella-backend",
-    REPO / "desktop" / "build" / "dist" / "stella-backend" / "stella-backend",
 ]
 
 
@@ -73,10 +75,11 @@ def frozen_backend_http(tmp_path_factory):
         stderr=subprocess.STDOUT,
         cwd=str(REPO),
     )
-    deadline = time.time() + 45
+    deadline = time.time() + 90
     ready = False
     while time.time() < deadline:
-        if log.is_file() and "Plugin bootstrap status=ok" in log.read_text(errors="replace"):
+        text = log.read_text(errors="replace") if log.is_file() else ""
+        if "Local desktop API ready" in text and "Plugin bootstrap status=ok" in text:
             ready = True
             break
         if proc.poll() is not None:
@@ -85,8 +88,8 @@ def frozen_backend_http(tmp_path_factory):
     if not ready:
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=10)
-        pytest.fail(f"bootstrap did not succeed:\n{log.read_text(errors='replace')[-2000:]}")
-    time.sleep(0.5)
+        pytest.fail(f"bootstrap/API did not succeed:\n{log.read_text(errors='replace')[-2000:]}")
+    time.sleep(0.3)
 
     def call(method: str, path: str, body: dict | None = None) -> dict:
         data_bytes = None if body is None else json.dumps(body).encode("utf-8")
