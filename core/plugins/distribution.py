@@ -158,6 +158,17 @@ def verify_package_digest(path: Path, expected_sha256: str) -> bool:
     return h.hexdigest() == expected_sha256
 
 
+def _resolve_catalog_entry_source(catalog_path: Path, entry: dict[str, Any]) -> Path | None:
+    """Resolve ``path`` relative to the catalog file (portable; no machine absolutes)."""
+    raw = entry.get("path")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = (Path(catalog_path).resolve().parent / path).resolve()
+    return path
+
+
 def fetch_and_install_from_catalog(
     *,
     catalog_path: Path,
@@ -180,8 +191,8 @@ def fetch_and_install_from_catalog(
     if not decision.ok:
         return {"status": "incompatible", "reason": decision.reason, "pluginId": plugin_id}
 
-    source = Path(entry["path"])
-    if entry.get("url") and not source.exists():
+    source = _resolve_catalog_entry_source(Path(catalog_path), entry)
+    if entry.get("url") and (source is None or not source.exists()):
         dest = package_store.staging / f"download-{plugin_id}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
@@ -197,6 +208,9 @@ def fetch_and_install_from_catalog(
             return {"status": "signature_invalid", "pluginId": plugin_id, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - surface as failed install
             return {"status": "failed", "pluginId": plugin_id, "error": str(exc)}
+
+    if source is None or not source.exists():
+        return {"status": "missing_source", "pluginId": plugin_id}
 
     if not verify_package_digest(source, entry["sha256"]):
         return {"status": "digest_mismatch", "pluginId": plugin_id}

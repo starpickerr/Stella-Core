@@ -45,6 +45,9 @@ hiddenimports = [
     'hashlib',
     'uuid',
     'zoneinfo',
+    # Domain plugins (bills/tasks/…) open SQLite; freeze must ship the stdlib module.
+    'sqlite3',
+    '_sqlite3',
 ]
 
 # Business stack that must never be reachable from the runner binary.

@@ -44,6 +44,39 @@ def test_offline_bootstrap_does_not_pretend_installed():
     assert plan["pretendInstalled"] is False
 
 
+def test_catalog_install_resolves_path_relative_to_catalog(tmp_path):
+    sample = Path("samples/plugins/alpha").resolve()
+    digest = _tree_digest(sample)
+    pkg_link = tmp_path / "plugins" / "alpha"
+    pkg_link.parent.mkdir(parents=True)
+    pkg_link.symlink_to(sample)
+    catalog_path = tmp_path / "catalog" / "official.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "coreApi": "1.0.0",
+                "plugins": [
+                    {
+                        "pluginId": "stella.sample.alpha",
+                        "hostApi": "^1.0.0",
+                        "path": "../plugins/alpha",
+                        "sha256": digest,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = PackageStore(tmp_path / "pkg")
+    installed = fetch_and_install_from_catalog(
+        catalog_path=catalog_path,
+        plugin_id="stella.sample.alpha",
+        package_store=store,
+    )
+    assert installed["status"] == "installed"
+
+
 def test_catalog_install_respects_removed_intent(tmp_path):
     sample = Path("samples/plugins/alpha")
     digest = _tree_digest(sample)
