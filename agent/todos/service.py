@@ -260,6 +260,20 @@ class TodoService:
         finally:
             db.close()
 
+    def has_source_tombstone(self, source_keys):
+        """Public collaboration API: whether any source_key is tombstoned."""
+        candidates = [key for key in source_keys if key]
+        if not candidates:
+            return False
+        with self._connect() as db:
+            for candidate in candidates:
+                if db.execute(
+                    "SELECT 1 FROM source_tombstones WHERE source_key=?",
+                    (candidate,),
+                ).fetchone():
+                    return True
+        return False
+
     def _migrate_calendar_records(self):
         """Copy records from the short-lived calendar implementation once."""
         if not self.legacy_calendar_db_path.exists():

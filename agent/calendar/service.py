@@ -136,6 +136,20 @@ class CalendarService:
         finally:
             db.close()
 
+    def has_source_tombstone(self, source_keys):
+        """Public collaboration API: whether any source_key is tombstoned."""
+        candidates = [key for key in source_keys if key]
+        if not candidates:
+            return False
+        with self._connect() as db:
+            for candidate in candidates:
+                if db.execute(
+                    "SELECT 1 FROM source_tombstones WHERE source_key=?",
+                    (candidate,),
+                ).fetchone():
+                    return True
+        return False
+
     def categories(self):
         with self._connect() as db:
             return [dict(row) for row in db.execute("""SELECT * FROM calendar_categories ORDER BY

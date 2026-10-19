@@ -261,8 +261,9 @@ class BriefingActions:
         return keys
 
     def _was_deleted(self, db, key, kind):
-        with self._service(kind)._connect() as target_db:
-            return any(target_db.execute('SELECT 1 FROM source_tombstones WHERE source_key=?', (candidate,)).fetchone() for candidate in self._legacy_keys(db, key))
+        candidates = self._legacy_keys(db, key)
+        # Use public domain methods — do not open peer private tables here.
+        return self._service(kind).has_source_tombstone(candidates)
 
     def _adopt_existing(self, db, entity, kind):
         key = entity['entity_key']

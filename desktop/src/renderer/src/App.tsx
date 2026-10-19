@@ -33,6 +33,7 @@ import BriefingPage from './pages/BriefingPage'
 import CalendarPage from './pages/CalendarPage'
 import TodosPage from './pages/TodosPage'
 import SecurityPage from './pages/SecurityPage'
+import PluginManagerPage from './pages/PluginManagerPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -246,6 +247,7 @@ const App: React.FC = () => {
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
+            <Route path="/plugins" element={<PluginManagerPage baseUrl={backend.baseUrl} />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             {/* Legacy /models route now lives as a tab inside settings */}
             <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

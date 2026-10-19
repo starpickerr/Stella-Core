@@ -1992,6 +1992,7 @@ class DesktopChannel(ChatChannel):
         urls = (
             '/', 'RootHandler',
             '/api/health', 'HealthHandler',
+            '/api/plugins/runtime', 'PluginRuntimeHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
             '/auth/logout', 'AuthLogoutHandler',
@@ -2225,6 +2226,21 @@ class HealthHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
         return json.dumps({"status": "ok"})
+
+
+class PluginRuntimeHandler:
+    """Plugin Runtime contribution snapshot for the host management shell."""
+
+    def GET(self):
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            from core.plugins.runtime_hub import list_published_plugins
+            plugins = list_published_plugins()
+        except Exception as e:
+            logger.warning(f"[DesktopChannel] Plugin runtime status error: {e}")
+            return json.dumps({"status": "degraded", "plugins": [], "error": str(e)}, ensure_ascii=False)
+        return json.dumps({"status": "ok", "plugins": plugins}, ensure_ascii=False)
 
 
 class McpOAuthCallbackHandler:

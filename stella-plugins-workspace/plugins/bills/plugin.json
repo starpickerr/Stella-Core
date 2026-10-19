@@ -1,0 +1,26 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.bills",
+  "name": "账单",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.bills",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": ["stella.bills@1"],
+    "pages": ["bills.main"],
+    "settings": ["bills.preferences"]
+  },
+  "permissions": [
+    { "capability": "bills.read", "required": true },
+    { "capability": "bills.write", "required": true }
+  ]
+}

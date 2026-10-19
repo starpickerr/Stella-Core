@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.sample.alpha",
+  "name": "Sample Alpha",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "contributes": {
+    "services": ["stella.sample.alpha@1"],
+    "tools": ["alpha.ping"]
+  },
+  "permissions": [
+    {
+      "capability": "sample.ping",
+      "required": true
+    }
+  ]
+}

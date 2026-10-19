@@ -85,8 +85,13 @@ class _Port:
                 from agent.todos import TodoService
                 self._service = TodoService()
             elif domain == "bills":
-                from agent.bills.service import BillsService
-                self._service = BillsService()
+                from core.services.bills_gateway import bills_plugin_enabled
+                if bills_plugin_enabled():
+                    from core.services.bills_facade import BillsPluginFacade
+                    self._service = BillsPluginFacade()
+                else:
+                    from agent.bills.service import BillsService
+                    self._service = BillsService()
             else:
                 from agent.briefing.service import BriefingService
                 self._service = BriefingService()

@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.sample.mcp-echo",
+  "name": "MCP Echo Reference",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "contributes": {
+    "mcp": ["echo-stdio"]
+  },
+  "permissions": [
+    { "capability": "mcp.use", "required": true }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "description": "Default first-party plugin bootstrap list (D22). Bytes are fetched from Stella-Plugins; Core DMG does not embed business packages.",
+  "plugins": [
+    {
+      "pluginId": "stella.bills",
+      "catalogRef": "official/stella.bills",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": ["bills"]
+    }
+  ]
+}

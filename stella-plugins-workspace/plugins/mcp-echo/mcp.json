@@ -1,0 +1,7 @@
+{
+  "connectionId": "echo-stdio",
+  "type": "stdio",
+  "command": "python",
+  "args": ["tests/fixtures/mcp_echo_server.py"],
+  "description": "Lightweight MCP-only package: no Stella runtime, UI, or data namespace."
+}

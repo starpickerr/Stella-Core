@@ -1,0 +1,1290 @@
+{
+  "apiVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "ResourceRef-valid",
+      "definition": "ResourceRef",
+      "valid": true,
+      "value": {
+        "kind": "email-folder",
+        "id": "demo-folder"
+      }
+    },
+    {
+      "id": "PermissionRequirement-valid",
+      "definition": "PermissionRequirement",
+      "valid": true,
+      "value": {
+        "capability": "bills.read",
+        "required": true
+      }
+    },
+    {
+      "id": "Runtime-valid",
+      "definition": "Runtime",
+      "valid": true,
+      "value": {
+        "kind": "python",
+        "entry": "backend/main.py",
+        "abi": "cp312"
+      }
+    },
+    {
+      "id": "Manifest-valid",
+      "definition": "Manifest",
+      "valid": true,
+      "value": {
+        "manifestVersion": 1,
+        "id": "stella.bills",
+        "name": "账单",
+        "version": "1.0.0",
+        "hostApi": "^1.0.0",
+        "runtime": {
+          "kind": "python",
+          "entry": "backend/main.py",
+          "abi": "cp312"
+        },
+        "data": {
+          "namespace": "stella.bills",
+          "schemaVersion": 2,
+          "migrationEntry": "backend/migrate.py"
+        },
+        "contributes": {
+          "services": [
+            "stella.bills@1"
+          ],
+          "pages": [
+            "bills.main"
+          ],
+          "settings": [
+            "bills.preferences"
+          ]
+        },
+        "permissions": [
+          {
+            "capability": "bills.read",
+            "required": true
+          },
+          {
+            "capability": "bills.write",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "HostContext-valid",
+      "definition": "HostContext",
+      "valid": true,
+      "value": {
+        "userId": "demo-user",
+        "callerPrincipal": "user:demo",
+        "callerPluginId": null,
+        "instanceId": "demo-instance",
+        "generation": 1,
+        "origin": "ui",
+        "delegationChain": [],
+        "grantRef": "demo-grant",
+        "traceId": "demo-trace",
+        "invocationRef": "demo-invocation"
+      }
+    },
+    {
+      "id": "InitializeParams-valid",
+      "definition": "InitializeParams",
+      "valid": true,
+      "value": {
+        "pluginId": "stella.bills",
+        "packageDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "userId": "demo-user",
+        "instanceId": "demo-instance",
+        "generation": 1,
+        "hostApi": "1.0.0",
+        "runtimeAbi": "cp312",
+        "platform": "darwin-arm64"
+      }
+    },
+    {
+      "id": "InitializeResult-valid",
+      "definition": "InitializeResult",
+      "valid": true,
+      "value": {
+        "pluginApi": "1.0.0",
+        "runtimeAbi": "cp312",
+        "capabilities": [
+          "services"
+        ]
+      }
+    },
+    {
+      "id": "PrepareParams-valid",
+      "definition": "PrepareParams",
+      "valid": true,
+      "value": {
+        "instanceId": "demo-instance",
+        "generation": 1
+      }
+    },
+    {
+      "id": "MethodDescriptor-valid",
+      "definition": "MethodDescriptor",
+      "valid": true,
+      "value": {
+        "name": "create_ledger",
+        "inputSchema": {
+          "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/LedgerCreate"
+        },
+        "outputSchema": {
+          "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/Ledger"
+        },
+        "effect": "domainWrite",
+        "permissions": [
+          "bills.write"
+        ],
+        "resourceScope": [
+          "user"
+        ],
+        "idempotency": true,
+        "timeoutMs": 30000
+      }
+    },
+    {
+      "id": "ServiceDescriptor-valid",
+      "definition": "ServiceDescriptor",
+      "valid": true,
+      "value": {
+        "contract": "stella.bills@1",
+        "methods": [
+          {
+            "name": "create_ledger",
+            "inputSchema": {
+              "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/LedgerCreate"
+            },
+            "outputSchema": {
+              "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/Ledger"
+            },
+            "effect": "domainWrite",
+            "permissions": [
+              "bills.write"
+            ],
+            "resourceScope": [
+              "user"
+            ],
+            "idempotency": true,
+            "timeoutMs": 30000
+          }
+        ]
+      }
+    },
+    {
+      "id": "PrepareResult-valid",
+      "definition": "PrepareResult",
+      "valid": true,
+      "value": {
+        "services": [
+          {
+            "contract": "stella.bills@1",
+            "methods": [
+              {
+                "name": "create_ledger",
+                "inputSchema": {
+                  "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/LedgerCreate"
+                },
+                "outputSchema": {
+                  "$ref": "https://stella.local/design/plugin-api/1.0.0/baseline.schema.json#/definitions/Ledger"
+                },
+                "effect": "domainWrite",
+                "permissions": [
+                  "bills.write"
+                ],
+                "resourceScope": [
+                  "user"
+                ],
+                "idempotency": true,
+                "timeoutMs": 30000
+              }
+            ]
+          }
+        ],
+        "contributions": {
+          "services": [
+            "stella.bills@1"
+          ],
+          "pages": [
+            "bills.main"
+          ],
+          "settings": [
+            "bills.preferences"
+          ]
+        }
+      }
+    },
+    {
+      "id": "InvokeParams-valid",
+      "definition": "InvokeParams",
+      "valid": true,
+      "value": {
+        "contract": "stella.bills@1",
+        "method": "create_ledger",
+        "input": {
+          "name": "午餐",
+          "amount_minor": 3200,
+          "entry_type": "expense",
+          "occurred_at": "2026-10-19T10:00:00+08:00"
+        },
+        "deadline": "2026-10-19T10:00:00+08:00",
+        "context": {
+          "userId": "demo-user",
+          "callerPrincipal": "user:demo",
+          "callerPluginId": null,
+          "instanceId": "demo-instance",
+          "generation": 1,
+          "origin": "ui",
+          "delegationChain": [],
+          "grantRef": "demo-grant",
+          "traceId": "demo-trace",
+          "invocationRef": "demo-invocation"
+        },
+        "idempotencyKey": "demo-key"
+      }
+    },
+    {
+      "id": "CoreInvokeParams-valid",
+      "definition": "CoreInvokeParams",
+      "valid": true,
+      "value": {
+        "contract": "stella.bills@1",
+        "method": "create_ledger",
+        "input": {
+          "name": "午餐",
+          "amount_minor": 3200,
+          "entry_type": "expense",
+          "occurred_at": "2026-10-19T10:00:00+08:00"
+        },
+        "deadline": "2026-10-19T10:00:00+08:00",
+        "idempotencyKey": "demo-key",
+        "invocationRef": "demo-invocation"
+      }
+    },
+    {
+      "id": "OperationQuery-valid",
+      "definition": "OperationQuery",
+      "valid": true,
+      "value": {
+        "operationId": "demo-op",
+        "context": {
+          "userId": "demo-user",
+          "callerPrincipal": "user:demo",
+          "callerPluginId": null,
+          "instanceId": "demo-instance",
+          "generation": 1,
+          "origin": "ui",
+          "delegationChain": [],
+          "grantRef": "demo-grant",
+          "traceId": "demo-trace",
+          "invocationRef": "demo-invocation"
+        }
+      }
+    },
+    {
+      "id": "OperationError-valid",
+      "definition": "OperationError",
+      "valid": true,
+      "value": {
+        "code": "conflict",
+        "message": "记录已更新",
+        "retryable": false
+      }
+    },
+    {
+      "id": "OperationResult-valid",
+      "definition": "OperationResult",
+      "valid": true,
+      "value": {
+        "status": "succeeded",
+        "sideEffects": "committed",
+        "operationId": "demo-op",
+        "value": {
+          "name": "午餐",
+          "amount_minor": 3200,
+          "entry_type": "expense",
+          "occurred_at": "2026-10-19T10:00:00+08:00",
+          "currency": "CNY",
+          "category": "",
+          "txn_type": "",
+          "note": "",
+          "counterparty": "",
+          "status": "posted",
+          "account_id": null,
+          "planned_payment_id": null,
+          "id": "demo-ledger",
+          "created_at": "2026-10-19T10:00:00+08:00",
+          "updated_at": "2026-10-19T10:00:00+08:00",
+          "revision": 1
+        }
+      }
+    },
+    {
+      "id": "DrainParams-valid",
+      "definition": "DrainParams",
+      "valid": true,
+      "value": {
+        "deadline": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "DrainResult-valid",
+      "definition": "DrainResult",
+      "valid": true,
+      "value": {
+        "drained": true,
+        "operationIds": []
+      }
+    },
+    {
+      "id": "DisposeParams-valid",
+      "definition": "DisposeParams",
+      "valid": true,
+      "value": {
+        "reason": "disabled"
+      }
+    },
+    {
+      "id": "DisposeResult-valid",
+      "definition": "DisposeResult",
+      "valid": true,
+      "value": {
+        "disposed": true
+      }
+    },
+    {
+      "id": "RpcRequest-valid",
+      "definition": "RpcRequest",
+      "valid": true,
+      "value": {
+        "jsonrpc": "2.0",
+        "id": "demo-rpc",
+        "method": "plugin.invoke",
+        "params": {
+          "contract": "stella.bills@1",
+          "method": "create_ledger",
+          "input": {
+            "name": "午餐",
+            "amount_minor": 3200,
+            "entry_type": "expense",
+            "occurred_at": "2026-10-19T10:00:00+08:00"
+          },
+          "deadline": "2026-10-19T10:00:00+08:00",
+          "context": {
+            "userId": "demo-user",
+            "callerPrincipal": "user:demo",
+            "callerPluginId": null,
+            "instanceId": "demo-instance",
+            "generation": 1,
+            "origin": "ui",
+            "delegationChain": [],
+            "grantRef": "demo-grant",
+            "traceId": "demo-trace",
+            "invocationRef": "demo-invocation"
+          },
+          "idempotencyKey": "demo-key"
+        }
+      }
+    },
+    {
+      "id": "RpcResponse-valid",
+      "definition": "RpcResponse",
+      "valid": true,
+      "value": {
+        "jsonrpc": "2.0",
+        "id": "demo-rpc",
+        "result": {
+          "status": "succeeded",
+          "sideEffects": "none",
+          "value": []
+        }
+      }
+    },
+    {
+      "id": "GrantSpec-valid",
+      "definition": "GrantSpec",
+      "valid": true,
+      "value": {
+        "grantId": "demo-grant",
+        "userId": "demo-user",
+        "consumerPluginId": "stella.briefing",
+        "capability": "email.read",
+        "methods": [
+          "list_messages"
+        ],
+        "resources": [
+          {
+            "kind": "email-folder",
+            "id": "demo-folder"
+          }
+        ],
+        "purpose": "background",
+        "validUntil": null,
+        "policyRevision": 1,
+        "revoked": false
+      }
+    },
+    {
+      "id": "GrantIntent-valid",
+      "definition": "GrantIntent",
+      "valid": true,
+      "value": {
+        "capability": "email.read",
+        "resources": [
+          {
+            "kind": "email-folder",
+            "id": "demo-folder"
+          }
+        ],
+        "purpose": "background",
+        "sourceRef": "demo-source"
+      }
+    },
+    {
+      "id": "AuthorizationRequest-valid",
+      "definition": "AuthorizationRequest",
+      "valid": true,
+      "value": {
+        "consumerPluginId": "stella.briefing",
+        "userId": "demo-user",
+        "capability": "email.read",
+        "resources": [
+          {
+            "kind": "email-folder",
+            "id": "demo-folder"
+          }
+        ],
+        "purpose": "background",
+        "requestId": "demo-request",
+        "expectedSourceRevision": 1,
+        "expectedPolicyRevision": 1,
+        "expiresAt": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "SettingsField-valid",
+      "definition": "SettingsField",
+      "valid": true,
+      "value": {
+        "key": "currency",
+        "title": "默认货币",
+        "type": "string",
+        "category": "general",
+        "default": "CNY"
+      }
+    },
+    {
+      "id": "SettingsDescriptor-valid",
+      "definition": "SettingsDescriptor",
+      "valid": true,
+      "value": {
+        "id": "bills.preferences",
+        "pluginId": "stella.bills",
+        "scope": "user",
+        "categories": [
+          {
+            "id": "general",
+            "title": "通用"
+          }
+        ],
+        "fields": [
+          {
+            "key": "currency",
+            "title": "默认货币",
+            "type": "string",
+            "category": "general"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SettingsPatch-valid",
+      "definition": "SettingsPatch",
+      "valid": true,
+      "value": {
+        "pluginId": "stella.bills",
+        "settingsId": "bills.preferences",
+        "category": "general",
+        "scope": "user",
+        "expectedRevision": 1,
+        "changes": {
+          "currency": "CNY"
+        }
+      }
+    },
+    {
+      "id": "SettingsSnapshot-valid",
+      "definition": "SettingsSnapshot",
+      "valid": true,
+      "value": {
+        "revision": 1,
+        "values": {
+          "currency": "CNY"
+        },
+        "secretFields": []
+      }
+    },
+    {
+      "id": "PackageRef-valid",
+      "definition": "PackageRef",
+      "valid": true,
+      "value": {
+        "version": "1.0.0",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "schemaVersion": 1
+      }
+    },
+    {
+      "id": "OperationRecord-valid",
+      "definition": "OperationRecord",
+      "valid": true,
+      "value": {
+        "operationId": "demo-op",
+        "pluginId": "stella.bills",
+        "revision": 1,
+        "phase": "verified",
+        "sourcePackage": null,
+        "targetPackage": {
+          "version": "1.0.0",
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "schemaVersion": 1
+        },
+        "userIds": [
+          "demo-user"
+        ],
+        "intentSnapshot": [
+          {
+            "userId": "demo-user",
+            "intent": "enabled",
+            "revision": 1
+          }
+        ],
+        "updatedAt": "2026-10-19T10:00:00+08:00",
+        "dataCheckpoints": [
+          {
+            "userId": "demo-user",
+            "fromSchema": 1,
+            "toSchema": 2,
+            "backupRef": null,
+            "migrationId": null,
+            "phase": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LedgerCreate-valid",
+      "definition": "LedgerCreate",
+      "valid": true,
+      "value": {
+        "name": "午餐",
+        "amount_minor": 3200,
+        "entry_type": "expense",
+        "occurred_at": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "LedgerPatch-valid",
+      "definition": "LedgerPatch",
+      "valid": true,
+      "value": {
+        "note": "工作餐"
+      }
+    },
+    {
+      "id": "Ledger-valid",
+      "definition": "Ledger",
+      "valid": true,
+      "value": {
+        "name": "午餐",
+        "amount_minor": 3200,
+        "entry_type": "expense",
+        "occurred_at": "2026-10-19T10:00:00+08:00",
+        "currency": "CNY",
+        "category": "",
+        "txn_type": "",
+        "note": "",
+        "counterparty": "",
+        "status": "posted",
+        "account_id": null,
+        "planned_payment_id": null,
+        "id": "demo-ledger",
+        "created_at": "2026-10-19T10:00:00+08:00",
+        "updated_at": "2026-10-19T10:00:00+08:00",
+        "revision": 1
+      }
+    },
+    {
+      "id": "StatementItem-valid",
+      "definition": "StatementItem",
+      "valid": true,
+      "value": {
+        "id": "demo-item",
+        "statement_id": "monthly-demo",
+        "category": "",
+        "name": "午餐",
+        "entry_type": "expense",
+        "amount_minor": 3200,
+        "entry_count": 1
+      }
+    },
+    {
+      "id": "Statement-valid",
+      "definition": "Statement",
+      "valid": true,
+      "value": {
+        "id": "monthly-demo",
+        "period_type": "monthly",
+        "year": 2026,
+        "month": 10,
+        "start_at": "2026-10-19T10:00:00+08:00",
+        "end_at": "2026-10-19T10:00:00+08:00",
+        "currency": "CNY",
+        "income_minor": 0,
+        "expense_minor": 3200,
+        "net_minor": -3200,
+        "status": "open",
+        "note": "",
+        "generated_at": "2026-10-19T10:00:00+08:00",
+        "created_at": "2026-10-19T10:00:00+08:00",
+        "updated_at": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "StatementDetail-valid",
+      "definition": "StatementDetail",
+      "valid": true,
+      "value": {
+        "id": "monthly-demo",
+        "period_type": "monthly",
+        "year": 2026,
+        "month": 10,
+        "start_at": "2026-10-19T10:00:00+08:00",
+        "end_at": "2026-10-19T10:00:00+08:00",
+        "currency": "CNY",
+        "income_minor": 0,
+        "expense_minor": 3200,
+        "net_minor": -3200,
+        "status": "open",
+        "note": "",
+        "generated_at": "2026-10-19T10:00:00+08:00",
+        "created_at": "2026-10-19T10:00:00+08:00",
+        "updated_at": "2026-10-19T10:00:00+08:00",
+        "items": []
+      }
+    },
+    {
+      "id": "StatementFilter-valid",
+      "definition": "StatementFilter",
+      "valid": true,
+      "value": {}
+    },
+    {
+      "id": "BillsListParams-valid",
+      "definition": "BillsListParams",
+      "valid": true,
+      "value": {
+        "year": 2026,
+        "month": 10
+      }
+    },
+    {
+      "id": "BillsRangeParams-valid",
+      "definition": "BillsRangeParams",
+      "valid": true,
+      "value": {
+        "start": "2026-10-01",
+        "end": "2026-10-31"
+      }
+    },
+    {
+      "id": "BillsIdParams-valid",
+      "definition": "BillsIdParams",
+      "valid": true,
+      "value": {
+        "id": "demo-ledger"
+      }
+    },
+    {
+      "id": "BillsUpdateParams-valid",
+      "definition": "BillsUpdateParams",
+      "valid": true,
+      "value": {
+        "id": "demo-ledger",
+        "patch": {
+          "note": "更正"
+        },
+        "expectedRevision": 1
+      }
+    },
+    {
+      "id": "BillsDeleteParams-valid",
+      "definition": "BillsDeleteParams",
+      "valid": true,
+      "value": {
+        "id": "demo-ledger",
+        "expectedRevision": 1
+      }
+    },
+    {
+      "id": "DeleteResult-valid",
+      "definition": "DeleteResult",
+      "valid": true,
+      "value": {
+        "id": "demo-ledger",
+        "deleted": true,
+        "revision": 2
+      }
+    },
+    {
+      "id": "BlobRef-valid",
+      "definition": "BlobRef",
+      "valid": true,
+      "value": {
+        "id": "demo-blob",
+        "mediaType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "size": 1024,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fileName": "ledger.xlsx",
+        "expiresAt": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "LedgerList-valid",
+      "definition": "LedgerList",
+      "valid": true,
+      "value": [
+        {
+          "name": "午餐",
+          "amount_minor": 3200,
+          "entry_type": "expense",
+          "occurred_at": "2026-10-19T10:00:00+08:00",
+          "currency": "CNY",
+          "category": "",
+          "txn_type": "",
+          "note": "",
+          "counterparty": "",
+          "status": "posted",
+          "account_id": null,
+          "planned_payment_id": null,
+          "id": "demo-ledger",
+          "created_at": "2026-10-19T10:00:00+08:00",
+          "updated_at": "2026-10-19T10:00:00+08:00",
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "id": "LedgerOrNull-valid",
+      "definition": "LedgerOrNull",
+      "valid": true,
+      "value": null
+    },
+    {
+      "id": "StatementList-valid",
+      "definition": "StatementList",
+      "valid": true,
+      "value": [
+        {
+          "id": "monthly-demo",
+          "period_type": "monthly",
+          "year": 2026,
+          "month": 10,
+          "start_at": "2026-10-19T10:00:00+08:00",
+          "end_at": "2026-10-19T10:00:00+08:00",
+          "currency": "CNY",
+          "income_minor": 0,
+          "expense_minor": 3200,
+          "net_minor": -3200,
+          "status": "open",
+          "note": "",
+          "generated_at": "2026-10-19T10:00:00+08:00",
+          "created_at": "2026-10-19T10:00:00+08:00",
+          "updated_at": "2026-10-19T10:00:00+08:00"
+        }
+      ]
+    },
+    {
+      "id": "StatementOrNull-valid",
+      "definition": "StatementOrNull",
+      "valid": true,
+      "value": null
+    },
+    {
+      "id": "MigrationParams-valid",
+      "definition": "MigrationParams",
+      "valid": true,
+      "value": {
+        "migrationId": "demo-migration",
+        "operationId": "demo-op",
+        "mode": "verify",
+        "fromSchema": 1,
+        "toSchema": 2,
+        "dataHandle": "demo-maintenance-handle",
+        "deadline": "2026-10-19T10:00:00+08:00"
+      }
+    },
+    {
+      "id": "DataDeclaration-valid",
+      "definition": "DataDeclaration",
+      "valid": true,
+      "value": {
+        "namespace": "stella.bills",
+        "schemaVersion": 2,
+        "migrationEntry": "backend/migrate.py"
+      }
+    },
+    {
+      "id": "SettingsQuery-valid",
+      "definition": "SettingsQuery",
+      "valid": true,
+      "value": {
+        "pluginId": "stella.bills",
+        "settingsId": "bills.preferences"
+      }
+    },
+    {
+      "id": "UserIntentSnapshot-valid",
+      "definition": "UserIntentSnapshot",
+      "valid": true,
+      "value": {
+        "userId": "demo-user",
+        "intent": "enabled",
+        "revision": 1
+      }
+    },
+    {
+      "id": "UserDataCheckpoint-valid",
+      "definition": "UserDataCheckpoint",
+      "valid": true,
+      "value": {
+        "userId": "demo-user",
+        "fromSchema": 1,
+        "toSchema": 2,
+        "backupRef": null,
+        "migrationId": null,
+        "phase": "pending"
+      }
+    },
+    {
+      "id": "MigrationResult-valid",
+      "definition": "MigrationResult",
+      "valid": true,
+      "value": {
+        "migrationId": "demo-migration",
+        "schemaVersion": 2,
+        "committed": true,
+        "verified": true
+      }
+    },
+    {
+      "id": "CatalogEntry-valid",
+      "definition": "CatalogEntry",
+      "valid": true,
+      "value": {
+        "pluginId": "stella.bills",
+        "version": "1.0.0",
+        "hostApi": "^1.0.0",
+        "platforms": [
+          "darwin-arm64"
+        ],
+        "runtimeAbi": "cp312",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1024,
+        "downloadUrl": "https://example.invalid/bills.zip"
+      }
+    },
+    {
+      "id": "CatalogPayload-valid",
+      "definition": "CatalogPayload",
+      "valid": true,
+      "value": {
+        "catalogVersion": 1,
+        "revision": 1,
+        "issuedAt": "2026-10-19T10:00:00+08:00",
+        "expiresAt": "2026-11-19T10:00:00+08:00",
+        "packages": [
+          {
+            "pluginId": "stella.bills",
+            "version": "1.0.0",
+            "hostApi": "^1.0.0",
+            "platforms": [
+              "darwin-arm64"
+            ],
+            "runtimeAbi": "cp312",
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size": 1024,
+            "downloadUrl": "https://example.invalid/bills.zip"
+          }
+        ]
+      }
+    },
+    {
+      "id": "CatalogEnvelope-valid",
+      "definition": "CatalogEnvelope",
+      "valid": true,
+      "value": {
+        "keyId": "demo-key",
+        "payloadBase64": "e30=",
+        "signatureBase64": "ZGVtby1ub3QtcmVhbC1zaWduYXR1cmU="
+      }
+    },
+    {
+      "id": "Manifest-invalid-0",
+      "definition": "Manifest",
+      "valid": false,
+      "value": {
+        "manifestVersion": 1,
+        "id": "stella.bills",
+        "name": "账单",
+        "version": "1.0.0",
+        "hostApi": "^1.0.0",
+        "runtime": {
+          "kind": "python",
+          "entry": "backend/main.py",
+          "abi": "cp312"
+        },
+        "data": {
+          "namespace": "stella.bills",
+          "schemaVersion": 2,
+          "migrationEntry": "backend/migrate.py"
+        },
+        "contributes": {
+          "services": [
+            "stella.bills@1"
+          ],
+          "pages": [
+            "bills.main"
+          ],
+          "settings": [
+            "bills.preferences"
+          ]
+        },
+        "permissions": [
+          {
+            "capability": "bills.read",
+            "required": true
+          },
+          {
+            "capability": "bills.write",
+            "required": false
+          }
+        ],
+        "admin": true
+      },
+      "reason": "拒绝未知清单字段"
+    },
+    {
+      "id": "Runtime-invalid-1",
+      "definition": "Runtime",
+      "valid": false,
+      "value": {
+        "kind": "python",
+        "entry": "../outside.py",
+        "abi": "cp312"
+      },
+      "reason": "拒绝上级目录"
+    },
+    {
+      "id": "HostContext-invalid-2",
+      "definition": "HostContext",
+      "valid": false,
+      "value": {
+        "userId": "demo-user",
+        "callerPrincipal": "user:demo",
+        "callerPluginId": null,
+        "instanceId": "demo-instance",
+        "generation": 0,
+        "origin": "ui",
+        "delegationChain": [],
+        "grantRef": "demo-grant",
+        "traceId": "demo-trace",
+        "invocationRef": "demo-invocation"
+      },
+      "reason": "拒绝无效代次"
+    },
+    {
+      "id": "CoreInvokeParams-invalid-3",
+      "definition": "CoreInvokeParams",
+      "valid": false,
+      "value": {
+        "contract": "stella.bills@1",
+        "method": "create_ledger",
+        "input": {
+          "name": "午餐",
+          "amount_minor": 3200,
+          "entry_type": "expense",
+          "occurred_at": "2026-10-19T10:00:00+08:00"
+        },
+        "deadline": "2026-10-19T10:00:00+08:00",
+        "idempotencyKey": "demo-key",
+        "invocationRef": "demo-invocation",
+        "context": {
+          "userId": "demo-user",
+          "callerPrincipal": "user:demo",
+          "callerPluginId": null,
+          "instanceId": "demo-instance",
+          "generation": 1,
+          "origin": "ui",
+          "delegationChain": [],
+          "grantRef": "demo-grant",
+          "traceId": "demo-trace",
+          "invocationRef": "demo-invocation"
+        }
+      },
+      "reason": "插件不能提交可信上下文"
+    },
+    {
+      "id": "LedgerCreate-invalid-4",
+      "definition": "LedgerCreate",
+      "valid": false,
+      "value": {
+        "name": "午餐",
+        "amount_minor": "3200",
+        "entry_type": "expense",
+        "occurred_at": "2026-10-19T10:00:00+08:00"
+      },
+      "reason": "金额不能是数字字符串"
+    },
+    {
+      "id": "LedgerCreate-invalid-5",
+      "definition": "LedgerCreate",
+      "valid": false,
+      "value": {
+        "name": "午餐",
+        "amount_minor": 3.2,
+        "entry_type": "expense",
+        "occurred_at": "2026-10-19T10:00:00+08:00"
+      },
+      "reason": "金额不能为小数"
+    },
+    {
+      "id": "LedgerCreate-invalid-6",
+      "definition": "LedgerCreate",
+      "valid": false,
+      "value": {
+        "name": "午餐",
+        "amount_minor": 3200,
+        "entry_type": "expense",
+        "occurred_at": "2026-10-19T10:00:00"
+      },
+      "reason": "公开新契约要求时区"
+    },
+    {
+      "id": "LedgerPatch-invalid-7",
+      "definition": "LedgerPatch",
+      "valid": false,
+      "value": {},
+      "reason": "空更新拒绝"
+    },
+    {
+      "id": "BillsListParams-invalid-8",
+      "definition": "BillsListParams",
+      "valid": false,
+      "value": {
+        "year": 2026,
+        "month": 13
+      },
+      "reason": "月份边界"
+    },
+    {
+      "id": "BillsUpdateParams-invalid-9",
+      "definition": "BillsUpdateParams",
+      "valid": false,
+      "value": {
+        "id": "x",
+        "patch": {
+          "note": "x"
+        }
+      },
+      "reason": "缺预期版本"
+    },
+    {
+      "id": "OperationResult-invalid-10",
+      "definition": "OperationResult",
+      "valid": false,
+      "value": {
+        "status": "failed",
+        "sideEffects": "none"
+      },
+      "reason": "失败必须有错误"
+    },
+    {
+      "id": "OperationResult-invalid-11",
+      "definition": "OperationResult",
+      "valid": false,
+      "value": {
+        "status": "pending",
+        "sideEffects": "none"
+      },
+      "reason": "受理必须有操作引用"
+    },
+    {
+      "id": "OperationResult-invalid-12",
+      "definition": "OperationResult",
+      "valid": false,
+      "value": {
+        "status": "unknown",
+        "sideEffects": "none",
+        "operationId": "x"
+      },
+      "reason": "未知不能伪报无副作用"
+    },
+    {
+      "id": "OperationResult-invalid-13",
+      "definition": "OperationResult",
+      "valid": false,
+      "value": {
+        "status": "succeeded",
+        "sideEffects": "committed"
+      },
+      "reason": "写入回执必需"
+    },
+    {
+      "id": "RpcResponse-invalid-14",
+      "definition": "RpcResponse",
+      "valid": false,
+      "value": {
+        "jsonrpc": "2.0",
+        "id": "demo-rpc",
+        "result": {
+          "status": "succeeded",
+          "sideEffects": "none",
+          "value": []
+        },
+        "error": {
+          "code": -1,
+          "message": "x"
+        }
+      },
+      "reason": "不能同时有result/error"
+    },
+    {
+      "id": "RpcRequest-invalid-15",
+      "definition": "RpcRequest",
+      "valid": false,
+      "value": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "plugin.invoke",
+        "params": {
+          "contract": "stella.bills@1",
+          "method": "create_ledger",
+          "input": {
+            "name": "午餐",
+            "amount_minor": 3200,
+            "entry_type": "expense",
+            "occurred_at": "2026-10-19T10:00:00+08:00"
+          },
+          "deadline": "2026-10-19T10:00:00+08:00",
+          "context": {
+            "userId": "demo-user",
+            "callerPrincipal": "user:demo",
+            "callerPluginId": null,
+            "instanceId": "demo-instance",
+            "generation": 1,
+            "origin": "ui",
+            "delegationChain": [],
+            "grantRef": "demo-grant",
+            "traceId": "demo-trace",
+            "invocationRef": "demo-invocation"
+          },
+          "idempotencyKey": "demo-key"
+        }
+      },
+      "reason": "请求id固定字符串"
+    },
+    {
+      "id": "SettingsPatch-invalid-16",
+      "definition": "SettingsPatch",
+      "valid": false,
+      "value": {
+        "pluginId": "stella.bills",
+        "settingsId": "bills.preferences",
+        "category": "general",
+        "scope": "user",
+        "expectedRevision": 0,
+        "changes": {
+          "currency": "CNY"
+        }
+      },
+      "reason": "设置版本持久正整数"
+    },
+    {
+      "id": "GrantIntent-invalid-17",
+      "definition": "GrantIntent",
+      "valid": false,
+      "value": {
+        "capability": "email.read",
+        "resources": [
+          {
+            "kind": "email-folder",
+            "id": "demo-folder"
+          }
+        ],
+        "purpose": "background",
+        "sourceRef": "demo-source",
+        "consumerPluginId": "other"
+      },
+      "reason": "不能由请求伪造申请者"
+    },
+    {
+      "id": "MigrationParams-negative",
+      "definition": "MigrationParams",
+      "valid": false,
+      "value": {
+        "migrationId": "demo-migration",
+        "operationId": "demo-op",
+        "mode": "verify",
+        "fromSchema": 1,
+        "toSchema": 2,
+        "deadline": "2026-10-19T10:00:00+08:00"
+      },
+      "reason": "无维护数据句柄拒绝"
+    },
+    {
+      "id": "CatalogEntry-negative",
+      "definition": "CatalogEntry",
+      "valid": false,
+      "value": {
+        "pluginId": "stella.bills",
+        "version": "1.0.0",
+        "hostApi": "^1.0.0",
+        "platforms": [
+          "darwin-arm64"
+        ],
+        "runtimeAbi": "cp312",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1024,
+        "downloadUrl": "http://example.invalid/a.zip"
+      },
+      "reason": "不接受HTTP降级"
+    },
+    {
+      "id": "CatalogEnvelope-negative",
+      "definition": "CatalogEnvelope",
+      "valid": false,
+      "value": {
+        "keyId": "demo-key",
+        "payloadBase64": "e30="
+      },
+      "reason": "缺签名拒绝"
+    },
+    {
+      "id": "DataDeclaration-negative",
+      "definition": "DataDeclaration",
+      "valid": false,
+      "value": {
+        "namespace": "stella.bills",
+        "schemaVersion": 2,
+        "migrationEntry": "../escape.py"
+      },
+      "reason": "迁移入口拒绝上级路径"
+    }
+  ]
+}

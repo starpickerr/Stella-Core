@@ -156,3 +156,15 @@ CREATE INDEX IF NOT EXISTS idx_planned_payments_due
 
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_occurred
     ON ledger_entries(status, occurred_at);
+
+-- Plugin API domain receipts (same DB transaction as business writes)
+CREATE TABLE IF NOT EXISTS plugin_operation_receipts (
+    operation_id    TEXT PRIMARY KEY,
+    method          TEXT NOT NULL,
+    request_digest  TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'unknown')),
+    result_id       TEXT,
+    error_code      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);

@@ -8,6 +8,8 @@ period statements are derived.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -112,19 +114,45 @@ class BillsService:
     def get_ledger(self, entry_id: str) -> Optional[dict]:
         return self.store.get_ledger(entry_id)
 
-    def create_ledger(self, payload: dict) -> dict:
-        entry = self._build_ledger(payload, existing=None)
+    def create_ledger(self, payload: dict, *, idempotency_key: Optional[str] = None) -> dict:
+        digest = _request_digest("create_ledger", payload)
         with self.store.transaction():
+            existing_op = self._reuse_or_conflict(idempotency_key, "create_ledger", digest)
+            if existing_op is not None:
+                return existing_op
+            entry = self._build_ledger(payload, existing=None)
+            entry["revision"] = 1
             saved = self.store.insert_ledger(entry)
             self._refresh_periods(saved["occurred_at"], saved["currency"])
-        return saved
+            self._save_receipt(idempotency_key, "create_ledger", digest, saved["id"])
+            return saved
 
-    def update_ledger(self, entry_id: str, payload: dict) -> dict:
-        existing = self.store.get_ledger(entry_id)
-        if existing is None:
-            raise KeyError(f"ledger entry not found: {entry_id}")
-        entry = self._build_ledger(payload, existing=existing)
+    def update_ledger(
+        self,
+        entry_id: str,
+        payload: dict,
+        *,
+        expected_revision: Optional[int] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> dict:
+        digest = _request_digest(
+            "update_ledger",
+            {"id": entry_id, "patch": payload, "expectedRevision": expected_revision},
+        )
         with self.store.transaction():
+            existing_op = self._reuse_or_conflict(idempotency_key, "update_ledger", digest)
+            if existing_op is not None:
+                return existing_op
+            existing = self.store.get_ledger(entry_id)
+            if existing is None:
+                raise KeyError(f"ledger entry not found: {entry_id}")
+            current_rev = int(existing.get("revision") or 1)
+            if expected_revision is not None and int(expected_revision) != current_rev:
+                raise ValueError(
+                    f"revision conflict: expected {expected_revision}, have {current_rev}"
+                )
+            entry = self._build_ledger(payload, existing=existing)
+            entry["revision"] = current_rev + 1
             saved = self.store.update_ledger(entry)
             self._refresh_periods(
                 saved["occurred_at"],
@@ -132,16 +160,80 @@ class BillsService:
                 also=existing["occurred_at"],
                 also_currency=existing["currency"],
             )
-        return saved
+            self._save_receipt(idempotency_key, "update_ledger", digest, saved["id"])
+            return saved
 
-    def delete_ledger(self, entry_id: str) -> None:
-        existing = self.store.get_ledger(entry_id)
-        if existing is None:
-            raise KeyError(f"ledger entry not found: {entry_id}")
+    def delete_ledger(
+        self,
+        entry_id: str,
+        *,
+        expected_revision: Optional[int] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> None:
+        digest = _request_digest(
+            "delete_ledger",
+            {"id": entry_id, "expectedRevision": expected_revision},
+        )
         with self.store.transaction():
+            if idempotency_key:
+                prior = self.store.get_operation_receipt(idempotency_key)
+                if prior is not None:
+                    if prior["request_digest"] != digest:
+                        raise ValueError("idempotency conflict: different payload for key")
+                    return
+            existing = self.store.get_ledger(entry_id)
+            if existing is None:
+                raise KeyError(f"ledger entry not found: {entry_id}")
+            current_rev = int(existing.get("revision") or 1)
+            if expected_revision is not None and int(expected_revision) != current_rev:
+                raise ValueError(
+                    f"revision conflict: expected {expected_revision}, have {current_rev}"
+                )
             self.store.delete_ledger(entry_id)
             self._refresh_periods(existing["occurred_at"], existing["currency"])
+            self._save_receipt(idempotency_key, "delete_ledger", digest, entry_id)
 
+    def get_operation(self, operation_id: str) -> Optional[dict]:
+        return self.store.get_operation_receipt(operation_id)
+
+    def _reuse_or_conflict(
+        self, idempotency_key: Optional[str], method: str, digest: str
+    ) -> Optional[dict]:
+        if not idempotency_key:
+            return None
+        prior = self.store.get_operation_receipt(idempotency_key)
+        if prior is None:
+            return None
+        if prior["request_digest"] != digest:
+            raise ValueError("idempotency conflict: different payload for key")
+        if prior.get("result_id"):
+            row = self.store.get_ledger(prior["result_id"])
+            if row is not None:
+                return row
+        return {"id": prior.get("result_id"), "operationId": idempotency_key}
+
+    def _save_receipt(
+        self,
+        idempotency_key: Optional[str],
+        method: str,
+        digest: str,
+        result_id: str,
+    ) -> None:
+        if not idempotency_key:
+            return
+        now = _now_iso()
+        self.store.put_operation_receipt(
+            {
+                "operation_id": idempotency_key,
+                "method": method,
+                "request_digest": digest,
+                "status": "succeeded",
+                "result_id": result_id,
+                "error_code": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
     # ------------------------------------------------------------------
     # Period statements (月 / 年账单)
     # ------------------------------------------------------------------
@@ -225,6 +317,7 @@ class BillsService:
             ),
             "created_at": existing["created_at"] if existing else now,
             "updated_at": now,
+            "revision": int(existing.get("revision") or 1) if existing else 1,
         }
 
     def _refresh_periods(
@@ -354,3 +447,8 @@ class BillsService:
             bucket["amount_minor"] += row["amount_minor"]
             bucket["entry_count"] += 1
         self.store.replace_statement_items(statement_id, list(buckets.values()))
+
+def _request_digest(method: str, payload: dict) -> str:
+    encoded = json.dumps({"method": method, "payload": payload}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+

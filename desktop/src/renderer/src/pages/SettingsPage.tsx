@@ -1,6 +1,6 @@
 import React from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bot, Cpu, Info, Link2, Newspaper, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+import { Bot, Cpu, Info, Link2, Newspaper, Puzzle, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { t } from '../i18n'
 import { product } from '@product'
 import GeneralSettings from './settings/GeneralSettings'
@@ -9,6 +9,7 @@ import AboutSettings from './settings/AboutSettings'
 import ModelsTab from './settings/ModelsTab'
 import ManagedModelSettings from './settings/ManagedModelSettings'
 import AppleIntegrations from './settings/AppleIntegrations'
+import PluginSettings from './settings/PluginSettings'
 import { SettingsPanel } from './briefing/SettingsPanel'
 import type { SettingsOrigin } from './settings/origin'
 import PageHeader from '../components/PageHeader'
@@ -18,7 +19,7 @@ interface SettingsPageProps {
   onLangChange?: () => void
 }
 
-type Tab = 'general' | 'models' | 'assistant' | 'connections' | 'briefing' | 'about'
+type Tab = 'general' | 'models' | 'assistant' | 'connections' | 'briefing' | 'plugins' | 'about'
 
 const TABS: { key: Tab; icon: LucideIcon }[] = [
   { key: 'general', icon: SlidersHorizontal },
@@ -26,6 +27,7 @@ const TABS: { key: Tab; icon: LucideIcon }[] = [
   { key: 'assistant', icon: Bot },
   { key: 'connections', icon: Link2 },
   { key: 'briefing', icon: Newspaper },
+  { key: 'plugins', icon: Puzzle },
   { key: 'about', icon: Info },
 ]
 
@@ -100,6 +102,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
                 <AppleIntegrations section={params.get('section')} />
               ) : tab === 'briefing' ? (
                 <SettingsPanel />
+              ) : tab === 'plugins' ? (
+                <PluginSettings baseUrl={baseUrl} />
               ) : (
                 <AboutSettings />
               )}

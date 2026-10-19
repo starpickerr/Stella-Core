@@ -27,6 +27,7 @@ SELECT
     e.note,
     e.created_at,
     e.updated_at,
+    COALESCE(e.revision, 1) AS revision,
     l.entry_type,
     l.txn_type,
     l.counterparty,
@@ -64,6 +65,14 @@ class BillStore:
         conn = self._raw_connect()
         try:
             conn.executescript(load_schema_sql())
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(financial_events)").fetchall()
+            }
+            if "revision" not in columns:
+                conn.execute(
+                    "ALTER TABLE financial_events ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+                )
             conn.commit()
         finally:
             conn.close()
@@ -139,8 +148,8 @@ class BillStore:
                 """
                 INSERT INTO financial_events (
                     id, event_type, amount_minor, currency, category, name, note,
-                    created_at, updated_at
-                ) VALUES (?, 'ledger_entry', ?, ?, ?, ?, ?, ?, ?)
+                    created_at, updated_at, revision
+                ) VALUES (?, 'ledger_entry', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry["id"],
@@ -151,6 +160,7 @@ class BillStore:
                     entry["note"],
                     entry["created_at"],
                     entry["updated_at"],
+                    int(entry.get("revision") or 1),
                 ),
             )
             conn.execute(
@@ -179,7 +189,7 @@ class BillStore:
                 """
                 UPDATE financial_events
                 SET amount_minor = ?, currency = ?, category = ?, name = ?,
-                    note = ?, updated_at = ?
+                    note = ?, updated_at = ?, revision = ?
                 WHERE id = ? AND event_type = 'ledger_entry'
                 """,
                 (
@@ -189,6 +199,7 @@ class BillStore:
                     entry["name"],
                     entry["note"],
                     entry["updated_at"],
+                    int(entry.get("revision") or 1),
                     entry["id"],
                 ),
             )
@@ -368,6 +379,44 @@ class BillStore:
                 "DELETE FROM period_statements WHERE id = ?", (statement_id,)
             )
             return cur.rowcount > 0
+
+    def get_operation_receipt(self, operation_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT operation_id, method, request_digest, status, result_id,
+                       error_code, created_at, updated_at
+                FROM plugin_operation_receipts WHERE operation_id = ?
+                """,
+                (operation_id,),
+            ).fetchone()
+            return _row_dict(row) if row else None
+
+    def put_operation_receipt(self, receipt: dict) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO plugin_operation_receipts (
+                    operation_id, method, request_digest, status, result_id,
+                    error_code, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(operation_id) DO UPDATE SET
+                    status=excluded.status,
+                    result_id=excluded.result_id,
+                    error_code=excluded.error_code,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    receipt["operation_id"],
+                    receipt["method"],
+                    receipt["request_digest"],
+                    receipt["status"],
+                    receipt.get("result_id"),
+                    receipt.get("error_code"),
+                    receipt["created_at"],
+                    receipt["updated_at"],
+                ),
+            )
 
 
 _store_instances: Dict[str, BillStore] = {}
