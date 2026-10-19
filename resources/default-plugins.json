@@ -7,7 +7,63 @@
       "catalogRef": "official/stella.bills",
       "versionRange": "^1.0.0",
       "defaultEnabled": true,
-      "requiredFor": ["bills"]
+      "requiredFor": [
+        "bills"
+      ]
+    },
+    {
+      "pluginId": "stella.calendar",
+      "catalogRef": "official/stella.calendar",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "calendar"
+      ]
+    },
+    {
+      "pluginId": "stella.tasks",
+      "catalogRef": "official/stella.tasks",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "tasks"
+      ]
+    },
+    {
+      "pluginId": "stella.email",
+      "catalogRef": "official/stella.email",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "email"
+      ]
+    },
+    {
+      "pluginId": "stella.elearning",
+      "catalogRef": "official/stella.elearning",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "elearning"
+      ]
+    },
+    {
+      "pluginId": "stella.briefing",
+      "catalogRef": "official/stella.briefing",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "briefing"
+      ]
+    },
+    {
+      "pluginId": "stella.automation",
+      "catalogRef": "official/stella.automation",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "automation"
+      ]
     }
   ]
 }

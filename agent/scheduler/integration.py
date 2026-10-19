@@ -41,6 +41,34 @@ def _resolve_working_dir(agent_id: str = None):
     return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
 
 
+def _handler_plan(task: dict, task_store, agent_id: str = None) -> dict:
+    """Classify a due task: the automation plugin owns the rules when enabled.
+
+    Execution (agent turns, tools, delivery) stays in Core; only the domain
+    classification moves. A plugin failure falls back to the local rules so the
+    scheduler tick never stalls on the worker.
+    """
+    try:
+        from core.services.automation_gateway import automation_plugin_enabled
+        if automation_plugin_enabled() and getattr(task_store, "store_path", None):
+            from pathlib import Path
+            from core.services.automation_gateway import resolve_handler
+            from common.runtime_identity import current_identity
+            return resolve_handler(task, db_path=Path(task_store.store_path),
+                                   agent_id=getattr(task_store, "agent_id", None) or agent_id,
+                                   owner_user_id=current_identity().user_id or "")
+    except Exception as exc:
+        logger.warning(f"[Scheduler] automation plugin unavailable, using Core rules: {exc}")
+    action = task.get("action", {})
+    action_type = action.get("type")
+    silent = (action_type == "application_command" or
+              action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
+    persist_in_chat = "conversation_mode" in action
+    return {"handler": action_type, "silent": bool(silent), "persist_in_chat": persist_in_chat,
+            "needs_channel_ready": not silent and not task.get("notification_route") and not persist_in_chat,
+            "channel_type": action.get("channel_type", "unknown"), "receiver": action.get("receiver", "")}
+
+
 def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = None) -> bool:
     """
     Initialize scheduler service (idempotent).
@@ -112,15 +140,11 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                                         session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
                                         execution_session_id=owner_session_id), scheduled_permission_scope(
                                             task.get("run_permission_mode")):
-                        action = task.get("action", {})
-                        action_type = action.get("type")
-                        channel_type = action.get("channel_type", "unknown")
-                        receiver = action.get("receiver", "")
-
-                        silent = (action_type == "application_command" or
-                                  action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
-                        persist_in_chat = "conversation_mode" in action
-                        if not silent and not task.get("notification_route") and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
+                        plan = _handler_plan(task, task_store, agent_id)
+                        action_type = plan["handler"]
+                        channel_type = plan["channel_type"]
+                        receiver = plan["receiver"]
+                        if plan["needs_channel_ready"] and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "

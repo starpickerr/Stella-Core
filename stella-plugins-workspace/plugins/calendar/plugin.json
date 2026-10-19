@@ -1,0 +1,26 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.calendar",
+  "name": "日程",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.calendar",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": ["stella.calendar@1"],
+    "pages": ["calendar.main"],
+    "settings": ["calendar.preferences"]
+  },
+  "permissions": [
+    { "capability": "calendar.read", "required": true },
+    { "capability": "calendar.write", "required": true }
+  ]
+}

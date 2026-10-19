@@ -1,0 +1,38 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.automation",
+  "name": "自动化",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.automation",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": [
+      "stella.automation@1"
+    ],
+    "pages": [
+      "automation.main"
+    ],
+    "settings": [
+      "automation.preferences"
+    ]
+  },
+  "permissions": [
+    {
+      "capability": "automation.read",
+      "required": true
+    },
+    {
+      "capability": "automation.write",
+      "required": true
+    }
+  ]
+}

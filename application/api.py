@@ -55,6 +55,17 @@ _METHODS = {
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",
         "update_ledger", "delete_ledger", "list_statements", "get_statement",
     }),
+    # Plugin-only domains: no legacy in-process service exists behind these ports.
+    "email": frozenset({
+        "list_accounts", "get_account", "list_sources", "get_cursors", "test_connection",
+        "list_folders", "fetch_messages", "save_account", "delete_account", "set_cursors",
+        "reset_cursors",
+    }),
+    "elearning": frozenset({
+        "get_settings", "get_cursors", "list_courses", "fetch", "fetch_source", "list_files",
+        "save_settings", "delete_settings", "save_file_sync_settings", "test_connection",
+        "set_cursors", "sync_files",
+    }),
     "briefing": frozenset({
         "list_briefings", "get_briefing", "get_revision", "start_briefing", "briefing_for_date",
         "complete_briefing", "update_item_status", "upsert_source_item", "list_rules",
@@ -66,6 +77,15 @@ _METHODS = {
 
 
 class _Port:
+    # G5 routing policy (domain -> service behind the port):
+    # - email, elearning: plugin-only (no in-process service); raise unless the
+    #   STELLA_<DOMAIN>_PLUGIN flag is on.
+    # - calendar, todos, bills, briefing, automation: opt-in via STELLA_<DOMAIN>_PLUGIN;
+    #   unset keeps the in-process legacy service so existing data and tests stay
+    #   unchanged. The default-plugins bootstrap (resources/default-plugins.json)
+    #   installs all seven packages but does NOT flip these flags: making them
+    #   default-on is a separate decision that needs the CSP e2e, signed-ZIP and
+    #   runner-in-DMG evidence (R01-R10). Never run both writers for one domain.
     def __init__(self, domain, context):
         if domain not in _METHODS:
             raise ValueError(f"unknown business domain: {domain}")
@@ -79,11 +99,21 @@ class _Port:
         self.identity = identity
         with use_identity(identity):
             if domain == "calendar":
-                from agent.calendar import CalendarService
-                self._service = CalendarService()
+                from core.services.calendar_gateway import calendar_plugin_enabled
+                if calendar_plugin_enabled():
+                    from core.services.calendar_facade import CalendarPluginFacade
+                    self._service = CalendarPluginFacade()
+                else:
+                    from agent.calendar import CalendarService
+                    self._service = CalendarService()
             elif domain == "todos":
-                from agent.todos import TodoService
-                self._service = TodoService()
+                from core.services.todos_gateway import todos_plugin_enabled
+                if todos_plugin_enabled():
+                    from core.services.todos_facade import TodosPluginFacade
+                    self._service = TodosPluginFacade()
+                else:
+                    from agent.todos import TodoService
+                    self._service = TodoService()
             elif domain == "bills":
                 from core.services.bills_gateway import bills_plugin_enabled
                 if bills_plugin_enabled():
@@ -92,9 +122,27 @@ class _Port:
                 else:
                     from agent.bills.service import BillsService
                     self._service = BillsService()
+            elif domain == "email":
+                from core.services.email_gateway import email_plugin_enabled
+                if not email_plugin_enabled():
+                    raise RuntimeError("email domain requires the stella.email plugin (STELLA_EMAIL_PLUGIN=1)")
+                from core.services.email_facade import EmailPluginFacade
+                self._service = EmailPluginFacade()
+            elif domain == "elearning":
+                from core.services.elearning_gateway import elearning_plugin_enabled
+                if not elearning_plugin_enabled():
+                    raise RuntimeError(
+                        "elearning domain requires the stella.elearning plugin (STELLA_ELEARNING_PLUGIN=1)")
+                from core.services.elearning_facade import ElearningPluginFacade
+                self._service = ElearningPluginFacade()
             else:
-                from agent.briefing.service import BriefingService
-                self._service = BriefingService()
+                from core.services.briefing_gateway import briefing_plugin_enabled
+                if briefing_plugin_enabled():
+                    from core.services.briefing_facade import BriefingPluginFacade
+                    self._service = BriefingPluginFacade()
+                else:
+                    from agent.briefing.service import BriefingService
+                    self._service = BriefingService()
 
     @property
     def store(self):
@@ -186,6 +234,13 @@ class Application:
         if store is None:
             from agent.todos.scheduler_link import default_scheduler_store
             store = default_scheduler_store()
+        # Task rules/mutations move to the plugin; Core keeps lease, dispatch and
+        # delivery on the same automation.db. Legacy JSON stores stay on Core.
+        from core.services.automation_gateway import automation_plugin_enabled
+        if automation_plugin_enabled():
+            from core.services.automation_facade import AutomationPluginFacade, plugin_serves
+            if plugin_serves(store):
+                return AutomationPluginFacade(store)
         return SchedulerMutations(store)
 
     @staticmethod

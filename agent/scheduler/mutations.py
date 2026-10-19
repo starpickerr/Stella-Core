@@ -81,20 +81,16 @@ class SchedulerMutations:
         self.store.add_task(task)
         return task
 
-    def update(self, task_id, patch, *, agent_id=None, origin="user"):
-        original = self.get(task_id)
-        if original.get("linked_todo_id"):
-            raise ValueError("请在关联事务中修改提醒时间和渠道")
-        if not isinstance(patch, dict):
-            raise ValueError("task update must be an object")
-        allowed = {"name", "enabled", "schedule", "action", "notification_route", "run_permission_mode"}
-        if set(patch) - allowed:
-            raise ValueError("unsupported scheduler update fields")
+    def resolve_delivery_updates(self, original, patch, agent_id=None):
+        """Host-side part of an update: destination, route and conversation scope.
+
+        Needs live channels and projects, so it stays in Core even when task rules
+        are served by the automation plugin. Returns only ``action`` and
+        ``notification_route`` keys.
+        """
+        updates = {}
         same_route = ("notification_route" in patch and
                       same_notification_route(patch["notification_route"], original.get("notification_route")))
-        updates = {key: patch[key] for key in ("name", "enabled", "schedule") if key in patch}
-        if "run_permission_mode" in patch:
-            updates["run_permission_mode"] = normalize_run_permission(patch["run_permission_mode"], origin=origin)
         if "action" in patch:
             if not isinstance(patch["action"], dict):
                 raise ValueError("Action must be an object")
@@ -132,6 +128,21 @@ class SchedulerMutations:
             elif action.get("type") == "agent_task":
                 action.pop("content", None)
             updates["action"] = action
+        return updates
+
+    def update(self, task_id, patch, *, agent_id=None, origin="user"):
+        original = self.get(task_id)
+        if original.get("linked_todo_id"):
+            raise ValueError("请在关联事务中修改提醒时间和渠道")
+        if not isinstance(patch, dict):
+            raise ValueError("task update must be an object")
+        allowed = {"name", "enabled", "schedule", "action", "notification_route", "run_permission_mode"}
+        if set(patch) - allowed:
+            raise ValueError("unsupported scheduler update fields")
+        updates = {key: patch[key] for key in ("name", "enabled", "schedule") if key in patch}
+        if "run_permission_mode" in patch:
+            updates["run_permission_mode"] = normalize_run_permission(patch["run_permission_mode"], origin=origin)
+        updates.update(self.resolve_delivery_updates(original, patch, agent_id))
         if "schedule" in patch or "next_run_at" not in original:
             from agent.scheduler import SchedulerService
             merged = {**original, **updates}

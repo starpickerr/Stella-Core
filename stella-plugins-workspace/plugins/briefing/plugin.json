@@ -1,0 +1,26 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.briefing",
+  "name": "简报",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.briefing",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": ["stella.briefing@1"],
+    "pages": ["briefing.main"],
+    "settings": ["briefing.preferences"]
+  },
+  "permissions": [
+    { "capability": "briefing.read", "required": true },
+    { "capability": "briefing.write", "required": true }
+  ]
+}

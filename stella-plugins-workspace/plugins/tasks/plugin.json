@@ -1,0 +1,26 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.tasks",
+  "name": "事务",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.tasks",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": ["stella.tasks@1"],
+    "pages": ["tasks.main"],
+    "settings": ["tasks.preferences"]
+  },
+  "permissions": [
+    { "capability": "tasks.read", "required": true },
+    { "capability": "tasks.write", "required": true }
+  ]
+}

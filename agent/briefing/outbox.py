@@ -19,6 +19,9 @@ def _lock_for(path):
 
 def dispatch_pending(store, limit=20):
     """Project ordered revisions; failed consumers keep their own pending ack."""
+    delegate = getattr(store, "dispatch_outbox", None)
+    if delegate is not None:  # plugin-backed store proxy (STELLA_BRIEFING_PLUGIN)
+        return delegate(limit)
     with _lock_for(store._db_path):
         events = store.pending_projection_events(limit)
         for event in events:
