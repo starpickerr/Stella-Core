@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | 事务 | `agent/todos/service.py` 管理状态、层级、依赖、提醒；`agent/tools/todos/` 暴露 Agent 调用 | `tests/test_todos.py`；[事务模块说明](../../agent/todos/README.md) |
 | 日程 | `agent/calendar/service.py` 管理事件、分类与简报交接 | `tests/test_calendar.py`；[日程模块说明](../../agent/calendar/README.md) |
-| 账单 | `agent/bills/service.py`、`store.py`、`schema.sql` 管理账本与期间报表 | `tests/test_bill_service.py`, `tests/test_bill_store.py` |
+| 账单 | Stella-Plugins 的 `plugins/bills/backend/domain/` 独占账本、期间报表和 XLSX 导出；Core 的 `core/services/bills_facade.py` 通过 RPC 调用，未安装/停用时拒绝旧实现回退 | 外仓 `plugins/bills/tests/`；Core `tests/test_bills_facade_port.py`、`tests/test_bills_web.py` |
 | 简报 | `agent/briefing/pipeline.py` 获取来源，`generator.py` 调用 Agent，`store.py` 保存快照，`actions.py` 处理业务回执 | `tests/test_briefing_*.py`, `tests/ui_briefing.py`；[简报说明](../../agent/briefing/README.md) |
 | 自动化/定时 | `agent/scheduler/service.py` 领取任务，`integration.py` 绑定 Agent/用户身份并分派动作 | `tests/test_scheduler_*.py` |
 

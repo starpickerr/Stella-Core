@@ -25,7 +25,7 @@ DOMAIN_TESTS = {
                        "tests/test_security_approval_resume.py", "tests/test_parallel_tool_calls.py"),
     "agent/memory/": ("tests/test_memory_global_config.py", "tests/test_session_resurrect.py"),
     "agent/skills/": ("tests/test_skill_authoring.py", "tests/test_skill_tool_binding.py"),
-    "agent/bills/": ("tests/test_bill_service.py", "tests/test_bill_store.py"),
+    "core/services/bills_": ("tests/test_bills_facade_port.py", "tests/test_bills_web.py"),
     "agent/workspace/": ("tests/test_project_conversation_scope.py",),
 }
 DOMAIN_GLOBS = {

@@ -7256,9 +7256,7 @@ class BillsLedgerExportHandler:
                 web.header('Content-Type', 'application/json; charset=utf-8')
                 return json.dumps({"status": "error", "message": "start and end are required"})
             lang = "en" if str(params.lang or "").lower().startswith("en") else "zh"
-            entries = _bills_service().list_ledger_between(start, end)
-            from core.services.bills_public import build_ledger_xlsx
-            data = build_ledger_xlsx(entries, start=start, end=end, lang=lang)
+            data = _bills_service().export_ledger(start, end, lang=lang)
             fname = f"bills-{start}-{end}.xlsx"
             web.header(
                 'Content-Type',

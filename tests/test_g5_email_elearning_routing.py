@@ -323,16 +323,14 @@ def test_bills_tool_wall_time_does_not_import_agent_bills(plugins_on, no_legacy)
     assert no_legacy.hits == []
 
 
-def test_bills_export_handler_renders_plugin_rows_without_agent_bills(plugins_on, desktop, monkeypatch, no_legacy):
-    rows = [{"id": "b1", "occurred_at": "2026-08-02T12:30:00+08:00", "entry_type": "expense",
-             "name": "午餐", "category": "消费", "amount_minor": 3250, "currency": "CNY",
-             "note": "", "status": "posted"}]
+def test_bills_export_handler_forwards_plugin_bytes_without_agent_bills(plugins_on, desktop, monkeypatch, no_legacy):
+    exported = b"PKplugin-export"
     seen = {}
 
     class _Bills:
-        def list_ledger_between(self, start, end):
-            seen["range"] = (start, end)
-            return rows
+        def export_ledger(self, start, end, lang):
+            seen["range"] = (start, end, lang)
+            return exported
 
     monkeypatch.setattr(web_channel, "_bills_service", lambda: _Bills())
     headers = {}
@@ -340,15 +338,16 @@ def test_bills_export_handler_renders_plugin_rows_without_agent_bills(plugins_on
     with patch.object(web_channel.web, "input",
                       return_value=SimpleNamespace(start="2026-08-01", end="2026-08-31", lang="en")):
         data = web_channel.BillsLedgerExportHandler().GET()
-    assert isinstance(data, bytes) and data[:2] == b"PK"
-    assert seen["range"] == ("2026-08-01", "2026-08-31")
+    assert data == exported
+    assert seen["range"] == ("2026-08-01", "2026-08-31", "en")
     assert headers["Content-Disposition"] == 'attachment; filename="bills-2026-08-01-2026-08-31.xlsx"'
     assert headers["Content-Length"] == str(len(data))
     assert no_legacy.hits == []
 
 
-def test_legacy_bills_export_module_is_the_core_implementation():
-    from agent.bills import export as legacy
-    from core.services import bills_public
+def test_bills_export_implementation_is_not_in_core():
+    from pathlib import Path
 
-    assert legacy.build_ledger_xlsx is bills_public.build_ledger_xlsx
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "agent/bills/export.py").exists()
+    assert not (root / "core/services/bills_public.py").exists()

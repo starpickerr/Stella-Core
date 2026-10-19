@@ -351,31 +351,21 @@ def test_application_scheduler_uses_automation_facade_when_plugin_on(monkeypatch
 
 
 def test_bills_facade_db_path_does_not_construct_legacy_store(monkeypatch, tmp_path):
-    import agent.bills.store as legacy
     from core.services import bills_facade
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
 
-    def boom(*args, **kwargs):  # pragma: no cover - only runs on regression
-        raise AssertionError("bills facade must not instantiate agent.bills.store")
-
-    monkeypatch.setattr(legacy, "get_bill_store", boom)
     assert bills_facade._db_path().name == "bills.db"
+    assert not bills_facade._db_path().exists()
 
 
-def test_app_init_bills_db_skips_legacy_schema_writer_when_plugin_on(monkeypatch):
-    import agent.bills.store as legacy
+def test_app_has_no_bills_schema_writer():
     import app
 
-    called = []
-    monkeypatch.setattr(legacy, "get_bill_store", lambda *a, **k: called.append(1))
-    monkeypatch.setenv("STELLA_BILLS_PLUGIN", "1")
-    app._init_bills_db()
-    assert called == []
-    monkeypatch.setenv("STELLA_BILLS_PLUGIN", "0")
-    app._init_bills_db()
-    assert called == [1]
+    assert not hasattr(app, "_init_bills_db")
+    assert not (Path(app.__file__).parent / "agent/bills/service.py").exists()
+    assert not (Path(app.__file__).parent / "agent/bills/schema.sql").exists()
 
 
 # -- tombstones prefer the plugin facade when enabled ----------------------------

@@ -180,6 +180,29 @@ def test_frozen_runner_rejects_forged_identity(frozen_runner, tmp_path, field):
         session.dispose()
 
 
+def test_frozen_bills_exports_xlsx_without_system_python(frozen_runner, tmp_path, monkeypatch):
+    import base64
+    import io
+    import zipfile
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    monkeypatch.setenv('PATH', '/nonexistent')
+    monkeypatch.delenv('PYTHONPATH', raising=False)
+    session = PluginSession(REPO.parent / 'Stella-Plugins/plugins/bills', source_label='frozen-export',
+                            registry=PluginRegistry(), runner_command=[str(frozen_runner)])
+    handle = {'namespace': 'stella.bills', 'dbPath': str(tmp_path / 'bills.sqlite')}
+    try:
+        session.start()
+        result = session.invoke('export_ledger', {'start': '2026-10-01', 'end': '2026-10-31',
+                                                 'lang': 'en', '_dataHandle': handle})
+        assert result['status'] == 'succeeded', result
+        with zipfile.ZipFile(io.BytesIO(base64.b64decode(result['value']['content']))) as archive:
+            assert b'Income total' in archive.read('xl/worksheets/sheet1.xml')
+    finally:
+        session.dispose()
+
+
 def test_frozen_hung_worker_is_terminated_with_unknown_outcome(frozen_runner, tmp_path):
     import time
     from core.plugins.authz import PluginAuthorizationStore

@@ -1,4 +1,4 @@
-"""Build a .xlsx workbook from ledger rows without optional Excel libraries."""
+"""Render ledger exports inside the Bills data owner."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import zipfile
 from xml.sax.saxutils import escape
 
 from .service import parse_occurred_at
+
 
 _HEADERS = {
     "zh": ("日期", "时间", "类型", "名称", "类别", "金额", "币种", "备注", "状态"),

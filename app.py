@@ -413,24 +413,6 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
-def _init_bills_db():
-    """Create the bills SQLite file on first boot; reuse it afterwards.
-
-    Skipped when stella.bills serves the domain: the plugin owns its schema and
-    the legacy BillStore must not stay a second schema writer.
-    """
-    from core.services.bills_gateway import bills_plugin_enabled
-
-    if bills_plugin_enabled():
-        return
-    try:
-        from agent.bills.store import get_bill_store
-
-        get_bill_store()
-    except Exception as e:
-        logger.warning(f"[App] Bills database init failed (non-fatal): {e}")
-
-
 def _bootstrap_default_plugins():
     """Install default first-party plugins and activate domain env flags (desktop)."""
     if not DESKTOP_MODE:
@@ -608,7 +590,6 @@ def run():
         _sync_builtin_skills()
         _scaffold_subagent_assets()
         _bootstrap_default_plugins()
-        _init_bills_db()
 
         # Kick off MCP server loading in the background so first-message
         # latency isn't dominated by npx package downloads. Skipped in desktop

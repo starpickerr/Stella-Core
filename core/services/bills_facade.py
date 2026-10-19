@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Any, Optional
 
@@ -9,15 +10,19 @@ from core.services import bills_gateway
 
 
 def _db_path() -> Path:
-    # Path only: instantiating agent.bills.store would apply the legacy schema.sql,
-    # which frozen builds no longer ship and which the plugin owns.
     from common.state_dir import bills_db
 
     return Path(bills_db())
 
 
 class BillsPluginFacade:
-    """Drop-in for Application._Port when STELLA_BILLS_PLUGIN is enabled."""
+    """Public Bills adapter; all domain operations execute in the plugin."""
+
+    def export_ledger(self, start: str, end: str, lang: str = "zh") -> bytes:
+        result = self._value("export_ledger", {"start": start, "end": end, "lang": lang})
+        if not isinstance(result, dict) or result.get("encoding") != "base64":
+            raise ValueError("invalid bills export encoding")
+        return base64.b64decode(result["content"], validate=True)
 
     def list_ledger(self, year: int, month: int) -> list:
         return self._value("list_ledger", {"year": year, "month": month})

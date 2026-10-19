@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import sys
+import base64
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.service import BillsService
 
 _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
-
-from domain.service import BillsService
-from domain.store import BillStore
 
 SERVICE_DESCRIPTORS = [
     {
@@ -45,6 +46,9 @@ SERVICE_DESCRIPTORS = [
 
 
 def _service(invoke_params: dict[str, Any]) -> BillsService:
+    from domain.service import BillsService
+    from domain.store import BillStore
+
     handle = invoke_params.get("_hostDataHandle") or {}
     db_path = handle.get("dbPath")
     if not db_path:
@@ -97,6 +101,13 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
             return _ok(svc.get_statement(params["id"]))
         if method == "get_operation":
             return _ok(svc.get_operation(params["operationId"]))
+        if method == "export_ledger":
+            from domain.export import build_ledger_xlsx
+
+            start, end = params["start"], params["end"]
+            rows = svc.list_ledger_between(start, end)
+            data = build_ledger_xlsx(rows, start, end, params.get("lang", "zh"))
+            return _ok({"encoding": "base64", "content": base64.b64encode(data).decode("ascii")})
         return {
             "status": "failed",
             "sideEffects": "none",

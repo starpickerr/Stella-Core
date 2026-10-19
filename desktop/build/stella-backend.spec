@@ -175,10 +175,6 @@ datas = [
     # sys.path, so `import cli.commands.*` resolves even if PyInstaller's
     # submodule collection misses the lazily-imported command modules.
     (rp('cli'), 'cli'),
-    # G5: agent/bills/schema.sql is intentionally NOT bundled any more. Bills
-    # schema/migrations ship inside the stella.bills plugin package. A frozen build
-    # therefore needs the plugin installed + STELLA_BILLS_PLUGIN=1; the in-process
-    # BillStore fallback raises an explicit error when the file is absent.
     # Briefing legacy fallback still reads these SQL files until agent.briefing is
     # deleted (plugin copies live in the stella.briefing package). Remove once the
     # in-process fallback is gone.

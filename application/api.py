@@ -55,6 +55,7 @@ _METHODS = {
     "bills": frozenset({
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",
         "update_ledger", "delete_ledger", "list_statements", "get_statement",
+        "export_ledger",
     }),
     # Plugin-only domains: no legacy in-process service exists behind these ports.
     "email": frozenset({
@@ -79,9 +80,9 @@ _METHODS = {
 
 class _Port:
     # G5 routing policy (domain -> service behind the port):
-    # - email, elearning: plugin-only (no in-process service); raise unless the
+    # - bills, email, elearning: plugin-only (no in-process service); raise unless the
     #   STELLA_<DOMAIN>_PLUGIN flag is on.
-    # - calendar, todos, bills, briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
+    # - calendar, todos, briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
     #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
     #   app._bootstrap_default_plugins installs catalog packages and sets those
     #   flags for enabled intents (explicit 0/false still wins). Never dual-write.
@@ -115,12 +116,10 @@ class _Port:
                     self._service = TodoService()
             elif domain == "bills":
                 from core.services.bills_gateway import bills_plugin_enabled
-                if bills_plugin_enabled():
-                    from core.services.bills_facade import BillsPluginFacade
-                    self._service = BillsPluginFacade()
-                else:
-                    from agent.bills.service import BillsService
-                    self._service = BillsService()
+                if not bills_plugin_enabled():
+                    raise RuntimeError("bills domain requires the stella.bills plugin (STELLA_BILLS_PLUGIN=1)")
+                from core.services.bills_facade import BillsPluginFacade
+                self._service = BillsPluginFacade()
             elif domain == "email":
                 from core.services.email_gateway import email_plugin_enabled
                 if not email_plugin_enabled():

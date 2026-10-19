@@ -6,8 +6,9 @@ import types
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.bills.service import BillsService
-from agent.bills.store import BillStore
+import pytest
+
+from core.services.bills_facade import BillsPluginFacade
 
 # Keep this unit test independent from the optional web.py dependency.
 if "web" not in sys.modules:
@@ -34,8 +35,19 @@ from channel.desktop import desktop_channel as web_channel
 ROOT = Path(__file__).parents[1]
 
 
-def _service(tmp_path) -> BillsService:
-    return BillsService(BillStore(tmp_path / "bills.db"))
+@pytest.fixture(autouse=True)
+def bills_worker(tmp_path, monkeypatch):
+    from core.services.bills_gateway import shutdown_bills_session
+
+    shutdown_bills_session()
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(ROOT.parent / "Stella-Plugins/plugins/bills"))
+    monkeypatch.setattr("core.services.bills_facade._db_path", lambda: tmp_path / "bills.db")
+    yield
+    shutdown_bills_session()
+
+
+def _service(tmp_path) -> BillsPluginFacade:
+    return BillsPluginFacade()
 
 
 def _lunch(**extra):
