@@ -414,7 +414,15 @@ def _warmup_scheduler():
 
 
 def _init_bills_db():
-    """Create the bills SQLite file on first boot; reuse it afterwards."""
+    """Create the bills SQLite file on first boot; reuse it afterwards.
+
+    Skipped when stella.bills serves the domain: the plugin owns its schema and
+    the legacy BillStore must not stay a second schema writer.
+    """
+    from core.services.bills_gateway import bills_plugin_enabled
+
+    if bills_plugin_enabled():
+        return
     try:
         from agent.bills.store import get_bill_store
 

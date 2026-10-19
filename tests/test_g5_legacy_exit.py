@@ -227,3 +227,204 @@ def test_briefing_tombstone_uses_facade_without_injected_service(monkeypatch):
     actions._was_deleted(None, "k", "todo")
     actions._was_deleted(None, "k", "event")
     assert seen == ["todos-facade", "calendar-facade"]
+
+
+# -- desktop bootstrap + Application.port: one writer per domain -----------------
+
+from core.plugins.bootstrap import DOMAIN_ENV, apply_desktop_plugin_defaults  # noqa: E402
+
+PORT_FACADES = {
+    "calendar": ("STELLA_CALENDAR_PLUGIN", "CalendarPluginFacade"),
+    "todos": ("STELLA_TODOS_PLUGIN", "TodosPluginFacade"),
+    "bills": ("STELLA_BILLS_PLUGIN", "BillsPluginFacade"),
+    "email": ("STELLA_EMAIL_PLUGIN", "EmailPluginFacade"),
+    "elearning": ("STELLA_ELEARNING_PLUGIN", "ElearningPluginFacade"),
+    "briefing": ("STELLA_BRIEFING_PLUGIN", "BriefingPluginFacade"),
+}
+
+
+def _clear_domain_env(monkeypatch):
+    for env_name in DOMAIN_ENV.values():
+        monkeypatch.delenv(env_name, raising=False)
+
+
+def test_desktop_bootstrap_activates_every_default_domain(monkeypatch, tmp_path):
+    _clear_domain_env(monkeypatch)
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    applied = apply_desktop_plugin_defaults(
+        installed_ids=[f"stella.{d}" for d in DOMAINS], intents_path=tmp_path / "none.json"
+    )
+    assert set(applied) == set(DOMAIN_ENV.values())
+    assert set(DOMAIN_ENV) == {f"stella.{d}" for d in DOMAINS}
+    import os
+
+    assert all(os.environ[name] == "1" for name in DOMAIN_ENV.values())
+
+
+def test_desktop_bootstrap_honours_removed_disabled_and_explicit_off(monkeypatch, tmp_path):
+    _clear_domain_env(monkeypatch)
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "0")
+    intents = tmp_path / "intents.json"
+    intents.write_text(json.dumps({"stella.tasks": "removed", "stella.bills": "disabled"}))
+    applied = apply_desktop_plugin_defaults(
+        installed_ids=[f"stella.{d}" for d in DOMAINS], intents_path=intents
+    )
+    import os
+
+    for name in ("STELLA_TODOS_PLUGIN", "STELLA_BILLS_PLUGIN"):
+        assert name not in applied and name not in os.environ
+    assert os.environ["STELLA_EMAIL_PLUGIN"] == "0" and "STELLA_EMAIL_PLUGIN" not in applied
+
+
+def test_non_desktop_never_activates_plugin_env(monkeypatch, tmp_path):
+    _clear_domain_env(monkeypatch)
+    monkeypatch.delenv("STELLA_DESKTOP", raising=False)
+    assert apply_desktop_plugin_defaults(installed_ids=list(DOMAIN_ENV), intents_path=None) == {}
+    import os
+
+    assert not [n for n in DOMAIN_ENV.values() if n in os.environ]
+
+
+@pytest.mark.parametrize("domain", sorted(PORT_FACADES))
+def test_application_port_uses_facade_after_desktop_activation(monkeypatch, tmp_path, domain):
+    from application.api import Application, RequestContext
+
+    _clear_domain_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    apply_desktop_plugin_defaults(
+        installed_ids=[f"stella.{d}" for d in DOMAINS], intents_path=tmp_path / "none.json"
+    )
+    port = Application.port(domain, RequestContext(user_id="g5-user"))
+    assert type(port._service).__name__ == PORT_FACADES[domain][1]
+
+
+def test_application_port_briefing_does_not_construct_legacy_service(monkeypatch, tmp_path):
+    import agent.briefing.service as legacy
+    from application.api import Application, RequestContext
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STELLA_BRIEFING_PLUGIN", "1")
+
+    def boom(*args, **kwargs):  # pragma: no cover - only runs on regression
+        raise AssertionError("legacy BriefingService must not be built while the plugin is on")
+
+    monkeypatch.setattr(legacy, "BriefingService", boom)
+    Application.port("briefing", RequestContext(user_id="g5-user"))
+
+
+@pytest.mark.parametrize("domain", ["email", "elearning"])
+def test_plugin_only_domains_refuse_legacy_fallback(monkeypatch, tmp_path, domain):
+    from application.api import Application, RequestContext
+
+    _clear_domain_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError, match="requires the stella"):
+        Application.port(domain, RequestContext(user_id="g5-user"))
+
+
+def test_application_scheduler_uses_automation_facade_when_plugin_on(monkeypatch):
+    from application.api import Application
+
+    class Store:
+        store_path = "/tmp/automation.db"
+        agent_id = "agent-1"
+
+        def _current_user(self):
+            return "u"
+
+    monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "1")
+    assert type(Application.scheduler(Store())).__name__ == "AutomationPluginFacade"
+    monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "0")
+    assert type(Application.scheduler(Store())).__name__ == "SchedulerMutations"
+
+
+# -- Bills: plugin path must not need the legacy schema writer -------------------
+
+
+def test_bills_facade_db_path_does_not_construct_legacy_store(monkeypatch, tmp_path):
+    import agent.bills.store as legacy
+    from core.services import bills_facade
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+
+    def boom(*args, **kwargs):  # pragma: no cover - only runs on regression
+        raise AssertionError("bills facade must not instantiate agent.bills.store")
+
+    monkeypatch.setattr(legacy, "get_bill_store", boom)
+    assert bills_facade._db_path().name == "bills.db"
+
+
+def test_app_init_bills_db_skips_legacy_schema_writer_when_plugin_on(monkeypatch):
+    import agent.bills.store as legacy
+    import app
+
+    called = []
+    monkeypatch.setattr(legacy, "get_bill_store", lambda *a, **k: called.append(1))
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN", "1")
+    app._init_bills_db()
+    assert called == []
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN", "0")
+    app._init_bills_db()
+    assert called == [1]
+
+
+# -- tombstones prefer the plugin facade when enabled ----------------------------
+
+
+@pytest.mark.parametrize(
+    "module_name,env_name,label",
+    [("todos_public", "STELLA_TODOS_PLUGIN", "todos"), ("calendar_public", "STELLA_CALENDAR_PLUGIN", "calendar")],
+)
+def test_public_tombstone_helper_resolves_facade_without_handle(monkeypatch, module_name, env_name, label):
+    import importlib
+
+    module = importlib.import_module(f"core.services.{module_name}")
+    seen = []
+
+    class Fake:
+        def has_source_tombstone(self, keys):
+            seen.append(sorted(keys))
+            return True
+
+    monkeypatch.setenv(env_name, "1")
+    monkeypatch.setattr(module, "default_service", lambda: Fake())
+    assert module.source_key_is_tombstoned(["b", "a"]) is True
+    assert seen == [["a", "b"]]
+
+
+def test_briefing_tombstone_does_not_touch_legacy_services_when_plugins_on(monkeypatch):
+    from agent.briefing.actions import BriefingActions
+    from core.services import calendar_public, todos_public
+
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
+    monkeypatch.setenv("STELLA_CALENDAR_PLUGIN", "1")
+
+    class Fake:
+        def has_source_tombstone(self, keys):
+            return True
+
+    monkeypatch.setattr(todos_public, "default_service", lambda: Fake())
+    monkeypatch.setattr(calendar_public, "default_service", lambda: Fake())
+
+    class Strict(BriefingActions):
+        todos = property(lambda self: (_ for _ in ()).throw(AssertionError("legacy todos handle")))
+        calendar = property(lambda self: (_ for _ in ()).throw(AssertionError("legacy calendar handle")))
+
+    actions = Strict.__new__(Strict)
+    actions._todos = actions._calendar = None
+    actions._legacy_keys = lambda db, key: {key}
+    assert actions._was_deleted(None, "k", "todo") is True
+    assert actions._was_deleted(None, "k", "event") is True
+
+
+def test_backend_spec_keeps_briefing_sql_only_as_labelled_legacy_fallback():
+    tree = _spec_tree(BACKEND_SPEC)
+    shipped = {parts[:3] for parts in _string_call_args(tree, "rp") if parts[:2] == ("agent", "briefing")}
+    assert shipped == {("agent", "briefing", "schema.sql"), ("agent", "briefing", "actions.sql")}
+    assert "legacy fallback" in BACKEND_SPEC.read_text(encoding="utf-8").lower()

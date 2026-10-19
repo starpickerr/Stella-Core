@@ -9,9 +9,11 @@ from core.services import bills_gateway
 
 
 def _db_path() -> Path:
-    from agent.bills.store import get_bill_store
+    # Path only: instantiating agent.bills.store would apply the legacy schema.sql,
+    # which frozen builds no longer ship and which the plugin owns.
+    from common.state_dir import bills_db
 
-    return Path(get_bill_store()._db_path)
+    return Path(bills_db())
 
 
 class BillsPluginFacade:
