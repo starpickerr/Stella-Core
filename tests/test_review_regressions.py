@@ -236,3 +236,14 @@ def test_shell_policy_rejects_direct_email_database_and_backup_reads():
                  '/tmp/plugin-packages/management/backups/op/email.db'):
         decision = SecurityGateway.check('full-access', 'bash', {'command': 'cat ' + path})
         assert decision.kind is DecisionKind.DENY
+
+
+def test_elearning_plugin_credentials_are_protected_without_legacy_modules(tmp_path, monkeypatch):
+    from common import state_dir
+    from agent.tools.utils.credentials import is_credential_path, is_elearning_credential_path
+    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
+    for relative in ('elearning/elearning.json', 'elearning/elearning-sessions/account.json',
+                     'elearning/.stella-migrate-test/elearning.json'):
+        path = str(tmp_path / relative)
+        assert is_credential_path(path)
+        assert is_elearning_credential_path(path)

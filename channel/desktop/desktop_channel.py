@@ -6944,48 +6944,14 @@ def _briefing_service():
     return Application.port("briefing")
 
 
-class _LegacyElearningSettings:
-    """Legacy ``agent.briefing.elearning_settings`` behind the plugin-shaped surface."""
-
-    @staticmethod
-    def get_settings():
-        from agent.briefing.elearning_settings import public_settings
-        return public_settings()
-
-    @staticmethod
-    def save_settings(payload):
-        from agent.briefing.elearning_settings import save_settings
-        return save_settings(payload)
-
-    @staticmethod
-    def delete_settings():
-        from agent.briefing import elearning_settings
-        elearning_settings.delete_settings()
-        return elearning_settings.public_settings()
-
-    @staticmethod
-    def save_file_sync_settings(enabled, root):
-        from agent.briefing.elearning_settings import save_file_sync_settings
-        return save_file_sync_settings(enabled, root)
-
-    @staticmethod
-    def test_connection(payload):
-        from agent.briefing.elearning_settings import check_connection
-        return check_connection(payload)
-
-
 def _email_settings():
     from application import Application
     return Application.port('email')
 
 
 def _elearning_settings():
-    """eLearning settings: ``Application.port("elearning")`` when the plugin is on, else legacy."""
-    from core.services.elearning_gateway import elearning_plugin_enabled
-    if elearning_plugin_enabled():
-        from application import Application
-        return Application.port("elearning")
-    return _LegacyElearningSettings
+    from application import Application
+    return Application.port('elearning')
 
 
 def _briefing_pipeline(service):

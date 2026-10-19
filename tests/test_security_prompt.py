@@ -18,11 +18,12 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
                                 "connections": {"browser": {"allowed": False}}}}
     monkeypatch.setattr("config.conf", lambda: live)
     monkeypatch.setattr("agent.prompt.builder.conf", lambda: live)
-    monkeypatch.setattr("agent.briefing.elearning_settings.public_settings", lambda: {
+    monkeypatch.setenv("STELLA_ELEARNING_PLUGIN", "1")
+    monkeypatch.setattr("core.services.elearning_facade.ElearningPluginFacade.get_settings", lambda self: {
         "enabled": False, "configured": True, "file_sync_enabled": True,
         "file_sync_root": str(tmp_path / "selected"),
         "password": "TOPSECRET",
-    })
+    }, raising=False)
     project_store.set_project_dir("conversation", str(project))
     project_store.set_security_policy(str(project), {"extra_roots": [str(tmp_path / "extra")]})
     with identity_scope(session_id="conversation"):

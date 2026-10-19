@@ -34,6 +34,8 @@ def current_invocation_deadline():
 
 
 def remaining_invocation_seconds():
+    from core.plugins.cancellation import check_cancelled
+    check_cancelled()
     deadline = current_invocation_deadline()
     if deadline is None:
         return None
@@ -207,8 +209,8 @@ def invocation_lock(lock, *, enforce_deadline=True):
         if not lock.acquire(blocking=False):
             raise PermissionError('public plugin service is busy; retry the operation')
     elif remaining is not None:
-        if not lock.acquire(timeout=remaining):
-            raise PermissionError('plugin invocation deadline expired while waiting for service')
+        while not lock.acquire(timeout=min(.05, remaining)):
+            remaining = remaining_invocation_seconds()
     else:
         lock.acquire()
     try:

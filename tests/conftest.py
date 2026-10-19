@@ -174,3 +174,15 @@ def email_plugin_env(monkeypatch, tmp_path):
     monkeypatch.setattr(email_facade, '_paths', lambda: (tmp_path / 'email.db', tmp_path / 'mailbox.json'))
     yield
     email_gateway.shutdown_email_session()
+
+
+@pytest.fixture
+def elearning_plugin_env(monkeypatch, tmp_path):
+    from core.services import elearning_gateway, elearning_facade
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/elearning'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    monkeypatch.setattr(elearning_facade, '_paths', lambda: (tmp_path / 'elearning', tmp_path / 'briefing'))
+    yield
+    elearning_gateway.shutdown_elearning_session()

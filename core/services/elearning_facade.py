@@ -1,19 +1,18 @@
 """Facade over the stella.elearning plugin for desktop settings, tools and briefing.
 
 Exposes the contract surface plus drop-in names for the legacy
-``agent.briefing.elearning_settings`` functions. Policy audit events queued by
+the public settings API. Policy audit events queued by
 the plugin worker (it cannot reach the host audit log) are recorded here.
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any, Dict
 
 from core.services import elearning_gateway
 
-logger = logging.getLogger(__name__)
+from common.log import logger
 
 _RECORDING = {"save_settings", "save_file_sync_settings", "sync_files", "delete_settings"}
 
@@ -30,6 +29,9 @@ def _unwrap(result: dict[str, Any]) -> Any:
     if status == "failed":
         err = result.get("error") or {}
         message = err.get("message") or "elearning plugin call failed"
+        if err.get('code') == 'cancelled':
+            from agent.protocol.cancel import AgentCancelledError
+            raise AgentCancelledError(message)
         if err.get("code") == "not_found":
             raise KeyError(message)
         raise ValueError(message)
@@ -91,7 +93,7 @@ class ElearningPluginFacade:
         except Exception as exc:  # audit pickup is retried on the next write
             logger.warning("[eLearning] audit drain deferred: %s", exc)
 
-    # ---- names matching agent.briefing.elearning_settings ---------------
+    # ---- public settings aliases ---------------
     def public_settings(self) -> dict:
         return self.get_settings()
 
@@ -107,6 +109,7 @@ class ElearningPluginSource:
     def __init__(self, *, account_id: str, username: str = "", purpose: str = "background",
                  facade: ElearningPluginFacade | None = None):
         self.account_id = account_id
+        self.cancel_event = None
         self.display_name = "eLearning · " + username
         self._facade = facade or ElearningPluginFacade(purpose=purpose)
 
@@ -115,7 +118,9 @@ class ElearningPluginSource:
 
         cursors = dict(cursors)
         window = {key: cursors.pop(key) for key in ("since", "until") if key in cursors}
-        result = self._facade.fetch_source(cursors=cursors, **window)
+        from core.plugins.cancellation import cancellation_scope
+        with cancellation_scope(self.cancel_event):
+            result = self._facade.fetch_source(cursors=cursors, **window)
         return FetchResult(items=[FetchedItem(**row) for row in result["items"]],
                            cursors=result["cursors"], errors=result["errors"])
 

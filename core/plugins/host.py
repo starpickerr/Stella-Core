@@ -476,8 +476,12 @@ class PluginSession:
         if managed and method in CONFIG_METHODS:
             # A timed-out mutation may have committed, so invalidate before dispatch.
             default_store().bump_source_revision(self.plugin_id, self.user_id)
-        with invocation_purpose_scope(purpose):
-            result = self._rpc("plugin.invoke", invoke_params, timeout_ms=remaining_invocation_seconds() * 1000)
+        from core.plugins.cancellation import worker_cancellation_handle
+        with worker_cancellation_handle() as cancellation_path:
+            if cancellation_path:
+                invoke_params.setdefault('_hostDataHandle', {})['cancellationPath'] = cancellation_path
+            with invocation_purpose_scope(purpose):
+                result = self._rpc("plugin.invoke", invoke_params, timeout_ms=remaining_invocation_seconds() * 1000)
         try:
             return validate_operation_result(result)
         except ContractError as exc:

@@ -119,3 +119,28 @@ def test_email_migration_backup_and_transient_copies_are_private_and_guarded(tmp
     assert result['stage'] == 'data_selected' and seen
     with closing(sqlite3.connect(result['facts']['backupRef'])) as db:
         assert db.execute('SELECT value FROM user_kept').fetchone()[0] == 'original user data'
+
+
+def test_elearning_directory_migration_keeps_every_credential_copy_protected(tmp_path, monkeypatch):
+    from common import state_dir
+    from agent.tools.utils.credentials import is_credential_path
+    from tests.elearning_domain import settings
+    from core.plugins.management import ManagementStore
+    from core.plugins.migration import MigrationCoordinator
+    data = tmp_path / 'elearning'
+    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
+    monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path / 'shared')
+    monkeypatch.setattr(settings, 'settings_path', lambda: data / 'elearning.json')
+    settings.save_settings({'enabled': True, 'username': 'student', 'password': 'migration-fake-secret'})
+    management = ManagementStore(tmp_path / 'shared/plugin-packages')
+    observed = []
+    def inspect(stage, op):
+        if stage in ('backed_up', 'migrated', 'data_selected'):
+            for key in ('backupRef', 'scratchRef', 'retiredRef'):
+                credential = Path(op['facts'][key]) / 'elearning.json'
+                if credential.is_file():
+                    observed.append((stage, key))
+                    assert is_credential_path(str(credential)), (stage, key)
+    result = MigrationCoordinator(management).run(Path('stella-plugins-workspace/plugins/elearning'),
+        user_id='local-default', data_handle={'dataDir': str(data), 'namespace': 'stella.elearning'}, checkpoint=inspect)
+    assert result['stage'] == 'data_selected' and observed

@@ -221,27 +221,22 @@ def test_source_registry_uses_plugin_sources_without_legacy_settings(plugins_on,
     assert no_legacy.hits == []
 
 
-def test_source_registry_excludes_disabled_email_and_keeps_pending_elearning_transition(monkeypatch):
+def test_source_registry_excludes_disabled_connector_plugins(monkeypatch):
     monkeypatch.delenv("STELLA_EMAIL_PLUGIN", raising=False)
     monkeypatch.delenv("STELLA_ELEARNING_PLUGIN", raising=False)
     from agent.briefing.sources import registry
 
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: False)
-    monkeypatch.setattr(registry.elearning_settings, "elearning_sources", lambda: ["legacy-el"])
-    assert registry.configured_sources() == ["legacy-el"]
+    assert registry.configured_sources() == []
 
 
 # ---- desktop HTTP: legacy path still used when plugins are off -----------
 
-def test_settings_handlers_keep_legacy_modules_when_plugins_off(monkeypatch, desktop):
-    monkeypatch.delenv("STELLA_EMAIL_PLUGIN", raising=False)
-    monkeypatch.delenv("STELLA_ELEARNING_PLUGIN", raising=False)
-    seen = []
-    monkeypatch.setattr("agent.briefing.elearning_settings.public_settings",
-                        lambda *a, **k: seen.append("elearning") or {"enabled": False})
-    assert call(web_channel.BriefingSettingsHandler, "GET")["status"] == "error"
-    assert call(web_channel.BriefingElearningHandler, "GET")["settings"] == {"enabled": False}
-    assert seen == ["elearning"]
+def test_settings_handlers_refuse_legacy_modules_when_plugins_off(monkeypatch, desktop):
+    monkeypatch.delenv('STELLA_EMAIL_PLUGIN', raising=False)
+    monkeypatch.delenv('STELLA_ELEARNING_PLUGIN', raising=False)
+    assert call(web_channel.BriefingSettingsHandler, 'GET')['status'] == 'error'
+    assert call(web_channel.BriefingElearningHandler, 'GET')['status'] == 'error'
 
 
 # ---- eLearning tool ------------------------------------------------------
@@ -297,16 +292,11 @@ def test_elearning_tool_plugin_runtime_failure_is_generic(plugins_on, facades, n
     assert "secret detail" not in str(result.result)
 
 
-def test_elearning_tool_uses_legacy_crawler_when_plugin_off(monkeypatch):
-    monkeypatch.delenv("STELLA_ELEARNING_PLUGIN", raising=False)
+def test_elearning_tool_refuses_legacy_crawler_when_plugin_off(monkeypatch):
+    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN', '0')
     from agent.tools.elearning.elearning_tool import ElearningTool
-
-    monkeypatch.setattr("application.Application.port",
-                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("port used with plugin off")))
-    monkeypatch.setattr("agent.briefing.elearning_settings.load_settings", lambda: {})
-    result = ElearningTool().execute({"action": "courses"})
-    assert result.status == "error"
-    assert "请先在 eLearning 设置中配置账号和登录凭据" in str(result.result)
+    result = ElearningTool().execute({'action': 'courses'})
+    assert result.status == 'error' and 'stella.elearning' in str(result.result)
 
 
 # ---- Bills tool and export ----------------------------------------------
@@ -374,5 +364,24 @@ def test_managed_disabled_email_does_not_block_other_sources(tmp_path, monkeypat
     state.set_intent('stella.email', 'local-default', intent)
     monkeypatch.setattr(management, 'default_store', lambda: state)
     monkeypatch.setattr(registry, '_elearning_sources', lambda: ['other-source'])
+    monkeypatch.setattr(registry, 'apple_calendar_connected', lambda: False)
+    assert registry.configured_sources() == ['other-source']
+
+
+def test_elearning_settings_refuses_legacy_fallback_when_plugin_is_off(monkeypatch):
+    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN', '0')
+    with pytest.raises(RuntimeError, match='stella.elearning'):
+        web_channel._elearning_settings()
+
+
+@pytest.mark.parametrize('intent', ['disabled', 'removed'])
+def test_managed_disabled_elearning_does_not_block_other_sources(tmp_path, monkeypatch, intent):
+    from core.plugins import management
+    from core.plugins.management import ManagementStore
+    from agent.briefing.sources import registry
+    state = ManagementStore(tmp_path / 'packages')
+    state.set_intent('stella.elearning', 'local-default', intent)
+    monkeypatch.setattr(management, 'default_store', lambda: state)
+    monkeypatch.setattr(registry, '_email_sources', lambda: ['other-source'])
     monkeypatch.setattr(registry, 'apple_calendar_connected', lambda: False)
     assert registry.configured_sources() == ['other-source']

@@ -46,3 +46,37 @@ def invoke(contract: str, method: str, input: dict, *, idempotency_key: str | No
             raise PermissionError(error.get('message') or 'Core callback denied')
         raise RuntimeError(error.get('message') or 'Core service failed')
     return response['result']
+
+
+class CancellationToken:
+    """Read-only cancellation for the currently approved invocation."""
+    def __init__(self, params):
+        self._path = (params.get('_hostDataHandle') or {}).get('cancellationPath')
+        self._deadline = datetime.fromisoformat(params['deadline'].replace('Z', '+00:00'))
+
+    def is_set(self):
+        if datetime.now(timezone.utc) >= self._deadline:
+            return True
+        if self._path:
+            from pathlib import Path
+            try:
+                return Path(self._path).read_bytes() == b'1'
+            except OSError:
+                return True
+        return False
+
+    def wait(self, timeout=None):
+        import time
+        end = None if timeout is None else time.monotonic() + max(0, timeout)
+        while not self.is_set():
+            if end is not None and time.monotonic() >= end:
+                return False
+            time.sleep(.02 if end is None else min(.02, max(0, end - time.monotonic())))
+        return True
+
+
+def cancellation_token():
+    params = _CURRENT.get()
+    if params is None:
+        raise PermissionError('cancellation token requires an active approved invocation')
+    return CancellationToken(params)

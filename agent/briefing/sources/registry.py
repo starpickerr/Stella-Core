@@ -1,20 +1,7 @@
 """One source registry for desktop, scheduled tasks and Agent tools."""
-import importlib
 import sqlite3
 
 from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
-
-_LEGACY_SETTINGS = ("elearning_settings",)
-
-
-def __getattr__(name):
-    # Legacy settings modules load on first use so plugin-backed runs never import them.
-    if name in _LEGACY_SETTINGS:
-        module = importlib.import_module("agent.briefing." + name)
-        globals()[name] = module
-        return module
-    raise AttributeError(name)
-
 
 def source_key(source):
     return source.name + ":" + source.account_id
@@ -33,11 +20,15 @@ def _email_sources():
 
 
 def _elearning_sources():
+    from core.plugins.caller import plugin_user_id
+    from core.plugins.management import default_store
+    if default_store().instance('stella.elearning', plugin_user_id())['intent'] in {'disabled', 'removed'}:
+        return []
     from core.services.elearning_gateway import elearning_plugin_enabled
     if elearning_plugin_enabled():
         from core.services.elearning_facade import elearning_sources
         return elearning_sources()
-    return importlib.import_module("agent.briefing.elearning_settings").elearning_sources()
+    return []
 
 
 def configured_sources():

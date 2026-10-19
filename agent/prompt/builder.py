@@ -167,8 +167,8 @@ def build_agent_system_prompt(
             elearning_sync = None
             if "elearning" in available_names:
                 try:
-                    from agent.briefing.elearning_settings import public_settings
-                    settings = public_settings()
+                    from application import Application
+                    settings = Application.port('elearning').get_settings()
                     elearning_sync = {"enabled": bool(settings.get("configured") and
                                                      settings.get("file_sync_enabled") and
                                                      settings.get("file_sync_root")),

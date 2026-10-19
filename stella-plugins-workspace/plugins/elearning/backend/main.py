@@ -73,7 +73,12 @@ def _service(invoke_params: dict[str, Any]) -> ElearningService:
     data_dir = handle.get("dataDir")
     if not data_dir:
         raise RuntimeError("host data handle with dataDir required")
-    return ElearningService(Path(data_dir), legacy_dir=handle.get("legacyDir"),
+    try:
+        from stella_host import cancellation_token
+        cancel_event = cancellation_token()
+    except ImportError:
+        cancel_event = None
+    return ElearningService(Path(data_dir), legacy_dir=handle.get("legacyDir"), cancel_event=cancel_event,
                             authorized_resources=handle.get('authorizedResources'), user_id=invoke_params['context']['userId'])
 
 

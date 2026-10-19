@@ -15,7 +15,6 @@ import threading
 
 from common.log import logger
 from agent.protocol.cancel import AgentCancelledError
-from agent.briefing.elearning.errors import SyncCancelled
 
 from agent.briefing.generator import AgentBriefingGenerator, briefing_title
 from agent.briefing import progress as briefing_progress
@@ -156,7 +155,7 @@ class BriefingPipeline:
                     with _stage_heartbeat(day, f"fetch:{source.name}"):
                         result = self._fetch_source(source, starts[source_key(source)], finish)
                     self._check_cancelled()
-                except (AgentCancelledError, SyncCancelled):
+                except AgentCancelledError:
                     raise
                 except Exception as exc:
                     label = getattr(source, "display_name", source.name)

@@ -79,7 +79,7 @@ _LOCAL_ACTIONS = {
     "scheduler": {"create", "delete", "enable", "disable"},
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|mailbox\.json|elearning-sessions/[^\s'\"]+)|/email/(?:email\.db(?:-(?:wal|shm|journal))?|\.stella-(?:migrate|retired)-[^\s\x27\x22]+)|/plugin-packages/management/|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
+_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|mailbox\.json|elearning-sessions/[^\s'\"]+)|/elearning/(?:elearning\.json|elearning-sessions/[^\s\x27\x22]+)|/email/(?:email\.db(?:-(?:wal|shm|journal))?|\.stella-(?:migrate|retired)-[^\s\x27\x22]+)|/plugin-packages/management/|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
 _ESCALATE = re.compile(r"\b(?:sudo|doas|pkexec|su)\b")
 _BULK_DELETE = re.compile(r"\b(?:rm\s+-(?:\w*r\w*f|\w*f\w*r)|find\b[^\n]*-delete|git\s+clean\s+-\w*f)\b", re.I)
 _PUBLISH = re.compile(r"\b(?:git\s+push|npm\s+publish|gh\s+release|docker\s+push)\b", re.I)
@@ -342,7 +342,7 @@ class SecurityGateway:
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 from agent.tools.utils.credentials import ELEARNING_DENIED_MESSAGE
                 hard_reason = (ELEARNING_DENIED_MESSAGE if re.search(
-                    r"/briefing/(?:elearning\.json|elearning-sessions/)", command, re.I)
+                    r"/(?:briefing|elearning)/(?:elearning\.json|elearning-sessions/)", command, re.I)
                     else "Shell access to credential data or environment variables is blocked.")
             elif _ESCALATE.search(command):
                 risk, hard_reason = "L4", "Privilege escalation is blocked."

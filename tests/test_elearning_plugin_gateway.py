@@ -431,3 +431,50 @@ def test_domain_list_and_sync_files_only_to_granted_folder(tmp_path):
     service.save_file_sync_settings(True, str(root))
     service.save_settings({"courses": ["43"]})
     assert service.get_settings()["file_sync_enabled"] is False
+
+
+def test_tool_cancellation_reaches_actual_elearning_worker_and_next_call_succeeds(tmp_path, monkeypatch):
+    import shutil
+    import threading
+    import time
+    from agent.tools.elearning.elearning_tool import ElearningTool
+    from core.services.elearning_facade import ElearningPluginFacade
+    from core.services import elearning_facade
+
+    root = tmp_path / 'plugin'
+    shutil.copytree(WORKSPACE_ROOT, root)
+    with (root / 'backend/main.py').open('a') as stream:
+        stream.write('''
+def _cancel_test_client(self, cfg):
+    class Client:
+        def list(self, *_args, **_kwargs): return []
+    started = self.store.root / 'started'
+    if not started.exists():
+        started.touch()
+        self.cancel_event.wait(5)
+        self._check_cancelled()
+    return Client()
+ElearningService._client = _cancel_test_client
+''')
+    data = tmp_path / 'data'
+    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN_ROOT', str(root))
+    monkeypatch.setattr(elearning_facade, '_paths', lambda: (data, tmp_path / 'legacy'))
+    ElearningPluginFacade().save_settings({'username': 'test', 'password': 'fake-secret', 'courses': ['42']})
+    tool = ElearningTool()
+    tool.cancel_event = threading.Event()
+    def stop():
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not (data / 'started').exists():
+            time.sleep(.01)
+        if (data / 'started').exists():
+            tool.cancel_event.set()
+    stopper = threading.Thread(target=stop)
+    stopper.start()
+    try:
+        result = tool.execute({'action': 'courses'})
+        assert result.status == 'error' and '已取消' in result.result
+        assert elearning_gateway._SESSION.is_running
+        second = ElearningTool().execute({'action': 'courses'})
+        assert second.status == 'success' and json.loads(second.result) == {'courses': []}
+    finally:
+        stopper.join(timeout=6)

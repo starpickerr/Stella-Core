@@ -26,7 +26,7 @@ def fixed_briefing_clock(monkeypatch):
 
 
 @pytest.fixture
-def api(tmp_path, email_plugin_env):
+def api(tmp_path, email_plugin_env, elearning_plugin_env):
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     source = StaticSource([FetchedItem(
         source="email", source_id="<hello@x>", title="请确认合同", sender="Ada",
@@ -154,52 +154,50 @@ def test_source_selection_is_passed_to_pipeline_and_source_discovery_is_authenti
 
 
 def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test(api, tmp_path):
-    from agent.briefing import elearning_settings
-    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
-        created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
-            "username": "student", "password": "campus-secret", "courses": ["42"]})
-        assert created["status"] == "success" and created["settings"]["configured"]
-        assert "campus-secret" not in json.dumps(created)
-        updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
-        assert updated["settings"]["enabled"] is False
-        with patch.object(elearning_settings, "check_connection", return_value=[{"id": "42", "name": "课程"}]) as check:
-            tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
-            assert tested["connected"] and tested["courses"][0]["id"] == "42"
-            check.assert_called_once_with({"username": "student"})
-        removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
-        assert not removed["settings"]["configured"]
-        assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
+    from core.services.elearning_facade import ElearningPluginFacade
+    created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
+        "username": "student", "password": "campus-secret", "courses": ["42"]})
+    assert created["status"] == "success" and created["settings"]["configured"]
+    assert "campus-secret" not in json.dumps(created)
+    updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
+    assert updated["settings"]["enabled"] is False
+    with patch.object(ElearningPluginFacade, "test_connection", create=True, return_value=[{"id": "42", "name": "课程"}]) as check:
+        tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
+        assert tested["connected"] and tested["courses"][0]["id"] == "42"
+        check.assert_called_once_with({"username": "student"})
+    removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
+    assert not removed["settings"]["configured"]
+    assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
 
 
 def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path):
-    from agent.briefing import elearning_settings
+    from core.services.elearning_facade import ElearningPluginFacade
     root = tmp_path / "course-files"
     root.mkdir()
-    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
-        created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
-            "base_url": "https://elearning.fudan.edu.cn", "username": "student",
-            "password": "campus-secret", "courses": ["42"]})
-        assert created["status"] == "success"
-        forbidden = call(web_channel.BriefingElearningHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        assert forbidden["status"] == "error"
-        assert elearning_settings.load_settings()["file_sync_enabled"] is False
+    created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
+        "base_url": "https://elearning.fudan.edu.cn", "username": "student",
+        "password": "campus-secret", "courses": ["42"]})
+    assert created["status"] == "success"
+    forbidden = call(web_channel.BriefingElearningHandler,
+        body={"file_sync_enabled": True, "file_sync_root": str(root)})
+    assert forbidden["status"] == "error"
+    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is False
 
-        granted = call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        assert granted["status"] == "success"
-        assert granted["settings"]["file_sync_root"] == str(root)
-        saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
-        assert saved["settings"]["file_sync_enabled"] is True
-        call(web_channel.BriefingElearningHandler, body={"enabled": False})
-        assert elearning_settings.load_settings()["file_sync_enabled"] is True
-        call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
-        assert elearning_settings.load_settings()["file_sync_enabled"] is False
-        call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        revoked = call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": False, "file_sync_root": str(root)})
-        assert revoked["settings"]["file_sync_enabled"] is False
+    granted = call(web_channel.ElearningFileSyncSettingsHandler,
+        body={"file_sync_enabled": True, "file_sync_root": str(root)})
+    assert granted["status"] == "success"
+    assert granted["settings"]["file_sync_root"] == str(root)
+    saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
+    assert saved["settings"]["file_sync_enabled"] is True
+    call(web_channel.BriefingElearningHandler, body={"enabled": False})
+    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is True
+    call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
+    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is False
+    call(web_channel.ElearningFileSyncSettingsHandler,
+        body={"file_sync_enabled": True, "file_sync_root": str(root)})
+    revoked = call(web_channel.ElearningFileSyncSettingsHandler,
+        body={"file_sync_enabled": False, "file_sync_root": str(root)})
+    assert revoked["settings"]["file_sync_enabled"] is False
 
 
 @pytest.mark.parametrize("handler,body", [
@@ -285,7 +283,7 @@ def test_mailbox_crud_and_masked_passwords(api):
     assert "second-secret" not in json.dumps(updated)
     disabled = call(web_channel.BriefingSettingsHandler, body={"id": mailbox_id, "enabled": False})
     assert not disabled["mailbox"]["enabled"] and disabled["mailbox"]["password_set"]
-    with patch("agent.briefing.elearning_settings.elearning_sources", return_value=[]):
+    with patch("agent.briefing.sources.registry._elearning_sources", return_value=[]):
         enabled_sources = call(web_channel.BriefingSourcesHandler, "GET")["sources"]
     assert len(enabled_sources) == 1 and "bob@example.com" in enabled_sources[0]["name"]
     deleted = call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})

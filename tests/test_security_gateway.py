@@ -116,7 +116,7 @@ def test_project_full_allows_in_project_bulk_cleanup_but_keeps_boundary(tmp_path
 
 def test_elearning_connector_uses_session_without_exposing_cookie_file(tmp_path, monkeypatch):
     config = tmp_path / "briefing" / "elearning.json"
-    monkeypatch.setattr("agent.briefing.elearning_settings.settings_path", lambda: config)
+    monkeypatch.setattr("common.state_dir.briefing_db", lambda **_: config.with_name("briefing.db"))
     session = config.parent / "elearning-sessions" / "account.json"
     scope = Scope(write_roots=(str(tmp_path / "workspace"),))
 

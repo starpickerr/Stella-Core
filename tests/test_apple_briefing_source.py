@@ -26,7 +26,7 @@ def test_connected_apple_calendar_makes_upcoming_stella_events_available_to_brie
 
 def test_calendar_source_is_registered_only_when_connected(monkeypatch):
     monkeypatch.setattr(registry, "_email_sources", lambda: [])
-    monkeypatch.setattr(registry.elearning_settings, "elearning_sources", lambda: [])
+    monkeypatch.setattr(registry, "_elearning_sources", lambda: [])
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: False)
     assert registry.configured_sources() == []
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: True)

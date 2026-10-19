@@ -123,8 +123,14 @@ class MigrationCoordinator:
                     advance('drained')
                 facts = operation['facts']
                 backup = Path(facts.get('backupRef') or self.management.root / 'management' / 'backups' / op_id / data.name)
-                scratch = data.parent / f'.stella-migrate-{op_id}'
-                retired = data.parent / f'.stella-retired-{op_id}'
+                private = data.parent / '.stella-private-migrations'
+                private.mkdir(mode=0o700, parents=True, exist_ok=True)
+                private.chmod(0o700)
+                operation_dir = private / op_id
+                operation_dir.mkdir(mode=0o700, exist_ok=True)
+                # Preserve durable paths for operations created before this layout.
+                scratch = Path(facts.get('scratchRef') or operation_dir / 'scratch')
+                retired = Path(facts.get('retiredRef') or operation_dir / 'retired')
                 data.parent.mkdir(parents=True, exist_ok=True)
                 if 'backupRef' not in facts:
                     backup.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
