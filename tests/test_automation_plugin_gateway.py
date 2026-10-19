@@ -335,12 +335,14 @@ def test_application_scheduler_keeps_legacy_json_store_on_core(tmp_path, identit
     assert isinstance(scheduler, SchedulerMutations)
 
 
-def test_application_scheduler_is_core_when_flag_off(tmp_path, identity, monkeypatch):
-    from agent.scheduler.mutations import SchedulerMutations
+def test_application_scheduler_refuses_automation_db_when_flag_off(tmp_path, identity, monkeypatch):
+    """automation.db is plugin-owned; flag off must fail closed (not Core mutations)."""
     from application.api import Application
 
-    monkeypatch.delenv("STELLA_AUTOMATION_PLUGIN")
-    assert isinstance(Application.scheduler(_store(tmp_path)), SchedulerMutations)
+    monkeypatch.delenv("STELLA_AUTOMATION_PLUGIN", raising=False)
+    monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "0")
+    with pytest.raises(RuntimeError, match="requires the stella.automation plugin"):
+        Application.scheduler(_store(tmp_path))
 
 
 def test_scheduler_handler_plan_uses_plugin_and_falls_back_on_failure(tmp_path, identity, monkeypatch):
