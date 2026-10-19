@@ -33,16 +33,12 @@ def ensure_calendar_session(db_path: Path | None = None) -> PluginSession:
     global _SESSION
     if _SESSION is not None:
         return _SESSION
-    sibling = Path(__file__).resolve().parents[3] / "Stella-Plugins" / "plugins" / "calendar"
-    workspace = (
-        Path(__file__).resolve().parents[2]
-        / "stella-plugins-workspace"
-        / "plugins"
-        / "calendar"
-    )
-    root = Path(
-        os.environ.get("STELLA_CALENDAR_PLUGIN_ROOT")
-        or (sibling if sibling.is_dir() else workspace)
+    from core.plugins.roots import resolve_plugin_package_root
+
+    root = resolve_plugin_package_root(
+        plugin_id="stella.calendar",
+        env_var="STELLA_CALENDAR_PLUGIN_ROOT",
+        folder_name="calendar",
     )
     user_id = os.environ.get("STELLA_PLUGIN_USER", "local-default")
     session = PluginSession(

@@ -23,16 +23,12 @@ def ensure_bills_session(db_path: Path | None = None) -> PluginSession:
     global _SESSION
     if _SESSION is not None:
         return _SESSION
-    sibling = Path(__file__).resolve().parents[3] / "Stella-Plugins" / "plugins" / "bills"
-    workspace = (
-        Path(__file__).resolve().parents[2]
-        / "stella-plugins-workspace"
-        / "plugins"
-        / "bills"
-    )
-    root = Path(
-        os.environ.get("STELLA_BILLS_PLUGIN_ROOT")
-        or (sibling if sibling.is_dir() else workspace)
+    from core.plugins.roots import resolve_plugin_package_root
+
+    root = resolve_plugin_package_root(
+        plugin_id="stella.bills",
+        env_var="STELLA_BILLS_PLUGIN_ROOT",
+        folder_name="bills",
     )
     user_id = os.environ.get("STELLA_PLUGIN_USER", "local-default")
     session = PluginSession(

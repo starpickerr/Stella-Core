@@ -44,14 +44,13 @@ def automation_plugin_enabled() -> bool:
 
 
 def _plugin_root() -> Path:
-    explicit = os.environ.get("STELLA_AUTOMATION_PLUGIN_ROOT")
-    if explicit:
-        return Path(explicit)
-    sibling = Path(__file__).resolve().parents[3] / "Stella-Plugins" / "plugins" / "automation"
-    workspace = (
-        Path(__file__).resolve().parents[2] / "stella-plugins-workspace" / "plugins" / "automation"
+    from core.plugins.roots import resolve_plugin_package_root
+
+    return resolve_plugin_package_root(
+        plugin_id=PLUGIN_ID,
+        env_var="STELLA_AUTOMATION_PLUGIN_ROOT",
+        folder_name="automation",
     )
-    return sibling if sibling.is_dir() else workspace
 
 
 def ensure_automation_session() -> PluginSession:
