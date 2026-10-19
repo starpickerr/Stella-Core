@@ -1,16 +1,43 @@
 """One source registry for desktop, scheduled tasks and Agent tools."""
+import importlib
 import sqlite3
 
-from agent.briefing import settings, elearning_settings
 from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
+
+_LEGACY_SETTINGS = ("settings", "elearning_settings")
+
+
+def __getattr__(name):
+    # Legacy settings modules load on first use so plugin-backed runs never import them.
+    if name in _LEGACY_SETTINGS:
+        module = importlib.import_module("agent.briefing." + name)
+        globals()[name] = module
+        return module
+    raise AttributeError(name)
 
 
 def source_key(source):
     return source.name + ":" + source.account_id
 
 
+def _email_sources():
+    from core.services.email_gateway import email_plugin_enabled
+    if email_plugin_enabled():
+        from core.services.email_facade import email_sources
+        return email_sources()
+    return importlib.import_module("agent.briefing.settings").email_sources()
+
+
+def _elearning_sources():
+    from core.services.elearning_gateway import elearning_plugin_enabled
+    if elearning_plugin_enabled():
+        from core.services.elearning_facade import elearning_sources
+        return elearning_sources()
+    return importlib.import_module("agent.briefing.elearning_settings").elearning_sources()
+
+
 def configured_sources():
-    sources = settings.email_sources() + elearning_settings.elearning_sources()
+    sources = _email_sources() + _elearning_sources()
     if apple_calendar_connected():
         sources.append(CalendarAgendaSource())
     return sources

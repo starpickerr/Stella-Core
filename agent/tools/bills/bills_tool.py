@@ -1,7 +1,8 @@
 """
 Bill tool - let the agent record and query the user's personal ledger.
 
-Thin adapter over ``agent.bills.service.BillsService``: the same layer the
+Thin adapter over ``Application.port("bills")`` (plugin facade when
+STELLA_BILLS_PLUGIN is on, legacy ``BillsService`` otherwise): the same layer the
 Web / desktop bills page talks to, so an entry the agent records shows up in
 the UI and vice versa. Amounts are exposed to the model in major units
 (yuan) and stored in minor units (fen) by the service.
@@ -46,7 +47,7 @@ def _now_local_iso() -> str:
 
 
 def _wall_time(occurred_at: str) -> str:
-    from agent.bills.service import parse_occurred_at
+    from core.services.bills_public import parse_occurred_at
 
     try:
         return parse_occurred_at(occurred_at).strftime("%Y-%m-%d %H:%M")

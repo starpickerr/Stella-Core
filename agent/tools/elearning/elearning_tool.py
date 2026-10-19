@@ -1,4 +1,10 @@
-"""Agent access to the in-process Canvas crawler used by daily briefings."""
+"""Agent access to eLearning course data used by daily briefings.
+
+With STELLA_ELEARNING_PLUGIN on, every action goes through
+``Application.port("elearning")`` (the stella.elearning plugin) and no
+``agent.briefing.elearning*`` module is imported. With the plugin off the
+in-process Canvas crawler is used, imported lazily.
+"""
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import json
@@ -6,13 +12,14 @@ import os
 import re
 
 from common.log import logger
-from agent.briefing import elearning_settings
-from agent.briefing.elearning.client import ensure_login
-from agent.briefing.elearning.courses import course_list, list_files, select_courses
-from agent.briefing.elearning.errors import LoginRequired, SyncCancelled, SyncError
-from agent.briefing.elearning.utils import parse_date
-from agent.briefing.sources.elearning import ElearningSource
 from agent.tools.base_tool import BaseTool, ToolResult
+
+_ACTIONS = {"courses", "fetch", "list_files", "sync_files"}
+_PLUGIN_FIELDS = {
+    "fetch": ("since", "until", "course_ids", "offset", "limit"),
+    "list_files": ("course_ids", "file_ids", "file_extensions", "offset", "limit"),
+    "sync_files": ("course_ids", "file_ids", "file_extensions", "layout", "offset", "limit"),
+}
 
 
 class ElearningTool(BaseTool):
@@ -59,6 +66,7 @@ class ElearningTool(BaseTool):
         self.clock = clock or (lambda: datetime.now().astimezone())
 
     def _client(self, cfg):
+        from agent.briefing.elearning.client import ensure_login
         self._check_cancelled()
         if self.client_factory is None:
             return ensure_login(cfg, cancel_event=self.cancel_event, progress_callback=self.report_progress)
@@ -72,11 +80,43 @@ class ElearningTool(BaseTool):
 
     def _check_cancelled(self):
         if self.cancel_event and self.cancel_event.is_set():
+            from agent.briefing.elearning.errors import SyncCancelled
             raise SyncCancelled("eLearning 读取已取消")
 
     def execute(self, params):
+        from core.services.elearning_gateway import elearning_plugin_enabled
+        if elearning_plugin_enabled():
+            return self._execute_plugin(params)
+        return self._execute_legacy(params)
+
+    def _execute_plugin(self, params):
+        """Route through the eLearning port; the plugin owns credentials, sessions and files."""
+        action = params.get("action") if isinstance(params, dict) else None
         try:
-            if not isinstance(params, dict) or params.get("action") not in {"courses", "fetch", "list_files", "sync_files"}:
+            if action not in _ACTIONS:
+                raise ValueError("action 必须是 courses、fetch、list_files 或 sync_files")
+            if self.cancel_event and self.cancel_event.is_set():
+                raise ValueError("eLearning 读取已取消")
+            from application import Application
+            port = Application.port("elearning")
+            if action == "courses":
+                output = {"courses": port.list_courses()}
+            else:
+                kwargs = {key: params[key] for key in _PLUGIN_FIELDS[action] if key in params}
+                output = getattr(port, action)(**kwargs)
+            return ToolResult.success(json.dumps(output, ensure_ascii=False))
+        except (ValueError, KeyError) as exc:
+            return ToolResult.fail(str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc))
+        except Exception as exc:
+            logger.error("[eLearning] Unexpected %s in plugin action %s", type(exc).__name__, action)
+            return ToolResult.fail(f"eLearning {action} 内部错误（{type(exc).__name__}）")
+
+    def _execute_legacy(self, params):
+        from agent.briefing import elearning_settings
+        from agent.briefing.elearning.courses import course_list
+        from agent.briefing.elearning.errors import LoginRequired, SyncError
+        try:
+            if not isinstance(params, dict) or params.get("action") not in _ACTIONS:
                 raise ValueError("action 必须是 courses、fetch、list_files 或 sync_files")
             self._check_cancelled()
             cfg = elearning_settings.load_settings()
@@ -124,6 +164,8 @@ class ElearningTool(BaseTool):
         return {value.lstrip(".").lower() for value in values}
 
     def _file_rows(self, cfg, params, *, authorized):
+        from agent.briefing.elearning.courses import course_list, list_files, select_courses
+        from agent.briefing.elearning.errors import LoginRequired, SyncCancelled, SyncError
         for key in ("course_ids", "file_ids"):
             values = params.get(key, [])
             if not isinstance(values, list) or any(not isinstance(value, str) or not value.strip() for value in values):
@@ -195,6 +237,9 @@ class ElearningTool(BaseTool):
                 "save_root": cfg["file_sync_root"], "errors": errors}
 
     def _fetch(self, cfg, params):
+        from agent.briefing.elearning.courses import course_list, select_courses
+        from agent.briefing.elearning.utils import parse_date
+        from agent.briefing.sources.elearning import ElearningSource
         offset, limit = self._page(params)
         now = self.clock()
         start = (now - timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)

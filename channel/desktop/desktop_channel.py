@@ -6843,6 +6843,78 @@ def _briefing_service():
     return Application.port("briefing")
 
 
+class _LegacyMailboxSettings:
+    """Legacy ``agent.briefing.settings`` behind the plugin-shaped mailbox surface."""
+
+    @staticmethod
+    def list_accounts():
+        from agent.briefing.settings import public_mailboxes
+        return public_mailboxes()
+
+    @staticmethod
+    def save_account(payload):
+        from agent.briefing.settings import save_mailbox
+        return save_mailbox(payload)
+
+    @staticmethod
+    def delete_account(account_id):
+        from agent.briefing.settings import delete_mailbox
+        delete_mailbox(account_id)
+
+    @staticmethod
+    def test_connection(payload):
+        from agent.briefing.settings import check_mailbox_connection
+        return check_mailbox_connection(payload)
+
+
+class _LegacyElearningSettings:
+    """Legacy ``agent.briefing.elearning_settings`` behind the plugin-shaped surface."""
+
+    @staticmethod
+    def get_settings():
+        from agent.briefing.elearning_settings import public_settings
+        return public_settings()
+
+    @staticmethod
+    def save_settings(payload):
+        from agent.briefing.elearning_settings import save_settings
+        return save_settings(payload)
+
+    @staticmethod
+    def delete_settings():
+        from agent.briefing import elearning_settings
+        elearning_settings.delete_settings()
+        return elearning_settings.public_settings()
+
+    @staticmethod
+    def save_file_sync_settings(enabled, root):
+        from agent.briefing.elearning_settings import save_file_sync_settings
+        return save_file_sync_settings(enabled, root)
+
+    @staticmethod
+    def test_connection(payload):
+        from agent.briefing.elearning_settings import check_connection
+        return check_connection(payload)
+
+
+def _email_settings():
+    """Mailbox settings: ``Application.port("email")`` when the plugin is on, else legacy."""
+    from core.services.email_gateway import email_plugin_enabled
+    if email_plugin_enabled():
+        from application import Application
+        return Application.port("email")
+    return _LegacyMailboxSettings
+
+
+def _elearning_settings():
+    """eLearning settings: ``Application.port("elearning")`` when the plugin is on, else legacy."""
+    from core.services.elearning_gateway import elearning_plugin_enabled
+    if elearning_plugin_enabled():
+        from application import Application
+        return Application.port("elearning")
+    return _LegacyElearningSettings
+
+
 def _briefing_pipeline(service):
     from agent.briefing.pipeline import BriefingPipeline
     from agent.briefing.sources.registry import configured_sources
@@ -6945,21 +7017,19 @@ class BriefingSourcesHandler:
 
 class BriefingElearningHandler:
     def GET(self):
-        from agent.briefing.elearning_settings import public_settings
-        return _briefing_response(lambda: {"settings": public_settings()})
+        return _briefing_response(lambda: {"settings": _elearning_settings().get_settings()})
 
     def POST(self):
         def operation():
-            from agent.briefing import elearning_settings
+            elearning = _elearning_settings()
             body = _briefing_body()
             action = body.get("action", "save")
             if action == "delete":
-                elearning_settings.delete_settings()
-                settings = elearning_settings.public_settings()
+                settings = elearning.delete_settings()
             elif action == "save":
                 if "file_sync_enabled" in body or "file_sync_root" in body:
                     raise ValueError("课件保存授权请在 Agent 设置中管理")
-                settings = elearning_settings.save_settings(body)
+                settings = elearning.save_settings(body)
             else:
                 raise ValueError("未知的来源操作")
             return {"settings": settings}
@@ -6968,23 +7038,21 @@ class BriefingElearningHandler:
 
 class ElearningFileSyncSettingsHandler:
     def GET(self):
-        from agent.briefing.elearning_settings import public_settings
-        return _briefing_response(lambda: {"settings": public_settings()})
+        return _briefing_response(lambda: {"settings": _elearning_settings().get_settings()})
 
     def POST(self):
         def operation():
-            from agent.briefing.elearning_settings import save_file_sync_settings
             body = _briefing_body()
             if set(body) != {"file_sync_enabled", "file_sync_root"}:
                 raise ValueError("只能修改课件保存开关和目录")
-            return {"settings": save_file_sync_settings(body["file_sync_enabled"], body["file_sync_root"])}
+            return {"settings": _elearning_settings().save_file_sync_settings(
+                body["file_sync_enabled"], body["file_sync_root"])}
         return _briefing_response(operation)
 
 
 class BriefingElearningTestHandler:
     def POST(self):
-        from agent.briefing.elearning_settings import check_connection
-        return _briefing_response(lambda: {"connected": True, "courses": check_connection(_briefing_body())})
+        return _briefing_response(lambda: {"connected": True, "courses": _elearning_settings().test_connection(_briefing_body())})
 
 
 class BriefingRulesHandler:
@@ -7015,27 +7083,25 @@ class BriefingRuleDeleteHandler:
 class BriefingSettingsHandler:
     def GET(self):
         def operation():
-            from agent.briefing.settings import public_mailboxes
-            return {"settings": public_mailboxes()}
+            return {"settings": _email_settings().list_accounts()}
         return _briefing_response(operation)
 
     def POST(self):
         def operation():
-            from agent.briefing.settings import delete_mailbox, public_mailboxes, save_mailbox
+            email = _email_settings()
             body = _briefing_body()
             if body.get("action") == "delete":
-                delete_mailbox(_briefing_id(body))
-                return {"settings": public_mailboxes()}
-            saved = save_mailbox(body)
-            return {"settings": public_mailboxes(), "mailbox": saved}
+                email.delete_account(_briefing_id(body))
+                return {"settings": email.list_accounts()}
+            saved = email.save_account(body)
+            return {"settings": email.list_accounts(), "mailbox": saved}
         return _briefing_response(operation)
 
 
 class BriefingSettingsTestHandler:
     def POST(self):
         def operation():
-            from agent.briefing.settings import check_mailbox_connection
-            result = check_mailbox_connection(_briefing_body())
+            result = _email_settings().test_connection(_briefing_body())
             return result if isinstance(result, dict) else {"connected": True}
         return _briefing_response(operation)
 
@@ -7090,7 +7156,7 @@ class BillsLedgerExportHandler:
                 return json.dumps({"status": "error", "message": "start and end are required"})
             lang = "en" if str(params.lang or "").lower().startswith("en") else "zh"
             entries = _bills_service().list_ledger_between(start, end)
-            from agent.bills.export import build_ledger_xlsx
+            from core.services.bills_public import build_ledger_xlsx
             data = build_ledger_xlsx(entries, start=start, end=end, lang=lang)
             fname = f"bills-{start}-{end}.xlsx"
             web.header(
