@@ -334,7 +334,8 @@ def test_application_scheduler_uses_automation_facade_when_plugin_on(monkeypatch
     monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "1")
     assert type(Application.scheduler(Store())).__name__ == "AutomationPluginFacade"
     monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "0")
-    assert type(Application.scheduler(Store())).__name__ == "SchedulerMutations"
+    with pytest.raises(RuntimeError, match="requires the stella.automation plugin"):
+        Application.scheduler(Store())
 
 
 # -- Bills: plugin path must not need the legacy schema writer -------------------

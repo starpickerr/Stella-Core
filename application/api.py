@@ -218,12 +218,15 @@ class Application:
             from agent.todos.scheduler_link import default_scheduler_store
             store = default_scheduler_store()
         # Task rules/mutations move to the plugin; Core keeps lease, dispatch and
-        # delivery on the same automation.db. Legacy JSON stores stay on Core.
+        # delivery on the same automation.db. Legacy JSON TaskStore stays on Core.
+        from core.services.automation_facade import AutomationPluginFacade, plugin_serves
         from core.services.automation_gateway import automation_plugin_enabled
-        if automation_plugin_enabled():
-            from core.services.automation_facade import AutomationPluginFacade, plugin_serves
-            if plugin_serves(store):
-                return AutomationPluginFacade(store)
+
+        if plugin_serves(store):
+            if not automation_plugin_enabled():
+                raise RuntimeError(
+                    "automation domain requires the stella.automation plugin (STELLA_AUTOMATION_PLUGIN=1)")
+            return AutomationPluginFacade(store)
         return SchedulerMutations(store)
 
     @staticmethod
