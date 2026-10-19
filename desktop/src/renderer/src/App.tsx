@@ -30,8 +30,6 @@ import HealthPage from './pages/HealthPage'
 import LogsPage from './pages/LogsPage'
 import PluginPageHost from './pages/plugins/PluginPageHost'
 import BriefingPage from './pages/BriefingPage'
-import CalendarPage from './pages/CalendarPage'
-import TodosPage from './pages/TodosPage'
 import SecurityPage from './pages/SecurityPage'
 import PluginManagerPage from './pages/PluginManagerPage'
 import { product } from '@product'
@@ -235,8 +233,28 @@ const App: React.FC = () => {
           ) : (
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
-            <Route path="/todos" element={<TodosPage baseUrl={backend.baseUrl} />} />
-            <Route path="/calendar" element={<CalendarPage baseUrl={backend.baseUrl} />} />
+            <Route
+              path="/todos"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.tasks"
+                  pageId="tasks.main"
+                  title="事务"
+                />
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.calendar"
+                  pageId="calendar.main"
+                  title="日程"
+                />
+              }
+            />
             <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
             <Route
               path="/bills"

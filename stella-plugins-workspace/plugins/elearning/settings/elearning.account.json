@@ -9,5 +9,31 @@
       "order": 0
     }
   ],
-  "fields": []
+  "fields": [
+    {
+      "key": "auto_sync_on_open",
+      "title": "打开时自动同步课程",
+      "type": "boolean",
+      "category": "general",
+      "default": false
+    },
+    {
+      "key": "course_list_page_size",
+      "title": "课程列表每页条数",
+      "type": "integer",
+      "category": "general",
+      "default": 20,
+      "validation": {
+        "min": 5,
+        "max": 100
+      }
+    },
+    {
+      "key": "account_password",
+      "title": "账号密码",
+      "type": "string",
+      "category": "general",
+      "secret": true
+    }
+  ]
 }

@@ -9,5 +9,23 @@
       "order": 0
     }
   ],
-  "fields": []
+  "fields": [
+    {
+      "key": "week_starts_on",
+      "title": "一周起始日",
+      "type": "enum",
+      "category": "general",
+      "default": "monday",
+      "validation": {
+        "enum": ["monday", "sunday"]
+      }
+    },
+    {
+      "key": "show_all_day_first",
+      "title": "全天事件优先显示",
+      "type": "boolean",
+      "category": "general",
+      "default": true
+    }
+  ]
 }

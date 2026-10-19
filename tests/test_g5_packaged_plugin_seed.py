@@ -1,4 +1,4 @@
-"""G5: packaged plugin-catalog + seed trees install without sibling checkout."""
+"""G5: packaged plugin-catalog is Core-only (no plugin-seed trees)."""
 
 from __future__ import annotations
 
@@ -20,9 +20,8 @@ SEED = RESOURCES / "plugin-seed"
 
 
 @pytest.mark.skipif(not BACKEND.is_file(), reason="Stella.app not built")
-@pytest.mark.skipif(not CATALOG.is_file(), reason="plugin-catalog.json not seeded into Stella.app")
-@pytest.mark.skipif(not SEED.is_dir(), reason="plugin-seed not present in Stella.app")
-def test_packaged_catalog_lists_seven_seeded_domains():
+@pytest.mark.skipif(not CATALOG.is_file(), reason="plugin-catalog.json not present in Stella.app")
+def test_packaged_catalog_lists_domains_without_seed_paths():
     data = json.loads(CATALOG.read_text(encoding="utf-8"))
     ids = {row["pluginId"] for row in data["plugins"]}
     assert ids == {
@@ -35,14 +34,20 @@ def test_packaged_catalog_lists_seven_seeded_domains():
         "stella.automation",
     }
     for row in data["plugins"]:
-        assert row["path"].startswith("plugin-seed/")
-        assert (RESOURCES / row["path"]).is_dir()
+        assert "path" not in row or not str(row.get("path") or "").startswith("plugin-seed/")
+        assert row.get("sha256")
+        assert row.get("version")
+    assert not SEED.exists(), "Core-only DMG must not ship plugin-seed"
 
 
 @pytest.mark.skipif(not BACKEND.is_file(), reason="Stella.app not built")
-@pytest.mark.skipif(not CATALOG.is_file(), reason="plugin-catalog.json not seeded into Stella.app")
-def test_frozen_backend_bootstraps_from_packaged_catalog_only(tmp_path, monkeypatch):
-    """No STELLA_PLUGIN_CATALOG env — frozen exe discovers Resources/plugin-catalog.json."""
+@pytest.mark.skipif(not CATALOG.is_file(), reason="plugin-catalog.json not present in Stella.app")
+def test_frozen_backend_bootstraps_catalog_without_seed_install(tmp_path):
+    """No STELLA_PLUGIN_CATALOG env — frozen exe discovers Resources/plugin-catalog.json.
+
+    Without local seed/url packages, bootstrap is partial/missing_source and
+    installs nothing — that is the honest Core-only first-boot contract.
+    """
     home = tmp_path / "home"
     home.mkdir()
     env = os.environ.copy()
@@ -67,11 +72,10 @@ def test_frozen_backend_bootstraps_from_packaged_catalog_only(tmp_path, monkeypa
         cwd=str(REPO),
     )
     deadline = time.time() + 45
-    ok = False
+    text = ""
     while time.time() < deadline:
         text = log.read_text(errors="replace") if log.is_file() else ""
-        if "Plugin bootstrap status=ok" in text:
-            ok = True
+        if "Plugin bootstrap status=" in text:
             break
         if proc.poll() is not None:
             break
@@ -81,6 +85,7 @@ def test_frozen_backend_bootstraps_from_packaged_catalog_only(tmp_path, monkeypa
         proc.wait(timeout=15)
     except subprocess.TimeoutExpired:
         proc.kill()
-    assert ok, log.read_text(errors="replace")[-2000:]
+    assert "Plugin bootstrap status=" in text, text[-2000:]
     currents = list((home / "stella" / "plugin-packages" / "packages").glob("stella.*/current.json"))
-    assert len(currents) == 7
+    # Core-only catalog has no local package bytes → nothing installed on first boot.
+    assert currents == []

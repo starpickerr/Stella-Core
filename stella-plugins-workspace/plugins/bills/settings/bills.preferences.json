@@ -9,5 +9,27 @@
       "order": 0
     }
   ],
-  "fields": []
+  "fields": [
+    {
+      "key": "default_entry_type",
+      "title": "默认记账类型",
+      "type": "enum",
+      "category": "general",
+      "default": "expense",
+      "validation": {
+        "enum": ["expense", "income"]
+      }
+    },
+    {
+      "key": "list_page_size",
+      "title": "列表每页条数",
+      "type": "integer",
+      "category": "general",
+      "default": 50,
+      "validation": {
+        "min": 10,
+        "max": 200
+      }
+    }
+  ]
 }

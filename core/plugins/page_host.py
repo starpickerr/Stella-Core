@@ -13,6 +13,13 @@ _BILLS_METHODS = frozenset({
     "create_ledger", "update_ledger", "delete_ledger",
     "list_statements", "get_statement",
 })
+_TASKS_METHODS = frozenset({
+    "list_todos", "list_todos_focus", "get_todo",
+    "create_todo", "update_todo", "complete_todo", "delete_todo",
+})
+_CALENDAR_METHODS = frozenset({
+    "list_events", "get_event", "create_event", "update_event", "delete_event",
+})
 
 
 class PluginPageHost:
@@ -66,8 +73,13 @@ class PluginPageHost:
             generation=generation,
             page_id=page_id,
         )
+        params = input or {}
         if plugin_id == "stella.bills":
-            return self._invoke_bills(method, input or {})
+            return self._invoke_bills(method, params)
+        if plugin_id == "stella.tasks":
+            return self._invoke_tasks(method, params)
+        if plugin_id == "stella.calendar":
+            return self._invoke_calendar(method, params)
         raise PermissionError(f"bridge invoke not enabled for {plugin_id}")
 
     def _invoke_bills(self, method: str, params: dict[str, Any]) -> Any:
@@ -97,6 +109,58 @@ class PluginPageHost:
                 return port.get_statement(params["id"])
         raise PermissionError(method)
 
+    def _invoke_tasks(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _TASKS_METHODS:
+            raise PermissionError(f"method not allowed on tasks page: {method}")
+        from application import Application
+        from common.runtime_identity import RuntimeIdentity, use_identity
+
+        port = Application.port("todos")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            if method == "create_todo":
+                return port.create_todo(params.get("payload") or params)
+            if method == "update_todo":
+                return port.update_todo(params["todo_id"], params.get("payload") or {})
+            if method == "complete_todo":
+                return port.complete_todo(
+                    params["todo_id"], bool(params.get("completed", True)),
+                    bool(params.get("force", False)),
+                )
+            if method == "delete_todo":
+                port.delete_todo(params["todo_id"], bool(params.get("preserve_children", False)))
+                return None
+            if method == "get_todo":
+                return port.get_todo(params["todo_id"])
+            if method == "list_todos":
+                return port.list_todos(
+                    params.get("start"), params.get("end"),
+                    bool(params.get("include_completed", False)),
+                )
+            if method == "list_todos_focus":
+                return port.list_todos_focus(params.get("today"))
+        raise PermissionError(method)
+
+    def _invoke_calendar(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _CALENDAR_METHODS:
+            raise PermissionError(f"method not allowed on calendar page: {method}")
+        from application import Application
+        from common.runtime_identity import RuntimeIdentity, use_identity
+
+        port = Application.port("calendar")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            if method == "create_event":
+                return port.create_event(params.get("payload") or params)
+            if method == "update_event":
+                return port.update_event(params["id"], params.get("payload") or params.get("patch") or {})
+            if method == "delete_event":
+                port.delete_event(params["id"])
+                return None
+            if method == "get_event":
+                return port.get_event(params["id"])
+            if method == "list_events":
+                return port.list_events(params.get("start"), params.get("end"), params.get("category_id"))
+        raise PermissionError(method)
+
     @staticmethod
     def _package_root(plugin_id: str) -> Path:
         from core.plugins.roots import resolve_plugin_package_root
@@ -106,4 +170,10 @@ class PluginPageHost:
         if plugin_id == "stella.bills":
             env = "STELLA_BILLS_PLUGIN_ROOT"
             folder = "bills"
+        elif plugin_id == "stella.tasks":
+            env = "STELLA_TASKS_PLUGIN_ROOT"
+            folder = "tasks"
+        elif plugin_id == "stella.calendar":
+            env = "STELLA_CALENDAR_PLUGIN_ROOT"
+            folder = "calendar"
         return resolve_plugin_package_root(plugin_id=plugin_id, env_var=env, folder_name=folder)

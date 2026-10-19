@@ -85,8 +85,7 @@
           "icon.png",
           "app-config.json",
           "themes/**",
-          "plugin-catalog.json",
-          "plugin-seed/**"
+          "plugin-catalog.json"
         ]
       }
     ],

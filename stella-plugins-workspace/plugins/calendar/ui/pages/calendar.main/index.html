@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日程</title>
+  <style>
+    :root { color-scheme: light; font-family: "SF Pro Text", "PingFang SC", sans-serif; }
+    body { margin: 0; padding: 24px; background: #f6f4ef; color: #1c1917; }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    p { margin: 0 0 16px; color: #57534e; }
+    form { display: grid; gap: 10px; max-width: 28rem; }
+    label { display: grid; gap: 4px; font-size: 0.9rem; }
+    input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #d6d3d1; }
+    button { background: #1c1917; color: #fafaf9; border-color: #1c1917; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #status { margin-top: 16px; font-size: 0.9rem; white-space: pre-wrap; }
+    #events { margin-top: 20px; display: grid; gap: 8px; }
+    .row { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; padding: 10px 12px; }
+  </style>
+</head>
+<body>
+  <h1>日程</h1>
+  <p>受限插件页 · stella.calendar · 经宿主 Bridge 读写，不持有 Core React / Node。</p>
+  <form id="create">
+    <label>标题 <input name="title" type="text" required placeholder="周会" /></label>
+    <label>开始 <input name="start" type="datetime-local" required /></label>
+    <label>结束 <input name="end" type="datetime-local" required /></label>
+    <button type="submit">新建日程</button>
+  </form>
+  <div id="status"></div>
+  <div id="events"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

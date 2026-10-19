@@ -201,3 +201,20 @@ def test_first_party_settings_are_static_contract_valid_resources(tmp_path, doma
         assert descriptor['pluginId'] == f'stella.{domain}'
         assert isinstance(descriptor['categories'], list)
         assert isinstance(descriptor['fields'], list)
+        assert descriptor['fields'], f'{domain} settings must declare at least one field'
+        field_keys = {field['key'] for field in descriptor['fields']}
+        assert len(field_keys) == len(descriptor['fields'])
+        non_secret = [field for field in descriptor['fields'] if not field.get('secret')]
+        assert non_secret, f'{domain} settings need a non-secret field for PluginSettings UI'
+        for field in descriptor['fields']:
+            field_contract = schema['definitions']['SettingsField']
+            assert set(field_contract['required']) <= set(field) <= set(field_contract['properties'])
+            assert field['category'] in {item['id'] for item in descriptor['categories']}
+        sample = non_secret[0]
+        if 'default' in sample and sample['type'] in {'string', 'integer', 'number', 'boolean', 'enum'}:
+            saved = PluginSettingsService(store).save(
+                f'stella.{domain}', 'alice', descriptor['id'], sample['category'],
+                {sample['key']: sample['default']}, expected_revision=1,
+            )
+            assert saved['values'][sample['key']] == sample['default']
+            assert saved['revision'] == 2

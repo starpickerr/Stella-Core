@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.elearning",
   "name": "eLearning",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",
