@@ -18,8 +18,10 @@ from core.plugins.package_ops import PackageStore
 def _catalog(tmp_path: Path, plugin_id: str, source: Path) -> Path:
     import hashlib
 
+    from core.plugins.distribution import _package_files
+
     h = hashlib.sha256()
-    for path in sorted(p for p in source.rglob("*") if p.is_file()):
+    for path in _package_files(source):
         h.update(path.relative_to(source).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(path.read_bytes())

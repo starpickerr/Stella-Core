@@ -32,9 +32,11 @@ def test_signed_zip_install_from_catalog_url(tmp_path, monkeypatch):
 
     monkeypatch.setattr("core.plugins.distribution.urllib.request.urlretrieve", _retrieve)
 
-    # Digest in catalog is of the unpacked tree, after verify.
+    # Digest in catalog is of the unpacked tree, after verify (no bytecode).
+    from core.plugins.distribution import _package_files
+
     h = hashlib.sha256()
-    for path in sorted(p for p in sample.rglob("*") if p.is_file()):
+    for path in _package_files(sample):
         h.update(path.relative_to(sample).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(path.read_bytes())
