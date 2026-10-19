@@ -33,6 +33,53 @@ def _platform_tag() -> str:
     return f"{sys.platform}-{platform.machine()}"
 
 
+RUNNER_ENV = "STELLA_PLUGIN_RUNNER"
+RUNNER_BINARY_NAME = "stella-plugin-runner"
+RUNNER_DEV_MODULE = "core.plugins.runner.cli"
+
+
+def _runner_binary_candidates(anchor: Path) -> list[Path]:
+    """Sibling layouts next to the frozen app executable (onedir or flat)."""
+    exe = RUNNER_BINARY_NAME + (".exe" if sys.platform == "win32" else "")
+    return [
+        anchor / exe,
+        anchor / RUNNER_BINARY_NAME / exe,
+        anchor.parent / RUNNER_BINARY_NAME / exe,
+    ]
+
+
+def resolve_runner_command(
+    *,
+    python_executable: str | None = None,
+    environ: Mapping[str, str] | None = None,
+    frozen: bool | None = None,
+    executable: str | None = None,
+) -> list[str]:
+    """Pick the worker command.
+
+    Order: ``STELLA_PLUGIN_RUNNER`` -> sibling ``stella-plugin-runner`` binary
+    next to the frozen app -> dev fallback ``python -m core.plugins.runner.cli``.
+    A frozen app never falls back to ``-m`` (its interpreter is the app itself).
+    """
+    env = os.environ if environ is None else environ
+    override = (env.get(RUNNER_ENV) or "").strip()
+    if override:
+        path = Path(override)
+        if not path.is_file():
+            raise PluginHostError(f"{RUNNER_ENV} does not point to a file: {override}")
+        return [str(path)]
+    is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    exe_path = Path(executable or sys.executable).resolve()
+    if is_frozen:
+        for cand in _runner_binary_candidates(exe_path.parent):
+            if cand.is_file():
+                return [str(cand)]
+        raise PluginHostError(
+            f"frozen app has no {RUNNER_BINARY_NAME} next to {exe_path} (set {RUNNER_ENV})"
+        )
+    return [python_executable or sys.executable, "-m", RUNNER_DEV_MODULE]
+
+
 class PluginSession:
     def __init__(
         self,
@@ -73,7 +120,7 @@ class PluginSession:
             # unless explicitly opted in for transitional packages.
             if env.get("STELLA_ALLOW_REPO_IMPORT") not in {"1", "true", "yes"}:
                 env.pop("STELLA_REPO_ROOT", None)
-            cmd = self._runner_command or [self._python, "-m", "core.plugins.runner"]
+            cmd = self._runner_command or resolve_runner_command(python_executable=self._python)
             self._proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
