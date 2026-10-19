@@ -124,8 +124,5 @@ def run_desktop_bootstrap(
 
 def _default_catalog_path() -> Path:
     sibling = Path(__file__).resolve().parents[3] / "Stella-Plugins" / "catalog" / "official.json"
-    if sibling.is_file():
-        return sibling
-    workspace = Path(__file__).resolve().parents[2] / "stella-plugins-workspace"
-    # Workspace has no catalog file; synthesize is caller's job. Prefer sibling.
+    # Workspace mirrors packages but has no catalog file; callers may synthesize.
     return sibling
