@@ -41,6 +41,27 @@ def test_dispatch_todo_reminder_uses_plugin_facade_when_enabled(monkeypatch, tmp
     assert calls == [("t1", "2026-01-01T00:00:00+00:00")]
 
 
+def test_todos_facade_reconcile_does_not_construct_legacy_service(monkeypatch, tmp_path):
+    from core.services.todos_facade import TodosPluginFacade
+
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
+    monkeypatch.setattr(
+        "agent.todos.service.TodoService",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy TodoService")),
+    )
+    calls = []
+
+    def fake_invoke(method, params, *, db_path, legacy_calendar_db_path=None):
+        calls.append(method)
+        if method == "pending_scheduler_links":
+            return {"status": "succeeded", "value": []}
+        return {"status": "succeeded", "value": {}}
+
+    monkeypatch.setattr("core.services.todos_gateway.invoke_todos", fake_invoke)
+    TodosPluginFacade._reconcile_host_scheduler(tmp_path / "todos.db", tmp_path / "calendar.db")
+    assert calls == ["pending_scheduler_links"]
+
+
 def test_briefing_actions_uses_public_default_services(monkeypatch):
     from agent.briefing.actions import BriefingActions
 

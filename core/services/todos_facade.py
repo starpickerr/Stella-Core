@@ -80,22 +80,74 @@ class TodosPluginFacade:
 
     @staticmethod
     def _reconcile_host_scheduler(db_path: Path, calendar_path: Path) -> None:
-        """The worker cannot reach the host scheduler; apply pending reminder links here."""
+        """Apply pending reminder links via Core TaskStore + plugin link completion.
+
+        Does not construct ``agent.todos.TodoService`` (avoids a dual domain writer).
+        """
         if os.environ.get("STELLA_TODOS_PLUGIN_SCHEDULER_SYNC", "1").strip() in {"0", "false", "no"}:
             return
         try:
+            import json
+            from datetime import datetime, timezone
+
+            from agent.todos.scheduler_link import default_scheduler_store, sync_task
+
             pending = todos_gateway.invoke_todos(
-                "pending_scheduler_links", {}, db_path=db_path, legacy_calendar_db_path=calendar_path
+                "pending_scheduler_links",
+                {},
+                db_path=db_path,
+                legacy_calendar_db_path=calendar_path,
             )
             if pending.get("status") != "succeeded" or not pending.get("value"):
                 return
-            from agent.todos.scheduler_link import default_scheduler_store
-            from agent.todos.service import TodoService
-
-            TodoService(
-                db_path=db_path,
-                legacy_calendar_db_path=calendar_path,
-                scheduler_store=default_scheduler_store(),
-            )._sync_scheduler_links()
+            store = default_scheduler_store()
+            now = datetime.now(timezone.utc)
+            for link in pending["value"]:
+                todo_id = link["todo_id"]
+                desired = link.get("desired_at")
+                title = link.get("title") or ""
+                remind_at = link.get("remind_at")
+                status = link.get("status") or ""
+                route_raw = link.get("reminder_delivery")
+                route = json.loads(route_raw) if route_raw else None
+                active = bool(
+                    remind_at
+                    and desired
+                    and remind_at == desired
+                    and status not in {"completed", "cancelled"}
+                )
+                if active and link.get("source_type") == "apple_reminders":
+                    active = False
+                if active:
+                    try:
+                        instant = datetime.fromisoformat(str(remind_at).replace("Z", "+00:00"))
+                        if instant.tzinfo is None or instant <= now:
+                            active = False
+                    except ValueError:
+                        active = False
+                try:
+                    sync_task(store, todo_id, title, desired if active else None, route)
+                    todos_gateway.invoke_todos(
+                        "complete_scheduler_link",
+                        {
+                            "todo_id": todo_id,
+                            "desired_at": desired,
+                            "outcome": "synced" if active else "cleared",
+                        },
+                        db_path=db_path,
+                        legacy_calendar_db_path=calendar_path,
+                    )
+                except Exception as link_exc:
+                    todos_gateway.invoke_todos(
+                        "complete_scheduler_link",
+                        {
+                            "todo_id": todo_id,
+                            "desired_at": desired,
+                            "outcome": "error",
+                            "error": str(link_exc),
+                        },
+                        db_path=db_path,
+                        legacy_calendar_db_path=calendar_path,
+                    )
         except Exception as exc:  # reminder sync is retried on the next write
             logger.warning("[Todos] host scheduler reconcile deferred: %s", exc)

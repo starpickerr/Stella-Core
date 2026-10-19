@@ -31,6 +31,12 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "get_category": ("query", "tasks.read", False, ("category_id",)),
     "has_source_tombstone": ("query", "tasks.read", False, ("source_keys",)),
     "pending_scheduler_links": ("query", "tasks.read", False, ()),
+    "complete_scheduler_link": (
+        "domainWrite",
+        "tasks.write",
+        True,
+        ("todo_id", "desired_at", "outcome", "error"),
+    ),
     "create_todo": ("domainWrite", "tasks.write", True, ("payload",)),
     "update_todo": ("domainWrite", "tasks.write", True, ("todo_id", "payload")),
     "delete_todo": ("domainWrite", "tasks.write", True, ("todo_id", "preserve_children")),
@@ -104,6 +110,35 @@ def _pending_scheduler_links(svc: TodoService) -> list[dict[str, Any]]:
         ]
 
 
+def _complete_scheduler_link(svc: TodoService, params: dict[str, Any]) -> dict[str, Any]:
+    """Host marks a pending reminder link after applying Core TaskStore sync."""
+    from datetime import datetime, timezone
+
+    todo_id = params["todo_id"]
+    desired_at = params.get("desired_at")
+    outcome = params.get("outcome") or "synced"
+    error = params.get("error") or ""
+    now = datetime.now(timezone.utc).isoformat()
+    with svc._connect() as db:
+        if outcome == "synced" and desired_at:
+            db.execute(
+                """UPDATE todo_scheduler_links SET state='synced',error='',updated_at=?
+                   WHERE todo_id=? AND desired_at=?""",
+                (now, todo_id, desired_at),
+            )
+        elif outcome == "cleared":
+            db.execute(
+                "DELETE FROM todo_scheduler_links WHERE todo_id=? AND desired_at IS ?",
+                (todo_id, desired_at),
+            )
+        else:
+            db.execute(
+                "UPDATE todo_scheduler_links SET error=?,updated_at=? WHERE todo_id=?",
+                (str(error), now, todo_id),
+            )
+    return {"todo_id": todo_id, "outcome": outcome}
+
+
 def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
@@ -118,6 +153,14 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         svc = _service(invoke_params)
         if method == "pending_scheduler_links":
             return _ok(_pending_scheduler_links(svc))
+        if method == "complete_scheduler_link":
+            value = _complete_scheduler_link(svc, params)
+            return {
+                "status": "succeeded",
+                "sideEffects": "committed",
+                "value": value,
+                "operationId": invoke_params.get("idempotencyKey") or method,
+            }
         value = getattr(svc, method)(**params)
         if method == "delete_todo":
             value = {"deleted": True, "id": params["todo_id"]}

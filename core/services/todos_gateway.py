@@ -53,6 +53,7 @@ TODOS_WRITE_METHODS: dict[str, tuple[str, ...]] = {
     "update_category": ("category_id", "payload"),
     "delete_category": ("category_id",),
     "set_todo_category": ("todo_id", "category_id"),
+    "complete_scheduler_link": ("todo_id", "desired_at", "outcome", "error"),
 }
 TODOS_METHOD_PARAMS = {**TODOS_READ_METHODS, **TODOS_WRITE_METHODS}
 
