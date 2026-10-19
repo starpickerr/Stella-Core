@@ -277,3 +277,131 @@ def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_pa
     assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "expired"
     assert sends == []
     assert facade.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "expired"
+
+
+def test_scheduler_reconcile_always_returns_a_set_and_refreshes_only_confirmed_receipts(tmp_path, monkeypatch):
+    from core.services.todos_facade import TodosPluginFacade
+    from agent.todos import scheduler_link
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_SCHEDULER_SYNC', '0')
+    assert TodosPluginFacade._reconcile_host_scheduler(tmp_path / 'todos.db', tmp_path / 'calendar.db') == set()
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_SCHEDULER_SYNC', '1')
+    monkeypatch.setattr(scheduler_link, 'default_scheduler_store', lambda: object())
+    monkeypatch.setattr(scheduler_link, 'sync_task', lambda *_args: None)
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    accepted = [False]
+
+    def invoke(method, params, **kwargs):
+        if method == 'pending_scheduler_links':
+            return {'status': 'succeeded', 'value': [{'todo_id': 't1', 'title': 'Task', 'desired_at': future,
+                                                     'remind_at': future, 'status': 'todo'}]}
+        return {'status': 'succeeded' if accepted[0] else 'failed', 'error': {'message': 'receipt rejected'}}
+
+    monkeypatch.setattr(todos_gateway, 'invoke_todos', invoke)
+    assert TodosPluginFacade._reconcile_host_scheduler(tmp_path / 'todos.db', tmp_path / 'calendar.db') == set()
+    accepted[0] = True
+    assert TodosPluginFacade._reconcile_host_scheduler(tmp_path / 'todos.db', tmp_path / 'calendar.db') == {'t1'}
+
+
+def test_pending_reminder_recovers_after_restart_on_read_without_new_write(tmp_path, monkeypatch):
+    from core.services import todos_facade
+    from agent.todos import scheduler_link
+    from agent.scheduler.store import TaskStore
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(todos_facade, '_db_paths', lambda: (tmp_path / 'todos.db', tmp_path / 'calendar.db'))
+    store = TaskStore(str(tmp_path / 'scheduler/tasks.json'))
+    monkeypatch.setattr(scheduler_link, 'default_scheduler_store', lambda: store)
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_SCHEDULER_SYNC', '0')
+    facade = todos_facade.TodosPluginFacade()
+    todo = facade.create_todo({'title':'Recover', 'remind_at':(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()})
+    assert todo['reminder_sync_pending']
+    assert store.list_tasks() == []
+    todos_gateway.shutdown_todos_session()
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_SCHEDULER_SYNC', '1')
+    recovered = facade.list_todos()[0]
+    assert not recovered['reminder_sync_pending']
+    assert store.get_task(recovered['scheduler_task_id'])['linked_todo_id'] == todo['id']
+
+
+def test_scheduler_tick_recovers_only_enabled_users_with_background_identity(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from core.plugins.management import ManagementStore
+    from core.plugins import management
+    from core.services import todos_public
+    from agent.scheduler.service import SchedulerService
+    from common.runtime_identity import current_identity
+    from core.plugins.caller import current_caller_origin
+    store = ManagementStore(tmp_path / 'packages')
+    store.set_intent('stella.tasks', 'alice', 'enabled')
+    store.set_intent('stella.tasks', 'bob', 'disabled')
+    monkeypatch.setattr(management, 'default_store', lambda: store)
+    seen = []
+    monkeypatch.setattr(todos_public, 'reconcile_pending_reminders',
+        lambda: seen.append((current_identity().user_id, current_caller_origin())))
+    scheduler = SchedulerService(SimpleNamespace(agent_id='agent', list_tasks=lambda **_: []), lambda *_: None)
+    scheduler._check_and_execute_tasks()
+    assert seen == [('alice', 'job')]
+
+
+def test_concurrent_reminder_projection_cannot_overwrite_a_newer_reminder(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from agent.todos import scheduler_link
+    from agent.scheduler.store import TaskStore
+    from core.services import todos_facade
+
+    _patch_paths(monkeypatch, tmp_path)
+    store = TaskStore(str(tmp_path / 'scheduler/tasks.json'))
+    monkeypatch.setattr(scheduler_link, 'default_scheduler_store', lambda: store)
+    facade = todos_facade.TodosPluginFacade()
+    first = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    second = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    todo = facade.create_todo({'title': 'Concurrent', 'remind_at': first})
+    old_entered, release_old, new_written, new_projection = (Event() for _ in range(4))
+    real_sync, real_invoke = scheduler_link.sync_task, todos_gateway.invoke_todos
+
+    def sync(store, todo_id, title, desired, route):
+        if desired == first:
+            old_entered.set()
+            assert release_old.wait(5)
+        elif desired == second:
+            new_projection.set()
+        return real_sync(store, todo_id, title, desired, route)
+
+    def invoke(method, params, **kwargs):
+        result = real_invoke(method, params, **kwargs)
+        if method == 'update_todo':
+            new_written.set()
+        return result
+
+    monkeypatch.setattr(scheduler_link, 'sync_task', sync)
+    monkeypatch.setattr(todos_gateway, 'invoke_todos', invoke)
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_SCHEDULER_SYNC', '1')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        old = pool.submit(facade.reconcile_scheduler_links)
+        try:
+            assert old_entered.wait(5)
+            new = pool.submit(facade.update_todo, todo['id'], {'remind_at': second})
+            assert new_written.wait(5)
+            overlapped = new_projection.wait(.3)
+        finally:
+            release_old.set()
+        old.result(timeout=5)
+        new.result(timeout=5)
+    assert not overlapped, 'one user must have only one active reminder projection'
+    assert store.get_task('todo-reminder:' + todo['id'])['action']['params'][1] == second
+    assert facade.get_todo(todo['id'])['reminder_sync_pending'] is False
+
+
+def test_scheduler_dispatches_due_tasks_before_reminder_recovery(monkeypatch):
+    from types import SimpleNamespace
+    from agent.scheduler.service import SchedulerService
+
+    seen = []
+    scheduler = SchedulerService(SimpleNamespace(list_tasks=lambda **_: [{'id': 'due'}]), lambda *_: None)
+    monkeypatch.setattr(scheduler, '_check_one_task', lambda *_: seen.append('due'))
+    monkeypatch.setattr(scheduler, '_recover_pending_reminder_links', lambda: seen.append('recovery'))
+    scheduler._check_and_execute_tasks()
+    assert seen == ['due', 'recovery']

@@ -23,7 +23,7 @@ flowchart LR
 | HTTP 与通道 | `app.py` 启动应用；`channel/desktop/desktop_channel.py` 暴露桌面 HTTP API，其他 `channel/` 处理外部与 Web 消息 | `app.py`, `channel/`, `tests/test_briefing_web.py` |
 | Agent/Harness | `bridge/` 组装模型、工具与会话；执行循环在 `agent/protocol/agent_stream.py` | [运行机制](agent-runtime.md) |
 | 共享业务边界 | `Application.port` 和 `Application.command` 将 Desktop、Agent 工具、自动化送入同一领域服务 | `application/api.py`, `tests/test_todos.py`, `tests/test_harness_runtime.py` |
-| 领域服务 | `agent/todos/`, `calendar/`, `briefing/`, `scheduler/`；账单通过 `core/services/bills_facade.py` 调用外仓插件 | [业务模块](../modules/core-business.md) |
+| 领域服务 | `agent/calendar/`, `briefing/`, `scheduler/`；账单与事务通过 `core/services/bills_facade.py`、`todos_facade.py` 调用外仓插件，`agent/todos/` 只保留 Apple 与 scheduler 适配 | [业务模块](../modules/core-business.md) |
 | 状态与权限 | `common/runtime_identity.py`、`common/state_dir.py` 分配身份与路径；运行时权限由 gateway 决定 | [数据与安全](security-and-storage.md) |
 
 更详细的数据路径见 [数据流](data-flow.md)。修改跨模块写入时，先定位 `Application` 命令与对应领域服务，检查是否已有幂等与恢复机制。

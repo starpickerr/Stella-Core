@@ -172,14 +172,35 @@ def test_public_surfaces_use_plugin_facade_when_enabled(monkeypatch):
 
 
 def test_public_surfaces_keep_legacy_service_when_plugin_off(monkeypatch, tmp_path):
-    from core.services import calendar_public, todos_public
+    from core.services import calendar_public
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("STELLA_TODOS_PLUGIN", raising=False)
     monkeypatch.delenv("STELLA_CALENDAR_PLUGIN", raising=False)
-    assert type(todos_public.default_service()).__name__ == "TodoService"
     assert type(calendar_public.default_service()).__name__ == "CalendarService"
+
+
+def test_tasks_surfaces_refuse_legacy_fallback_when_plugin_off(monkeypatch, tmp_path):
+    from application.api import Application, RequestContext
+    from core.services import todos_public
+
+    _clear_domain_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError, match="requires the stella.tasks plugin"):
+        todos_public.default_service()
+    with pytest.raises(RuntimeError, match="requires the stella.tasks plugin"):
+        Application.port("todos", RequestContext(user_id="g5-user"))
+
+
+def test_core_has_no_legacy_todo_service():
+    import importlib.util
+
+    import agent.todos
+
+    assert not hasattr(agent.todos, "TodoService")
+    assert importlib.util.find_spec("agent.todos.service") is None
+    assert not (REPO / "agent/todos/service.py").exists()
 
 
 def test_briefing_tombstone_check_routes_through_public_helpers(monkeypatch):

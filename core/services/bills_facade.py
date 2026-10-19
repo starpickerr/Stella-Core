@@ -1,4 +1,4 @@
-"""Compatibility facade: same method surface as BillsService, routed to plugin RPC."""
+"""Bills port facade: the stella.bills method surface, routed to plugin RPC."""
 
 from __future__ import annotations
 

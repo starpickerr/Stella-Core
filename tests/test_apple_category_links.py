@@ -2,8 +2,6 @@ import pytest
 
 from agent.apple.category_links import reconcile_names, validate_links
 from agent.calendar.apple_sync import AppleCalendarSync
-from agent.scheduler.store import TaskStore
-from agent.todos import TodoService
 from application import Application
 from tests.test_apple_calendar_sync import FakeBridge, remote_event
 from tests.test_apple_reminder_sync import manager as reminder_manager
@@ -192,23 +190,7 @@ def test_calendar_batch_transfer_uses_category_and_range_without_connecting(tmp_
     assert again["preview"]["skipped"] == 1
 
 
-def test_todo_category_rename_keeps_hierarchy(tmp_path):
-    todos = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db",
-                        scheduler_store=TaskStore(str(tmp_path / "scheduler" / "tasks.json")))
-    category = todos.create_category({"name": "学习"})
-    parent = todos.set_todo_category(todos.create_todo({"title": "课程"})["id"], category["id"])
-    child = todos.set_todo_category(todos.add_subtask(parent["id"], {"title": "作业"})["id"], category["id"])
-    todos.update_category(category["id"], {"name": "大学学习"})
-    parent = todos.get_todo(parent["id"])
-    child = todos.get_todo(child["id"])
-    assert parent["list_name"] == child["list_name"] == "大学学习"
-    assert parent["category_id"] == child["category_id"] == category["id"]
-    assert child["parent_id"] == parent["id"]
-    todos.delete_category(category["id"])
-    assert todos.get_todo(parent["id"])["title"] == "课程"
-    assert todos.get_todo(parent["id"])["category_id"] is None
-
-
+@pytest.mark.usefixtures("todos_plugin")
 def test_reminder_links_sync_names_without_clearing_stella_fields(tmp_path):
     sync, todos, bridge, _clock = reminder_manager(tmp_path, [reminder("hw", "study", "作业")])
     bridge.available = {"study", "home"}
@@ -256,6 +238,7 @@ def test_reminder_links_sync_names_without_clearing_stella_fields(tmp_path):
     assert todos.get_todo(local["id"])["title"] == "买菜"
 
 
+@pytest.mark.usefixtures("todos_plugin")
 def test_reminder_batch_keeps_undated_children_and_does_not_connect(tmp_path):
     sync, todos, bridge, _clock = reminder_manager(tmp_path, [
         reminder("hw", "study", "作业"),

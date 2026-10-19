@@ -6,20 +6,14 @@ from typing import Iterable
 
 
 def default_service():
-    """Ambient Tasks service: the plugin facade when STELLA_TODOS_PLUGIN is on.
-
-    Keeps callers such as Briefing from holding a private ``agent.todos`` handle
-    as the only path once Tasks is served by ``stella.tasks``.
-    """
+    """Ambient Tasks service; ``stella.tasks`` is the only Tasks implementation."""
     from core.services.todos_gateway import todos_plugin_enabled
 
-    if todos_plugin_enabled():
-        from core.services.todos_facade import TodosPluginFacade
+    if not todos_plugin_enabled():
+        raise RuntimeError("todos domain requires the stella.tasks plugin (STELLA_TODOS_PLUGIN=1)")
+    from core.services.todos_facade import TodosPluginFacade
 
-        return TodosPluginFacade()
-    from agent.todos.service import TodoService
-
-    return TodoService()
+    return TodosPluginFacade()
 
 
 def source_key_is_tombstoned(source_keys: Iterable[str], *, service=None) -> bool:
@@ -46,3 +40,8 @@ def dispatch_scheduled_reminder(todo_id, expected_at, *, service=None):
         return None
     return dispatch_notification(service, pending["delivery_id"], pending["route"], pending["content"],
                                  expires_at=datetime.fromisoformat(pending["expires_at"]))
+
+
+def reconcile_pending_reminders() -> set[str]:
+    """Recover existing Tasks reminder intents through public plugin RPC."""
+    return default_service().reconcile_scheduler_links()

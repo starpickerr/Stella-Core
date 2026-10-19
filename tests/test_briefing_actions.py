@@ -4,23 +4,27 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from agent.briefing.service import BriefingService
 from agent.briefing.store import BriefingStore
-from agent.todos.service import TodoService
 from agent.calendar.service import CalendarService
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch):
-    # Keep legacy BriefingActions regression on in-process writers; plugin
-    # gateway suites must not leak STELLA_*_PLUGIN into this fixture.
+def env(tmp_path, monkeypatch, todos_plugin, tasks_domain):
+    # Tasks run on the real stella.tasks worker (``todos_plugin``: tmp todos.db and a
+    # TaskStore at tmp/scheduler/tasks.json). Calendar and briefing stay in-process;
+    # plugin gateway suites must not leak those STELLA_*_PLUGIN flags into this fixture.
     for key in (
-        "STELLA_TODOS_PLUGIN",
         "STELLA_CALENDAR_PLUGIN",
         "STELLA_BRIEFING_PLUGIN",
         "STELLA_DESKTOP",
     ):
         monkeypatch.delenv(key, raising=False)
-    from agent.scheduler.store import TaskStore
-    todos = TodoService(tmp_path/'todos.db', tmp_path/'calendar.db', scheduler_store=TaskStore(str(tmp_path/'scheduler.json')))
+    todos = todos_plugin
+
+    def seed_legacy_sourced_todo(*args):
+        # Test seeding only: write a pre-entity briefing row the way the retired ingest did.
+        tasks_domain.TodoService(tmp_path/'todos.db')._upsert_sourced_todo(*args)
+
+    todos.seed_legacy_sourced_todo = seed_legacy_sourced_todo
     calendar = CalendarService(tmp_path/'calendar.db')
     service = BriefingService(BriefingStore(tmp_path/'briefing.db'))
     from agent.briefing.actions import BriefingActions
@@ -186,7 +190,7 @@ def test_legacy_objects_are_adopted_and_user_deadlines_are_protected(env):
     _,actions,todos,_=env
     import json
     key=json.dumps([item.source,item.account_id,item.source_id],ensure_ascii=False,separators=(',',':'))
-    todos._upsert_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
+    todos.seed_legacy_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
     old=todos.list_todos()[0]
     todos.update_todo(old['id'],dict(due_on='2026-10-30',planned_on='2026-10-20'))
     detail,new=publish(env,day='2026-10-09',payload={'resource_type':'assignment','course_id':'12','due_at':'2026-10-28T15:59:00Z'})
@@ -291,7 +295,7 @@ def test_deleted_legacy_source_is_not_recreated_under_new_identity(env):
     detail, item = publish(env)
     _, actions, todos, _ = env
     key = json.dumps([item.source,item.account_id,item.source_id],ensure_ascii=False,separators=(',',':'))
-    todos._upsert_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
+    todos.seed_legacy_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
     todos.delete_todo(todos.list_todos()[0]['id'])
     actions.save_rule(dict(source='elearning',account_id='campus',information_type='assignment',kind='todo',mode='auto'))
     actions.sync(detail, 'todo')
@@ -320,14 +324,18 @@ def test_reminder_receipt_exposes_scheduler_failure_and_retry(env, monkeypatch):
     _, item = publish(env)
     _, actions, todos, _ = env
     created = actions.decide(item.id, dict(operation='create',kind='todo'))
+    from agent.todos import scheduler_link
+    original = scheduler_link.sync_task
     def fail(*args, **kwargs):
         raise RuntimeError('scheduler temporarily unavailable')
-    monkeypatch.setattr('agent.todos.service.sync_task', fail)
+    # The host applies plugin reminder links through scheduler_link.sync_task.
+    monkeypatch.setattr(scheduler_link, 'sync_task', fail)
     result = actions.decide(item.id, dict(operation='remind',kind='reminder',remind_at='2099-10-28T08:00:00Z'))
     assert result['state'] == 'failed'
     assert result['target_id'] == created['target_id']
     assert 'scheduler' in result['error']
-    monkeypatch.undo()
+    # Restore only the scheduler (a blanket undo would also unbind the plugin fixture).
+    monkeypatch.setattr(scheduler_link, 'sync_task', original)
     assert actions.decide(item.id, dict(operation='retry',kind='reminder'))['state'] == 'succeeded'
 
 
@@ -492,7 +500,7 @@ def test_email_thread_adopts_legacy_message_key(env):
     _, actions, todos, _ = env
     item.thread_id = '<root>'
     key = json.dumps([item.source,item.account_id,item.source_id],separators=(',',':'))
-    todos._upsert_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
+    todos.seed_legacy_sourced_todo(key,item,item.payload['due_at'],item.briefing_id)
     old = todos.list_todos()[0]
     actions.sync(detail,'todo')
     assert actions.view([item])[item.id]['todo']['target_id'] == old['id']

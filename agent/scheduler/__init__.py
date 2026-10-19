@@ -1,7 +1,7 @@
 """Scheduler domain: persistence, background loop, and AgentBridge glue.
 
 The model-facing tool lives in ``agent.tools.scheduler`` and is a thin
-adapter over this package — the same split as ``agent.bills`` / ``agent.tools.bills``.
+adapter over this package.
 """
 
 from agent.scheduler.store import TaskStore

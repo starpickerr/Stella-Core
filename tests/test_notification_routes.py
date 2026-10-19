@@ -9,7 +9,6 @@ import pytest
 
 from agent.scheduler import delivery
 from agent.scheduler.store import TaskStore
-from agent.todos import TodoService
 from agent.tools.scheduler.scheduler_tool import SchedulerTool
 from agent.tools.todos.todos_tool import TodosTool
 
@@ -28,10 +27,10 @@ def channels(monkeypatch):
     return available
 
 
-def _todo_tool(tmp_path):
-    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
-    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db", scheduler_store=store)
-    return TodosTool(service=service), store
+def _todo_tool(todos_plugin):
+    # Real stella.tasks worker; the host reconciles reminder links into
+    # TaskStore(tmp_path/scheduler/tasks.json), the same store as before.
+    return TodosTool(service=todos_plugin), todos_plugin.scheduler_store
 
 
 def _scheduler_tool(tmp_path):
@@ -50,8 +49,8 @@ def _route(channel, receiver, *, backup=None, enabled=False):
             "backup_enabled": enabled, "backup": backup}
 
 
-def test_agent_creates_queries_and_changes_todo_reminder_without_duplicate_task(tmp_path, channels):
-    tool, store = _todo_tool(tmp_path)
+def test_agent_creates_queries_and_changes_todo_reminder_without_duplicate_task(tmp_path, channels, todos_plugin):
+    tool, store = _todo_tool(todos_plugin)
     reminder = _future()
     created = tool.execute({"action": "create", "title": "Submit homework", "remind_at": reminder,
                             "reminder_delivery": _route("telegram", "100")})
@@ -68,9 +67,9 @@ def test_agent_creates_queries_and_changes_todo_reminder_without_duplicate_task(
     assert store.get_task(todo["scheduler_task_id"])["reminder_delivery"] == stored["reminder_delivery"]
 
 
-def test_unchanged_weixin_route_allows_other_edits_after_context_expires(tmp_path, channels):
+def test_unchanged_weixin_route_allows_other_edits_after_context_expires(tmp_path, channels, todos_plugin):
     from application import Application
-    tool, store = _todo_tool(tmp_path)
+    tool, store = _todo_tool(todos_plugin)
     todo = json.loads(tool.execute({"action": "create", "title": "Before", "remind_at": _future(),
                                     "reminder_delivery": _route("telegram", "100")}).result)["todo"]
     task = {"id": "independent", "name": "Before", "enabled": True,
@@ -89,8 +88,8 @@ def test_unchanged_weixin_route_allows_other_edits_after_context_expires(tmp_pat
     assert saved_task["name"] == "After" and saved_task["enabled"] is False
 
 
-def test_agent_rejects_unresolved_todo_recipient(tmp_path, channels):
-    tool, store = _todo_tool(tmp_path)
+def test_agent_rejects_unresolved_todo_recipient(tmp_path, channels, todos_plugin):
+    tool, store = _todo_tool(todos_plugin)
     result = tool.execute({"action": "create", "title": "Submit", "remind_at": _future(),
                            "reminder_delivery": _route("telegram", "")})
     assert result.status == "error" and "recipient" in result.result

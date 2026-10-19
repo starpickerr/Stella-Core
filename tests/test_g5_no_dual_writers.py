@@ -9,6 +9,15 @@ from unittest.mock import MagicMock
 from application import Application, RequestContext
 
 
+def _assert_no_legacy_todo_service():
+    import importlib.util
+
+    import agent.todos
+
+    assert not hasattr(agent.todos, "TodoService")
+    assert importlib.util.find_spec("agent.todos.service") is None
+
+
 def test_dispatch_todo_reminder_uses_plugin_facade_when_enabled(monkeypatch, tmp_path):
     monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
     monkeypatch.setenv(
@@ -26,11 +35,8 @@ def test_dispatch_todo_reminder_uses_plugin_facade_when_enabled(monkeypatch, tmp
         "core.services.todos_facade.TodosPluginFacade",
         lambda: _Facade(),
     )
-    # Legacy constructor must not run.
-    monkeypatch.setattr(
-        "agent.todos.TodoService",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy TodoService")),
-    )
+    # The legacy constructor cannot run: Core no longer ships a Tasks service.
+    _assert_no_legacy_todo_service()
     result = Application.dispatch_todo_reminder(
         "t1",
         "2026-01-01T00:00:00+00:00",
@@ -44,10 +50,7 @@ def test_todos_facade_reconcile_does_not_construct_legacy_service(monkeypatch, t
     from core.services.todos_facade import TodosPluginFacade
 
     monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
-    monkeypatch.setattr(
-        "agent.todos.service.TodoService",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy TodoService")),
-    )
+    _assert_no_legacy_todo_service()
     calls = []
 
     def fake_invoke(method, params, *, db_path, legacy_calendar_db_path=None):
@@ -68,10 +71,7 @@ def test_briefing_actions_uses_public_default_services(monkeypatch):
     cal = MagicMock(name="cal_facade")
     monkeypatch.setattr("core.services.todos_public.default_service", lambda: todo)
     monkeypatch.setattr("core.services.calendar_public.default_service", lambda: cal)
-    monkeypatch.setattr(
-        "agent.todos.service.TodoService",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy todos")),
-    )
+    _assert_no_legacy_todo_service()
     monkeypatch.setattr(
         "agent.calendar.service.CalendarService",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy calendar")),

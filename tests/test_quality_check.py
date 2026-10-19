@@ -19,9 +19,15 @@ def test_renderer_change_selects_ui_and_typecheck():
 
 
 def test_todo_change_selects_its_behavior_tests():
-    checks = affected_checks(["agent/todos/service.py"])
+    for adapter in ("agent/todos/apple_sync.py", "agent/todos/scheduler_link.py"):
+        checks = affected_checks([adapter])
 
-    assert "tests/test_todos.py" in checks["pytest"]
+        assert "tests/test_todos.py" in checks["pytest"]
+        assert "tests/test_todos_plugin_gateway.py" in checks["pytest"]
+        assert "tests/test_apple_reminder_sync.py" in checks["pytest"]
+    facade = affected_checks(["core/services/todos_facade.py"])
+    assert "tests/test_todos_plugin_gateway.py" in facade["pytest"]
+    assert "tests/test_todos.py" in facade["pytest"]
 
 
 def test_runtime_permission_change_selects_denial_and_recovery_tests():

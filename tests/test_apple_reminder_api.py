@@ -8,6 +8,8 @@ import pytest
 from application import Application
 from tests.test_apple_reminder_sync import manager, reminder
 
+pytestmark = pytest.mark.usefixtures("todos_plugin")
+
 
 def test_reminder_one_time_is_scoped_confirmed_and_does_not_connect(tmp_path):
     sync, todos, bridge, _ = manager(tmp_path, [reminder()])

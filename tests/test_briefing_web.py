@@ -65,12 +65,11 @@ def test_run_list_detail_and_mark(api):
     assert auth.call_count == 4
 
 
-def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path):
+def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path, todos_plugin):
     service, auth = api
     from agent.briefing.actions import BriefingActions
-    from agent.todos.service import TodoService
     from agent.calendar.service import CalendarService
-    service._actions = BriefingActions(service.store, TodoService(tmp_path/'todos.db',tmp_path/'calendar.db'), CalendarService(tmp_path/'calendar.db'))
+    service._actions = BriefingActions(service.store, todos_plugin, CalendarService(tmp_path/'calendar.db'))
     ran = call(web_channel.BriefingRunHandler, body={'briefing_date':'2026-09-09'})
     item_id = ran['items'][0]['id']
     receipt = call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'create','kind':'todo'}})['receipt']

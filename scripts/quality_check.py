@@ -17,7 +17,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHON = python_path(ROOT)
 SKILL_SERVER = ROOT / ".agents/skills/webapp-testing/scripts/with_server.py"
 DOMAIN_TESTS = {
-    "agent/todos/": ("tests/test_todos.py",),
+    # Core keeps only the Tasks adapters (Apple Reminders sync, scheduler links); the
+    # domain's own tests live in Stella-Plugins/plugins/tasks/tests.
+    "agent/todos/": ("tests/test_todos.py", "tests/test_todos_plugin_gateway.py",
+                     "tests/test_apple_reminder_sync.py", "tests/test_apple_reminder_todos.py"),
+    "core/services/todos_": ("tests/test_todos_plugin_gateway.py", "tests/test_todos.py"),
     "agent/calendar/": ("tests/test_calendar.py",),
     "agent/permission/": ("tests/test_security_gateway.py", "tests/test_security_center.py",
                           "tests/test_security_approval_resume.py", "tests/test_process_sandbox.py"),

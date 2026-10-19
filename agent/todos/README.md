@@ -1,5 +1,7 @@
 # 事务
 
+事务领域（数据、规则、提醒发件箱）由外仓插件 `stella.tasks` 独有，Core 通过 `core/services/todos_facade.py` 调用；本目录只保留 Core 侧适配：Apple 提醒事项同步（`apple_sync.py`）与 scheduler 任务链接（`scheduler_link.py`）。以下为领域行为说明。
+
 普通事务是一个节点；只有需要拆解时才添加子事务。`parent_id` 与同级 `sort_order` 表示层级和手动顺序。`todo_dependencies` 单独保存“必须先完成”的关系，既不是子事务，也不改变父事务进度。依赖不能形成环，前置事务未完成时不能进入“进行中”或“已完成”。
 
 状态为 `todo`、`in_progress`、`waiting`、`blocked`、`completed`、`cancelled`。`completed_at` 与状态同步，保留旧 API 的完成/撤销完成语义。父事务进度按未取消的直接子事务计算；完成父事务前检查所有后代，仍有未完成后代时要求调用方明确使用 `force`，不会级联完成子事务。删除父事务会删除其子树，页面会先确认。
@@ -8,6 +10,6 @@
 
 数据保存在用户级 `todos/todos.db`。启动时只补充列和依赖表，并把旧的非空 `completed_at` 映射为 `completed`；旧记录仍是顶层事务。原有 `checklist` 保留为旧检查清单，新的拆解使用子事务。早期 `calendar_affairs` 与 `agenda_handoffs` 的迁移和来源墓碑保持原行为。简报行动条目仍同步进事务，用户修改后不被覆盖。
 
-未来的显式 `remind_at` 会建立一条 ID 为 `todo-reminder:<todo_id>` 的一次性 scheduler 任务。任务执行时通过 `QueueTodoReminder` 命令核对事务 ID 和提醒时间，再写入现有桌面通知交付队列；改期、完成、取消或删除事务会更新或移除对应任务。事务库中的 `todo_scheduler_links` 保存待同步状态，scheduler 存储暂时不可用时由后续服务初始化重试。旧提醒在迁移时补建任务；截止时间和重复事务的既有通知逻辑保持原样。
+未来的显式 `remind_at` 会建立一条 ID 为 `todo-reminder:<todo_id>` 的一次性 scheduler 任务。任务执行时通过 `QueueTodoReminder` 命令核对事务 ID 和提醒时间，再写入现有桌面通知交付队列；改期、完成、取消或删除事务会更新或移除对应任务。事务库中的 `todo_scheduler_links` 保存待同步状态，插件无法直接访问 Core scheduler，由 Core facade 在每次写入后对账 `pending_scheduler_links`，失败时下次写入重试。到点后 Core 向插件取待送达提醒，经自身渠道发送，并把每段送达结果写回插件的发件箱。旧提醒在迁移时补建任务；截止时间和重复事务的既有通知逻辑保持原样。
 
-`TodoService` 是 UI 和 Agent 共用的事务能力。旧的创建、编辑、完成、删除、列表接口仍可使用；新增 `change_todo_status`、`add_subtask`、`move_todo`、`add_dependency`、`remove_dependency`。HTTP `/api/todos` 路径与 Agent `todos` 工具都调用 Application Port 中同一个服务。自然语言任务可从事务页交给现有对话 Agent 解释，事务页不另建日期解析器。
+插件内 `TodoService` 是 UI 和 Agent 共用的事务能力。旧的创建、编辑、完成、删除、列表接口仍可使用；新增 `change_todo_status`、`add_subtask`、`move_todo`、`add_dependency`、`remove_dependency`。HTTP `/api/todos` 路径与 Agent `todos` 工具都调用 Application Port 中同一个服务。自然语言任务可从事务页交给现有对话 Agent 解释，事务页不另建日期解析器。

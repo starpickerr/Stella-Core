@@ -2,9 +2,13 @@
 
 import json
 
+import pytest
+
 from agent.tools.apple.apple_tool import AppleTool
 from application import Application
 from tests.test_apple_reminder_sync import manager, reminder
+
+pytestmark = pytest.mark.usefixtures("todos_plugin")
 
 
 def test_agent_reminders_lookup_preview_and_one_time_share_manager(tmp_path, monkeypatch):

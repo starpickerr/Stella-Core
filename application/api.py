@@ -80,9 +80,9 @@ _METHODS = {
 
 class _Port:
     # G5 routing policy (domain -> service behind the port):
-    # - bills, email, elearning: plugin-only (no in-process service); raise unless the
+    # - bills, todos, email, elearning: plugin-only (no in-process service); raise unless the
     #   STELLA_<DOMAIN>_PLUGIN flag is on.
-    # - calendar, todos, briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
+    # - calendar, briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
     #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
     #   app._bootstrap_default_plugins installs catalog packages and sets those
     #   flags for enabled intents (explicit 0/false still wins). Never dual-write.
@@ -107,13 +107,8 @@ class _Port:
                     from agent.calendar import CalendarService
                     self._service = CalendarService()
             elif domain == "todos":
-                from core.services.todos_gateway import todos_plugin_enabled
-                if todos_plugin_enabled():
-                    from core.services.todos_facade import TodosPluginFacade
-                    self._service = TodosPluginFacade()
-                else:
-                    from agent.todos import TodoService
-                    self._service = TodoService()
+                from core.services.todos_public import default_service
+                self._service = default_service()
             elif domain == "bills":
                 from core.services.bills_gateway import bills_plugin_enabled
                 if not bills_plugin_enabled():

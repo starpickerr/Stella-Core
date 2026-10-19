@@ -4,7 +4,7 @@
 
 | 场景 | 路径 | 关键边界 |
 | --- | --- | --- |
-| 桌面事务 | React → 本地 HTTP API → `Application.port('todos')` → `TodoService` → SQLite | Python 服务校验；UI 不直接写库 |
+| 桌面事务 | React → 本地 HTTP API → `Application.port('todos')` → `TodosPluginFacade` → `stella.tasks` 插件 → SQLite | Python 服务校验；UI 不直接写库 |
 | Agent 业务工具 | 消息 → Bridge/执行器 → 权限网关 → Tool → `Application.port`/`command` → 领域服务 | 工具授权与业务校验分开 |
 | 简报 | `BriefingPipeline` → 来源适配器 → Agent 逐项判断/报告 → `BriefingStore` → `BriefingActions`/事务与日程 | 来源游标在成功持久化后推进；行动有回执与幂等恢复 |
 | 自动化 | `SchedulerService` 领取触发 → `scheduler.integration` 绑定身份 → Agent/Tool 或 `Application.command` | 发生记录、重试和通知交付分开 |

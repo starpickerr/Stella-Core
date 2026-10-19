@@ -81,3 +81,54 @@ def deterministic_briefing_generator(monkeypatch):
 
     monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", generator)
     return generator
+
+
+@pytest.fixture
+def todos_plugin_env(monkeypatch):
+    """Route the Tasks port to the real ``stella.tasks`` worker (workspace mirror)."""
+    from core.services import todos_gateway
+
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_ROOT", str(repo / "stella-plugins-workspace" / "plugins" / "tasks"))
+    monkeypatch.setenv("STELLA_REPO_ROOT", str(repo))
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_SCHEDULER_SYNC", "0")
+    yield
+    todos_gateway.shutdown_todos_session()
+
+
+@pytest.fixture
+def todos_plugin(todos_plugin_env, tmp_path, monkeypatch):
+    """Real-worker Tasks facade over ``tmp_path/todos.db``.
+
+    Reminder links are reconciled by the host into a ``TaskStore`` under
+    ``tmp_path/scheduler``, exposed as ``facade.scheduler_store``.
+    """
+    from agent.scheduler.store import TaskStore
+    from agent.todos import scheduler_link
+    from core.services import todos_facade
+
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    monkeypatch.setattr(todos_facade, "_db_paths", lambda: (tmp_path / "todos.db", tmp_path / "calendar.db"))
+    monkeypatch.setattr(scheduler_link, "default_scheduler_store", lambda: store)
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_SCHEDULER_SYNC", "1")
+    facade = todos_facade.TodosPluginFacade()
+    facade.scheduler_store = store
+    return facade
+
+
+@pytest.fixture(scope="session")
+def tasks_domain():
+    """The vendored stella.tasks domain package, for seeding legacy rows in Core tests only."""
+    import importlib
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "tasks" / "backend" / "domain"
+    name = "stella_tasks_domain_core_seed"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, root / "__init__.py",
+                                                      submodule_search_locations=[str(root)])
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[name] = package
+        spec.loader.exec_module(package)
+    return importlib.import_module(name + ".service")

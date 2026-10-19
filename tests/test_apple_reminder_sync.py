@@ -1,14 +1,17 @@
 """Apple Reminders reconciliation against an isolated EventKit adapter."""
 
 import copy
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from agent.scheduler.store import TaskStore
-from agent.todos import TodoService
 from agent.todos.apple_sync import AppleReminderSync
+from core.services.todos_facade import TodosPluginFacade
+
+# Every manager drives the real stella.tasks worker over tmp_path (tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("todos_plugin")
 
 
 def reminder(identifier="r1", list_id="a", title="Homework", **updates):
@@ -87,8 +90,10 @@ class FakeBridge:
 
 
 def manager(tmp_path, rows=()):
-    todos = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db",
-                        scheduler_store=TaskStore(str(tmp_path / "scheduler" / "tasks.json")))
+    # Requires the ``todos_plugin`` fixture: the facade is bound to tmp_path/todos.db and
+    # reconciles reminder links into TaskStore(tmp_path/scheduler/tasks.json).
+    assert os.environ.get("STELLA_TODOS_PLUGIN") == "1", "manager() needs the todos_plugin fixture"
+    todos = TodosPluginFacade()
     bridge = FakeBridge(rows)
     current = [datetime(2026, 10, 9, tzinfo=timezone.utc)]
     sync = AppleReminderSync(bridge=bridge, db_path=tmp_path / "apple_reminders.db", todo_port=todos,

@@ -85,6 +85,25 @@ class SchedulerService:
 
             time.sleep(30)
     
+    def _recover_pending_reminder_links(self):
+        from common.runtime_identity import identity_scope
+        from core.plugins.caller import caller_origin_scope
+        from core.plugins.management import default_store
+        from core.services.todos_public import reconcile_pending_reminders
+
+        management = default_store()
+        for user in management.users('stella.tasks'):
+            if management.instance('stella.tasks', user)['intent'] != 'enabled':
+                continue
+            try:
+                with identity_scope(user_id=user, agent_id=getattr(self.task_store, 'agent_id', None)):
+                    with caller_origin_scope('scheduler'):
+                        reconcile_pending_reminders()
+            except Exception as exc:
+                # Recovery must not postpone unrelated deliveries, and never
+                # creates a new background grant to make a repair succeed.
+                logger.warning('[Scheduler] Tasks reminder recovery deferred user=%s: %s', user, exc)
+
     def _check_and_execute_tasks(self):
         """Check for due tasks and execute them"""
         now = datetime.now()
@@ -100,6 +119,8 @@ class SchedulerService:
                     self._check_one_task(task, now)
             else:
                 self._check_one_task(task, now)
+
+        self._recover_pending_reminder_links()
 
     def _check_one_task(self, task, now):
         try:

@@ -251,14 +251,14 @@ def test_agent_tool_discovery_and_permissions(service):
     assert check_tool_call("workspace-write", "calendar", {"action": "create"})
 
 @pytest.mark.usefixtures("deterministic_briefing_generator")
-def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch):
+def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch, todos_plugin_env):
     from datetime import datetime
     from agent.briefing.pipeline import BriefingPipeline
     from agent.briefing.service import BriefingService
     from agent.briefing.sources.base import FetchedItem
     from agent.briefing.store import BriefingStore
     from briefing_fakes import StaticSource
-    from agent.todos import TodoService
+    from core.services.todos_facade import TodosPluginFacade
 
     calendar_path = tmp_path / "calendar.db"
     todos_path = tmp_path / "todos.db"
@@ -273,12 +273,12 @@ def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch):
     assert detail["briefing"].status == "completed"
     events = CalendarService(calendar_path).list_events()
     assert events == []
-    todos = TodoService(todos_path, calendar_path).list_todos()
+    todos = TodosPluginFacade().list_todos()
     assert todos == []
     assert detail['actions'][detail['items'][0].id]['todo']['state'] == 'pending'
     receipt = briefing.update_action(detail['items'][0].id, {'operation':'create', 'kind':'todo'})
     assert receipt['state'] == 'succeeded'
-    todos = TodoService(todos_path, calendar_path).list_todos()
+    todos = TodosPluginFacade().list_todos()
     assert len(todos) == 1 and todos[0]['title'] == '测验'
     assert CalendarService(calendar_path).list_events() == []
 

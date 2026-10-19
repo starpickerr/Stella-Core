@@ -10,7 +10,6 @@ from agent.scheduler.dispatch import dispatch_notification
 from agent.scheduler import integration
 from agent.scheduler.dispatch import DeliveryOutcome
 from agent.scheduler import delivery
-from agent.todos import TodoService
 from bridge.reply import Reply, ReplyType
 from bridge.context import Context, ContextType
 
@@ -279,38 +278,6 @@ def test_scheduled_agent_output_survives_delivery_retry(tmp_path, monkeypatch):
     assert store.get_delivery(job_id, "primary")["status"] == "accepted"
 
 
-def test_todo_external_reminder_uses_same_outbox_without_desktop_duplicate(tmp_path, monkeypatch):
-    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
-        login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
-    sends = []
-    monkeypatch.setattr("agent.scheduler.dispatch._channel_for", lambda name: SimpleNamespace(
-        send=lambda reply, context: sends.append((name, context["receiver"], reply.content)) or True))
-    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
-    due = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
-    todo = service.create_todo({"title": "Submit", "remind_at": due, "reminder_delivery": _route()})
-    assert service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
-    assert sends == [("telegram", "100", "事务提醒：Submit")]
-    assert service.claim_desktop_reminders() == []
-    assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "accepted"
-
-
-def test_late_todo_external_reminder_expires_without_sending(tmp_path, monkeypatch):
-    monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
-        login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
-    sends = []
-    monkeypatch.setattr("agent.scheduler.dispatch._channel_for", lambda _: SimpleNamespace(
-        send=lambda *_args: sends.append(1)))
-    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
-    due = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat()
-    todo = service.create_todo({"title": "Old", "remind_at": due, "reminder_delivery": _route()})
-    assert service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "expired"
-    assert not sends
-    assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "expired"
-
-
 def test_scheduler_todo_command_reports_external_delivery_waiting(monkeypatch):
     from application import Application
     calls = []
@@ -326,7 +293,18 @@ def test_scheduler_todo_command_reports_external_delivery_waiting(monkeypatch):
     assert calls == [("one", "2026-10-09T06:00:00+00:00", "scheduler")]
 
 
-def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(tmp_path, monkeypatch):
+def _scheduler_context():
+    from application import RequestContext
+
+    return RequestContext(source="scheduler", user_id="test-user", agent_id="test-agent", session_id="s")
+
+
+# Delivered-once and late-expiry todo reminders run against the real plugin outbox in
+# tests/test_todos_plugin_gateway.py; route edits below use the same real-worker path.
+
+
+def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugin, monkeypatch):
+    from application import Application
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
         login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
     sends = []
@@ -338,19 +316,20 @@ def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(tmp_path, m
             return True
         return SimpleNamespace(send=send)
     monkeypatch.setattr("agent.scheduler.dispatch._channel_for", provider)
-    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
+    service = todos_plugin
     due = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
     todo = service.create_todo({"title": "Submit", "remind_at": due, "reminder_delivery": _route()})
     service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "failed"
+    assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "failed"
     service.update_todo(todo["id"], {"reminder_delivery": {
         "primary": {"channel_type": "wecom_bot", "receiver": "chat-1"}}})
     service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "accepted"
+    assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "accepted"
     assert sends == ["telegram", "wecom_bot"]
 
 
-def test_todo_unknown_result_is_preserved_across_route_edit(tmp_path, monkeypatch):
+def test_todo_unknown_result_is_preserved_across_route_edit(todos_plugin, monkeypatch):
+    from application import Application
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
         login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
     sends = []
@@ -358,14 +337,14 @@ def test_todo_unknown_result_is_preserved_across_route_edit(tmp_path, monkeypatc
         sends.append(1)
         raise requests.exceptions.Timeout("response lost")
     monkeypatch.setattr("agent.scheduler.dispatch._channel_for", lambda _: SimpleNamespace(send=send))
-    service = TodoService(tmp_path / "todos.db", tmp_path / "calendar.db")
+    service = todos_plugin
     due = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
     todo = service.create_todo({"title": "Submit", "remind_at": due, "reminder_delivery": _route()})
     service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "unknown"
+    assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "unknown"
     service.update_todo(todo["id"], {"reminder_delivery": {
         "primary": {"channel_type": "wecom_bot", "receiver": "chat-1"}}})
     service.queue_scheduled_reminder(todo["id"], due)
-    assert service.dispatch_scheduled_reminder(todo["id"], due).status == "unknown"
+    assert Application.dispatch_todo_reminder(todo["id"], due, _scheduler_context()).status == "unknown"
     assert service.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "unknown"
     assert sends == [1]

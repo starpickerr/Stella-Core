@@ -799,7 +799,7 @@ export interface NotificationDeliveryStatus {
 }
 
 // ============================================================
-// Bills (mirrors agent/bills/schema.sql period_statements)
+// Bills (mirrors the stella.bills plugin period_statements schema)
 // ============================================================
 
 export type PeriodType = 'monthly' | 'yearly'
