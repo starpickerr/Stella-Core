@@ -185,19 +185,38 @@ class PluginSession:
             return {"initialize": init, "prepare": prepared}
 
     def invoke(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Compatibility wrapper — prefer invoke_contract."""
+        """Compatibility wrapper for samples/tests — production callers use ``invoke_contract``.
+
+        Auto-issues a per-plugin compat grant covering declared capabilities so
+        authz stays enforceable (R05); a revoked grant still blocks.
+        """
         services = self.registry.get(self.plugin_id)
         contract = (services.services[0] if services and services.services else f"{self.plugin_id}@1")
         payload = dict(params or {})
         data_handle = payload.pop("_dataHandle", None)
+        grant_ref = f"legacy-compat:{self.plugin_id}:{self.user_id}"
+        caps = {"plugin.invoke"}
+        for row in self.manifest.get("permissions") or ():
+            if isinstance(row, dict) and row.get("capability"):
+                caps.add(str(row["capability"]))
+        caps.update(self._service_permissions.get(contract) or ())
+        if self.authz.get(grant_ref) is None:
+            self.authz.issue(
+                grant_ref=grant_ref,
+                plugin_id=self.plugin_id,
+                user_id=self.user_id,
+                capabilities=caps,
+                purposes=["interactive", "system", "any"],
+            )
         return self.invoke_contract(
             contract=contract,
             method=method,
             input_payload=payload,
             origin="system",
-            grant_ref="legacy-compat",
-            permissions=(),
-            skip_authz=True,
+            grant_ref=grant_ref,
+            permissions=tuple(caps),
+            purpose="interactive",
+            skip_authz=False,
             data_handle=data_handle,
         )
 

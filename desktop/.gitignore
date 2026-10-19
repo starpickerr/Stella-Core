@@ -6,3 +6,5 @@ release/
 Thumbs.db
 resources/app-config.json
 resources/themes/
+resources/plugin-catalog.json
+resources/plugin-seed/

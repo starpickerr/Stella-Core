@@ -15,9 +15,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build:eventkit && npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
+    "sync:plugin-seed": "node scripts/sync-plugin-seed.mjs",
+    "dist": "npm run sync:plugin-seed && npm run build && electron-builder",
+    "dist:mac": "npm run sync:plugin-seed && npm run build:eventkit && npm run build && electron-builder --mac",
+    "dist:win": "npm run sync:plugin-seed && npm run build && electron-builder --win",
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
@@ -83,7 +84,9 @@
         "filter": [
           "icon.png",
           "app-config.json",
-          "themes/**"
+          "themes/**",
+          "plugin-catalog.json",
+          "plugin-seed/**"
         ]
       }
     ],

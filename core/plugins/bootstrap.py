@@ -126,13 +126,18 @@ def run_desktop_bootstrap(
 def _default_catalog_path() -> Path:
     """Resolve the official catalog for bootstrap.
 
-    Order: ``STELLA_PLUGIN_CATALOG`` → frozen Resources/catalog → sibling checkout.
+    Order: ``STELLA_PLUGIN_CATALOG`` → Electron Resources seed → frozen
+    ``_MEIPASS`` copy → sibling Stella-Plugins checkout.
     """
     explicit = os.environ.get("STELLA_PLUGIN_CATALOG", "").strip()
     if explicit:
         return Path(explicit)
+    # Packaged app: <Resources>/backend/stella-backend/stella-backend → ../../plugin-catalog.json
+    if getattr(sys, "frozen", False):
+        resources_catalog = Path(sys.executable).resolve().parents[2] / "plugin-catalog.json"
+        if resources_catalog.is_file():
+            return resources_catalog
     here = Path(__file__).resolve()
-    # Frozen onedir: .../stella-backend/_internal/core/plugins/bootstrap.py
     meipass = Path(getattr(sys, "_MEIPASS", here.parents[2]))
     bundled = meipass / "resources" / "plugin-catalog.json"
     if bundled.is_file():
