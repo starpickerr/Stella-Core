@@ -222,7 +222,10 @@ def main():
     parser.add_argument("--report", type=Path, default=ROOT / ".agents/audits/code-review" / f"Full-Audit-{date.today().isoformat()}.md")
     args = parser.parse_args()
     if not PYTHON.is_file():
-        parser.error(".venv/bin/python is required; create the project virtual environment first")
+        parser.error(
+            "Stella Python not found; activate conda env Stella "
+            "(or set STELLA_PYTHON). CI may use .venv/bin/python."
+        )
     selected = affected_checks(args.files if args.files is not None else changed_files()) if args.mode == "incremental" else None
     commands = []
     if args.mode == "full":

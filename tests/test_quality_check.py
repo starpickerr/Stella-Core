@@ -154,7 +154,20 @@ def test_isolation_redirects_windows_profile_and_temp_state(tmp_path):
     assert env['TMP'] == str(tmp_path / 'tmp')
 
 
-def test_quality_tools_select_native_virtualenv(tmp_path):
+def test_quality_tools_prefer_stella_python_override(tmp_path, monkeypatch):
     from scripts.check_runtime import python_path
-    assert python_path(tmp_path, 'nt') == tmp_path / '.venv/Scripts/python.exe'
-    assert python_path(tmp_path, 'posix') == tmp_path / '.venv/bin/python'
+
+    fake = tmp_path / "conda-stella-python"
+    fake.write_text("", encoding="utf-8")
+    monkeypatch.setenv("STELLA_PYTHON", str(fake))
+    assert python_path(tmp_path, "posix") == fake
+    assert python_path(tmp_path, "nt") == fake
+
+
+def test_quality_tools_fall_back_to_venv_without_conda(tmp_path, monkeypatch):
+    from scripts import check_runtime
+
+    monkeypatch.delenv("STELLA_PYTHON", raising=False)
+    monkeypatch.setattr(check_runtime, "_conda_stella_python", lambda platform=None: None)
+    assert check_runtime.python_path(tmp_path, "nt") == tmp_path / ".venv/Scripts/python.exe"
+    assert check_runtime.python_path(tmp_path, "posix") == tmp_path / ".venv/bin/python"
