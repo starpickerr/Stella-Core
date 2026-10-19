@@ -162,6 +162,8 @@ hiddenimports += collect_submodules('playwright')
 # (source, dest_dir_in_bundle).
 datas = [
     (rp('config-template.json'), '.'),
+    # First-boot plugin bootstrap list (bytes still come from Stella-Plugins catalog).
+    (rp('resources', 'default-plugins.json'), 'resources'),
     (rp('skills'), 'skills'),
     # Legacy PluginManager.scan_plugins() walks the on-disk ./plugins dir at
     # runtime for chat-command plugins (it doesn't rely solely on imports), so

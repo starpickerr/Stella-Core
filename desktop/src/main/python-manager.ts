@@ -290,6 +290,28 @@ export class PythonBackend extends EventEmitter {
    * We recover the real login-shell PATH (macOS/Linux) and merge in common bin
    * dirs, so the agent can find these commands regardless of how the app started.
    */
+  /**
+   * Official plugin catalog for first-boot install. Prefer an explicit env,
+   * then a packaged Resources copy, then a sibling Stella-Plugins checkout
+   * (monorepo / local development). Absolute machine paths never belong in the
+   * published catalog itself.
+   */
+  private resolvePluginCatalogPath(): string | undefined {
+    const fromEnv = process.env.STELLA_PLUGIN_CATALOG?.trim()
+    if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
+    const packaged = path.join(process.resourcesPath, 'plugin-catalog.json')
+    if (fs.existsSync(packaged)) return packaged
+    const siblings = [
+      path.resolve(app.getAppPath(), '..', '..', '..', 'Stella-Plugins', 'catalog', 'official.json'),
+      path.resolve(process.resourcesPath, '..', '..', '..', '..', 'Stella-Plugins', 'catalog', 'official.json'),
+      path.resolve(process.cwd(), '..', 'Stella-Plugins', 'catalog', 'official.json'),
+    ]
+    for (const candidate of siblings) {
+      if (fs.existsSync(candidate)) return candidate
+    }
+    return undefined
+  }
+
   private resolveEnvPath(): string {
     if (this.resolvedPath !== null) {
       return this.resolvedPath
@@ -681,6 +703,7 @@ export class PythonBackend extends EventEmitter {
       this.emit('log', `Starting Python backend: ${pythonPath} ${appPath}`)
     }
 
+    const pluginCatalog = this.resolvePluginCatalogPath()
     this.process = spawn(command, args, {
       cwd,
       // STELLA_DESKTOP enables the lighter desktop runtime (no plugins, no MCP).
@@ -698,6 +721,7 @@ export class PythonBackend extends EventEmitter {
         // two sides can never disagree (and we avoid the 9899 web-console clash).
         STELLA_BACKEND_PORT: String(this.port),
         STELLA_DATA_DIR: dataDir,
+        ...(pluginCatalog ? { STELLA_PLUGIN_CATALOG: pluginCatalog } : {}),
         ...(this.clientSource() ? { STELLA_CLIENT_SOURCE: this.clientSource() } : {}),
         STELLA_CLIENT_VERSION: app.getVersion(),
       },

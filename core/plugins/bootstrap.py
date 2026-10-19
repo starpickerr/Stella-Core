@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -123,6 +124,18 @@ def run_desktop_bootstrap(
 
 
 def _default_catalog_path() -> Path:
-    sibling = Path(__file__).resolve().parents[3] / "Stella-Plugins" / "catalog" / "official.json"
-    # Workspace mirrors packages but has no catalog file; callers may synthesize.
+    """Resolve the official catalog for bootstrap.
+
+    Order: ``STELLA_PLUGIN_CATALOG`` → frozen Resources/catalog → sibling checkout.
+    """
+    explicit = os.environ.get("STELLA_PLUGIN_CATALOG", "").strip()
+    if explicit:
+        return Path(explicit)
+    here = Path(__file__).resolve()
+    # Frozen onedir: .../stella-backend/_internal/core/plugins/bootstrap.py
+    meipass = Path(getattr(sys, "_MEIPASS", here.parents[2]))
+    bundled = meipass / "resources" / "plugin-catalog.json"
+    if bundled.is_file():
+        return bundled
+    sibling = here.parents[3] / "Stella-Plugins" / "catalog" / "official.json"
     return sibling
