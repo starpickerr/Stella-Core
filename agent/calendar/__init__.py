@@ -1,5 +1,1 @@
-"""Calendar domain: SQLite schedule and source handoffs."""
-
-from .service import CalendarService
-
-__all__ = ["CalendarService"]
+"""Core Apple Calendar adapters; calendar business rules belong to stella.calendar."""

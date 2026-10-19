@@ -7,6 +7,8 @@ from tests.test_apple_calendar_sync import FakeBridge, remote_event
 from tests.test_apple_reminder_sync import manager as reminder_manager
 from tests.test_apple_reminder_sync import reminder
 
+pytestmark = pytest.mark.usefixtures("calendar_plugin_env")
+
 
 def test_name_sync_is_independent_of_content_direction():
     assert reconcile_names("课程", "课程", "大学课程", "课程") == ("apple_to_stella", "大学课程")

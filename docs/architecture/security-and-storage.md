@@ -5,7 +5,7 @@
 | 模块 | 表/模型入口 | 迁移和恢复关注点 |
 | --- | --- | --- |
 | 事务 | 外仓插件 `stella.tasks`（`backend/domain/schema.sql`）中的 `todos`、依赖、提醒和墓碑表 | 旧日程事务迁移、幂等应用、用户编辑保护 |
-| 日程 | `agent/calendar/service.py` 中的事件、分类和交接表 | 简报来源变更与已有事件冲突 |
+| 日程 | `stella.calendar` 插件拥有事件、分类和交接表；Core 仅拥有 Apple 映射库 | 简报来源变更与已有事件冲突 |
 | 账单 | 外仓插件 `stella.bills`（`backend/domain/schema.sql`、`store.py`） | 账本、计划付款、期间报表一致性 |
 | 简报 | `agent/briefing/schema.sql`、`actions.sql`、`store.py` | 候选快照、版本、来源游标、行动回执与 outbox |
 | 会话 | `agent/memory/conversation_store.py` | 旧库迁移、运行准入与消息顺序 |

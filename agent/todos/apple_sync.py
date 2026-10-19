@@ -32,7 +32,7 @@ def _priority(value, *, remote=False):
 
 
 def _payload(remote):
-    from agent.calendar.timezones import normalize_timezone
+    from common.timezones import normalize_timezone
     rule = remote.get("recurrence") or {}
     return {"title": remote["title"], "notes": remote.get("notes") or "",
             "due_on": remote.get("due_on"), "due_time": remote.get("due_time"),

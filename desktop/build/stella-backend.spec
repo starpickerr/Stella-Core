@@ -72,7 +72,7 @@ hiddenimports += [
     'agent.calendar.apple_preview',
     'agent.calendar.apple_runtime',
     'agent.calendar.apple_sync',
-    'agent.calendar.timezones',
+    'common.timezones',
 ]
 hiddenimports += collect_submodules('models')
 hiddenimports += collect_submodules('voice')

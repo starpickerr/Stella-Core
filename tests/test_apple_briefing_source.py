@@ -1,6 +1,10 @@
+import pytest
+
 from application import Application
 from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
 from agent.briefing.sources import registry
+
+pytestmark = pytest.mark.usefixtures("calendar_plugin_env")
 
 
 def test_connected_apple_calendar_makes_upcoming_stella_events_available_to_briefing(tmp_path, monkeypatch):

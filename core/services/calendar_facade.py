@@ -1,4 +1,4 @@
-"""Compatibility facade: same method surface as CalendarService, routed to plugin RPC."""
+"""Calendar port facade: the stella.calendar surface, routed to plugin RPC."""
 
 from __future__ import annotations
 
@@ -49,6 +49,8 @@ class CalendarPluginFacade:
 
     def create_event(self, payload: dict, *, _briefing_key: Optional[str] = None) -> dict:
         body = dict(payload)
+        if {'_briefing_key', '_external_source_key'} & set(body):
+            raise ValueError('reserved Calendar source fields are not allowed in public payloads')
         if _briefing_key:
             body["_briefing_key"] = _briefing_key
         return self._value("create_event", body)
@@ -101,6 +103,9 @@ class CalendarPluginFacade:
             {"briefing_id": briefing_id, "revision": revision},
         )
         return int(result["count"])
+
+    def find_briefing_sources(self, source_keys):
+        return self._value('find_briefing_sources', {'source_keys': list(source_keys)})
 
     def has_source_tombstone(self, source_keys) -> bool:
         result = self._value(

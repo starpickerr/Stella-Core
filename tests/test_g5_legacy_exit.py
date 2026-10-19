@@ -171,13 +171,14 @@ def test_public_surfaces_use_plugin_facade_when_enabled(monkeypatch):
     assert type(calendar_public.default_service()).__name__ == "CalendarPluginFacade"
 
 
-def test_public_surfaces_keep_legacy_service_when_plugin_off(monkeypatch, tmp_path):
+def test_calendar_public_surface_refuses_legacy_fallback_when_plugin_off(monkeypatch, tmp_path):
     from core.services import calendar_public
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("STELLA_CALENDAR_PLUGIN", raising=False)
-    assert type(calendar_public.default_service()).__name__ == "CalendarService"
+    with pytest.raises(RuntimeError, match="stella.calendar"):
+        calendar_public.default_service()
 
 
 def test_tasks_surfaces_refuse_legacy_fallback_when_plugin_off(monkeypatch, tmp_path):

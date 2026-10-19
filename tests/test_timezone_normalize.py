@@ -1,6 +1,6 @@
 """IANA timezone normalization for EventKit and other external sources."""
 
-from agent.calendar.timezones import normalize_timezone
+from common.timezones import normalize_timezone
 
 
 def test_normalize_keeps_valid_iana():

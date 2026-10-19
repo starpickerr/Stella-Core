@@ -132,3 +132,22 @@ def tasks_domain():
         sys.modules[name] = package
         spec.loader.exec_module(package)
     return importlib.import_module(name + ".service")
+
+
+@pytest.fixture
+def calendar_plugin_env(monkeypatch):
+    """Route Calendar to the real workspace worker, without any host fallback."""
+    from core.services import calendar_gateway
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_CALENDAR_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_CALENDAR_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/calendar'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    yield
+    calendar_gateway.shutdown_calendar_session()
+
+
+@pytest.fixture
+def calendar_plugin(calendar_plugin_env, tmp_path, monkeypatch):
+    from core.services import calendar_facade
+    monkeypatch.setattr(calendar_facade, '_db_path', lambda: tmp_path / 'calendar.db')
+    return calendar_facade.CalendarPluginFacade()

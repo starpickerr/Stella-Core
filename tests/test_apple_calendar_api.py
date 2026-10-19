@@ -1,9 +1,13 @@
 """Desktop API contract for the Apple Calendar connection."""
 
 import json
+import pytest
+
 from unittest.mock import patch
 
 from tests.test_apple_calendar_sync import AppleCalendarSync, FakeBridge, remote_event
+
+pytestmark = pytest.mark.usefixtures("calendar_plugin_env")
 
 
 def test_application_owns_calendar_manager_and_one_time_requires_exact_ids(tmp_path, monkeypatch):

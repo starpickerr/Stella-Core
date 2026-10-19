@@ -17,7 +17,7 @@ from agent.apple.category_links import reconcile_names, validate_links
 from application import Application, RequestContext
 from .apple_bridge import AppleCalendarBridge
 from agent.calendar.apple_runtime import report_sync_error
-from agent.calendar.timezones import normalize_timezone
+from common.timezones import normalize_timezone
 
 
 def _instant(value):

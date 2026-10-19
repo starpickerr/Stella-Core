@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.calendar import CalendarService
 from agent.permission.gateway import SecurityGateway
 from agent.scheduler.automation_store import AutomationStore
 from agent.scheduler import delivery
@@ -63,9 +62,10 @@ def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command
         assert store.get_task(todo["scheduler_task_id"]) is None
 
 
-def test_legacy_calendar_todos_migrate_once_without_reappearing(tmp_path, service):
+def test_legacy_calendar_todos_migrate_once_without_reappearing(tmp_path, service, calendar_plugin):
     calendar_path = tmp_path / "calendar.db"
-    calendar = CalendarService(calendar_path)
+    calendar = calendar_plugin
+    calendar.categories()
     with sqlite3.connect(calendar_path) as db:
         db.execute("INSERT INTO agenda_handoffs VALUES (?,?,?,?,?,?,?,?,?)",
                    ("briefing", "old-source", "task", "旧事务", "备忘", "briefing-1", "item-1", None, "2026-10-01"))

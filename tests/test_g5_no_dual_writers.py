@@ -72,10 +72,8 @@ def test_briefing_actions_uses_public_default_services(monkeypatch):
     monkeypatch.setattr("core.services.todos_public.default_service", lambda: todo)
     monkeypatch.setattr("core.services.calendar_public.default_service", lambda: cal)
     _assert_no_legacy_todo_service()
-    monkeypatch.setattr(
-        "agent.calendar.service.CalendarService",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy calendar")),
-    )
+    import importlib.util
+    assert importlib.util.find_spec('agent.calendar.service') is None
     actions = BriefingActions.__new__(BriefingActions)
     actions.store = MagicMock()
     actions._todos = None

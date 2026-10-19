@@ -4,16 +4,15 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from agent.briefing.service import BriefingService
 from agent.briefing.store import BriefingStore
-from agent.calendar.service import CalendarService
+from core.services.calendar_facade import CalendarPluginFacade
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch, todos_plugin, tasks_domain):
+def env(tmp_path, monkeypatch, todos_plugin, tasks_domain, calendar_plugin):
     # Tasks run on the real stella.tasks worker (``todos_plugin``: tmp todos.db and a
-    # TaskStore at tmp/scheduler/tasks.json). Calendar and briefing stay in-process;
+    # TaskStore at tmp/scheduler/tasks.json). Calendar also uses its worker; briefing stays in-process;
     # plugin gateway suites must not leak those STELLA_*_PLUGIN flags into this fixture.
     for key in (
-        "STELLA_CALENDAR_PLUGIN",
         "STELLA_BRIEFING_PLUGIN",
         "STELLA_DESKTOP",
     ):
@@ -25,7 +24,7 @@ def env(tmp_path, monkeypatch, todos_plugin, tasks_domain):
         tasks_domain.TodoService(tmp_path/'todos.db')._upsert_sourced_todo(*args)
 
     todos.seed_legacy_sourced_todo = seed_legacy_sourced_todo
-    calendar = CalendarService(tmp_path/'calendar.db')
+    calendar = calendar_plugin
     service = BriefingService(BriefingStore(tmp_path/'briefing.db'))
     from agent.briefing.actions import BriefingActions
     actions = BriefingActions(service.store, todos=todos, calendar=calendar)
@@ -57,7 +56,7 @@ def test_failed_calendar_projection_stays_unacked(env, monkeypatch):
     def locked(*_args, **_kwargs):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(CalendarService, "create_event", locked)
+    monkeypatch.setattr(CalendarPluginFacade, "create_event", locked)
     dispatch_pending(service.store)
     pending = service.store.pending_projection_events()
     calendar_rows = [row for row in pending if row["calendar_ack_at"] is None]

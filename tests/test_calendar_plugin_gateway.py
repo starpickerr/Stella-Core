@@ -138,13 +138,11 @@ def test_application_port_routes_to_plugin(monkeypatch):
     assert port.get_event(event["id"])["title"] == "站会"
 
 
-def test_application_port_defaults_to_core_service(monkeypatch, tmp_path):
-    monkeypatch.delenv("STELLA_CALENDAR_PLUGIN")
-    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
-    from application.api import Application
-
-    port = Application.port("calendar")
-    assert type(port._service).__name__ == "CalendarService"
+def test_application_port_refuses_missing_plugin(monkeypatch):
+    monkeypatch.delenv('STELLA_CALENDAR_PLUGIN')
+    from application import Application
+    with pytest.raises(RuntimeError, match='stella.calendar'):
+        Application.port('calendar')
 
 
 def test_default_plugins_and_catalog_list_calendar():
@@ -163,10 +161,32 @@ def test_default_plugins_and_catalog_list_calendar():
         pytest.skip("Stella-Plugins sibling checkout not present")
     entry = next(p for p in catalog["plugins"] if p["pluginId"] == "stella.calendar")
     h = hashlib.sha256()
-    root = PLUGIN_ROOT.resolve()
+    root = (Path("..") / "Stella-Plugins" / "catalog" / entry["path"]).resolve()
     for f in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
         h.update(f.relative_to(root).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(f.read_bytes())
         h.update(b"\0")
     assert h.hexdigest() == entry["sha256"]
+
+
+def test_missing_calendar_plugin_cannot_create_legacy_database(monkeypatch, tmp_path):
+    from application import Application
+    from core.services import calendar_public
+
+    monkeypatch.setenv('STELLA_CALENDAR_PLUGIN', '0')
+    monkeypatch.setattr('common.state_dir.calendar_db', lambda **_: tmp_path / 'calendar.db')
+    with pytest.raises(RuntimeError, match='stella.calendar'):
+        Application.port('calendar')
+    with pytest.raises(RuntimeError, match='stella.calendar'):
+        calendar_public.default_service()
+    assert not (tmp_path / 'calendar.db').exists()
+
+
+def test_public_event_payload_cannot_impersonate_a_briefing_source():
+    facade = CalendarPluginFacade()
+    existing = facade.create_event(EVENT, _briefing_key='briefing:reserved')
+    with pytest.raises(ValueError, match='reserved'):
+        facade.create_event({**EVENT, '_briefing_key': 'briefing:reserved'})
+    assert len(facade.list_events()) == 1
+    assert facade.get_event(existing['id'])['source_key'] == 'briefing:reserved'

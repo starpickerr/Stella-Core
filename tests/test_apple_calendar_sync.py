@@ -6,9 +6,10 @@ from datetime import datetime
 
 import pytest
 
-from agent.calendar import CalendarService
 from agent.calendar.apple_sync import AppleCalendarSync
 from application import Application
+
+pytestmark = pytest.mark.usefixtures("calendar_plugin_env")
 
 
 def event_payload(title="Lecture"):
@@ -19,8 +20,8 @@ def event_payload(title="Lecture"):
     }
 
 
-def test_sourced_upsert_is_idempotent_and_preserves_provenance(tmp_path):
-    service = CalendarService(tmp_path / "calendar.db")
+def test_sourced_upsert_is_idempotent_and_preserves_provenance(calendar_plugin):
+    service = calendar_plugin
     first = service.upsert_external_event("apple_calendar", "cal/a/occ-1", event_payload())
     again = service.upsert_external_event("apple_calendar", "cal/a/occ-1", event_payload("New title"))
     assert first["id"] == again["id"]
@@ -30,8 +31,8 @@ def test_sourced_upsert_is_idempotent_and_preserves_provenance(tmp_path):
     assert len(service.list_events()) == 1
 
 
-def test_sourced_upsert_keeps_local_edit_and_rejects_wrong_provider(tmp_path):
-    service = CalendarService(tmp_path / "calendar.db")
+def test_sourced_upsert_keeps_local_edit_and_rejects_wrong_provider(calendar_plugin):
+    service = calendar_plugin
     imported = service.upsert_external_event("apple_calendar", "cal/a/occ-1", event_payload())
     service.update_event(imported["id"], {"title": "My correction"})
     with pytest.raises(ValueError, match="locally modified"):
@@ -41,8 +42,8 @@ def test_sourced_upsert_keeps_local_edit_and_rejects_wrong_provider(tmp_path):
         service.upsert_external_event("other", "k", event_payload())
 
 
-def test_sourced_upsert_can_apply_reconciled_remote_change(tmp_path):
-    service = CalendarService(tmp_path / "calendar.db")
+def test_sourced_upsert_can_apply_reconciled_remote_change(calendar_plugin):
+    service = calendar_plugin
     imported = service.upsert_external_event("apple_calendar", "cal/a/occ-1", event_payload())
     service.update_event(imported["id"], {"title": "Previously synced edit"})
     updated = service.upsert_external_event("apple_calendar", "cal/a/occ-1", event_payload("Later remote edit"),
