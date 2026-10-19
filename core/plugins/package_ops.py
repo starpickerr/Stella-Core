@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -105,21 +107,20 @@ class PackageStore:
         op = self._load(operation_id)
         if op.stage != PackageStage.PREPARED or not op.target_path:
             return self._fail(op, f"commit requires prepared, have {op.stage}")
+        target = Path(op.target_path)
+        if not target.is_dir() or _sha256_tree(target) != op.digest:
+            return self._fail(op, "prepared package digest mismatch")
         # Atomic pointer: current → digest
         current = self.packages / op.plugin_id / "current.json"
-        current.write_text(
-            json.dumps(
-                {
-                    "pluginId": op.plugin_id,
-                    "version": op.version,
-                    "digest": op.digest,
-                    "path": op.target_path,
-                    "operationId": op.operation_id,
-                },
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        _atomic_json(
+            current,
+            {
+                "pluginId": op.plugin_id,
+                "version": op.version,
+                "digest": op.digest,
+                "path": op.target_path,
+                "operationId": op.operation_id,
+            },
         )
         staged = self.staging / operation_id
         if staged.exists():
@@ -147,23 +148,19 @@ class PackageStore:
 
     def _persist(self, op: PackageOperation) -> None:
         path = self.ops_dir / f"{op.operation_id}.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "operationId": op.operation_id,
-                    "pluginId": op.plugin_id,
-                    "version": op.version,
-                    "digest": op.digest,
-                    "stage": op.stage.value,
-                    "sourcePath": op.source_path,
-                    "targetPath": op.target_path,
-                    "error": op.error,
-                    "history": op.history,
-                },
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        _atomic_json(
+            path,
+            {
+                "operationId": op.operation_id,
+                "pluginId": op.plugin_id,
+                "version": op.version,
+                "digest": op.digest,
+                "stage": op.stage.value,
+                "sourcePath": op.source_path,
+                "targetPath": op.target_path,
+                "error": op.error,
+                "history": op.history,
+            },
         )
 
     def _load(self, operation_id: str) -> PackageOperation:
@@ -192,3 +189,16 @@ def _sha256_tree(root: Path) -> str:
         h.update(path.read_bytes())
         h.update(b"\0")
     return h.hexdigest()
+
+
+def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """A failed/interrupted write must leave the last committed marker readable."""
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)

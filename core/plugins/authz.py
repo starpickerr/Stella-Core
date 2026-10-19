@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from threading import RLock
 from typing import Iterable
 
@@ -32,6 +32,7 @@ class PluginAuthorizationStore:
         user_id: str,
         capabilities: Iterable[str],
         purposes: Iterable[str] = ("interactive",),
+        replace_existing: bool = True,
     ) -> PluginGrant:
         grant = PluginGrant(
             grant_ref=grant_ref,
@@ -41,6 +42,8 @@ class PluginAuthorizationStore:
             purposes=frozenset(purposes),
         )
         with self._lock:
+            if not replace_existing and grant_ref in self._grants:
+                return self._grants[grant_ref]
             self._grants[grant_ref] = grant
         return grant
 
@@ -57,6 +60,13 @@ class PluginAuthorizationStore:
                 purposes=grant.purposes,
                 revoked=True,
             )
+
+    def set_purposes(self, grant_ref: str, purposes: Iterable[str]) -> None:
+        """Change an existing grant without restoring revoked capabilities."""
+        with self._lock:
+            grant = self._grants.get(grant_ref)
+            if grant is not None:
+                self._grants[grant_ref] = replace(grant, purposes=frozenset(purposes))
 
     def get(self, grant_ref: str) -> PluginGrant | None:
         with self._lock:

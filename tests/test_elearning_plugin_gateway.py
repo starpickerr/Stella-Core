@@ -22,6 +22,8 @@ PASSWORD = "campus-secret-77"
 
 @pytest.fixture(autouse=True)
 def _cleanup(monkeypatch):
+    from core.plugins.authz import PluginAuthorizationStore
+    monkeypatch.setattr(elearning_gateway, "DEFAULT_AUTHZ", PluginAuthorizationStore())
     monkeypatch.setenv("STELLA_ELEARNING_PLUGIN", "1")
     monkeypatch.setenv("STELLA_ELEARNING_PLUGIN_ROOT", str(WORKSPACE_ROOT.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))
@@ -348,7 +350,8 @@ class FakeCanvas:
 def _service(tmp_path, canvas=None, **kw):
     module = _load_vendored()
     canvas = canvas or FakeCanvas()
-    clock = lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc)
+    def clock():
+        return datetime(2026, 9, 9, 8, tzinfo=timezone.utc)
     return module.ElearningService(tmp_path / "elearning", client_factory=lambda cfg: canvas, clock=clock, **kw), canvas
 
 

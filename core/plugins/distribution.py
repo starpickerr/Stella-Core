@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import urllib.request
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.plugins.package_ops import PackageStore
+from core.plugins.manifest import load_manifest
 
 
 @dataclass(frozen=True)
@@ -31,34 +33,35 @@ def check_plugin_api_compatibility(
     package_host_api: str,
     core_supports: str = "1.0.0",
 ) -> CompatibilityDecision:
-    """SemVer range-aware major check for first edition."""
+    """Check the supported v1 range forms; unknown syntax fails closed."""
     def _parts(version: str) -> tuple[int, int, int]:
-        text = version.lstrip("^~>=< ")
-        nums = text.split("+", 1)[0].split("-", 1)[0].split(".")
-        major = int(nums[0])
-        minor = int(nums[1]) if len(nums) > 1 else 0
-        patch = int(nums[2]) if len(nums) > 2 else 0
-        return major, minor, patch
+        match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?", version)
+        if match is None:
+            raise ValueError("unsupported API version")
+        return tuple(int(value) for value in match.groups())
 
     try:
         core = _parts(core_api)
         support = _parts(core_supports)
         pkg_range = package_host_api.strip()
-        pkg = _parts(pkg_range)
+        operator = next((prefix for prefix in (">=", "<=", "^", "~", ">", "<", "=")
+                         if pkg_range.startswith(prefix)), "")
+        pkg = _parts(pkg_range[len(operator):].strip())
     except (TypeError, ValueError, IndexError):
         return CompatibilityDecision(False, "unparseable Plugin API version")
-    if core[0] != support[0]:
-        return CompatibilityDecision(False, "core API outside supported major", True)
-    if pkg_range.startswith("^"):
-        if pkg[0] != core[0]:
-            return CompatibilityDecision(False, "hostApi caret major mismatch", True)
-    elif pkg_range.startswith("~"):
-        if pkg[0] != core[0] or pkg[1] != core[1]:
-            return CompatibilityDecision(False, "hostApi tilde mismatch", True)
-    elif pkg != core:
-        # Exact or other — require same major for v1.
-        if pkg[0] != core[0]:
-            return CompatibilityDecision(False, "hostApi major mismatch", True)
+    if core != support:
+        return CompatibilityDecision(False, "core API outside supported version", True)
+    if operator == "^":
+        upper = ((pkg[0] + 1, 0, 0) if pkg[0] else
+                 ((0, pkg[1] + 1, 0) if pkg[1] else (0, 0, pkg[2] + 1)))
+        compatible = pkg <= core < upper
+    elif operator == "~":
+        compatible = pkg <= core < (pkg[0], pkg[1] + 1, 0)
+    else:
+        compatible = {"": core == pkg, "=": core == pkg, ">=": core >= pkg,
+                      "<=": core <= pkg, ">": core > pkg, "<": core < pkg}[operator]
+    if not compatible:
+        return CompatibilityDecision(False, f"hostApi {pkg_range} excludes {core_api}", True)
     return CompatibilityDecision(True, "compatible")
 
 
@@ -222,12 +225,23 @@ def fetch_and_install_from_catalog(
     if not verify_package_digest(source, entry["sha256"]):
         return {"status": "digest_mismatch", "pluginId": plugin_id}
 
+    manifest = load_manifest(source)
+    if manifest["id"] != plugin_id or (entry.get("version") and manifest["version"] != entry["version"]):
+        return {"status": "identity_mismatch", "pluginId": plugin_id}
+    decision = check_plugin_api_compatibility(core_api="1.0.0", package_host_api=manifest["hostApi"])
+    if not decision.ok:
+        return {"status": "incompatible", "reason": decision.reason, "pluginId": plugin_id}
+
     op = package_store.stage(source)
     op = package_store.inspect(op.operation_id)
     if op.stage.value == "failed":
         return {"status": "failed", "error": op.error, "pluginId": plugin_id}
     op = package_store.prepare(op.operation_id)
+    if op.stage.value == "failed":
+        return {"status": "failed", "error": op.error, "pluginId": plugin_id}
     op = package_store.commit(op.operation_id)
+    if op.stage.value == "failed":
+        return {"status": "failed", "error": op.error, "pluginId": plugin_id}
     return {
         "status": "installed",
         "pluginId": plugin_id,

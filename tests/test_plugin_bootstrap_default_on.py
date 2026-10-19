@@ -94,3 +94,60 @@ def test_explicit_zero_wins_over_desktop_default(tmp_path, monkeypatch):
         intents_path=tmp_path / "missing.json",
     )
     assert __import__("os").environ.get("STELLA_BILLS_PLUGIN") == "0"
+
+
+def test_bootstrap_keeps_installed_version_without_loading_catalog(tmp_path):
+    store = PackageStore(tmp_path / "pkg")
+    op = store.stage(Path("samples/plugins/alpha"))
+    store.inspect(op.operation_id)
+    store.prepare(op.operation_id)
+    store.commit(op.operation_id)
+    before = store.current_package("stella.sample.alpha")
+    result = bootstrap_default_plugins(
+        catalog_path=tmp_path / "offline.json", package_store=store,
+        plugin_ids=["stella.sample.alpha"],
+    )
+    assert result["status"] == "ok"
+    assert store.current_package("stella.sample.alpha") == before
+
+
+def test_bootstrap_continues_after_one_catalog_entry_is_missing(tmp_path):
+    catalog = _catalog(tmp_path, "stella.sample.alpha", Path("samples/plugins/alpha"))
+    store = PackageStore(tmp_path / "pkg")
+    result = bootstrap_default_plugins(
+        catalog_path=catalog, package_store=store,
+        plugin_ids=["stella.missing", "stella.sample.alpha"],
+    )
+    assert result["status"] == "partial"
+    assert result["failed"][0]["pluginId"] == "stella.missing"
+    assert result["installed"] == ["stella.sample.alpha"]
+
+
+@pytest.mark.parametrize("damage", ["missing", "modified"])
+def test_bootstrap_does_not_activate_corrupt_committed_package(tmp_path, monkeypatch, damage):
+    import shutil
+    from core.plugins.bootstrap import run_desktop_bootstrap
+
+    sample = tmp_path / "source"
+    shutil.copytree(Path("samples/plugins/alpha"), sample)
+    manifest = json.loads((sample / "plugin.json").read_text())
+    manifest["id"] = "stella.bills"
+    (sample / "plugin.json").write_text(json.dumps(manifest))
+    catalog = _catalog(tmp_path, "stella.bills", sample)
+    monkeypatch.setattr("core.plugins.bootstrap.load_default_plugin_manifest",
+                        lambda: {"plugins": [{"pluginId": "stella.bills"}]})
+    monkeypatch.setenv("STELLA_DESKTOP", "1")
+    monkeypatch.delenv("STELLA_BILLS_PLUGIN", raising=False)
+    result = run_desktop_bootstrap(data_dir=tmp_path / "data", catalog_path=catalog)
+    assert result["status"] == "ok"
+    monkeypatch.delenv("STELLA_BILLS_PLUGIN", raising=False)
+    current = PackageStore(tmp_path / "data" / "plugin-packages").current_package("stella.bills")
+    target = Path(current["path"])
+    if damage == "missing":
+        shutil.rmtree(target)
+    else:
+        (target / "backend" / "main.py").write_text("tampered")
+    result = run_desktop_bootstrap(data_dir=tmp_path / "data", catalog_path=tmp_path / "offline.json")
+    assert result["status"] == "partial"
+    assert result["installed"] == []
+    assert "STELLA_BILLS_PLUGIN" not in result["envApplied"]

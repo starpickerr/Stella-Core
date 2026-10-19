@@ -74,3 +74,26 @@ def test_session_invoke_uses_contract_shape(tmp_path):
         assert result["value"]["plugin"] == "alpha"
     finally:
         session.dispose()
+
+
+def test_read_only_grant_can_query_but_cannot_write(tmp_path):
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.plugins.registry import PluginRegistry
+
+    authz = PluginAuthorizationStore()
+    session = PluginSession(Path("stella-plugins-workspace/plugins/bills"),
+                            source_label="test", registry=PluginRegistry(), authz=authz)
+    authz.issue(grant_ref="read", plugin_id="stella.bills", user_id=session.user_id,
+                capabilities=["bills.read"], purposes=["interactive"])
+    try:
+        session.start()
+        args = dict(contract="stella.bills@1", origin="ui", grant_ref="read",
+                    data_handle={"dbPath": str(tmp_path / "bills.db"), "namespace": "stella.bills"})
+        result = session.invoke_contract(method="list_ledger", input_payload={"year": 2026, "month": 10}, **args)
+        assert result["status"] == "succeeded"
+        with pytest.raises(PermissionError, match="bills.write"):
+            session.invoke_contract(method="create_ledger", input_payload={}, **args)
+        with pytest.raises((PermissionError, ValueError), match="unknown|not declared"):
+            session.invoke_contract(method="undeclared", input_payload={}, **args)
+    finally:
+        session.dispose()

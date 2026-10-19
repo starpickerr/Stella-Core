@@ -84,6 +84,7 @@ def ensure_briefing_session() -> PluginSession:
         source_label="first-party-external",
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
+        authz=DEFAULT_AUTHZ,
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
@@ -93,6 +94,7 @@ def ensure_briefing_session() -> PluginSession:
         user_id=user_id,
         capabilities=["briefing.read", "briefing.write", "plugin.invoke"],
         purposes=["interactive", "tool", "job", "any"],
+        replace_existing=False,
     )
     session.start()
     _SESSION = session

@@ -48,3 +48,33 @@ def test_application_port_routes_bills_via_plugin(tmp_path, monkeypatch):
         assert created["amount_minor"] == 1800
         rows = port.list_ledger(2026, 10)
         assert len(rows) == 1
+
+
+def test_repeated_business_operations_have_distinct_receipts(tmp_path, monkeypatch):
+    from core.services.bills_facade import BillsPluginFacade
+
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(Path("stella-plugins-workspace/plugins/bills").resolve()))
+    monkeypatch.setattr("core.services.bills_facade._db_path", lambda: tmp_path / "bills.db")
+    service = BillsPluginFacade()
+    payload = {"name": "午餐", "category": "消费", "entry_type": "expense",
+               "amount_minor": 3200, "occurred_at": "2026-10-19T12:00:00+08:00"}
+    first = service.create_ledger(payload)
+    second = service.create_ledger(payload)
+    assert first["id"] != second["id"]
+    service.update_ledger(first["id"], {"name": "午餐改"})
+    service.update_ledger(first["id"], {"amount_minor": 3500})
+    assert service.get_ledger(first["id"])["amount_minor"] == 3500
+    service.delete_ledger(first["id"])
+    assert service.get_ledger(first["id"]) is None
+
+
+def test_explicit_create_receipt_still_replays(tmp_path, monkeypatch):
+    from core.services.bills_facade import BillsPluginFacade
+
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(Path("stella-plugins-workspace/plugins/bills").resolve()))
+    monkeypatch.setattr("core.services.bills_facade._db_path", lambda: tmp_path / "bills.db")
+    service = BillsPluginFacade()
+    payload = {"name": "午餐", "category": "消费", "entry_type": "expense",
+               "amount_minor": 3200, "occurred_at": "2026-10-19T12:00:00+08:00",
+               "idempotencyKey": "request-1"}
+    assert service.create_ledger(payload)["id"] == service.create_ledger(payload)["id"]

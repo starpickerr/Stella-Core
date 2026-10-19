@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from core.plugins.distribution import fetch_and_install_from_catalog, load_default_plugin_manifest
+from core.plugins.distribution import fetch_and_install_from_catalog, load_default_plugin_manifest, verify_package_digest
+from core.plugins.manifest import load_manifest
 from core.plugins.package_ops import PackageStore
 
 DOMAIN_ENV = {
@@ -38,12 +39,28 @@ def bootstrap_default_plugins(
     skipped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for plugin_id in wanted:
-        result = fetch_and_install_from_catalog(
-            catalog_path=catalog_path,
-            plugin_id=plugin_id,
-            package_store=package_store,
-            user_intents=intents,
-        )
+        try:
+            if intents.get(plugin_id) in {"disabled", "removed"}:
+                result = {"status": "skipped_user_intent", "pluginId": plugin_id, "intent": intents[plugin_id]}
+            elif current := package_store.current_package(plugin_id):
+                # Bootstrap fills missing defaults; updates are an explicit operation.
+                # Keep the exact installed version even when the catalog is offline.
+                root = Path(current["path"])
+                if not root.is_dir() or not verify_package_digest(root, current["digest"]):
+                    raise ValueError("installed package is missing or corrupt; repair required")
+                manifest = load_manifest(root)
+                if manifest["id"] != plugin_id or manifest["version"] != current["version"]:
+                    raise ValueError("installed package identity mismatch")
+                result = {"status": "installed", "pluginId": plugin_id}
+            else:
+                result = fetch_and_install_from_catalog(
+                    catalog_path=catalog_path,
+                    plugin_id=plugin_id,
+                    package_store=package_store,
+                    user_intents=intents,
+                )
+        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+            result = {"status": "failed", "pluginId": plugin_id, "error": str(exc)}
         status = result.get("status")
         if status == "installed":
             installed.append(plugin_id)
@@ -113,11 +130,7 @@ def run_desktop_bootstrap(
     intents_path.parent.mkdir(parents=True, exist_ok=True)
     intents_path.write_text(json.dumps(result.get("intents") or intents, indent=2) + "\n", encoding="utf-8")
     installed = list(result.get("installed") or [])
-    # Also activate already-committed packages from prior boots.
-    for plugin_id in DOMAIN_ENV:
-        if store.current_package(plugin_id) and plugin_id not in installed:
-            if intents.get(plugin_id) not in {"disabled", "removed"}:
-                installed.append(plugin_id)
+    # bootstrap_default_plugins includes validated packages from prior boots.
     applied = apply_desktop_plugin_defaults(installed_ids=installed, intents_path=intents_path)
     result["envApplied"] = applied
     return result

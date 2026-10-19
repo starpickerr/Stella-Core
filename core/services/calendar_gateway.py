@@ -46,6 +46,7 @@ def ensure_calendar_session(db_path: Path | None = None) -> PluginSession:
         source_label="first-party-external",
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
+        authz=DEFAULT_AUTHZ,
     )
     # Self-contained Stella-Plugins packages must not import Stella agent.* .
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
@@ -56,6 +57,7 @@ def ensure_calendar_session(db_path: Path | None = None) -> PluginSession:
         user_id=user_id,
         capabilities=["calendar.read", "calendar.write", "plugin.invoke"],
         purposes=["interactive", "tool", "job", "any"],
+        replace_existing=False,
     )
     session.start()
     _SESSION = session

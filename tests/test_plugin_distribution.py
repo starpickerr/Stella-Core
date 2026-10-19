@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from core.plugins.distribution import (
     check_plugin_api_compatibility,
     fetch_and_install_from_catalog,
@@ -129,3 +131,31 @@ def test_dual_update_blocks_incompatible_plugin_without_pretending_success():
     assert "stella.tasks" in plan["jointPlugins"]
     assert plan["blocked"]
     assert plan["core"]["changing"] is True
+
+
+@pytest.mark.parametrize("core,required,compatible", [
+    ("1.0.0", "^1.1.0", False),
+    ("1.0.0", "~1.0.1", False),
+    ("1.1.0", "1.0.0", False),
+    ("1.1.0", "^1.0.0", True),
+    ("0.3.0", "^0.2.0", False),
+    ("1.0.0", "garbage", False),
+    ("1.0.0", ">=2.0.0", False),
+])
+def test_host_api_range_is_enforced(core, required, compatible):
+    assert check_plugin_api_compatibility(
+        core_api=core, package_host_api=required, core_supports=core,
+    ).ok is compatible
+
+
+def test_catalog_identity_must_match_package(tmp_path):
+    sample = Path("samples/plugins/alpha").resolve()
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(json.dumps({"coreApi": "1.0.0", "plugins": [{
+        "pluginId": "stella.bills", "path": str(sample), "sha256": _tree_digest(sample),
+        "version": "1.0.0", "hostApi": "^1.0.0",
+    }]}))
+    store = PackageStore(tmp_path / "pkg")
+    result = fetch_and_install_from_catalog(catalog_path=catalog, plugin_id="stella.bills", package_store=store)
+    assert result["status"] == "identity_mismatch"
+    assert store.current_package("stella.sample.alpha") is None

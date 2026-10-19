@@ -113,6 +113,7 @@ class PluginSession:
         self._lock = threading.RLock()
         self._inflight: set[str] = set()
         self._service_permissions: dict[str, frozenset[str]] = {}
+        self._method_permissions: dict[tuple[str, str], frozenset[str]] = {}
 
     def start(self) -> dict[str, Any]:
         with self._lock:
@@ -161,6 +162,7 @@ class PluginSession:
             services_desc = prepared.get("services") or []
             service_ids: list[str] = []
             self._service_permissions = {}
+            self._method_permissions = {}
             if isinstance(services_desc, list) and services_desc and isinstance(services_desc[0], dict):
                 for svc in services_desc:
                     contract = svc.get("contract")
@@ -169,6 +171,7 @@ class PluginSession:
                         perms: set[str] = set()
                         for method in svc.get("methods") or []:
                             perms.update(method.get("permissions") or [])
+                            self._method_permissions[(contract, method["name"])] = frozenset(method.get("permissions") or [])
                         self._service_permissions[contract] = frozenset(perms)
             else:
                 service_ids = list(contributions.get("services") or [])
@@ -238,8 +241,11 @@ class PluginSession:
         data_handle: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.registry.require_generation(self.plugin_id, self.generation)
+        declared = self._method_permissions.get((contract, method))
+        if declared is None:
+            raise PermissionError(f"method not declared: {contract}.{method}")
         required = set(permissions)
-        required.update(self._service_permissions.get(contract) or ())
+        required.update(declared)
         if not skip_authz:
             self.authz.check(
                 grant_ref=grant_ref,

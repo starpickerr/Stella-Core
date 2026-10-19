@@ -20,6 +20,8 @@ DRAFT = {"host": "127.0.0.1", "user": "ada@example.com", "password": SECRET, "po
 
 @pytest.fixture(autouse=True)
 def _cleanup(monkeypatch):
+    from core.plugins.authz import PluginAuthorizationStore
+    monkeypatch.setattr(email_gateway, "DEFAULT_AUTHZ", PluginAuthorizationStore())
     monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "1")
     monkeypatch.setenv("STELLA_EMAIL_PLUGIN_ROOT", str(WORKSPACE_ROOT.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))

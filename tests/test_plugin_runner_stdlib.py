@@ -73,6 +73,8 @@ def _write_sqlite_plugin(root: Path) -> Path:
     backend.mkdir()
     (backend / "main.py").write_text(
         "import sqlite3\n"
+        "SERVICE_DESCRIPTORS = [{'contract': 'stella.sample.sqlite@1', 'methods': "
+        "[{'name': 'probe', 'permissions': ['sample.probe']}]}]\n"
         "\n"
         "def handle(method, params):\n"
         "    if method == 'probe':\n"
@@ -89,6 +91,19 @@ def _write_sqlite_plugin(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def test_sqlite_probe_declares_the_invoked_method(tmp_path):
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    session = PluginSession(_write_sqlite_plugin(tmp_path / "probe"),
+                            source_label="stdlib-probe", registry=PluginRegistry())
+    try:
+        session.start()
+        assert session.invoke("probe")["value"]["ok"] is True
+    finally:
+        session.dispose()
 
 
 def test_frozen_runner_can_import_sqlite3_for_plugin(frozen_runner, tmp_path, monkeypatch):

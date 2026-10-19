@@ -53,3 +53,41 @@ def test_r07_resume_after_each_durable_stage(tmp_path, stop_after, resume):
     current = store2.current_package("stella.sample.alpha")
     assert current is not None
     assert current["digest"] == op2.digest
+
+
+def test_commit_refuses_modified_prepared_package(tmp_path):
+    store = PackageStore(tmp_path / "pkg")
+    op = store.stage(Path("samples/plugins/alpha"))
+    store.inspect(op.operation_id)
+    op = store.prepare(op.operation_id)
+    Path(op.target_path, "backend", "main.py").write_text("tampered")
+    result = store.commit(op.operation_id)
+    assert result.stage == PackageStage.FAILED
+    assert store.current_package(op.plugin_id) is None
+
+
+def test_interrupted_pointer_replace_preserves_previous_install(tmp_path, monkeypatch):
+    import os
+
+    store = PackageStore(tmp_path / "pkg")
+    op = store.stage(Path("samples/plugins/alpha"))
+    store.inspect(op.operation_id)
+    store.prepare(op.operation_id)
+    store.commit(op.operation_id)
+    previous = store.current_package(op.plugin_id)
+    op = store.stage(Path("samples/plugins/alpha"))
+    store.inspect(op.operation_id)
+    store.prepare(op.operation_id)
+    replace = os.replace
+
+    def interrupt(src, dst):
+        if Path(dst).name == "current.json":
+            raise OSError("simulated power loss before pointer replacement")
+        return replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", interrupt)
+    with pytest.raises(OSError, match="simulated power loss"):
+        store.commit(op.operation_id)
+    assert store.current_package(op.plugin_id) == previous
+    monkeypatch.setattr(os, "replace", replace)
+    assert store.commit(op.operation_id).stage == PackageStage.COMMITTED

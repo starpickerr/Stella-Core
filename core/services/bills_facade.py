@@ -29,21 +29,19 @@ class BillsPluginFacade:
         return self._value("get_ledger", {"id": entry_id})
 
     def create_ledger(self, payload: dict) -> dict:
-        body = dict(payload)
-        body.setdefault("idempotencyKey", body.get("id") or body.get("name"))
-        return self._value("create_ledger", body, write=True)
+        return self._value("create_ledger", dict(payload), write=True)
 
     def update_ledger(self, entry_id: str, payload: dict) -> dict:
         return self._value(
             "update_ledger",
-            {"id": entry_id, "patch": payload, "idempotencyKey": entry_id},
+            {"id": entry_id, "patch": payload},
             write=True,
         )
 
     def delete_ledger(self, entry_id: str) -> None:
         self._value(
             "delete_ledger",
-            {"id": entry_id, "idempotencyKey": entry_id},
+            {"id": entry_id},
             write=True,
         )
 

@@ -71,13 +71,14 @@ def _plugin_root() -> Path:
     )
 
 
-def _issue_grant() -> None:
+def _issue_grant(*, replace_existing: bool = True) -> None:
     DEFAULT_AUTHZ.issue(
         grant_ref=_GRANT_REF,
         plugin_id=PLUGIN_ID,
         user_id=os.environ.get("STELLA_PLUGIN_USER", "local-default"),
         capabilities=_CAPABILITIES,
         purposes=sorted(_PURPOSES),
+        replace_existing=replace_existing,
     )
 
 
@@ -85,8 +86,7 @@ def set_elearning_purposes(purposes: Iterable[str]) -> None:
     """Replace the authorized purposes (e.g. withdraw ``background`` but keep ``read``)."""
     _PURPOSES.clear()
     _PURPOSES.update(purposes)
-    if _SESSION is not None:
-        _issue_grant()
+    DEFAULT_AUTHZ.set_purposes(_GRANT_REF, _PURPOSES)
 
 
 def ensure_elearning_session() -> PluginSession:
@@ -99,10 +99,11 @@ def ensure_elearning_session() -> PluginSession:
         source_label="first-party-external",
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
+        authz=DEFAULT_AUTHZ,
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
-    _issue_grant()
+    _issue_grant(replace_existing=False)
     session.start()
     _SESSION = session
     return session
