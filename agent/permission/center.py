@@ -187,9 +187,7 @@ def connections(policy: dict | None = None) -> list[dict]:
             else:
                 email_configured = bool(accounts)
         else:
-            from agent.briefing.settings import public_mailboxes
-            mail = public_mailboxes()
-            email_configured = bool(mail.get("configured"))
+            email_configured = False
     except Exception:
         email_configured = bool(cfg.get("email_password") or os.environ.get("EMAIL_PASSWORD"))
     try:

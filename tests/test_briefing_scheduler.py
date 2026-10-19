@@ -61,7 +61,6 @@ def test_shared_scheduler_at_eight_catches_up_and_skips_existing(store, clock, t
     monkeypatch.setattr(tool, "_get_pipeline", lambda svc: BriefingPipeline(svc, [StaticSource([])],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": True})
     add_briefing_task(store, clock[0])
     scheduler = SchedulerService(store, lambda task: integration._execute_tool_call(task, None))
     scheduler._check_and_execute_tasks()
@@ -76,10 +75,8 @@ def test_shared_scheduler_at_eight_catches_up_and_skips_existing(store, clock, t
     # A later failed manual update still has a successful daily document.
     BriefingPipeline(service, [StaticSource(error=RuntimeError("offline"))],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))).run(operation="update")
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": False})
     assert integration._execute_tool_call(store.get_task(BRIEFING_TASK_ID), None)
     assert len(service.get_briefing("brf-2026-09-09")["revisions"]) == 2
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": True})
     # Sleep across several days only generates the day we wake up.
     clock[0] = datetime(2026, 9, 12, 15)
     scheduler._check_and_execute_tasks()
@@ -97,7 +94,6 @@ def test_shared_scheduler_waits_for_mailboxes_and_retries_failures(store, clock,
     monkeypatch.setattr(tool, "_get_pipeline", lambda svc: BriefingPipeline(svc, sources if configured[0] else [],
         clock=lambda: clock[0].replace(tzinfo=timezone(timedelta(hours=8)))))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": configured[0]})
     add_briefing_task(store, clock[0])
     scheduler = SchedulerService(store, lambda task: integration._execute_tool_call(task, None))
     scheduler._check_and_execute_tasks()
@@ -125,7 +121,6 @@ def test_scheduled_briefing_works_with_only_elearning(tmp_path, monkeypatch,
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     monkeypatch.setattr("agent.briefing.sources.registry.configured_sources", lambda: [source])
     monkeypatch.setattr("agent.briefing.generator.AgentBriefingGenerator", deterministic_briefing_generator)
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {"configured": False})
     tool = BriefingTool(service=service)
     tool.current_context = {"is_scheduled_task": True}
     result = tool.execute({"action": "run", "operation": "create", "briefing_date": "2026-09-09"})

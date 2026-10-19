@@ -6944,30 +6944,6 @@ def _briefing_service():
     return Application.port("briefing")
 
 
-class _LegacyMailboxSettings:
-    """Legacy ``agent.briefing.settings`` behind the plugin-shaped mailbox surface."""
-
-    @staticmethod
-    def list_accounts():
-        from agent.briefing.settings import public_mailboxes
-        return public_mailboxes()
-
-    @staticmethod
-    def save_account(payload):
-        from agent.briefing.settings import save_mailbox
-        return save_mailbox(payload)
-
-    @staticmethod
-    def delete_account(account_id):
-        from agent.briefing.settings import delete_mailbox
-        delete_mailbox(account_id)
-
-    @staticmethod
-    def test_connection(payload):
-        from agent.briefing.settings import check_mailbox_connection
-        return check_mailbox_connection(payload)
-
-
 class _LegacyElearningSettings:
     """Legacy ``agent.briefing.elearning_settings`` behind the plugin-shaped surface."""
 
@@ -6999,12 +6975,8 @@ class _LegacyElearningSettings:
 
 
 def _email_settings():
-    """Mailbox settings: ``Application.port("email")`` when the plugin is on, else legacy."""
-    from core.services.email_gateway import email_plugin_enabled
-    if email_plugin_enabled():
-        from application import Application
-        return Application.port("email")
-    return _LegacyMailboxSettings
+    from application import Application
+    return Application.port('email')
 
 
 def _elearning_settings():

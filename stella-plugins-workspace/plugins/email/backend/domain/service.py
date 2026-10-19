@@ -17,7 +17,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from .hosts import normalize_imap_host
 from .imap import EmailSource, _selectable_folders, mailbox_key
@@ -98,6 +98,21 @@ class EmailService:
     # ----- storage -----------------------------------------------------
     @contextmanager
     def _connect(self):
+        # Create with private permissions before SQLite sees the file, and
+        # tighten older installations without changing their credential data.
+        flags = os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)
+        for suffix in ('', '-wal', '-shm', '-journal'):
+            path = str(self.db_path) + suffix
+            try:
+                fd = os.open(path, flags | (os.O_CREAT if not suffix else 0), 0o600)
+            except FileNotFoundError:
+                if not suffix:
+                    raise
+                continue
+            try:
+                os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
         db = sqlite3.connect(str(self.db_path), timeout=10)
         db.row_factory = sqlite3.Row
         try:

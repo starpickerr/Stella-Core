@@ -26,7 +26,7 @@ def fixed_briefing_clock(monkeypatch):
 
 
 @pytest.fixture
-def api(tmp_path):
+def api(tmp_path, email_plugin_env):
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     source = StaticSource([FetchedItem(
         source="email", source_id="<hello@x>", title="请确认合同", sender="Ada",
@@ -35,7 +35,6 @@ def api(tmp_path):
     with ExitStack() as stack:
         stack.enter_context(patch.object(web_channel, "_briefing_service", return_value=service))
         stack.enter_context(patch.object(web_channel, "_briefing_pipeline", return_value=BriefingPipeline(service, [source])))
-        stack.enter_context(patch("agent.briefing.settings.mailbox_path", return_value=tmp_path / "mailbox.json"))
         auth = stack.enter_context(patch.object(web_channel, "_require_auth"))
         stack.enter_context(patch.object(web_channel.web, "header"))
         yield service, auth
@@ -259,6 +258,8 @@ def test_settings_do_not_expose_credentials(api, monkeypatch):
     assert result["settings"]["mailboxes"][0]["password_set"] is True
     assert result["settings"]["mailboxes"][0]["password_masked"] == "********"
     monkeypatch.delenv("IMAP_PASSWORD")
+    from core.services.email_gateway import shutdown_email_session
+    shutdown_email_session()  # environment changes take effect in a fresh isolated worker
     assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]["missing"] == ["IMAP_PASSWORD"]
 
 
@@ -308,7 +309,8 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
 
 def test_connection_endpoint_reports_success_and_configuration_errors(api):
     _, auth = api
-    with patch("agent.briefing.settings.check_mailbox_connection") as check:
+    from core.services.email_facade import EmailPluginFacade
+    with patch.object(EmailPluginFacade, 'test_connection', create=True) as check:
         check.return_value = {"connected": True, "folder_accessible": False,
                               "folders": [{"name": "INBOX", "label": "INBOX"}], "message": "select denied"}
         result = call(web_channel.BriefingSettingsTestHandler, body={"host": "imap.gmail.com", "password": ""})

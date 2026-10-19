@@ -61,9 +61,10 @@ def test_desktop_claim_rebuilds_waiting_notifications_after_restart(tmp_path):
 
 
 def test_mailbox_and_weixin_credentials_stay_protected(tmp_path, monkeypatch):
-    mailbox = tmp_path / "mailbox.json"
+    mailbox = tmp_path / "briefing/mailbox.json"
+    mailbox.parent.mkdir()
     mailbox.write_text('{"password":"secret"}', encoding="utf-8")
-    monkeypatch.setattr("agent.briefing.settings.mailbox_path", lambda: mailbox)
+    monkeypatch.setattr("common.state_dir.briefing_db", lambda **_: mailbox.with_name("briefing.db"))
     from agent.permission.gateway import DecisionKind, SecurityGateway
     from agent.permission.process_sandbox import _protected_paths
     from agent.tools.utils.credentials import is_credential_path
@@ -72,7 +73,7 @@ def test_mailbox_and_weixin_credentials_stay_protected(tmp_path, monkeypatch):
     assert is_credential_path(str(mailbox))
     files, _folders = _protected_paths()
     assert any(path.endswith(os.path.join("briefing", "mailbox.json")) for path in files)
-    assert get_weixin_credentials_path() in files
+    assert os.path.realpath(get_weixin_credentials_path()) in files
     decision = SecurityGateway.check(
         "workspace-write", "bash", {"command": "cat /tmp/briefing/mailbox.json"})
     assert decision.kind is DecisionKind.DENY
@@ -219,3 +220,19 @@ def test_stream_error_generators_keep_the_exception_text():
                 if "e" in names:
                     offenders.append(relative)
     assert offenders == []
+
+
+def test_plugin_email_credentials_and_sqlite_sidecars_are_protected(tmp_path, monkeypatch):
+    from common import state_dir
+    from agent.tools.utils.credentials import is_credential_path
+    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
+    for suffix in ('', '-wal', '-shm', '-journal'):
+        assert is_credential_path(str(tmp_path / ('email/email.db' + suffix)))
+
+
+def test_shell_policy_rejects_direct_email_database_and_backup_reads():
+    from agent.permission.gateway import DecisionKind, SecurityGateway
+    for path in ('/tmp/email/email.db', '/tmp/email/email.db-wal',
+                 '/tmp/plugin-packages/management/backups/op/email.db'):
+        decision = SecurityGateway.check('full-access', 'bash', {'command': 'cat ' + path})
+        assert decision.kind is DecisionKind.DENY

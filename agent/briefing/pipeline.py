@@ -1,7 +1,7 @@
 """Daily run: fetch every source, then draft once and persist.
 
 Cursors advance only after a non-failed briefing is saved. Source adapters
-are injected; IMAP lives in sources.email.
+are injected; Email and eLearning connectors own their credentials.
 """
 
 from __future__ import annotations

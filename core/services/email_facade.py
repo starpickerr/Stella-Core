@@ -1,7 +1,6 @@
 """Facade over the stella.email plugin for desktop settings and the briefing pipeline.
 
-``EmailPluginFacade`` exposes the contract surface plus drop-in names for the
-legacy ``agent.briefing.settings`` mailbox functions. ``EmailPluginSource``
+``EmailPluginFacade`` exposes the public contract and mailbox method aliases. ``EmailPluginSource``
 implements the briefing ``Source`` protocol so the pipeline can fetch without
 ever holding IMAP credentials.
 """
@@ -65,7 +64,7 @@ class EmailPluginFacade:
         return _unwrap(email_gateway.invoke_email(
             method, params, db_path=db_path, legacy_mailbox_path=legacy, purpose=self._purpose))
 
-    # ---- names matching agent.briefing.settings ------------------------
+    # ---- mailbox method aliases ------------------------
     def public_mailboxes(self) -> dict:
         return self.list_accounts()
 

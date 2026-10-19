@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent.briefing.settings import PASSWORD_MASK
+PASSWORD_MASK = "********"
 
 _lock = threading.RLock()
 DEFAULTS = {"enabled": False, "base_url": "https://elearning.fudan.edu.cn", "username": "",

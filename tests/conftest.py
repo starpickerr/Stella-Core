@@ -162,3 +162,15 @@ def briefing_plugin_env(monkeypatch):
     monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
     yield
     briefing_gateway.shutdown_briefing_session()
+
+
+@pytest.fixture
+def email_plugin_env(monkeypatch, tmp_path):
+    from core.services import email_gateway, email_facade
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_EMAIL_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_EMAIL_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/email'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    monkeypatch.setattr(email_facade, '_paths', lambda: (tmp_path / 'email.db', tmp_path / 'mailbox.json'))
+    yield
+    email_gateway.shutdown_email_session()

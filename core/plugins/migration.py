@@ -127,7 +127,8 @@ class MigrationCoordinator:
                 retired = data.parent / f'.stella-retired-{op_id}'
                 data.parent.mkdir(parents=True, exist_ok=True)
                 if 'backupRef' not in facts:
-                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    backup.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    backup.parent.chmod(0o700)
                     if directory:
                         source_digest = _directory_digest(data)
                         if data.exists():
@@ -136,6 +137,11 @@ class MigrationCoordinator:
                             backup.mkdir()
                     else:
                         source_digest = _db_digest(data)
+                        descriptor = os.open(backup, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+                        try:
+                            os.fchmod(descriptor, 0o600)
+                        finally:
+                            os.close(descriptor)
                         with closing(sqlite3.connect(backup)) as destination:
                             if data.exists():
                                 with closing(sqlite3.connect(f'{data.as_uri()}?mode=ro', uri=True)) as source:
@@ -146,6 +152,8 @@ class MigrationCoordinator:
                                           'retiredRef': str(retired), 'sourceDigest': source_digest,
                                           'migrationId': migration_id, 'fromSchema': source_schema})
                 facts = operation['facts']
+                if not directory:
+                    backup.chmod(0o600)  # also tighten a pre-upgrade durable backup on resume
                 # No source byte is modified while the working copy is incomplete.
                 if operation['stage'] not in {'migrated', 'selecting_data'}:
                     if scratch.exists():
@@ -182,6 +190,7 @@ class MigrationCoordinator:
                 advance('selecting_data')
                 if directory:
                     if data.exists():
+                        data.chmod(0o700)
                         os.replace(data, retired)
                     os.replace(scratch, data)
                 else:

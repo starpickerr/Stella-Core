@@ -11,3 +11,5 @@
 | 会话 | `agent/memory/conversation_store.py` | 旧库迁移、运行准入与消息顺序 |
 
 权限模式与平台边界已有 [详细说明](../security-permission-modes.md)。运行时的可信判定点是 `agent/runtime/tool_invocation.py` 和 `agent/permission/gateway.py`；`Application.command` 对定时业务写入再次校验。Web/API 端还需验证认证，不能把前端隐藏按钮当作授权。涉及外部资源的工具要检查路径、URL、重定向与凭证泄露。权限和事务的失败恢复必须有隔离测试。
+
+Email 连接、凭据与 IMAP 抓取由 `stella.email` 插件拥有；Core 不再保留邮箱设置或收信回退。凭据数据库及 SQLite 临时文件以私有权限创建并在重开时收紧；文件工具与 shell 隔离共用凭据路径清单，保护 Email 数据目录以及 Core 生命周期状态和迁移备份。

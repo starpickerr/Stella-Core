@@ -51,9 +51,9 @@ def credential_denial_message(absolute_path: str) -> str:
 
 def protected_credential_paths() -> set[str]:
     from config import get_data_root, get_weixin_credentials_path
-    from common.state_dir import mcp_config_file, shared_root, state_root
+    from common.state_dir import mcp_config_file, shared_root, state_root, briefing_db
     from agent.briefing import elearning_settings
-    from agent.briefing.settings import mailbox_path
+    email_db = briefing_db(ensure=False).parent.parent / "email/email.db"
     elearning_config = elearning_settings.settings_path()
     return {os.path.realpath(path) for path in (
         expand_path("~/.stella/.env"),
@@ -67,9 +67,19 @@ def protected_credential_paths() -> set[str]:
         str(state_root() / "RULE.md"),
         str(state_root() / "BOOTSTRAP.md"),
         str(elearning_config),
-        str(mailbox_path()),
+        str(briefing_db(ensure=False).with_name("mailbox.json")),
+        *(str(email_db) + suffix for suffix in ("", "-wal", "-shm", "-journal")),
     )}
 
+
+
+def protected_credential_folders() -> set[str]:
+    """Private connector files and Core lifecycle state, including migration copies."""
+    from common.state_dir import briefing_db, shared_root
+    return {os.path.realpath(path) for path in (
+        briefing_db(ensure=False).parent.parent / 'email',
+        shared_root() / 'plugin-packages' / 'management',
+    )}
 
 def is_credential_path(absolute_path: str, protected_paths: set[str] | None = None) -> bool:
     """Return True if *absolute_path* points at protected credential data.
@@ -96,6 +106,9 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
             return True
     if is_elearning_credential_path(absolute_path):
         return True
+    for folder in protected_credential_folders():
+        if any(candidate == folder or candidate.startswith(folder + '/') for candidate in candidates):
+            return True
 
     # 2. The credential file itself, following symlinks on both sides.
     return any(path.replace(os.sep, "/") in candidates for path in (protected_paths or protected_credential_paths()))

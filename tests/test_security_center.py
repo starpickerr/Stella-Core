@@ -601,7 +601,7 @@ def test_live_tool_gate_uses_project_and_conversation_context(tmp_path, monkeypa
         assert permission_denial("web_fetch", {"url": "https://example.com"}, agent=LiveAgent()) is None
 
 
-def test_connections_use_real_service_status(tmp_path, monkeypatch):
+def test_connections_use_real_service_status(tmp_path, monkeypatch, calendar_plugin_env):
     from agent.permission import center as security_center
     import config as config_module
 
@@ -613,10 +613,11 @@ def test_connections_use_real_service_status(tmp_path, monkeypatch):
         "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {"email": {"allowed": False}}},
         "github_token": "ghp_test",
     })
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {
+    monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "1")
+    monkeypatch.setattr("core.services.email_facade.EmailPluginFacade.list_accounts", lambda self: {
         "mailboxes": [{"id": "1", "configured": True, "enabled": True}],
         "configured": True, "missing": [],
-    })
+    }, raising=False)
     from agent.calendar.apple_sync import AppleCalendarSync
     monkeypatch.setattr(AppleCalendarSync, "status", lambda self: {"connected": True, "authorization": "full_access"})
     monkeypatch.setattr(
@@ -819,9 +820,10 @@ def test_overview_exposes_activity_counts(tmp_path, monkeypatch, security_audit_
     monkeypatch.setattr(config_module, "conf", lambda: {
         "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {}},
     })
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes", lambda: {
+    monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "1")
+    monkeypatch.setattr("core.services.email_facade.EmailPluginFacade.list_accounts", lambda self: {
         "mailboxes": [], "configured": False, "missing": [],
-    })
+    }, raising=False)
     monkeypatch.setattr(
         "agent.tools.browser.browser_env.capability_summary",
         lambda config=None: {"ready": False},

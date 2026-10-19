@@ -221,15 +221,14 @@ def test_source_registry_uses_plugin_sources_without_legacy_settings(plugins_on,
     assert no_legacy.hits == []
 
 
-def test_source_registry_uses_legacy_sources_when_plugins_off(monkeypatch):
+def test_source_registry_excludes_disabled_email_and_keeps_pending_elearning_transition(monkeypatch):
     monkeypatch.delenv("STELLA_EMAIL_PLUGIN", raising=False)
     monkeypatch.delenv("STELLA_ELEARNING_PLUGIN", raising=False)
     from agent.briefing.sources import registry
 
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: False)
-    monkeypatch.setattr(registry.settings, "email_sources", lambda: ["legacy-mail"])
     monkeypatch.setattr(registry.elearning_settings, "elearning_sources", lambda: ["legacy-el"])
-    assert registry.configured_sources() == ["legacy-mail", "legacy-el"]
+    assert registry.configured_sources() == ["legacy-el"]
 
 
 # ---- desktop HTTP: legacy path still used when plugins are off -----------
@@ -238,13 +237,11 @@ def test_settings_handlers_keep_legacy_modules_when_plugins_off(monkeypatch, des
     monkeypatch.delenv("STELLA_EMAIL_PLUGIN", raising=False)
     monkeypatch.delenv("STELLA_ELEARNING_PLUGIN", raising=False)
     seen = []
-    monkeypatch.setattr("agent.briefing.settings.public_mailboxes",
-                        lambda *a, **k: seen.append("mail") or {"mailboxes": [], "configured": False, "missing": []})
     monkeypatch.setattr("agent.briefing.elearning_settings.public_settings",
                         lambda *a, **k: seen.append("elearning") or {"enabled": False})
-    assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"] == []
+    assert call(web_channel.BriefingSettingsHandler, "GET")["status"] == "error"
     assert call(web_channel.BriefingElearningHandler, "GET")["settings"] == {"enabled": False}
-    assert seen == ["mail", "elearning"]
+    assert seen == ["elearning"]
 
 
 # ---- eLearning tool ------------------------------------------------------
@@ -351,3 +348,31 @@ def test_bills_export_implementation_is_not_in_core():
     root = Path(__file__).resolve().parents[1]
     assert not (root / "agent/bills/export.py").exists()
     assert not (root / "core/services/bills_public.py").exists()
+
+
+def test_email_settings_refuses_legacy_fallback_when_plugin_is_off(monkeypatch):
+    monkeypatch.setenv('STELLA_EMAIL_PLUGIN', '0')
+    with pytest.raises(RuntimeError, match='stella.email'):
+        web_channel._email_settings()
+
+
+def test_briefing_does_not_discover_email_from_a_disabled_plugin(monkeypatch, tmp_path):
+    from agent.briefing.sources import registry
+    monkeypatch.setenv('STELLA_EMAIL_PLUGIN', '0')
+    monkeypatch.setenv('IMAP_HOST', 'imap.example.test')
+    monkeypatch.setenv('IMAP_USER', 'old@example.test')
+    monkeypatch.setenv('IMAP_PASSWORD', 'old-secret')
+    assert registry._email_sources() == []
+
+
+@pytest.mark.parametrize('intent', ['disabled', 'removed'])
+def test_managed_disabled_email_does_not_block_other_sources(tmp_path, monkeypatch, intent):
+    from core.plugins import management
+    from core.plugins.management import ManagementStore
+    from agent.briefing.sources import registry
+    state = ManagementStore(tmp_path / 'packages')
+    state.set_intent('stella.email', 'local-default', intent)
+    monkeypatch.setattr(management, 'default_store', lambda: state)
+    monkeypatch.setattr(registry, '_elearning_sources', lambda: ['other-source'])
+    monkeypatch.setattr(registry, 'apple_calendar_connected', lambda: False)
+    assert registry.configured_sources() == ['other-source']

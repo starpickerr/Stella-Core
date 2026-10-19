@@ -159,3 +159,29 @@ def test_revoking_share_terminates_running_shell_with_old_grant(tmp_path, monkey
             process.wait()
         if plan.temp_dir:
             shutil.rmtree(plan.temp_dir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform not in ('darwin', 'linux'), reason='sandbox backend unavailable')
+def test_full_access_shell_cannot_read_plugin_email_credentials_or_copies(tmp_path, monkeypatch):
+    import shlex
+    from common import state_dir
+    if process_sandbox.capability()['status'] != 'enabled':
+        pytest.skip('OS sandbox not available')
+    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
+    monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path / 'shared')
+    work = tmp_path / 'work'
+    work.mkdir()
+    targets = [tmp_path / 'email/email.db', tmp_path / 'email/email.db-wal',
+               tmp_path / 'email/.stella-retired-test',
+               tmp_path / 'shared/plugin-packages/management/backups/op/email.db']
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('FAKE_CREDENTIAL_FOR_SANDBOX_TEST')
+        for command in (f'cat {shlex.quote(str(target))}',
+                        f'{shlex.quote(sys.executable)} -c {shlex.quote("import pathlib; print(pathlib.Path(" + repr(str(target)) + ").read_text())")}'):
+            env = os.environ.copy()
+            plan = process_sandbox.prepare(command, str(work), [str(work)],
+                                           {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
+            result = _run(plan, str(work), env)
+            assert result.returncode != 0
+            assert 'FAKE_CREDENTIAL_FOR_SANDBOX_TEST' not in result.stdout

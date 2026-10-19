@@ -159,7 +159,7 @@ def test_tool_supports_markdown_rules_and_uses_calling_agents_model(service, mon
     added = tool.execute({"action": "add_rule", "text": "# 保留\n保留课程通知。"})
     assert added.status == "success"
     assert "# 保留" in tool.execute({"action": "list_rules"}).result
-    monkeypatch.setattr("agent.briefing.settings.email_sources", lambda: [StaticSource([item("课程")])])
+    monkeypatch.setattr("agent.briefing.sources.registry._email_sources", lambda: [StaticSource([item("课程")])])
     monkeypatch.setattr("agent.briefing.pipeline._now", lambda: datetime.fromisoformat("2026-09-09T08:00:00+08:00"))
     result = tool.execute({"action": "run"})
     assert result.status == "success"
@@ -292,7 +292,7 @@ def test_agent_partial_update_reuses_other_sources_decisions_and_snapshot_conten
 
 def test_manual_and_tool_factories_use_agent_generator(service, monkeypatch):
     from channel.desktop.desktop_channel import _briefing_pipeline
-    monkeypatch.setattr("agent.briefing.settings.email_sources", lambda path=None: [])
+    monkeypatch.setattr("agent.briefing.sources.registry._email_sources", lambda path=None: [])
     tool = BriefingTool(service=service)
     tool.model = ScriptedModel()
     assert isinstance(_briefing_pipeline(service).generator, AgentBriefingGenerator)

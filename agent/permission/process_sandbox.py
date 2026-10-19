@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import shutil
 import signal
 import subprocess
@@ -107,17 +106,12 @@ def _seatbelt_literal(path: str) -> str:
 
 
 def _protected_paths() -> tuple[list[str], list[str]]:
-    from common.state_dir import mcp_config_file, shared_root, state_root, user_root
+    from common.state_dir import shared_root, user_root
     from agent.workspace.shares import _manifest_file
-    from config import get_data_root, get_weixin_credentials_path
-    files = [str(Path(get_data_root()) / "config.json"), str(Path.home() / ".stella" / ".env"),
-             str(mcp_config_file()), str(user_root() / "briefing" / "elearning.json"),
-             str(user_root() / "briefing" / "mailbox.json"), get_weixin_credentials_path(),
-             str(shared_root() / ".env"), str(shared_root() / "session_prefs.json"),
-             str(shared_root() / "projects.json"), str(_manifest_file())]
-    folders = [str(user_root() / "briefing" / "elearning-sessions")]
-    # Treat Agent instructions and executable skills as control data.
-    files.extend(str(state_root() / name) for name in ("AGENT.md", "RULE.md", "BOOTSTRAP.md"))
+    from agent.tools.utils.credentials import protected_credential_paths, protected_credential_folders
+    files = sorted(protected_credential_paths()) + [str(_manifest_file())]
+    folders = sorted(protected_credential_folders())
+    folders.append(str(user_root() / 'briefing' / 'elearning-sessions'))
     folders.append(str(shared_root() / "skills"))
     return files, folders
 

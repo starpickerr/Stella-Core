@@ -86,3 +86,36 @@ def test_older_package_cannot_migrate_a_newer_domain_schema(tmp_path):
         MigrationCoordinator(store).run(BILLS, user_id='local-default',
             data_handle={'namespace': 'stella.bills', 'dbPath': str(data)})
     assert data.read_bytes() == before
+
+
+def test_email_migration_backup_and_transient_copies_are_private_and_guarded(tmp_path, monkeypatch):
+    import os
+    from common import state_dir
+    from agent.tools.utils.credentials import is_credential_path
+    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
+    monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path / 'shared')
+    data = tmp_path / 'email/email.db'
+    data.parent.mkdir()
+    _legacy(data)
+    from tests.email_domain import EmailService
+    EmailService(data).save_account({'action': 'add', 'host': 'imap.example.test',
+                                    'user': 'test@example.test', 'password': 'migration-test-secret'})
+    data.chmod(0o644)
+    state = ManagementStore(tmp_path / 'shared/plugin-packages')
+    seen = []
+    def inspect(stage, operation):
+        if stage in ('backed_up', 'migrated', 'data_selected'):
+            for key in ('backupRef', 'scratchRef', 'retiredRef'):
+                path = Path(operation['facts'][key])
+                if path.is_file():
+                    seen.append(path)
+                    assert is_credential_path(str(path)), (stage, key)
+                    with closing(sqlite3.connect(path)) as db:
+                        assert db.execute('SELECT password FROM email_accounts').fetchone()[0] == 'migration-test-secret'
+                    if os.name == 'posix':
+                        assert path.stat().st_mode & 0o777 == 0o600
+    result = MigrationCoordinator(state).run(Path('stella-plugins-workspace/plugins/email'),
+        user_id='local-default', data_handle={'dbPath': str(data), 'namespace': 'stella.email'}, checkpoint=inspect)
+    assert result['stage'] == 'data_selected' and seen
+    with closing(sqlite3.connect(result['facts']['backupRef'])) as db:
+        assert db.execute('SELECT value FROM user_kept').fetchone()[0] == 'original user data'

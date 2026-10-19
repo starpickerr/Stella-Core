@@ -4,7 +4,7 @@ import sqlite3
 
 from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
 
-_LEGACY_SETTINGS = ("settings", "elearning_settings")
+_LEGACY_SETTINGS = ("elearning_settings",)
 
 
 def __getattr__(name):
@@ -21,11 +21,15 @@ def source_key(source):
 
 
 def _email_sources():
+    from core.plugins.caller import plugin_user_id
+    from core.plugins.management import default_store
+    if default_store().instance('stella.email', plugin_user_id())['intent'] in {'disabled', 'removed'}:
+        return []
     from core.services.email_gateway import email_plugin_enabled
     if email_plugin_enabled():
         from core.services.email_facade import email_sources
         return email_sources()
-    return importlib.import_module("agent.briefing.settings").email_sources()
+    return []
 
 
 def _elearning_sources():
