@@ -83,12 +83,11 @@ _RESULT = {
 # Methods the Application port exposes (Application._METHODS["briefing"]).
 APPLICATION_METHODS = frozenset({
     "list_briefings", "get_briefing", "get_revision", "start_briefing", "briefing_for_date",
-    "complete_briefing", "update_item_status", "upsert_source_item", "list_rules",
+    "complete_briefing", "run_pipeline", "update_item_status", "upsert_source_item", "list_rules",
     "get_rule", "create_rule", "update_rule", "delete_rule", "get_cursor", "set_cursor",
     "build_source_item", "update_action", "list_action_rules", "create_action_rule", "delete_action_rule",
     "get_preferences", "update_preferences", "get_action_targets", "get_overview",
 })
-
 
 class BriefingPluginError(RuntimeError):
     def __init__(self, code: str, message: str):
@@ -168,6 +167,25 @@ class BriefingPluginFacade:
     @property
     def store(self):
         return _StoreProxy()
+
+    def run_pipeline(self, *, briefing_date=None, operation="upsert", trigger="manual",
+                     sources=None, draft=None, run_at=None, acquire_lock: bool = True):
+        """Persist a host-fetched (and optionally host-drafted) briefing run.
+
+        ``acquire_lock`` is accepted for API parity with the in-process domain
+        service; the worker always manages its own lock.
+        """
+        del acquire_lock  # worker-side lock only
+        params = {
+            "briefing_date": briefing_date,
+            "operation": operation,
+            "trigger": trigger,
+            "sources": _wire(sources),
+            "draft": _wire(draft),
+            "run_at": run_at,
+        }
+        params = {key: value for key, value in params.items() if value is not None or key in {"sources", "draft"}}
+        return _detail(_call("run_pipeline", params))
 
     def __getattr__(self, name: str):
         if name not in APPLICATION_METHODS:

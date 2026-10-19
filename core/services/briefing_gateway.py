@@ -55,7 +55,7 @@ BRIEFING_WRITE_METHODS: dict[str, tuple[str, ...]] = {
     "stage_source_items": ("run_id", "rows"),
     "stage_source_errors": ("run_id", "source", "account_id", "errors"),
     "dispatch_outbox": ("limit",),
-    "run_pipeline": ("briefing_date", "operation", "trigger", "sources", "draft"),
+    "run_pipeline": ("briefing_date", "operation", "trigger", "sources", "draft", "run_at"),
 }
 BRIEFING_METHOD_PARAMS = {**BRIEFING_READ_METHODS, **BRIEFING_WRITE_METHODS}
 _SOURCE_DIRECTORY_METHODS = frozenset({"list_sources", "select_sources"})

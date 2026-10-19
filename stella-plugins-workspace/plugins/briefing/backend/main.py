@@ -30,7 +30,7 @@ R, W = "briefing.read", "briefing.write"
 
 # name -> (effect, permission, idempotent, ordered parameter names)
 METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
-    # --- Application _METHODS["briefing"] (24) ---
+    # --- Application _METHODS["briefing"] (25) ---
     "list_briefings": ("query", R, False, ("status",)),
     "get_briefing": ("query", R, False, ("briefing_id",)),
     "get_revision": ("query", R, False, ("briefing_id", "number")),
@@ -45,6 +45,7 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "get_action_targets": ("query", R, False, ("kind", "query")),
     "start_briefing": ("domainWrite", W, True, ("briefing_date", "title")),
     "complete_briefing": ("domainWrite", W, True, ("briefing_id", "payload")),
+    "run_pipeline": ("domainWrite", W, False, ("briefing_date", "operation", "trigger", "sources", "draft", "run_at")),
     "update_item_status": ("domainWrite", W, True, ("item_id", "status")),
     "upsert_source_item": ("domainWrite", W, True, ("payload",)),
     "create_rule": ("domainWrite", W, True, ("payload",)),
@@ -64,10 +65,9 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "stage_source_items": ("domainWrite", W, True, ("run_id", "rows")),
     "stage_source_errors": ("domainWrite", W, True, ("run_id", "source", "account_id", "errors")),
     "dispatch_outbox": ("domainWrite", W, False, ("limit",)),
-    "run_pipeline": ("domainWrite", W, False, ("briefing_date", "operation", "trigger", "sources", "draft")),
 }
 
-BRIEFING_APPLICATION_METHODS = tuple(list(METHODS)[:24])
+BRIEFING_APPLICATION_METHODS = tuple(list(METHODS)[:25])
 
 SERVICE_DESCRIPTORS = [
     {
@@ -171,7 +171,8 @@ def _dispatch(svc: BriefingService, method: str, params: dict[str, Any], invoke_
     if method == "run_pipeline":
         return BriefingPipeline(svc).run(
             briefing_date=params.get("briefing_date"), operation=params.get("operation") or "upsert",
-            trigger=params.get("trigger") or "manual", sources=params.get("sources"), draft=params.get("draft"))
+            trigger=params.get("trigger") or "manual", sources=params.get("sources"), draft=params.get("draft"),
+            run_at=params.get("run_at"))
     return getattr(svc, method)(**params)
 
 

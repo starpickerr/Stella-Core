@@ -69,7 +69,8 @@ class BriefingPipeline:
         self.clock = clock or (lambda: datetime.now().astimezone())
 
     def run(self, *, briefing_date: Optional[str] = None, operation: str = "upsert",
-            trigger: str = "manual", sources: Optional[list] = None, draft: Optional[dict] = None) -> dict:
+            trigger: str = "manual", sources: Optional[list] = None, draft: Optional[dict] = None,
+            run_at: Optional[str] = None, acquire_lock: bool = True) -> dict:
         if not sources:
             raise ValueError("no briefing sources configured")
         if operation not in {"create", "update", "upsert"}:
@@ -80,7 +81,7 @@ class BriefingPipeline:
             if not isinstance(row, dict) or not row.get("source"):
                 raise ValueError("each source entry needs a source name")
         store = self.service.store
-        if not store.run_lock.acquire(blocking=False):
+        if acquire_lock and not store.run_lock.acquire(blocking=False):
             raise ValueError("简报正在生成，请等待当前运行完成后刷新")
         try:
             day = briefing_date or self.clock().date().isoformat()
@@ -89,14 +90,16 @@ class BriefingPipeline:
                 return self.service.get_briefing(existing.id)
             if operation == "update" and (not existing or not existing.generated_at):
                 raise ValueError("generate this day's briefing before updating it")
-            return self._run(day, trigger, sources, draft)
+            return self._run(day, trigger, sources, draft, run_at)
         finally:
-            store.run_lock.release()
+            if acquire_lock:
+                store.run_lock.release()
 
-    def _run(self, day: str, trigger: str, sources: list, draft: Optional[dict]) -> dict:
+    def _run(self, day: str, trigger: str, sources: list, draft: Optional[dict],
+             run_at: Optional[str] = None) -> dict:
         store = self.service.store
         local_now = self.clock()
-        finish = _iso(local_now)
+        finish = run_at or _iso(local_now)
         existing = self.service.briefing_for_date(day)
         previous = [row for row in self.service.list_briefings() if row.id[4:14] < day and row.generated_at]
         boundary = max((row.window_end or row.generated_at for row in previous), key=_parse, default=None)
@@ -117,7 +120,10 @@ class BriefingPipeline:
             for source in sources:
                 name, account = source["source"], source.get("account_id") or "default"
                 key = source_key({"source": name, "account_id": account})
-                src_start = source_windows.get(key, {}).get("start") or start
+                src_start = (
+                    source.get("window_start")
+                    or source_windows.get(key, {}).get("start")
+                    or start)
                 label = source.get("name") or name
                 src_errors = [str(e) for e in source.get("errors") or []]
                 rows = [self.service.build_source_item({**item, "source": name, "account_id": account})
@@ -136,7 +142,10 @@ class BriefingPipeline:
             for row in refreshed:
                 catalog_rows.extend(store.staged_window_candidates(run_id, row["start"], finish,
                                                                    [(row["name"], row["account"])]))
-            status = "failed" if errors and not fully else "partial" if errors else "completed"
+            # A FetchResult with per-item errors is partial; only hard misses (no cursors) are failed.
+            attempted = {source_key({"source": row["source"], "account_id": row.get("account_id") or "default"})
+                         for row in sources if "cursors" in row}
+            status = "failed" if errors and not attempted else "partial" if errors else "completed"
             drafted: dict[str, Any] = {}
             if status != "failed":
                 drafted = draft if isinstance(draft, dict) else compose_draft(

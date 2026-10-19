@@ -279,6 +279,15 @@ class BriefingService:
             detail["actions"] = self.actions.view(detail["items"])
         return detail
 
+    def run_pipeline(self, *, briefing_date=None, operation="upsert", trigger="manual",
+                     sources=None, draft=None, run_at=None, acquire_lock: bool = True) -> dict:
+        """Persist a host-fetched (and optionally host-drafted) briefing run."""
+        from .pipeline import BriefingPipeline
+
+        return BriefingPipeline(self).run(
+            briefing_date=briefing_date, operation=operation, trigger=trigger,
+            sources=sources, draft=draft, run_at=run_at, acquire_lock=acquire_lock)
+
     def update_item_status(self, item_id: str, status: str) -> BriefingItem:
         if status not in _ITEM_STATUSES:
             raise ValueError("status must be undo, done, ignored, or follow_up")

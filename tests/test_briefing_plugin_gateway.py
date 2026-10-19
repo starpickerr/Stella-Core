@@ -106,7 +106,7 @@ def test_descriptors_cover_application_briefing_methods_and_gateway_table():
     descriptor = module.SERVICE_DESCRIPTORS[0]
     assert descriptor["contract"] == "stella.briefing@1"
     methods = {m["name"]: m for m in descriptor["methods"]}
-    assert len(_METHODS["briefing"]) == 24
+    assert len(_METHODS["briefing"]) == 25
     assert set(_METHODS["briefing"]) == set(APPLICATION_METHODS) == set(module.BRIEFING_APPLICATION_METHODS)
     assert set(_METHODS["briefing"]) <= set(methods)
     assert set(methods) == set(briefing_gateway.BRIEFING_METHOD_PARAMS)
@@ -381,6 +381,51 @@ def test_core_pipeline_runs_through_plugin_store_proxy(tmp_path, monkeypatch):
     assert [item.source_id for item, _email in rows] == ["m1"]
     # Missing peer authorization keeps the durable event pending in its owner.
     assert _ok(tmp_path / "briefing.db", "dispatch_outbox", limit=5)["pending"] == 1
+
+
+def test_host_pipeline_persists_only_via_run_pipeline(tmp_path, monkeypatch):
+    """Production host fetch/draft must commit through plugin run_pipeline, not host stage/complete."""
+    from agent.briefing.pipeline import BriefingPipeline
+    from agent.briefing.sources.base import FetchedItem
+    from briefing_fakes import StaticSource
+    from core.services import briefing_gateway as gw
+    from core.services.briefing_facade import BriefingPluginFacade
+
+    _patch_paths(monkeypatch, tmp_path)
+    seen: list[str] = []
+    real = gw.invoke_briefing
+
+    def track(method, params, **kwargs):
+        seen.append(method)
+        return real(method, params, **kwargs)
+
+    monkeypatch.setattr(gw, "invoke_briefing", track)
+
+    class Drafter:
+        def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None):
+            cards, mail = [], []
+            for index, (item, _email) in enumerate(rows):
+                mail.append({"id": item.id, "source": item.source, "account_id": item.account_id,
+                             "source_id": item.source_id, "thread_id": item.thread_id,
+                             "category": "selected", "title": item.title, "metadata": {},
+                             "occurred_at": item.occurred_at, "decision": {"id": item.id, "selected": True}})
+                cards.append({"source_item_id": item.id, "section": "fyi", "score": 60, "sort_order": index,
+                              "snippet": item.snippet, "source": item.source, "account_id": item.account_id,
+                              "source_id": item.source_id, "occurred_at": item.occurred_at, "title": item.title})
+            return {"title": "HostDraft", "body": "drafted", "items": cards, "mail": mail, "rule_text": "r"}
+
+    source = StaticSource([FetchedItem(source="email", source_id="m9", title="作业", snippet="s",
+                                       occurred_at=NOW, account_id="default", sender="Ada")],
+                          cursors={"imap_uid": "9"})
+    facade = BriefingPluginFacade()
+    detail = BriefingPipeline(
+        facade, [source], clock=lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc), generator=Drafter(),
+    ).run(briefing_date="2026-09-09")
+    assert detail["briefing"].title == "HostDraft" and detail["briefing"].body == "drafted"
+    assert seen.count("run_pipeline") == 1
+    # Host may start a running row for progress; snapshot/cursor writes stay in run_pipeline.
+    for forbidden in ("complete_briefing", "stage_source_items", "stage_source_errors"):
+        assert forbidden not in seen, forbidden
 
 
 def test_briefing_migration_entry_applies_and_verifies(tmp_path):
