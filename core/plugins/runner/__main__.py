@@ -171,7 +171,20 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
                     "contributions": manifest.get("contributes") or {},
                 },
             )
+        if method == "runtime.migrate":
+            import os
+            from core.plugins.runner.migration import migrate
+
+            if os.environ.get("STELLA_PLUGIN_MAINTENANCE") != "1":
+                raise PermissionError("migration requires maintenance mode")
+            if not STATE.prepared or STATE.root is None:
+                raise RuntimeError("maintenance session not prepared")
+            return make_result(request_id, migrate(params, STATE))
         if method == "plugin.invoke":
+            import os
+
+            if os.environ.get("STELLA_PLUGIN_MAINTENANCE") == "1":
+                raise PermissionError("business invoke refused during maintenance")
             if STATE.draining:
                 raise RuntimeError("worker draining")
             if not STATE.prepared or STATE.handler is None:

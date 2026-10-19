@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.plugins.authz import DEFAULT_AUTHZ
-from core.plugins.caller import plugin_user_id, serialized_gateway, user_grant_ref
+from core.plugins.caller import issue_compatibility_grant, managed_plugin_route, plugin_user_id, serialized_gateway, user_grant_ref
 from core.plugins.host import PluginSession
 from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
@@ -62,7 +62,7 @@ _SOURCE_DIRECTORY_METHODS = frozenset({"list_sources", "select_sources"})
 
 
 def briefing_plugin_enabled() -> bool:
-    return os.environ.get("STELLA_BRIEFING_PLUGIN", "").strip() in {"1", "true", "yes"}
+    return managed_plugin_route("stella.briefing", os.environ.get("STELLA_BRIEFING_PLUGIN", ""))
 
 
 def _plugin_root() -> Path:
@@ -92,7 +92,7 @@ def ensure_briefing_session() -> PluginSession:
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
-    DEFAULT_AUTHZ.issue(
+    issue_compatibility_grant(DEFAULT_AUTHZ,
         grant_ref=user_grant_ref(_GRANT_REF),
         plugin_id=PLUGIN_ID,
         user_id=user_id,

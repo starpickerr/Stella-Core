@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from core.plugins.authz import DEFAULT_AUTHZ
-from core.plugins.caller import plugin_user_id, serialized_gateway, user_grant_ref
+from core.plugins.caller import issue_compatibility_grant, managed_plugin_route, plugin_user_id, serialized_gateway, user_grant_ref
 from core.plugins.host import PluginSession
 from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
@@ -56,7 +56,7 @@ _NETWORK_METHODS = {"test_connection", "list_folders", "fetch_messages"}
 
 
 def email_plugin_enabled() -> bool:
-    return os.environ.get("STELLA_EMAIL_PLUGIN", "").strip() in {"1", "true", "yes"}
+    return managed_plugin_route("stella.email", os.environ.get("STELLA_EMAIL_PLUGIN", ""))
 
 
 def _plugin_root() -> Path:
@@ -70,7 +70,7 @@ def _plugin_root() -> Path:
 
 
 def _issue_grant(*, replace_existing: bool = True) -> None:
-    DEFAULT_AUTHZ.issue(
+    issue_compatibility_grant(DEFAULT_AUTHZ,
         grant_ref=user_grant_ref(_GRANT_REF),
         plugin_id=PLUGIN_ID,
         user_id=plugin_user_id(),

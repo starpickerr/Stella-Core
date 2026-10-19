@@ -66,17 +66,22 @@ class AutomationStore:
 
     @contextmanager
     def _connect(self):
-        db = sqlite3.connect(self.store_path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA busy_timeout=10000")
-        try:
-            yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        from core.plugins.caller import managed_data_lease
+
+        # Disabling the Automation business plugin never disables Core reminder
+        # delivery. Only a data-maintenance lease pauses these shared DB writes.
+        with managed_data_lease('stella.automation', mechanism=True):
+            db = sqlite3.connect(self.store_path, timeout=10)
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA busy_timeout=10000")
+            try:
+                yield db
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
 
     def _migrate_legacy(self):
         with self.lock, self._connect() as db:

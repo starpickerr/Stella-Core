@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from core.plugins.roots import resolve_plugin_package_root
+from core.plugins.package_ops import _sha256_tree
 
 
 def test_resolve_prefers_installed_package_store(tmp_path, monkeypatch):
@@ -13,12 +13,11 @@ def test_resolve_prefers_installed_package_store(tmp_path, monkeypatch):
     pkg = tmp_path / "home" / "stella" / "plugin-packages" / "packages" / "stella.tasks" / "1.0.0" / "deadbeef"
     pkg.mkdir(parents=True)
     (pkg / "plugin.json").write_text("{}", encoding="utf-8")
-    current = pkg.parent.parent / "current.json"
     # PackageStore layout: packages/<id>/current.json
     store_root = tmp_path / "home" / "stella" / "plugin-packages"
     (store_root / "packages" / "stella.tasks").mkdir(parents=True, exist_ok=True)
     (store_root / "packages" / "stella.tasks" / "current.json").write_text(
-        json.dumps({"pluginId": "stella.tasks", "path": str(pkg), "digest": "deadbeef"}),
+        json.dumps({"pluginId": "stella.tasks", "path": str(pkg), "digest": _sha256_tree(pkg)}),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -26,7 +25,7 @@ def test_resolve_prefers_installed_package_store(tmp_path, monkeypatch):
 
     # Force state_root under our temp home.
     monkeypatch.setattr(
-        "common.state_dir.state_root",
+        "common.state_dir.shared_root",
         lambda identity=None: tmp_path / "home" / "stella",
     )
     # Pretend frozen so workspace fallback is skipped even if present.
@@ -42,3 +41,15 @@ def test_resolve_prefers_installed_package_store(tmp_path, monkeypatch):
         folder_name="tasks",
     )
     assert root == pkg
+
+
+def test_managed_root_cannot_be_overridden_or_fall_back(tmp_path, monkeypatch):
+    import pytest
+    from core.plugins.management import ManagementStore
+    from core.plugins import management
+    store = ManagementStore(tmp_path / 'packages')
+    store.set_intent('stella.tasks', 'local-default', 'enabled')
+    monkeypatch.setattr(management, 'default_store', lambda: store)
+    monkeypatch.setenv('STELLA_TODOS_PLUGIN_ROOT', str(tmp_path / 'untrusted'))
+    with pytest.raises((FileNotFoundError, PermissionError), match='installed'):
+        resolve_plugin_package_root(plugin_id='stella.tasks', env_var='STELLA_TODOS_PLUGIN_ROOT', folder_name='tasks')

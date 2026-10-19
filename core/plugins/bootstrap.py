@@ -116,24 +116,48 @@ def run_desktop_bootstrap(
     catalog_path: Path | None = None,
 ) -> dict[str, Any]:
     """Install default catalog into the user package store and activate env flags."""
-    store = PackageStore(Path(data_dir) / "plugin-packages")
+    from core.plugins.lifecycle import PluginManager
+    from core.plugins.management import ManagementStore
+    from core.plugins.package_ops import _atomic_json
+
+    management = ManagementStore(Path(data_dir) / "plugin-packages")
+    manager = PluginManager(management, catalog_path=catalog_path or _default_catalog_path())
     intents_path = Path(data_dir) / "plugin-intents.json"
-    intents = {}
-    if intents_path.is_file():
-        intents = json.loads(intents_path.read_text(encoding="utf-8"))
-    catalog = catalog_path or _default_catalog_path()
-    result = bootstrap_default_plugins(
-        catalog_path=catalog,
-        package_store=store,
-        user_intents=intents,
-    )
+    legacy_intents = json.loads(intents_path.read_text()) if intents_path.is_file() else {}
+    installed, skipped, failed = [], [], []
+    user = "local-default"
+    wanted = [row['pluginId'] for row in load_default_plugin_manifest()['plugins']]
+    for plugin_id in wanted:
+        if not management.has_instance(plugin_id, user):
+            intent = legacy_intents.get(plugin_id, 'enabled')
+            explicit = os.environ.get(DOMAIN_ENV.get(plugin_id, ''), '').strip().lower()
+            if explicit in {'0', 'false', 'no'}:
+                intent = 'disabled'
+            management.set_intent(plugin_id, user, intent)
+        current = management.instance(plugin_id, user)
+        if current['intent'] in {'disabled', 'removed'}:
+            skipped.append({'pluginId': plugin_id, 'status': 'skipped_user_intent', 'intent': current['intent']})
+            continue
+        try:
+            pending = [op for op in management.unfinished(plugin_id) if op['kind'] == 'install']
+            if pending:
+                manager.resume(pending[0]['operationId'])
+            elif manager.packages.current_package(plugin_id):
+                # Validate installed bytes offline. Migration markers make this
+                # adoption idempotent; no catalog fetch or version replacement.
+                manager.adopt_current(plugin_id, user_id=user)
+            else:
+                manager.install(plugin_id, user_id=user)
+            installed.append(plugin_id)
+        except Exception as exc:
+            management.set_runtime(plugin_id, user, 'maintenance', error=str(exc))
+            failed.append({'pluginId': plugin_id, 'status': 'failed', 'error': str(exc)})
+    intents = {plugin_id: management.instance(plugin_id, user)['intent'] for plugin_id in wanted}
     intents_path.parent.mkdir(parents=True, exist_ok=True)
-    intents_path.write_text(json.dumps(result.get("intents") or intents, indent=2) + "\n", encoding="utf-8")
-    installed = list(result.get("installed") or [])
-    # bootstrap_default_plugins includes validated packages from prior boots.
+    _atomic_json(intents_path, intents)
     applied = apply_desktop_plugin_defaults(installed_ids=installed, intents_path=intents_path)
-    result["envApplied"] = applied
-    return result
+    return {'status': 'ok' if not failed else 'partial', 'installed': installed,
+            'skipped': skipped, 'failed': failed, 'intents': intents, 'envApplied': applied}
 
 
 def _default_catalog_path() -> Path:

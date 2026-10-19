@@ -103,6 +103,7 @@ class PluginSession:
         python_executable: str | None = None,
         authz: PluginAuthorizationStore | None = None,
         runner_command: list[str] | None = None,
+        maintenance: bool = False,
     ) -> None:
         self.plugin_root = Path(plugin_root).resolve()
         self.source_label = source_label
@@ -116,6 +117,7 @@ class PluginSession:
         self.instance_id = str(uuid.uuid4())
         self._python = python_executable or sys.executable
         self._runner_command = runner_command
+        self.maintenance = maintenance
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.RLock()
         self._inflight: set[str] = set()
@@ -160,6 +162,8 @@ class PluginSession:
                 env["STELLA_ALLOW_REPO_IMPORT"] = "1"
                 if "STELLA_REPO_ROOT" in os.environ:
                     env["STELLA_REPO_ROOT"] = os.environ["STELLA_REPO_ROOT"]
+            if self.maintenance:
+                env["STELLA_PLUGIN_MAINTENANCE"] = "1"
             env["STELLA_PLUGIN_ROOT"] = str(self.plugin_root)
             env["STELLA_PLUGIN_ID"] = self.plugin_id
             # Frozen/dedicated runner must not depend on repo checkout imports
@@ -221,17 +225,32 @@ class PluginSession:
                         self._service_permissions[contract] = frozenset(perms)
             else:
                 service_ids = list(contributions.get("services") or [])
-            self.registry.publish(
-                ContributionSnapshot(
+            snapshot = ContributionSnapshot(
                     plugin_id=self.plugin_id,
                     generation=self.generation,
                     source_label=self.source_label,
                     package_digest=self.package_digest,
                     contributes=dict(contributions),
                     services=tuple(service_ids),
+                    user_id=self.user_id,
                 )
-            )
+            if not self.maintenance:
+                self.registry.publish(snapshot)
             return {"initialize": init, "prepare": prepared}
+
+    def migrate(self, *, operation_id: str, migration_id: str, from_schema: int, to_schema: int,
+                data_handle: Mapping[str, Any], mode: str) -> dict[str, Any]:
+        if not self.maintenance:
+            raise PermissionError("migration requires maintenance session")
+        handle = {**dict(data_handle), "userId": self.user_id, "instanceId": self.instance_id,
+                  "generation": self.generation}
+        return self._rpc("runtime.migrate", {
+            "operationId": operation_id, "migrationId": migration_id, "mode": mode,
+            "fromSchema": from_schema, "toSchema": to_schema,
+            "dataHandle": f"maintenance:{operation_id}:{migration_id}",
+            "deadline": (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(),
+            "_hostDataHandle": handle,
+        }, timeout_ms=60_000)
 
     def invoke(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Compatibility wrapper for samples/tests — production callers use ``invoke_contract``.

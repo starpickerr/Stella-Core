@@ -15,6 +15,7 @@ class ContributionSnapshot:
     package_digest: str
     contributes: dict[str, Any]
     services: tuple[str, ...] = ()
+    user_id: str = 'local-default'
 
 
 class PluginRegistry:

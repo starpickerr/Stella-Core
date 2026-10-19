@@ -210,3 +210,29 @@ def handle(method, params):
         assert registry.get(session.plugin_id) is None
     finally:
         session.dispose()
+
+
+def test_frozen_maintenance_runner_applies_and_verifies_actual_schema(frozen_runner, tmp_path, monkeypatch):
+    import sqlite3
+    from core.plugins.host import PluginHostError, PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    monkeypatch.setenv('PATH', '/nonexistent')
+    monkeypatch.delenv('PYTHONPATH', raising=False)
+    registry = PluginRegistry()
+    session = PluginSession(REPO / 'stella-plugins-workspace/plugins/bills', source_label='frozen-migration',
+                            registry=registry, maintenance=True, runner_command=[str(frozen_runner)])
+    handle = {'namespace': 'stella.bills', 'dbPath': str(tmp_path / 'bills.sqlite')}
+    try:
+        session.start()
+        assert registry.get(session.plugin_id) is None
+        for mode in ('apply', 'verify'):
+            result = session.migrate(operation_id='op', migration_id='migration', from_schema=0, to_schema=1,
+                                     data_handle=handle, mode=mode)
+            assert result['committed'] and result['verified']
+        with sqlite3.connect(handle['dbPath']) as db:
+            assert db.execute("SELECT name FROM sqlite_master WHERE name='financial_events'").fetchone()
+        with pytest.raises(PluginHostError, match='maintenance'):
+            session._rpc('plugin.invoke', {})
+    finally:
+        session.dispose()

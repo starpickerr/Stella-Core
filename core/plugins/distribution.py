@@ -178,6 +178,7 @@ def fetch_and_install_from_catalog(
     plugin_id: str,
     package_store: PackageStore,
     user_intents: dict[str, str] | None = None,
+    prepare_only: bool = False,
 ) -> dict[str, Any]:
     """Install one catalog entry. Respects disabled/removed user intent."""
     intents = user_intents or {}
@@ -239,6 +240,9 @@ def fetch_and_install_from_catalog(
     op = package_store.prepare(op.operation_id)
     if op.stage.value == "failed":
         return {"status": "failed", "error": op.error, "pluginId": plugin_id}
+    if prepare_only:
+        return {"status": "prepared", "pluginId": plugin_id, "operationId": op.operation_id,
+                "path": op.target_path, "digest": op.digest}
     op = package_store.commit(op.operation_id)
     if op.stage.value == "failed":
         return {"status": "failed", "error": op.error, "pluginId": plugin_id}

@@ -17,7 +17,7 @@ def scope(monkeypatch, tmp_path):
     project.mkdir()
 
     monkeypatch.setattr("agent.registry.get_agent_registry", lambda: SimpleNamespace(
-        get=lambda agent_id: SimpleNamespace(workspace=str(tmp_path))))
+        get=lambda agent_id=None, **kwargs: SimpleNamespace(workspace=str(tmp_path))))
     monkeypatch.setattr("agent.memory.get_conversation_store", lambda workspace: SimpleNamespace(
         list_session_ids=lambda channel_type: list(sessions)))
     monkeypatch.setattr(conversation.project_store, "get_project_dir",
