@@ -122,6 +122,14 @@ def test_frame_identity_is_host_bound(frame_result):
     assert ident["generation"] == 0
 
 
+def test_frame_blocks_foreign_navigation_and_window_open(frame_result):
+    nav = frame_result["navigation"]
+    assert nav["navigatedAway"] is False
+    assert "127.0.0.1" in nav["urlAfterForeignAssign"]
+    assert "example.invalid" not in nav["urlAfterForeignAssign"]
+    assert nav["windowOpen"] == "denied"
+
+
 def _expected_csp() -> str:
     text = (DESKTOP / "src" / "main" / "plugin-frame.ts").read_text(encoding="utf-8")
     start = text.index("PLUGIN_FRAME_CSP = [")

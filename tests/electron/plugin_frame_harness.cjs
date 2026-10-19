@@ -85,6 +85,27 @@ app.whenReady().then(() => {
         if (!probe) await new Promise((r) => setTimeout(r, 100))
       }
       const violations = await child.webContents.executeJavaScript('window.__violations')
+
+      // Navigation / popup hardening (R03): foreign navigations and window.open must be denied.
+      const allowedOrigin = `http://127.0.0.1:${port}/`
+      let navigatedAway = false
+      child.webContents.on('did-navigate', (_e, url) => {
+        if (!url.startsWith(allowedOrigin) && !url.startsWith('file:')) {
+          navigatedAway = true
+        }
+      })
+      // Attempt foreign navigation; will-navigate handler should prevent it.
+      await child.webContents.executeJavaScript(
+        'void location.assign("https://example.invalid/escape")'
+      )
+      await new Promise((r) => setTimeout(r, 300))
+      const urlAfterNav = child.webContents.getURL()
+
+      // window.open must be denied by setWindowOpenHandler.
+      const openResult = await child.webContents.executeJavaScript(
+        '(() => { const w = window.open("https://example.invalid/popup"); return w ? "opened" : "denied"; })()'
+      )
+
       finish(
         {
           prefs: {
@@ -96,7 +117,12 @@ app.whenReady().then(() => {
           },
           probe,
           violations,
-          identity: child.__stellaPluginIdentity || null
+          identity: child.__stellaPluginIdentity || null,
+          navigation: {
+            urlAfterForeignAssign: urlAfterNav,
+            navigatedAway,
+            windowOpen: openResult
+          }
         },
         probe ? 0 : 3
       )
