@@ -312,6 +312,20 @@ export class PythonBackend extends EventEmitter {
     return undefined
   }
 
+  /**
+   * First-edition HMAC material for verifying official signed plugin ZIPs.
+   * Prefer an explicit env, then the packaged Resources secret next to the catalog.
+   */
+  private resolvePluginSigningSecret(): string | undefined {
+    const fromEnv = process.env.STELLA_PLUGIN_SIGNING_SECRET?.trim()
+    if (fromEnv) return fromEnv
+    const packaged = path.join(process.resourcesPath, 'plugin-signing.secret')
+    if (fs.existsSync(packaged)) {
+      return fs.readFileSync(packaged, 'utf8').trim() || undefined
+    }
+    return undefined
+  }
+
   private resolveEnvPath(): string {
     if (this.resolvedPath !== null) {
       return this.resolvedPath
@@ -704,6 +718,7 @@ export class PythonBackend extends EventEmitter {
     }
 
     const pluginCatalog = this.resolvePluginCatalogPath()
+    const signingSecret = this.resolvePluginSigningSecret()
     this.process = spawn(command, args, {
       cwd,
       // STELLA_DESKTOP enables the lighter desktop runtime (no plugins, no MCP).
@@ -722,6 +737,7 @@ export class PythonBackend extends EventEmitter {
         STELLA_BACKEND_PORT: String(this.port),
         STELLA_DATA_DIR: dataDir,
         ...(pluginCatalog ? { STELLA_PLUGIN_CATALOG: pluginCatalog } : {}),
+        ...(signingSecret ? { STELLA_PLUGIN_SIGNING_SECRET: signingSecret } : {}),
         ...(this.clientSource() ? { STELLA_CLIENT_SOURCE: this.clientSource() } : {}),
         STELLA_CLIENT_VERSION: app.getVersion(),
       },

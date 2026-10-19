@@ -85,7 +85,9 @@
           "icon.png",
           "app-config.json",
           "themes/**",
-          "plugin-catalog.json"
+          "plugin-catalog.json",
+          "plugin-packages/**",
+          "plugin-signing.secret"
         ]
       }
     ],

@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 
@@ -21,10 +22,17 @@ def verify_signature(payload: bytes, signature_hex: str, *, secret: bytes) -> bo
 
 
 def signing_secret_from_env() -> bytes:
-    raw = os.environ.get("STELLA_PLUGIN_SIGNING_SECRET", "").encode("utf-8")
-    if not raw:
-        raise RuntimeError("STELLA_PLUGIN_SIGNING_SECRET is required for signed packages")
-    return raw
+    raw = os.environ.get("STELLA_PLUGIN_SIGNING_SECRET", "").encode("utf-8").strip()
+    if raw:
+        return raw
+    # Packaged desktop: <Resources>/backend/stella-backend/stella-backend → ../../plugin-signing.secret
+    if getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).resolve().parents[2] / "plugin-signing.secret"
+        if candidate.is_file():
+            secret = candidate.read_bytes().strip()
+            if secret:
+                return secret
+    raise RuntimeError("STELLA_PLUGIN_SIGNING_SECRET is required for signed packages")
 
 
 def write_signed_zip(source_dir: Path, archive: Path, *, secret: bytes) -> Path:

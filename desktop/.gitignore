@@ -8,3 +8,5 @@ resources/app-config.json
 resources/themes/
 resources/plugin-catalog.json
 resources/plugin-seed/
+resources/plugin-packages/
+resources/plugin-signing.secret

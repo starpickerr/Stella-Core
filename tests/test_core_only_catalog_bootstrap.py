@@ -42,10 +42,9 @@ def test_catalog_without_local_paths_reports_missing_source(tmp_path):
 
 
 def test_sync_script_writes_catalog_without_seed_tree(tmp_path, monkeypatch):
-    """desktop/scripts/sync-plugin-seed.mjs must not materialize plugin-seed packages."""
+    """desktop packaging ships signed plugin-packages, never unpacked plugin-seed."""
     script = Path("desktop/scripts/sync-plugin-seed.mjs").read_text(encoding="utf-8")
-    assert "plugin-seed" in script or "catalog" in script.lower()
-    # Contract: packaged extraResources must not ship plugin-seed trees.
+    assert "pack_signed_plugin_catalog" in script
     package_json = json.loads(Path("desktop/package.json").read_text(encoding="utf-8"))
     filters = []
     for item in package_json["build"]["extraResources"]:
@@ -53,3 +52,5 @@ def test_sync_script_writes_catalog_without_seed_tree(tmp_path, monkeypatch):
             filters.extend(item["filter"])
     assert "plugin-seed/**" not in filters
     assert "plugin-catalog.json" in filters
+    assert "plugin-packages/**" in filters
+    assert "plugin-signing.secret" in filters
