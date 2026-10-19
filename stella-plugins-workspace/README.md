@@ -1,6 +1,7 @@
 # Stella-Plugins workspace (local staging)
 
-This tree mirrors the future [Stella-Plugins](https://github.com/starpickerr/Stella-Plugins) repository layout while the mainline lands in Stella.
+Mirror of [Stella-Plugins](https://github.com/starpickerr/Stella-Plugins) used by [Stella-Core](https://github.com/starpickerr/Stella-Core) while packages land.
+Authoritative delivery lives in the sibling checkout `../Stella-Plugins` (same parent as this Core tree).
 
 | Plugin | Role |
 | --- | --- |
