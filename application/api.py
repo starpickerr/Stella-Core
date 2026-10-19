@@ -7,7 +7,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.runtime_identity import RuntimeIdentity, current_identity, use_identity
+from common.runtime_identity import current_identity, use_identity
+from core.plugins.caller import caller_origin_scope
 
 
 _apple_managers = {}
@@ -92,8 +93,8 @@ class _Port:
             raise ValueError("invalid user identity")
         self.domain = domain
         self.context = context
-        identity = RuntimeIdentity(agent_id=context.agent_id, user_id=context.user_id,
-                                   session_id=context.session_id, run_id=current_identity().run_id)
+        identity = current_identity().derive(agent_id=context.agent_id, user_id=context.user_id,
+                                             session_id=context.session_id)
         self.identity = identity
         with use_identity(identity):
             if domain == "calendar":
@@ -153,7 +154,7 @@ class _Port:
             raise AttributeError(name)
 
         def call(*args, **kwargs):
-            with use_identity(self.identity):
+            with use_identity(self.identity), caller_origin_scope(self.context.source):
                 mutates = name.startswith(('create_', 'update_', 'delete_', 'complete_', 'change_', 'add_', 'remove_', 'move_', 'import_', 'ingest_', 'upsert_', 'withdraw_', 'start_', 'set_'))
                 run_id = current_identity().run_id
                 if not mutates or not run_id:
@@ -220,8 +221,8 @@ class Application:
         """Resume the todo outbox only from a scheduler handoff."""
         if context.source != "scheduler":
             raise PermissionError("todo reminder dispatch is reserved for scheduler")
-        with use_identity(RuntimeIdentity(agent_id=context.agent_id, user_id=context.user_id,
-                                          session_id=context.session_id, run_id=current_identity().run_id)):
+        with use_identity(current_identity().derive(agent_id=context.agent_id, user_id=context.user_id,
+                                                   session_id=context.session_id)), caller_origin_scope(context.source):
             from core.services.todos_public import default_service
             return default_service().dispatch_scheduled_reminder(todo_id, expected_at)
 
@@ -266,8 +267,8 @@ class Application:
         args = params if isinstance(params, list) else [params or {}]
         request = context or RequestContext.ambient()
         operation_id = request.idempotency_key or uuid.uuid4().hex
-        with use_identity(RuntimeIdentity(agent_id=request.agent_id, user_id=request.user_id,
-                                          session_id=request.session_id, run_id=current_identity().run_id)):
+        with use_identity(current_identity().derive(agent_id=request.agent_id, user_id=request.user_id,
+                                                   session_id=request.session_id)), caller_origin_scope(request.source):
             from agent.runtime.tool_invocation import permission_denial
             action = {"create_ledger": "add", "update_ledger": "update", "delete_ledger": "delete",
                       "create_todo": "create", "update_todo": "update", "complete_todo": "complete",

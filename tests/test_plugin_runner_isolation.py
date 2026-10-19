@@ -338,3 +338,27 @@ def test_frozen_runner_sibling_discovery(frozen_runner, tmp_path):
     link.symlink_to(frozen_runner.parent, target_is_directory=True)
     cmd = resolve_runner_command(environ={}, frozen=True, executable=str(app_exe))
     assert Path(cmd[0]).resolve() == frozen_runner.resolve()
+
+
+def test_worker_does_not_inherit_host_credentials(monkeypatch):
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-host-secret")
+    monkeypatch.setenv("STELLA_DESKTOP_INTERNAL_TOKEN", "test-management-token")
+    monkeypatch.setenv("IMAP_PASSWORD", "test-mail-secret")
+    monkeypatch.setenv("PYTHONPATH", "/untrusted/site-packages")
+    captured = {}
+
+    def capture(command, **kwargs):
+        captured.update(kwargs["env"])
+        raise RuntimeError("captured environment")
+
+    monkeypatch.setattr("core.plugins.host.subprocess.Popen", capture)
+    session = PluginSession(ALPHA, source_label="test", registry=PluginRegistry())
+    with pytest.raises(RuntimeError, match="captured"):
+        session.start()
+    assert "OPENAI_API_KEY" not in captured
+    assert "STELLA_DESKTOP_INTERNAL_TOKEN" not in captured
+    assert "IMAP_PASSWORD" not in captured
+    assert "PYTHONPATH" not in captured

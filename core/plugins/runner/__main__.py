@@ -29,6 +29,8 @@ class WorkerState:
         self.disposed = False
         self.draining = False
         self.plugin_id: str | None = None
+        self.user_id: str | None = None
+        self.instance_id: str | None = None
         self.generation: int | None = None
         self.manifest: dict[str, Any] | None = None
         self.handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
@@ -113,6 +115,8 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
         if method == "runtime.initialize":
             if STATE.disposed:
                 raise RuntimeError("worker disposed")
+            if STATE.initialized:
+                raise RuntimeError("worker already initialized")
             for key in (
                 "pluginId",
                 "packageDigest",
@@ -126,6 +130,8 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
                 if key not in params:
                     raise RuntimeError(f"initialize missing {key}")
             STATE.plugin_id = params["pluginId"]
+            STATE.user_id = params["userId"]
+            STATE.instance_id = params["instanceId"]
             STATE.generation = int(params["generation"])
             STATE.manifest = params.get("manifest") or {}
             root = Path(__import__("os").environ["STELLA_PLUGIN_ROOT"])
@@ -174,8 +180,8 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
             ctx = invoke_params["context"]
             if int(ctx.get("generation", -1)) != STATE.generation:
                 raise PermissionError("stale generation")
-            if ctx.get("instanceId") and STATE.plugin_id and False:
-                pass
+            if ctx.get("userId") != STATE.user_id or ctx.get("instanceId") != STATE.instance_id:
+                raise PermissionError("host context identity mismatch")
             # Reject plugin-supplied identity overrides sneaking into input.
             if "userId" in invoke_params["input"] or "grantRef" in invoke_params["input"]:
                 raise PermissionError("input must not override host identity fields")

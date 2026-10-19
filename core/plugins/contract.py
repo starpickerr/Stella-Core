@@ -154,7 +154,7 @@ def build_invoke_params(
         "contract": contract,
         "method": method,
         "input": dict(input_payload),
-        "deadline": deadline.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "deadline": deadline.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "context": dict(context),
     }
     if idempotency_key is not None:

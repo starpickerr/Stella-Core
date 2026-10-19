@@ -97,3 +97,33 @@ def test_read_only_grant_can_query_but_cannot_write(tmp_path):
             session.invoke_contract(method="undeclared", input_payload={}, **args)
     finally:
         session.dispose()
+
+
+def test_deadline_preserves_subsecond_precision():
+    deadline = datetime.now(timezone.utc) + timedelta(milliseconds=250)
+    context = build_host_context(user_id="u", instance_id="i", generation=1, origin="ui", grant_ref="g")
+    params = build_invoke_params(contract="stella.sample.alpha@1", method="ping", input_payload={},
+                                 context=context, deadline=deadline)
+    decoded = datetime.fromisoformat(params["deadline"].replace("Z", "+00:00"))
+    assert abs((deadline - decoded).total_seconds()) < 0.001
+
+
+@pytest.mark.parametrize("field,value", [("userId", "another-user"), ("instanceId", "another-instance")])
+def test_worker_rejects_identity_other_than_initialized_session(field, value):
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.plugins.host import PluginHostError
+    from core.plugins.registry import PluginRegistry
+
+    session = PluginSession(Path("samples/plugins/alpha"), source_label="test", registry=PluginRegistry(),
+                            authz=PluginAuthorizationStore())
+    try:
+        session.start()
+        context = build_host_context(user_id=session.user_id, instance_id=session.instance_id,
+                                     generation=session.generation, origin="ui", grant_ref="g")
+        context[field] = value
+        params = build_invoke_params(contract="stella.sample.alpha@1", method="ping", input_payload={},
+                                     context=context, deadline=datetime.now(timezone.utc) + timedelta(seconds=5))
+        with pytest.raises(PluginHostError, match="identity mismatch"):
+            session._rpc("plugin.invoke", params)
+    finally:
+        session.dispose()

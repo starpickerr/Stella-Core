@@ -156,3 +156,57 @@ def test_frozen_runner_initializes_default_domain_plugins(frozen_runner, domain,
         assert started["initialize"]["pluginId"] == f"stella.{domain}"
     finally:
         session.dispose()
+
+
+@pytest.mark.parametrize("field", ["userId", "instanceId"])
+def test_frozen_runner_rejects_forged_identity(frozen_runner, tmp_path, field):
+    from datetime import datetime, timedelta, timezone
+    from core.plugins.contract import build_host_context, build_invoke_params
+    from core.plugins.host import PluginHostError, PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    session = PluginSession(_write_sqlite_plugin(tmp_path / "probe"), source_label="frozen-probe",
+                            registry=PluginRegistry(), runner_command=[str(frozen_runner)])
+    try:
+        session.start()
+        context = build_host_context(user_id=session.user_id, instance_id=session.instance_id,
+                                     generation=session.generation, origin="ui", grant_ref="g")
+        context[field] = "forged"
+        params = build_invoke_params(contract="stella.sample.sqlite@1", method="probe", input_payload={},
+                                     context=context, deadline=datetime.now(timezone.utc) + timedelta(seconds=5))
+        with pytest.raises(PluginHostError, match="identity mismatch"):
+            session._rpc("plugin.invoke", params)
+    finally:
+        session.dispose()
+
+
+def test_frozen_hung_worker_is_terminated_with_unknown_outcome(frozen_runner, tmp_path):
+    import time
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.plugins.host import PluginOutcomeUnknown, PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    root = _write_sqlite_plugin(tmp_path / "hung")
+    (root / "backend" / "main.py").write_text('''import time
+SERVICE_DESCRIPTORS = [{"contract": "stella.sample.sqlite@1", "methods": [
+    {"name": "probe", "effect": "domainWrite", "permissions": ["sample.probe"]}]}]
+def handle(method, params):
+    time.sleep(60)
+''')
+    authz = PluginAuthorizationStore()
+    registry = PluginRegistry()
+    session = PluginSession(root, source_label="frozen-probe", registry=registry, authz=authz,
+                            runner_command=[str(frozen_runner)])
+    authz.issue(grant_ref="g", plugin_id=session.plugin_id, user_id=session.user_id, capabilities=["sample.probe"])
+    try:
+        session.start()
+        process = session._proc
+        started = time.monotonic()
+        with pytest.raises(PluginOutcomeUnknown, match="unknown"):
+            session.invoke_contract(contract="stella.sample.sqlite@1", method="probe", input_payload={},
+                                    origin="ui", grant_ref="g", timeout_ms=1200)
+        assert time.monotonic() - started < 4
+        assert process.poll() is not None
+        assert registry.get(session.plugin_id) is None
+    finally:
+        session.dispose()

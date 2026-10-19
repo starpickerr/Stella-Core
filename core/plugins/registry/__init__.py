@@ -23,7 +23,14 @@ class PluginRegistry:
     def __init__(self) -> None:
         self._lock = RLock()
         self._by_plugin: dict[str, ContributionSnapshot] = {}
+        self._generations: dict[str, int] = {}
         self._service_owner: dict[str, str] = {}
+
+    def next_generation(self, plugin_id: str) -> int:
+        with self._lock:
+            generation = self._generations.get(plugin_id, 0) + 1
+            self._generations[plugin_id] = generation
+            return generation
 
     def publish(self, snapshot: ContributionSnapshot) -> None:
         with self._lock:

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from core.plugins.authz import DEFAULT_AUTHZ
+from core.plugins.caller import plugin_user_id, serialized_gateway, user_grant_ref
 from core.plugins.host import PluginSession
 from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
@@ -70,27 +71,30 @@ def _plugin_root() -> Path:
 
 def _issue_grant(*, replace_existing: bool = True) -> None:
     DEFAULT_AUTHZ.issue(
-        grant_ref=_GRANT_REF,
+        grant_ref=user_grant_ref(_GRANT_REF),
         plugin_id=PLUGIN_ID,
-        user_id=os.environ.get("STELLA_PLUGIN_USER", "local-default"),
+        user_id=plugin_user_id(),
         capabilities=_CAPABILITIES,
         purposes=sorted(_PURPOSES),
         replace_existing=replace_existing,
     )
 
 
+@serialized_gateway
 def set_email_purposes(purposes: Iterable[str]) -> None:
     """Replace the purposes the default grant authorizes (e.g. drop ``background``)."""
-    _PURPOSES.clear()
-    _PURPOSES.update(purposes)
-    DEFAULT_AUTHZ.set_purposes(_GRANT_REF, _PURPOSES)
+    _issue_grant(replace_existing=False)
+    DEFAULT_AUTHZ.set_purposes(user_grant_ref(_GRANT_REF), purposes)
 
 
+@serialized_gateway
 def ensure_email_session() -> PluginSession:
     global _SESSION
+    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running):
+        shutdown_email_session()
     if _SESSION is not None:
         return _SESSION
-    user_id = os.environ.get("STELLA_PLUGIN_USER", "local-default")
+    user_id = plugin_user_id()
     session = PluginSession(
         _plugin_root(),
         source_label="first-party-external",
@@ -106,6 +110,7 @@ def ensure_email_session() -> PluginSession:
     return session
 
 
+@serialized_gateway
 def invoke_email(
     method: str,
     params: dict[str, Any],
@@ -128,7 +133,7 @@ def invoke_email(
         method=method,
         input_payload=payload,
         origin="system",
-        grant_ref=_GRANT_REF,
+        grant_ref=user_grant_ref(_GRANT_REF),
         permissions=(),
         purpose=purpose or _PURPOSE[method],
         idempotency_key=idem or (uuid.uuid4().hex if write else None),
@@ -137,6 +142,7 @@ def invoke_email(
     )
 
 
+@serialized_gateway
 def shutdown_email_session() -> None:
     global _SESSION
     if _SESSION is not None:
