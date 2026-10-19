@@ -245,7 +245,11 @@ PORT_FACADES = {
 
 def _clear_domain_env(monkeypatch):
     for env_name in DOMAIN_ENV.values():
-        monkeypatch.delenv(env_name, raising=False)
+        # setenv-then-delenv records the original state, so env written later by
+        # apply_desktop_plugin_defaults is undone at teardown (a bare delenv of an
+        # unset name registers nothing and would leak flags into later tests).
+        monkeypatch.setenv(env_name, "")
+        monkeypatch.delenv(env_name)
 
 
 def test_desktop_bootstrap_activates_every_default_domain(monkeypatch, tmp_path):

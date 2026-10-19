@@ -215,7 +215,6 @@ def test_source_registry_uses_plugin_sources_without_legacy_settings(plugins_on,
     sentinel = [object()]
     monkeypatch.setattr("core.services.email_facade.email_sources", lambda *a, **k: list(sentinel))
     monkeypatch.setattr("core.services.elearning_facade.elearning_sources", lambda *a, **k: [])
-    sys.modules.pop("agent.briefing.sources.registry", None)
     registry = importlib.import_module("agent.briefing.sources.registry")
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: False)
     assert registry.configured_sources() == sentinel
