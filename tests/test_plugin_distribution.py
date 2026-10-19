@@ -9,6 +9,7 @@ from core.plugins.distribution import (
     fetch_and_install_from_catalog,
     load_default_plugin_manifest,
     plan_bootstrap,
+    plan_dual_update,
 )
 from core.plugins.package_ops import PackageStore
 
@@ -78,3 +79,18 @@ def test_catalog_install_respects_removed_intent(tmp_path):
         package_store=store,
     )
     assert again["status"] == "installed"
+
+
+def test_dual_update_blocks_incompatible_plugin_without_pretending_success():
+    plan = plan_dual_update(
+        core_from="1.0.0",
+        core_to="1.1.0",
+        plugin_updates=[
+            {"pluginId": "stella.bills", "fromVersion": "1.0.0", "toVersion": "1.1.0", "hostApi": "^1.0.0"},
+            {"pluginId": "stella.tasks", "fromVersion": "1.0.0", "toVersion": "2.0.0", "hostApi": "^2.0.0"},
+        ],
+    )
+    assert "stella.bills" in plan["independentPlugins"]
+    assert "stella.tasks" in plan["jointPlugins"]
+    assert plan["blocked"]
+    assert plan["core"]["changing"] is True

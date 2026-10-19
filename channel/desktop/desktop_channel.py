@@ -1993,6 +1993,7 @@ class DesktopChannel(ChatChannel):
             '/', 'RootHandler',
             '/api/health', 'HealthHandler',
             '/api/plugins/runtime', 'PluginRuntimeHandler',
+            '/api/plugins/dual-update-plan', 'PluginDualUpdatePlanHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
             '/auth/logout', 'AuthLogoutHandler',
@@ -2241,6 +2242,34 @@ class PluginRuntimeHandler:
             logger.warning(f"[DesktopChannel] Plugin runtime status error: {e}")
             return json.dumps({"status": "degraded", "plugins": [], "error": str(e)}, ensure_ascii=False)
         return json.dumps({"status": "ok", "plugins": plugins}, ensure_ascii=False)
+
+
+class PluginDualUpdatePlanHandler:
+    """Expose Core/plugin dual-update coordination (never pretends both finished)."""
+
+    def GET(self):
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            from core.plugins.distribution import plan_dual_update
+            from core.plugins.runtime_hub import list_published_plugins
+
+            plugins = list_published_plugins()
+            updates = [
+                {
+                    "pluginId": row.get("pluginId"),
+                    "fromVersion": row.get("version") or "1.0.0",
+                    "toVersion": row.get("version") or "1.0.0",
+                    "hostApi": row.get("hostApi") or "^1.0.0",
+                }
+                for row in plugins
+            ]
+            plan = plan_dual_update(core_from="1.0.0", core_to="1.0.0", plugin_updates=updates)
+            plan["status"] = plan.get("status") or "planned"
+            return json.dumps(plan, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"[DesktopChannel] Dual-update plan error: {e}")
+            return json.dumps({"status": "degraded", "error": str(e)}, ensure_ascii=False)
 
 
 class McpOAuthCallbackHandler:

@@ -423,6 +423,25 @@ def _init_bills_db():
         logger.warning(f"[App] Bills database init failed (non-fatal): {e}")
 
 
+def _bootstrap_default_plugins():
+    """Install default first-party plugins and activate domain env flags (desktop)."""
+    if not DESKTOP_MODE:
+        return
+    try:
+        from common.state_dir import state_root
+        from core.plugins.bootstrap import run_desktop_bootstrap
+
+        result = run_desktop_bootstrap(data_dir=state_root())
+        logger.info(
+            "[App] Plugin bootstrap status=%s installed=%s env=%s",
+            result.get("status"),
+            result.get("installed"),
+            sorted((result.get("envApplied") or {}).keys()),
+        )
+    except Exception as e:
+        logger.warning(f"[App] Plugin bootstrap failed (non-fatal): {e}")
+
+
 def _warn_if_legacy_workspace_data_exists():
     """
     Warn if the hardcoded ~/stella default holds data that agent_workspace
@@ -580,6 +599,7 @@ def run():
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
         _scaffold_subagent_assets()
+        _bootstrap_default_plugins()
         _init_bills_db()
 
         # Kick off MCP server loading in the background so first-message

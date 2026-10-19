@@ -80,12 +80,10 @@ class _Port:
     # G5 routing policy (domain -> service behind the port):
     # - email, elearning: plugin-only (no in-process service); raise unless the
     #   STELLA_<DOMAIN>_PLUGIN flag is on.
-    # - calendar, todos, bills, briefing, automation: opt-in via STELLA_<DOMAIN>_PLUGIN;
-    #   unset keeps the in-process legacy service so existing data and tests stay
-    #   unchanged. The default-plugins bootstrap (resources/default-plugins.json)
-    #   installs all seven packages but does NOT flip these flags: making them
-    #   default-on is a separate decision that needs the CSP e2e, signed-ZIP and
-    #   runner-in-DMG evidence (R01-R10). Never run both writers for one domain.
+    # - calendar, todos, bills, briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
+    #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
+    #   app._bootstrap_default_plugins installs catalog packages and sets those
+    #   flags for enabled intents (explicit 0/false still wins). Never dual-write.
     def __init__(self, domain, context):
         if domain not in _METHODS:
             raise ValueError(f"unknown business domain: {domain}")

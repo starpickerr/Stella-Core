@@ -82,16 +82,26 @@ pip install -q -c "$ROOT/requirements-security.txt" pyinstaller
 
 # --- run pyinstaller from repo root so relative datas resolve -------------
 cd "$ROOT"
-echo "==> Running PyInstaller (onedir)"
+echo "==> Running PyInstaller (onedir) for stella-backend"
 pyinstaller "$BUILD_DIR/stella-backend.spec" \
   --noconfirm \
   --distpath "$BUILD_DIR/dist" \
   --workpath "$BUILD_DIR/build-work"
 
+echo "==> Running PyInstaller (onedir) for stella-plugin-runner"
+pyinstaller "$BUILD_DIR/stella-plugin-runner.spec" \
+  --noconfirm \
+  --distpath "$BUILD_DIR/dist" \
+  --workpath "$BUILD_DIR/build-work-runner"
+
 echo ""
-echo "==> Done. Bundle at: $BUILD_DIR/dist/stella-backend/"
+echo "==> Done. Bundles at:"
+echo "    $BUILD_DIR/dist/stella-backend/"
+echo "    $BUILD_DIR/dist/stella-plugin-runner/"
 if [ "$(uname -s)" = "Darwin" ]; then
   bash "$ROOT/native/apple-calendar/build.sh"
 fi
 du -sh "$BUILD_DIR/dist/stella-backend/" 2>/dev/null || true
+du -sh "$BUILD_DIR/dist/stella-plugin-runner/" 2>/dev/null || true
 echo "==> Smoke test: STELLA_DESKTOP=1 \"$BUILD_DIR/dist/stella-backend/stella-backend\""
+echo "==> Runner: \"$BUILD_DIR/dist/stella-plugin-runner/stella-plugin-runner\""

@@ -39,12 +39,17 @@ RUNNER_DEV_MODULE = "core.plugins.runner.cli"
 
 
 def _runner_binary_candidates(anchor: Path) -> list[Path]:
-    """Sibling layouts next to the frozen app executable (onedir or flat)."""
+    """Sibling layouts next to the frozen app executable (onedir or flat).
+
+    Electron packs backend as ``Resources/backend/stella-backend/`` and the
+    runner as ``Resources/backend/stella-plugin-runner/`` (see desktop/package.json).
+    """
     exe = RUNNER_BINARY_NAME + (".exe" if sys.platform == "win32" else "")
     return [
         anchor / exe,
         anchor / RUNNER_BINARY_NAME / exe,
         anchor.parent / RUNNER_BINARY_NAME / exe,
+        anchor.parent.parent / "backend" / RUNNER_BINARY_NAME / exe,
     ]
 
 

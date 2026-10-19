@@ -84,6 +84,54 @@ def plan_bootstrap(offline: bool, staged: list[str] | None = None) -> dict[str, 
     }
 
 
+def plan_dual_update(
+    *,
+    core_from: str,
+    core_to: str,
+    plugin_updates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Coordinate Core vs plugin updates; never pretend both finished independently.
+
+    Each plugin_updates item: ``{pluginId, fromVersion, toVersion, hostApi}``.
+    Incompatible hostApi against ``core_to`` requires a joint plan.
+    """
+    joint: list[str] = []
+    independent: list[str] = []
+    blocked: list[dict[str, Any]] = []
+    for item in plugin_updates:
+        decision = check_plugin_api_compatibility(
+            core_api=core_to,
+            package_host_api=str(item.get("hostApi") or "^1.0.0"),
+            core_supports=core_to,
+        )
+        plugin_id = str(item.get("pluginId") or "")
+        if not decision.ok:
+            blocked.append(
+                {
+                    "pluginId": plugin_id,
+                    "reason": decision.reason,
+                    "joint_plan_required": decision.joint_plan_required,
+                }
+            )
+            if decision.joint_plan_required:
+                joint.append(plugin_id)
+        else:
+            independent.append(plugin_id)
+    core_changing = core_from != core_to
+    return {
+        "core": {"from": core_from, "to": core_to, "changing": core_changing},
+        "independentPlugins": independent,
+        "jointPlugins": joint,
+        "blocked": blocked,
+        "status": "blocked" if blocked and not independent and not core_changing else "planned",
+        "applyOrder": (
+            ["core", *joint, *independent]
+            if core_changing and joint
+            else ([*independent] if not core_changing else ["core", *independent])
+        ),
+    }
+
+
 def load_catalog(catalog_path: Path) -> dict[str, Any]:
     data = json.loads(Path(catalog_path).read_text(encoding="utf-8"))
     if "plugins" not in data:
@@ -132,8 +180,14 @@ def fetch_and_install_from_catalog(
         dest.mkdir(parents=True)
         archive = dest / "package.bin"
         urllib.request.urlretrieve(entry["url"], archive)  # noqa: S310 - catalog trusted URL
-        # Local catalogs use directory paths; URL path reserved for signed ZIP later.
-        raise NotImplementedError("remote ZIP unpack requires signed package format")
+        try:
+            from core.plugins.signing import unpack_signed_zip
+
+            source = unpack_signed_zip(archive, dest / "unpacked")
+        except PermissionError as exc:
+            return {"status": "signature_invalid", "pluginId": plugin_id, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - surface as failed install
+            return {"status": "failed", "pluginId": plugin_id, "error": str(exc)}
 
     if not verify_package_digest(source, entry["sha256"]):
         return {"status": "digest_mismatch", "pluginId": plugin_id}

@@ -74,6 +74,10 @@
         "to": "backend/stella-backend"
       },
       {
+        "from": "build/dist/stella-plugin-runner",
+        "to": "backend/stella-plugin-runner"
+      },
+      {
         "from": "resources",
         "to": ".",
         "filter": [

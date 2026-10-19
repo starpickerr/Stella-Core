@@ -14,10 +14,19 @@ type Props = { baseUrl: string }
  * Host management shell for Plugin Runtime contributions.
  * Remains usable when a worker is failed/stopped (shows empty or last known).
  */
+type DualUpdatePlan = {
+  status: string
+  independentPlugins?: string[]
+  jointPlugins?: string[]
+  blocked?: { pluginId: string; reason: string }[]
+  applyOrder?: string[]
+}
+
 export default function PluginManagerPage({ baseUrl }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [dualPlan, setDualPlan] = useState<DualUpdatePlan | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -29,6 +38,14 @@ export default function PluginManagerPage({ baseUrl }: Props) {
       }
       const data = await res.json()
       setRows(Array.isArray(data.plugins) ? data.plugins : [])
+      try {
+        const planRes = await fetch(`${baseUrl}/api/plugins/dual-update-plan`)
+        if (planRes.ok) {
+          setDualPlan(await planRes.json())
+        }
+      } catch {
+        setDualPlan(null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setRows([])
@@ -66,6 +83,24 @@ export default function PluginManagerPage({ baseUrl }: Props) {
       )}
       {!loading && !error && rows.length === 0 && (
         <p className="text-sm text-secondary">当前没有已发布的插件贡献快照。</p>
+      )}
+      {dualPlan && (
+        <section className="rounded-lg border border-border px-4 py-3 bg-surface text-sm">
+          <div className="font-medium text-primary mb-1">Core / 插件更新协调</div>
+          <p className="text-secondary">状态：{dualPlan.status}</p>
+          {dualPlan.applyOrder && dualPlan.applyOrder.length > 0 && (
+            <p className="text-secondary mt-1">顺序：{dualPlan.applyOrder.join(' → ')}</p>
+          )}
+          {(dualPlan.blocked || []).length > 0 && (
+            <ul className="mt-2 text-danger list-disc pl-5">
+              {dualPlan.blocked!.map((b) => (
+                <li key={b.pluginId}>
+                  {b.pluginId}：{b.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       <ul className="flex flex-col gap-2">
         {rows.map((row) => (
