@@ -20,6 +20,9 @@ _TASKS_METHODS = frozenset({
 _CALENDAR_METHODS = frozenset({
     "list_events", "get_event", "create_event", "update_event", "delete_event",
 })
+_BRIEFING_METHODS = frozenset({
+    "list_briefings", "get_briefing", "get_preferences", "update_preferences",
+})
 
 
 class PluginPageHost:
@@ -80,6 +83,8 @@ class PluginPageHost:
             return self._invoke_tasks(method, params)
         if plugin_id == "stella.calendar":
             return self._invoke_calendar(method, params)
+        if plugin_id == "stella.briefing":
+            return self._invoke_briefing(method, params)
         raise PermissionError(f"bridge invoke not enabled for {plugin_id}")
 
     def _invoke_bills(self, method: str, params: dict[str, Any]) -> Any:
@@ -161,6 +166,24 @@ class PluginPageHost:
                 return port.list_events(params.get("start"), params.get("end"), params.get("category_id"))
         raise PermissionError(method)
 
+    def _invoke_briefing(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _BRIEFING_METHODS:
+            raise PermissionError(f"method not allowed on briefing page: {method}")
+        from application import Application
+        from common.runtime_identity import RuntimeIdentity, use_identity
+
+        port = Application.port("briefing")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            if method == "list_briefings":
+                return port.list_briefings(params.get("status"))
+            if method == "get_briefing":
+                return port.get_briefing(params["briefing_id"])
+            if method == "get_preferences":
+                return port.get_preferences()
+            if method == "update_preferences":
+                return port.update_preferences(params.get("payload") or params)
+        raise PermissionError(method)
+
     @staticmethod
     def _package_root(plugin_id: str) -> Path:
         from core.plugins.roots import resolve_plugin_package_root
@@ -176,4 +199,7 @@ class PluginPageHost:
         elif plugin_id == "stella.calendar":
             env = "STELLA_CALENDAR_PLUGIN_ROOT"
             folder = "calendar"
+        elif plugin_id == "stella.briefing":
+            env = "STELLA_BRIEFING_PLUGIN_ROOT"
+            folder = "briefing"
         return resolve_plugin_package_root(plugin_id=plugin_id, env_var=env, folder_name=folder)

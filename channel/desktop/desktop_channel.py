@@ -2071,6 +2071,9 @@ class DesktopChannel(ChatChannel):
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
             '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
+            # Mailbox CRUD lives on email domain routes; briefing paths remain as aliases for tests.
+            '/api/email/accounts', 'EmailAccountsHandler',
+            '/api/email/accounts/test', 'EmailAccountsTestHandler',
             '/api/briefings/settings', 'BriefingSettingsHandler',
             '/api/briefings/settings/test', 'BriefingSettingsTestHandler',
             '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
@@ -7219,7 +7222,9 @@ class BriefingRuleDeleteHandler:
         return _briefing_response(operation)
 
 
-class BriefingSettingsHandler:
+class EmailAccountsHandler:
+    """Email plugin mailbox accounts — primary HTTP surface for desktop UI."""
+
     def GET(self):
         def operation():
             return {"settings": _email_settings().list_accounts()}
@@ -7237,12 +7242,17 @@ class BriefingSettingsHandler:
         return _briefing_response(operation)
 
 
-class BriefingSettingsTestHandler:
+class EmailAccountsTestHandler:
     def POST(self):
         def operation():
             result = _email_settings().test_connection(_briefing_body())
             return result if isinstance(result, dict) else {"connected": True}
         return _briefing_response(operation)
+
+
+# Compatibility aliases — product UI must use /api/email/accounts*.
+BriefingSettingsHandler = EmailAccountsHandler
+BriefingSettingsTestHandler = EmailAccountsTestHandler
 
 
 def _bills_service():

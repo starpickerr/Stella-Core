@@ -29,7 +29,6 @@ import TasksPage from './pages/TasksPage'
 import HealthPage from './pages/HealthPage'
 import LogsPage from './pages/LogsPage'
 import PluginPageHost from './pages/plugins/PluginPageHost'
-import BriefingPage from './pages/BriefingPage'
 import SecurityPage from './pages/SecurityPage'
 import PluginManagerPage from './pages/PluginManagerPage'
 import { product } from '@product'
@@ -255,7 +254,17 @@ const App: React.FC = () => {
                 />
               }
             />
-            <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
+            <Route
+              path="/briefing"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.briefing"
+                  pageId="briefing.main"
+                  title="简报"
+                />
+              }
+            />
             <Route
               path="/bills"
               element={

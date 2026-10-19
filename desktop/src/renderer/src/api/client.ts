@@ -1185,19 +1185,19 @@ class ApiClient {
   }
 
   async saveBriefingSettings(payload: BriefingMailboxInput): Promise<{ settings: BriefingSettings; mailbox: BriefingMailbox }> {
-    return this.briefingRequest('/api/briefings/settings', payload)
+    return this.briefingRequest('/api/email/accounts', payload)
   }
 
   async testBriefingSettings(payload: BriefingMailboxInput): Promise<BriefingMailboxCheck> {
-    return this.briefingRequest('/api/briefings/settings/test', payload)
+    return this.briefingRequest('/api/email/accounts/test', payload)
   }
 
   async getBriefingSettings(): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/email/accounts')).settings
   }
 
   async deleteBriefingMailbox(id: string): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', { action: 'delete', id })).settings
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/email/accounts', { action: 'delete', id })).settings
   }
 
   // ---------------------------------------------------------
