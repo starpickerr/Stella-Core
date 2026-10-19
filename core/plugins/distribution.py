@@ -142,11 +142,22 @@ def load_catalog(catalog_path: Path) -> dict[str, Any]:
     return data
 
 
+_SKIP_DIR_NAMES = frozenset({
+    "__pycache__",
+    ".pytest_cache",
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+})
+
+
 def _package_files(root: Path):
-    """Source files that participate in package digests (ignore bytecode caches)."""
+    """Source files that participate in package digests (ignore caches/VCS)."""
     for path in sorted(p for p in Path(root).rglob("*") if p.is_file()):
-        parts = set(path.parts)
-        if "__pycache__" in parts or path.suffix in {".pyc", ".pyo"}:
+        if _SKIP_DIR_NAMES.intersection(path.parts):
+            continue
+        if path.suffix in {".pyc", ".pyo"}:
             continue
         yield path
 

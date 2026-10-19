@@ -25,14 +25,10 @@ DOMAINS = ("bills", "calendar", "tasks", "email", "elearning", "briefing", "auto
 DEFAULT_SECRET = b"stella-first-edition-plugin-catalog"
 
 
-def _package_files(root: Path):
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            continue
-        yield path
-
-
 def tree_digest(root: Path) -> str:
+    sys.path.insert(0, str(ROOT))
+    from core.plugins.distribution import _package_files
+
     h = hashlib.sha256()
     for path in _package_files(root):
         h.update(path.relative_to(root).as_posix().encode("utf-8"))
@@ -40,7 +36,6 @@ def tree_digest(root: Path) -> str:
         h.update(path.read_bytes())
         h.update(b"\0")
     return h.hexdigest()
-
 
 def main() -> int:
     if not PLUGINS_ROOT.is_dir():

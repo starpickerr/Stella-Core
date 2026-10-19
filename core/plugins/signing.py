@@ -42,9 +42,9 @@ def write_signed_zip(source_dir: Path, archive: Path, *, secret: bytes) -> Path:
     buf_path = archive.with_suffix(".unsigned.zip")
     with zipfile.ZipFile(buf_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         root = Path(source_dir)
-        for path in sorted(p for p in root.rglob("*") if p.is_file()):
-            if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-                continue
+        from core.plugins.distribution import _package_files
+
+        for path in _package_files(root):
             zf.write(path, path.relative_to(root).as_posix())
     payload = buf_path.read_bytes()
     signature = sign_bytes(payload, secret=secret)
