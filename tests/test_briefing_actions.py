@@ -9,7 +9,16 @@ from agent.calendar.service import CalendarService
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    # Keep legacy BriefingActions regression on in-process writers; plugin
+    # gateway suites must not leak STELLA_*_PLUGIN into this fixture.
+    for key in (
+        "STELLA_TODOS_PLUGIN",
+        "STELLA_CALENDAR_PLUGIN",
+        "STELLA_BRIEFING_PLUGIN",
+        "STELLA_DESKTOP",
+    ):
+        monkeypatch.delenv(key, raising=False)
     from agent.scheduler.store import TaskStore
     todos = TodoService(tmp_path/'todos.db', tmp_path/'calendar.db', scheduler_store=TaskStore(str(tmp_path/'scheduler.json')))
     calendar = CalendarService(tmp_path/'calendar.db')

@@ -185,6 +185,8 @@ class PackageStore:
 def _sha256_tree(root: Path) -> str:
     h = hashlib.sha256()
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
+            continue
         h.update(path.relative_to(root).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(path.read_bytes())

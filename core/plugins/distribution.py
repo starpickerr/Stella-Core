@@ -139,9 +139,18 @@ def load_catalog(catalog_path: Path) -> dict[str, Any]:
     return data
 
 
+def _package_files(root: Path):
+    """Source files that participate in package digests (ignore bytecode caches)."""
+    for path in sorted(p for p in Path(root).rglob("*") if p.is_file()):
+        parts = set(path.parts)
+        if "__pycache__" in parts or path.suffix in {".pyc", ".pyo"}:
+            continue
+        yield path
+
+
 def verify_package_digest(path: Path, expected_sha256: str) -> bool:
     h = hashlib.sha256()
-    for file in sorted(p for p in Path(path).rglob("*") if p.is_file()):
+    for file in _package_files(path):
         h.update(file.relative_to(path).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(file.read_bytes())

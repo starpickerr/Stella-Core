@@ -90,15 +90,15 @@ class BriefingActions:
     @property
     def todos(self):
         if self._todos is None:
-            from agent.todos.service import TodoService
-            self._todos = TodoService()
+            from core.services.todos_public import default_service
+            self._todos = default_service()
         return self._todos
 
     @property
     def calendar(self):
         if self._calendar is None:
-            from agent.calendar.service import CalendarService
-            self._calendar = CalendarService()
+            from core.services.calendar_public import default_service
+            self._calendar = default_service()
         return self._calendar
 
     def _service(self, kind):
@@ -274,17 +274,35 @@ class BriefingActions:
             service = self._calendar or (None if calendar_plugin_enabled() else self.calendar)
         return source_key_is_tombstoned(candidates, service=service)
 
-    # Remaining private-handle paths (``_connect`` in _adopt_existing, list_* in matching)
-    # still use the in-process services; they read the same todos/calendar DB files the
-    # plugins own and are tracked as G5 follow-ups, not as plugin-served writers.
+    # Adoption and matching go through the ambient service surface (plugin facade
+    # when enabled, otherwise in-process). No private ``_connect`` on facades.
+
+    def _briefing_source_rows(self, kind, aliases):
+        """Locate linked todos/events by briefing source_key (read path)."""
+        service = self._service(kind)
+        connect = getattr(service, "_connect", None)
+        if connect is not None:
+            table = "todos" if kind == "todo" else "calendar_events"
+            placeholders = ",".join("?" for _ in aliases)
+            with connect() as target_db:
+                return [
+                    dict(row)
+                    for row in target_db.execute(
+                        f"SELECT * FROM {table} WHERE source_type='briefing' "
+                        f"AND source_key IN ({placeholders})",
+                        sorted(aliases),
+                    ).fetchall()
+                ]
+        finder = getattr(service, "find_briefing_sources", None)
+        if finder is not None:
+            return list(finder(sorted(aliases)))
+        return []
 
     def _adopt_existing(self, db, entity, kind):
         key = entity['entity_key']
         stable_key = 'entity:' + hashlib.sha256(key.encode()).hexdigest()
-        aliases = sorted(self._legacy_keys(db, key) | {stable_key})
-        table = 'todos' if kind == 'todo' else 'calendar_events'
-        with self._service(kind)._connect() as target_db:
-            rows = target_db.execute(f"SELECT * FROM {table} WHERE source_type='briefing' AND source_key IN ({','.join('?' for _ in aliases)})", aliases).fetchall()
+        aliases = set(self._legacy_keys(db, key) | {stable_key})
+        rows = self._briefing_source_rows(kind, aliases)
         if len(rows) > 1:
             self._write(db, key, kind, state='pending', result={'operation':'matching_required','candidate_ids':[row['id'] for row in rows]})
             return 'ambiguous'
@@ -300,7 +318,12 @@ class BriefingActions:
 
     def _matching_targets(self, entity, kind):
         service = self._service(kind)
-        rows = service.list_todos(include_completed=True) if kind == 'todo' else service.list_events()
+        # list_events() with no range returns templates (no 370-day cap).
+        rows = (
+            service.list_todos(include_completed=True)
+            if kind == "todo"
+            else service.list_events()
+        )
         return [row for row in rows if row['title'].strip().casefold() == entity['title'].strip().casefold()]
 
     def _sync_reminder(self, db, entity):
