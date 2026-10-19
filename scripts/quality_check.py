@@ -23,6 +23,7 @@ DOMAIN_TESTS = {
                      "tests/test_apple_reminder_sync.py", "tests/test_apple_reminder_todos.py"),
     "core/services/todos_": ("tests/test_todos_plugin_gateway.py", "tests/test_todos.py"),
     "agent/calendar/": ("tests/test_calendar.py", "tests/test_apple_calendar_sync.py"),
+    "core/services/briefing_": ("tests/test_briefing_plugin_gateway.py", "tests/test_briefing_plugin_single_writer.py", "tests/test_briefing_pipeline.py"),
     "core/services/calendar_": ("tests/test_calendar.py", "tests/test_calendar_plugin_gateway.py"),
     "agent/permission/": ("tests/test_security_gateway.py", "tests/test_security_center.py",
                           "tests/test_security_approval_resume.py", "tests/test_process_sandbox.py"),

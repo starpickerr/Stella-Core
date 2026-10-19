@@ -2,8 +2,8 @@
 from dataclasses import asdict
 from concurrent.futures import ThreadPoolExecutor
 import pytest
-from agent.briefing.service import BriefingService
-from agent.briefing.store import BriefingStore
+from tests.briefing_domain import BriefingService
+from tests.briefing_domain import BriefingStore
 from core.services.calendar_facade import CalendarPluginFacade
 
 
@@ -26,7 +26,7 @@ def env(tmp_path, monkeypatch, todos_plugin, tasks_domain, calendar_plugin):
     todos.seed_legacy_sourced_todo = seed_legacy_sourced_todo
     calendar = calendar_plugin
     service = BriefingService(BriefingStore(tmp_path/'briefing.db'))
-    from agent.briefing.actions import BriefingActions
+    from tests.briefing_domain import BriefingActions
     actions = BriefingActions(service.store, todos=todos, calendar=calendar)
     return service, actions, todos, calendar
 
@@ -44,7 +44,7 @@ def publish(env, *, day='2026-10-08', source_id='12:assignment:4', section='acti
 
 def test_failed_calendar_projection_stays_unacked(env, monkeypatch):
     import sqlite3
-    from agent.briefing.outbox import dispatch_pending
+    from tests.briefing_domain import dispatch_pending
 
     service, actions, _, _calendar = env
     publish(env, payload={'resource_type': 'assignment', 'course_id': '12',
@@ -304,7 +304,7 @@ def test_deleted_legacy_source_is_not_recreated_under_new_identity(env):
 
 
 def test_ai_email_meeting_times_are_suggested_but_never_automated(env):
-    from agent.briefing.actions import facts_for
+    from tests.briefing_domain import facts_for
     _, item = publish(env, source='email', payload={'body_available':True}, section='fyi')
     facts = facts_for(item, {'information_type':'meeting','calendar':{'start_at':'2026-10-10T09:00:00+08:00','end_at':'2026-10-10T10:00:00+08:00'}})
     assert facts['start_at'] == '2026-10-10T09:00:00+08:00'
@@ -409,7 +409,7 @@ def test_complete_overview_tracks_prior_days_without_generating_or_projecting(en
 
 
 def test_email_thread_uses_stable_entity_and_keeps_latest_source_facts(env):
-    from agent.briefing.actions import entity_key
+    from tests.briefing_domain import entity_key
     _, first = publish(env,source='email',source_id='<message-1>')
     first.thread_id = '<root-message>'
     _, second = publish(env,day='2026-10-09',source='email',source_id='<message-2>')

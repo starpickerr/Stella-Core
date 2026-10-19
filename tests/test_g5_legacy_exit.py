@@ -204,51 +204,28 @@ def test_core_has_no_legacy_todo_service():
     assert not (REPO / "agent/todos/service.py").exists()
 
 
-def test_briefing_tombstone_check_routes_through_public_helpers(monkeypatch):
-    from agent.briefing.actions import BriefingActions
-
+def test_briefing_tombstone_check_uses_explicit_public_peer_adapters():
+    from tests.briefing_domain import BriefingActions
     calls = []
-
     class Tomb:
-        def __init__(self, label):
-            self.label = label
-
+        def __init__(self, label): self.label = label
         def has_source_tombstone(self, keys):
             calls.append((self.label, sorted(keys)))
-            return self.label == "todo"
-
+            return self.label == 'todo'
     actions = BriefingActions.__new__(BriefingActions)
-    actions._todos, actions._calendar = Tomb("todo"), Tomb("calendar")
+    actions._todos, actions._calendar = Tomb('todo'), Tomb('calendar')
     actions._legacy_keys = lambda db, key: {key}
-    assert actions._was_deleted(None, "k", "todo") is True
-    assert actions._was_deleted(None, "k", "event") is False
-    assert [label for label, _ in calls] == ["todo", "calendar"]
+    assert actions._was_deleted(None, 'k', 'todo') is True
+    assert actions._was_deleted(None, 'k', 'event') is False
+    assert [label for label, _ in calls] == ['todo', 'calendar']
 
 
-def test_briefing_tombstone_uses_facade_without_injected_service(monkeypatch):
-    from agent.briefing.actions import BriefingActions
-    from core.services import calendar_public, todos_public
-
-    seen = []
-    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
-    monkeypatch.setenv("STELLA_CALENDAR_PLUGIN", "1")
-
-    class Fake:
-        def __init__(self, label):
-            self.label = label
-
-        def has_source_tombstone(self, keys):
-            seen.append(self.label)
-            return False
-
-    monkeypatch.setattr(todos_public, "default_service", lambda: Fake("todos-facade"))
-    monkeypatch.setattr(calendar_public, "default_service", lambda: Fake("calendar-facade"))
+def test_briefing_domain_requires_public_peer_adapters():
+    from tests.briefing_domain import BriefingActions, actions_module
     actions = BriefingActions.__new__(BriefingActions)
     actions._todos = actions._calendar = None
-    actions._legacy_keys = lambda db, key: {key}
-    actions._was_deleted(None, "k", "todo")
-    actions._was_deleted(None, "k", "event")
-    assert seen == ["todos-facade", "calendar-facade"]
+    with pytest.raises(actions_module.AdapterUnavailable):
+        actions.require_adapters('test')
 
 
 # -- desktop bootstrap + Application.port: one writer per domain -----------------
@@ -327,19 +304,10 @@ def test_application_port_uses_facade_after_desktop_activation(monkeypatch, tmp_
     assert type(port._service).__name__ == PORT_FACADES[domain][1]
 
 
-def test_application_port_briefing_does_not_construct_legacy_service(monkeypatch, tmp_path):
-    import agent.briefing.service as legacy
-    from application.api import Application, RequestContext
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("STELLA_BRIEFING_PLUGIN", "1")
-
-    def boom(*args, **kwargs):  # pragma: no cover - only runs on regression
-        raise AssertionError("legacy BriefingService must not be built while the plugin is on")
-
-    monkeypatch.setattr(legacy, "BriefingService", boom)
-    Application.port("briefing", RequestContext(user_id="g5-user"))
+def test_application_port_briefing_has_only_plugin_facade(monkeypatch):
+    from application import Application
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN', '1')
+    assert type(Application.port('briefing')._service).__name__ == 'BriefingPluginFacade'
 
 
 @pytest.mark.parametrize("domain", ["email", "elearning"])
@@ -414,33 +382,13 @@ def test_public_tombstone_helper_resolves_facade_without_handle(monkeypatch, mod
     assert seen == [["a", "b"]]
 
 
-def test_briefing_tombstone_does_not_touch_legacy_services_when_plugins_on(monkeypatch):
-    from agent.briefing.actions import BriefingActions
-    from core.services import calendar_public, todos_public
-
-    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
-    monkeypatch.setenv("STELLA_CALENDAR_PLUGIN", "1")
-
-    class Fake:
-        def has_source_tombstone(self, keys):
-            return True
-
-    monkeypatch.setattr(todos_public, "default_service", lambda: Fake())
-    monkeypatch.setattr(calendar_public, "default_service", lambda: Fake())
-
-    class Strict(BriefingActions):
-        todos = property(lambda self: (_ for _ in ()).throw(AssertionError("legacy todos handle")))
-        calendar = property(lambda self: (_ for _ in ()).throw(AssertionError("legacy calendar handle")))
-
-    actions = Strict.__new__(Strict)
-    actions._todos = actions._calendar = None
-    actions._legacy_keys = lambda db, key: {key}
-    assert actions._was_deleted(None, "k", "todo") is True
-    assert actions._was_deleted(None, "k", "event") is True
+def test_core_ships_no_briefing_domain_writer():
+    import importlib.util
+    for module in ('service', 'store', 'actions', 'outbox'):
+        assert importlib.util.find_spec('agent.briefing.' + module) is None
 
 
-def test_backend_spec_keeps_briefing_sql_only_as_labelled_legacy_fallback():
-    tree = _spec_tree(BACKEND_SPEC)
-    shipped = {parts[:3] for parts in _string_call_args(tree, "rp") if parts[:2] == ("agent", "briefing")}
-    assert shipped == {("agent", "briefing", "schema.sql"), ("agent", "briefing", "actions.sql")}
-    assert "legacy fallback" in BACKEND_SPEC.read_text(encoding="utf-8").lower()
+def test_backend_spec_has_no_briefing_domain_sql():
+    shipped = {parts[:3] for parts in _string_call_args(_spec_tree(BACKEND_SPEC), 'rp')
+               if parts[:2] == ('agent', 'briefing')}
+    assert shipped == set()

@@ -30,9 +30,9 @@ def test_agent_tool_discovery_and_permissions(service):
 def test_briefing_pipeline_routes_due_item_to_todos(tmp_path, monkeypatch, todos_plugin_env, calendar_plugin):
     from datetime import datetime
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
+    from tests.briefing_domain import BriefingService
     from agent.briefing.sources.base import FetchedItem
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingStore
     from briefing_fakes import StaticSource
     from core.services.todos_facade import TodosPluginFacade
 

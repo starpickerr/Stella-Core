@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 
 from application import Application, RequestContext
@@ -64,19 +63,7 @@ def test_todos_facade_reconcile_does_not_construct_legacy_service(monkeypatch, t
     assert calls == ["pending_scheduler_links"]
 
 
-def test_briefing_actions_uses_public_default_services(monkeypatch):
-    from agent.briefing.actions import BriefingActions
-
-    todo = MagicMock(name="todo_facade")
-    cal = MagicMock(name="cal_facade")
-    monkeypatch.setattr("core.services.todos_public.default_service", lambda: todo)
-    monkeypatch.setattr("core.services.calendar_public.default_service", lambda: cal)
-    _assert_no_legacy_todo_service()
+def test_core_has_no_briefing_domain_fallback():
     import importlib.util
-    assert importlib.util.find_spec('agent.calendar.service') is None
-    actions = BriefingActions.__new__(BriefingActions)
-    actions.store = MagicMock()
-    actions._todos = None
-    actions._calendar = None
-    assert actions.todos is todo
-    assert actions.calendar is cal
+    for module in ('store', 'service', 'actions', 'outbox'):
+        assert importlib.util.find_spec('agent.briefing.' + module) is None

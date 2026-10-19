@@ -80,9 +80,9 @@ _METHODS = {
 
 class _Port:
     # G5 routing policy (domain -> service behind the port):
-    # - bills, todos, calendar, email, elearning: plugin-only (no in-process service); raise unless the
+    # - bills, todos, calendar, briefing, email, elearning: plugin-only (no in-process service); raise unless the
     #   STELLA_<DOMAIN>_PLUGIN flag is on.
-    # - briefing, automation: STELLA_<DOMAIN>_PLUGIN opt-in
+    # - automation: STELLA_<DOMAIN>_PLUGIN opt-in
     #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
     #   app._bootstrap_default_plugins installs catalog packages and sets those
     #   flags for enabled intents (explicit 0/false still wins). Never dual-write.
@@ -124,13 +124,8 @@ class _Port:
                 from core.services.elearning_facade import ElearningPluginFacade
                 self._service = ElearningPluginFacade()
             else:
-                from core.services.briefing_gateway import briefing_plugin_enabled
-                if briefing_plugin_enabled():
-                    from core.services.briefing_facade import BriefingPluginFacade
-                    self._service = BriefingPluginFacade()
-                else:
-                    from agent.briefing.service import BriefingService
-                    self._service = BriefingService()
+                from core.services.briefing_public import default_service
+                self._service = default_service()
 
     @property
     def store(self):

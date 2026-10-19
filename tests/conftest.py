@@ -151,3 +151,14 @@ def calendar_plugin(calendar_plugin_env, tmp_path, monkeypatch):
     from core.services import calendar_facade
     monkeypatch.setattr(calendar_facade, '_db_path', lambda: tmp_path / 'calendar.db')
     return calendar_facade.CalendarPluginFacade()
+
+
+@pytest.fixture
+def briefing_plugin_env(monkeypatch):
+    from core.services import briefing_gateway
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/briefing'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    yield
+    briefing_gateway.shutdown_briefing_session()

@@ -8,10 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore
+from tests.briefing_domain import BriefingStore
 from channel.desktop import desktop_channel as web_channel
 
 pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
@@ -67,7 +67,7 @@ def test_run_list_detail_and_mark(api):
 
 def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path, todos_plugin, calendar_plugin):
     service, auth = api
-    from agent.briefing.actions import BriefingActions
+    from tests.briefing_domain import BriefingActions
     service._actions = BriefingActions(service.store, todos_plugin, calendar_plugin)
     ran = call(web_channel.BriefingRunHandler, body={'briefing_date':'2026-09-09'})
     item_id = ran['items'][0]['id']

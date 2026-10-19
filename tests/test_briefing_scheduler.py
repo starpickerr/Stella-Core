@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore
+from tests.briefing_domain import BriefingStore
 from agent.scheduler import SchedulerService, TaskStore
 from agent.scheduler import integration
 from agent.tools.base_tool import ToolResult
@@ -202,3 +202,22 @@ def test_desktop_boot_starts_empty_and_manual_silent_task_runs(tmp_path, monkeyp
         assert len(scheduler.task_store.list_tasks()) == 1
     finally:
         integration.reset_scheduler_services(stop=False)
+
+
+def test_scheduler_recovers_briefing_outbox_only_for_enabled_users_as_background(tmp_path, monkeypatch):
+    from core.plugins import management
+    from core.plugins.management import ManagementStore
+    from core.plugins.caller import current_caller_origin
+    from common.runtime_identity import current_identity
+    from core.services import briefing_public
+
+    state = ManagementStore(tmp_path / 'packages')
+    state.set_intent('stella.briefing', 'alice', 'enabled')
+    state.set_intent('stella.briefing', 'bob', 'disabled')
+    monkeypatch.setattr(management, 'default_store', lambda: state)
+    seen = []
+    monkeypatch.setattr(briefing_public, 'dispatch_outbox', lambda: seen.append(
+        (current_identity().user_id, current_identity().agent_id, current_caller_origin())))
+    scheduler = SchedulerService(SimpleNamespace(agent_id='agent'), lambda *_: None)
+    scheduler._recover_briefing_outbox()
+    assert seen == [('alice', 'agent', 'job')]

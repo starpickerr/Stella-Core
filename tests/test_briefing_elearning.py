@@ -510,8 +510,8 @@ def test_briefing_keeps_previously_catalogued_course_files(
     config_path, tmp_path, deterministic_briefing_generator
 ):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingService
+    from tests.briefing_domain import BriefingStore
     from agent.briefing.sources.base import FetchedItem
 
     settings.save_settings(config())
@@ -569,8 +569,8 @@ def test_quiz_404_does_not_leave_error_on_successful_briefing(
     config_path, tmp_path, deterministic_briefing_generator
 ):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingService
+    from tests.briefing_domain import BriefingStore
 
     canvas = FakeCanvas()
     canvas.rows["quizzes"] = SyncError("网站返回 HTTP 404。")
@@ -589,8 +589,8 @@ def test_successful_update_clears_previous_fetch_error(
     config_path, tmp_path, deterministic_briefing_generator
 ):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingService
+    from tests.briefing_domain import BriefingStore
 
     canvas = FakeCanvas()
     canvas.rows["quizzes"] = SyncError("网站返回 HTTP 403。")
@@ -612,8 +612,8 @@ def test_invalid_saved_course_is_reported_by_actual_generation(
     config_path, tmp_path, deterministic_briefing_generator
 ):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingService
+    from tests.briefing_domain import BriefingStore
 
     source = ElearningSource(config(courses=["missing-course"]), client_factory=lambda cfg: FakeCanvas())
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
@@ -630,8 +630,8 @@ def test_enabled_source_without_tested_course_is_not_silently_skipped(
     config_path, tmp_path, deterministic_briefing_generator
 ):
     from agent.briefing.pipeline import BriefingPipeline
-    from agent.briefing.service import BriefingService
-    from agent.briefing.store import BriefingStore
+    from tests.briefing_domain import BriefingService
+    from tests.briefing_domain import BriefingStore
 
     settings.save_settings(config(courses=[]))
     source = settings.elearning_sources()[0]

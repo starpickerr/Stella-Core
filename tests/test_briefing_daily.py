@@ -5,10 +5,10 @@ import sqlite3
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore, load_schema_sql
+from tests.briefing_domain import BriefingStore, load_schema_sql
 
 pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 

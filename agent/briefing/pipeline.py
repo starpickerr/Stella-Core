@@ -20,7 +20,7 @@ from agent.briefing.elearning.errors import SyncCancelled
 from agent.briefing.generator import AgentBriefingGenerator, briefing_title
 from agent.briefing import progress as briefing_progress
 from agent.briefing.models import EmailMessage, SourceItem
-from agent.briefing.service import BriefingService
+from core.services.briefing_public import default_service
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
 from agent.briefing.sources.registry import select_sources, source_key
 
@@ -51,13 +51,13 @@ def _stage_heartbeat(day: str, stage: str):
 class BriefingPipeline:
     def __init__(
         self,
-        service: Optional[BriefingService] = None,
+        service=None,
         sources: Optional[Sequence[Source]] = None,
         clock=None,
         generator=None,
         cancel_event=None,
     ):
-        self.service = service if service is not None else BriefingService()
+        self.service = service if service is not None else default_service()
         self.sources = list(sources or [])
         self.clock = clock or _now
         self.generator = generator if generator is not None else AgentBriefingGenerator()
@@ -275,8 +275,7 @@ class BriefingPipeline:
                 },
             )
             if status != "failed":
-                from agent.briefing.outbox import dispatch_pending
-                dispatch_pending(self.service.store)
+                self.service.store.dispatch_outbox()
             logger.info("[BriefingPipeline] finished date=%s status=%s elapsed=%.1fs",
                         day, status, time.monotonic() - run_started)
             return self.service.get_briefing(briefing.id)

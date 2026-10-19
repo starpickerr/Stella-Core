@@ -10,10 +10,10 @@ from agent.briefing.generator import (AgentBriefingGenerator, BriefingAgent, Rea
                                       ResultTool, decision_schema, validate_body, validate_decisions)
 from agent.briefing.instructions import DEFAULT_RULE_TEXT
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore, load_schema_sql
+from tests.briefing_domain import BriefingStore, load_schema_sql
 from agent.permission.gateway import SecurityGateway
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.briefing.briefing_tool import BriefingTool
@@ -74,8 +74,8 @@ def pipeline(service, model, items=(), at="2026-09-09T08:00:00+08:00", cursor="9
         clock=lambda: datetime.fromisoformat(at), generator=AgentBriefingGenerator(model=model))
 
 
-def test_pipeline_accepts_application_briefing_port(service, monkeypatch):
-    monkeypatch.setattr("agent.briefing.service.BriefingService", lambda: service)
+def test_pipeline_accepts_application_briefing_port(service, monkeypatch, briefing_plugin_env):
+    monkeypatch.setattr('core.services.briefing_facade._db_path', lambda: service.store._db_path)
     port = Application.port("briefing")
     detail = pipeline(port, ScriptedModel(), [item("课程")]).run()
     assert detail["briefing"].status == "completed"

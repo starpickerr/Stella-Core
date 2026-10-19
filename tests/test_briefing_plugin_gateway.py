@@ -321,8 +321,8 @@ def test_failed_peer_action_never_falls_back_to_core_writer(tmp_path, monkeypatc
     db = tmp_path / 'briefing.db'
     item_id = _complete_with_action_item(db)['items'][0]['id']
     monkeypatch.setenv('STELLA_BRIEFING_HOST_ADAPTERS', '1')
-    monkeypatch.setattr('agent.briefing.service.BriefingService',
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('Core Briefing writer used')))
+    import importlib.util
+    assert importlib.util.find_spec('agent.briefing.service') is None
     result = BriefingPluginFacade().update_action(item_id, {'operation':'create', 'kind':'todo'})
     assert result['state'] == 'failed' and 'not installed' in result['error']
     assert not hasattr(BriefingPluginFacade, '_host_update_action')
@@ -431,3 +431,12 @@ def test_official_catalog_digest_matches_briefing_package():
         pytest.skip("Stella-Plugins checkout not present")
     entry = next(e for e in json.loads(catalog.read_text())["plugins"] if e["pluginId"] == "stella.briefing")
     assert verify_package_digest(SIBLING_ROOT, entry["sha256"])
+
+
+def test_missing_briefing_plugin_cannot_create_legacy_database(monkeypatch, tmp_path):
+    from application import Application
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN', '0')
+    monkeypatch.setattr('common.state_dir.briefing_db', lambda **_: tmp_path / 'briefing.db')
+    with pytest.raises(RuntimeError, match='stella.briefing'):
+        Application.port('briefing')
+    assert not (tmp_path / 'briefing.db').exists()

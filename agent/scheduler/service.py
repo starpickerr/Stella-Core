@@ -74,17 +74,29 @@ class SchedulerService:
         while self.running:
             try:
                 self._check_and_execute_tasks()
-                if hasattr(self.task_store, "agent_id"):
-                    from common.runtime_identity import identity_scope
-                    from agent.briefing.service import BriefingService
-                    from agent.briefing.outbox import dispatch_pending
-                    with identity_scope(agent_id=self.task_store.agent_id):
-                        dispatch_pending(BriefingService().store)
+                self._recover_briefing_outbox()
             except Exception as e:
                 logger.error(f"[Scheduler] Error in scheduler loop: {e}")
 
             time.sleep(30)
     
+    def _recover_briefing_outbox(self):
+        from common.runtime_identity import identity_scope
+        from core.plugins.caller import caller_origin_scope
+        from core.plugins.management import default_store
+        from core.services.briefing_public import dispatch_outbox
+
+        management = default_store()
+        for user in management.users('stella.briefing'):
+            if management.instance('stella.briefing', user)['intent'] != 'enabled':
+                continue
+            try:
+                with identity_scope(user_id=user, agent_id=getattr(self.task_store, 'agent_id', None)):
+                    with caller_origin_scope('scheduler'):
+                        dispatch_outbox()
+            except Exception as exc:
+                logger.warning('[Scheduler] Briefing outbox recovery deferred user=%s: %s', user, exc)
+
     def _recover_pending_reminder_links(self):
         from common.runtime_identity import identity_scope
         from core.plugins.caller import caller_origin_scope

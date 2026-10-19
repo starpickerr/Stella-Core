@@ -5,11 +5,11 @@ import pytest
 from agent.briefing.pipeline import BriefingPipeline
 from agent.briefing import progress as briefing_progress
 from agent.briefing.generator import AgentBriefingGenerator
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchResult, FetchedItem
 from briefing_fakes import StaticSource
 from briefing_fakes import DeterministicBriefingModel
-from agent.briefing.store import BriefingStore
+from tests.briefing_domain import BriefingStore
 
 pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
 

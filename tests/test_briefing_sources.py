@@ -5,11 +5,11 @@ import sqlite3
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchedItem, FetchResult
 from agent.briefing.sources.registry import select_sources, public_sources
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore, load_schema_sql
+from tests.briefing_domain import BriefingStore, load_schema_sql
 from agent.tools.briefing.briefing_tool import BriefingTool
 
 
@@ -80,7 +80,7 @@ def test_invalid_selection_has_no_side_effects(service, selection):
     assert source.calls == [] and service.list_briefings() == []
 
 
-def test_all_and_group_selection_and_source_registry(monkeypatch):
+def test_all_and_group_selection_and_source_registry(monkeypatch, briefing_plugin_env):
     available = [TrackedSource("email", "a"), TrackedSource("email", "b"), TrackedSource("elearning", "c")]
     assert select_sources(available) == available
     assert select_sources(available, ["all"]) == available

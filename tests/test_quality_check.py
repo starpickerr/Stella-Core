@@ -127,10 +127,10 @@ def test_nested_isolation_preserves_installed_browser_cache(tmp_path, monkeypatc
 
 def test_removed_backend_and_dependency_changes_expand_checks():
     deleted = affected_checks(["agent/briefing/removed.py"])
-    assert "tests/test_briefing_service.py" in deleted["pytest"]
+    assert "tests/test_briefing_plugin_gateway.py" in deleted["pytest"]
     dependencies = affected_checks(["requirements.txt"])
     assert "tests/test_todos.py" in dependencies["pytest"]
-    assert "tests/test_briefing_service.py" in dependencies["pytest"]
+    assert "tests/test_briefing_plugin_gateway.py" in dependencies["pytest"]
 
 
 def test_frontend_checks_include_lint_build_and_new_node_tests():

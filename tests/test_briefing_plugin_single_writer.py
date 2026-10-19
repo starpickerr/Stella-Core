@@ -59,7 +59,8 @@ def test_briefing_creates_and_recovers_todo_through_scoped_reverse_call(tmp_path
             assert db.execute('SELECT COUNT(*) FROM todos').fetchone()[0] == 1
         # This public facade must route all decision operations to the owner.
         monkeypatch.setattr(briefing_facade, '_db_path', lambda: tmp_path / 'briefing.sqlite')
-        monkeypatch.setattr('agent.briefing.service.BriefingService', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('Core domain writer used')))
+        import importlib.util
+        assert importlib.util.find_spec('agent.briefing.service') is None
         assert briefing_facade.BriefingPluginFacade().get_action_targets('todo', '作业')
     finally:
         for domain, gateway in [('briefing', briefing_gateway), ('todos', todos_gateway), ('calendar', calendar_gateway)]:

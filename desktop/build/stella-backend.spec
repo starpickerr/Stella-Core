@@ -63,8 +63,7 @@ hiddenimports = [
 # submodules so nothing is missed at runtime.
 hiddenimports += collect_submodules('agent.tools')
 # agent.calendar / agent.briefing are no longer blanket-collected (G5): neither
-# package uses dynamic imports, so the in-process legacy fallback modules are
-# pulled in by static analysis only where Core still imports them. The Apple
+# package needs blanket collection. Domain stores live in their plugins. The Apple
 # EventKit bridge must stay in Core (it needs host OS access), so list it
 # explicitly in case it is only reached lazily.
 hiddenimports += [
@@ -175,11 +174,6 @@ datas = [
     # sys.path, so `import cli.commands.*` resolves even if PyInstaller's
     # submodule collection misses the lazily-imported command modules.
     (rp('cli'), 'cli'),
-    # Briefing legacy fallback still reads these SQL files until agent.briefing is
-    # deleted (plugin copies live in the stella.briefing package). Remove once the
-    # in-process fallback is gone.
-    (rp('agent', 'briefing', 'schema.sql'), 'agent/briefing'),
-    (rp('agent', 'briefing', 'actions.sql'), 'agent/briefing'),
     # Scaffold templates for first-run subagent assets (README + example).
     (rp('agent', 'subagent', 'assets'), 'agent/subagent/assets'),
 ]
