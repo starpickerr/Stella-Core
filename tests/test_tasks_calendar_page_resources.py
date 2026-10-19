@@ -21,6 +21,9 @@ def _package_root(domain: str) -> Path:
 @pytest.mark.parametrize("domain,page_id,needle", [
     ("tasks", "tasks.main", "stella.tasks"),
     ("calendar", "calendar.main", "stella.calendar"),
+    ("automation", "automation.main", "stella.automation"),
+    ("email", "email.main", "stella.email"),
+    ("elearning", "elearning.main", "stella.elearning"),
 ])
 def test_domain_main_page_resolves_inside_package(domain, page_id, needle):
     root = _package_root(domain)

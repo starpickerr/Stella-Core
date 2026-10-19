@@ -23,6 +23,9 @@ _CALENDAR_METHODS = frozenset({
 _BRIEFING_METHODS = frozenset({
     "list_briefings", "get_briefing", "get_preferences", "update_preferences",
 })
+_EMAIL_METHODS = frozenset({"list_accounts", "get_account", "list_folders", "test_connection"})
+_ELEARNING_METHODS = frozenset({"list_courses", "get_settings", "test_connection"})
+_AUTOMATION_METHODS = frozenset({"list_tasks", "get_task", "enable_task"})
 
 
 class PluginPageHost:
@@ -85,6 +88,12 @@ class PluginPageHost:
             return self._invoke_calendar(method, params)
         if plugin_id == "stella.briefing":
             return self._invoke_briefing(method, params)
+        if plugin_id == "stella.email":
+            return self._invoke_email(method, params)
+        if plugin_id == "stella.elearning":
+            return self._invoke_elearning(method, params)
+        if plugin_id == "stella.automation":
+            return self._invoke_automation(method, params)
         raise PermissionError(f"bridge invoke not enabled for {plugin_id}")
 
     def _invoke_bills(self, method: str, params: dict[str, Any]) -> Any:
@@ -184,22 +193,74 @@ class PluginPageHost:
                 return port.update_preferences(params.get("payload") or params)
         raise PermissionError(method)
 
+    def _invoke_email(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _EMAIL_METHODS:
+            raise PermissionError(f"method not allowed on email page: {method}")
+        from application import Application
+        from common.runtime_identity import RuntimeIdentity, use_identity
+
+        port = Application.port("email")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            if method == "list_accounts":
+                return port.list_accounts()
+            if method == "get_account":
+                return port.get_account(params["account_id"])
+            if method == "list_folders":
+                return port.list_folders(params.get("account_id"))
+            if method == "test_connection":
+                return port.test_connection(params)
+        raise PermissionError(method)
+
+    def _invoke_elearning(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _ELEARNING_METHODS:
+            raise PermissionError(f"method not allowed on elearning page: {method}")
+        from application import Application
+        from common.runtime_identity import RuntimeIdentity, use_identity
+
+        port = Application.port("elearning")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            if method == "list_courses":
+                return port.list_courses()
+            if method == "get_settings":
+                return port.get_settings()
+            if method == "test_connection":
+                return port.test_connection(params)
+        raise PermissionError(method)
+
+    def _invoke_automation(self, method: str, params: dict[str, Any]) -> Any:
+        if method not in _AUTOMATION_METHODS:
+            raise PermissionError(f"method not allowed on automation page: {method}")
+        from common.runtime_identity import RuntimeIdentity, use_identity
+        from common.state_dir import scheduler_file
+        from core.services import automation_gateway
+
+        db_path = Path(scheduler_file()).with_name("automation.db")
+        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+            result = automation_gateway.invoke_automation(
+                method, params, db_path=db_path, agent_id="plugin-ui",
+            )
+        status = result.get("status")
+        if status == "failed":
+            raise ValueError((result.get("error") or {}).get("message") or "automation call failed")
+        if status != "succeeded":
+            raise RuntimeError(f"automation plugin returned {status}")
+        return result.get("value")
+
     @staticmethod
     def _package_root(plugin_id: str) -> Path:
         from core.plugins.roots import resolve_plugin_package_root
 
         folder = plugin_id.split(".")[-1]
         env = f"STELLA_{folder.upper()}_PLUGIN_ROOT"
-        if plugin_id == "stella.bills":
-            env = "STELLA_BILLS_PLUGIN_ROOT"
-            folder = "bills"
-        elif plugin_id == "stella.tasks":
-            env = "STELLA_TASKS_PLUGIN_ROOT"
-            folder = "tasks"
-        elif plugin_id == "stella.calendar":
-            env = "STELLA_CALENDAR_PLUGIN_ROOT"
-            folder = "calendar"
-        elif plugin_id == "stella.briefing":
-            env = "STELLA_BRIEFING_PLUGIN_ROOT"
-            folder = "briefing"
+        aliases = {
+            "stella.bills": ("STELLA_BILLS_PLUGIN_ROOT", "bills"),
+            "stella.tasks": ("STELLA_TASKS_PLUGIN_ROOT", "tasks"),
+            "stella.calendar": ("STELLA_CALENDAR_PLUGIN_ROOT", "calendar"),
+            "stella.briefing": ("STELLA_BRIEFING_PLUGIN_ROOT", "briefing"),
+            "stella.email": ("STELLA_EMAIL_PLUGIN_ROOT", "email"),
+            "stella.elearning": ("STELLA_ELEARNING_PLUGIN_ROOT", "elearning"),
+            "stella.automation": ("STELLA_AUTOMATION_PLUGIN_ROOT", "automation"),
+        }
+        if plugin_id in aliases:
+            env, folder = aliases[plugin_id]
         return resolve_plugin_package_root(plugin_id=plugin_id, env_var=env, folder_name=folder)

@@ -278,6 +278,39 @@ const App: React.FC = () => {
             />
 
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
+            <Route
+              path="/email"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.email"
+                  pageId="email.main"
+                  title="邮件"
+                />
+              }
+            />
+            <Route
+              path="/elearning"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.elearning"
+                  pageId="elearning.main"
+                  title="课件"
+                />
+              }
+            />
+            <Route
+              path="/automation"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.automation"
+                  pageId="automation.main"
+                  title="自动化"
+                />
+              }
+            />
             <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />

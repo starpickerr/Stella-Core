@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.email",
   "name": "邮件",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",
@@ -20,6 +20,9 @@
     ],
     "settings": [
       "email.accounts"
+    ],
+    "pages": [
+      "email.main"
     ]
   },
   "permissions": [
