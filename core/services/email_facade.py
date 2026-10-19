@@ -91,7 +91,7 @@ class EmailPluginSource:
         self._facade = facade or EmailPluginFacade(purpose=purpose)
 
     def fetch(self, cursors: Dict[str, str]):
-        from agent.briefing.sources.base import FetchedItem, FetchResult
+        from core.services.source_types import FetchedItem, FetchResult
 
         cursors = dict(cursors)
         extra = {key: cursors.pop(key) for key in ("since", "until") if key in cursors}

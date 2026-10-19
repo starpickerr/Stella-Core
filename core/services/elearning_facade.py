@@ -114,7 +114,7 @@ class ElearningPluginSource:
         self._facade = facade or ElearningPluginFacade(purpose=purpose)
 
     def fetch(self, cursors: Dict[str, str]):
-        from agent.briefing.sources.base import FetchedItem, FetchResult
+        from core.services.source_types import FetchedItem, FetchResult
 
         cursors = dict(cursors)
         window = {key: cursors.pop(key) for key in ("since", "until") if key in cursors}
