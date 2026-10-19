@@ -113,3 +113,31 @@ def test_frozen_runner_can_import_sqlite3_for_plugin(frozen_runner, tmp_path, mo
         assert result["value"]["sqlite"]
     finally:
         session.dispose()
+
+
+@pytest.mark.parametrize(
+    "domain",
+    ["bills", "tasks", "calendar", "email", "elearning", "briefing", "automation"],
+)
+def test_frozen_runner_initializes_default_domain_plugins(frozen_runner, domain, monkeypatch):
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+
+    sibling = REPO.parent / "Stella-Plugins" / "plugins" / domain
+    workspace = REPO / "stella-plugins-workspace" / "plugins" / domain
+    root = sibling if sibling.is_dir() else workspace
+    if not root.is_dir():
+        pytest.skip(f"missing plugin package for {domain}")
+    monkeypatch.setenv("PATH", "/nonexistent")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    session = PluginSession(
+        root,
+        source_label=f"stdlib-{domain}",
+        registry=PluginRegistry(),
+        runner_command=[str(frozen_runner)],
+    )
+    try:
+        started = session.start()
+        assert started["initialize"]["pluginId"] == f"stella.{domain}"
+    finally:
+        session.dispose()
