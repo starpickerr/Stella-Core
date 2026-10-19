@@ -1,0 +1,13 @@
+{
+  "id": "briefing.preferences",
+  "pluginId": "stella.briefing",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "general",
+      "title": "常规",
+      "order": 0
+    }
+  ],
+  "fields": []
+}

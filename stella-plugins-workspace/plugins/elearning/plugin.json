@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.elearning",
   "name": "eLearning",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",
@@ -15,12 +15,25 @@
     "migrationEntry": "backend/migrate.py"
   },
   "contributes": {
-    "services": ["stella.elearning@1"],
-    "settings": ["elearning.account"]
+    "services": [
+      "stella.elearning@1"
+    ],
+    "settings": [
+      "elearning.account"
+    ]
   },
   "permissions": [
-    { "capability": "elearning.read", "required": true },
-    { "capability": "elearning.write", "required": true },
-    { "capability": "elearning.files", "required": true }
+    {
+      "capability": "elearning.read",
+      "required": true
+    },
+    {
+      "capability": "elearning.write",
+      "required": true
+    },
+    {
+      "capability": "elearning.files",
+      "required": true
+    }
   ]
 }

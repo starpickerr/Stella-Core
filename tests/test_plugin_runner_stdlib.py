@@ -236,3 +236,21 @@ def test_frozen_maintenance_runner_applies_and_verifies_actual_schema(frozen_run
             session._rpc('plugin.invoke', {})
     finally:
         session.dispose()
+
+
+def test_worker_does_not_write_bytecode_into_immutable_package(tmp_path, monkeypatch):
+    from core.plugins.host import PluginSession, _digest_tree
+    from core.plugins.package_ops import _sha256_tree
+    from core.plugins.registry import PluginRegistry
+
+    monkeypatch.delenv('PYTHONDONTWRITEBYTECODE', raising=False)
+    root = _write_sqlite_plugin(tmp_path / 'immutable')
+    digest = _sha256_tree(root)
+    session = PluginSession(root, source_label='immutable', registry=PluginRegistry())
+    try:
+        session.start()
+        session.invoke('probe')
+        assert not list(root.rglob('*.pyc'))
+        assert _digest_tree(root) == digest
+    finally:
+        session.dispose()

@@ -1,123 +1,71 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Puzzle } from 'lucide-react'
-
-type PluginRow = {
-  pluginId: string
-  sourceLabel: string
-  generation: number
-  services: string[]
-}
+import { Puzzle, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { apiClient } from '../api/client'
+import { PluginRow, pluginStateLabel } from '../plugins/managementTypes'
 
 type Props = { baseUrl: string }
-
-/**
- * Host management shell for Plugin Runtime contributions.
- * Remains usable when a worker is failed/stopped (shows empty or last known).
- */
-type DualUpdatePlan = {
-  status: string
-  independentPlugins?: string[]
-  jointPlugins?: string[]
-  blocked?: { pluginId: string; reason: string }[]
-  applyOrder?: string[]
-}
+type Plan = { status: string; core?: { from: string; to: string }; updates?: { pluginId: string; fromVersion: string; toVersion: string }[]; blocked?: { pluginId: string; reason: string }[] }
 
 export default function PluginManagerPage({ baseUrl }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [dualPlan, setDualPlan] = useState<DualUpdatePlan | null>(null)
-
+  const [plan, setPlan] = useState<Plan | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const refresh = useCallback(async () => {
+    apiClient.setBaseUrl(baseUrl)
     setLoading(true)
-    setError(null)
     try {
-      const res = await fetch(`${baseUrl}/api/plugins/runtime`)
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-      const data = await res.json()
-      setRows(Array.isArray(data.plugins) ? data.plugins : [])
-      try {
-        const planRes = await fetch(`${baseUrl}/api/plugins/dual-update-plan`)
-        if (planRes.ok) {
-          setDualPlan(await planRes.json())
-        }
-      } catch {
-        setDualPlan(null)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setRows([])
-    } finally {
-      setLoading(false)
-    }
+      const data = await apiClient.pluginRequest<{ plugins: PluginRow[] }>('runtime')
+      setRows(data.plugins)
+      try { setPlan(await apiClient.pluginRequest<Plan>('dual-update-plan')) }
+      catch (err) { setPlan(null); setError(String(err)) }
+    } catch (err) { setError(String(err)) }
+    finally { setLoading(false) }
   }, [baseUrl])
+  useEffect(() => { void refresh() }, [refresh])
 
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  return (
-    <div className="flex flex-col h-full min-h-0 p-6 gap-4 overflow-auto">
-      <div className="flex items-center gap-3">
-        <Puzzle className="w-6 h-6 text-accent" />
-        <div>
-          <h1 className="text-xl font-semibold text-primary">插件运行时</h1>
-          <p className="text-sm text-secondary">统一管理已发布贡献；worker 故障时本页仍可打开。</p>
-        </div>
-        <button
-          type="button"
-          className="ml-auto px-3 py-1.5 rounded-md bg-surface-2 text-sm hover:bg-surface-3"
-          onClick={() => void refresh()}
-        >
-          刷新
-        </button>
+  async function manage(row: PluginRow, action: string) {
+    setBusy(row.pluginId); setError(''); setMessage('')
+    try {
+      await apiClient.pluginRequest('manage', { action, pluginId: row.pluginId })
+      setMessage(`${row.name}：操作已完成`)
+      await refresh()
+    } catch (err) { setError(String(err)) }
+    finally { setBusy(null) }
+  }
+  return <main className="h-full overflow-auto p-6 space-y-5 text-content">
+    <header className="flex flex-wrap items-center gap-3">
+      <Puzzle size={24} className="text-accent" />
+      <div className="flex-1"><h1 className="text-xl font-semibold">插件</h1><p className="text-sm text-content-secondary">管理安装、运行状态和更新</p></div>
+      <Link to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
+      <button type="button" disabled={loading || !!busy} onClick={() => { setError(''); void refresh() }} className="inline-flex items-center gap-2 rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"><RefreshCw size={14} />刷新</button>
+    </header>
+    {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+    {message && <p role="status" className="text-sm text-content-secondary">{message}</p>}
+    {plan && <section className="border-y border-default py-3 text-sm space-y-1">
+      <p>Core {plan.core?.from || '—'} · {plan.updates?.length ? `${plan.updates.length} 个插件可更新` : '插件已是最新版本'}</p>
+      {plan.blocked?.map(item => <p key={item.pluginId} className="text-danger">{item.pluginId}：{item.reason}</p>)}
+    </section>}
+    {loading && <p role="status" className="text-sm text-content-secondary">正在读取已安装插件…</p>}
+    {!loading && !rows.length && <p className="text-sm text-content-secondary">尚未安装插件。默认插件会在启动时从配置的目录安装；安装失败时可查看诊断日志。</p>}
+    <ul className="divide-y divide-default">{rows.map(row => <li key={row.pluginId} className="py-4 flex flex-wrap items-center gap-4">
+      <div className="flex-1 min-w-40"><h2 className="font-medium">{row.name} <span className="ml-2 text-sm text-content-secondary">{row.version || '版本不可读'}</span></h2>
+        <p className="text-xs text-content-tertiary mt-1">{row.pluginId}</p>
+        {row.error && <p className="text-sm text-danger mt-2">{row.error}</p>}
       </div>
-
-      {loading && <p className="text-sm text-secondary">加载中…</p>}
-      {error && (
-        <p className="text-sm text-danger" role="alert">
-          无法读取运行时状态：{error}（管理壳仍可用）
-        </p>
-      )}
-      {!loading && !error && rows.length === 0 && (
-        <p className="text-sm text-secondary">当前没有已发布的插件贡献快照。</p>
-      )}
-      {dualPlan && (
-        <section className="rounded-lg border border-border px-4 py-3 bg-surface text-sm">
-          <div className="font-medium text-primary mb-1">Core / 插件更新协调</div>
-          <p className="text-secondary">状态：{dualPlan.status}</p>
-          {dualPlan.applyOrder && dualPlan.applyOrder.length > 0 && (
-            <p className="text-secondary mt-1">顺序：{dualPlan.applyOrder.join(' → ')}</p>
-          )}
-          {(dualPlan.blocked || []).length > 0 && (
-            <ul className="mt-2 text-danger list-disc pl-5">
-              {dualPlan.blocked!.map((b) => (
-                <li key={b.pluginId}>
-                  {b.pluginId}：{b.reason}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-      <ul className="flex flex-col gap-2">
-        {rows.map((row) => (
-          <li
-            key={`${row.pluginId}:${row.generation}`}
-            className="rounded-lg border border-border px-4 py-3 bg-surface"
-          >
-            <div className="font-medium text-primary">{row.pluginId}</div>
-            <div className="text-xs text-secondary mt-1">
-              来源 {row.sourceLabel} · 代次 {row.generation}
-            </div>
-            {row.services?.length > 0 && (
-              <div className="text-xs text-secondary mt-1">服务：{row.services.join(', ')}</div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
+      <span className="text-sm text-content-secondary">{pluginStateLabel[row.intent === 'enabled' ? row.state : row.intent] || row.state}</span>
+      <div className="flex flex-wrap gap-2 text-sm">
+        {row.intent === 'removed' ? <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy} onClick={() => void manage(row, 'reinstall')}>重新安装</button> : <>
+          <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy || row.state === 'maintenance'} onClick={() => void manage(row, row.intent === 'enabled' ? 'disable' : 'enable')}>{row.intent === 'enabled' ? '停用' : '启用'}</button>
+          {plan?.updates?.some(item => item.pluginId === row.pluginId) && <button className="rounded-btn bg-accent px-3 py-2 text-white" disabled={!!busy} onClick={() => void manage(row, 'update')}>更新</button>}
+          <button className="rounded-btn px-3 py-2 text-content-secondary" disabled={!!busy} onClick={() => void manage(row, 'remove')}>卸载</button>
+        </>}
+        {busy === row.pluginId && <span role="status" className="self-center text-content-secondary">处理中…</span>}
+      </div>
+    </li>)}</ul>
+    <p className="text-xs text-content-tertiary">停用和卸载保留业务数据。插件启用后，会在首次获准调用时启动。</p>
+  </main>
 }

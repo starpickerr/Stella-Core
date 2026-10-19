@@ -35,6 +35,7 @@ class PluginAuthorizationStore:
         self._path = path
         self._lock = RLock()
         self._grants: dict[str, PluginGrant] = {}
+        self._requests: dict[str, dict] = {}
 
     @contextmanager
     def _state(self):
@@ -47,7 +48,10 @@ class PluginAuthorizationStore:
             path.parent.mkdir(parents=True, exist_ok=True)
             with closing(sqlite3.connect(path, timeout=30)) as db, db:
                 db.execute("CREATE TABLE IF NOT EXISTS grants (ref TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                db.execute("CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, value TEXT NOT NULL)")
                 db.execute("BEGIN IMMEDIATE")
+                self._requests = {key: json.loads(value) for key, value in db.execute("SELECT id,value FROM requests")}
+                before_requests = json.dumps(self._requests, sort_keys=True)
                 grants = {}
                 for ref, raw in db.execute("SELECT ref, value FROM grants"):
                     row = json.loads(raw)
@@ -58,6 +62,10 @@ class PluginAuthorizationStore:
                     grants[ref] = PluginGrant(**row)
                 before = dict(grants)
                 yield grants
+                if before_requests != json.dumps(self._requests, sort_keys=True):
+                    for key, row in self._requests.items():
+                        db.execute("INSERT INTO requests VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+                                   (key, json.dumps(row)))
                 for ref, grant in grants.items():
                     if before.get(ref) == grant:
                         continue
@@ -162,6 +170,42 @@ class PluginAuthorizationStore:
                 if not any(capability in grant.capabilities and
                            (all_user in grant.resources or required <= grant.resources) for grant in candidates):
                     raise PermissionError(f'scoped grant denied: {capability} / {purpose} / {method}')
+
+    def create_request(self, request: dict) -> dict:
+        with self._state():
+            self._requests[request['requestId']] = dict(request)
+        return dict(request)
+
+    def authorization_request(self, request_id: str, user_id: str) -> dict:
+        with self._state():
+            row = self._requests.get(request_id)
+            if row is None or row['userId'] != user_id:
+                raise PermissionError('authorization request does not belong to this user')
+            return dict(row)
+
+    def approve_request(self, request_id: str, user_id: str, *, source_revision: int, package_digest: str) -> PluginGrant:
+        with self._state() as grants:
+            row = self._requests.get(request_id)
+            if row is None or row['userId'] != user_id:
+                raise PermissionError('authorization request does not belong to this user')
+            if row.get('status') == 'approved':
+                return grants[row['grantId']]
+            if row.get('status') != 'pending' or _expiry(row['expiresAt']) <= datetime.now(timezone.utc):
+                raise PermissionError('authorization request expired or cancelled')
+            if row.get('validUntil') is not None and _expiry(row['validUntil']) <= datetime.now(timezone.utc):
+                raise PermissionError('requested grant validity expired')
+            if row['expectedSourceRevision'] != source_revision or row['packageDigest'] != package_digest:
+                raise PermissionError('source changed; request authorization again')
+            policy = 1 + sum(grant.policy_revision for grant in grants.values() if grant.user_id == user_id)
+            if row['expectedPolicyRevision'] != policy:
+                raise PermissionError('policy changed; request authorization again')
+            grant = PluginGrant(grant_ref=row['grantId'], parent_ref=row['parentRef'], plugin_id=row['pluginId'],
+                user_id=user_id, consumer_plugin_id=row['consumerPluginId'], capabilities=frozenset({row['capability']}),
+                methods=frozenset(row['methods']), resources=frozenset(_resource_key(item) for item in row['resources']),
+                purposes=frozenset({row['purpose']}), valid_until=row.get('validUntil'))
+            grants[grant.grant_ref] = grant
+            self._requests[request_id] = {**row, 'status': 'approved'}
+            return grant
 
     def check(
         self,

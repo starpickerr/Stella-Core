@@ -1,0 +1,13 @@
+{
+  "id": "bills.preferences",
+  "pluginId": "stella.bills",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "general",
+      "title": "常规",
+      "order": 0
+    }
+  ],
+  "fields": []
+}

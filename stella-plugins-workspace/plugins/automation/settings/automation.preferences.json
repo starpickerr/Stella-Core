@@ -1,0 +1,13 @@
+{
+  "id": "automation.preferences",
+  "pluginId": "stella.automation",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "general",
+      "title": "常规",
+      "order": 0
+    }
+  ],
+  "fields": []
+}

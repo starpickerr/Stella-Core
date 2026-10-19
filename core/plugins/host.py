@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import platform
 import queue
@@ -11,6 +10,7 @@ import sys
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -92,6 +92,29 @@ def resolve_runner_command(
     return [python_executable or sys.executable, "-m", RUNNER_DEV_MODULE]
 
 
+def _managed_boundary(function):
+    @wraps(function)
+    def call(self, **kwargs):
+        from core.plugins.management import default_store
+        from core.plugins.caller import managed_data_lease, managed_plugin
+        from core.plugins.locks import package_lock
+
+        store = default_store()
+        if not managed_plugin(self.plugin_id, self.user_id):
+            return function(self, **kwargs)
+        with managed_data_lease(self.plugin_id, user_id=self.user_id):
+            from core.plugins.package_ops import PackageStore
+
+            current = PackageStore(store.root).current_package(self.plugin_id)
+            if not current or current['digest'] != self.package_digest:
+                self.dispose()
+                raise PermissionError('worker package selection changed; restart the session')
+            with package_lock(store.root, self.plugin_id + ':policy', exclusive=True):
+                with self._lock:
+                    return function(self, **kwargs)
+    return call
+
+
 class PluginSession:
     def __init__(
         self,
@@ -130,6 +153,17 @@ class PluginSession:
     @property
     def is_running(self) -> bool:
         with self._lock:
+            from core.plugins.caller import managed_plugin
+            from core.plugins.management import default_store
+            from core.plugins.package_ops import PackageStore
+
+            if managed_plugin(self.plugin_id, self.user_id):
+                try:
+                    current = PackageStore(default_store().root).current_package(self.plugin_id)
+                    if not current or current['digest'] != self.package_digest:
+                        return False
+                except (ValueError, OSError, KeyError):
+                    return False
             snapshot = self.registry.get(self.plugin_id)
             return (self._proc is not None and self._proc.poll() is None and
                     snapshot is not None and snapshot.generation == self.generation)
@@ -164,6 +198,7 @@ class PluginSession:
                     env["STELLA_REPO_ROOT"] = os.environ["STELLA_REPO_ROOT"]
             if self.maintenance:
                 env["STELLA_PLUGIN_MAINTENANCE"] = "1"
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
             env["STELLA_PLUGIN_ROOT"] = str(self.plugin_root)
             env["STELLA_PLUGIN_ID"] = self.plugin_id
             # Frozen/dedicated runner must not depend on repo checkout imports
@@ -288,6 +323,7 @@ class PluginSession:
             data_handle=data_handle,
         )
 
+    @_managed_boundary
     def invoke_contract(
         self,
         *,
@@ -324,16 +360,43 @@ class PluginSession:
             raise PermissionError(f"method not declared: {contract}.{method}")
         required = set(permissions)
         required.update(declared)
+        from core.plugins.management import default_store
+        from core.plugins.caller import current_consumer_plugin, managed_plugin
+
+        managed = managed_plugin(self.plugin_id, self.user_id)
+        if managed and skip_authz:
+            raise PermissionError('managed authorization cannot be bypassed')
+        resource_refs = None
         if not skip_authz:
-            self.authz.check(
-                grant_ref=grant_ref,
-                plugin_id=self.plugin_id,
-                user_id=self.user_id,
-                required_capabilities=required or {"plugin.invoke"},
-                purpose=purpose,
-                generation=self.generation,
-                context_generation=self.generation,
-            )
+            if managed:
+                from core.plugins.resources import invocation_resources
+
+                purpose = 'background' if origin == 'job' or purpose == 'background' else 'interactive'
+                scope = dict(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
+                             consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
+                             required_capabilities=required or {'plugin.invoke'}, method=method, purpose=purpose)
+                # No body read is permitted merely to discover the authorization scope.
+                self.authz.check_scoped(**scope, resources=[])
+
+                def metadata(name, values):
+                    context = build_host_context(user_id=self.user_id, instance_id=self.instance_id,
+                        generation=self.generation, origin=origin, grant_ref=grant_ref)
+                    params = build_invoke_params(contract=contract, method=name, input_payload=values, context=context,
+                        deadline=datetime.now(timezone.utc) + timedelta(seconds=10))
+                    params['_hostDataHandle'] = dict(data_handle or {})
+                    result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=10_000))
+                    if result['status'] != 'succeeded' or not isinstance(result.get('value'), dict):
+                        raise PermissionError('source metadata is unavailable')
+                    return result['value']
+
+                resource_refs = invocation_resources(self.plugin_id, method, input_payload, self.user_id, metadata)
+                self.authz.check_scoped(**scope, resources=resource_refs)
+            else:
+                self.authz.check(
+                    grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
+                    required_capabilities=required or {'plugin.invoke'}, purpose=purpose,
+                    generation=self.generation, context_generation=self.generation,
+                )
             # Overlay existing conversation/tool permission path when agent/tool origin.
             if origin in {"tool", "job"}:
                 denial = _conversation_permission_denial(
@@ -368,6 +431,12 @@ class PluginSession:
         if data_handle is not None:
             invoke_params = dict(invoke_params)
             invoke_params["_hostDataHandle"] = dict(data_handle)
+            if resource_refs is not None:
+                invoke_params["_hostDataHandle"]["authorizedResources"] = resource_refs
+        if managed and method in {'save_account', 'delete_account', 'save_settings', 'delete_settings',
+                                  'save_file_sync_settings', 'update_preferences'}:
+            # A timed-out mutation may have committed, so invalidate before dispatch.
+            default_store().bump_source_revision(self.plugin_id, self.user_id)
         result = self._rpc("plugin.invoke", invoke_params, timeout_ms=timeout_ms)
         try:
             return validate_operation_result(result)
@@ -577,11 +646,6 @@ def _conversation_permission_denial(
 
 
 def _digest_tree(root: Path) -> str:
-    h = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        rel = path.relative_to(root).as_posix()
-        h.update(rel.encode("utf-8"))
-        h.update(b"\0")
-        h.update(path.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()
+    from core.plugins.package_ops import _sha256_tree
+
+    return _sha256_tree(root)

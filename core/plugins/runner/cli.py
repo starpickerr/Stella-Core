@@ -12,6 +12,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in forbidden:
         if name in sys.modules:
             raise SystemExit(f"stella-plugin-runner refuses polluted process: {name} already imported")
+    sys.dont_write_bytecode = True
     os.environ.setdefault("STELLA_PLUGIN_WORKER", "1")
     from core.plugins.runner.__main__ import main as runner_main
 

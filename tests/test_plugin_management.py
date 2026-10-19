@@ -146,8 +146,58 @@ def test_managed_install_does_not_issue_full_grant_when_worker_starts(tmp_path, 
         session = bills_gateway.ensure_bills_session()
         assert session.is_running
         assert authz.get(bills_gateway._GRANT_REF) is None
-        with pytest.raises(PermissionError, match='unknown grantRef'):
+        with pytest.raises(PermissionError, match='scoped grant denied'):
             bills_gateway.invoke_bills('list_ledger', {'year': 2026, 'month': 10}, db_path=tmp_path / 'never.sqlite')
         assert not (tmp_path / 'never.sqlite').exists()
     finally:
         bills_gateway.shutdown_bills_session()
+
+
+def test_shared_installed_package_never_gives_new_user_legacy_full_grant(tmp_path, monkeypatch):
+    from common.runtime_identity import identity_scope
+    from core.plugins import management
+    from core.plugins.package_ops import PackageStore
+    from core.plugins.caller import issue_compatibility_grant, managed_plugin_route, managed_data_lease
+    from core.plugins.authz import PluginAuthorizationStore
+
+    store = ManagementStore(tmp_path / 'packages')
+    packages = PackageStore(store.root)
+    op = packages.stage(Path('stella-plugins-workspace/plugins/bills'))
+    packages.inspect(op.operation_id)
+    packages.prepare(op.operation_id)
+    packages.commit(op.operation_id)
+    store.set_intent('stella.bills', 'alice', 'enabled')
+    monkeypatch.setattr(management, 'default_store', lambda: store)
+    authz = PluginAuthorizationStore()
+    with identity_scope(user_id='bob'):
+        assert managed_plugin_route('stella.bills', '0')
+        assert issue_compatibility_grant(authz, grant_ref='g', plugin_id='stella.bills', user_id='bob',
+                                         capabilities=['bills.read']) is None
+        assert authz.get('g') is None
+        with pytest.raises(PermissionError, match='enrolled'):
+            with managed_data_lease('stella.bills'):
+                pytest.fail('new user reached installed domain before migration')
+
+
+@pytest.mark.parametrize('domain', ['bills', 'calendar', 'tasks', 'briefing', 'email', 'elearning', 'automation'])
+def test_first_party_settings_are_static_contract_valid_resources(tmp_path, domain):
+    import json
+    from core.plugins.package_ops import PackageStore
+    from core.plugins.settings import PluginSettingsService
+
+    store = ManagementStore(tmp_path / 'packages')
+    packages = PackageStore(store.root)
+    op = packages.stage(Path(f'stella-plugins-workspace/plugins/{domain}'))
+    packages.inspect(op.operation_id)
+    packages.prepare(op.operation_id)
+    packages.commit(op.operation_id)
+    descriptors = PluginSettingsService(store).descriptors(f'stella.{domain}')
+    assert descriptors
+    schema = json.loads(Path('plugin-api/schemas/baseline.schema.json').read_text())
+    for descriptor in descriptors:
+        contract = schema['definitions']['SettingsDescriptor']
+        assert set(contract['required']) <= set(descriptor) <= set(contract['properties'])
+        assert descriptor['scope'] == 'user'
+        assert descriptor['pluginId'] == f'stella.{domain}'
+        assert isinstance(descriptor['categories'], list)
+        assert isinstance(descriptor['fields'], list)

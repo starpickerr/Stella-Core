@@ -1996,6 +1996,7 @@ class DesktopChannel(ChatChannel):
             '/api/plugins/dual-update-plan', 'PluginDualUpdatePlanHandler',
             '/api/plugins/manage', 'PluginManagementHandler',
             '/api/plugins/settings', 'PluginSettingsHandler',
+            '/api/plugins/authorization', 'PluginAuthorizationHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
             '/auth/logout', 'AuthLogoutHandler',
@@ -2304,6 +2305,43 @@ class PluginManagementHandler:
             return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
         except Exception as exc:
             logger.warning('[PluginManagement] Operation failed: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+def _plugin_authorization_service():
+    from core.plugins.authorization import AuthorizationService
+    from core.plugins.authz import DEFAULT_AUTHZ
+    from core.plugins.management import default_store
+
+    return AuthorizationService(default_store(), DEFAULT_AUTHZ)
+
+
+class PluginAuthorizationHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) - {'action', 'pluginId', 'spec', 'requestId', 'grantId'}:
+                raise ValueError('unsupported authorization fields')
+            user, service = _plugin_user(), _plugin_authorization_service()
+            action = body.get('action')
+            if action == 'describe':
+                result = service.describe(body['pluginId'], user)
+            elif action == 'list':
+                result = service.list(user, body['pluginId'])
+            elif action == 'request':
+                result = service.request(body['pluginId'], user, body['spec'])
+            elif action == 'approve':
+                result = service.approve(user, body['requestId'])
+            elif action == 'revoke':
+                service.revoke(user, body['grantId'])
+                result = {'revoked': True}
+            else:
+                raise ValueError('unknown authorization action')
+            return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
+        except Exception as exc:
             return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
 
 

@@ -1,0 +1,13 @@
+{
+  "id": "email.accounts",
+  "pluginId": "stella.email",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "general",
+      "title": "常规",
+      "order": 0
+    }
+  ],
+  "fields": []
+}

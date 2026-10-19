@@ -193,6 +193,15 @@ class ApiClient {
     return res.json()
   }
 
+  async pluginRequest<T>(resource: 'runtime' | 'dual-update-plan' | 'manage' | 'settings' | 'authorization', body?: Record<string, unknown>): Promise<T> {
+    const data = await this.request<{ status: string; result?: T; message?: string; error?: string }>(
+      `/api/plugins/${resource}`, body ? { method: 'POST', body: JSON.stringify(body) } : undefined)
+    if (data.status === 'error' || data.status === 'conflict' || data.status === 'degraded') {
+      throw new Error(data.message || data.error || '插件请求失败')
+    }
+    return (body ? data.result : data) as T
+  }
+
   /** POST multipart form data.
    *
    * `request()` can't be reused: it forces a JSON content type, while FormData

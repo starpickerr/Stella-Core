@@ -1,0 +1,13 @@
+{
+  "id": "elearning.account",
+  "pluginId": "stella.elearning",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "general",
+      "title": "常规",
+      "order": 0
+    }
+  ],
+  "fields": []
+}

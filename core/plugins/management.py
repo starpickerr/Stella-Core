@@ -23,6 +23,8 @@ class ManagementStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             db.executescript('''
+                CREATE TABLE IF NOT EXISTS source_revisions (plugin TEXT NOT NULL, user TEXT NOT NULL,
+                    revision INTEGER NOT NULL, PRIMARY KEY(plugin,user));
                 CREATE TABLE IF NOT EXISTS instances (
                     plugin TEXT NOT NULL, user TEXT NOT NULL,
                     intent TEXT NOT NULL DEFAULT 'enabled', state TEXT NOT NULL DEFAULT 'stopped',
@@ -66,11 +68,14 @@ class ManagementStore:
     def set_intent(self, plugin_id: str, user_id: str, intent: str) -> dict:
         if intent not in {'enabled', 'disabled', 'removed'}:
             raise ValueError('invalid plugin intent')
+        previous = self.instance(plugin_id, user_id)['intent']
         with self._db() as db:
             db.execute('''INSERT INTO instances(plugin,user,intent) VALUES (?,?,?)
                 ON CONFLICT(plugin,user) DO UPDATE SET intent=excluded.intent,
                 state=CASE WHEN excluded.intent='enabled' THEN instances.state ELSE 'stopped' END''',
                        (plugin_id, user_id, intent))
+        if previous != intent:
+            self.bump_source_revision(plugin_id, user_id)
         return self.instance(plugin_id, user_id)
 
     def set_runtime(self, plugin_id: str, user_id: str, state: str, *, error: str | None = None):
@@ -80,6 +85,16 @@ class ManagementStore:
             db.execute('''INSERT INTO instances(plugin,user,state,error) VALUES (?,?,?,?)
                 ON CONFLICT(plugin,user) DO UPDATE SET state=excluded.state,error=excluded.error''',
                        (plugin_id, user_id, state, error))
+
+    def source_revision(self, plugin_id: str, user_id: str) -> int:
+        with self._db() as db:
+            row = db.execute('SELECT revision FROM source_revisions WHERE plugin=? AND user=?', (plugin_id, user_id)).fetchone()
+        return row[0] if row else 1
+
+    def bump_source_revision(self, plugin_id: str, user_id: str):
+        with self._db() as db:
+            db.execute('INSERT INTO source_revisions VALUES (?,?,2) ON CONFLICT(plugin,user) DO UPDATE SET revision=revision+1',
+                       (plugin_id, user_id))
 
     def settings(self, plugin_id, user_id, settings_id, category) -> dict:
         with self._db() as db:

@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.email",
   "name": "邮件",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",
@@ -15,13 +15,29 @@
     "migrationEntry": "backend/migrate.py"
   },
   "contributes": {
-    "services": ["stella.email@1"],
-    "settings": ["email.accounts"]
+    "services": [
+      "stella.email@1"
+    ],
+    "settings": [
+      "email.accounts"
+    ]
   },
   "permissions": [
-    { "capability": "email.read", "required": true },
-    { "capability": "email.write", "required": true },
-    { "capability": "email.connect", "required": true },
-    { "capability": "email.fetch", "required": true }
+    {
+      "capability": "email.read",
+      "required": true
+    },
+    {
+      "capability": "email.write",
+      "required": true
+    },
+    {
+      "capability": "email.connect",
+      "required": true
+    },
+    {
+      "capability": "email.fetch",
+      "required": true
+    }
   ]
 }

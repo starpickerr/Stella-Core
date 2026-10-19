@@ -66,6 +66,8 @@ class PluginManager:
         self.packages = PackageStore(management.root)
 
     def set_intent(self, plugin_id, user_id, intent) -> dict:
+        if intent == 'enabled' and not self.management.has_instance(plugin_id, user_id):
+            self.adopt_current(plugin_id, user_id=user_id)
         with package_lock(self.management.root, plugin_id + ':management', exclusive=True):
             return self._set_intent_locked(plugin_id, user_id, intent)
 
@@ -74,11 +76,13 @@ class PluginManager:
             raise FileNotFoundError('plugin is not installed')
         if intent == 'enabled' and self.management.runtime_state(plugin_id, user_id) == 'maintenance':
             raise PermissionError('plugin requires migration recovery before enabling')
-        result = self.management.set_intent(plugin_id, user_id, intent)
         if intent != 'enabled':
+            self.management.set_runtime(plugin_id, user_id, 'draining')
             stop_session(plugin_id)
             DEFAULT_REGISTRY.revoke(plugin_id)
-        self.management.set_runtime(plugin_id, user_id, 'stopped')
+        with package_lock(self.management.root, plugin_id + ':policy', exclusive=True):
+            result = self.management.set_intent(plugin_id, user_id, intent)
+            self.management.set_runtime(plugin_id, user_id, 'stopped')
         return result
 
     def install(self, plugin_id, *, user_id, data_handle: dict | None = None, checkpoint=None) -> dict:
@@ -166,7 +170,8 @@ class PluginManager:
                     migrations[user] = migrated['operationId']
                     self.management.advance(op_id, operation['stage'], {'migrations': migrations})
                 advance('migrated', {'migrations': migrations})
-            with package_lock(self.management.root, plugin_id, exclusive=True):
+            with package_lock(self.management.root, plugin_id, exclusive=True), package_lock(
+                    self.management.root, plugin_id + ':policy', exclusive=True):
                 current = self.packages.current_package(plugin_id)
                 if not current or current['digest'] != facts['digest']:
                     selected = self.packages.commit(facts['packageOperationId'])
@@ -176,6 +181,7 @@ class PluginManager:
                 for user, migration_id in migrations.items():
                     self.management.advance(migration_id, 'completed')
                 for user in users:
+                    self.management.bump_source_revision(plugin_id, user)
                     self.management.set_runtime(plugin_id, user, 'stopped')
                 advance('completed')
             return operation
@@ -191,6 +197,8 @@ class PluginManager:
         for pointer in sorted(self.packages.packages.glob('*/current.json')):
             plugin_id = pointer.parent.name
             state = self.management.instance(plugin_id, user_id)
+            if not self.management.has_instance(plugin_id, user_id):
+                state = {**state, 'intent': 'disabled', 'state': 'stopped'}
             try:
                 current = self.packages.current_package(plugin_id)
                 manifest = load_manifest(Path(current['path']))

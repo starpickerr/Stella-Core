@@ -28,11 +28,11 @@ def resolve_plugin_package_root(
     a user is enrolled in managed package execution.
     """
     from common.state_dir import shared_root
-    from core.plugins.caller import plugin_user_id
+    from core.plugins.caller import plugin_user_id, managed_plugin
     from core.plugins.management import default_store
     from core.plugins.package_ops import PackageStore, _sha256_tree
 
-    managed = default_store().has_instance(plugin_id, plugin_user_id())
+    managed = managed_plugin(plugin_id, plugin_user_id())
     explicit = os.environ.get(env_var, "").strip()
     if explicit and not managed:
         return Path(explicit)
