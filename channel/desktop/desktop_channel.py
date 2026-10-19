@@ -1996,6 +1996,9 @@ class DesktopChannel(ChatChannel):
             '/api/plugins/dual-update-plan', 'PluginDualUpdatePlanHandler',
             '/api/plugins/manage', 'PluginManagementHandler',
             '/api/plugins/settings', 'PluginSettingsHandler',
+            '/api/plugins/pages/open', 'PluginPageOpenHandler',
+            '/api/plugins/pages/content/(.*)/(.*)', 'PluginPageContentHandler',
+            '/api/plugins/bridge/invoke', 'PluginBridgeInvokeHandler',
             '/api/plugins/authorization', 'PluginAuthorizationHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
@@ -2370,6 +2373,103 @@ class PluginSettingsHandler:
         except RevisionConflict as exc:
             return json.dumps({'status': 'conflict', 'message': str(exc)}, ensure_ascii=False)
         except Exception as exc:
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+_PAGE_HOST = None
+_PAGE_CONTENT: dict[str, dict] = {}
+
+
+def _plugin_page_host():
+    global _PAGE_HOST
+    if _PAGE_HOST is None:
+        from core.plugins.bridge import BridgeRegistry
+        from core.plugins.page_host import PluginPageHost
+        _PAGE_HOST = PluginPageHost(bridges=BridgeRegistry())
+    return _PAGE_HOST
+
+
+class PluginPageOpenHandler:
+    """Open a restricted plugin page channel and return a content URL."""
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            plugin_id = body.get('pluginId')
+            page_id = body.get('pageId')
+            if not plugin_id or not page_id:
+                raise ValueError('pluginId and pageId are required')
+            generation = int(body.get('generation') or 1)
+            opened = _plugin_page_host().open_page(
+                plugin_id=plugin_id, page_id=page_id, user_id=_plugin_user(),
+                instance_id=body.get('instanceId') or 'desktop', generation=generation)
+            token = opened['channelNonce']
+            _PAGE_CONTENT[token] = opened
+            opened = {
+                **opened,
+                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={token}",
+            }
+            return json.dumps({'status': 'ok', 'result': opened}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginPage] open failed: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+class PluginPageContentHandler:
+    """Serve package ui/pages HTML/JS for an opened Bridge channel."""
+
+    def GET(self, plugin_id, page_id):
+        from pathlib import Path
+
+        _require_auth()
+        params = web.input(nonce='', file='')
+        opened = _PAGE_CONTENT.get(params.nonce)
+        if not opened or opened['pluginId'] != plugin_id or opened['pageId'] != page_id:
+            raise web.forbidden()
+        root = Path(opened['resourcePath']).parent
+        name = params.file or 'index.html'
+        if name not in {'index.html', 'app.js'}:
+            raise web.forbidden()
+        target = (root / name).resolve()
+        if not str(target).startswith(str(root.resolve())):
+            raise web.forbidden()
+        if name.endswith('.js'):
+            web.header('Content-Type', 'application/javascript; charset=utf-8')
+            return target.read_text(encoding='utf-8')
+        web.header('Content-Type', 'text/html; charset=utf-8')
+        html = target.read_text(encoding='utf-8')
+        # Point the page script at the authenticated content endpoint.
+        html = html.replace(
+            'src="./app.js"',
+            f'src="/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={params.nonce}&file=app.js"')
+        # Embed host-bound identity for the Bridge postMessage handshake.
+        inject = (
+            f'<script>window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=False)};'
+            f'history.replaceState(null,"","?pluginId={plugin_id}&pageId={page_id}&channelNonce={params.nonce}&generation={opened["generation"]}");</script>'
+        )
+        return html.replace('</head>', inject + '</head>', 1)
+
+class PluginBridgeInvokeHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            value = _plugin_page_host().invoke(
+                channel_nonce=body['channelNonce'],
+                plugin_id=body['pluginId'],
+                page_id=body['pageId'],
+                generation=int(body.get('generation') or 0),
+                method=body['method'],
+                input=body.get('input') or {},
+            )
+            return json.dumps({'status': 'ok', 'value': value}, ensure_ascii=False, default=str)
+        except PermissionError as exc:
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginBridge] invoke failed: %s', exc)
             return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
 
 
