@@ -42,7 +42,15 @@ WHERE e.event_type = 'ledger_entry'
 
 
 def load_schema_sql() -> str:
-    return _SCHEMA_PATH.read_text(encoding="utf-8")
+    try:
+        return _SCHEMA_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        # Frozen desktop builds no longer bundle this file (G5): bills is served by
+        # the stella.bills plugin there.
+        raise RuntimeError(
+            "bills schema is not bundled; install the stella.bills plugin and set "
+            "STELLA_BILLS_PLUGIN=1"
+        ) from exc
 
 
 def _row_dict(row: sqlite3.Row) -> dict:

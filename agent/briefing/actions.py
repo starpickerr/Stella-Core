@@ -262,8 +262,21 @@ class BriefingActions:
 
     def _was_deleted(self, db, key, kind):
         candidates = self._legacy_keys(db, key)
-        # Use public domain methods — do not open peer private tables here.
-        return self._service(kind).has_source_tombstone(candidates)
+        # Use public domain methods — do not open peer private tables here. With no
+        # injected service the public helper resolves the plugin facade when enabled.
+        if kind in {'todo', 'reminder'}:
+            from core.services.todos_gateway import todos_plugin_enabled
+            from core.services.todos_public import source_key_is_tombstoned
+            service = self._todos or (None if todos_plugin_enabled() else self.todos)
+        else:
+            from core.services.calendar_gateway import calendar_plugin_enabled
+            from core.services.calendar_public import source_key_is_tombstoned
+            service = self._calendar or (None if calendar_plugin_enabled() else self.calendar)
+        return source_key_is_tombstoned(candidates, service=service)
+
+    # Remaining private-handle paths (``_connect`` in _adopt_existing, list_* in matching)
+    # still use the in-process services; they read the same todos/calendar DB files the
+    # plugins own and are tracked as G5 follow-ups, not as plugin-served writers.
 
     def _adopt_existing(self, db, entity, kind):
         key = entity['entity_key']

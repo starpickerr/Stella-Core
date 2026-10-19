@@ -33,8 +33,34 @@ def _plugins_data_dir():
     return "./plugins"
 
 
+# G5 deprecation: this manager only serves legacy chat-command plugins (godcmd,
+# keyword, ...). Business domains are plugin-owned (core.plugins runtime + the
+# stella-plugin-runner); loading one here as well would create a second writer.
+RETIRED_BUSINESS_PLUGINS = frozenset({
+    "bills", "tasks", "todos", "calendar", "email", "elearning", "briefing", "automation",
+})
+
+
+def legacy_skip_reason(plugin_name: str, plugin_path: str):
+    """Why scan_plugins must not import this directory, or None if it may load.
+
+    Skips Plugin Runtime packages (``plugin.json``) and retired business-domain
+    names. Only skips importing; any data a plugin left on disk is untouched.
+    """
+    if os.path.isfile(os.path.join(plugin_path, "plugin.json")):
+        return "Plugin Runtime package (managed by core.plugins)"
+    if plugin_name.lower().removeprefix("stella.") in RETIRED_BUSINESS_PLUGINS:
+        return "business domain is served by a Stella-Plugins package"
+    return None
+
+
 @singleton
 class PluginManager:
+    """Legacy chat-command plugin manager (deprecated for business plugins; see above).
+
+    Package install, registry and worker lifecycle live in ``core.plugins``.
+    """
+
     def __init__(self):
         self.plugins = SortedDict(lambda k, v: v.priority, reverse=True)
         self.listening_plugins = {}
@@ -118,6 +144,10 @@ class PluginManager:
         for plugin_name in os.listdir(plugins_dir):
             plugin_path = os.path.join(plugins_dir, plugin_name)
             if os.path.isdir(plugin_path):
+                skip = legacy_skip_reason(plugin_name, plugin_path)
+                if skip:
+                    logger.warning("[PluginManager] skip %s: %s" % (plugin_name, skip))
+                    continue
                 # 判断插件是否包含同名__init__.py文件
                 main_module_path = os.path.join(plugin_path, "__init__.py")
                 if os.path.isfile(main_module_path):
