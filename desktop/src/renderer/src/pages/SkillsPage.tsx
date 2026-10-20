@@ -9,6 +9,7 @@ import { SKILL_HUB_URL } from './settings/links'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PluginCapabilities from './PluginCapabilities'
 import PageHeader from '../components/PageHeader'
+import CapabilityRefreshButton from '../components/CapabilityRefreshButton'
 
 interface SkillsPageProps {
   baseUrl: string
@@ -38,10 +39,10 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [toolsError, setToolsError] = useState('')
   const [skillsError, setSkillsError] = useState('')
+  const [skillBusy, setSkillBusy] = useState(false)
   const [toolsLoading, setToolsLoading] = useState(true)
   const [skillsLoading, setSkillsLoading] = useState(true)
   const [mcpLoading, setMcpLoading] = useState(true)
-  const loading = activeTab === 'tools' ? toolsLoading : activeTab === 'skills' ? skillsLoading : activeTab === 'mcp' ? mcpLoading : false
 
   const loadTools = useCallback(async () => {
     setToolsLoading(true)
@@ -78,13 +79,15 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   }, [baseUrl, loadTools, loadSkills, loadMcp])
 
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
+    if (skillBusy) return
+    setSkillBusy(true)
     setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled } : item)))
     try {
       const res = await apiClient.toggleSkill(skill.name, enabled ? 'open' : 'close')
       if (res.status !== 'success') throw new Error()
     } catch {
       setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled: !enabled } : item)))
-    }
+    } finally { setSkillBusy(false) }
   }
 
   return (
@@ -123,13 +126,8 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
       </div>
       <div className="flex-1 overflow-y-auto" data-stella-scroll>
         <div role="tabpanel" id={`capability-panel-${activeTab}`} aria-labelledby={`capability-tab-${activeTab}`} tabIndex={0} className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-20 text-content-tertiary">
-              <Loader2 size={18} className="animate-spin mr-2" />{t('skills_loading')}
-            </div>
-          ) : (
             <div className="space-y-10">
-              {activeTab === 'tools' && <Section title={t('tools_section_title')} count={tools.length}>
+              {activeTab === 'tools' && <Section title={t('tools_section_title')} count={tools.length} loading={toolsLoading} onRefresh={() => void loadTools()}>
                 {toolsError ? <LoadError text={toolsError || t('capability_tools_error')} onRetry={() => void loadTools()} /> : tools.length === 0 ? (
                   <Empty text={t('tools_empty')} />
                 ) : (
@@ -140,7 +138,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                   </Grid>
                 )}
               </Section>}
-              {activeTab === 'skills' && <Section title={t('skills_section_title')} count={skills.length}>
+              {activeTab === 'skills' && <Section title={t('skills_section_title')} count={skills.length} loading={skillsLoading} refreshDisabled={skillBusy} onRefresh={() => void loadSkills()}>
                 {skillsError ? <LoadError text={skillsError || t('capability_skills_error')} onRetry={() => void loadSkills()} /> : skills.length === 0 ? (
                   <Empty text={t('skills_empty')} />
                 ) : (
@@ -151,7 +149,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                         <Card key={item.name} label={title}>
                           <div className="flex items-start justify-between gap-3">
                             <h3 className="text-sm font-semibold text-content break-words">{title}</h3>
-                            <Toggle label={title} checked={item.enabled} onChange={(value) => void toggle(item, value)} />
+                            <Toggle label={title} disabled={skillBusy} checked={item.enabled} onChange={(value) => void toggle(item, value)} />
                           </div>
                           <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{item.description}</p>
                         </Card>
@@ -164,11 +162,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
                 <PluginCapabilities baseUrl={baseUrl} />
               </section>}
-              {activeTab === 'mcp' && <Section title="MCP" count={servers.length}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-content-tertiary">{t('capability_mcp_desc')}</p>
-                  <button type="button" onClick={() => void loadMcp()} className="text-xs text-accent">{t('capability_refresh')}</button>
-                </div>
+              {activeTab === 'mcp' && <Section title="MCP" count={servers.length} loading={mcpLoading} onRefresh={() => void loadMcp()}>
                 {mcpError ? <LoadError text={mcpError} onRetry={() => void loadMcp()} /> : !servers.length ? (
                   <Empty text={t('capability_mcp_empty')} />
                 ) : <Grid>{servers.map(server => <Card key={server.name} label={server.name}>
@@ -194,7 +188,6 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 </Card>)}</Grid>}
               </Section>}
             </div>
-          )}
         </div>
       </div>
     </div>
@@ -211,13 +204,18 @@ const ToolCard: React.FC<{ tool: ToolInfo }> = ({ tool }) => (
   </Card>
 )
 
-const Section: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
+const Section: React.FC<{ title: string; count: number; loading: boolean; refreshDisabled?: boolean; onRefresh: () => void; children: React.ReactNode }> = ({ title, count, loading, refreshDisabled, onRefresh, children }) => (
   <section className="space-y-3">
-    <div className="flex items-baseline gap-2">
-      <h2 className="text-sm font-semibold text-content">{title}</h2>
-      {count > 0 && <span className="text-xs text-content-tertiary tabular-nums">{count}</span>}
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold text-content">{title}</h2>
+        {count > 0 && <span className="text-xs text-content-tertiary tabular-nums">{count}</span>}
+      </div>
+      <CapabilityRefreshButton loading={loading} disabled={refreshDisabled} onRefresh={onRefresh} />
     </div>
-    {children}
+    {loading ? <div role="status" className="flex items-center justify-center py-20 text-content-tertiary">
+      <Loader2 size={18} className="animate-spin mr-2" />{t('skills_loading')}
+    </div> : children}
   </section>
 )
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import CapabilityRefreshButton from '../components/CapabilityRefreshButton'
 import { Link, useLocation } from 'react-router-dom'
 import { currentSettingsOrigin } from './settings/origin'
 import { apiClient } from '../api/client'
@@ -38,10 +38,9 @@ export default function PluginCapabilities({ baseUrl }: Props) {
     finally { setBusy(null) }
   }
   return <div className="space-y-3 text-content">
-    <header className="flex flex-wrap items-center gap-3">
-      <div className="flex-1"><p className="text-sm text-content-secondary">查看插件并管理启用状态</p></div>
+    <header className="flex flex-wrap items-center justify-end gap-3">
       <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
-      <button type="button" disabled={loading || !!busy} onClick={() => { setError(''); void refresh() }} className="inline-flex items-center gap-2 rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"><RefreshCw size={14} />刷新</button>
+      <CapabilityRefreshButton loading={loading} disabled={!!busy} onRefresh={() => void refresh()} />
     </header>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     {message && <p role="status" className="text-sm text-content-secondary">{message}</p>}
@@ -63,6 +62,5 @@ export default function PluginCapabilities({ baseUrl }: Props) {
         </>}        {busy === row.pluginId && <span role="status" className="self-center text-content-secondary">处理中…</span>}
       </div>
     </Card>)}</Grid>
-    <p className="text-xs text-content-tertiary">停用和卸载保留业务数据。插件启用后，会在首次获准调用时启动。</p>
   </div>
 }

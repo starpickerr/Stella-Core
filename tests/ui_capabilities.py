@@ -8,12 +8,15 @@ from playwright.sync_api import expect, sync_playwright
 
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
+request_counts = {}
 fail_tools = [False]
 fail_mcp = [False]
 empty_mcp = [False]
 plugin_enabled = [True]
 plugin_posts = []
 skill_posts = []
+hold_skill = [False]
+pending_skill_routes = []
 plan_requests = []
 updated = [False]
 fail_update = [False]
@@ -24,6 +27,7 @@ DETAIL = '只在带有记忆能力的对话中可用。它可以查找记忆和�
 
 def backend(route):
     path = urlparse(route.request.url).path
+    request_counts[path] = request_counts.get(path, 0) + 1
     method = route.request.method
     body = route.request.post_data_json if method == 'POST' else {}
     data = {'status': 'success'}
@@ -100,6 +104,9 @@ def backend(route):
         data['result'] = []
     elif path == '/api/skills' and method == 'POST':
         skill_posts.append(body)
+        if hold_skill[0]:
+            pending_skill_routes.append(route)
+            return
     elif path == '/api/skills':
         data['skills'] = [{
             'name': 'demo-skill', 'display_name': '演示技能', 'enabled': True, 'source': 'custom',
@@ -137,6 +144,18 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('tab', name='插件', exact=True)).to_have_attribute('aria-selected', 'true')
         expect(page.get_by_role('article', name='read')).to_have_count(0)
         expect(page.get_by_role('article', name='简报')).to_be_visible()
+        for text in ['查看插件并管理启用状态', '停用和卸载保留业务数据。插件启用后，会在首次获准调用时启动。']:
+            expect(page.get_by_text(text, exact=True)).to_have_count(0)
+        for tab, endpoint in [('插件', '/api/plugins/runtime'), ('工具', '/api/tools'), ('技能', '/api/skills'), ('MCP', '/api/mcp')]:
+            page.get_by_role('tab', name=tab, exact=True).click()
+            refresh = page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True)
+            expect(refresh).to_be_enabled()
+            before = request_counts.get(endpoint, 0)
+            refresh.click()
+            expect(refresh).to_be_enabled()
+            assert request_counts[endpoint] == before + 1, (tab, request_counts)
+            expect(page.get_by_role('tab', name=tab, exact=True)).to_have_attribute('aria-selected', 'true')
+        expect(page.get_by_text('已配置的 MCP 服务及其运行时工具。修改连接配置后，服务会在 Agent 加载时更新。', exact=True)).to_have_count(0)
         page.get_by_role('tab', name='MCP', exact=True).click()
         mcp = page.get_by_role('article', name='Documents')
         expect(mcp.get_by_text('已连接')).to_be_visible()
@@ -178,8 +197,16 @@ with sync_playwright() as playwright:
         right_gap = tiny_box['y'] - (short_box['y'] + short_box['height'])
         assert abs(left_gap - right_gap) < 2 and 8 <= left_gap <= 16, (left_gap, right_gap, demo_box, short_box, mid_box, tiny_box)
         assert skill_posts == []
+        hold_skill[0] = True
         demo.get_by_role('switch').click()
-        page.wait_for_timeout(200)
+        expect(page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True)).to_be_disabled()
+        expect(demo.get_by_role('switch')).to_be_disabled()
+        assert pending_skill_routes
+        pending_skill_routes.pop().fulfill(status=200, content_type='application/json', body=json.dumps({'status': 'success'}),
+            headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
+        hold_skill[0] = False
+        expect(page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True)).to_be_enabled()
+        expect(demo.get_by_role('switch')).not_to_be_checked()
         assert skill_posts and skill_posts[-1]['action'] == 'close'
         assert skill_posts[-1]['name'] == 'demo-skill'
 
@@ -200,7 +227,8 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('article', name='Documents')).to_be_visible()
         empty_mcp[0] = True
         mcp_section.get_by_role('button', name='刷新', exact=True).click()
-        expect(mcp_section.get_by_text('尚未配置 MCP 服务。', exact=False)).to_be_visible()
+        expect(mcp_section.get_by_text('暂无 MCP 服务', exact=True)).to_be_visible()
+        expect(page.get_by_text('尚未配置 MCP 服务。可在工作区的 mcp.json 中添加服务。', exact=True)).to_have_count(0)
         empty_mcp[0] = False
         mcp_section.get_by_role('button', name='刷新', exact=True).click()
         expect(page.get_by_role('article', name='Documents')).to_be_visible()
