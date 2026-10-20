@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Bot, Cpu, Info, Link2, Puzzle, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { t } from '../i18n'
@@ -18,6 +18,7 @@ interface SettingsPageProps {
   onLangChange?: () => void
 }
 
+/** Core shell tabs only. Domain/plugin product settings live under「插件」. */
 type Tab = 'general' | 'models' | 'assistant' | 'connections' | 'plugins' | 'about'
 
 const TABS: { key: Tab; icon: LucideIcon }[] = [
@@ -29,7 +30,16 @@ const TABS: { key: Tab; icon: LucideIcon }[] = [
   { key: 'about', icon: Info },
 ]
 
-const LEGACY_TABS: Record<string, Tab> = { basic: 'general', integrations: 'connections', briefing: 'plugins' }
+/** Old bookmarks: basic/integrations; briefing was a duplicate of the briefing plugin. */
+const LEGACY_TABS: Record<string, Tab> = {
+  basic: 'general',
+  integrations: 'connections',
+  briefing: 'plugins',
+}
+
+const PLUGIN_ALIASES: Record<string, string> = {
+  briefing: 'stella.briefing',
+}
 
 const readTab = (requested: string | null): Tab => {
   const key = requested ? LEGACY_TABS[requested] ?? requested : 'general'
@@ -41,14 +51,39 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
   const navigate = useNavigate()
   const modelsTabHidden = product.models?.hideModelsTab === true
   const params = new URLSearchParams(location.search)
-  const tab = readTab(params.get('tab'))
-  const pluginId = params.get('plugin') || (params.get('tab') === 'briefing' ? 'stella.briefing' : undefined)
+  const rawTab = params.get('tab')
+  const tab = readTab(rawTab)
+  const pluginParam = params.get('plugin')
+  const pluginId = pluginParam
+    ? (PLUGIN_ALIASES[pluginParam] ?? pluginParam)
+    : (rawTab === 'briefing' ? 'stella.briefing' : null)
   const incoming = location.state as SettingsOrigin | null
   if (incoming?.from) sessionStorage.setItem('stella_settings_origin', JSON.stringify(incoming))
   else if (!location.search.includes('tab=')) sessionStorage.removeItem('stella_settings_origin')
   const stored = sessionStorage.getItem('stella_settings_origin')
   const origin = stored ? JSON.parse(stored) as SettingsOrigin : null
-  const chooseTab = (next: Tab) => navigate(`/settings?tab=${next}`, { state: origin })
+
+  useEffect(() => {
+    // Rewrite legacy ?tab=briefing into plugins + plugin id (keep other query keys).
+    if (rawTab !== 'briefing') return
+    const next = new URLSearchParams(location.search)
+    next.set('tab', 'plugins')
+    next.set('plugin', 'stella.briefing')
+    navigate(`/settings?${next.toString()}`, { replace: true, state: origin })
+  }, [rawTab, location.search, navigate, origin])
+
+  const chooseTab = (next: Tab) => {
+    const search = new URLSearchParams()
+    search.set('tab', next)
+    navigate(`/settings?${search.toString()}`, { state: origin })
+  }
+
+  const choosePlugin = (nextPluginId: string) => {
+    const search = new URLSearchParams()
+    search.set('tab', 'plugins')
+    search.set('plugin', nextPluginId)
+    navigate(`/settings?${search.toString()}`, { state: origin })
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -100,7 +135,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
               ) : tab === 'connections' ? (
                 <AppleIntegrations section={params.get('section')} />
               ) : tab === 'plugins' ? (
-                <PluginSettings baseUrl={baseUrl} pluginId={pluginId} />
+                <PluginSettings
+                  baseUrl={baseUrl}
+                  pluginId={pluginId}
+                  onPluginChange={choosePlugin}
+                />
               ) : (
                 <AboutSettings />
               )}

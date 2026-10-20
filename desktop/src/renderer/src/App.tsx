@@ -26,10 +26,15 @@ import SkillsPage from './pages/SkillsPage'
 import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
-import HealthPage from './pages/HealthPage'
 import LogsPage from './pages/LogsPage'
-import PluginPageHost from './pages/plugins/PluginPageHost'
+import TodosPage from './pages/TodosPage'
+import CalendarPage from './pages/CalendarPage'
+import BriefingPage from './pages/BriefingPage'
+import BillsPage from './pages/BillsPage'
+import EmailPage from './pages/EmailPage'
+import ElearningPage from './pages/ElearningPage'
 import SecurityPage from './pages/SecurityPage'
+import PluginPageHost from './pages/plugins/PluginPageHost'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -231,97 +236,18 @@ const App: React.FC = () => {
           ) : (
           <Routes>
             <Route path="/" element={<ChatPage baseUrl={backend.baseUrl} />} />
-            <Route
-              path="/todos"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.tasks"
-                  pageId="tasks.main"
-                  title="事务"
-                />
-              }
-            />
-            <Route
-              path="/calendar"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.calendar"
-                  pageId="calendar.main"
-                  title="日程"
-                />
-              }
-            />
-            <Route
-              path="/briefing"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.briefing"
-                  pageId="briefing.main"
-                  title="简报"
-                />
-              }
-            />
-            <Route
-              path="/bills"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.bills"
-                  pageId="bills.main"
-                  title="账单"
-                />
-              }
-            />
+            {/* Mature host pages (develop UI); domain logic still goes through plugin ports/APIs. */}
+            <Route path="/todos" element={<TodosPage baseUrl={backend.baseUrl} />} />
+            <Route path="/calendar" element={<CalendarPage baseUrl={backend.baseUrl} />} />
+            <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
+            <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
 
+            <Route path="/agent-hub" element={<PluginPageHost baseUrl={backend.baseUrl} pluginId="stella.agent-hub" pageId="agent-hub.main" title="智能体" />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
-            <Route
-              path="/email"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.email"
-                  pageId="email.main"
-                  title="邮件"
-                />
-              }
-            />
-            <Route
-              path="/elearning"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.elearning"
-                  pageId="elearning.main"
-                  title="课件"
-                />
-              }
-            />
-            <Route
-              path="/automation"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.automation"
-                  pageId="automation.main"
-                  title="自动化"
-                />
-              }
-            />
-            <Route
-              path="/agent-hub"
-              element={
-                <PluginPageHost
-                  baseUrl={backend.baseUrl}
-                  pluginId="stella.agent-hub"
-                  pageId="agent-hub.main"
-                  title="智能体"
-                />
-              }
-            />
-            <Route path="/health" element={<HealthPage />} />
+            <Route path="/email" element={<EmailPage baseUrl={backend.baseUrl} />} />
+            <Route path="/elearning" element={<ElearningPage baseUrl={backend.baseUrl} />} />
+            {/* Automation product UI is the mature scheduler page (侧栏「定时」). */}
+            <Route path="/automation" element={<Navigate to="/tasks" replace />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills/*" element={<Navigate to="/skills" replace />} />

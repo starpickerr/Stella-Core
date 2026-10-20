@@ -42,7 +42,8 @@ export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
     } finally { setBusy(false) }
   }
 
-  return <div className="max-w-3xl mx-auto space-y-6">
+  // Embedded in settings → plugins: same vertical rhythm as General/Assistant (space-y-8).
+  return <div className={onBack ? 'max-w-3xl mx-auto space-y-6' : 'space-y-8'}>
     {onBack && <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold text-content">{t('briefing_settings')}</h2>
       <button type="button" onClick={onBack} className={`inline-flex items-center gap-1.5 ${buttonClass}`}>
@@ -52,7 +53,10 @@ export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
     <section className="space-y-4" aria-label={t('briefing_source_management')}>
-      <div><h3 className="text-base font-semibold text-content">{t('briefing_source_management')}</h3><p className="text-xs text-content-tertiary mt-1">{t('briefing_source_management_help')}</p></div>
+      <div className="px-1">
+        <h3 className="text-sm font-semibold text-content">{t('briefing_source_management')}</h3>
+        <p className="text-xs text-content-tertiary mt-0.5">{t('briefing_source_management_help')}</p>
+      </div>
       <MailboxSettings />
       <ElearningSettings />
     </section>

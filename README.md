@@ -20,7 +20,6 @@ Talk with AI in natural language for questions, writing, information lookup, and
 | **Calendar** | Manage schedules and time with calendar views, categories, and reminders. Sync with Apple Calendar. |
 | **Briefings** | Combine email, eLearning, calendar, and task information to surface important items, to-dos, and upcoming deadlines in a personalized briefing. |
 | **Bills** | Record income and expenses with categories, search, and basic analytics. |
-| **Health** | Personal health information and analysis — **planned**. |
 | **Scheduler** | Manage automation that runs at chosen times, review execution history, and deliver results through configured messaging channels. |
 
 ### Information

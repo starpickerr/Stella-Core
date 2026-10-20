@@ -202,7 +202,7 @@ with sync_playwright() as playwright:
         settings_nav = page.get_by_role('navigation', name='设置分类')
         expect(settings_nav.get_by_role('button', name='简报', exact=True)).to_have_count(0)
         expect(settings_nav.get_by_role('button', name='插件', exact=True)).to_have_attribute('aria-current', 'page')
-        expect(page.get_by_role('tab', name='简报选项', exact=True)).to_be_visible()
+        expect(page.get_by_role('radio', name='功能', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name='规则文稿', exact=True)).to_be_visible()
         page.screenshot(path='/tmp/stella-plugin-settings.png', full_page=True)
         page.goto(test_url + '/#/skills', wait_until='networkidle')

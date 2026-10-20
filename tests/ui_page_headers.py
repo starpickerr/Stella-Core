@@ -11,7 +11,6 @@ test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 PAGES = [
     ('/#/tasks', '定时任务', True),
     ('/#/todos', '事务', False),
-    ('/#/health', '健康', False),
     ('/#/security', '安全中心', False),
     ('/#/settings', '设置', False),
     ('/#/models', '设置', False),

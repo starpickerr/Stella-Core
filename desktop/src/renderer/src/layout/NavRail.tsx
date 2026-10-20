@@ -17,7 +17,6 @@ import {
   CalendarDays,
   Receipt,
   Shield,
-  Heart,
   Bot,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -55,7 +54,6 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/briefing', labelKey: 'menu_briefing', icon: Sun },
       { path: '/bills', labelKey: 'menu_bills', icon: Receipt },
       { path: '/agent-hub', labelKey: 'menu_agent_hub', icon: Bot },
-      { path: '/health', labelKey: 'menu_health', icon: Heart },
       { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
     ],
   },

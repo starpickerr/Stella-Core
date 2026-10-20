@@ -5,7 +5,6 @@ import apiClient from '../../api/client'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { Dropdown, Group, Row, SaveRow, TextInput, Toggle } from './primitives'
-import AgentElearningFileSettings from './AgentElearningFileSettings'
 
 const showManagedApiKey = product.models?.showManagedApiKey === true
 
@@ -169,8 +168,6 @@ const AssistantSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           control={<Toggle label={t('config_evolution')} checked={evolution} onChange={setEvolution} />}
         />
       </Group>
-
-      <AgentElearningFileSettings />
     </div>
   )
 }
