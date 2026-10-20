@@ -218,3 +218,11 @@ def test_desktop_management_bootstrap_adopts_all_first_party_plugins(tmp_path, m
     assert 'stella.agent-hub' in result['installed']
     with sqlite3.connect(hub_db) as db:
         assert db.execute("SELECT agent_id, access_mode FROM provider_configs WHERE provider_config_id='old'").fetchone() == ('codex', 'cli')
+
+
+def test_package_store_never_copies_ignored_bytecode(tmp_path):
+    source = _dirty_pkg(tmp_path)
+    (source / 'standalone.pyc').write_bytes(b'cached bytecode')
+    store = PackageStore(tmp_path / 'store')
+    operation = store.stage(source)
+    assert not (store.staging / operation.operation_id / 'standalone.pyc').exists()

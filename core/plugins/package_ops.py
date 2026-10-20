@@ -204,7 +204,7 @@ def _copy_package_tree(source_dir: Path, destination: Path) -> None:
     """Copy package sources without local caches/VCS into the content-addressed store."""
 
     def _ignore(directory: str, names: list[str]) -> set[str]:
-        return {name for name in names if name in _SKIP_DIR_NAMES}
+        return {name for name in names if name in _SKIP_DIR_NAMES or Path(name).suffix in {".pyc", ".pyo"}}
 
     shutil.copytree(source_dir, destination, ignore=_ignore)
 
