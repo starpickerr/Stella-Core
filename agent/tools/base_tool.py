@@ -41,6 +41,13 @@ def is_tool_available(tool) -> bool:
     line, not a capability.
     """
     try:
+        from agent.tools.capability_settings import tool_enabled
+        if not tool_enabled(tool.name, tool=tool):
+            return False
+    except Exception:
+        logger.warning('[Capabilities] Cannot resolve enablement for %s', getattr(tool, 'name', '?'))
+        return False
+    try:
         return bool(tool.is_available())
     except Exception as e:
         logger.debug(f"[{getattr(tool, 'name', '?')}] availability check failed: {e}")
@@ -161,9 +168,15 @@ class BaseTool:
         }
 
     def execute_tool(self, params: dict) -> ToolResult:
+        from agent.tools.capability_settings import tool_enabled
+        try:
+            if not tool_enabled(self.name, tool=self):
+                return ToolResult.fail(f'Tool {self.name} is disabled.')
+        except Exception:
+            return ToolResult.fail(f'Cannot resolve enablement for {self.name}; the tool did not run.')
         from agent.runtime.tool_invocation import current_tool_call_id, permission_denial
         if current_tool_call_id() is None:
-            denial = permission_denial(self.name, params, agent=getattr(self, "context", None))
+            denial = permission_denial(self.name, params, agent=getattr(self, "context", None), tool=self)
             if denial:
                 logger.warning(
                     "[Permission] Tool %s denied outside invocation scope: %s",

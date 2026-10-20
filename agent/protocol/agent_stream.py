@@ -1874,6 +1874,7 @@ class AgentStreamExecutor:
 
         scheduled = bool(getattr(self.agent, "_scheduled_noninteractive", False))
         return permission_denial(tool_name, arguments, agent=self.agent,
+                                 tool=self.tools.get(tool_name),
                                  wait_for_approval=self.cancel_event is not None and not scheduled,
                                  noninteractive=scheduled,
                                  cancel_event=self.cancel_event)

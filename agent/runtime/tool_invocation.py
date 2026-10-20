@@ -137,6 +137,7 @@ def permission_denial(
     wait_for_approval: bool = False,
     noninteractive: bool = False,
     cancel_event=None,
+    tool=None,
 ) -> Optional[str]:
     """Return a refusal reason, resolving the current mode at call time.
 
@@ -151,6 +152,11 @@ def permission_denial(
         identity = current_identity()
         session_id = session_id or identity.session_id
         agent_id = agent_id or identity.agent_id
+        from agent.tools.capability_settings import tool_enabled
+        capability_scope = dict(tool=tool, agent_id=agent_id,
+                                workspace_root=getattr(agent, 'workspace_dir', None))
+        if not tool_enabled(tool_name, **capability_scope):
+            return f'Tool {tool_name} is disabled.'
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
         decision = SecurityGateway.check(mode, tool_name, arguments,
@@ -204,6 +210,8 @@ def permission_denial(
             else:
                 raise ApprovalRejectedError(f"{tool_name} 审批已过期，本轮已停止；操作未执行。")
         if decision.allowed:
+            if not tool_enabled(tool_name, **capability_scope):
+                return f'Tool {tool_name} is disabled.'
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
                 from agent.workspace.context import resolve_context
                 context = resolve_context(identity.execution_session_id or session_id, agent_id,

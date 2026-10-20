@@ -45,8 +45,10 @@ class ToolManager:
 
     def __new__(cls):
         from common.state_dir import real_state_root
+        from common.runtime_identity import current_identity
 
-        key = real_state_root()
+        workspace_root = real_state_root()
+        key = (workspace_root, current_identity().user_id or 'local-default')
         instance = cls._instances.get(key)
         if instance is not None:
             return instance
@@ -54,7 +56,7 @@ class ToolManager:
             instance = cls._instances.get(key)
             if instance is None:
                 instance = super(ToolManager, cls).__new__(cls)
-                instance.workspace_root = key
+                instance.workspace_root = workspace_root
                 instance.tool_classes = {}  # Store tool classes instead of instances
                 instance._initialized = False
                 cls._instances[key] = instance
@@ -75,6 +77,12 @@ class ToolManager:
     def __init__(self):
         # Runs on every ToolManager() call, including the ones that get a
         # cached instance back, so every field is guarded.
+        if not hasattr(self, 'capability_settings'):
+            from common.runtime_identity import current_identity
+            from agent.tools.capability_settings import CapabilitySettings
+            self.identity = current_identity()
+            self.capability_settings = CapabilitySettings(getattr(self, 'workspace_root', None), user_id=self.identity.user_id)
+            self.workspace_root = self.capability_settings.workspace_root
         if not hasattr(self, 'tool_classes'):
             self.tool_classes = {}  # Dictionary to store tool classes
         if not hasattr(self, '_mcp_registry'):
@@ -119,7 +127,7 @@ class ToolManager:
             self._embedding_provider_initialized = False
             self._embedding_provider = None
 
-    def load_tools(self, tools_dir: str = "", config_dict=None):
+    def load_tools(self, tools_dir: str = "", config_dict=None, *, load_mcp=True):
         """
         Load tools from both directory and configuration.
 
@@ -132,7 +140,8 @@ class ToolManager:
             self._load_tools_from_init()
             self._configure_tools_from_config(config_dict)
 
-        self._load_mcp_tools()
+        if load_mcp:
+            self._load_mcp_tools()
 
     def _load_tools_from_init(self) -> bool:
         """
@@ -766,6 +775,7 @@ class ToolManager:
         if tool_class:
             # Create a new instance
             tool_instance = tool_class()
+            tool_instance._capability_settings = self.capability_settings
 
             # Apply configuration if available
             if hasattr(self, 'tool_configs') and name in self.tool_configs:
@@ -789,6 +799,8 @@ class ToolManager:
         """
         result = {}
         for name, tool_class in self.tool_classes.items():
+            if not self.capability_settings.enabled('tool', name):
+                continue
             # Create a temporary instance to get schema
             temp_instance = tool_class()
             result[name] = {

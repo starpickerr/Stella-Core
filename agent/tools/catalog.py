@@ -156,9 +156,12 @@ CATALOG = [
 ]
 
 
-def build_catalog(loaded_ids):
+def build_catalog(loaded_ids, settings=None):
     """Return the public catalog. ``loaded_ids`` are tools the process can construct."""
     loaded = set(loaded_ids)
+    if settings is None:
+        from agent.tools.capability_settings import CapabilitySettings
+        settings = CapabilitySettings()
     rows = []
     for item in CATALOG:
         row = {
@@ -166,6 +169,7 @@ def build_catalog(loaded_ids):
             "title": dict(item["title"]),
             "intro": dict(item["intro"]),
             "detail": dict(item["detail"]),
+            "enabled": settings.enabled('tool', item['id']),
         }
         if item["id"] in MEMORY_IDS:
             row["available"] = False
@@ -185,5 +189,5 @@ def tools_payload():
     from agent.tools.tool_manager import ToolManager
 
     manager = ToolManager()
-    manager.load_tools()
-    return {"status": "success", "tools": build_catalog(set(manager.tool_classes))}
+    manager.load_tools(load_mcp=False)
+    return {"status": "success", "tools": build_catalog(set(manager.tool_classes), manager.capability_settings)}
