@@ -62,12 +62,18 @@ SERVICE_DESCRIPTORS = [
 ]
 
 
+_SERVICES: dict[str, AgentHubService] = {}
+
+
 def _service(invoke_params: dict[str, Any]) -> AgentHubService:
     handle = invoke_params.get("_hostDataHandle") or {}
     db_path = handle.get("dbPath")
     if not db_path:
         raise RuntimeError("host data handle with dbPath required")
-    return AgentHubService(AgentHubStore(Path(db_path)))
+    key = str(Path(db_path).resolve())
+    if key not in _SERVICES:
+        _SERVICES[key] = AgentHubService(AgentHubStore(Path(key)))
+    return _SERVICES[key]
 
 
 def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +86,11 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(params) - set(allowed))
     if unknown:
         return _fail("invalid_argument", f"unknown parameters for {method}: {', '.join(unknown)}")
+    if method == "provider_start":
+        task = (invoke_params.get("_hostDataHandle") or {}).get("executionTask")
+        if not task:
+            return _fail("invalid_argument", "Core execution lease required")
+        params["task"] = dict(task)
     try:
         value = getattr(_service(invoke_params), method)(**params)
     except ProviderNotFound as exc:

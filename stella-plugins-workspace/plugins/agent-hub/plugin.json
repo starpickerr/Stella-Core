@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "stella.agent-hub",
   "name": "智能体",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "hostApi": "^1.0.0",
   "runtime": {
     "kind": "python",
@@ -11,7 +11,7 @@
   },
   "data": {
     "namespace": "stella.agent-hub",
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "migrationEntry": "backend/migrate.py"
   },
   "contributes": {

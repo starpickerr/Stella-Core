@@ -18,6 +18,8 @@ WORKSPACE_ROOT = Path("stella-plugins-workspace/plugins/agent-hub")
 @pytest.fixture(autouse=True)
 def _cleanup(monkeypatch, tmp_path):
     monkeypatch.setenv("STELLA_AGENT_HUB_PLUGIN", "1")
+    monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: tmp_path / 'hub.db')
+    monkeypatch.setattr('common.state_dir.executions_dir', lambda **_: tmp_path / 'executions')
     monkeypatch.setenv("STELLA_AGENT_HUB_PLUGIN_ROOT", str(SIBLING_ROOT.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path / "data"))
@@ -251,3 +253,21 @@ def test_apply_user_preferences_syncs_binary_paths(tmp_path, monkeypatch):
 
     selector = agent_hub_gateway.resolve_provider_selector({})
     assert selector == {"providerLocalId": "codex-app-server"}
+
+
+def test_preferences_do_not_reenable_a_disabled_provider(tmp_path, monkeypatch):
+    binary = str(tmp_path / 'codex')
+    monkeypatch.setattr(agent_hub_gateway, 'read_user_preferences', lambda **_: {'codex_binary_path': binary})
+    agent_hub_gateway.apply_user_preferences()
+    row = next(row for row in _ok('list_providers') if row['providerLocalId'] == 'codex-cli')
+    _ok('upsert_provider', provider={**row, 'enabled': False})
+    agent_hub_gateway.apply_user_preferences()
+    assert _ok('get_provider', provider_config_id=row['providerConfigId'])['enabled'] is False
+
+
+def test_absent_preferences_do_not_erase_provider_binary(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_hub_gateway, 'read_user_preferences', lambda **_: {})
+    binary = str(tmp_path / 'codex')
+    row = _ok('upsert_provider', provider={'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': binary})
+    agent_hub_gateway.apply_user_preferences()
+    assert _ok('get_provider', provider_config_id=row['providerConfigId'])['binaryPath'] == binary

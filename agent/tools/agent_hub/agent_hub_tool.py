@@ -107,21 +107,19 @@ class AgentHubTool(BaseTool):
 
     def _execution_service(self):
         from common.state_dir import executions_dir
-        from core.execution.service import ExecutionService
+        from core.execution import execution_service
 
         root = executions_dir(ensure=True)
-        return ExecutionService(db_path=root / "executions.db", work_root=root / "work")
+        return execution_service(db_path=root / "executions.db", work_root=root / "work")
 
     def _submit(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        from core.execution.artifacts import seal_artifact
-        from core.execution.workspace_lease import allocate_workspace_lease
-        from core.services import agent_hub_gateway
-
         goal = (kwargs.get("goal") or "").strip()
         if not goal:
             raise ValueError("goal is required for submit")
         task_kind = kwargs.get("task_kind") or "general.delegate"
         wall = int(kwargs.get("max_wall_time") or 180)
+        if not 5 <= wall <= 3600:
+            raise ValueError("max_wall_time must be between 5 and 3600")
         svc = self._execution_service()
         created = svc.create(
             owner_plugin_id="stella.agent-hub",
@@ -130,7 +128,22 @@ class AgentHubTool(BaseTool):
             budget={"maxWallTime": wall, "maxAttempts": 1, "maxConcurrent": 1},
             acceptance=kwargs.get("acceptance") or {},
         )
+        try:
+            return self._start_execution(svc, created, kwargs)
+        except Exception as exc:
+            eid = created["executionId"]
+            row = svc.get(eid)
+            if row["status"] in {"running", "cancel_requested"}:
+                row = svc.transition(eid, "outcome_unknown", error={"message": str(exc)})
+            elif row["status"] == "queued":
+                row = svc.transition(eid, "failed", error={"message": str(exc)})
+            return {"executionId": eid, "status": row["status"], "error": {"message": str(exc)}}
+
+    def _start_execution(self, svc, created: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+        from core.execution.workspace_lease import allocate_workspace_lease
+        from core.services import agent_hub_gateway
         eid = created["executionId"]
+        goal, task_kind = created["goal"], created["taskKind"]
         # Select provider (may raise if none ready — still return executionId queued).
         selector = {}
         if kwargs.get("provider_config_id"):
@@ -187,34 +200,7 @@ class AgentHubTool(BaseTool):
             svc.transition(eid, "failed", summary="provider start rejected", error=err)
             return {"executionId": eid, "status": "failed", "error": err, "provider": provider}
 
-        # Non-blocking contract: observe once in-process for short providers; long runs stay running.
-        try:
-            events = agent_hub_gateway.invoke_ok("provider_observe", {"execution_id": eid})
-        except Exception as exc:
-            logger.warning("[agent_hub] observe deferred: %s", exc)
-            events = []
-        terminal = next((e for e in reversed(events or []) if e.get("type") == "terminal"), None)
-        if terminal and terminal.get("status") in {"succeeded", "failed", "cancelled"}:
-            out = terminal.get("outputPath")
-            refs = []
-            if out and Path(out).is_file():
-                art = seal_artifact(
-                    store_root=Path(svc.work_root).parent / "artifacts",
-                    source_path=out,
-                    execution_id=eid,
-                )
-                refs.append(art["artifactRef"])
-                svc.attach_artifacts(eid, refs)
-            svc.transition(
-                eid,
-                terminal["status"],
-                summary=terminal.get("summary"),
-                error=terminal.get("error"),
-            )
-        elif terminal and terminal.get("status") == "outcome_unknown":
-            svc.transition(eid, "outcome_unknown", summary=terminal.get("summary"))
-        # else leave running for later status/cancel/reconcile
-        row = svc.get(eid)
+        row = self._observe_execution(svc, eid)
         return {
             "executionId": eid,
             "status": row["status"],
@@ -224,11 +210,37 @@ class AgentHubTool(BaseTool):
             "artifactRefs": row.get("artifactRefs") or [],
         }
 
+    def _observe_execution(self, svc, execution_id: str) -> dict[str, Any]:
+        from core.execution.artifacts import seal_artifact
+        from core.execution.store import TERMINAL
+        from core.services import agent_hub_gateway
+
+        row = svc.get(execution_id)
+        if row["status"] in TERMINAL:
+            return row
+        try:
+            events = agent_hub_gateway.invoke_ok("provider_observe", {"execution_id": execution_id})
+        except Exception:
+            return row
+        terminal = next((event for event in reversed(events or []) if event.get("type") == "terminal"), None)
+        if not terminal or terminal.get("status") not in {*TERMINAL, "outcome_unknown"}:
+            return row
+        if terminal.get("outputPath"):
+            output = Path(terminal["outputPath"]).resolve()
+            workspace = Path(row["workspacePath"]).resolve()
+            if not output.is_relative_to(workspace):
+                raise PermissionError("provider output escapes execution workspace")
+            artifact = seal_artifact(store_root=Path(svc.work_root).parent / "artifacts",
+                                     source_path=output, execution_id=execution_id)
+            svc.attach_artifacts(execution_id, [artifact["artifactRef"]])
+        return svc.transition(execution_id, terminal["status"],
+                              summary=terminal.get("summary"), error=terminal.get("error"))
+
     def _status(self, execution_id: str) -> dict[str, Any]:
         if not execution_id:
             raise ValueError("execution_id required")
         svc = self._execution_service()
-        row = svc.get(execution_id)
+        row = self._observe_execution(svc, execution_id)
         events = list(svc.watch(execution_id))
         mapping = None
         try:
@@ -239,7 +251,16 @@ class AgentHubTool(BaseTool):
             )
         except Exception:
             mapping = None
-        return {"execution": row, "watch": events, "external": mapping}
+        from core.execution.artifacts import resolve_artifact
+        artifacts = []
+        for ref in row.get("artifactRefs") or []:
+            artifact = resolve_artifact(store_root=Path(svc.work_root).parent / "artifacts",
+                                        artifact_ref=ref, execution_id=execution_id)
+            with Path(artifact["path"]).open("rb") as stream:
+                content = stream.read(65537)
+            artifacts.append({key: value for key, value in artifact.items() if key != "path"} |
+                             {"text": content[:65536].decode("utf-8", errors="replace"), "truncated": len(content) > 65536})
+        return {"execution": row, "watch": events, "external": mapping, "artifacts": artifacts}
 
     def _cancel(self, execution_id: str) -> dict[str, Any]:
         if not execution_id:

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess
 import threading
 from typing import Any
@@ -38,22 +36,5 @@ class ProcessSupervisor:
 
     @staticmethod
     def _stop(process: subprocess.Popen) -> None:
-        if process.poll() is not None:
-            return
-        try:
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                    capture_output=True,
-                    timeout=5,
-                    check=False,
-                )
-            else:
-                os.killpg(process.pid, signal.SIGKILL)
-        except (OSError, subprocess.TimeoutExpired, ProcessLookupError):
-            if process.poll() is None:
-                process.kill()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
+        from common.process_tree import stop_process_tree
+        stop_process_tree(process)

@@ -151,3 +151,70 @@ def test_installed_package_digest_stable_after_cache_inject(tmp_path):
     (cache / "pollute").write_text("x\n", encoding="utf-8")
     assert _sha256_tree(package) == current["digest"]
     assert verify_package_digest(package, current["digest"])
+
+
+def test_release_builder_preserves_manifest_versions(tmp_path, monkeypatch):
+    import importlib.util
+    script = Path(__file__).resolve().parents[2] / 'Stella-Plugins/scripts/build_release_catalog.py'
+    spec = importlib.util.spec_from_file_location('stella_release_builder_test', script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    (tmp_path / 'catalog').mkdir()
+    source = tmp_path / 'plugins/demo'
+    source.mkdir(parents=True)
+    manifest = json.loads(_MANIFEST)
+    manifest['version'] = '1.2.3'
+    source.joinpath('plugin.json').write_text(json.dumps(manifest))
+    monkeypatch.setattr(module, 'ROOT', tmp_path)
+    monkeypatch.setattr(module, 'DOMAINS', ('demo',))
+    monkeypatch.setenv('STELLA_PLUGIN_SIGNING_SECRET', 'test-release-secret')
+    assert module.main() == 0
+    catalog = tmp_path / 'catalog/release.json'
+    row = json.loads(catalog.read_text())['plugins'][0]
+    assert row['version'] == '1.2.3'
+    assert '1.2.3' in row['url']
+    result = fetch_and_install_from_catalog(catalog_path=catalog, plugin_id='stella.demo',
+                                            package_store=PackageStore(tmp_path / 'packages'))
+    assert result['status'] == 'installed'
+
+
+def test_desktop_source_catalog_installs_all_first_party_plugins(tmp_path, monkeypatch):
+    import importlib.util
+    script = Path('desktop/scripts/pack_signed_plugin_catalog.py').resolve()
+    spec = importlib.util.spec_from_file_location('stella_pack_catalog_test', script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resources = tmp_path / 'resources'
+    monkeypatch.setattr(module, 'RESOURCES', resources)
+    monkeypatch.setattr(module, 'PACKAGES', resources / 'plugin-packages')
+    monkeypatch.setattr(module, 'CATALOG_OUT', resources / 'plugin-catalog.json')
+    monkeypatch.setattr(module, 'SECRET_FILE', resources / 'plugin-signing.secret')
+    monkeypatch.setenv('STELLA_PLUGIN_SIGNING_SECRET', 'test-source-catalog-secret')
+    assert module.main() == 0
+    catalog = resources / 'plugin-catalog.json'
+    rows = json.loads(catalog.read_text())['plugins']
+    expected = {f'stella.{name}' for name in
+                ['bills', 'calendar', 'tasks', 'email', 'elearning', 'briefing', 'automation', 'agent-hub']}
+    assert {row['pluginId'] for row in rows} == expected
+    store = PackageStore(tmp_path / 'installed')
+    for row in rows:
+        assert fetch_and_install_from_catalog(catalog_path=catalog, plugin_id=row['pluginId'],
+                                               package_store=store)['status'] == 'installed'
+
+
+def test_desktop_management_bootstrap_adopts_all_first_party_plugins(tmp_path, monkeypatch):
+    from core.plugins.bootstrap import run_desktop_bootstrap
+    import sqlite3
+    hub_db = tmp_path / 'old-hub.db'
+    schema = Path('../Stella-Plugins/plugins/agent-hub/backend/domain/schema.sql').read_text()
+    schema = schema.replace('    agent_id TEXT,\n    access_mode TEXT,\n', '')
+    with sqlite3.connect(hub_db) as db:
+        db.executescript(schema)
+        db.execute("INSERT INTO provider_configs(provider_config_id,provider_local_id,display_name,created_at,updated_at) VALUES ('old','codex-cli','Old','now','now')")
+    monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: hub_db)
+    catalog = Path('../Stella-Plugins/catalog/official.json').resolve()
+    result = run_desktop_bootstrap(data_dir=tmp_path / 'data', catalog_path=catalog)
+    assert result['status'] == 'ok', result['failed']
+    assert 'stella.agent-hub' in result['installed']
+    with sqlite3.connect(hub_db) as db:
+        assert db.execute("SELECT agent_id, access_mode FROM provider_configs WHERE provider_config_id='old'").fetchone() == ('codex', 'cli')

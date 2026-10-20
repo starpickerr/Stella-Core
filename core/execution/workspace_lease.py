@@ -7,6 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from core.execution.paths import managed_child
+
 
 def allocate_workspace_lease(
     *,
@@ -18,7 +20,7 @@ def allocate_workspace_lease(
     root = Path(work_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     lease_id = f"wlease-{uuid.uuid4().hex[:12]}"
-    dest = (root / execution_id / attempt_id).resolve()
+    dest = managed_child(root, execution_id, attempt_id)
     dest.mkdir(parents=True, exist_ok=True)
     kind = "output_dir"
     if source_project:

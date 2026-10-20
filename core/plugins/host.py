@@ -16,6 +16,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from common.process_tree import reap_runner_session, stop_process_tree
 from core.plugins.authz import DEFAULT_AUTHZ, PluginAuthorizationStore
 from core.plugins.contract import (
     ContractError,
@@ -230,11 +231,13 @@ class PluginSession:
                 stderr=subprocess.PIPE,
                 cwd=str(Path(os.environ.get("STELLA_RUNNER_CWD") or Path.cwd())),
                 env=env,
+                start_new_session=True,
             )
             process = self._proc
             self._stderr_bytes = 0
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(process,), daemon=True)
             self._stderr_thread.start()
+            threading.Thread(target=reap_runner_session, args=(process,), daemon=True).start()
             self.generation = self.registry.next_generation(self.plugin_id)
             init = self._rpc(
                 "runtime.initialize",
@@ -493,13 +496,8 @@ class PluginSession:
         if not self._lock.acquire(timeout=2):
             self.registry.revoke(self.plugin_id, self.generation)
             process = self._proc
-            if process is not None and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=1)
+            if process is not None:
+                stop_process_tree(process, owned_session=True)
             if not self._lock.acquire(timeout=4):
                 raise PluginHostError("worker stopped but transport cleanup is still pending")
         try:
@@ -536,13 +534,7 @@ class PluginSession:
             finally:
                 self.registry.revoke(self.plugin_id, self.generation)
                 if self._proc is not None:
-                    if self._proc.poll() is None:
-                        self._proc.terminate()
-                        try:
-                            self._proc.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            self._proc.kill()
-                            self._proc.wait(timeout=5)
+                    stop_process_tree(self._proc, owned_session=True)
                     for stream in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
                         if stream:
                             stream.close()
@@ -563,13 +555,7 @@ class PluginSession:
 
     def _abort_transport(self, process, thread) -> None:
         self.registry.revoke(self.plugin_id, self.generation)
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=1)
+        stop_process_tree(process, owned_session=True)
         if thread is not None:
             thread.join(timeout=1)
         if self._stderr_thread:

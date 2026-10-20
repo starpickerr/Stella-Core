@@ -147,6 +147,12 @@ CATALOG = [
            "Navigate pages, interact with elements, and read web content.",
            "通过受控浏览器打开页面并与可见元素交互。它遵守现有权限，不会绕过登录或站点限制。",
            "Opens pages in the controlled browser and interacts with visible elements. It stays inside the existing permissions and does not bypass a login or a site restriction."),
+    _entry("agent_hub", "外部智能体", "External Agents",
+           "向已配置的外部智能体提交任务，查询进度或请求取消。",
+           "Delegate tasks to configured external agents, inspect progress, or request cancellation.",
+           "需要启用智能体插件并配置接入方式。外部调用遵守连接权限；未实现的能力会明确返回不支持。",
+           "Requires the Agent Hub plugin and a configured access mode. External calls follow connection permissions; unimplemented capabilities return unsupported."),
+
 ]
 
 

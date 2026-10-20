@@ -16,6 +16,7 @@ class ProviderNotFound(KeyError):
 class AgentHubService:
     def __init__(self, store: AgentHubStore):
         self.store = store
+        self._run_adapters = {}
 
     def list_catalog(self) -> list[dict[str, Any]]:
         return list(DEFAULT_CATALOG)
@@ -171,6 +172,7 @@ class AgentHubService:
         )
         result = adapter.start(task)
         if result.get("status") == "started" and result.get("externalRunRef"):
+            self._run_adapters[task["executionId"]] = adapter
             self.map_external_run(
                 {
                     "executionId": task["executionId"],
@@ -189,12 +191,9 @@ class AgentHubService:
         mapping = self.get_external_run(execution_id)
         if mapping is None or not mapping.get("externalRunRef"):
             raise ProviderNotFound(execution_id)
-        row = self.get_provider(mapping["providerConfigId"])
-        adapter = get_adapter(
-            row["providerLocalId"],
-            binary_path=row.get("binaryPath"),
-            settings=row.get("settings") or {},
-        )
+        adapter = self._run_adapters.get(execution_id)
+        if adapter is None:
+            return [{"type": "terminal", "status": "outcome_unknown", "error": {"code": "run_not_attached"}}]
         events = list(adapter.observe(mapping["externalRunRef"]))
         terminal = next((e for e in reversed(events) if e.get("type") == "terminal"), None)
         if terminal and terminal.get("status") in {"succeeded", "failed", "cancelled", "outcome_unknown"}:
@@ -205,12 +204,10 @@ class AgentHubService:
         mapping = self.get_external_run(execution_id)
         if mapping is None or not mapping.get("externalRunRef"):
             return {"status": "unknown"}
-        row = self.get_provider(mapping["providerConfigId"])
-        adapter = get_adapter(
-            row["providerLocalId"],
-            binary_path=row.get("binaryPath"),
-            settings=row.get("settings") or {},
-        )
+        adapter = self._run_adapters.get(execution_id)
+        if adapter is None:
+            return {"status": "unsupported", "reason": "run_not_attached"}
         result = adapter.request_cancel(mapping["externalRunRef"])
-        self.map_external_run({**mapping, "status": "cancel_requested"})
+        if result.get("status") == "acknowledged":
+            self.map_external_run({**mapping, "status": "cancel_requested"})
         return result

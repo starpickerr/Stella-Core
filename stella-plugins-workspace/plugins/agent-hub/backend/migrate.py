@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from domain.store import AgentHubStore
+
 SCHEMA_VERSION = 2
 _SCHEMA = Path(__file__).resolve().parent / "domain" / "schema.sql"
 REQUIRED_TABLES = frozenset({"provider_configs", "external_runs"})
@@ -19,13 +21,7 @@ def _db_path(data_handle: dict[str, Any]) -> Path | None:
 def apply(migration_id: str, data_handle: dict[str, Any]) -> dict[str, Any]:
     path = _db_path(data_handle)
     if path is not None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(str(path), timeout=10)
-        try:
-            db.executescript(_SCHEMA.read_text(encoding="utf-8"))
-            db.commit()
-        finally:
-            db.close()
+        AgentHubStore(path)
     return {"migrationId": migration_id, "applied": True, "schemaVersion": SCHEMA_VERSION}
 
 

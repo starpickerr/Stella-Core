@@ -8,6 +8,7 @@ bounded dry start when binary is present; network auth failures are SKIP.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def _row(check: str, result: str, detail: str = "") -> dict:
     return {"check": check, "result": result, "detail": detail}
 
 
+@pytest.mark.skipif(os.environ.get("STELLA_RUN_LOCAL_PROVIDER_MATRIX") != "1", reason="real external agents require an explicit local acceptance run")
 @pytest.mark.skipif(sys.platform != "darwin", reason="H1 acceptance platform is macOS")
 def test_local_provider_matrix(tmp_path):
     rows = []
@@ -84,22 +86,33 @@ def test_local_provider_matrix(tmp_path):
             continue
 
         # Bounded start in isolated workspace — reject/auth issues => SKIP.
-        work = tmp_path / "work" / local_id
-        work.mkdir(parents=True)
+        from common.state_dir import executions_dir
+        from core.execution import execution_service
+        from core.execution.workspace_lease import allocate_workspace_lease
+        root = executions_dir(ensure=True)
+        service = execution_service(db_path=root / "executions.db", work_root=root / "work")
+        execution = service.create(owner_plugin_id="stella.agent-hub", task_kind="local.acceptance",
+            goal="Reply with the single word pong and stop.",
+            budget={"maxWallTime": 45, "maxAttempts": 1, "maxConcurrent": 1})
+        eid = execution["executionId"]
+        lease = allocate_workspace_lease(work_root=root / "work", execution_id=eid,
+                                        attempt_id=execution["attemptId"])
+        service.attach_workspace(eid, lease["workspaceLeaseRef"], lease["path"])
+        service.transition(eid, "running")
         start = _ok(
             "provider_start",
             provider_config_id=cfg["providerConfigId"],
             task={
-                "executionId": f"matrix-{local_id}",
-                "attemptId": "att-matrix",
+                "executionId": eid,
+                "attemptId": execution["attemptId"],
                 "goal": "Reply with the single word pong and stop.",
-                "workspacePath": str(work),
+                "workspacePath": lease["path"],
                 "budget": {"maxWallTime": 45, "maxAttempts": 1, "maxConcurrent": 1},
             },
         )
         if start.get("status") == "started":
             rows.append(_row(f"start:{local_id}", "PASS", start.get("externalRunRef") or ""))
-            events = _ok("provider_observe", execution_id=f"matrix-{local_id}")
+            events = _ok("provider_observe", execution_id=eid)
             terminal = next((e for e in reversed(events) if e.get("type") == "terminal"), None)
             if terminal:
                 rows.append(
@@ -109,13 +122,15 @@ def test_local_provider_matrix(tmp_path):
                         terminal.get("status") or "",
                     )
                 )
+            elif any(event.get("type") == "progress" for event in events):
+                rows.append(_row(f"observe:{local_id}", "PASS", "running; nonblocking task accepted"))
             else:
-                rows.append(_row(f"observe:{local_id}", "FAIL", "no terminal event"))
-            cancel = _ok("provider_cancel", execution_id=f"matrix-{local_id}")
+                rows.append(_row(f"observe:{local_id}", "FAIL", "no observable state"))
+            cancel = _ok("provider_cancel", execution_id=eid)
             rows.append(
                 _row(
                     f"cancel:{local_id}",
-                    "PASS" if cancel.get("status") in {"acknowledged", "unsupported", "unknown"} else "FAIL",
+                    "PASS" if cancel.get("status") in {"acknowledged", "unsupported", "unknown", "already_finished"} else "FAIL",
                     str(cancel.get("status")),
                 )
             )

@@ -79,7 +79,8 @@ def read_user_preferences(*, owner_user_id: str = "") -> dict[str, Any]:
 def apply_user_preferences(**kwargs: Any) -> dict[str, Any]:
     """Ensure default providers exist and sync binary paths / enablement from settings."""
     values = read_user_preferences(owner_user_id=str(kwargs.get("owner_user_id") or ""))
-    invoke_ok("ensure_defaults", **kwargs)
+    created = invoke_ok("ensure_defaults", **kwargs)
+    new_ids = {row["providerConfigId"] for row in created}
     providers = invoke_ok("list_providers", {}, **kwargs) or []
     updated: list[dict[str, Any]] = []
     for row in providers:
@@ -87,17 +88,18 @@ def apply_user_preferences(**kwargs: Any) -> dict[str, Any]:
         key = _BINARY_KEYS.get(local_id or "")
         if not key:
             continue
-        path = str(values.get(key) or "").strip() or None
+        path = (str(values.get(key) or "").strip() or None) if key in values else row.get("binaryPath")
+        enabled = bool(row.get("enabled")) or (row["providerConfigId"] in new_ids and bool(path))
         desired = {
             "providerConfigId": row["providerConfigId"],
             "providerLocalId": local_id,
             "displayName": row.get("displayName"),
             "binaryPath": path,
-            "enabled": True,
+            "enabled": enabled,
             "settings": row.get("settings") or {},
             "lastProbe": row.get("lastProbe"),
         }
-        if row.get("binaryPath") == path and row.get("enabled") is True:
+        if row.get("binaryPath") == path and bool(row.get("enabled")) == enabled:
             continue
         updated.append(invoke_ok("upsert_provider", {"provider": desired}, **kwargs))
     return {
@@ -184,6 +186,25 @@ def invoke_agent_hub(
         raise RuntimeError("stella.agent-hub plugin is disabled")
     if method not in AGENT_HUB_METHOD_PARAMS:
         raise ValueError(f"unknown agent-hub plugin method: {method}")
+    execution = None
+    if method == "provider_start":
+        from common.state_dir import executions_dir
+        from core.execution import execution_service
+        root = executions_dir(ensure=True)
+        service = execution_service(db_path=root / "executions.db", work_root=root / "work")
+        task = params.get("task") or {}
+        try:
+            execution = service.get(task.get("executionId") or "")
+        except KeyError as exc:
+            raise PermissionError("provider start requires a Core-owned execution lease") from exc
+        if (execution["ownerPluginId"] != PLUGIN_ID or execution["status"] != "running"
+                or not execution.get("workspaceLeaseRef") or not execution.get("workspacePath")
+                or task.get("workspacePath") != execution["workspacePath"]
+                or task.get("attemptId") != execution["attemptId"]):
+            raise PermissionError("provider task does not match the Core execution lease")
+        task = {**task, "goal": execution["goal"], "budget": execution["budget"],
+                "workspaceLeaseRef": execution["workspaceLeaseRef"], "acceptance": execution["acceptance"]}
+        params = {**params, "task": task}
     session = ensure_agent_hub_session()
     write = method in AGENT_HUB_WRITE_METHODS
     path = Path(db_path) if db_path else agent_hub_db_path()
@@ -193,6 +214,8 @@ def invoke_agent_hub(
         "agentId": agent_id,
         "userId": owner_user_id or "",
     }
+    if execution is not None:
+        handle["executionTask"] = dict(params["task"])
     payload = dict(params)
     idem = payload.pop("idempotencyKey", None)
     return session.invoke_contract(
