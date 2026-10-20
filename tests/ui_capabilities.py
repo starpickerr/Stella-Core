@@ -15,8 +15,22 @@ fail_mcp = [False]
 empty_mcp = [False]
 plugin_enabled = [True]
 plugin_posts = []
+tool_enabled = {'read': True, 'memory_search': True}
+mcp_enabled = {'Documents': True, 'Offline': True}
+tool_posts = []
+mcp_posts = []
+fail_tool_save = [False]
+fail_mcp_save = [False]
+fail_plugin_save = [False]
+hold_tool = [False]
+hold_mcp = [False]
+hold_plugin = [False]
+pending_tool_routes = []
+pending_mcp_routes = []
+pending_plugin_routes = []
 skill_posts = []
 hold_skill = [False]
+fail_skill_save = [False]
 pending_skill_routes = []
 plan_requests = []
 updated = [False]
@@ -26,6 +40,13 @@ AGENT_PACKAGE = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace/
 AGENT_MANIFEST = json.loads((AGENT_PACKAGE / 'plugin.json').read_text())
 INTRO = '检索 Agent 的长期记忆；启用知识库时也可检索知识内容。这份介绍需要完整显示，不能被两行省略号截断。'
 DETAIL = '只在带有记忆能力的对话中可用。它可以查找记忆和已启用的知识内容。'
+
+
+def mcp_row(name):
+    return {'name': name, 'transport': 'stdio' if name == 'Documents' else 'sse',
+            'enabled': mcp_enabled[name],
+            'state': ('ready' if name == 'Documents' else 'failed') if mcp_enabled[name] else 'disabled',
+            'tools': [{'name':'search_docs','description':'搜索文档内容'}] if name == 'Documents' and mcp_enabled[name] else []}
 
 
 def backend(route):
@@ -50,6 +71,15 @@ def backend(route):
     elif path == '/api/models':
         data.update(providers=[{'id': 'test', 'configured': True, 'label': 'Test'}],
                     capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
+    elif path == '/api/tools' and method == 'POST':
+        tool_posts.append(body)
+        if fail_tool_save[0]:
+            data = {'status':'error','message':'工具开关保存失败'}
+        else:
+            tool_enabled[body['id']] = body['enabled']
+            if hold_tool[0]:
+                pending_tool_routes.append(route)
+                return
     elif path == '/api/tools':
         if fail_tools[0]:
             data = {'status': 'error', 'message': '工具目录加载失败'}
@@ -60,6 +90,7 @@ def backend(route):
                 'intro': {'zh': '读取工作区中的文件内容。', 'en': 'Read workspace files.'},
                 'detail': {'zh': '只能读取当前工作区里已有的文件。', 'en': 'Reads files in the workspace.'},
                 'available': True,
+                'enabled': tool_enabled['read'],
                 'reason': {'zh': '', 'en': ''},
             }, {
                 'id': 'memory_search',
@@ -67,6 +98,7 @@ def backend(route):
                 'intro': {'zh': INTRO, 'en': 'Search the agent memory. This introduction must stay complete.'},
                 'detail': {'zh': DETAIL, 'en': 'Available only in a conversation with memory.'},
                 'available': False,
+                'enabled': tool_enabled['memory_search'],
                 'reason': {'zh': '仅在启用记忆的对话中可用。', 'en': 'Available only in a conversation with memory.'},
             }]
     elif path == '/api/briefings/elearning':
@@ -79,14 +111,22 @@ def backend(route):
     elif path == '/api/email/accounts' or path.startswith('/api/briefings'):
         data.update(rules=[], default_text='', sources=[], items=[], settings={'mailboxes': []},
                     actions={}, authorizations=[])
+    elif path == '/api/mcp' and method == 'POST':
+        mcp_posts.append(body)
+        if fail_mcp_save[0]:
+            data = {'status':'error','message':'MCP 开关保存失败'}
+        else:
+            mcp_enabled[body['name']] = body['enabled']
+            data['server'] = mcp_row(body['name'])
+            if hold_mcp[0]:
+                pending_mcp_routes.append(route)
+                return
     elif path == '/api/mcp' and fail_mcp[0]:
         data = {'status': 'error', 'message': 'MCP 目录加载失败'}
     elif path == '/api/mcp' and empty_mcp[0]:
         data['servers'] = []
     elif path == '/api/mcp':
-        data['servers'] = [{'name': 'Documents', 'transport': 'stdio', 'state': 'ready',
-                            'tools': [{'name': 'search_docs', 'description': '搜索文档内容'}]},
-                           {'name': 'Offline', 'transport': 'sse', 'state': 'failed', 'tools': []}]
+        data['servers'] = [mcp_row('Documents'), mcp_row('Offline')]
     elif path == '/api/plugins/manage':
         plugin_posts.append(body)
         if body['action'] == 'update':
@@ -95,7 +135,13 @@ def backend(route):
             else:
                 updated[0] = True
         else:
-            plugin_enabled[0] = body['action'] == 'enable'
+            if fail_plugin_save[0]:
+                data = {'status':'error','message':'插件开关保存失败'}
+            else:
+                plugin_enabled[0] = body['action'] == 'enable'
+                if hold_plugin[0]:
+                    pending_plugin_routes.append(route)
+                    return
         data['result'] = {}
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.briefing', 'userId': 'test', 'name': '简报',
@@ -119,7 +165,9 @@ def backend(route):
         data['result'] = []
     elif path == '/api/skills' and method == 'POST':
         skill_posts.append(body)
-        if hold_skill[0]:
+        if fail_skill_save[0]:
+            data = {'status':'error','message':'技能开关保存失败'}
+        elif hold_skill[0]:
             pending_skill_routes.append(route)
             return
     elif path == '/api/skills':
@@ -164,6 +212,7 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('tab', name='插件', exact=True)).to_have_attribute('aria-selected', 'true')
         expect(page.get_by_role('article', name='read')).to_have_count(0)
         expect(page.get_by_role('article', name='简报')).to_be_visible()
+        expect(page.get_by_role('article', name='简报').get_by_role('switch', name='简报', exact=True)).to_be_checked()
         panel = page.get_by_role('tabpanel')
         heading_box = panel.get_by_role('heading', name='插件', exact=True).bounding_box()
         refresh_box = panel.get_by_role('button', name='刷新', exact=True).bounding_box()
@@ -194,7 +243,28 @@ with sync_playwright() as playwright:
         expect(memory.get_by_text(INTRO)).to_be_visible()
         expect(memory.get_by_text('不可用', exact=True)).to_be_visible()
         expect(page.get_by_role('article', name='read').get_by_text('可用', exact=True)).to_be_visible()
-        expect(memory.get_by_role('switch')).to_have_count(0)
+        expect(memory.get_by_role('switch')).to_be_checked()
+        read = page.get_by_role('article', name='read')
+        hold_tool[0] = True
+        read.get_by_role('switch').click()
+        expect(read.get_by_role('switch')).to_be_disabled()
+        expect(page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True)).to_be_disabled()
+        pending_tool_routes.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'status':'success'}),
+            headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+        hold_tool[0] = False
+        expect(read.get_by_role('switch')).to_be_enabled()
+        expect(read.get_by_role('switch')).not_to_be_checked()
+        assert tool_posts[-1] == {'id':'read','enabled':False}
+        page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True).click()
+        expect(read.get_by_role('switch')).not_to_be_checked()
+        fail_tool_save[0] = True
+        read.get_by_role('switch').click()
+        expect(page.get_by_role('alert')).to_contain_text('工具开关保存失败')
+        expect(read.get_by_role('switch')).not_to_be_checked()
+        fail_tool_save[0] = False
+        read.get_by_role('switch').focus()
+        page.keyboard.press('Space')
+        expect(read.get_by_role('switch')).to_be_checked()
         expect(page.get_by_text('搜索记忆', exact=True)).to_have_count(0)
         expect(page.get_by_text('读取文件', exact=True)).to_have_count(0)
         expect(page.get_by_text('查看详情')).to_have_count(0)
@@ -206,6 +276,7 @@ with sync_playwright() as playwright:
         expect(memory.get_by_text(DETAIL)).to_have_count(0)
         expect(memory.get_by_role('button', name='适用说明')).to_have_count(0)
         assert skill_posts == []
+        page.screenshot(path='/tmp/stella-capability-switches-tools.png', full_page=True, animations='disabled')
 
         page.goto(test_url + '/#/skills/tools/memory_search', wait_until='networkidle')
         expect(page).to_have_url(test_url + '/#/skills')
@@ -235,16 +306,62 @@ with sync_playwright() as playwright:
         expect(demo.get_by_role('switch')).not_to_be_checked()
         assert skill_posts and skill_posts[-1]['action'] == 'close'
         assert skill_posts[-1]['name'] == 'demo-skill'
+        fail_skill_save[0] = True
+        demo.get_by_role('switch').click()
+        expect(page.get_by_role('alert')).to_contain_text('技能开关保存失败')
+        expect(demo.get_by_role('switch')).not_to_be_checked()
+        fail_skill_save[0] = False
+        demo.get_by_role('switch').click()
+        expect(demo.get_by_role('switch')).to_be_checked()
+        page.screenshot(path='/tmp/stella-capability-switches-skills.png', full_page=True, animations='disabled')
 
         page.get_by_role('tab', name='插件', exact=True).click()
         plugin = page.get_by_role('article', name='简报')
-        plugin.get_by_role('button', name='停用', exact=True).click()
-        expect(plugin.get_by_role('button', name='启用', exact=True)).to_be_visible()
-        assert plugin_posts[-1] == {'action': 'disable', 'pluginId': 'stella.briefing'}
-        plugin.get_by_role('button', name='启用', exact=True).click()
-        expect(plugin.get_by_role('button', name='停用', exact=True)).to_be_visible()
+        hold_plugin[0] = True
+        plugin.get_by_role('switch').click()
+        expect(plugin.get_by_role('switch')).to_be_disabled()
+        expect(page.get_by_role('tabpanel').get_by_role('button', name='刷新', exact=True)).to_be_disabled()
+        pending_plugin_routes.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'status':'success','result':{}}),
+            headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+        hold_plugin[0] = False
+        expect(plugin.get_by_role('switch')).to_be_enabled()
+        expect(plugin.get_by_role('switch')).not_to_be_checked()
+        assert plugin_posts[-1] == {'action':'disable','pluginId':'stella.briefing'}
+        expect(plugin.get_by_role('button', name='启用', exact=True)).to_have_count(0)
+        expect(plugin.get_by_role('button', name='停用', exact=True)).to_have_count(0)
+        fail_plugin_save[0] = True
+        plugin.get_by_role('switch').click()
+        expect(page.get_by_role('alert')).to_contain_text('插件开关保存失败')
+        expect(plugin.get_by_role('switch')).not_to_be_checked()
+        fail_plugin_save[0] = False
+        plugin.get_by_role('switch').focus()
+        page.keyboard.press('Space')
+        expect(plugin.get_by_role('switch')).to_be_checked()
         page.get_by_role('tab', name='MCP', exact=True).click()
         mcp_section = page.locator('section').filter(has=page.get_by_role('heading', name='MCP', exact=True))
+        docs = page.get_by_role('article', name='Documents')
+        expect(docs.get_by_role('switch')).to_be_checked()
+        hold_mcp[0] = True
+        docs.get_by_role('switch').click()
+        expect(docs.get_by_role('switch')).to_be_disabled()
+        expect(mcp_section.get_by_role('button', name='刷新', exact=True)).to_be_disabled()
+        pending_mcp_routes.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'status':'success','server':mcp_row('Documents')}),
+            headers={'Access-Control-Allow-Origin':test_url,'Access-Control-Allow-Credentials':'true'})
+        hold_mcp[0] = False
+        expect(docs.get_by_role('switch')).to_be_enabled()
+        expect(docs.get_by_role('switch')).not_to_be_checked()
+        assert mcp_posts[-1] == {'name':'Documents','enabled':False}
+        mcp_section.get_by_role('button', name='刷新', exact=True).click()
+        expect(docs.get_by_role('switch')).not_to_be_checked()
+        fail_mcp_save[0] = True
+        docs.get_by_role('switch').click()
+        expect(page.get_by_role('alert')).to_contain_text('MCP 开关保存失败')
+        expect(docs.get_by_role('switch')).not_to_be_checked()
+        fail_mcp_save[0] = False
+        docs.get_by_role('switch').focus()
+        page.keyboard.press('Space')
+        expect(docs.get_by_role('switch')).to_be_checked()
+
         fail_mcp[0] = True
         mcp_section.get_by_role('button', name='刷新', exact=True).click()
         expect(mcp_section.get_by_role('alert')).to_contain_text('MCP 目录加载失败')
@@ -330,6 +447,6 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('需要更新 Core', exact=True)).to_be_visible()
         page.screenshot(path='/tmp/stella-about-updates.png', full_page=True)
         assert errors == [], errors
-        print('PASS: horizontal capability tabs, plugin actions, MCP tools/error/retry/empty, legacy routes, nested briefing settings, desktop/narrow layouts')
+        print('PASS: uniform plugin/tool/skill/MCP switches, persisted intent, save errors, busy guards, keyboard, desktop/narrow layouts')
     finally:
         browser.close()

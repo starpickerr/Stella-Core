@@ -40,6 +40,11 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [toolsError, setToolsError] = useState('')
   const [skillsError, setSkillsError] = useState('')
   const [skillBusy, setSkillBusy] = useState(false)
+  const [toolBusy, setToolBusy] = useState<string | null>(null)
+  const [mcpBusy, setMcpBusy] = useState<string | null>(null)
+  const [toolSaveError, setToolSaveError] = useState('')
+  const [skillSaveError, setSkillSaveError] = useState('')
+  const [mcpSaveError, setMcpSaveError] = useState('')
   const [toolsLoading, setToolsLoading] = useState(true)
   const [skillsLoading, setSkillsLoading] = useState(true)
   const [mcpLoading, setMcpLoading] = useState(true)
@@ -81,13 +86,42 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
     if (skillBusy) return
     setSkillBusy(true)
+    setSkillSaveError('')
     setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled } : item)))
     try {
       const res = await apiClient.toggleSkill(skill.name, enabled ? 'open' : 'close')
-      if (res.status !== 'success') throw new Error()
-    } catch {
+      if (res.status !== 'success') throw new Error(res.message || t('capability_save_error'))
+    } catch (err) {
+      setSkillSaveError(err instanceof Error ? err.message : t('capability_save_error'))
       setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled: !enabled } : item)))
     } finally { setSkillBusy(false) }
+  }
+
+  const toggleTool = async (tool: ToolInfo, enabled: boolean) => {
+    if (toolBusy || toolsLoading) return
+    setToolBusy(tool.id); setToolSaveError('')
+    setTools(prev => prev.map(item => item.id === tool.id ? { ...item, enabled } : item))
+    try {
+      const result = await apiClient.toggleTool(tool.id, enabled)
+      if (result.status !== 'success') throw new Error(result.message || t('capability_save_error'))
+    } catch (err) {
+      setTools(prev => prev.map(item => item.id === tool.id ? { ...item, enabled: tool.enabled } : item))
+      setToolSaveError(err instanceof Error ? err.message : t('capability_save_error'))
+    } finally { setToolBusy(null) }
+  }
+
+  const toggleMcp = async (server: McpServerInfo, enabled: boolean) => {
+    if (mcpBusy || mcpLoading) return
+    setMcpBusy(server.name); setMcpSaveError('')
+    setServers(prev => prev.map(item => item.name === server.name ? { ...item, enabled } : item))
+    try {
+      const result = await apiClient.toggleMcpServer(server.name, enabled)
+      if (result.status !== 'success') throw new Error(result.message || t('capability_save_error'))
+      setServers(prev => prev.map(item => item.name === server.name ? result.server : item))
+    } catch (err) {
+      setServers(prev => prev.map(item => item.name === server.name ? server : item))
+      setMcpSaveError(err instanceof Error ? err.message : t('capability_save_error'))
+    } finally { setMcpBusy(null) }
   }
 
   return (
@@ -127,18 +161,20 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
       <div className="flex-1 overflow-y-auto" data-stella-scroll>
         <div role="tabpanel" id={`capability-panel-${activeTab}`} aria-labelledby={`capability-tab-${activeTab}`} tabIndex={0} className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
             <div className="space-y-10">
-              {activeTab === 'tools' && <Section title={t('tools_section_title')} count={tools.length} loading={toolsLoading} onRefresh={() => void loadTools()}>
+              {activeTab === 'tools' && <Section title={t('tools_section_title')} count={tools.length} loading={toolsLoading} refreshDisabled={!!toolBusy} onRefresh={() => void loadTools()}>
+                {toolSaveError && <p role="alert" className="text-sm text-danger">{toolSaveError}</p>}
                 {toolsError ? <LoadError text={toolsError || t('capability_tools_error')} onRetry={() => void loadTools()} /> : tools.length === 0 ? (
                   <Empty text={t('tools_empty')} />
                 ) : (
                   <Grid>
                     {tools.map((item) => (
-                      <ToolCard key={item.id} tool={item} />
+                      <ToolCard key={item.id} tool={item} disabled={!!toolBusy} onToggle={enabled => void toggleTool(item, enabled)} />
                     ))}
                   </Grid>
                 )}
               </Section>}
               {activeTab === 'skills' && <Section title={t('skills_section_title')} count={skills.length} loading={skillsLoading} refreshDisabled={skillBusy} onRefresh={() => void loadSkills()}>
+                {skillSaveError && <p role="alert" className="text-sm text-danger">{skillSaveError}</p>}
                 {skillsError ? <LoadError text={skillsError || t('capability_skills_error')} onRetry={() => void loadSkills()} /> : skills.length === 0 ? (
                   <Empty text={t('skills_empty')} />
                 ) : (
@@ -161,17 +197,22 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
               {activeTab === 'plugins' && <section id="plugins" className="space-y-3 scroll-mt-4">
                 <PluginCapabilities baseUrl={baseUrl} />
               </section>}
-              {activeTab === 'mcp' && <Section title="MCP" count={servers.length} loading={mcpLoading} onRefresh={() => void loadMcp()}>
+              {activeTab === 'mcp' && <Section title="MCP" count={servers.length} loading={mcpLoading} refreshDisabled={!!mcpBusy} onRefresh={() => void loadMcp()}>
+                {mcpSaveError && <p role="alert" className="text-sm text-danger">{mcpSaveError}</p>}
                 {mcpError ? <LoadError text={mcpError} onRetry={() => void loadMcp()} /> : !servers.length ? (
                   <Empty text={t('capability_mcp_empty')} />
                 ) : <Grid>{servers.map(server => <Card key={server.name} label={server.name}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-content break-all">{server.name}</h3>
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="min-w-0 text-sm font-semibold text-content break-all">{server.name}</h3>
+                    <Toggle label={server.name} checked={server.enabled} disabled={!!mcpBusy}
+                      onChange={enabled => void toggleMcp(server, enabled)} />
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-content-tertiary">{server.transport}</p>
                     <span className={`text-xs ${server.state === 'failed' ? 'text-danger' : 'text-content-secondary'}`}>
-                      {t(`capability_mcp_${server.state}`)}
+                      {t(`capability_mcp_${server.enabled ? server.state : 'disabled'}`)}
                     </span>
                   </div>
-                  <p className="text-xs text-content-tertiary">{server.transport}</p>
                   <button type="button" aria-expanded={openServer === server.name} aria-controls={`mcp-tools-${server.name}`}
                     onClick={() => setOpenServer(openServer === server.name ? '' : server.name)}
                     className="inline-flex items-center gap-1 self-start text-xs text-content-secondary">
@@ -193,13 +234,14 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   )
 }
 
-const ToolCard: React.FC<{ tool: ToolInfo }> = ({ tool }) => (
+const ToolCard: React.FC<{ tool: ToolInfo; disabled: boolean; onToggle: (enabled: boolean) => void }> = ({ tool, disabled, onToggle }) => (
   <Card label={tool.id}>
     <div className="flex items-start justify-between gap-3">
       <h3 className="font-mono text-[13px] font-semibold text-content break-all">{tool.id}</h3>
-      <span className="text-xs text-content-tertiary shrink-0">{t(tool.available ? 'capability_tool_available' : 'capability_tool_unavailable')}</span>
+      <Toggle label={tool.id} checked={tool.enabled} disabled={disabled} onChange={onToggle} />
     </div>
     <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
+    <span className="text-xs text-content-tertiary">{t(!tool.enabled ? 'capability_disabled' : tool.available ? 'capability_tool_available' : 'capability_tool_unavailable')}</span>
   </Card>
 )
 

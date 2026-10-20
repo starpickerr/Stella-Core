@@ -635,6 +635,7 @@ export interface LocalizedCopy {
 
 export interface ToolInfo {
   id: string
+  enabled: boolean
   title: LocalizedCopy
   intro: LocalizedCopy
   detail: LocalizedCopy
@@ -1159,6 +1160,7 @@ export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_u
 
 export interface McpServerInfo {
   name: string
+  enabled: boolean
   transport: string
   state: string
   tools: { name: string; description: string }[]

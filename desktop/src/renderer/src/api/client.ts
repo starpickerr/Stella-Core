@@ -673,6 +673,14 @@ class ApiClient {
     return data.servers
   }
 
+  async toggleTool(id: string, enabled: boolean): Promise<ApiResult> {
+    return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ id, enabled }) })
+  }
+
+  async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {
+    return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, enabled }) })
+  }
+
   async getSkills(): Promise<SkillInfo[]> {
     const data = await this.request<{ status: string; skills?: SkillInfo[]; message?: string }>('/api/skills')
     if (data.status !== 'success' || !Array.isArray(data.skills)) throw new Error(data.message || 'Could not load skills')
