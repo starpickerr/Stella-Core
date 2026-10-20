@@ -5943,6 +5943,23 @@ class FeishuRegisterHandler:
 
 
 class ToolsHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.tools.catalog import CATALOG
+            from agent.tools.capability_settings import CapabilitySettings
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) != {'id', 'enabled'}:
+                raise ValueError('id and enabled are required')
+            if body['id'] not in {row['id'] for row in CATALOG} or type(body['enabled']) is not bool:
+                raise ValueError('unknown tool or invalid enabled value')
+            CapabilitySettings().set_enabled('tool', body['id'], body['enabled'])
+            return json.dumps({'status': 'success', **body})
+        except Exception as exc:
+            logger.warning('[Capabilities] Tool setting rejected: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)})
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -5955,6 +5972,23 @@ class ToolsHandler:
 
 
 class McpCatalogHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.tools.tool_manager import ToolManager
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) != {'name', 'enabled'}:
+                raise ValueError('name and enabled are required')
+            if not isinstance(body['name'], str) or type(body['enabled']) is not bool:
+                raise ValueError('invalid MCP enablement input')
+            ToolManager().set_mcp_enabled(body['name'], body['enabled'])
+            server = next(row for row in ToolManager().mcp_catalog() if row['name'] == body['name'])
+            return json.dumps({'status': 'success', **body, 'server': server})
+        except Exception as exc:
+            logger.warning('[Capabilities] MCP setting rejected: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)})
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')

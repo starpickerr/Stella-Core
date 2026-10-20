@@ -28,7 +28,17 @@ class McpTool(BaseTool):
         self.description = tool_schema.get("description", "")
         self.params = tool_schema.get("inputSchema", {})
 
+    def is_available(self):
+        from agent.tools.capability_settings import tool_enabled
+        check = getattr(self, '_admission_check', None)
+        return tool_enabled(self.name, tool=self) and (check is None or check())
+
     def execute(self, params: dict) -> ToolResult:
+        try:
+            if not self.is_available():
+                return ToolResult.fail('MCP server is disabled or this connection was replaced.')
+        except Exception:
+            return ToolResult.fail('Cannot resolve MCP enablement; the tool did not run.')
         if self.is_cancelled():
             return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")

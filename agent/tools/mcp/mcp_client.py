@@ -94,6 +94,8 @@ class McpClient:
           SSE:             {"name": "my-api",    "type": "sse",   "url": "http://localhost:8000/sse"}
           streamable-http: {"name": "pubmed",    "type": "streamable-http", "url": "https://x/mcp"}
         """
+        self._lifecycle_lock = threading.RLock()
+        self._closed = False
         self.config = config
         self.name: str = config.get("name", "unknown")
         raw_transport: str = config.get("type", "stdio")
@@ -144,6 +146,8 @@ class McpClient:
 
     def initialize(self) -> bool:
         """Connect and perform the MCP handshake. Returns True on success."""
+        if self._closed:
+            return False
         try:
             if self.transport == "stdio":
                 return self._init_stdio()
@@ -192,7 +196,12 @@ class McpClient:
             return f"Error: {e}"
 
     def shutdown(self):
-        """Close the connection / terminate the child process."""
+        """A closed generation cannot reconnect or spawn another process."""
+        with self._lifecycle_lock:
+            self._closed = True
+            self._shutdown_connection()
+
+    def _shutdown_connection(self):
         if self._proc is not None:
             try:
                 self._proc.stdin.close()
@@ -241,15 +250,18 @@ class McpClient:
         args = self.config.get("args", [])
         env = self._build_stdio_env(self.config.get("env", None))
 
-        self._proc = subprocess.Popen(
-            [command] + list(args),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            env=env,
-        )
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            self._proc = subprocess.Popen(
+                [command] + list(args),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                env=env,
+            )
         logger.debug(f"[MCP:{self.name}] stdio process started (pid={self._proc.pid})")
 
         threading.Thread(
@@ -830,19 +842,11 @@ class McpClient:
 
 
 class McpClientRegistry:
-    """Global singleton managing the lifecycle of all MCP Server clients."""
+    """Clients owned by one ToolManager, never shared across workspaces/users."""
 
-    _instance = None
-    _instance_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._instance_lock:
-            if cls._instance is None:
-                obj = super().__new__(cls)
-                obj._clients: dict[str, McpClient] = {}
-                obj._registry_lock = threading.Lock()
-                cls._instance = obj
-        return cls._instance
+    def __init__(self):
+        self._clients: dict[str, McpClient] = {}
+        self._registry_lock = threading.Lock()
 
     def start_all(self, configs: list) -> None:
         """Initialize McpClient for each config entry; skip failures with a warning."""

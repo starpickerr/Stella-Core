@@ -92,7 +92,11 @@ class ToolManager:
         if not hasattr(self, '_mcp_lock'):
             # Guards _mcp_loaded check-then-set so concurrent callers
             # don't trigger duplicate background loaders.
-            self._mcp_lock = threading.Lock()
+            self._mcp_lock = threading.RLock()
+        if not hasattr(self, '_mcp_pending_clients'):
+            self._mcp_pending_clients = {}
+        if not hasattr(self, '_mcp_generations'):
+            self._mcp_generations = {}
         if not hasattr(self, '_mcp_loaded'):
             # Idempotency flag. Flipped to True the moment the first loader
             # is dispatched (synchronously, inside _mcp_lock). Subsequent
@@ -319,13 +323,13 @@ class ToolManager:
         try:
             mtime = os.path.getmtime(path)
         except OSError:
-            return (None, None)
+            return (None, None, self.capability_settings.revision('mcp'))
         try:
             with open(path, "rb") as f:
                 digest = hashlib.sha256(f.read()).hexdigest()
         except OSError:
             return (mtime, None)
-        return (mtime, digest)
+        return (mtime, digest, self.capability_settings.revision('mcp'))
 
     def _load_mcp_configs(self) -> list:
         """
@@ -351,265 +355,206 @@ class ToolManager:
         raw = conf().get("mcp_servers", [])
         return _normalize_mcp_configs(raw)
 
-    def _load_mcp_tools(self):
-        """
-        Trigger MCP tool loading in a background thread (idempotent).
+    def _mcp_enabled(self, config):
+        default = config.get('enabled', not config.get('disabled', False)) is not False
+        return self.capability_settings.enabled('mcp', config.get('name', '<unnamed>'), default=default)
 
-        Returns immediately. Booting MCP servers (npx, uvx, etc.) takes
-        seconds to tens of seconds on first run, which would otherwise
-        block agent initialization and the user's first message.
-        Built-in tools work fine without MCP, so we let the agent serve
-        traffic right away and let MCP servers come online in the
-        background. Per-session agents read a snapshot of whatever is
-        ready at construction time and gracefully ignore the rest.
-        """
+    def _mcp_admitted(self, name, generation):
+        with self._mcp_lock:
+            config = self._mcp_active_configs.get(name)
+            return bool(config is not None and self._mcp_generations.get(name) == generation
+                        and self._mcp_enabled(config))
+
+    def _queue_mcp_servers(self, configs):
+        """Called under the manager lock; each queued load owns one generation."""
+        pending = []
+        generations = {}
+        for config in configs:
+            name = config.get('name', '<unnamed>')
+            if not self._mcp_enabled(config):
+                continue
+            if (self._mcp_active_configs.get(name) == config and
+                    self._mcp_status.get(name) in {'pending', 'ready', 'needs_auth'}):
+                continue
+            if name in self._mcp_active_configs:
+                self._teardown_mcp_server(name)
+            generation = self._mcp_generations.get(name, 0) + 1
+            self._mcp_generations[name] = generation
+            self._mcp_active_configs[name] = config
+            self._mcp_status[name] = 'pending'
+            generations[name] = generation
+            pending.append(config)
+        if pending:
+            threading.Thread(target=self._run_mcp_loader, args=(pending, generations),
+                             daemon=True, name='mcp-loader').start()
+
+    def _run_mcp_loader(self, configs, generations):
+        from common.runtime_identity import use_identity
+        with use_identity(self.identity):
+            self._load_mcp_tools_async(configs, generations)
+
+    def _load_mcp_tools(self):
         with self._mcp_lock:
             if self._mcp_loaded:
                 return
-            mcp_servers_config = self._load_mcp_configs()
-            # Snapshot the signature now so future refresh_mcp_if_changed()
-            # calls can short-circuit when nothing has changed on disk.
+            configs = self._load_mcp_configs()
             self._mcp_signature = self._read_mcp_json_signature()
-            self._mcp_active_configs = {
-                cfg.get("name", "<unnamed>"): cfg for cfg in mcp_servers_config
-            }
-            if not mcp_servers_config:
-                # Mark as loaded even when there is nothing to load,
-                # so we don't re-read the config file on every call.
-                self._mcp_loaded = True
-                return
-
-            # Mark pending immediately so list_mcp_status() callers see
-            # the in-progress state instead of an empty dict.
-            for cfg in mcp_servers_config:
-                name = cfg.get("name", "<unnamed>")
-                self._mcp_status[name] = "pending"
-
+            self._queue_mcp_servers(configs)
             self._mcp_loaded = True
-            threading.Thread(
-                target=self._load_mcp_tools_async,
-                args=(mcp_servers_config,),
-                daemon=True,
-                name="mcp-loader",
-            ).start()
-            logger.info(
-                f"[ToolManager] MCP loading started in background "
-                f"({len(mcp_servers_config)} server(s) configured)"
-            )
 
     def refresh_mcp_if_changed(self):
-        """
-        Cheap check whether ~/stella/mcp.json has changed since last load.
-        If it has, do a diff-based reload: start newly added servers,
-        shut down removed ones, and restart any whose config was edited.
-        Untouched servers are left running.
-
-        Designed to be called on every agent creation. The fast path is
-        a single os.stat() — completely free when nothing has changed.
-        """
         with self._mcp_lock:
-            new_sig = self._read_mcp_json_signature()
-            if new_sig == self._mcp_signature:
-                return  # no-op fast path
-
-            try:
-                new_configs = self._load_mcp_configs()
-            except Exception as e:
-                logger.warning(f"[ToolManager] MCP reload — failed to parse config: {e}")
+            signature = self._read_mcp_json_signature()
+            if signature == self._mcp_signature:
                 return
+            configs = self._load_mcp_configs()
+            desired = {cfg.get('name', '<unnamed>'): cfg for cfg in configs if self._mcp_enabled(cfg)}
+            old = dict(self._mcp_active_configs)
+            for name, cfg in old.items():
+                if name not in desired or desired[name] != cfg:
+                    self._teardown_mcp_server(name)
+            self._queue_mcp_servers([cfg for name, cfg in desired.items() if name not in old or old[name] != cfg])
+            self._mcp_signature = signature
 
-            new_by_name = {
-                cfg.get("name", "<unnamed>"): cfg for cfg in new_configs
-            }
-            old_by_name = self._mcp_active_configs
-
-            added = [n for n in new_by_name if n not in old_by_name]
-            removed = [n for n in old_by_name if n not in new_by_name]
-            changed = [
-                n for n in new_by_name
-                if n in old_by_name and new_by_name[n] != old_by_name[n]
-            ]
-
-            if not (added or removed or changed):
-                # Signature drifted but content is logically identical
-                # (e.g. user re-saved the file without edits). Just sync.
-                self._mcp_signature = new_sig
-                return
-
-            logger.info(
-                f"[ToolManager] mcp.json changed — "
-                f"adding={added}, removing={removed}, restarting={changed}"
-            )
-
-            # Tear down removed + changed servers (changed ones get restarted below)
-            for name in removed + changed:
+    def set_mcp_enabled(self, name, enabled):
+        if type(enabled) is not bool:
+            raise ValueError('enabled must be a boolean')
+        with self._mcp_lock:
+            configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
+            if name not in configs:
+                raise ValueError('MCP server is not configured')
+            self.capability_settings.set_enabled('mcp', name, enabled)
+            if enabled:
+                self._queue_mcp_servers([configs[name]])
+            else:
                 self._teardown_mcp_server(name)
+        return enabled
 
-            # Spin up newly added + changed servers in the background
-            to_start = [new_by_name[n] for n in added + changed]
-            if to_start:
-                for cfg in to_start:
-                    self._mcp_status[cfg.get("name", "<unnamed>")] = "pending"
-                threading.Thread(
-                    target=self._load_mcp_tools_async,
-                    args=(to_start,),
-                    daemon=True,
-                    name="mcp-loader-reload",
-                ).start()
-
-            self._mcp_active_configs = new_by_name
-            self._mcp_signature = new_sig
-
-    def _teardown_mcp_server(self, server_name: str):
-        """Shut down one MCP server and drop its tools from the registry."""
-        if self._mcp_registry is None:
-            return
-        client = None
-        with self._mcp_registry._registry_lock:
-            client = self._mcp_registry._clients.pop(server_name, None)
-        if client is not None:
-            try:
-                client.shutdown()
-            except Exception as e:
-                logger.warning(f"[MCP] Error shutting down '{server_name}': {e}")
-        # Drop tools that belonged to this server.
-        for tool_name in list(self._mcp_tool_instances.keys()):
-            tool = self._mcp_tool_instances.get(tool_name)
-            if tool is not None and getattr(tool, "server_name", None) == server_name:
-                self._mcp_tool_instances.pop(tool_name, None)
-        self._mcp_status.pop(server_name, None)
-
-    def _load_mcp_tools_async(self, mcp_servers_config):
-        """
-        Background worker: bring up each MCP server one-by-one and
-        publish ready tools to _mcp_tool_instances as they come online.
-
-        Server failures are isolated — one bad server cannot block
-        the others, and never raises out of the worker thread.
-        """
-        try:
-            from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry, set_reload_callback
-            from agent.tools.mcp.mcp_tool import McpTool
-
-            registry = McpClientRegistry()
-            self._mcp_registry = registry
-            # Let the OAuth web callback bring a server online once authorized.
-            set_reload_callback(self.reload_mcp_server)
-
-            for cfg in mcp_servers_config:
-                server_name = cfg.get("name", "<unnamed>")
-                try:
-                    client = McpClient(cfg)
-                    if not client.initialize():
-                        if getattr(client, "needs_auth", False):
-                            self._mcp_status[server_name] = "needs_auth"
-                            logger.info(
-                                f"[MCP] Server '{server_name}' needs authorization — "
-                                f"waiting for the user to complete the OAuth flow"
-                            )
-                        else:
-                            self._mcp_status[server_name] = "failed"
-                            logger.warning(
-                                f"[MCP] Server '{server_name}' failed to initialize — skipping"
-                            )
-                        continue
-
-                    tool_schemas = client.list_tools()
-                    added = []
-                    for schema in tool_schemas:
-                        tool_name = schema.get("name", "")
-                        if not tool_name:
-                            continue
-                        mcp_tool = McpTool(client, schema, server_name)
-                        public_name = mcp_tool.name
-                        # Atomic dict assignment is GIL-safe; readers iterate
-                        # over a list() snapshot to avoid concurrent mutation.
-                        self._mcp_tool_instances[public_name] = mcp_tool
-                        from agent.permission.gateway import Capability, register_tool
-                        try:
-                            register_tool(public_name, Capability.EXTERNAL, connection=f"mcp:{server_name}",
-                                          read_only=mcp_tool.read_only)
-                        except ValueError:
-                            logger.warning("[MCP] Skipped a tool with an invalid security declaration")
-                            self._mcp_tool_instances.pop(public_name, None)
-                            continue
-                        added.append(public_name)
-
-                    # Register client into the shared registry only after its
-                    # tools are visible, so callers never see a half-loaded server.
-                    with registry._registry_lock:
-                        registry._clients[server_name] = client
-                    self._mcp_status[server_name] = "ready"
-                    logger.info(
-                        f"[MCP] Server '{server_name}' ready — "
-                        f"{len(added)} tool(s): {added}"
-                    )
-                except Exception as e:
-                    self._mcp_status[server_name] = "failed"
-                    logger.warning(f"[MCP] Server '{server_name}' load failed: {e}")
-
-            ready = sum(1 for s in self._mcp_status.values() if s == "ready")
-            total = len(self._mcp_status)
-            logger.info(
-                f"[ToolManager] MCP loading complete: "
-                f"{ready}/{total} server(s) ready, "
-                f"{len(self._mcp_tool_instances)} tool(s) available"
-            )
-        except Exception as e:
-            logger.warning(f"[ToolManager] MCP background loader crashed: {e}")
-
-    def reload_mcp_server(self, server_name: str) -> None:
-        """Re-initialize a single MCP server (e.g. after OAuth authorization).
-
-        Tears down any existing client for the server and starts it again in
-        the background, so a freshly-stored access token is picked up and the
-        server's tools become available on the next message.
-        """
+    def _teardown_mcp_server(self, server_name):
         with self._mcp_lock:
-            cfg = self._mcp_active_configs.get(server_name)
-        if not cfg:
-            logger.warning(f"[MCP] reload requested for unknown server '{server_name}'")
-            return
-        logger.info(f"[MCP] Reloading server '{server_name}' after authorization")
-        self._teardown_mcp_server(server_name)
-        self._mcp_status[server_name] = "pending"
-        threading.Thread(
-            target=self._load_mcp_tools_async,
-            args=([cfg],),
-            daemon=True,
-            name=f"mcp-reload-{server_name}",
-        ).start()
+            self._mcp_generations[server_name] = self._mcp_generations.get(server_name, 0) + 1
+            self._mcp_active_configs.pop(server_name, None)
+            client = None
+            if self._mcp_registry is not None:
+                with self._mcp_registry._registry_lock:
+                    client = self._mcp_registry._clients.pop(server_name, None)
+            for name, tool in list(self._mcp_tool_instances.items()):
+                if tool.server_name == server_name:
+                    self._mcp_tool_instances.pop(name, None)
+                    self._mcp_tool_vectors.pop(name, None)
+            self._mcp_status.pop(server_name, None)
+            for key, pending in list(self._mcp_pending_clients.items()):
+                if key[0] == server_name:
+                    self._mcp_pending_clients.pop(key, None)
+                    try:
+                        pending.shutdown()
+                    except Exception:
+                        logger.warning('[MCP] Failed to close initializing server %s', server_name)
+            if client:
+                try:
+                    client.shutdown()
+                except Exception:
+                    logger.warning('[MCP] Failed to close server %s', server_name)
 
-    def list_mcp_status(self) -> dict:
-        """Return {server_name: status} snapshot for UI / debugging."""
+    def _load_mcp_tools_async(self, configs, generations=None):
+        from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry, set_reload_callback
+        from agent.tools.mcp.mcp_tool import McpTool
+        with self._mcp_lock:
+            if self._mcp_registry is None:
+                self._mcp_registry = McpClientRegistry()
+            registry = self._mcp_registry
+            if generations is None:
+                generations = {}
+                for cfg in configs:
+                    name = cfg.get('name', '<unnamed>')
+                    self._mcp_active_configs[name] = cfg
+                    self._mcp_generations[name] = self._mcp_generations.get(name, 0) + 1
+                    generations[name] = self._mcp_generations[name]
+        set_reload_callback(self.reload_mcp_server)
+        for cfg in configs:
+            name = cfg.get('name', '<unnamed>')
+            generation = generations[name]
+            client = None
+            published = False
+            try:
+                if not self._mcp_admitted(name, generation):
+                    continue
+                client = McpClient(cfg)
+                with self._mcp_lock:
+                    if not self._mcp_admitted(name, generation):
+                        continue
+                    self._mcp_pending_clients[(name, generation)] = client
+                if not client.initialize():
+                    with self._mcp_lock:
+                        if self._mcp_admitted(name, generation):
+                            self._mcp_status[name] = 'needs_auth' if getattr(client, 'needs_auth', False) else 'failed'
+                    continue
+                schemas = client.list_tools()
+                tools = []
+                from agent.permission.gateway import Capability, register_tool
+                for schema in schemas:
+                    if not schema.get('name'):
+                        continue
+                    tool = McpTool(client, schema, name)
+                    tool._capability_settings = self.capability_settings
+                    tool._admission_check = lambda n=name, g=generation: self._mcp_admitted(n, g)
+                    try:
+                        register_tool(tool.name, Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only)
+                    except ValueError:
+                        continue
+                    tools.append(tool)
+                with self._mcp_lock:
+                    if not self._mcp_admitted(name, generation):
+                        continue
+                    for tool in tools:
+                        self._mcp_tool_instances[tool.name] = tool
+                    with registry._registry_lock:
+                        registry._clients[name] = client
+                    self._mcp_status[name] = 'ready'
+                    published = True
+            except Exception:
+                with self._mcp_lock:
+                    if self._mcp_admitted(name, generation):
+                        self._mcp_status[name] = 'failed'
+                logger.warning('[MCP] Failed to load server %s', name)
+            finally:
+                with self._mcp_lock:
+                    self._mcp_pending_clients.pop((name, generation), None)
+                if client is not None and not published:
+                    try:
+                        client.shutdown()
+                    except Exception:
+                        logger.warning('[MCP] Failed to close unselected server %s', name)
+
+    def reload_mcp_server(self, server_name):
+        with self._mcp_lock:
+            config = self._mcp_active_configs.get(server_name)
+            if config is None or not self._mcp_enabled(config):
+                return
+            self._teardown_mcp_server(server_name)
+            self._queue_mcp_servers([config])
+
+    def list_mcp_status(self):
         return dict(self._mcp_status)
 
-    def mcp_catalog(self) -> list[dict]:
-        """Read this workspace's published MCP inventory without making remote calls.
-
-        Only explicit display fields leave the manager; commands, URLs, headers,
-        environment variables and argument schemas remain private.
-        """
+    def mcp_catalog(self):
+        """Inventory reads never connect servers or expose connection secrets."""
         with self._mcp_lock:
-            configs = dict(self._mcp_active_configs)
+            configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
+            configs = {**self._mcp_active_configs, **configs}
             statuses = self.list_mcp_status()
             tools = list(self._mcp_tool_instances.values())
-            if not configs and not self._mcp_loaded:
-                configs = {cfg.get("name", "<unnamed>"): cfg for cfg in self._load_mcp_configs()}
-        names = set(configs) | set(statuses) | {tool.server_name for tool in tools}
-        result = []
-        for name in sorted(names):
-            state = statuses.get(name, "not_started")
-            result.append({
-                "name": name,
-                "transport": str(configs.get(name, {}).get("type", "stdio")),
-                "state": state,
-                "tools": sorted([
-                    {"name": tool.remote_name, "description": tool.description}
-                    for tool in tools if tool.server_name == name and state == "ready"
-                ], key=lambda tool: tool["name"]),
-            })
-        return result
+            result = []
+            for name in sorted(set(configs) | set(statuses) | {tool.server_name for tool in tools}):
+                config = configs.get(name, {'name': name})
+                enabled = self._mcp_enabled(config)
+                state = statuses.get(name, 'not_started') if enabled else 'disabled'
+                result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
+                    'enabled': enabled, 'state': state, 'tools': sorted([
+                        {'name': tool.remote_name, 'description': tool.description}
+                        for tool in tools if tool.server_name == name and state == 'ready'
+                    ], key=lambda tool: tool['name'])})
+            return result
 
     def sync_mcp_into_agent(self, agent) -> tuple:
         """
@@ -639,7 +584,9 @@ class ToolManager:
             return ([], [])
 
         from agent.tools.mcp.mcp_tool import McpTool
-        current = self._mcp_tool_instances
+        with self._mcp_lock:
+            current = {name: tool for name, tool in self._mcp_tool_instances.items()
+                       if tool.is_available()}
         registry_names = set(current.keys())
 
         agent_tools = agent.tools
@@ -649,7 +596,9 @@ class ToolManager:
                 name for name, tool in agent_tools.items()
                 if isinstance(tool, McpTool)
             }
-            added = registry_names - agent_mcp_names
+            replaced = {name for name in registry_names & agent_mcp_names
+                        if agent_tools[name].client is not current[name].client}
+            added = registry_names - agent_mcp_names | replaced
             removed = agent_mcp_names - registry_names
             if not (added or removed):
                 return ([], [])
@@ -662,8 +611,10 @@ class ToolManager:
             agent_mcp_names = {
                 t.name for t in agent_tools if isinstance(t, McpTool)
             }
-            added = registry_names - agent_mcp_names
-            removed = agent_mcp_names - registry_names
+            replaced = {tool.name for tool in agent_tools if tool.name in registry_names
+                        and isinstance(tool, McpTool) and tool.client is not current[tool.name].client}
+            added = registry_names - agent_mcp_names | replaced
+            removed = agent_mcp_names - registry_names | replaced
             if not (added or removed):
                 return ([], [])
             if removed:
@@ -809,7 +760,9 @@ class ToolManager:
             }
 
         # Include MCP tool instances
-        for name, mcp_tool in self._mcp_tool_instances.items():
+        for name, mcp_tool in list(self._mcp_tool_instances.items()):
+            if not mcp_tool.is_available():
+                continue
             result[name] = {
                 "description": mcp_tool.description,
                 "parameters": mcp_tool.params,
@@ -818,6 +771,9 @@ class ToolManager:
         return result
 
     def shutdown_mcp(self):
-        """Shut down all MCP server clients."""
-        if self._mcp_registry:
-            self._mcp_registry.shutdown_all()
+        with self._mcp_lock:
+            for name in list(self._mcp_active_configs):
+                self._teardown_mcp_server(name)
+            if self._mcp_registry:
+                self._mcp_registry.shutdown_all()
+            self._mcp_loaded = False

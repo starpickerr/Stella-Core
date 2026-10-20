@@ -147,7 +147,7 @@ def test_each_agent_boots_only_its_own_mcp_servers(mcp_workspaces, monkeypatch):
     monkeypatch.setattr(
         ToolManager,
         "_load_mcp_tools_async",
-        lambda self, configs: booted.append(
+        lambda self, configs, generations=None: booted.append(
             sorted(cfg.get("name") for cfg in configs)
         ),
     )

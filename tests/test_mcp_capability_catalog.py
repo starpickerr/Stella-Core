@@ -18,10 +18,10 @@ def test_mcp_catalog_reports_runtime_tools_and_pending_servers():
         server_name='docs', remote_name='search', description='Search documents')}
     result = manager.mcp_catalog()
     assert result == [
-        {'name': 'booting', 'transport': 'stdio', 'state': 'pending', 'tools': []},
-        {'name': 'docs', 'transport': 'streamable-http', 'state': 'ready',
+        {'name': 'booting', 'transport': 'stdio', 'enabled': True, 'state': 'pending', 'tools': []},
+        {'name': 'docs', 'transport': 'streamable-http', 'enabled': True, 'state': 'ready',
          'tools': [{'name': 'search', 'description': 'Search documents'}]},
-        {'name': 'offline', 'transport': 'stdio', 'state': 'failed', 'tools': []},
+        {'name': 'offline', 'transport': 'stdio', 'enabled': True, 'state': 'failed', 'tools': []},
     ]
     assert 'secret' not in json.dumps(result)
 
@@ -34,7 +34,7 @@ def test_unstarted_configured_server_is_not_reported_as_available(monkeypatch):
     manager._mcp_tool_instances = {}
     monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [{'name': 'local', 'type': 'stdio'}])
     assert manager.mcp_catalog() == [
-        {'name': 'local', 'transport': 'stdio', 'state': 'not_started', 'tools': []}]
+        {'name': 'local', 'transport': 'stdio', 'enabled': True, 'state': 'not_started', 'tools': []}]
 
 
 def test_catalog_uses_published_tools_without_requerying_the_server(monkeypatch):
