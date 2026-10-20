@@ -154,7 +154,46 @@ def test_isolation_redirects_windows_profile_and_temp_state(tmp_path):
     assert env['TMP'] == str(tmp_path / 'tmp')
 
 
-def test_quality_tools_select_native_virtualenv(tmp_path):
+def test_quality_tools_select_explicit_interpreter(tmp_path, monkeypatch):
     from scripts.check_runtime import python_path
-    assert python_path(tmp_path, 'nt') == tmp_path / '.venv/Scripts/python.exe'
-    assert python_path(tmp_path, 'posix') == tmp_path / '.venv/bin/python'
+    interpreter = tmp_path / 'ci-python'
+    interpreter.touch()
+    interpreter.chmod(0o755)
+    monkeypatch.setenv('STELLA_PYTHON', str(interpreter))
+    assert python_path(tmp_path) == interpreter
+
+
+def test_isolation_preserves_resolved_python_for_nested_checks(tmp_path):
+    from scripts.quality_check import PYTHON
+
+    assert isolated_env(tmp_path)['STELLA_PYTHON'] == str(PYTHON)
+
+
+def test_python_selection_changes_run_environment_regressions():
+    checks = affected_checks(['scripts/check_runtime.py'])
+    assert 'tests/test_python_environment.py' in checks['pytest']
+    assert 'tests/test_quality_check.py' in checks['pytest']
+    assert checks['node']
+
+
+def test_runtime_node_regressions_are_in_incremental_and_full_gates(monkeypatch):
+    import sys
+    from scripts import quality_check
+
+    commands = []
+
+    def record(name, command, _env, _timeout):
+        commands.append((name, command))
+        return name, 'PASS', command, ''
+
+    monkeypatch.setattr(quality_check, 'run_check', record)
+    monkeypatch.setattr(quality_check, 'markdown_report', lambda *_: None)
+    for mode in ('incremental', 'full'):
+        commands.clear()
+        args = ['quality_check.py', mode]
+        if mode == 'incremental':
+            args += ['--files', 'scripts/check_runtime.py']
+        monkeypatch.setattr(sys, 'argv', args)
+        assert quality_check.main() == 0
+        node = next(command for name, command in commands if name == 'node')
+        assert 'tests/pythonRuntime.test.mjs' in node

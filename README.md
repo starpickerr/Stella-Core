@@ -59,12 +59,15 @@ Requirements:
 
 The commands below are for macOS. Windows commands are in the [user guide](docs/guide.md).
 
+Local development uses the Conda `Stella` environment (Python 3.12). Skip environment creation if it already exists.
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```

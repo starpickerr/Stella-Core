@@ -59,12 +59,15 @@
 
 以下命令適用於 macOS；Windows 命令見[使用指南](guide-Hant.md)。
 
+本機開發統一使用 Conda 的 `Stella` 環境（Python 3.12）；已有環境時略過建立命令。
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```

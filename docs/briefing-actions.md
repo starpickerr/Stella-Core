@@ -71,7 +71,7 @@ then `decide` with `{"operation":"create","kind":"todo"}` to create only a task.
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md) to install runtime and test dependencies,
 Chromium and desktop packages.
 
-Use `.venv/bin/python scripts/quality_check.py incremental` during development.
+Use `conda run --no-capture-output -n Stella python scripts/quality_check.py incremental` during development.
 `--files` selects an explicit scope. The runner maps changed modules to Ruff,
 pytest, desktop ESLint, TypeScript, build, Node and Playwright checks. Each result
 is printed as PASS, FAIL or SKIP, with failure output. State and provider environment
@@ -79,11 +79,11 @@ are isolated in temporary directories. UI checks launch a private renderer and
 exercise login rejection plus real React briefing interactions with a mocked backend.
 Python handler tests exercise actual isolated SQLite services.
 
-Run `.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md`
+Run `conda run --no-capture-output -n Stella python scripts/quality_check.py full --report /tmp/stella-quality-report.md`
 for the complete automated suite and a saved report. Automated checks complement
 manual review; they do not verify live account integrations or packaged builds.
 
-On Windows use `.venv\Scripts\python.exe` for the commands above. The check runner
+On Windows use `conda run --no-capture-output -n Stella python` for the commands above. The check runner
 redirects HOME, USERPROFILE, APPDATA, LOCALAPPDATA and temporary directories, resolves
 native executables and cleans up its private renderer tree. Native Windows execution
 still needs verification on a Windows host.

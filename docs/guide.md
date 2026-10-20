@@ -8,10 +8,13 @@ Available packaged builds are listed in [GitHub Releases](https://github.com/sta
 
 Clone the repository, enter its root, and run:
 
+Local development uses the Conda `Stella` environment (Python 3.12). Skip environment creation if it already exists.
+
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
@@ -19,14 +22,15 @@ npm --prefix desktop run dev
 On Windows:
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip setuptools
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
 
-Browser automation also needs a supported browser. For the Chromium used by development checks, run `.venv/bin/python -m playwright install chromium` (Windows: `.venv\Scripts\python.exe -m playwright install chromium`).
+Browser automation also needs a supported browser. For the Chromium used by development checks, run `python -m playwright install chromium` (Windows: `python -m playwright install chromium`).
 
 The client starts a private backend on `127.0.0.1` and receives its actual port from Electron. Use the desktop app to configure it. For UI hot reload, use `npm --prefix desktop run dev:hot`.
 

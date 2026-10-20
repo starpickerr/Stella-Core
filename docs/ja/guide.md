@@ -8,10 +8,13 @@
 
 リポジトリをクローンし、ルートで実行します。
 
+ローカル開発には Conda の `Stella` 環境（Python 3.12）を使用します。既存の環境がある場合、作成コマンドは省略してください。
+
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
@@ -19,14 +22,15 @@ npm --prefix desktop run dev
 Windows：
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip setuptools
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
 
-ブラウザー自動化には対応ブラウザーが必要です。開発用 Chromium は `.venv/bin/python -m playwright install chromium`、Windows では `.venv\Scripts\python.exe -m playwright install chromium` で準備します。
+ブラウザー自動化には対応ブラウザーが必要です。開発用 Chromium は `python -m playwright install chromium`、Windows では `python -m playwright install chromium` で準備します。
 
 Electron は `127.0.0.1` の専用バックエンドを起動し、実際のポートを UI に渡します。設定はデスクトップで行います。UI のホットリロードには `npm --prefix desktop run dev:hot` を使います。
 
