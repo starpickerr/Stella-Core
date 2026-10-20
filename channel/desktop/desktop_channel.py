@@ -2517,7 +2517,6 @@ class McpOAuthCallbackHandler:
 
         try:
             from agent.tools.mcp.mcp_oauth import pop_pending
-            from agent.tools.mcp.mcp_client import notify_server_authorized
         except Exception as e:
             logger.warning(f"[MCP-OAuth] callback import failed: {e}")
             return _page("内部错误", "OAuth 模块不可用。")
@@ -2535,7 +2534,7 @@ class McpOAuthCallbackHandler:
         if not ok:
             return _page("授权失败", "换取令牌失败，请重试。")
 
-        notify_server_authorized(handler.server_name)
+        handler.notify_authorized()
         logger.info(f"[MCP-OAuth] Server '{handler.server_name}' authorized via web callback")
         return _page(
             "授权成功",

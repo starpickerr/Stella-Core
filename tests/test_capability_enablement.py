@@ -363,3 +363,359 @@ def test_mcp_config_changed_before_enable_replaces_and_closes_old_client(
         assert manager._mcp_registry.get("Documents") is clients[1]
     finally:
         manager.shutdown_mcp()
+
+
+def test_scheduled_tool_rechecks_enablement_after_preparation(
+    tmp_path, monkeypatch, registered_agent
+):
+    from agent.scheduler import integration
+    from agent.tools.base_tool import BaseTool, ToolResult
+    from agent.runtime.run_record import RunRecord
+
+    profile = registered_agent("alpha")
+    from agent.registry import get_agent_registry
+
+    get_agent_registry().set_default("alpha")
+    store = CapabilitySettings(profile.workspace)
+    calls = []
+
+    class Probe(BaseTool):
+        name = "bash"
+
+        def set_cwd(self, cwd):
+            store.set_enabled("tool", self.name, False)
+
+        def execute(self, args):
+            calls.append(args)
+            return ToolResult.success("ran")
+
+    tool = Probe()
+    tool._capability_settings = store
+    monkeypatch.setattr(
+        "agent.tools.tool_manager.ToolManager",
+        lambda: SimpleNamespace(create_tool=lambda _: tool),
+    )
+    monkeypatch.setattr(
+        "agent.runtime.tool_invocation.execution_workspace",
+        lambda *args, **kwargs: (str(tmp_path), [str(tmp_path)]),
+    )
+    monkeypatch.setattr(
+        "agent.runtime.run_record.RunRecord", lambda: RunRecord(tmp_path / "runs.db")
+    )
+    monkeypatch.setattr(
+        integration, "_resolve_working_dir", lambda **kwargs: str(tmp_path)
+    )
+    result = integration._run_scheduled_tool(
+        {
+            "id": "probe",
+            "run_permission_mode": "full-access",
+            "action": {"silent": True},
+        },
+        "bash",
+        {},
+        "alpha",
+        None,
+        None,
+    )
+    assert result.status == "failed" and "disabled" in result.error.lower()
+    assert calls == []
+
+
+@pytest.mark.parametrize("wrapper", ["workspace", "memory"])
+def test_evolution_wrappers_recheck_disabled_inner_tools(tmp_path, wrapper):
+    from agent.evolution.executor import _WorkspaceWriteGuard, _PluginMemoryWriteGuard
+    from agent.tools.base_tool import BaseTool, ToolResult
+    from agent.runtime.tool_invocation import invocation_scope
+
+    calls = []
+
+    class Probe(BaseTool):
+        name = "write" if wrapper == "workspace" else "memory_write"
+        description = "test"
+        params = {}
+
+        def _resolve_path(self, path):
+            return str(tmp_path / path)
+
+        def execute(self, args):
+            calls.append(args)
+            return ToolResult.success("ran")
+
+    tool = Probe()
+    tool._capability_settings = CapabilitySettings(str(tmp_path))
+    tool._capability_settings.set_enabled("tool", tool.name, False)
+    if wrapper == "workspace":
+        guarded = _WorkspaceWriteGuard(
+            tool, str(tmp_path), set(), SimpleNamespace(record=lambda path: None)
+        )
+    else:
+        guarded = _PluginMemoryWriteGuard(tool, {"snapshotId": "trusted"})
+    with invocation_scope("already-authorized"):
+        result = guarded.execute_tool({"path": "report.txt"})
+    assert result.status == "error" and "disabled" in str(result.result).lower()
+    assert calls == []
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_oauth_callback_reloads_only_originating_live_generation(
+    tmp_path, monkeypatch, stale
+):
+    from agent.tools.mcp import mcp_client, mcp_oauth
+    from channel.desktop import desktop_channel as web
+
+    monkeypatch.setenv("STELLA_HEADLESS", "1")
+    monkeypatch.setattr(mcp_oauth, "_PENDING", {})
+
+    def registered(handler, *args):
+        handler.metadata = {"authorization_endpoint": "https://auth.invalid/authorize"}
+        handler.client_id = "test-client"
+        return True
+
+    monkeypatch.setattr(mcp_oauth.OAuthHandler, "ensure_registered", registered)
+    monkeypatch.setattr(
+        mcp_oauth.OAuthHandler, "finish_authorization", lambda self, code: True
+    )
+    monkeypatch.setattr(mcp_client.McpClient, "_url_allowed", lambda self, url: True)
+    monkeypatch.setattr(mcp_client.McpClient, "_maybe_load_oauth", lambda self: None)
+    monkeypatch.setattr(
+        mcp_client.McpClient, "_handshake", lambda self: self._begin_oauth() or False
+    )
+    a = _manager(tmp_path, monkeypatch, label="a")
+    b = _manager(tmp_path, monkeypatch, label="b")
+    for manager in (a, b):
+        monkeypatch.setattr(
+            manager,
+            "_load_mcp_configs",
+            lambda: [
+                {
+                    "name": "Documents",
+                    "type": "streamable-http",
+                    "url": "https://mcp.invalid",
+                }
+            ],
+        )
+    try:
+        a.set_mcp_enabled("Documents", True)
+        _wait(lambda: a.list_mcp_status().get("Documents") == "needs_auth")
+        state = next(iter(mcp_oauth._PENDING))
+        b.set_mcp_enabled("Documents", True)
+        _wait(lambda: b.list_mcp_status().get("Documents") == "needs_auth")
+        if stale:
+            a.set_mcp_enabled("Documents", False)
+            a.set_mcp_enabled("Documents", True)
+            _wait(lambda: a.list_mcp_status().get("Documents") == "needs_auth")
+        before_a = a._mcp_generations["Documents"]
+        before_b = b._mcp_generations["Documents"]
+        monkeypatch.setattr(web.web, "header", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            web.web,
+            "input",
+            lambda **kwargs: SimpleNamespace(
+                error="", error_description="", code="test-code", state=state
+            ),
+        )
+        assert "授权成功" in web.McpOAuthCallbackHandler().GET()
+        assert b._mcp_generations["Documents"] == before_b
+        if stale:
+            assert a._mcp_generations["Documents"] == before_a
+        else:
+            assert a._mcp_generations["Documents"] > before_a
+    finally:
+        a.shutdown_mcp()
+        b.shutdown_mcp()
+
+
+@pytest.mark.parametrize(
+    "phase", ["http-url", "http-oauth", "sse-url", "sse-endpoint", "http-bearer"]
+)
+def test_remote_mcp_disable_during_preparation_never_dispatches(monkeypatch, phase):
+    import threading
+    from agent.tools.mcp.mcp_client import McpClient
+
+    client = McpClient(
+        {
+            "name": "remote",
+            "type": "sse" if phase.startswith("sse") else "streamable-http",
+            "url": "https://mcp.invalid",
+        }
+    )
+    entered, release = threading.Event(), threading.Event()
+    requests, results = [], []
+
+    def pause(value):
+        entered.set()
+        assert release.wait(3)
+        return value
+
+    class Response:
+        headers = {"Content-Type": "application/json"}
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b'{"result":{}}'
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, **kwargs: requests.append(req.get_method()) or Response(),
+    )
+    monkeypatch.setattr(client, "_url_allowed", lambda url: True)
+    monkeypatch.setattr(client, "_maybe_load_oauth", lambda: None)
+    if phase.endswith("-url"):
+        monkeypatch.setattr(client, "_url_allowed", lambda url: pause(True))
+    elif phase == "http-oauth":
+        monkeypatch.setattr(client, "_maybe_load_oauth", lambda: pause(None))
+    elif phase == "sse-endpoint":
+        monkeypatch.setattr(
+            client, "_sse_discover_endpoint", lambda: pause("https://mcp.invalid/post")
+        )
+    else:
+        client._http_url = "https://mcp.invalid"
+        client._initialized = True
+        monkeypatch.setattr(client, "_current_bearer", lambda: pause("test-token"))
+
+    def initialize():
+        try:
+            result = (
+                client._streamable_http_post({"id": 1, "method": "tools/call"}, True)
+                if phase == "http-bearer"
+                else client.initialize()
+            )
+            results.append(result)
+        except (RuntimeError, IOError):
+            results.append(False)
+
+    worker = threading.Thread(target=initialize)
+    worker.start()
+    try:
+        assert entered.wait(3)
+        client.shutdown()
+    finally:
+        release.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert requests == []
+    assert results == [False] and client._initialized is False
+
+
+def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
+    import threading
+    from agent.tools.mcp.mcp_client import McpClient
+
+    client = McpClient(
+        {"name": "remote", "type": "streamable-http", "url": "https://mcp.invalid"}
+    )
+    entered, release = threading.Event(), threading.Event()
+    requests, results = [], []
+    closed = []
+
+    class Response:
+        headers = {"Content-Type": "application/json", "Mcp-Session-Id": "late-session"}
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+        def read(self):
+            return b'{"result":{}}'
+
+        def close(self):
+            closed.append(True)
+
+    def remote(req, **kwargs):
+        requests.append((req.get_method(), req.get_header("Mcp-session-id")))
+        if req.get_method() == "POST":
+            entered.set()
+            assert release.wait(3)
+        return Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", remote)
+    monkeypatch.setattr(client, "_url_allowed", lambda url: True)
+    monkeypatch.setattr(client, "_maybe_load_oauth", lambda: None)
+    worker = threading.Thread(target=lambda: results.append(client.initialize()))
+    worker.start()
+    try:
+        assert entered.wait(3)
+        client.shutdown()
+    finally:
+        release.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert results == [False]
+    assert requests == [("POST", None), ("DELETE", "late-session")]
+    assert client._http_session_id is None and client._initialized is False
+    assert closed
+
+
+def test_post_process_tools_cannot_bypass_disabled_state(tmp_path):
+    from agent.protocol.agent import Agent
+    from agent.tools.base_tool import BaseTool, ToolResult, ToolStage
+
+    calls, records = [], []
+
+    class Probe(BaseTool):
+        name = "read"
+        stage = ToolStage.POST_PROCESS
+
+        def execute(self, args):
+            calls.append(args)
+            return ToolResult.success("ran")
+
+    tool = Probe()
+    tool._capability_settings = CapabilitySettings(str(tmp_path))
+    tool._capability_settings.set_enabled("tool", tool.name, False)
+    agent = object.__new__(Agent)
+    agent.tools = [tool]
+    agent.output = lambda *args, **kwargs: None
+    agent.capture_tool_use = lambda **kwargs: records.append(kwargs)
+    agent._execute_post_process_tools()
+    assert calls == []
+    assert (
+        records[0]["status"] == "error"
+        and "disabled" in records[0]["error_message"].lower()
+    )
+
+
+def test_stdio_drainers_keep_process_streams_when_shutdown_interleaves(monkeypatch):
+    import io
+    from agent.tools.mcp import mcp_client
+
+    client = mcp_client.McpClient({"name": "closing", "command": "not-run"})
+    process = SimpleNamespace(
+        pid=1,
+        stdin=io.StringIO(),
+        stdout=io.StringIO("reply\n"),
+        stderr=io.StringIO(),
+        terminate=lambda: None,
+        wait=lambda **kwargs: None,
+    )
+    monkeypatch.setattr(mcp_client.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(client, "_command_allowed", lambda command: True)
+    errors = []
+
+    class ImmediateThread:
+        def __init__(self, target, args=(), **kwargs):
+            self.target, self.args = target, args
+
+        def start(self):
+            client.shutdown()
+            try:
+                self.target(*self.args)
+            except Exception as exc:
+                errors.append(exc)
+
+    monkeypatch.setattr(mcp_client.threading, "Thread", ImmediateThread)
+    assert client.initialize() is False
+    assert errors == []
+    assert client._proc is None and client._closed

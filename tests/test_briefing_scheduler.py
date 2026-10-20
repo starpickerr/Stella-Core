@@ -144,7 +144,7 @@ def test_overdue_before_eight_waits_until_today_and_ordinary_tasks_keep_grace_pe
 
 def test_silent_tool_dispatch_has_no_delivery_and_propagates_errors(monkeypatch):
     task = {"id": "briefing", "action": {"type": "tool_call", "call_name": "briefing", "silent": True}}
-    tool = SimpleNamespace(execute=lambda params: ToolResult.success("saved"))
+    tool = SimpleNamespace(execute_tool=lambda params: ToolResult.success("saved"))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
     monkeypatch.setattr("channel.channel_factory.create_channel", lambda *args: pytest.fail("silent task must not send"))
     cancel_event = threading.Event()
@@ -152,7 +152,7 @@ def test_silent_tool_dispatch_has_no_delivery_and_propagates_errors(monkeypatch)
     assert tool.current_context.get("is_scheduled_task") is True
     assert tool.current_context.get("agent_id") == "default"
     assert tool.cancel_event is cancel_event
-    tool.execute = lambda params: ToolResult.fail("model failure")
+    tool.execute_tool = lambda params: ToolResult.fail("model failure")
     assert not integration._execute_tool_call(task, None)
 
 
@@ -183,7 +183,7 @@ def test_desktop_boot_starts_empty_and_manual_silent_task_runs(tmp_path, monkeyp
     monkeypatch.setenv("STELLA_DESKTOP", "1")
     monkeypatch.setattr(SchedulerService, "start", lambda service: setattr(service, "running", True))
     monkeypatch.setattr(integration, "_is_channel_ready", lambda *args: pytest.fail("silent task must not need a chat session"))
-    monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: SimpleNamespace(execute=lambda params: ToolResult.success("saved")))
+    monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: SimpleNamespace(execute_tool=lambda params: ToolResult.success("saved")))
     integration.reset_scheduler_services(stop=False)
     try:
         assert integration.init_scheduler(bridge, str(tmp_path), "default")

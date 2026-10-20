@@ -43,8 +43,6 @@ def test_catalog_uses_published_tools_without_requerying_the_server(monkeypatch)
 
     manager = object.__new__(ToolManager)
     manager.__init__()
-    from agent.tools.mcp import mcp_client
-    monkeypatch.setattr(mcp_client, '_reload_callback', mcp_client._reload_callback)
     configs = [{'name': 'catalog-echo', 'type': 'stdio', 'command': sys.executable,
                 'args': [str(Path('tests/fixtures/mcp_echo_server.py').resolve())]}]
     manager._mcp_active_configs = {cfg['name']: cfg for cfg in configs}

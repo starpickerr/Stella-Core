@@ -722,7 +722,7 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
             invoked = True
             from agent.runtime.tool_invocation import invocation_scope
             with invocation_scope(tool_call_id):
-                result = tool.execute(tool_params)
+                result = tool.execute_tool(tool_params)
             record.event(run_id, "tool_execution_end", tool_call_id=tool_call_id)
             content = result.result if hasattr(result, "result") else str(result)
             if getattr(result, "status", None) == "error":

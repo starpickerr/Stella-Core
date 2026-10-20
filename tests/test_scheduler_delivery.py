@@ -47,7 +47,7 @@ def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch, regi
     monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path / 'runs.db'))
     calls = []
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager', lambda: SimpleNamespace(
-        create_tool=lambda _name: SimpleNamespace(execute=lambda params: calls.append(params) or ToolResult.success('ok'),
+        create_tool=lambda _name: SimpleNamespace(execute_tool=lambda params: calls.append(params) or ToolResult.success('ok'),
                                                   config={})))
     inherited = {'id': 'inherit', 'action': {'execution_session_id': 'source', 'silent': True}}
     started = threading.Event()
@@ -250,7 +250,7 @@ def test_delivery_retry_reuses_completed_tool_output(tmp_path,monkeypatch):
     def send(reply,context):
         sent.append(context['receive_id_type'])
         return len(sent)>1
-    monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:SimpleNamespace(execute=execute)))
+    monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:SimpleNamespace(execute_tool=execute)))
     monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial',lambda *_a,**_k:None)
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.scheduler.result_cache.runs_dir',lambda **_:tmp_path)

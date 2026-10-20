@@ -443,7 +443,7 @@ class Agent:
             start_time = time.time()
 
             # Execute tool (with empty parameters, tool will extract needed info from context)
-            result = tool.execute({})
+            result = tool.execute_tool({})
 
             # Calculate execution time
             execution_time = time.time() - start_time

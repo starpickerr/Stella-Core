@@ -43,6 +43,8 @@ class _FileTool:
         path.write_text(args.get("content", "changed"), encoding="utf-8")
         return ToolResult.success({"path": str(path)})
 
+    execute_tool = execute
+
 
 class _MemoryConfig:
     def __init__(self, workspace):

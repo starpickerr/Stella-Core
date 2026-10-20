@@ -301,7 +301,7 @@ class _WorkspaceWriteGuard:
             self._transaction.record(resolved)
         except Exception as e:
             return ToolResult.fail(f"Error: {e}")
-        return self._inner.execute(args)
+        return self._inner.execute_tool(args)
 
 
 class _PluginMemoryWriteGuard:
@@ -316,7 +316,7 @@ class _PluginMemoryWriteGuard:
         return self.execute(args)
 
     def execute(self, args):
-        return self._inner.execute({**args, **self._snapshot})
+        return self._inner.execute_tool({**args, **self._snapshot})
 
 
 def _guard_tools(

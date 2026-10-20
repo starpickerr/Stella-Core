@@ -14,6 +14,7 @@ import time
 import urllib.request
 import urllib.error
 from typing import Optional
+from contextlib import contextmanager
 
 from common.log import logger
 
@@ -47,30 +48,6 @@ _STDIO_ENV_PASSTHROUGH = (
 _STDIO_ENV_SENSITIVE = ("_KEY", "_SECRET", "_TOKEN", "_PASSWORD", "_PASSWD", "_CREDENTIAL")
 
 
-# Optional callback invoked after an OAuth authorization completes, so the
-# tool manager can bring the newly-authorized server online. Signature:
-# reload_fn(server_name: str) -> None. Installed by the tool manager.
-_reload_callback = None
-
-
-def set_reload_callback(fn) -> None:
-    """Register a callback fired after a server's OAuth flow succeeds."""
-    global _reload_callback
-    _reload_callback = fn
-
-
-def notify_server_authorized(server_name: str) -> None:
-    """Called by the web callback once tokens are stored for a server."""
-    fn = _reload_callback
-    if fn is None:
-        logger.debug(f"[MCP:{server_name}] Authorized but no reload callback registered")
-        return
-    try:
-        fn(server_name)
-    except Exception as e:
-        logger.warning(f"[MCP:{server_name}] reload callback failed: {e}")
-
-
 def _oauth_redirect_uri() -> str:
     """Build the OAuth callback URI served by the desktop backend."""
     try:
@@ -96,6 +73,8 @@ class McpClient:
         """
         self._lifecycle_lock = threading.RLock()
         self._closed = False
+        self._remote_responses = set()
+        self.on_authorized = None
         self.config = config
         self.name: str = config.get("name", "unknown")
         raw_transport: str = config.get("type", "stdio")
@@ -199,7 +178,41 @@ class McpClient:
         """A closed generation cannot reconnect or spawn another process."""
         with self._lifecycle_lock:
             self._closed = True
+            for response in tuple(self._remote_responses):
+                response.close()
+            self._remote_responses.clear()
             self._shutdown_connection()
+
+    def _ensure_open(self):
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError('MCP connection is closed')
+
+    @contextmanager
+    def _remote_response(self, request, timeout):
+        self._ensure_open()
+        response = urllib.request.urlopen(request, timeout=timeout)
+        with self._lifecycle_lock:
+            abandoned = self._closed
+            # Capture the session before publishing the response, so shutdown
+            # cannot miss an id assigned by an in-flight initialize request.
+            session_id = response.headers.get('Mcp-Session-Id')
+            if self.transport == 'streamable-http' and session_id:
+                with self._http_lock:
+                    if not self._http_session_id:
+                        self._http_session_id = session_id
+            if not abandoned:
+                self._remote_responses.add(response)
+        if abandoned:
+            response.close()
+            self.shutdown()
+            raise RuntimeError('MCP connection closed while request was in flight')
+        try:
+            yield response
+        finally:
+            with self._lifecycle_lock:
+                self._remote_responses.discard(response)
+            response.close()
 
     def _shutdown_connection(self):
         if self._proc is not None:
@@ -253,7 +266,7 @@ class McpClient:
         with self._lifecycle_lock:
             if self._closed:
                 return False
-            self._proc = subprocess.Popen(
+            process = self._proc = subprocess.Popen(
                 [command] + list(args),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -262,13 +275,13 @@ class McpClient:
                 encoding="utf-8",
                 env=env,
             )
-        logger.debug(f"[MCP:{self.name}] stdio process started (pid={self._proc.pid})")
+        logger.debug(f"[MCP:{self.name}] stdio process started (pid={process.pid})")
 
         threading.Thread(
-            target=self._drain_stderr, daemon=True, name=f"mcp-stderr-{self.name}"
+            target=self._drain_stderr, args=(process.stderr,), daemon=True, name=f"mcp-stderr-{self.name}"
         ).start()
         threading.Thread(
-            target=self._drain_stdout, daemon=True, name=f"mcp-stdout-{self.name}"
+            target=self._drain_stdout, args=(process.stdout,), daemon=True, name=f"mcp-stdout-{self.name}"
         ).start()
 
         return self._handshake()
@@ -335,16 +348,19 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] url blocked: {e}")
             return False
 
-    def _drain_stderr(self):
-        for line in self._proc.stderr:
-            line = line.strip()
-            if line:
-                logger.warning(f"[MCP:{self.name}] stderr: {line}")
+    def _drain_stderr(self, stream):
+        try:
+            for line in stream:
+                line = line.strip()
+                if line:
+                    logger.warning(f"[MCP:{self.name}] stderr: {line}")
+        except (OSError, ValueError):
+            pass  # Shutdown may close a process stream while it is being read.
 
-    def _drain_stdout(self):
+    def _drain_stdout(self, stream):
         """Background thread: read lines from stdout and put them into the queue."""
         try:
-            for line in self._proc.stdout:
+            for line in stream:
                 self._read_queue.put(line)
         except Exception:
             pass
@@ -448,7 +464,7 @@ class McpClient:
             headers={"Accept": "text/event-stream"},
         )
         endpoint = None
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with self._remote_response(req, timeout=10) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8").rstrip("\n\r")
                 if line.startswith("data:"):
@@ -483,7 +499,7 @@ class McpClient:
             method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
+        with self._remote_response(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
             _check_cancelled(cancel_event)
             raw = resp.read().decode("utf-8")
             _check_cancelled(cancel_event)
@@ -539,6 +555,7 @@ class McpClient:
                 resource_url=self._http_url,
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
+                on_authorized=self.on_authorized,
             )
 
     def _current_bearer(self) -> Optional[str]:
@@ -549,6 +566,7 @@ class McpClient:
 
     def _begin_oauth(self, www_authenticate: str = "") -> None:
         """Kick off the OAuth flow after a 401: discover, register, prompt user."""
+        self._ensure_open()
         if self._has_static_auth():
             return
         try:
@@ -563,6 +581,7 @@ class McpClient:
                 resource_url=self._http_url,
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
+                on_authorized=self.on_authorized,
             )
 
         if not self._oauth.ensure_registered(www_authenticate):
@@ -572,11 +591,14 @@ class McpClient:
             )
             return
 
+        self._ensure_open()
+        self._oauth.on_authorized = self.on_authorized
         auth_url = self._oauth.build_authorization_url()
         if not auth_url:
             logger.warning(f"[MCP:{self.name}] Failed to build authorization URL")
             return
 
+        self._ensure_open()
         self.needs_auth = True
         logger.warning(
             f"[MCP:{self.name}] ⚠️  Authorization required. Open this URL in a "
@@ -659,9 +681,32 @@ class McpClient:
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30)
+            with self._remote_response(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
+                _check_cancelled(cancel_event)
+                status = resp.status if hasattr(resp, "status") else resp.getcode()
+
+                # Notifications: server may reply with 202 Accepted and no body
+                if not expect_response or status == 202:
+                    try:
+                        resp.read()
+                    except Exception:
+                        pass
+                    return {}
+
+                content_type = (resp.headers.get("Content-Type") or "").lower()
+                expected_id = message.get("id")
+
+                if "text/event-stream" in content_type:
+                    return self._read_sse_response(resp, expected_id, cancel_event=cancel_event)
+
+                raw = resp.read().decode("utf-8")
+                _check_cancelled(cancel_event)
+                if not raw:
+                    return {}
+                return json.loads(raw)
         except urllib.error.HTTPError as e:
             # 401 is the spec-compliant "needs authorization" signal.
+            self._ensure_open()
             if e.code == 401 and not self._has_static_auth():
                 return self._handle_401(e, message, expect_response, _retried, cancel_event=cancel_event)
             # Surface the server-provided error body for easier debugging
@@ -673,40 +718,6 @@ class McpClient:
             raise IOError(
                 f"[MCP:{self.name}] streamable-http HTTP {e.code}: {detail[:200]}"
             )
-
-        with resp:
-            _check_cancelled(cancel_event)
-            # Capture session id assigned by the server (if any)
-            session_id = resp.headers.get("Mcp-Session-Id")
-            # Double-checked lock: only the first response sets the
-            # session id, preventing concurrent initializers from
-            # overwriting each other.
-            if session_id and not self._http_session_id:
-                with self._http_lock:
-                    if not self._http_session_id:
-                        self._http_session_id = session_id
-
-            status = resp.status if hasattr(resp, "status") else resp.getcode()
-
-            # Notifications: server may reply with 202 Accepted and no body
-            if not expect_response or status == 202:
-                try:
-                    resp.read()
-                except Exception:
-                    pass
-                return {}
-
-            content_type = (resp.headers.get("Content-Type") or "").lower()
-            expected_id = message.get("id")
-
-            if "text/event-stream" in content_type:
-                return self._read_sse_response(resp, expected_id, cancel_event=cancel_event)
-
-            raw = resp.read().decode("utf-8")
-            _check_cancelled(cancel_event)
-            if not raw:
-                return {}
-            return json.loads(raw)
 
     def _read_sse_response(self, resp, expected_id, cancel_event=None) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""
@@ -761,6 +772,7 @@ class McpClient:
     def _send_request(self, method: str, params: dict, cancel_event=None) -> dict:
         """Send a request and return the full response dict."""
         _check_cancelled(cancel_event)
+        self._ensure_open()
         if not self._initialized and method != "initialize":
             raise RuntimeError(f"[MCP:{self.name}] Client not initialized")
 
@@ -790,6 +802,7 @@ class McpClient:
 
     def _send_notification(self, method: str, params: dict):
         """Fire-and-forget notification (no response expected)."""
+        self._ensure_open()
         notification = self._build_notification(method, params)
         raw = json.dumps(notification) + "\n"
 
@@ -805,7 +818,7 @@ class McpClient:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=10):
+                with self._remote_response(req, timeout=10):
                     pass
             except Exception:
                 pass  # notifications are fire-and-forget
@@ -822,8 +835,11 @@ class McpClient:
             "capabilities": {},
             "clientInfo": {"name": "Stella", "version": "1.0"},
         }
-        # Temporarily mark as initialized so _send_request doesn't block
-        self._initialized = True
+        # Admission and publication are coordinated with shutdown.
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            self._initialized = True
         try:
             resp = self._send_request("initialize", init_params)
         except Exception as e:
@@ -836,7 +852,15 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] Handshake error")
             return False
 
+        with self._lifecycle_lock:
+            if self._closed:
+                self._initialized = False
+                return False
         self._send_notification("notifications/initialized", {})
+        with self._lifecycle_lock:
+            if self._closed:
+                self._initialized = False
+                return False
         logger.debug(f"[MCP:{self.name}] Handshake complete")
         return True
 

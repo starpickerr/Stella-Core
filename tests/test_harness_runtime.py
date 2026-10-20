@@ -218,7 +218,7 @@ def test_scheduled_tool_records_failure_and_unknown_without_replay(tmp_path, mon
             if isinstance(failure, Exception):
                 raise failure
             return failure
-        monkeypatch.setattr(ToolManager, 'create_tool', lambda *_: SimpleNamespace(execute=execute))
+        monkeypatch.setattr(ToolManager, 'create_tool', lambda *_: SimpleNamespace(execute_tool=execute))
         service = SchedulerService(store, lambda run: integration._execute_tool_call(run, None, agent_id))
         service._check_and_execute_tasks()
         assert store.occurrence_status(expected, stamp) == expected

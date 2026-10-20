@@ -457,7 +457,7 @@ class ToolManager:
                     logger.warning('[MCP] Failed to close server %s', server_name)
 
     def _load_mcp_tools_async(self, configs, generations=None):
-        from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry, set_reload_callback
+        from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry
         from agent.tools.mcp.mcp_tool import McpTool
         with self._mcp_lock:
             if self._mcp_registry is None:
@@ -470,7 +470,6 @@ class ToolManager:
                     self._mcp_active_configs[name] = cfg
                     self._mcp_generations[name] = self._mcp_generations.get(name, 0) + 1
                     generations[name] = self._mcp_generations[name]
-        set_reload_callback(self.reload_mcp_server)
         for cfg in configs:
             name = cfg.get('name', '<unnamed>')
             generation = generations[name]
@@ -480,6 +479,7 @@ class ToolManager:
                 if not self._mcp_admitted(name, generation):
                     continue
                 client = McpClient(cfg)
+                client.on_authorized = lambda n=name, g=generation: self.reload_mcp_server(n, generation=g)
                 with self._mcp_lock:
                     if not self._mcp_admitted(name, generation):
                         continue
@@ -526,8 +526,10 @@ class ToolManager:
                     except Exception:
                         logger.warning('[MCP] Failed to close unselected server %s', name)
 
-    def reload_mcp_server(self, server_name):
+    def reload_mcp_server(self, server_name, *, generation=None):
         with self._mcp_lock:
+            if generation is not None and not self._mcp_admitted(server_name, generation):
+                return
             config = self._mcp_active_configs.get(server_name)
             if config is None or not self._mcp_enabled(config):
                 return

@@ -299,12 +299,13 @@ class OAuthHandler:
     """Drives the OAuth flow and token lifecycle for a single MCP server."""
 
     def __init__(self, server_name: str, resource_url: str, redirect_uri: str,
-                 scope: str = "", client_name: str = "Stella"):
+                 scope: str = "", client_name: str = "Stella", on_authorized=None):
         self.server_name = server_name
         self.resource_url = resource_url
         self.redirect_uri = redirect_uri
         self.scope = scope
         self.client_name = client_name
+        self.on_authorized = on_authorized
 
         rec = load_server_record(server_name)
         self.metadata: dict = rec.get("metadata", {})
@@ -316,6 +317,14 @@ class OAuthHandler:
         self._verifier: Optional[str] = None
 
     # --- persistence -------------------------------------------------
+
+    def notify_authorized(self) -> None:
+        """Reload only the originating runtime generation, if it is still enabled."""
+        if self.on_authorized is not None:
+            try:
+                self.on_authorized()
+            except Exception:
+                logger.warning('[MCP-OAuth] Failed to reload authorized server')
 
     def _persist(self) -> None:
         save_server_record(self.server_name, {
