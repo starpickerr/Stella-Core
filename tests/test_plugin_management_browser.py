@@ -31,9 +31,10 @@ def test_settings_retains_drafts_reports_conflict_and_approves_independently(tmp
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={'width': 1080, 'height': 900})
+            page.set_default_timeout(5000)
             errors, calls, grants = [], [], []
             page.on('pageerror', lambda error: errors.append(str(error)))
-            page.add_init_script("localStorage.setItem('cow_auth_token', 'test-token')")
+            page.add_init_script("localStorage.setItem('cow_auth_token', 'test-token'); localStorage.setItem('stella_lang', 'zh')")
             fields = [{'key': 'name', 'title': '名称', 'category': 'general', 'type': 'string'},
                       {'key': 'other', 'title': '其他', 'category': 'other', 'type': 'string'}]
             descriptor = {'id': 'preferences', 'categories': [{'id': 'general', 'title': '常规'}, {'id': 'other', 'title': '其他类别'}], 'fields': fields}
@@ -79,6 +80,8 @@ def test_settings_retains_drafts_reports_conflict_and_approves_independently(tmp
             compiled = urllib.request.urlopen(origin + '/src/main.tsx').read().decode()
             react_url = re.search(r'from "([^"]*/deps/react\.js(?:\?[^"]*)?)"', compiled).group(1)
             dom_url = re.search(r'from "([^"]*/deps/react-dom_client\.js(?:\?[^"]*)?)"', compiled).group(1)
+            router_source = urllib.request.urlopen(origin + '/src/App.tsx').read().decode()
+            router_url = re.search(r'from "([^"]*/deps/react-router-dom\.js(?:\?[^"]*)?)"', router_source).group(1)
             html = '''<!doctype html><html><body><div id="root" style="max-width:800px;margin:24px auto"></div>
 <script type="module">
 import '/@vite/client';
@@ -87,19 +90,21 @@ RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$=()=>{}; window.
 const React = (await import('REACT_URL')).default;
 const ReactDOM = (await import('DOM_URL')).default;
 const Settings = (await import('/src/pages/settings/PluginSettings.tsx')).default;
+const {MemoryRouter} = await import('ROUTER_URL');
 await import('/src/index.css');
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Settings, {baseUrl: window.location.origin}));
-</script></body></html>'''.replace('REACT_URL', react_url).replace('DOM_URL', dom_url)
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter, null, React.createElement(Settings, {baseUrl: window.location.origin})));
+</script></body></html>'''.replace('REACT_URL', react_url).replace('DOM_URL', dom_url).replace('ROUTER_URL', router_url)
             page.route('**/plugin-test', lambda route: route.fulfill(body=html, content_type='text/html'))
             page.goto(origin + '/plugin-test')
             page.wait_for_load_state('networkidle')
             assert not errors, errors
+            page.get_by_role('radio', name='授权', exact=True).click()
             expect(page.get_by_role('button', name='审阅授权范围')).to_be_visible()
-            page.get_by_role('tab', name='常规').click()
+            page.get_by_role('radio', name='常规').click()
             page.get_by_label('名称').fill('保留草稿')
-            page.get_by_role('tab', name='其他类别').click()
+            page.get_by_role('radio', name='其他类别').click()
             page.get_by_label('其他', exact=True).fill('另一类别')
-            page.get_by_role('tab', name='常规').click()
+            page.get_by_role('radio', name='常规').click()
             expect(page.get_by_label('名称')).to_have_value('保留草稿')
             page.get_by_role('button', name='保存本类别').click()
             expect(page.get_by_role('alert')).to_contain_text('草稿已保留')
@@ -107,7 +112,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
             expect(page.get_by_label('名称')).to_have_value('保留草稿')
             page.get_by_role('button', name='保存本类别').click()
             expect(page.get_by_role('status')).to_have_text('本类别已保存')
-            page.get_by_role('tab', name='授权', exact=True).click()
+            page.get_by_role('radio', name='授权', exact=True).click()
             page.get_by_role('button', name='审阅授权范围').click()
             expect(page.get_by_role('dialog')).to_be_visible()
             expect(page.get_by_role('dialog')).to_contain_text('user: alice')

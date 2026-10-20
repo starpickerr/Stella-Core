@@ -279,7 +279,7 @@ export const SaveRow: React.FC<{ status: string; onSave: () => void; label?: str
   label,
 }) => (
   <div className="flex items-center justify-end gap-3 pt-1">
-    <span className={`text-xs text-accent transition-opacity ${status ? 'opacity-100' : 'opacity-0'}`}>{status}</span>
+    <span role="status" className={`text-xs text-accent transition-opacity ${status ? 'opacity-100' : 'opacity-0'}`}>{status}</span>
     <button
       onClick={onSave}
       className="px-4 py-2 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm font-medium cursor-pointer transition-colors"
