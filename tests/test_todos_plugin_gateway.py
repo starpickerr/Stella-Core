@@ -241,10 +241,11 @@ def _telegram_sends(monkeypatch):
     return sends
 
 
-def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, monkeypatch):
+def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, monkeypatch, registered_agent):
     from application import Application
     from core.services.todos_facade import TodosPluginFacade
 
+    registered_agent('test-agent')
     _patch_paths(monkeypatch, tmp_path)
     sends = _telegram_sends(monkeypatch)
     route = {"primary": {"channel_type": "telegram", "receiver": "100", "is_group": False}}
@@ -262,10 +263,11 @@ def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, mo
     assert facade.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "accepted"
 
 
-def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_path, monkeypatch):
+def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_path, monkeypatch, registered_agent):
     from application import Application
     from core.services.todos_facade import TodosPluginFacade
 
+    registered_agent('test-agent')
     _patch_paths(monkeypatch, tmp_path)
     sends = _telegram_sends(monkeypatch)
     route = {"primary": {"channel_type": "telegram", "receiver": "100", "is_group": False}}

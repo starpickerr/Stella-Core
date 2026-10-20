@@ -303,8 +303,9 @@ def _scheduler_context():
 # tests/test_todos_plugin_gateway.py; route edits below use the same real-worker path.
 
 
-def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugin, monkeypatch):
+def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugin, monkeypatch, registered_agent):
     from application import Application
+    registered_agent('test-agent')
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
         login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
     sends = []
@@ -328,8 +329,9 @@ def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugi
     assert sends == ["telegram", "wecom_bot"]
 
 
-def test_todo_unknown_result_is_preserved_across_route_edit(todos_plugin, monkeypatch):
+def test_todo_unknown_result_is_preserved_across_route_edit(todos_plugin, monkeypatch, registered_agent):
     from application import Application
+    registered_agent('test-agent')
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
         login_status="logged_in", _context_tokens={"wx_user": "private-token"}))
     sends = []

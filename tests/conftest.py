@@ -75,6 +75,26 @@ def security_audit_path(monkeypatch):
 
 
 @pytest.fixture
+def registered_agent(tmp_path):
+    """Register test identities against isolated state without bypassing lookup."""
+    from agent.registry import AgentProfile, AgentRegistry, get_agent_registry, set_agent_registry
+
+    previous = get_agent_registry()
+    registry = AgentRegistry(previous.list(), previous.default_agent_id)
+    set_agent_registry(registry)
+
+    def register(agent_id):
+        profile = AgentProfile(agent_id, agent_id, str(tmp_path / 'agents' / agent_id))
+        registry.upsert(profile)
+        return profile
+
+    try:
+        yield register
+    finally:
+        set_agent_registry(previous)
+
+
+@pytest.fixture
 def deterministic_briefing_generator(monkeypatch):
     """Run the production generator with scripted tool calls, never a provider."""
     from agent.briefing.generator import AgentBriefingGenerator

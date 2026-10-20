@@ -8,9 +8,10 @@ from agent.tools.base_tool import ToolResult
 
 
 @pytest.mark.parametrize('source,folder', [('source','project'),(None,'work/automations/alpha/write')])
-def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder):
+def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder, registered_agent):
     from agent.tools.write.write import Write
     from agent.runtime.run_record import RunRecord
+    registered_agent('alpha')
     workspace = tmp_path / 'work'
     project = tmp_path / 'project'
     workspace.mkdir()
@@ -30,11 +31,12 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
 
 
-def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
+def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch, registered_agent):
     import threading
     from agent.permission.gateway import SecurityGateway
     from agent.runtime.run_record import RunRecord
     from agent.runtime.tool_invocation import permission_denial, scheduled_permission_scope
+    registered_agent('alpha')
     workspace = tmp_path / 'work'
     workspace.mkdir()
     monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **kwargs: workspace)
