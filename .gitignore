@@ -2,6 +2,8 @@
 .DS_Store
 .idea
 .vscode
+.superpowers
+.c2cignore
 .venv
 /.venv 2/
 .vs
@@ -40,9 +42,6 @@ client_config.json
 .preview_secret
 /references/
 **/.dev.vars
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
 local/
 node_modules/
 
@@ -71,9 +70,3 @@ desktop/resources/bin/
 
 .wrangler/
 evals/reports/
-
-# Development-agent specifications stay on this machine and are not product source.
-/AGENTS.md
-/.agents/
-/.cursor/
-/.codex/
