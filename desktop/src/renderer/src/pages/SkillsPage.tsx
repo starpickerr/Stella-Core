@@ -241,7 +241,10 @@ const ToolCard: React.FC<{ tool: ToolInfo; disabled: boolean; onToggle: (enabled
       <Toggle label={tool.id} checked={tool.enabled} disabled={disabled} onChange={onToggle} />
     </div>
     <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
-    <span className="text-xs text-content-tertiary">{t(!tool.enabled ? 'capability_disabled' : tool.available ? 'capability_tool_available' : 'capability_tool_unavailable')}</span>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-content-tertiary">
+      <span>{tool.source?.type === 'plugin' ? `${t('menu_plugins')} · ${tool.source.plugin_ids.join(' / ')}` : 'Core'}</span>
+      <span>{t(!tool.enabled ? 'capability_disabled' : tool.available ? 'capability_tool_available' : 'capability_tool_unavailable')}</span>
+    </div>
   </Card>
 )
 

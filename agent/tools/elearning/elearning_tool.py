@@ -56,14 +56,8 @@ class ElearningTool(BaseTool):
 
     def is_available(self):
         from core.services.elearning_gateway import elearning_plugin_enabled
-        from core.plugins.caller import managed_data_lease
-        try:
-            if not elearning_plugin_enabled():
-                return False
-            with managed_data_lease('stella.elearning'):
-                return True
-        except Exception:
-            return False
+        from agent.tools.provenance import plugin_tool_available
+        return elearning_plugin_enabled() and plugin_tool_available(self.name)
 
     def execute(self, params):
         """Route through the eLearning port; the plugin owns credentials, sessions and files."""

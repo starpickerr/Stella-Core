@@ -86,6 +86,7 @@ def backend(route):
         else:
             data['tools'] = [{
                 'id': 'read',
+                'source': {'type':'builtin','plugin_ids':[]},
                 'title': {'zh': '读取文件', 'en': 'Read Files'},
                 'intro': {'zh': '读取工作区中的文件内容。', 'en': 'Read workspace files.'},
                 'detail': {'zh': '只能读取当前工作区里已有的文件。', 'en': 'Reads files in the workspace.'},
@@ -94,6 +95,7 @@ def backend(route):
                 'reason': {'zh': '', 'en': ''},
             }, {
                 'id': 'memory_search',
+                'source': {'type':'plugin','plugin_ids':['stella.memory']},
                 'title': {'zh': '搜索记忆', 'en': 'Search Memory'},
                 'intro': {'zh': INTRO, 'en': 'Search the agent memory. This introduction must stay complete.'},
                 'detail': {'zh': DETAIL, 'en': 'Available only in a conversation with memory.'},
@@ -241,6 +243,8 @@ with sync_playwright() as playwright:
         memory = page.get_by_role('article', name='memory_search')
         expect(memory.get_by_role('heading', name='memory_search', exact=True)).to_be_visible()
         expect(memory.get_by_text(INTRO)).to_be_visible()
+        expect(memory.get_by_text('插件 · stella.memory', exact=True)).to_be_visible()
+        expect(page.get_by_role('article', name='read', exact=True).get_by_text('Core', exact=True)).to_be_visible()
         expect(memory.get_by_text('不可用', exact=True)).to_be_visible()
         expect(page.get_by_role('article', name='read').get_by_text('可用', exact=True)).to_be_visible()
         expect(memory.get_by_role('switch')).to_be_checked()
@@ -382,7 +386,7 @@ with sync_playwright() as playwright:
         page.reload(wait_until='networkidle')
         page.get_by_role('tab', name='工具', exact=True).click()
         expect(page.get_by_text('工具目录加载失败')).to_be_visible()
-        expect(page.get_by_text('暂无内置工具')).to_have_count(0)
+        expect(page.get_by_text('暂无工具')).to_have_count(0)
         expect(page.get_by_role('button', name='重试')).to_be_visible()
         page.goto(test_url + '/#/plugins', wait_until='networkidle')
         expect(page).to_have_url(test_url + '/#/skills#plugins')

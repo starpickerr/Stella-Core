@@ -42,7 +42,8 @@ def is_tool_available(tool) -> bool:
     """
     try:
         from agent.tools.capability_settings import tool_enabled
-        if not tool_enabled(tool.name, tool=tool):
+        from agent.tools.provenance import plugin_tool_available
+        if not tool_enabled(tool.name, tool=tool) or not plugin_tool_available(tool.name, tool=tool):
             return False
     except Exception:
         logger.warning('[Capabilities] Cannot resolve enablement for %s', getattr(tool, 'name', '?'))
@@ -172,6 +173,9 @@ class BaseTool:
         try:
             if not tool_enabled(self.name, tool=self):
                 return ToolResult.fail(f'Tool {self.name} is disabled.')
+            from agent.tools.provenance import plugin_tool_available
+            if not plugin_tool_available(self.name, params, tool=self):
+                return ToolResult.fail(f'Plugin for tool {self.name} is disabled or unavailable.')
         except Exception:
             return ToolResult.fail(f'Cannot resolve enablement for {self.name}; the tool did not run.')
         from agent.runtime.tool_invocation import current_tool_call_id, permission_denial

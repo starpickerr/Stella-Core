@@ -1,10 +1,12 @@
-"""User-facing catalog of built-in tools.
+"""User-facing tool catalog, including Core adapters to plugin-owned features.
 
-The catalog is display copy. It does not register tools or change which
-tools an agent receives.
+Source ownership is shared with execution admission; listing never registers
+or starts tools, plugins or MCP servers.
 """
 
 from __future__ import annotations
+
+from agent.tools.provenance import plugin_tool_available, tool_source
 
 MEMORY_IDS = frozenset({"memory_search", "memory_get"})
 MEMORY_REASON = {
@@ -170,11 +172,12 @@ def build_catalog(loaded_ids, settings=None):
             "intro": dict(item["intro"]),
             "detail": dict(item["detail"]),
             "enabled": settings.enabled('tool', item['id']),
+            "source": tool_source(item['id']),
         }
         if item["id"] in MEMORY_IDS:
             row["available"] = False
             row["reason"] = dict(MEMORY_REASON)
-        elif item["id"] in loaded:
+        elif item["id"] in loaded and plugin_tool_available(item['id']):
             row["available"] = True
             row["reason"] = None
         else:

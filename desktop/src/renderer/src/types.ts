@@ -635,6 +635,7 @@ export interface LocalizedCopy {
 
 export interface ToolInfo {
   id: string
+  source?: { type: 'builtin' | 'plugin'; plugin_ids: string[] }
   enabled: boolean
   title: LocalizedCopy
   intro: LocalizedCopy
