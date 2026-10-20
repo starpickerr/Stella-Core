@@ -62,7 +62,7 @@ with sync_playwright() as playwright:
 
         categories = page.get_by_role('navigation', name='设置分类')
         names = [item.inner_text().strip() for item in categories.get_by_role('button').all()]
-        assert names == ['通用', '模型', '助手', '连接', '简报', '关于'], names
+        assert names == ['通用', '模型', '助手', '连接', '插件', '关于'], names
         expect(categories.get_by_role('button', name='通用', exact=True)).to_have_attribute('aria-current', 'page')
 
         main = page.locator('[data-settings-content]')

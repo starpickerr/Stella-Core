@@ -575,6 +575,33 @@ class ToolManager:
         """Return {server_name: status} snapshot for UI / debugging."""
         return dict(self._mcp_status)
 
+    def mcp_catalog(self) -> list[dict]:
+        """Read this workspace's published MCP inventory without making remote calls.
+
+        Only explicit display fields leave the manager; commands, URLs, headers,
+        environment variables and argument schemas remain private.
+        """
+        with self._mcp_lock:
+            configs = dict(self._mcp_active_configs)
+            statuses = self.list_mcp_status()
+            tools = list(self._mcp_tool_instances.values())
+            if not configs and not self._mcp_loaded:
+                configs = {cfg.get("name", "<unnamed>"): cfg for cfg in self._load_mcp_configs()}
+        names = set(configs) | set(statuses) | {tool.server_name for tool in tools}
+        result = []
+        for name in sorted(names):
+            state = statuses.get(name, "not_started")
+            result.append({
+                "name": name,
+                "transport": str(configs.get(name, {}).get("type", "stdio")),
+                "state": state,
+                "tools": sorted([
+                    {"name": tool.remote_name, "description": tool.description}
+                    for tool in tools if tool.server_name == name and state == "ready"
+                ], key=lambda tool: tool["name"]),
+            })
+        return result
+
     def sync_mcp_into_agent(self, agent) -> tuple:
         """
         Reconcile a live agent's tool collection with the current MCP tool registry.

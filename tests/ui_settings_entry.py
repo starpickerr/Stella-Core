@@ -1,4 +1,4 @@
-"""Settings entry, briefing tab, return path, and sidebar footer."""
+"""Settings entry, nested plugin options, return path, and sidebar footer."""
 
 import json
 import os
@@ -31,6 +31,20 @@ def backend(route):
     elif path == '/api/briefings/preferences':
         data['preferences'] = {'show_low_priority': True, 'show_ongoing': True, 'important_types': [],
                                'reminder_frequency': 'daily', 'summary_detail': 'brief'}
+    elif path == '/api/email/accounts':
+        data['settings'] = {'mailboxes': []}
+    elif path == '/api/tools':
+        data['tools'] = []
+    elif path == '/api/skills':
+        data['skills'] = []
+    elif path == '/api/mcp':
+        data['servers'] = []
+    elif path == '/api/plugins/dual-update-plan':
+        data.update(updates=[], blocked=[])
+    elif path == '/api/plugins/runtime':
+        data['plugins'] = [{'pluginId': 'stella.briefing', 'name': '简报', 'intent': 'enabled', 'state': 'stopped', 'version': '1.0'}]
+    elif path in ('/api/plugins/settings', '/api/plugins/authorization'):
+        data['result'] = []
     elif path.startswith('/api/briefings'):
         data.update(briefings=[], rules=[], default_text='', sources=[], items=[],
                     settings={'mailboxes': []}, actions={}, authorizations=[])
@@ -81,30 +95,19 @@ with sync_playwright() as playwright:
         for label in ('检查更新', '文档中心', 'GitHub', '反馈'):
             expect(page.get_by_text(label, exact=True).first).to_be_visible()
 
-        nav.get_by_role('button', name='简报').click()
-        expect(page.get_by_role('button', name='添加邮箱')).to_have_count(0)
-        page.get_by_role('button', name='简报设置').click()
-        expect(page).to_have_url(test_url + '/#/settings?tab=briefing')
+        nav.get_by_role('button', name='能力').click()
+        plugin = page.get_by_role('article', name='简报')
+        plugin.get_by_role('link', name='设置', exact=True).click()
+        expect(page).to_have_url(test_url + '/#/settings?tab=plugins&plugin=stella.briefing')
+        expect(categories.get_by_role('button', name='简报', exact=True)).to_have_count(0)
+        expect(categories.get_by_role('button', name='插件', exact=True)).to_have_attribute('aria-current', 'page')
         expect(page.get_by_role('button', name='添加邮箱')).to_be_visible()
-        expect(page.get_by_role('button', name='返回简报')).to_have_count(0)
         categories.get_by_role('button', name='模型', exact=True).click()
         page.get_by_role('button', name='返回原页面').click()
-        expect(page).to_have_url(test_url + '/#/briefing')
-
-        nav.get_by_role('button', name='日程').click()
-        page.get_by_role('button', name='Apple 日历').click()
-        page.get_by_role('menuitem', name='管理 Apple 日历').click()
-        expect(page.get_by_role('button', name='返回原页面')).to_be_visible()
-        page.get_by_role('button', name='返回原页面').click()
-        expect(page).to_have_url(test_url + '/#/calendar')
-
-        nav.get_by_role('button', name='事务').click()
-        page.get_by_role('button', name='Apple 提醒事项').click()
-        page.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
-        categories.get_by_role('button', name='简报', exact=True).click()
-        page.get_by_role('button', name='返回原页面').click()
-        expect(page).to_have_url(test_url + '/#/todos')
+        expect(page).to_have_url(test_url + '/#/skills')
+        nav.get_by_role('button', name='设置', exact=True).click()
+        expect(page.get_by_role('button', name='返回原页面')).to_have_count(0)
         assert errors == [], errors
-        print('Settings entry: sidebar, briefing tab, return path, and footer passed')
+        print('Settings entry: sidebar, nested plugin options, return path, and footer passed')
     finally:
         browser.close()

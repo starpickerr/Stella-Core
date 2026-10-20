@@ -2031,6 +2031,7 @@ class DesktopChannel(ChatChannel):
             '/api/weixin/qrlogin', 'WeixinQrHandler',
             '/api/feishu/register', 'FeishuRegisterHandler',
             '/api/tools', 'ToolsHandler',
+            '/api/mcp', 'McpCatalogHandler',
             '/api/skills', 'SkillsHandler',
             '/api/memory', 'MemoryHandler',
             '/api/memory/content', 'MemoryContentHandler',
@@ -5943,6 +5944,18 @@ class ToolsHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] Tools API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class McpCatalogHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.tools.tool_manager import ToolManager
+            return json.dumps({"status": "success", "servers": ToolManager().mcp_catalog()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[DesktopChannel] MCP catalog error: {e}")
+            return json.dumps({"status": "error", "message": "Could not load MCP capabilities"})
 
 
 class SkillsHandler:
