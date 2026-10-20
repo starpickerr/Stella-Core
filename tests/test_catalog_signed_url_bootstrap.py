@@ -1,28 +1,17 @@
 """Core-only first boot: catalog relative signed ZIP urls install and recover."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 from core.plugins.bootstrap import bootstrap_default_plugins
-from core.plugins.distribution import _package_files, fetch_and_install_from_catalog
-from core.plugins.package_ops import PackageStore
+from core.plugins.distribution import fetch_and_install_from_catalog
+from core.plugins.package_ops import PackageStore, _sha256_tree
 from core.plugins.signing import write_signed_zip
 
 
 DOMAINS = ("bills", "tasks")
 SECRET = b"stella-first-edition-plugin-catalog"
-
-
-def _tree_digest(root: Path) -> str:
-    h = hashlib.sha256()
-    for path in _package_files(root):
-        h.update(path.relative_to(root).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(path.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()
 
 
 def _layout(tmp_path: Path) -> tuple[Path, Path]:
@@ -44,7 +33,7 @@ def _layout(tmp_path: Path) -> tuple[Path, Path]:
             "hostApi": "^1.0.0",
             "version": manifest["version"],
             "url": f"plugin-packages/{domain}.zip",
-            "sha256": _tree_digest(src),
+            "sha256": _sha256_tree(src),
             "signatureAlg": "hmac-sha256",
         })
     catalog_path = resources / "plugin-catalog.json"

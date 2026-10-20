@@ -146,10 +146,9 @@ def test_application_port_refuses_missing_plugin(monkeypatch):
 
 
 def test_default_plugins_and_catalog_list_calendar():
-    import hashlib
     import json
 
-    from core.plugins.distribution import load_default_plugin_manifest
+    from core.plugins.distribution import load_default_plugin_manifest, verify_package_digest
 
     ids = {row["pluginId"] for row in load_default_plugin_manifest()["plugins"]}
     assert "stella.calendar" in ids
@@ -160,14 +159,8 @@ def test_default_plugins_and_catalog_list_calendar():
     if catalog is None:
         pytest.skip("Stella-Plugins sibling checkout not present")
     entry = next(p for p in catalog["plugins"] if p["pluginId"] == "stella.calendar")
-    h = hashlib.sha256()
     root = (Path("..") / "Stella-Plugins" / "catalog" / entry["path"]).resolve()
-    for f in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
-        h.update(f.relative_to(root).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(f.read_bytes())
-        h.update(b"\0")
-    assert h.hexdigest() == entry["sha256"]
+    assert verify_package_digest(root, entry["sha256"])
 
 
 def test_missing_calendar_plugin_cannot_create_legacy_database(monkeypatch, tmp_path):

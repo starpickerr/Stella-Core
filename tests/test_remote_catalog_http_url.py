@@ -6,28 +6,17 @@ without requiring a published CDN or push authorization.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from core.plugins.bootstrap import bootstrap_default_plugins
-from core.plugins.distribution import _package_files, fetch_and_install_from_catalog
-from core.plugins.package_ops import PackageStore
+from core.plugins.distribution import fetch_and_install_from_catalog
+from core.plugins.package_ops import PackageStore, _sha256_tree
 from core.plugins.signing import write_signed_zip
 
 SECRET = b"stella-first-edition-plugin-catalog"
-
-
-def _tree_digest(root: Path) -> str:
-    h = hashlib.sha256()
-    for path in _package_files(root):
-        h.update(path.relative_to(root).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(path.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()
 
 
 def _plugins_root() -> Path:
@@ -53,7 +42,7 @@ def test_absolute_http_url_installs_signed_package(tmp_path, monkeypatch):
                 "hostApi": "^1.0.0",
                 "version": json.loads((src / "plugin.json").read_text(encoding="utf-8"))["version"],
                 "url": "REPLACE",
-                "sha256": _tree_digest(src),
+                "sha256": _sha256_tree(src),
                 "signatureAlg": "hmac-sha256",
             }
         ],

@@ -16,16 +16,8 @@ from core.plugins.package_ops import PackageStore
 
 
 def _catalog(tmp_path: Path, plugin_id: str, source: Path) -> Path:
-    import hashlib
+    from core.plugins.package_ops import _sha256_tree
 
-    from core.plugins.distribution import _package_files
-
-    h = hashlib.sha256()
-    for path in _package_files(source):
-        h.update(path.relative_to(source).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(path.read_bytes())
-        h.update(b"\0")
     catalog = {
         "coreApi": "1.0.0",
         "plugins": [
@@ -33,7 +25,7 @@ def _catalog(tmp_path: Path, plugin_id: str, source: Path) -> Path:
                 "pluginId": plugin_id,
                 "hostApi": "^1.0.0",
                 "path": str(source.resolve()),
-                "sha256": h.hexdigest(),
+                "sha256": _sha256_tree(source),
             }
         ],
     }

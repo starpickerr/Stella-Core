@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -13,19 +12,7 @@ from core.plugins.distribution import (
     plan_bootstrap,
     plan_dual_update,
 )
-from core.plugins.package_ops import PackageStore
-
-
-def _tree_digest(root: Path) -> str:
-    h = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            continue
-        h.update(path.relative_to(root).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(path.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()
+from core.plugins.package_ops import PackageStore, _sha256_tree
 
 
 def test_default_plugins_list_includes_bills():
@@ -48,7 +35,7 @@ def test_offline_bootstrap_does_not_pretend_installed():
 
 def test_catalog_install_resolves_path_relative_to_catalog(tmp_path):
     sample = Path("samples/plugins/alpha").resolve()
-    digest = _tree_digest(sample)
+    digest = _sha256_tree(sample)
     pkg_link = tmp_path / "plugins" / "alpha"
     pkg_link.parent.mkdir(parents=True)
     pkg_link.symlink_to(sample)
@@ -81,7 +68,7 @@ def test_catalog_install_resolves_path_relative_to_catalog(tmp_path):
 
 def test_catalog_install_respects_removed_intent(tmp_path):
     sample = Path("samples/plugins/alpha")
-    digest = _tree_digest(sample)
+    digest = _sha256_tree(sample)
     catalog = {
         "coreApi": "1.0.0",
         "plugins": [
@@ -152,7 +139,7 @@ def test_catalog_identity_must_match_package(tmp_path):
     sample = Path("samples/plugins/alpha").resolve()
     catalog = tmp_path / "catalog.json"
     catalog.write_text(json.dumps({"coreApi": "1.0.0", "plugins": [{
-        "pluginId": "stella.bills", "path": str(sample), "sha256": _tree_digest(sample),
+        "pluginId": "stella.bills", "path": str(sample), "sha256": _sha256_tree(sample),
         "version": "1.0.0", "hostApi": "^1.0.0",
     }]}))
     store = PackageStore(tmp_path / "pkg")

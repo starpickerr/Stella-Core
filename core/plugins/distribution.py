@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -11,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.plugins.package_ops import PackageStore
+from core.plugins.package_ops import PackageStore, _iter_package_files, _sha256_tree
 from core.plugins.manifest import load_manifest
 
 
@@ -142,34 +141,13 @@ def load_catalog(catalog_path: Path) -> dict[str, Any]:
     return data
 
 
-_SKIP_DIR_NAMES = frozenset({
-    "__pycache__",
-    ".pytest_cache",
-    ".git",
-    ".mypy_cache",
-    ".ruff_cache",
-    "node_modules",
-})
-
-
 def _package_files(root: Path):
     """Source files that participate in package digests (ignore caches/VCS)."""
-    for path in sorted(p for p in Path(root).rglob("*") if p.is_file()):
-        if _SKIP_DIR_NAMES.intersection(path.parts):
-            continue
-        if path.suffix in {".pyc", ".pyo"}:
-            continue
-        yield path
+    yield from _iter_package_files(root)
 
 
 def verify_package_digest(path: Path, expected_sha256: str) -> bool:
-    h = hashlib.sha256()
-    for file in _package_files(path):
-        h.update(file.relative_to(path).as_posix().encode("utf-8"))
-        h.update(b"\0")
-        h.update(file.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest() == expected_sha256
+    return _sha256_tree(path) == expected_sha256
 
 
 def _resolve_catalog_entry_source(catalog_path: Path, entry: dict[str, Any]) -> Path | None:

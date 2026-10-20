@@ -230,7 +230,7 @@ def test_source_registry_excludes_disabled_connector_plugins(monkeypatch):
     assert registry.configured_sources() == []
 
 
-# ---- desktop HTTP: legacy path still used when plugins are off -----------
+# ---- desktop HTTP: plugins off must refuse legacy fallback (fail-closed) ---
 
 def test_settings_handlers_refuse_legacy_modules_when_plugins_off(monkeypatch, desktop):
     monkeypatch.delenv('STELLA_EMAIL_PLUGIN', raising=False)

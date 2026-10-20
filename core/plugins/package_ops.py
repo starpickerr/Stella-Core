@@ -56,7 +56,7 @@ class PackageStore:
         staged = self.staging / op_id
         if staged.exists():
             shutil.rmtree(staged)
-        shutil.copytree(source_dir, staged)
+        _copy_package_tree(Path(source_dir), staged)
         op = PackageOperation(
             operation_id=op_id,
             plugin_id=manifest["id"],
@@ -96,7 +96,7 @@ class PackageStore:
             if existing != op.digest:
                 return self._fail(op, "immutable package path content mismatch")
         else:
-            shutil.copytree(staged, target)
+            _copy_package_tree(staged, target)
         op.target_path = str(target)
         op.stage = PackageStage.PREPARED
         op.history.append("prepared")
@@ -179,11 +179,39 @@ class PackageStore:
         )
 
 
+# Must stay aligned with catalog packing / verify_package_digest filters.
+_SKIP_DIR_NAMES = frozenset({
+    "__pycache__",
+    ".pytest_cache",
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+})
+
+
+def _iter_package_files(root: Path):
+    """Files that participate in package digests (ignore caches/VCS)."""
+    for path in sorted(p for p in Path(root).rglob("*") if p.is_file()):
+        if _SKIP_DIR_NAMES.intersection(path.parts):
+            continue
+        if path.suffix in {".pyc", ".pyo"}:
+            continue
+        yield path
+
+
+def _copy_package_tree(source_dir: Path, destination: Path) -> None:
+    """Copy package sources without local caches/VCS into the content-addressed store."""
+
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        return {name for name in names if name in _SKIP_DIR_NAMES}
+
+    shutil.copytree(source_dir, destination, ignore=_ignore)
+
+
 def _sha256_tree(root: Path) -> str:
     h = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            continue
+    for path in _iter_package_files(root):
         h.update(path.relative_to(root).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(path.read_bytes())
