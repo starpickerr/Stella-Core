@@ -3,7 +3,7 @@ import { BookOpen } from 'lucide-react'
 import { t } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { ElearningSettings } from './briefing/ElearningSettings'
-import AgentElearningFileSettings from './settings/AgentElearningFileSettings'
+import ElearningFileSettings from './settings/ElearningFileSettings'
 
 /** Mature host shell for stella.elearning (settings cards from develop). */
 const ElearningPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
@@ -22,7 +22,7 @@ const ElearningPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <main data-stella-scroll className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-8">
           <ElearningSettings />
-          <AgentElearningFileSettings />
+          <ElearningFileSettings />
         </div>
       </main>
     </div>

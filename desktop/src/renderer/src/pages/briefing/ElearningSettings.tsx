@@ -6,7 +6,7 @@ import type { ElearningSettings as Config, ElearningSettingsInput } from '../../
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const initial: Config = { enabled: false, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '', file_sync_enabled: false, file_sync_root: '' }
+const initial: Config = { enabled: false, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '', file_sync_root: '' }
 const courseName = (value: string): string | null => {
   const name = value.trim().replace(/^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+/, '')
   return name && !/^\d+$/.test(name) ? name : null

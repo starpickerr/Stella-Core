@@ -7223,8 +7223,6 @@ class BriefingElearningHandler:
             if action == "delete":
                 settings = elearning.delete_settings()
             elif action == "save":
-                if "file_sync_enabled" in body or "file_sync_root" in body:
-                    raise ValueError("课件保存授权请在 Agent 设置中管理")
                 settings = elearning.save_settings(body)
             else:
                 raise ValueError("未知的来源操作")
@@ -7239,10 +7237,10 @@ class ElearningFileSyncSettingsHandler:
     def POST(self):
         def operation():
             body = _briefing_body()
-            if set(body) != {"file_sync_enabled", "file_sync_root"}:
-                raise ValueError("只能修改课件保存开关和目录")
+            if set(body) != {"file_sync_root"}:
+                raise ValueError("只能修改课件保存目录")
             return {"settings": _elearning_settings().save_file_sync_settings(
-                body["file_sync_enabled"], body["file_sync_root"])}
+                body["file_sync_root"])}
         return _briefing_response(operation)
 
 

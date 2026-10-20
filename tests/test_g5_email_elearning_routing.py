@@ -101,9 +101,9 @@ class _ElearningFacade:
         self.calls.append(("delete_settings",))
         return {"enabled": False, "username": ""}
 
-    def save_file_sync_settings(self, enabled, root):
-        self.calls.append(("save_file_sync_settings", enabled, root))
-        return {"file_sync_enabled": enabled, "file_sync_root": root}
+    def save_file_sync_settings(self, root):
+        self.calls.append(("save_file_sync_settings", root))
+        return {"file_sync_root": root}
 
     def test_connection(self, payload):
         self.calls.append(("test_connection", payload))
@@ -186,8 +186,8 @@ def test_elearning_settings_handlers_use_elearning_port(plugins_on, facades, des
     saved = call(web_channel.BriefingElearningHandler, body={"enabled": True, "username": "student"})
     assert saved["settings"] == {"enabled": True, "username": "student"}
 
-    forbidden = call(web_channel.BriefingElearningHandler, body={"file_sync_root": "/tmp"})
-    assert forbidden["status"] == "error"
+    directory = call(web_channel.BriefingElearningHandler, body={"file_sync_root": "/tmp"})
+    assert directory["status"] == "success"
 
     removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
     assert removed == {"status": "success", "settings": {"enabled": False, "username": ""}}
@@ -200,11 +200,11 @@ def test_elearning_settings_handlers_use_elearning_port(plugins_on, facades, des
     sync_get = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
     assert sync_get["settings"]["username"] == "student"
     sync_set = call(web_channel.ElearningFileSyncSettingsHandler,
-                    body={"file_sync_enabled": True, "file_sync_root": "/tmp/x"})
-    assert sync_set["settings"] == {"file_sync_enabled": True, "file_sync_root": "/tmp/x"}
+                    body={"file_sync_root": "/tmp/x"})
+    assert sync_set["settings"] == {"file_sync_root": "/tmp/x"}
     assert call(web_channel.ElearningFileSyncSettingsHandler, body={"file_sync_enabled": True})["status"] == "error"
 
-    assert ("save_file_sync_settings", True, "/tmp/x") in facades.elearning.calls
+    assert ("save_file_sync_settings", "/tmp/x") in facades.elearning.calls
     assert ("delete_settings",) in facades.elearning.calls
     assert no_legacy.hits == []
 

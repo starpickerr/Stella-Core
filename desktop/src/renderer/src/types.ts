@@ -1144,7 +1144,6 @@ export interface BriefingSource {
 
 export interface ElearningSettings {
   enabled: boolean
-  file_sync_enabled: boolean
   file_sync_root: string
   configured: boolean
   base_url: string

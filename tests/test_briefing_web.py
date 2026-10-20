@@ -170,7 +170,7 @@ def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test
     assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
 
 
-def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path):
+def test_elearning_directory_configuration_has_no_extra_write_switch(api, tmp_path):
     from core.services.elearning_facade import ElearningPluginFacade
     root = tmp_path / "course-files"
     root.mkdir()
@@ -178,26 +178,21 @@ def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path
         "base_url": "https://elearning.fudan.edu.cn", "username": "student",
         "password": "campus-secret", "courses": ["42"]})
     assert created["status"] == "success"
-    forbidden = call(web_channel.BriefingElearningHandler,
-        body={"file_sync_enabled": True, "file_sync_root": str(root)})
-    assert forbidden["status"] == "error"
-    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is False
-
-    granted = call(web_channel.ElearningFileSyncSettingsHandler,
-        body={"file_sync_enabled": True, "file_sync_root": str(root)})
-    assert granted["status"] == "success"
-    assert granted["settings"]["file_sync_root"] == str(root)
+    configured = call(web_channel.BriefingElearningHandler, body={"file_sync_root": str(root)})
+    assert configured["status"] == "success"
     saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
-    assert saved["settings"]["file_sync_enabled"] is True
-    call(web_channel.BriefingElearningHandler, body={"enabled": False})
-    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is True
-    call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
-    assert ElearningPluginFacade().get_settings()["file_sync_enabled"] is False
-    call(web_channel.ElearningFileSyncSettingsHandler,
-        body={"file_sync_enabled": True, "file_sync_root": str(root)})
-    revoked = call(web_channel.ElearningFileSyncSettingsHandler,
-        body={"file_sync_enabled": False, "file_sync_root": str(root)})
-    assert revoked["settings"]["file_sync_enabled"] is False
+    assert saved["settings"]["file_sync_root"] == str(root)
+    assert "file_sync_enabled" not in saved["settings"]
+    for changes in ({"enabled": False}, {"courses": ["43"]}):
+        call(web_channel.BriefingElearningHandler, body=changes)
+        assert ElearningPluginFacade().get_settings()["file_sync_root"] == str(root)
+    missing = call(web_channel.ElearningFileSyncSettingsHandler,
+        body={"file_sync_root": str(root / "not-present")})
+    assert missing["status"] == "error"
+    assert ElearningPluginFacade().get_settings()["file_sync_root"] == str(root)
+    cleared = call(web_channel.ElearningFileSyncSettingsHandler, body={"file_sync_root": ""})
+    assert cleared["settings"]["file_sync_root"] == ""
+    assert ElearningPluginFacade().get_settings()["username"] == "student"
 
 
 @pytest.mark.parametrize("handler,body", [

@@ -6,7 +6,7 @@ Host-provided capabilities arrive through ``_hostDataHandle`` (JSON only):
 
 Network purposes (discover / read / background / sync) are authorized by the
 host gateway through the invoke purpose; this entry only enforces the surface.
-Policy audit events (file-sync grant changes, downloads) are queued in the data
+Policy audit events (directory changes, downloads) are queued in the data
 directory and surfaced to the host with ``drain_audit_events``.
 """
 
@@ -35,7 +35,7 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "list_files": ("query", "elearning.read", False, ("course_ids", "file_ids", "file_extensions", "offset", "limit")),
     "save_settings": ("domainWrite", "elearning.write", True, ("payload",)),
     "delete_settings": ("domainWrite", "elearning.write", True, ()),
-    "save_file_sync_settings": ("domainWrite", "elearning.write", True, ("enabled", "root")),
+    "save_file_sync_settings": ("domainWrite", "elearning.write", True, ("root",)),
     "test_connection": ("domainWrite", "elearning.write", False, ("payload",)),
     "set_cursors": ("domainWrite", "elearning.write", True, ("cursors",)),
     "drain_audit_events": ("domainWrite", "elearning.write", False, ()),

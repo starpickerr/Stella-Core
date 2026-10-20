@@ -20,7 +20,7 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
     monkeypatch.setattr("agent.prompt.builder.conf", lambda: live)
     monkeypatch.setenv("STELLA_ELEARNING_PLUGIN", "1")
     monkeypatch.setattr("core.services.elearning_facade.ElearningPluginFacade.get_settings", lambda self: {
-        "enabled": False, "configured": True, "file_sync_enabled": True,
+        "enabled": False, "configured": True, "file_sync_enabled": False,
         "file_sync_root": str(tmp_path / "selected"),
         "password": "TOPSECRET",
     }, raising=False)

@@ -1,4 +1,4 @@
-"""Download selected Canvas files into an explicitly granted course folder."""
+"""Download selected Canvas files into the configured course folder."""
 from __future__ import annotations
 
 import hashlib
@@ -57,6 +57,14 @@ def _courseware_filename(raw):
     return stem + suffix
 
 
+def _versioned_filename(name, version):
+    stem, extension = os.path.splitext(name)
+    suffix = f"-更新-{version}{extension[:16]}"
+    while len((stem + suffix).encode("utf-8")) > 240:
+        stem = stem[:-1]
+    return stem + suffix
+
+
 def _courseware_folder(course):
     name = re.sub(r"^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+", "", str(course.get("name") or ""))
     safe = _component(name, "课程")
@@ -79,6 +87,34 @@ def _manifest_name(value):
 def _fingerprint(raw):
     fields = {key: raw.get(key) for key in ("id", "filename", "display_name", "size", "updated_at", "modified_at")}
     return hashlib.sha256(json.dumps(fields, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _open_directory(path):
+    """Walk every component without following links, including root ancestors."""
+    if not path.is_absolute() or ".." in path.parts:
+        raise SyncError("课程文件保存目录无效")
+    descriptor = None
+    try:
+        descriptor = os.open(path.anchor, _DIRECTORY_FLAGS)
+        for component in path.parts[1:]:
+            child = os.open(component, _DIRECTORY_FLAGS, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise SyncError("课程文件保存目录不可访问、权限不足或已移动，请检查目录及系统访问权限") from exc
+
+
+def _check_directory(path, descriptor):
+    current = _open_directory(path)
+    try:
+        actual, expected = os.fstat(current), os.fstat(descriptor)
+        if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+            raise SyncError("课程文件保存目录已移动，请重新选择目录")
+    finally:
+        os.close(current)
 
 
 def _open_child(parent_fd, name):
@@ -202,29 +238,26 @@ def _save_manifest(store, config, manifest, layout):
     write_json(_manifest_path(store, config, layout), manifest)
 
 
-def _current_grant(store, config, course_id):
+def _current_configuration(store, config, course_id):
     current = store.load_settings()
-    if (not current.get("file_sync_enabled")
-            or account_id(current) != account_id(config)
+    if (account_id(current) != account_id(config)
             or current.get("file_sync_root") != config.get("file_sync_root")
             or course_id not in current.get("courses", [])):
-        raise SyncError("课程文件同步授权已变更，请检查 Agent 设置")
+        raise SyncError("课程文件同步设置已变更，请检查 eLearning 设置")
 
 
 def sync_files(client, config, rows, store, cancel_event=None, layout="managed"):
     """Save changed files; return per-file errors without hiding briefing data."""
     if layout not in ("managed", "courseware"):
         raise ValueError("invalid eLearning file layout")
-    if not config.get("file_sync_enabled"):
-        return []
     if not rows:
         return []
     _check_cancelled(cancel_event)
     root = Path(config.get("file_sync_root") or "")
-    if not root.is_absolute() or not root.is_dir() or root.resolve(strict=True) != root:
-        return ["课程文件保存目录已移动或不可用，请重新选择目录"]
+    if not root.is_absolute() or ".." in root.parts:
+        return ["课程文件保存目录无效，请重新选择目录"]
     try:
-        _current_grant(store, config, str(rows[0][0]["id"]))
+        _current_configuration(store, config, str(rows[0][0]["id"]))
     except SyncError as exc:
         return [str(exc)]
     errors = []
@@ -234,9 +267,9 @@ def sync_files(client, config, rows, store, cancel_event=None, layout="managed")
         _check_cancelled(cancel_event)
         manifest = _load_manifest(store, config, root, layout)
         try:
-            root_fd = os.open(str(root), _DIRECTORY_FLAGS)
-        except OSError:
-            return ["课程文件保存目录不可用，请重新选择目录"]
+            root_fd = _open_directory(root)
+        except SyncError as exc:
+            return [str(exc)]
         try:
             for index, (course, raw) in enumerate(rows, start=1):
                 _check_cancelled(cancel_event)
@@ -264,7 +297,8 @@ def sync_files(client, config, rows, store, cancel_event=None, layout="managed")
 def _sync_one(client, config, store, root, materials_fd, manifest, course, raw, cancel_event=None, layout="managed"):
     _check_cancelled(cancel_event)
     course_id, file_id = str(course["id"]), str(raw["id"])
-    _current_grant(store, config, course_id)
+    _current_configuration(store, config, course_id)
+    _check_directory(root, materials_fd)
     if isinstance(raw.get("size"), (int, float)) and raw["size"] > _MAX_FILE_SIZE:
         raise SyncError("课程文件超过 512 MB，未保存")
     if course_id not in manifest["courses"]:
@@ -309,29 +343,28 @@ def _sync_one(client, config, store, root, materials_fd, manifest, course, raw, 
         logger.info("[eLearningFileSync] downloaded course=%s file=%s", course_id, file_id)
         try:
             _check_cancelled(cancel_event)
-            _current_grant(store, config, course_id)
+            _current_configuration(store, config, course_id)
             existing_digest = _digest_existing(directory_fd, name, cancel_event)
             if layout == "courseware" and existing_digest == downloaded_digest:
                 manifest["files"][key] = {"remote": remote, "name": name, "sha256": downloaded_digest}
                 _save_manifest(store, config, manifest, layout)
                 return
-            replace = (existing_digest is None or
-                       bool(previous.get("sha256") and existing_digest == previous["sha256"]))
-            if not replace:
-                stem, extension = os.path.splitext(name if layout == "courseware" else _filename(raw))
-                name = f"{stem}-更新-{remote[:8]}{extension}"
+            # Never replace an existing user-visible file: it may be edited
+            # after any digest check. New remote versions get exclusive names.
+            if existing_digest is not None:
+                base = _courseware_filename(raw) if layout == "courseware" else _filename(raw)
+                name = _versioned_filename(base, remote[:8])
                 if _digest_existing(directory_fd, name, cancel_event) is not None:
-                    name = f"{stem}-更新-{remote[:8]}-{downloaded_digest[:8]}{extension}"
+                    name = _versioned_filename(base, f"{remote[:8]}-{downloaded_digest[:8]}")
             destination = root / folder / "课件" / name if layout == "courseware" else root / folder / name
             store.record_audit(tool="elearning", operation="download", resource=str(destination), event="file_modify",
                    risk="L1", decision="allow", reason="Configured course file sync within the selected folder.")
             _check_cancelled(cancel_event)
-            if replace:
-                os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-            else:
-                os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
-                        follow_symlinks=False)
-                os.unlink(temporary, dir_fd=directory_fd)
+            _current_configuration(store, config, course_id)
+            _check_directory(destination.parent, directory_fd)
+            os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
+                    follow_symlinks=False)
+            os.unlink(temporary, dir_fd=directory_fd)
             manifest["files"][key] = {"remote": remote, "name": name, "sha256": downloaded_digest}
             _save_manifest(store, config, manifest, layout)
         finally:

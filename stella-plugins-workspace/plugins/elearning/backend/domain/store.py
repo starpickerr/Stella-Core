@@ -33,7 +33,6 @@ DEFAULTS = {
     "token": "",
     "courses": [],
     "request_interval": 0.4,
-    "file_sync_enabled": False,
     "file_sync_root": "",
 }
 
@@ -168,6 +167,7 @@ class ElearningStore:
             saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
             if not isinstance(saved, dict):
                 raise ValueError("eLearning 设置格式无效")
+            saved.pop("file_sync_enabled", None)  # Retired business write switch; never gates downloads.
             return {**DEFAULTS, **saved}
 
     def public_settings(self, config=None):
@@ -179,7 +179,7 @@ class ElearningStore:
             "password_masked": PASSWORD_MASK if cfg["password"] else "",
             "configured": bool(cfg["username"] and cfg["courses"] and self.has_credentials(cfg)),
             "account_id": account_id(cfg),
-            "file_sync_enabled": bool(cfg["file_sync_enabled"]), "file_sync_root": cfg["file_sync_root"],
+            "file_sync_root": cfg["file_sync_root"],
         }
 
     def resolve_settings(self, payload):
@@ -187,7 +187,7 @@ class ElearningStore:
             raise ValueError("eLearning 设置必须是对象")
         old = self.load_settings()
         cfg = {**old, **{key: payload[key] for key in ("enabled", "base_url", "username", "courses",
-                                                       "file_sync_enabled", "file_sync_root") if key in payload}}
+                                                       "file_sync_root") if key in payload}}
         if not isinstance(cfg["enabled"], bool):
             raise ValueError("enabled 必须是布尔值")
         if not isinstance(cfg["base_url"], str):
@@ -204,26 +204,10 @@ class ElearningStore:
         ):
             raise ValueError("课程必须是非空课程 ID 或课程名称的列表")
         cfg["courses"] = list(dict.fromkeys(value.strip() for value in cfg["courses"]))
-        # Changing the briefing course selection must not silently expand an
-        # existing Agent file-save grant. It can be re-enabled in Agent settings.
-        if cfg["courses"] != old["courses"] and "file_sync_enabled" not in payload:
-            cfg["file_sync_enabled"] = False
         if account_id(cfg) != account_id(old):
             cfg["password"] = cfg["token"] = ""
-            # Never transfer an earlier account's folder grant implicitly.
-            if not (payload.get("file_sync_enabled") is True and payload.get("file_sync_root")):
-                cfg["file_sync_enabled"] = False
-                cfg["file_sync_root"] = ""
-        if not isinstance(cfg["file_sync_enabled"], bool) or not isinstance(cfg["file_sync_root"], str):
-            raise ValueError("课程文件同步设置无效")
-        if cfg["file_sync_enabled"]:
-            if not cfg["courses"]:
-                raise ValueError("请先选择允许保存文件的课程，再开启文件同步")
-            if "file_sync_enabled" in payload or "file_sync_root" in payload:
-                root = Path(cfg["file_sync_root"]).expanduser()
-                if not root.is_dir():
-                    raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
-                cfg["file_sync_root"] = str(root.resolve(strict=True))
+        if "file_sync_root" in payload:
+            cfg["file_sync_root"] = self._directory(cfg["file_sync_root"])
         password = payload.get("password", "")
         if not isinstance(password, str):
             raise ValueError("eLearning 密码格式无效")
@@ -242,36 +226,36 @@ class ElearningStore:
             write_json(self.settings_path, cfg)
             if account_id(previous) != account_id(cfg):
                 self.course_options_path(previous).unlink(missing_ok=True)
-            if (previous.get("file_sync_enabled"), previous.get("file_sync_root")) != (
-                cfg["file_sync_enabled"], cfg["file_sync_root"]
-            ):
-                self.record_audit(tool="elearning", operation="configure",
-                                  resource=cfg["file_sync_root"] or "course files",
-                                  event="file_modify", risk="L1", decision="policy_change",
-                                  reason="eLearning file sync folder grant changed.")
+            if previous.get("file_sync_root") != cfg["file_sync_root"]:
+                self._record_directory_change(cfg["file_sync_root"])
             return self.public_settings(cfg)
 
-    def save_file_sync_settings(self, enabled, root):
-        """Manage the Agent's file-save grant without changing briefing sources."""
-        if not isinstance(enabled, bool) or not isinstance(root, str):
-            raise ValueError("课程文件同步设置无效")
+    @staticmethod
+    def _directory(root):
+        if not isinstance(root, str):
+            raise ValueError("课程文件保存目录格式无效")
+        if not root.strip():
+            return ""
+        directory = Path(root).expanduser()
+        if not directory.is_dir():
+            raise ValueError("请选择已存在且可访问的保存目录；课程文件夹会自动创建")
+        return str(directory.resolve(strict=True))
+
+    def _record_directory_change(self, root):
+        self.record_audit(tool="elearning", operation="configure", resource=root or "course files",
+                          event="file_modify", risk="L1", decision="policy_change",
+                          reason="eLearning download directory changed; execution remains subject to Core policy.")
+
+    def save_file_sync_settings(self, root):
+        """Configure the destination independently of account and execution permission."""
+        root = self._directory(root)
         with _lock:
             cfg = self.load_settings()
-            previous = (cfg["file_sync_enabled"], cfg["file_sync_root"])
-            if enabled:
-                if not cfg["username"] or not cfg["courses"] or not self.has_credentials(cfg):
-                    raise ValueError("请先连接 eLearning 账号并选择课程")
-                directory = Path(root).expanduser()
-                if not directory.is_dir():
-                    raise ValueError("请选择已存在的保存目录；课程文件夹会自动创建")
-                root = str(directory.resolve(strict=True))
-            cfg["file_sync_enabled"] = enabled
+            previous = cfg["file_sync_root"]
             cfg["file_sync_root"] = root
             write_json(self.settings_path, cfg)
-            if previous != (enabled, root):
-                self.record_audit(tool="elearning", operation="configure", resource=root or "course files",
-                                  event="file_modify", risk="L1", decision="policy_change",
-                                  reason="eLearning file sync folder grant changed.")
+            if previous != root:
+                self._record_directory_change(root)
             return self.public_settings(cfg)
 
     def delete_settings(self):

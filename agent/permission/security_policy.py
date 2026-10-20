@@ -394,12 +394,12 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                          json.dumps(scopes, ensure_ascii=False) + ".")
     if elearning_sync is not None:
         lines.append(
-            "The built-in eLearning tool reads its saved login session internally, even when workspace_outside=deny. "
+            "The eLearning plugin tool reads its saved login session internally, even when workspace_outside=deny. "
             "A refusal to read the raw session file does not block this connector. Never request workspace_outside "
             "access to inspect cookies; it cannot grant credential access. If the connector reports login timeout "
             "or HTTP 401, report an authentication/network problem and direct the user to eLearning settings."
             if english else
-            "内置 elearning 工具会在内部读取已保存的登录状态，不受 workspace_outside=deny 对原始文件读取的限制。"
+            "eLearning 插件工具会在内部读取已保存的登录状态，不受 workspace_outside=deny 对原始文件读取的限制。"
             "会话文件读取被拒绝不代表连接器被拒绝；不要建议开放 workspace_outside 来查看 Cookie，"
             "该权限也不能开放凭据。若连接器报告登录超时或 HTTP 401，应说明是登录或网络问题，"
             "引导用户到 eLearning 设置重新登录。"
@@ -422,8 +422,8 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                           "eLearning 文件同步仅可写入已选目录：") + root + ".")
         else:
             lines.append("eLearning file sync is not ready; the user must connect the account and select courses "
-                         "in briefing sources, then authorize a save folder in Agent settings."
-                         if english else "eLearning 文件同步未就绪；需要先在简报来源中连接账号并选择课程，再在 Agent 设置中授权保存目录。")
+                         "in eLearning settings and choose a destination folder."
+                         if english else "eLearning 文件同步未就绪；需要先在 eLearning 设置中连接账号、选择课程并配置课件保存目录。")
     lines.extend([
         ("Create or update custom skills with the skill tool. Full access permits this managed operation; "
          "project access may require confirmation for the system skill store."

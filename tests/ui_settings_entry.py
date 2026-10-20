@@ -27,7 +27,7 @@ def backend(route):
     elif path in ('/api/briefings/elearning', '/api/elearning/file-sync'):
         data['settings'] = {'enabled': False, 'configured': False, 'base_url': '', 'username': '',
                             'courses': [], 'course_options': [], 'account_id': '', 'password_set': False,
-                            'password_masked': '', 'file_sync_enabled': False, 'file_sync_root': ''}
+                            'password_masked': '', 'file_sync_root': ''}
     elif path == '/api/briefings/preferences':
         data['preferences'] = {'show_low_priority': True, 'show_ongoing': True, 'important_types': [],
                                'reminder_frequency': 'daily', 'summary_detail': 'brief'}

@@ -4,7 +4,7 @@ import { ExternalLink } from 'lucide-react'
 import { SettingsPanel } from '../briefing/SettingsPanel'
 import { MailboxSettings } from '../briefing/MailboxSettings'
 import { ElearningSettings } from '../briefing/ElearningSettings'
-import AgentElearningFileSettings from './AgentElearningFileSettings'
+import ElearningFileSettings from './ElearningFileSettings'
 import { t } from '../../i18n'
 
 /** First-party product settings that used to live as top-level Core tabs. */
@@ -54,7 +54,7 @@ export function PluginDomainPanel({ pluginId }: { pluginId: string }): React.Rea
       <section className="space-y-6" aria-label="课程来源">
         <OpenAppLink to="/elearning" label={t('settings_plugin_open_elearning')} />
         <ElearningSettings />
-        <AgentElearningFileSettings />
+        <ElearningFileSettings />
       </section>
     )
   }

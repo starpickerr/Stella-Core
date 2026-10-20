@@ -46,14 +46,14 @@ def test_course_names_are_cached_per_account_for_settings(config_path):
     assert not previous_path.exists()
 
 
-def test_connection_test_discovers_courses_before_file_grant(config_path, tmp_path):
+def test_connection_test_discovers_courses_without_changing_directory(config_path, tmp_path):
     settings.save_settings(config(enabled=False, courses=[]))
     canvas = FakeCanvas()
     with patch("stella_elearning_domain_tests.service.ensure_login", return_value=canvas):
         rows = settings.check_connection({"file_sync_enabled": True,
                                           "file_sync_root": str(tmp_path)})
     assert rows == [{"id": "42", "name": "课程"}]
-    assert settings.load_settings()["file_sync_enabled"] is False
+    assert settings.load_settings()["file_sync_root"] == ""
 
 
 def test_disabled_source_is_not_available(config_path):
@@ -163,10 +163,10 @@ def test_cancelled_elearning_tool_returns_so_next_session_work_can_run(config_pa
     assert next_tool.execute({"action": "courses"}).status == "success"
 
 
-def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path, tmp_path, security_audit_path):
+def test_elearning_tool_syncs_selected_files_only_to_configured_folder(config_path, tmp_path, security_audit_path):
     root = tmp_path / "selected"
     root.mkdir()
-    settings.save_settings(config(enabled=False, file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(enabled=False, file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"] = [
         {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"},
@@ -186,14 +186,14 @@ def test_elearning_tool_syncs_selected_files_only_to_granted_folder(config_path,
     assert missing["status"] == "partial" and "missing" in missing["errors"][0]
     page = json.loads(tool.execute({"action": "sync_files", "limit": 1}).result)
     assert page["total"] == 2 and page["next_offset"] == 1
-    settings.save_settings({"file_sync_enabled": False})
-    assert "Agent 设置中开启课件保存" in tool.execute({"action": "sync_files"}).result
+    settings.save_file_sync_settings("")
+    assert "eLearning 设置中选择课件保存目录" in tool.execute({"action": "sync_files"}).result
 
 
 def test_elearning_lists_live_files_and_filters_downloads_without_scripts(config_path, tmp_path, security_audit_path):
     root = tmp_path / "selected"
     root.mkdir()
-    settings.save_settings(config(enabled=False, file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(enabled=False, file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"] = [
         {"id": 4, "filename": "第一讲.PDF", "size": 3, "url": BASE + "/files/4/download"},
@@ -285,7 +285,7 @@ def test_courseware_layout_adopts_existing_original_name_and_blocks_symlink(conf
     materials = root / "计算机网络" / "课件"
     materials.mkdir(parents=True)
     (materials / "讲义.pdf").write_bytes(b"pdf")
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["courses"] = [{"id": 42, "name": "CS30066.01 计算机网络"}]
     canvas.rows["files"] = [
@@ -312,7 +312,7 @@ def test_courseware_layout_adopts_existing_original_name_and_blocks_symlink(conf
     # A new layout manifest maps this course to its original safe directory;
     # exercise a fresh account so the symlink is the first candidate.
     settings.save_settings({"username": "another", "password": "replacement", "courses": ["42"],
-                            "file_sync_enabled": True, "file_sync_root": str(root)})
+                            "file_sync_root": str(root)})
     result = json.loads(tool.execute(args).result)
     assert result["status"] == "partial"
     assert "安全目录" in result["errors"][0]
@@ -322,7 +322,7 @@ def test_courseware_layout_adopts_existing_original_name_and_blocks_symlink(conf
 def test_cancel_during_file_download_removes_partial_file(config_path, tmp_path, security_audit_path):
     root = tmp_path / "selected"
     root.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"] = [{"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}]
     event = threading.Event()
@@ -490,7 +490,7 @@ def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, 
 
     root = tmp_path / "project"
     root.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     cfg = settings.load_settings()
     course = {"id": 42, "name": "课程"}
     raw = {"id": 4, "filename": "讲义.pdf", "size": 5, "updated_at": "v1", "url": BASE + "/files/4/download"}
@@ -507,24 +507,25 @@ def test_file_sync_creates_course_folder_and_preserves_local_edits(config_path, 
     raw["updated_at"] = "v2"
     client.content = b"newer"
     assert sync_files(client, cfg, [(course, raw)]) == []
-    assert saved.read_bytes() == b"newer"
-
-    saved.write_bytes(b"my notes")
+    assert saved.read_bytes() == b"first"
+    current = next(path for path in saved.parent.iterdir() if path.read_bytes() == b"newer")
+    current.write_bytes(b"my notes")
     raw["updated_at"] = "v3"
     client.content = b"third"
     assert sync_files(client, cfg, [(course, raw)]) == []
-    assert saved.read_bytes() == b"my notes"
-    assert any(path.read_bytes() == b"third" for path in saved.parent.iterdir() if path != saved)
+    assert saved.read_bytes() == b"first"
+    assert current.read_bytes() == b"my notes"
+    assert any(path.read_bytes() == b"third" for path in saved.parent.iterdir() if path not in (saved, current))
     assert len(security_audit_path.read_text().splitlines()) >= 4
 
 
-def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_path, monkeypatch):
+def test_file_sync_rejects_symlink_escape_and_changed_configuration(config_path, tmp_path, monkeypatch):
     from stella_elearning_test_support import sync_files
 
     root, outside = tmp_path / "project", tmp_path / "outside"
     root.mkdir()
     outside.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     cfg = settings.load_settings()
     course = {"id": 42, "name": "课程"}
     raw = {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}
@@ -534,8 +535,8 @@ def test_file_sync_rejects_symlink_escape_and_revoked_grant(config_path, tmp_pat
     assert list(outside.iterdir()) == []
     client.open.assert_not_called()
 
-    settings.save_settings({"file_sync_enabled": False})
-    assert "授权已变更" in sync_files(client, cfg, [(course, raw)])[0]
+    settings.save_file_sync_settings("")
+    assert "设置已变更" in sync_files(client, cfg, [(course, raw)])[0]
     client.open.assert_not_called()
 
 
@@ -544,7 +545,7 @@ def test_file_sync_retries_incomplete_response_without_leaving_partial_file(conf
 
     root = tmp_path / "selected"
     root.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     monkeypatch.setattr("stella_elearning_domain_tests.file_sync.time.sleep", lambda _: None)
     course = {"id": 42, "name": "课程"}
     raw = {"id": 4, "filename": "讲义.pdf", "url": BASE + "/files/4/download"}
@@ -565,7 +566,7 @@ def test_file_sync_retries_incomplete_response_without_leaving_partial_file(conf
 def test_briefing_source_never_downloads_with_legacy_auto_sync_setting(config_path, tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    settings.save_settings(config(file_sync_enabled=True, file_sync_root=str(root)))
+    settings.save_settings(config(file_sync_root=str(root)))
     canvas = FakeCanvas()
     canvas.rows["files"][0]["filename"] = "讲义.pdf"
     canvas.rows["files"][0]["url"] = BASE + "/files/4/download"

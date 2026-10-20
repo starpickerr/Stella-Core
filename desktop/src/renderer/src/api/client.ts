@@ -1162,9 +1162,9 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/elearning/file-sync')).settings
   }
 
-  async saveElearningFileSyncSettings(enabled: boolean, root: string): Promise<ElearningSettings> {
+  async saveElearningFileSyncSettings(root: string): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>(
-      '/api/elearning/file-sync', { file_sync_enabled: enabled, file_sync_root: root })).settings
+      '/api/elearning/file-sync', { file_sync_root: root })).settings
   }
 
   async deleteElearningSource(): Promise<void> {

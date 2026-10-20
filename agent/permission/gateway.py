@@ -435,7 +435,7 @@ class SecurityGateway:
             mutating = action in _LOCAL_ACTIONS[tool_name]
             risk, policy_key = ("L1", "workspace_write") if mutating else ("L0", "workspace_read")
         elif tool_name == "elearning" and action == "sync_files":
-            # The tool itself restricts writes to the folder granted in eLearning settings.
+            # The tool itself restricts writes to the folder configured in eLearning settings.
             resource_kind, resource, risk, policy_key = (
                 ResourceKind.USER_WORKSPACE, "eLearning selected course folder", "L1", "workspace_write")
             event = "file_modify"

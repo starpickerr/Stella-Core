@@ -39,7 +39,7 @@ ELEARNING_READ_METHODS: dict[str, tuple[str, ...]] = {
 ELEARNING_WRITE_METHODS: dict[str, tuple[str, ...]] = {
     "save_settings": ("payload",),
     "delete_settings": (),
-    "save_file_sync_settings": ("enabled", "root"),
+    "save_file_sync_settings": ("root",),
     "test_connection": ("payload",),
     "set_cursors": ("cursors",),
     "drain_audit_events": (),

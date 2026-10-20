@@ -70,16 +70,14 @@ class ElearningService:
         return self.store.public_settings()
 
     def save_settings(self, payload):
-        if isinstance(payload, dict) and ("file_sync_enabled" in payload or "file_sync_root" in payload):
-            raise ValueError("课件保存授权请使用 save_file_sync_settings 管理")
         return self.store.save_settings(payload)
 
     def delete_settings(self):
         self.store.delete_settings()
         return self.store.public_settings()
 
-    def save_file_sync_settings(self, enabled, root):
-        return self.store.save_file_sync_settings(enabled, root)
+    def save_file_sync_settings(self, root):
+        return self.store.save_file_sync_settings(root)
 
     def get_cursors(self):
         return self.store.get_cursors()
@@ -100,8 +98,8 @@ class ElearningService:
     def test_connection(self, payload):
         if not isinstance(payload, dict):
             raise ValueError("eLearning 设置必须是对象")
-        # Discovering courses is independent of the later file-save grant.
-        cfg = self.store.resolve_settings({**payload, "file_sync_enabled": False, "file_sync_root": ""})
+        # Testing credentials does not validate or change the download destination.
+        cfg = self.store.resolve_settings({**payload, "file_sync_root": ""})
         client = self._client(cfg)
         options = [{"id": str(row["id"]), "name": row.get("name") if isinstance(row.get("name"), str) else ""}
                    for row in course_list(client)]
@@ -255,8 +253,8 @@ class ElearningService:
     def sync_files(self, course_ids=None, file_ids=None, file_extensions=None, layout="managed",
                    offset=0, limit=20):
         cfg = self._credentialed_settings()
-        if not cfg.get("file_sync_enabled") or not cfg.get("file_sync_root"):
-            raise ValueError("请先在 Agent 设置中开启课件保存，并选择保存目录")
+        if not cfg.get("file_sync_root"):
+            raise ValueError("请先在 eLearning 设置中选择课件保存目录")
         if not cfg.get("courses"):
             raise ValueError("请先在 eLearning 设置中选择允许保存文件的课程")
         if layout not in ("managed", "courseware"):

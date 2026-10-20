@@ -33,7 +33,7 @@ def backend(route):
     elif path == '/api/elearning/file-sync':
         data['settings'] = {'enabled': False, 'configured': False, 'base_url': '', 'username': '',
                             'courses': [], 'course_options': [], 'account_id': '', 'password_set': False,
-                            'password_masked': '', 'file_sync_enabled': False, 'file_sync_root': ''}
+                            'password_masked': '', 'file_sync_root': ''}
     elif path == '/api/models':
         blank = {'current_provider': '', 'current_model': '', 'providers': []}
         data.update(providers=[{'id': 'test', 'configured': True, 'label': 'Test'}], capabilities={
