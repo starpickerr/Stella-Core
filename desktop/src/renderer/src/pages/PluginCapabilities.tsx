@@ -5,6 +5,7 @@ import { currentSettingsOrigin } from './settings/origin'
 import { apiClient } from '../api/client'
 import { Card, Grid } from '../components/CapabilityCards'
 import { PluginRow, pluginStateLabel } from '../plugins/managementTypes'
+import { t } from '../i18n'
 
 type Props = { baseUrl: string }
 
@@ -38,9 +39,12 @@ export default function PluginCapabilities({ baseUrl }: Props) {
     finally { setBusy(null) }
   }
   return <div className="space-y-3 text-content">
-    <header className="flex flex-wrap items-center justify-end gap-3">
-      <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
-      <CapabilityRefreshButton loading={loading} disabled={!!busy} onRefresh={() => void refresh()} />
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
+        <CapabilityRefreshButton loading={loading} disabled={!!busy} onRefresh={() => void refresh()} />
+      </div>
     </header>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     {message && <p role="status" className="text-sm text-content-secondary">{message}</p>}

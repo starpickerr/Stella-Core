@@ -159,7 +159,6 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 )}
               </Section>}
               {activeTab === 'plugins' && <section id="plugins" className="space-y-3 scroll-mt-4">
-                <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
                 <PluginCapabilities baseUrl={baseUrl} />
               </section>}
               {activeTab === 'mcp' && <Section title="MCP" count={servers.length} loading={mcpLoading} onRefresh={() => void loadMcp()}>
