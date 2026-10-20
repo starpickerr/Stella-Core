@@ -194,7 +194,7 @@ def test_desktop_source_catalog_installs_all_first_party_plugins(tmp_path, monke
     catalog = resources / 'plugin-catalog.json'
     rows = json.loads(catalog.read_text())['plugins']
     expected = {f'stella.{name}' for name in
-                ['bills', 'calendar', 'tasks', 'email', 'elearning', 'briefing', 'automation', 'agent-hub']}
+                ['bills', 'calendar', 'tasks', 'email', 'elearning', 'briefing', 'automation', 'agent-hub', 'knowledge', 'memory']}
     assert {row['pluginId'] for row in rows} == expected
     store = PackageStore(tmp_path / 'installed')
     for row in rows:
@@ -212,10 +212,16 @@ def test_desktop_management_bootstrap_adopts_all_first_party_plugins(tmp_path, m
         db.executescript(schema)
         db.execute("INSERT INTO provider_configs(provider_config_id,provider_local_id,display_name,created_at,updated_at) VALUES ('old','codex-cli','Old','now','now')")
     monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: hub_db)
+    from config import conf
+    monkeypatch.setitem(conf(), 'deep_dream_enabled', False)
     catalog = Path('../Stella-Plugins/catalog/official.json').resolve()
     result = run_desktop_bootstrap(data_dir=tmp_path / 'data', catalog_path=catalog)
     assert result['status'] == 'ok', result['failed']
     assert 'stella.agent-hub' in result['installed']
+    from core.plugins.management import ManagementStore
+    from core.plugins.settings import PluginSettingsService
+    settings = PluginSettingsService(ManagementStore(tmp_path / 'data/plugin-packages'))
+    assert settings.read('stella.memory', 'local-default', 'memory.preferences', 'curation')['values']['deep_dream_enabled'] is False
     with sqlite3.connect(hub_db) as db:
         assert db.execute("SELECT agent_id, access_mode FROM provider_configs WHERE provider_config_id='old'").fetchone() == ('codex', 'cli')
 

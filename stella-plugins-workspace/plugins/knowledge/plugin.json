@@ -1,0 +1,50 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.knowledge",
+  "name": "知识",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.knowledge",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": [
+      "stella.knowledge@1"
+    ],
+    "pages": [
+      "knowledge.main"
+    ],
+    "settings": [
+      "knowledge.preferences"
+    ],
+    "context": [
+      "stella.knowledge@1"
+    ],
+    "tools": [
+      "knowledge_search",
+      "knowledge_get",
+      "knowledge_write"
+    ]
+  },
+  "permissions": [
+    {
+      "capability": "knowledge.read",
+      "required": true
+    },
+    {
+      "capability": "knowledge.write",
+      "required": true
+    },
+    {
+      "capability": "models.embedding",
+      "required": true
+    }
+  ]
+}

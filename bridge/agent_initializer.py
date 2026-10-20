@@ -3,7 +3,6 @@ Agent Initializer - Handles agent initialization logic
 """
 
 import os
-import asyncio
 import datetime
 import threading
 import time
@@ -17,13 +16,6 @@ from common.utils import expand_path
 # Module-level lock to serialize scheduler init across concurrent sessions
 _scheduler_init_lock = threading.Lock()
 
-# Guards the in-flight memory-sync set below so concurrent session inits for
-# the same workspace don't each dispatch a redundant background sync thread.
-_memory_sync_lock = threading.Lock()
-# Workspaces with a memory sync currently running in the background. A new
-# request for the same workspace is dropped instead of forking another thread,
-# so a burst of messages can't stack up dozens of embedding HTTP calls.
-_memory_sync_inflight: set = set()
 
 
 class AgentInitializer:
@@ -136,7 +128,7 @@ class AgentInitializer:
         if memory_manager:
             agent.memory_manager = memory_manager
             if hasattr(agent, 'model') and agent.model:
-                memory_manager.flush_manager.llm_model = agent.model
+                memory_manager.model = agent.model
 
         agent.agent_id = profile.id
         agent.agent_profile = profile
@@ -302,109 +294,27 @@ class AgentInitializer:
         Returns:
             (memory_manager, memory_tools) tuple
         """
-        memory_manager = None
-        memory_tools = []
-        
-        try:
-            from agent.memory import MemoryManager, MemoryConfig, register_memory_config
-            from agent.tools import MemorySearchTool, MemoryGetTool
+        from core.services.memory_facade import MemoryPort
+        from agent.tools import MemorySearchTool, MemoryGetTool
+        from common.runtime_identity import current_identity
+        from agent.registry import get_agent_registry
+        identity = current_identity()
+        profile = next((item for item in get_agent_registry().list() if item.workspace == workspace_root), None)
+        bound = identity.derive(agent_id=profile.id if profile else identity.agent_id)
+        memory = MemoryPort(identity=bound)
+        from agent.tools.memory import MemoryWriteTool
+        tools = [MemorySearchTool(memory), MemoryGetTool(memory), MemoryWriteTool(memory)]
+        from agent.tools.knowledge import KnowledgeSearchTool, KnowledgeGetTool, KnowledgeWriteTool
+        tools.extend([KnowledgeSearchTool(), KnowledgeGetTool(), KnowledgeWriteTool()])
+        return memory, tools
 
-            memory_config = MemoryConfig(workspace_root=workspace_root)
-            # Publish per workspace, not process-wide: this runs once per Agent,
-            # and a single global slot would leave the last one to initialize
-            # owning where every Agent's memory is written.
-            register_memory_config(memory_config)
-
-            embedding_provider = self._init_embedding_provider(
-                memory_config, session_id=session_id
-            )
-
-            memory_manager = MemoryManager(memory_config, embedding_provider=embedding_provider)
-            self._sync_memory(memory_manager, session_id)
-
-            memory_tools = [
-                MemorySearchTool(memory_manager),
-                MemoryGetTool(memory_manager)
-            ]
-            
-            if session_id is None:
-                logger.info("[AgentInitializer] Memory system initialized")
-        
-        except Exception as e:
-            logger.warning(f"[AgentInitializer] Memory system not available: {e}")
-        
-        return memory_manager, memory_tools
-
-    def _init_embedding_provider(self, memory_config, session_id: Optional[str] = None):
-        """
-        Initialize the embedding provider for memory.
-
-        Delegates to the shared factory so agent init, knowledge sync and
-        index rebuild all select the same provider:
-          A. Default (no `embedding_provider` in config.json):
-             Auto-init OpenAI -> LinkAI fallback.
-          B. Explicit (`embedding_provider` is set):
-             Initialize the requested vendor.
-        """
-        from agent.memory import create_default_embedding_provider
-        return create_default_embedding_provider()
-
-    def _sync_memory(self, memory_manager, session_id: Optional[str] = None):
-        """Bring the memory index up to date with the workspace files.
-
-        Runs entirely on a background daemon thread. sync() re-embeds any file
-        whose hash changed (MEMORY.md / memory/*.md / knowledge/*.md), and each
-        embed_batch is a blocking HTTP call that can take 20-50s from China-side
-        networks. Daily memory files change on nearly every session, so keeping
-        this on the init path made every user's first message wait for that
-        round-trip. The index is only read on the *next* memory search, so a
-        slightly stale index for the current turn is an acceptable trade-off —
-        the same design MCP tool loading already uses.
-
-        Idempotent per workspace: a burst of concurrent session inits dispatches
-        at most one sync thread, so messages can't stack up embedding calls.
-        """
-        workspace_key = None
-        try:
-            workspace_key = str(memory_manager.config.get_workspace())
-        except Exception:
-            workspace_key = None
-
-        with _memory_sync_lock:
-            if workspace_key is not None and workspace_key in _memory_sync_inflight:
-                return
-            if workspace_key is not None:
-                _memory_sync_inflight.add(workspace_key)
-
-        def _run():
-            try:
-                loop = asyncio.new_event_loop()
-                try:
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(memory_manager.sync())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Memory sync failed: {e}")
-            finally:
-                if workspace_key is not None:
-                    with _memory_sync_lock:
-                        _memory_sync_inflight.discard(workspace_key)
-
-        threading.Thread(
-            target=_run, daemon=True, name="memory-sync"
-        ).start()
-    
     def _load_tools(self, workspace_root: str, memory_manager, memory_tools: List, session_id: Optional[str] = None):
         """Load all tools"""
         tool_manager = ToolManager()
         tool_manager.load_tools()
         
         tools = []
-        file_config = {
-            "cwd": workspace_root,
-            "memory_manager": memory_manager
-        } if memory_manager else {"cwd": workspace_root}
+        file_config = {"cwd": workspace_root}
         
         for tool_name in tool_manager.tool_classes.keys():
             try:
@@ -448,8 +358,6 @@ class AgentInitializer:
                             # for any tool that has one (not name-gated to grep,
                             # so a future tool with a .timeout attribute isn't missed).
                             tool.timeout = merged_config.get("timeout", getattr(tool, 'timeout', None))
-                        if 'memory_manager' in merged_config:
-                            tool.memory_manager = merged_config['memory_manager']
                         # Re-derive config-derived attributes that were set during
                         # __init__ (before tool.config was populated from user config).
                         # bash is the only tool with such attributes (default_timeout,

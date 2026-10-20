@@ -19,6 +19,12 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+for _domain in ('memory', 'knowledge'):
+    _backend = Path(__file__).resolve().parents[2] / 'Stella-Plugins' / 'plugins' / _domain / 'backend'
+    if not _backend.is_dir():
+        _backend = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace' / 'plugins' / _domain / 'backend'
+    sys.path.insert(0, str(_backend))
+
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -53,11 +59,9 @@ def workspace_out_of_the_way():
 
 def _forget_resolved_paths():
     from agent.memory import clear_conversation_store_cache
-    from agent.memory.config import reset_memory_configs
     from agent.registry import set_agent_registry
 
     set_agent_registry(None)
-    reset_memory_configs()
     clear_conversation_store_cache()
 
 

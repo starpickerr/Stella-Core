@@ -40,10 +40,10 @@ class EvolutionUndoTool(BaseTool):
         if not backup_id:
             return ToolResult.fail("Error: backup_id is required")
         try:
-            from agent.memory.config import get_default_memory_config
+            from common.state_dir import state_root
             from agent.evolution.backup import restore_backup
 
-            workspace_dir = get_default_memory_config().get_workspace()
+            workspace_dir = state_root()
             ok = restore_backup(workspace_dir, backup_id)
             if ok:
                 return ToolResult.success(

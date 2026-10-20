@@ -1,0 +1,54 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.memory",
+  "name": "记忆",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.memory",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": [
+      "stella.memory@1"
+    ],
+    "pages": [
+      "memory.main"
+    ],
+    "settings": [
+      "memory.preferences"
+    ],
+    "context": [
+      "stella.memory@1"
+    ],
+    "tools": [
+      "memory_search",
+      "memory_get",
+      "memory_write"
+    ]
+  },
+  "permissions": [
+    {
+      "capability": "memory.read",
+      "required": true
+    },
+    {
+      "capability": "memory.write",
+      "required": true
+    },
+    {
+      "capability": "models.embedding",
+      "required": true
+    },
+    {
+      "capability": "models.chat",
+      "required": true
+    }
+  ]
+}

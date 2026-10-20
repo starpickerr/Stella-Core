@@ -49,13 +49,10 @@ class MemorySearchTool(BaseTool):
         self.memory_manager = memory_manager
         self.user_id = user_id
 
-        from config import conf
-        if conf().get("knowledge", True):
-            self.description = (
-                "Search agent's long-term memory and knowledge base using semantic and keyword search. "
-                "Use this to recall past conversations, preferences, and knowledge pages."
-            )
-    
+    def is_available(self):
+        from core.services.memory_facade import plugin_available
+        return plugin_available('stella.memory')
+
     def execute(self, args: dict):
         """
         Execute memory search
@@ -67,7 +64,6 @@ class MemorySearchTool(BaseTool):
             ToolResult with formatted search results
         """
         from agent.tools.base_tool import ToolResult
-        import asyncio
         
         query = args.get("query")
         max_results = args.get("max_results", 10)
@@ -78,14 +74,7 @@ class MemorySearchTool(BaseTool):
         
         try:
             # Run async search in sync context
-            results = asyncio.run(self.memory_manager.search(
-                query=query,
-                user_id=self.user_id,
-                max_results=max_results,
-                min_score=min_score,
-                include_shared=True
-            ))
-            
+            results = self.memory_manager.search(query=query, max_results=max_results, min_score=min_score)
             if not results:
                 # Return clear message that no memories exist yet
                 # This prevents infinite retry loops
@@ -99,9 +88,9 @@ class MemorySearchTool(BaseTool):
             output = [f"Found {len(results)} relevant memories:\n"]
             
             for i, result in enumerate(results, 1):
-                output.append(f"\n{i}. {result.path} (lines {result.start_line}-{result.end_line})")
-                output.append(f"   Score: {result.score:.3f}")
-                output.append(f"   Snippet: {result.snippet}")
+                output.append(f"\n{i}. {result['path']} (lines {result['start_line']}-{result['end_line']})")
+                output.append(f"   Score: {result['score']:.3f}")
+                output.append(f"   Snippet: {result['snippet']}")
             
             return ToolResult.success("\n".join(output))
             

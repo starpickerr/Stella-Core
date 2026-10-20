@@ -56,7 +56,6 @@ class Edit(BaseTool):
     def __init__(self, config: dict = None):
         self.config = config or {}
         self.cwd = self.config.get("cwd", os.getcwd())
-        self.memory_manager = self.config.get("memory_manager", None)
     
     def execute(self, args: Dict[str, Any]) -> ToolResult:
         """
@@ -217,12 +216,6 @@ class Edit(BaseTool):
                 result["warning"] = " ".join(warnings)
             
             # Notify memory manager if file is in memory directory
-            if self.memory_manager and "memory/" in path:
-                try:
-                    self.memory_manager.mark_dirty()
-                except Exception:
-                    # Don't fail the edit if memory notification fails
-                    pass
             
             return ToolResult.success(result)
             

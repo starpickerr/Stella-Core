@@ -3,15 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.memory import (
-    MemoryConfig,
-    clear_conversation_store_cache,
-    get_default_memory_config,
-    get_conversation_store,
-    register_memory_config,
-    reset_memory_configs,
-    set_global_memory_config,
-)
+from memory_domain.config import MemoryConfig
+from agent.memory import clear_conversation_store_cache, get_conversation_store
 from common.runtime_identity import identity_scope
 from agent.registry import AgentProfile, AgentRegistry, get_agent_registry, set_agent_registry
 from agent.scheduler import (
@@ -43,11 +36,9 @@ def isolated_registry(tmp_path, monkeypatch):
     set_agent_registry(registry)
     clear_conversation_store_cache()
     reset_scheduler_services()
-    reset_memory_configs()
     try:
         yield registry
     finally:
-        reset_memory_configs()
         reset_scheduler_services()
         clear_conversation_store_cache()
         set_agent_registry(previous)
@@ -115,8 +106,8 @@ def test_memory_config_keeps_each_agent_index_under_its_workspace(
     research_db = MemoryConfig(workspace_root=research.workspace).get_db_path()
 
     assert primary_db != research_db
-    assert primary_db == Path(primary.workspace) / "memory/long-term/index.db"
-    assert research_db == Path(research.workspace) / "memory/long-term/index.db"
+    assert primary_db == Path(primary.workspace) / "index.db"
+    assert research_db == Path(research.workspace) / "index.db"
 
 
 def test_scheduler_stores_allow_same_task_id_per_agent(isolated_registry):
@@ -203,54 +194,35 @@ def test_mcp_path_stays_put_when_the_ambient_identity_is_gone(mcp_workspaces):
     assert research._mcp_json_path().endswith("research/mcp.json")
 
 
-def test_registering_one_agents_config_does_not_move_another(isolated_registry):
-    """Each Agent's initializer registers its own config. Before this was keyed
-    by workspace, the last one to initialize owned where every Agent's memory
-    and conversation history landed."""
-    for agent_id in ("primary", "research"):
-        register_memory_config(
-            MemoryConfig(workspace_root=isolated_registry.get(agent_id).workspace)
-        )
+def test_bound_memory_ports_do_not_transfer_between_users(isolated_registry):
+    from core.services.memory_facade import MemoryPort
+    from common.runtime_identity import RuntimeIdentity
+    port = MemoryPort(identity=RuntimeIdentity(agent_id='primary', user_id='alice'))
+    with identity_scope(agent_id='primary', user_id='bob'):
+        with pytest.raises(PermissionError, match='another user'):
+            port.read(path='MEMORY.md')
 
-    for agent_id in ("primary", "research"):
-        workspace = Path(isolated_registry.get(agent_id).workspace)
+
+def test_core_paths_follow_routing_without_memory_registration(isolated_registry):
+    from common.state_dir import state_root
+    for agent_id in ('primary', 'research'):
         with identity_scope(agent_id=agent_id):
-            assert Path(get_default_memory_config().workspace_root) == workspace
+            workspace = Path(isolated_registry.get(agent_id).workspace)
+            assert state_root() == workspace
             assert get_conversation_store() is get_conversation_store(str(workspace))
 
 
-def test_memory_config_follows_routing_without_any_registration(isolated_registry):
-    """Startup paths read the config before any Agent has initialized."""
-    for agent_id in ("primary", "research"):
-        with identity_scope(agent_id=agent_id):
-            assert Path(get_default_memory_config().workspace_root) == Path(
-                isolated_registry.get(agent_id).workspace
-            )
+def test_bound_memory_port_rejects_a_different_agent(isolated_registry):
+    from core.services.memory_facade import MemoryPort
+    from common.runtime_identity import RuntimeIdentity
+    port = MemoryPort(identity=RuntimeIdentity(agent_id='primary'))
+    with identity_scope(agent_id='research'):
+        with pytest.raises(PermissionError, match='another Agent'):
+            port.read(path='MEMORY.md')
 
 
-def test_pinned_config_overrides_routing(isolated_registry):
-    pinned = MemoryConfig(workspace_root=isolated_registry.get("primary").workspace)
-    try:
-        set_global_memory_config(pinned)
-        with identity_scope(agent_id="research"):
-            assert get_default_memory_config() is pinned
-    finally:
-        set_global_memory_config(None)
-    with identity_scope(agent_id="research"):
-        assert get_default_memory_config() is not pinned
-
-
-def test_no_argument_conversation_store_preserves_single_agent_default(
-    isolated_registry,
-):
-    previous = get_default_memory_config()
-    default_workspace = isolated_registry.get("primary").workspace
-    try:
-        set_global_memory_config(MemoryConfig(workspace_root=default_workspace))
-        clear_conversation_store_cache()
-        default_store = get_conversation_store()
-        explicit_store = get_conversation_store(default_workspace)
-        assert default_store is explicit_store
-    finally:
-        set_global_memory_config(previous)
-        clear_conversation_store_cache()
+def test_no_argument_conversation_store_preserves_single_agent_default(isolated_registry):
+    workspace = isolated_registry.get('primary').workspace
+    clear_conversation_store_cache()
+    assert get_conversation_store() is get_conversation_store(workspace)
+    clear_conversation_store_cache()

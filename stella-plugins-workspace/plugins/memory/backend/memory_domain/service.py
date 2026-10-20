@@ -26,7 +26,7 @@ class MemoryService:
         """
         :param workspace_root: Agent workspace directory (e.g. ~/stella)
         """
-        from common.state_dir import user_root_for_workspace
+        from memory_domain.config import user_root_for_workspace
 
         self.workspace_root = str(user_root_for_workspace(Path(workspace_root)))
         self.memory_dir = os.path.join(self.workspace_root, "memory")
@@ -68,14 +68,14 @@ class MemoryService:
         files: List[dict] = []
 
         global_path = os.path.join(self.workspace_root, "MEMORY.md")
-        if os.path.isfile(global_path):
+        if self._is_file(global_path):
             files.append(self._file_info(global_path, "MEMORY.md", "global"))
 
         if os.path.isdir(self.memory_dir):
             daily_files = []
             for name in os.listdir(self.memory_dir):
                 full = os.path.join(self.memory_dir, name)
-                if os.path.isfile(full) and name.endswith(".md"):
+                if self._is_file(full) and name.endswith(".md"):
                     daily_files.append((name, full))
             daily_files.sort(key=lambda x: x[0], reverse=True)
             for name, full in daily_files:
@@ -92,7 +92,7 @@ class MemoryService:
             entries = []
             for name in os.listdir(dreams_dir):
                 full = os.path.join(dreams_dir, name)
-                if os.path.isfile(full) and name.endswith(".md"):
+                if self._is_file(full) and name.endswith(".md"):
                     entries.append((name, full))
             entries.sort(key=lambda x: x[0], reverse=True)
             for name, full in entries:
@@ -114,7 +114,7 @@ class MemoryService:
                 continue
             for name in os.listdir(sub_dir):
                 full = os.path.join(sub_dir, name)
-                if os.path.isfile(full) and name.endswith(".md"):
+                if self._is_file(full) and name.endswith(".md"):
                     files.append(self._file_info(full, name, ftype))
         # Sort newest first by filename (date-named); ties favor evolution.
         files.sort(key=lambda f: (f["filename"], f["type"] != "evolution"), reverse=True)
@@ -208,11 +208,16 @@ class MemoryService:
 
         resolved = os.path.realpath(os.path.join(base_dir, filename))
         allowed = os.path.realpath(base_dir)
+        if not Path(allowed).is_relative_to(Path(self.workspace_root).resolve()):
+            raise ValueError("Memory directory escapes namespace")
 
         if resolved != allowed and not resolved.startswith(allowed + os.sep):
             raise ValueError("Invalid filename: path traversal detected")
 
         return resolved
+
+    def _is_file(self, path: str) -> bool:
+        return Path(path).is_file() and Path(path).resolve().is_relative_to(Path(self.workspace_root).resolve())
 
     @staticmethod
     def _file_info(path: str, filename: str, file_type: str) -> dict:

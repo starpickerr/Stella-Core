@@ -747,7 +747,7 @@ class ToolManager:
         """Lazily create and cache the shared embedding provider (or None)."""
         if not self._embedding_provider_initialized:
             try:
-                from agent.memory.embedding import create_default_embedding_provider
+                from models.embedding import create_default_embedding_provider
                 self._embedding_provider = create_default_embedding_provider()
             except Exception as e:
                 logger.warning(f"[ToolManager] embedding provider init failed: {e}")

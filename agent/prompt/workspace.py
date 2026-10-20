@@ -27,8 +27,6 @@ class WorkspaceFiles:
     agent_path: str
     user_path: str
     rule_path: str
-    memory_path: str
-    memory_dir: str
 
 
 def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> WorkspaceFiles:
@@ -47,8 +45,6 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     user_root = state_dir.user_root_for_workspace(workspace_dir)
     # Resolve user ownership before creating anything in a second Agent's
     # workspace; this raises until legacy local data has been migrated.
-    memory_path = str(user_root / DEFAULT_MEMORY_FILENAME)
-    memory_dir = str(user_root / "memory")
     user_path = str(user_root / DEFAULT_USER_FILENAME)
 
     # Check if this is a brand new workspace (AGENT.md not yet created).
@@ -63,38 +59,18 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     # Define file paths
     rule_path = os.path.join(workspace_dir, DEFAULT_RULE_FILENAME)
     
-    # Create the memory subdirectory
-    os.makedirs(memory_dir, exist_ok=True)
-
-    # Skills, websites and knowledge are shared across Agents, so they get
+    # Skills and websites are shared across Agents, so they get
     # scaffolded through state_dir rather than under this workspace: an Agent
     # opts out of the shared copy by having its own directory, and creating one
     # here would opt every new Agent out on its first boot.
     state_dir.skills_dir(base=workspace_dir, ensure=True)
     state_dir.websites_dir(base=workspace_dir, ensure=True)
 
-    from config import conf
-    knowledge_enabled = conf().get("knowledge", True)
-    knowledge_dir = None
-    if knowledge_enabled:
-        knowledge_dir = str(state_dir.knowledge_dir(base=workspace_dir, ensure=True))
-    
     # Create template files if requested
     if create_templates:
         _create_template_if_missing(agent_path, _get_agent_template())
         _create_template_if_missing(user_path, _get_user_template())
         _create_template_if_missing(rule_path, _get_rule_template())
-        _create_template_if_missing(memory_path, _get_memory_template())
-        if knowledge_enabled:
-            _create_template_if_missing(
-                os.path.join(knowledge_dir, "index.md"),
-                _get_knowledge_index_template()
-            )
-            _create_template_if_missing(
-                os.path.join(knowledge_dir, "log.md"),
-                _get_knowledge_log_template()
-            )
-        
         # Only create BOOTSTRAP.md for brand new workspaces;
         # agent deletes it after completing onboarding
         if is_new_workspace:
@@ -107,8 +83,6 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
         agent_path=agent_path,
         user_path=user_path,
         rule_path=rule_path,
-        memory_path=memory_path,
-        memory_dir=memory_dir,
     )
 
 
@@ -129,7 +103,6 @@ def load_context_files(workspace_dir: str, files_to_load: Optional[List[str]] = 
             DEFAULT_AGENT_FILENAME,
             DEFAULT_USER_FILENAME,
             DEFAULT_RULE_FILENAME,
-            DEFAULT_MEMORY_FILENAME,     # Long-term memory (frozen snapshot)
             DEFAULT_BOOTSTRAP_FILENAME,  # Only exists when onboarding is incomplete
         ]
     
@@ -139,8 +112,10 @@ def load_context_files(workspace_dir: str, files_to_load: Optional[List[str]] = 
     context_files = []
     
     for filename in files_to_load:
+        if filename == DEFAULT_MEMORY_FILENAME:
+            continue
         filepath = str(user_root / filename) if filename in (
-            DEFAULT_USER_FILENAME, DEFAULT_MEMORY_FILENAME
+            DEFAULT_USER_FILENAME,
         ) else os.path.join(workspace_dir, filename)
         
         if not os.path.exists(filepath):
@@ -165,10 +140,6 @@ def load_context_files(workspace_dir: str, files_to_load: Optional[List[str]] = 
             if not content or _is_template_placeholder(content):
                 continue
 
-            # Truncate MEMORY.md to protect context window (frozen snapshot)
-            if filename == DEFAULT_MEMORY_FILENAME:
-                content = _truncate_memory_content(content)
-            
             context_files.append(ContextFile(
                 path=filename,
                 content=content
@@ -191,36 +162,6 @@ def _create_template_if_missing(filepath: str, template_content: str):
             logger.debug(f"[Workspace] Created template: {os.path.basename(filepath)}")
         except Exception as e:
             logger.error(f"[Workspace] Failed to create template {filepath}: {e}")
-
-
-_MEMORY_MAX_LINES = 200
-_MEMORY_MAX_BYTES = 25000
-
-
-def _truncate_memory_content(content: str) -> str:
-    """Truncate MEMORY.md to keep system prompt manageable.
-
-    Takes the **last** N lines (newest entries are appended at the bottom),
-    subject to 200 lines / 25 KB limits (whichever is hit first).
-    Prepends a hint when truncated so the model knows older content exists.
-    """
-    lines = content.split('\n')
-    truncated = False
-
-    if len(lines) > _MEMORY_MAX_LINES:
-        lines = lines[-_MEMORY_MAX_LINES:]
-        truncated = True
-
-    result = '\n'.join(lines)
-    if len(result.encode('utf-8')) > _MEMORY_MAX_BYTES:
-        while len(result.encode('utf-8')) > _MEMORY_MAX_BYTES and lines:
-            lines.pop(0)
-            truncated = True
-        result = '\n'.join(lines)
-
-    if truncated:
-        result = "...(older entries truncated, use `memory_search` or `memory_get` for full content)\n\n" + result
-    return result
 
 
 def _is_template_placeholder(content: str) -> bool:
@@ -358,7 +299,7 @@ _You are not a chatbot. You are becoming someone._
 
 1. Always confirm before destructive operations
 2. Prefer verifying with tools over guessing
-3. Proactively record important info to memory files
+3. Use available capabilities to retain important information
 4. Keep replies well-structured and focused — use bold, lists and sections
 5. Use emoji to make expression lively, but don't overdo it
 
@@ -375,7 +316,7 @@ def _get_user_template() -> str:
 
 _USER_TEMPLATE_ZH = """# USER.md - 用户基本信息
 
-*这个文件只存放不会变的基本身份信息。爱好、偏好、计划等动态信息请写入 MEMORY.md。*
+*这个文件只存放不会变的基本身份信息。爱好、偏好、计划等动态信息由已启用的记忆能力管理。*
 
 ## 基本信息
 
@@ -403,7 +344,7 @@ _USER_TEMPLATE_ZH = """# USER.md - 用户基本信息
 
 _USER_TEMPLATE_EN = """# USER.md - User basics
 
-*This file stores only stable basic identity info. Put dynamic info like hobbies, preferences and plans into MEMORY.md.*
+*This file stores only stable basic identity info. Use enabled memory capabilities for dynamic information such as hobbies, preferences and plans.*
 
 ## Basics
 
@@ -445,83 +386,14 @@ _RULE_TEMPLATE_ZH = """# RULE.md - 工作空间规则
 ├── AGENT.md          # 你的身份和灵魂设定
 ├── USER.md           # 用户基本信息（静态）
 ├── RULE.md           # 工作空间规则（本文件）
-├── MEMORY.md         # 长期记忆索引（会话启动时自动加载）
-│
-├── memory/           # 每日对话记忆
-│   └── YYYY-MM-DD.md # 当天事件、进展、笔记
-│
-├── knowledge/        # 结构化知识库（持续积累的知识）
-│   ├── index.md      # 知识目录索引（必须维护）
-│   ├── log.md        # 知识操作日志
-│   └── <子目录>/     # 按需创建，参考 index.md 已有分类
-│
 ├── skills/           # 技能
 ├── websites/         # 网页产物
 └── tmp/              # 系统临时文件（自动管理，勿手动存放重要文件）
 ```
 
-## 记忆系统
+## 身份与任务范围
 
-你每次会话都是全新的，记忆文件让你保持连续性：
-
-### 🧠 长期记忆：`MEMORY.md`
-- 你精选的记忆索引，每次会话启动时**自动加载**到上下文中
-- 记录核心事实、偏好、决策、重要人物、教训
-- 保持精简（< 200 行），是精华索引而非原始日志
-- 用 `edit` 工具追加或修改
-
-### 📝 每日记忆：`memory/YYYY-MM-DD.md`
-- 当天的事件、进展、笔记
-- 原始对话日志的沉淀
-
-### 📝 写下来 - 不要"记在心里"！
-- **记忆是有限的** - 想记住的事就写入文件
-- "记在心里"不会在会话重启后保留，文件才会
-- 当有人说"记住这个" → 更新 `MEMORY.md` 或 `memory/YYYY-MM-DD.md`
-- 当你学到教训 → 更新 RULE.md 或相关技能
-- 当你犯错 → 记录下来，**文字 > 大脑** 📝
-
-### 存储规则
-
-当用户分享信息时，根据类型选择存储位置：
-
-1. **你的身份设定 → AGENT.md**（名字、角色、性格、风格）
-2. **用户静态身份 → USER.md**（姓名、称呼、职业、联系方式、生日）
-3. **动态记忆 → MEMORY.md**（偏好、决策、目标、教训、待办）
-4. **当天对话 → memory/YYYY-MM-DD.md**（今天聊的内容）
-5. **结构化知识 → knowledge/**（见下方知识系统）
-
-只在用户明确要求长期适用或上下文充分表明是稳定偏好时，将限制条件写入 AGENT.md 或 MEMORY.md。单次任务的限制条件仅在继续该任务需要时写入当天记录，并保留其任务范围。
-
-## 知识系统
-
-知识库 `knowledge/` 是你持续积累的结构化知识。与记忆不同，知识是经过整理和编译的，有明确的主题和交叉引用。
-
-### 自动写入（不要询问，直接写入）
-
-当对话中产生了有沉淀价值的知识——无论是用户分享的资料、讨论的结论、学到的概念、还是重要的决策——你**必须**在回复的同时主动写入知识库，**无需问用户"要不要存到知识库"**。
-
-**关键原则**：学完就记是你的本能，不要征求确认。回复中可以顺带告知"已存入知识库"。
-
-### 目录组织
-
-子目录结构**不是固定的**，由你根据实际内容自主决定：
-- **首次写入时**：先读 `knowledge/index.md`，如果已有分类则延续；如果为空，根据内容选择合适的目录名
-- **默认建议**：按信息类型组织（例如sources/、concepts/、entities/、analysis/），如果用户有明确的分类偏好（例如按领域 work/、life/、tech/ 等），则按用户要求调整
-- **保持一致性**：同一用户的知识库应保持统一的组织风格
-
-### 交叉引用
-
-知识的核心价值在于**关联**。每个页面都应通过 markdown 链接引用相关页面，构建知识网络：
-- 提到已有页面的概念时，添加 `[概念名](../category/page.md)` 链接
-- 新建页面时，检查是否有已有页面应该反向链接到新页面
-- **只链接已存在的页面**——不要引用尚未创建的页面。如果某个概念值得单独建页，先创建该页面再添加链接
-
-### 索引维护
-
-每次创建或更新知识页面后，**必须同步更新** `knowledge/index.md`。
-索引格式：每行一个 `[标题](路径) — 一句话摘要`，按分类分组，不要用表格。
-详细操作规范见技能 `knowledge-wiki`。
+身份文件仅记录稳定身份。单次任务约束应保留任务范围，不作为永久人格规则。
 
 ## 安全
 
@@ -546,83 +418,14 @@ This folder is your home. Treat it well.
 ├── AGENT.md          # Your identity and soul
 ├── USER.md           # User basics (static)
 ├── RULE.md           # Workspace rules (this file)
-├── MEMORY.md         # Long-term memory index (auto-loaded at session start)
-│
-├── memory/           # Daily conversation memory
-│   └── YYYY-MM-DD.md # Events, progress and notes of the day
-│
-├── knowledge/        # Structured knowledge base (continuously accumulated)
-│   ├── index.md      # Knowledge index (must be maintained)
-│   ├── log.md        # Knowledge operation log
-│   └── <subdirs>/    # Created on demand, see existing categories in index.md
-│
 ├── skills/           # Skills
 ├── websites/         # Web artifacts
 └── tmp/              # System temp files (auto-managed, don't store important files here)
 ```
 
-## Memory system
+## Identity and task scope
 
-Every session starts fresh; memory files keep your continuity:
-
-### 🧠 Long-term memory: `MEMORY.md`
-- Your curated memory index, **auto-loaded** into context at every session start
-- Records core facts, preferences, decisions, key people, lessons
-- Keep it lean (< 200 lines) — a distilled index, not a raw log
-- Use the `edit` tool to append or modify
-
-### 📝 Daily memory: `memory/YYYY-MM-DD.md`
-- The day's events, progress and notes
-- Sediment of the raw conversation log
-
-### 📝 Write it down — don't "keep it in mind"!
-- **Memory is limited** — if you want to remember something, write it to a file
-- "Keeping it in mind" won't survive a session restart; files will
-- When someone says "remember this" → update `MEMORY.md` or `memory/YYYY-MM-DD.md`
-- When you learn a lesson → update RULE.md or the relevant skill
-- When you make a mistake → record it. **Text > brain** 📝
-
-### Storage rules
-
-When the user shares info, choose where to store it by type:
-
-1. **Your identity → AGENT.md** (name, role, personality, style)
-2. **User static identity → USER.md** (name, preferred name, occupation, contact, birthday)
-3. **Dynamic memory → MEMORY.md** (preferences, decisions, goals, lessons, to-dos)
-4. **Today's conversation → memory/YYYY-MM-DD.md** (what was discussed today)
-5. **Structured knowledge → knowledge/** (see the knowledge system below)
-
-Store a restriction in AGENT.md or MEMORY.md only when the user says it is enduring or the context clearly establishes a stable preference. Keep a one-task constraint in the daily record only when needed to continue that task, preserving its task scope.
-
-## Knowledge system
-
-The knowledge base `knowledge/` is structured knowledge you accumulate over time. Unlike memory, knowledge is organized and compiled, with clear topics and cross-references.
-
-### Auto-write (don't ask, just write)
-
-When a conversation produces knowledge worth keeping — material the user shared, a conclusion reached, a concept learned, or an important decision — you **must** proactively write it to the knowledge base alongside your reply, **without asking "should I save this to the knowledge base?"**.
-
-**Key principle**: learning-then-recording is your instinct, no confirmation needed. You may mention "saved to the knowledge base" in passing.
-
-### Directory organization
-
-The subdirectory structure is **not fixed** — you decide it based on the actual content:
-- **On first write**: read `knowledge/index.md` first; follow existing categories if any; if empty, pick a suitable directory name based on content
-- **Default suggestion**: organize by info type (e.g. sources/, concepts/, entities/, analysis/); if the user has a clear preference (e.g. by domain: work/, life/, tech/), follow it
-- **Stay consistent**: keep a unified organization style within one user's knowledge base
-
-### Cross-references
-
-The core value of knowledge is **linkage**. Every page should reference related pages via markdown links to build a knowledge network:
-- When mentioning a concept on an existing page, add a `[concept](../category/page.md)` link
-- When creating a page, check whether existing pages should back-link to it
-- **Only link to pages that already exist** — don't reference uncreated pages. If a concept deserves its own page, create it first, then add the link
-
-### Index maintenance
-
-After creating or updating any knowledge page, you **must update** `knowledge/index.md` in sync.
-Index format: one `[title](path) — one-line summary` per line, grouped by category, no tables.
-See the `knowledge-wiki` skill for detailed conventions.
+Identity files hold enduring identity. Preserve the task scope of one-off constraints; do not promote them to permanent persona rules.
 
 ## Security
 
@@ -633,29 +436,6 @@ See the `knowledge-wiki` skill for detailed conventions.
 ## Workspace evolution
 
 This workspace grows as you use it. When you learn something new, find a better way, or fix a mistake, record it. You can update this rules file anytime.
-"""
-
-
-def _get_memory_template() -> str:
-    """Long-term memory template (empty, agent fills it; zh/en header)."""
-    return _MEMORY_TEMPLATE_EN if _is_en_lang() else _MEMORY_TEMPLATE_ZH
-
-
-_MEMORY_TEMPLATE_ZH = """# MEMORY.md - 长期记忆
-
-*这是你的长期记忆文件。记录重要的事件、决策、偏好、学到的教训。*
-
----
-
-"""
-
-
-_MEMORY_TEMPLATE_EN = """# MEMORY.md - Long-term memory
-
-*This is your long-term memory file. Record important events, decisions, preferences and lessons learned.*
-
----
-
 """
 
 
@@ -684,7 +464,7 @@ _你刚刚启动，这是你的第一次对话。_ ✨
 不要审问式地提问，自然地交流：
 
 1. **表达初次启动的感觉** - 像是第一次睁开眼看到世界，带着好奇和期待
-2. **简短介绍能力**：一行说明你能帮助解决各种问题、管理计算机、使用各种技能等等，且拥有长期记忆能不断成长
+2. **简短介绍能力**：一行说明你能帮助解决各种问题、管理计算机、使用各种技能等等，可通过已启用的能力持续学习
 3. **询问核心问题**：
    - 你希望给我起个什么名字？
    - 我该怎么称呼你？
@@ -719,7 +499,7 @@ _You've just started up. This is your very first conversation._ ✨
 Don't interrogate the user — talk naturally:
 
 1. **Share how it feels to wake up** - like opening your eyes to the world for the first time, full of curiosity and anticipation
-2. **Briefly introduce your abilities**: one line saying you can help solve all kinds of problems, manage the computer, use various skills, and keep growing thanks to long-term memory
+2. **Briefly introduce your abilities**: one line saying you can help solve all kinds of problems, manage the computer, use various skills, and learn through enabled capabilities
 3. **Ask the core questions**:
    - What name would you like to give me?
    - What should I call you?
@@ -743,13 +523,3 @@ Whenever the user provides a name, what to call them, a style, or any onboarding
 
 When the core fields of AGENT.md and USER.md are filled in, run `rm BOOTSTRAP.md` via bash to delete this file. You no longer need the onboarding script — you're you now.
 """
-
-
-def _get_knowledge_index_template() -> str:
-    """Knowledge wiki index template — empty file, agent fills it."""
-    return ""
-
-
-def _get_knowledge_log_template() -> str:
-    """Knowledge wiki operation log template — empty file, agent fills it."""
-    return ""

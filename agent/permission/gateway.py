@@ -67,8 +67,8 @@ class PolicyDecision:
         return self.allowed
 
 
-_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "web_search", "web_fetch", "vision", "elearning"})
-_WRITE_TOOLS = frozenset({"write", "edit", "bash"})
+_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "knowledge_search", "knowledge_get", "web_search", "web_fetch", "vision", "elearning"})
+_WRITE_TOOLS = frozenset({"write", "edit", "bash", "memory_write", "knowledge_write"})
 _EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent", "agent_hub"})
 _ADMIN_TOOLS = frozenset({"evolution_undo", "skill"})
 _LOCAL_ACTIONS = {

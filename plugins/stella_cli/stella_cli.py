@@ -1396,9 +1396,6 @@ class StellaCliPlugin(Plugin):
             except Exception as e:
                 return _t(f"⚠️ 无法初始化记忆蒸馏: {e}", f"⚠️ Failed to initialize memory distillation: {e}")
 
-        if not flush_mgr.llm_model:
-            return _t("⚠️ 未配置 LLM 模型，无法执行记忆蒸馏", "⚠️ No LLM model configured, cannot run memory distillation")
-
         # SaaS (e_context is None): run synchronously, return full result
         if e_context is None:
             return self._memory_dream_sync(flush_mgr, days)
@@ -1434,206 +1431,17 @@ class StellaCliPlugin(Plugin):
             logger.warning(f"[StellaCli] /memory dream sync failed: {e}")
             return _t(f"❌ 记忆蒸馏失败: {e}", f"❌ Memory distillation failed: {e}")
 
-    @staticmethod
-    def _resolve_active_embedding():
-        """
-        Resolve (provider_label, model, dim) from the LATEST config, not the
-        possibly-stale provider instance cached on a running agent. Used by
-        /memory status and rebuild-index hints so they reflect what a rebuild
-        will actually run as after the user changes embedding_provider.
-        Returns (label, model, dim) where any field may be None when unknown.
-        """
-        from agent.memory.embedding import EMBEDDING_VENDORS
-        from config import conf
-
-        provider_key = (conf().get("embedding_provider") or "").strip().lower()
-        cfg_model = (conf().get("embedding_model") or "").strip()
-        try:
-            cfg_dim = int(conf().get("embedding_dimensions") or 0)
-        except (TypeError, ValueError):
-            cfg_dim = 0
-
-        if not provider_key:
-            # Legacy auto path: openai -> linkai, both default to text-embedding-3-small (1536).
-            if (conf().get("open_ai_api_key") or "").strip():
-                return "openai (legacy)", "text-embedding-3-small", 1536
-            if (conf().get("linkai_api_key") or "").strip():
-                return "linkai (legacy)", "text-embedding-3-small", 1536
-            return "(legacy)", None, None
-
-        # Since we have added support for custom providers for vector models, this part should be modified accordingly:
-        # Custom providers ("custom:<id>") resolve to the "custom" vendor key.
-        resolved_key = "custom" if provider_key.startswith("custom:") else provider_key
-        meta = EMBEDDING_VENDORS.get(resolved_key) or {}
-        model = cfg_model or meta.get("default_model")
-        # Custom provider model fallback: read from custom_providers entry.
-        if not model and provider_key.startswith("custom:"):
-            from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
-            _, custom_id = parse_custom_bot_type(provider_key)
-            if custom_id:
-                entry = _find_provider_by_id(get_custom_providers(), custom_id)
-                if entry and entry.get("model"):
-                    model = entry["model"]
-        dim = cfg_dim if cfg_dim > 0 else meta.get("default_dimensions")
-        return provider_key, model, dim
 
     def _memory_status(self) -> str:
-        """Show current memory index status."""
-        from agent.memory.embedding import detect_index_dim
-        from config import conf
-
-        agent = self._get_agent("")
-        memory_manager = agent.memory_manager if agent else None
-
-        lines = [_t("🧠 记忆索引状态", "🧠 Memory Index Status"), ""]
-        if not memory_manager:
-            lines.append(_t("  ⚠️ Agent 尚未初始化，先发一条普通消息再试", "  ⚠️ Agent not initialized yet, send a normal message first"))
-            return "\n".join(lines)
-
-        stats = memory_manager.storage.get_stats()
-        db_path = memory_manager.config.get_db_path()
-        embedded = stats.get('embedded', 0)
-        chunks = stats.get('chunks', 0)
-        lines.append(f"  索引DB  : {db_path}")
-        lines.append(f"  Files   : {stats.get('files', 0)}")
-        lines.append(f"  Chunks  : {chunks} (embedded: {embedded})")
-        lines.append("")
-
-        # Resolve from the latest config so users see what /memory rebuild-index
-        # will actually run as — not what the cached agent was initialized with.
-        cfg_provider, cfg_model, cfg_dim = self._resolve_active_embedding()
-        provider_obj = memory_manager.embedding_provider
-        if cfg_model:
-            lines.append(f"  Provider : {cfg_provider}")
-            lines.append(f"  Model    : {cfg_model}")
-            lines.append(f"  Dim      : {cfg_dim if cfg_dim else '?'}")
-        else:
-            lines.append(_t("  Provider : (未初始化, keyword-only)", "  Provider : (not initialized, keyword-only)"))
-
-        # Health hints — only shown when the user has explicitly opted into
-        # vector search via `embedding_provider`. Legacy users (no explicit
-        # provider) are running in a "best-effort vectors" mode by design;
-        # nagging them about missing/mismatched vectors would be noise.
-        warnings = []
-        explicitly_opted_in = (conf().get("embedding_provider") or "").strip() != ""
-        if explicitly_opted_in and provider_obj is not None:
-            if chunks > 0 and embedded < chunks:
-                missing = chunks - embedded
-                warnings.append(_t(
-                    f"  ⚠️ {missing}/{chunks} 个 chunk 没有向量；运行 /memory rebuild-index 后所有记忆才会被向量化检索",
-                    f"  ⚠️ {missing}/{chunks} chunks have no vectors; run /memory rebuild-index to enable vector search for all memories",
-                ))
-
-            index_dim = detect_index_dim(memory_manager.storage)
-            if index_dim is not None and cfg_dim and index_dim != cfg_dim:
-                warnings.append(_t(
-                    f"  ⚠️ 索引中存量向量为 {index_dim} 维，与当前配置 {cfg_dim} 维不一致；运行 /memory rebuild-index 重建后向量检索才会生效",
-                    f"  ⚠️ Existing vectors are {index_dim}-dim, mismatching the current {cfg_dim}-dim config; run /memory rebuild-index to make vector search work",
-                ))
-
-        if warnings:
-            lines.append("")
-            lines.extend(warnings)
-
-        return "\n".join(lines)
+        from core.services.memory_facade import MemoryPort
+        import json
+        return json.dumps(MemoryPort().get_status(), ensure_ascii=False, indent=2)
 
     def _memory_rebuild_index(self, e_context, session_id: str) -> str:
-        """Rebuild the vector index using the current agent's memory_manager."""
-        session_id = self._get_session_id(e_context, fallback=session_id)
-        agent = self._get_agent(session_id)
-        if not agent or not agent.memory_manager:
-            return _t(
-                "⚠️ Agent 尚未初始化，无法重建索引。\n"
-                "请先发送一条普通消息触发 Agent 启动后再试。",
-                "⚠️ Agent not initialized, cannot rebuild the index.\n"
-                "Send a normal message first to start the Agent, then try again.",
-            )
+        from core.services.memory_facade import MemoryPort
+        import json
+        return json.dumps(MemoryPort()._call('sync', force=True), ensure_ascii=False, indent=2)
 
-        memory_manager = agent.memory_manager
-
-        # Rebuild against the LATEST config: build a fresh provider from
-        # config.json and swap it onto memory_manager. The agent's
-        # conversation_history and other state are untouched.
-        try:
-            from bridge.agent_initializer import AgentInitializer
-            fresh_provider = AgentInitializer(bridge=None, agent_bridge=None) \
-                ._init_embedding_provider(memory_manager.config, session_id=session_id)
-        except Exception as e:
-            logger.exception("[StellaCli] /memory rebuild-index: build provider failed")
-            return _t(f"⚠️ 无法根据当前配置构造 embedding provider: {e}", f"⚠️ Failed to build embedding provider from current config: {e}")
-
-        if fresh_provider is None:
-            return _t(
-                "⚠️ 当前没有可用的 embedding provider。\n"
-                "请检查 config.json 中的 embedding 相关配置 (provider / api key)。",
-                "⚠️ No embedding provider available.\n"
-                "Check the embedding settings in config.json (provider / api key).",
-            )
-        memory_manager.embedding_provider = fresh_provider
-
-        model_label = getattr(fresh_provider, "model", "?")
-        dim_label = getattr(fresh_provider, "dimensions", "?")
-
-        # SaaS (e_context is None): run synchronously, return final result
-        if e_context is None:
-            return self._memory_rebuild_sync(memory_manager, model_label, dim_label)
-
-        # Local channels: run in background, push progress + final result
-        from agent.memory.embedding import rebuild_in_process
-
-        def _run():
-            try:
-                result = rebuild_in_process(memory_manager)
-                if result.ok:
-                    self._notify(
-                        e_context,
-                        _t(
-                            f"✅ 索引重建完成\n"
-                            f"  cleared : {result.removed}\n"
-                            f"  chunks  : {result.chunks}\n"
-                            f"  files   : {result.files}",
-                            f"✅ Index rebuild complete\n"
-                            f"  cleared : {result.removed}\n"
-                            f"  chunks  : {result.chunks}\n"
-                            f"  files   : {result.files}",
-                        ),
-                    )
-                else:
-                    self._notify(e_context, _t(f"❌ 索引重建失败: {result.error}", f"❌ Index rebuild failed: {result.error}"))
-            except Exception as e:
-                logger.exception("[StellaCli] /memory rebuild-index failed")
-                self._notify(e_context, _t(f"❌ 索引重建失败: {e}", f"❌ Index rebuild failed: {e}"))
-
-        threading.Thread(target=_run, daemon=True).start()
-        return _t(
-            f"🔧 索引重建已启动 (model={model_label}, dim={dim_label})\n\n"
-            f"将重新向量化所有记忆和知识文件，完成后会通知你。",
-            f"🔧 Index rebuild started (model={model_label}, dim={dim_label})\n\n"
-            f"Re-vectorizing all memory and knowledge files; you'll be notified when done.",
-        )
-
-    @staticmethod
-    def _memory_rebuild_sync(memory_manager, model_label, dim_label) -> str:
-        from agent.memory.embedding import rebuild_in_process
-
-        try:
-            result = rebuild_in_process(memory_manager)
-        except Exception as e:
-            logger.exception("[StellaCli] /memory rebuild-index sync failed")
-            return _t(f"❌ 索引重建失败: {e}", f"❌ Index rebuild failed: {e}")
-
-        if not result.ok:
-            return _t(f"❌ 索引重建失败: {result.error}", f"❌ Index rebuild failed: {result.error}")
-        return _t(
-            f"✅ 索引重建完成 (model={model_label}, dim={dim_label})\n"
-            f"  cleared : {result.removed}\n"
-            f"  chunks  : {result.chunks}\n"
-            f"  files   : {result.files}",
-            f"✅ Index rebuild complete (model={model_label}, dim={dim_label})\n"
-            f"  cleared : {result.removed}\n"
-            f"  chunks  : {result.chunks}\n"
-            f"  files   : {result.files}",
-        )
 
     @staticmethod
     def _notify(e_context, text: str):
@@ -1697,40 +1505,13 @@ class StellaCliPlugin(Plugin):
 
     @staticmethod
     def _build_dream_result(flush_mgr, is_web: bool) -> str:
-        """Build dream completion message with diary content."""
-        from datetime import datetime
-        lines = [_t("✅ 记忆蒸馏完成", "✅ Memory distillation complete")]
-
-        # Read today's dream diary
-        today = datetime.now().strftime("%Y-%m-%d")
-        diary_file = flush_mgr.memory_dir / "dreams" / f"{today}.md"
-        if diary_file.exists():
-            diary = diary_file.read_text(encoding="utf-8").strip()
-            # Strip the "# Dream Diary: ..." header line
-            diary_lines = diary.split("\n")
-            if diary_lines and diary_lines[0].startswith("# "):
-                diary = "\n".join(diary_lines[1:]).strip()
-            if diary:
-                lines.append(f"\n{diary}")
-
-        if is_web:
-            lines.append(_t("\n[MEMORY.md](/memory/MEMORY.md) | [梦境日记](/memory/dreams)", "\n[MEMORY.md](/memory/MEMORY.md) | [Dream Diary](/memory/dreams)"))
-        else:
-            lines.append(_t("\nMEMORY.md 已更新", "\nMEMORY.md updated"))
-
-        return "\n".join(lines)
+        content = flush_mgr.read(path='MEMORY.md')['content']
+        return _t('✅ 记忆整理完成\n\n', '✅ Memory distillation complete\n\n') + content
 
     @staticmethod
     def _create_standalone_flush_manager():
-        """Create a MemoryFlushManager without a running agent (for pre-init dream)."""
-        from common.state_dir import state_root
-        from agent.memory.summarizer import MemoryFlushManager
-        from bridge.bridge import Bridge
-        from bridge.agent_bridge import AgentLLMModel
-
-        flush_mgr = MemoryFlushManager(workspace_dir=state_root())
-        flush_mgr.llm_model = AgentLLMModel(Bridge())
-        return flush_mgr
+        from core.services.memory_facade import MemoryPort
+        return MemoryPort()
 
     # ------------------------------------------------------------------
     # knowledge
@@ -1749,115 +1530,23 @@ class StellaCliPlugin(Plugin):
             return self._knowledge_stats()
 
     def _knowledge_toggle(self, enabled: bool) -> str:
-        from config import conf
-        import json as _json
-
-        conf()["knowledge"] = enabled
-
-        # Data dir (~/.stella in desktop), not __file__-relative — see _config_set.
-        from config import get_data_root
-        config_path = os.path.join(get_data_root(), "config.json")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_config = _json.load(f)
-            file_config["knowledge"] = enabled
-            with open(config_path, "w", encoding="utf-8") as f:
-                _json.dump(file_config, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            return _t(f"⚠️ 内存中已切换，但写入 config.json 失败: {e}", f"⚠️ Switched in memory, but failed to write config.json: {e}")
-
-        if enabled:
-            return _t(
-                "📚 知识库已开启 ✅\n\n知识库将在下次对话中生效",
-                "📚 Knowledge base enabled ✅\n\nIt will take effect in the next conversation",
-            )
-        return _t(
-            "📚 知识库已关闭 ❌\n\n知识库系统已停用，不再注入提示词和索引知识文件",
-            "📚 Knowledge base disabled ❌\n\nThe knowledge system is off; no prompt injection or file indexing",
-        )
+        from core.plugins.bootstrap import _default_catalog_path
+        from core.plugins.lifecycle import PluginManager
+        from core.plugins.management import default_store
+        from core.plugins.caller import plugin_user_id
+        PluginManager(default_store(), catalog_path=_default_catalog_path()).set_intent(
+            'stella.knowledge', plugin_user_id(), 'enabled' if enabled else 'disabled')
+        return _t('知识插件已启用' if enabled else '知识插件已停用', 'Knowledge enabled' if enabled else 'Knowledge disabled')
 
     def _knowledge_stats(self) -> str:
-        from config import conf
-        from common import state_dir
-        knowledge_dir = str(state_dir.knowledge_dir())
-        if not os.path.isdir(knowledge_dir):
-            return _t("📚 知识库目录不存在\n\n💡 开启知识库: /knowledge on", "📚 Knowledge base directory not found\n\n💡 Enable it: /knowledge on")
-
-        enabled = conf().get("knowledge", True)
-        total_files = 0
-        total_bytes = 0
-        cat_count = {}
-
-        for root, dirs, files in os.walk(knowledge_dir):
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-            rel_root = os.path.relpath(root, knowledge_dir)
-            category = rel_root.split(os.sep)[0] if rel_root != "." else "root"
-            for f in files:
-                if f.endswith(".md") and f not in ("index.md", "log.md"):
-                    total_files += 1
-                    total_bytes += os.path.getsize(os.path.join(root, f))
-                    cat_count[category] = cat_count.get(category, 0) + 1
-
-        status = _t("✅ 已开启", "✅ Enabled") if enabled else _t("❌ 已关闭", "❌ Disabled")
-        lines = [
-            _t("📚 知识库统计", "📚 Knowledge Base Stats"),
-            "",
-            _t(f"状态: {status}", f"Status: {status}"),
-            _t(f"页面: {total_files} 篇", f"Pages: {total_files}"),
-            _t(f"大小: {total_bytes / 1024:.1f} KB", f"Size: {total_bytes / 1024:.1f} KB"),
-            "",
-        ]
-        if cat_count:
-            for cat in sorted(cat_count.keys()):
-                lines.append(f"- {cat}/ ({cat_count[cat]} pages)")
-            lines.append("")
-
-        lines.append(_t(f"路径: {knowledge_dir}", f"Path: {knowledge_dir}"))
-        lines.extend([
-            "",
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            _t("💡 /knowledge list: 查看文件树", "💡 /knowledge list: Show file tree"),
-            _t("💡 /knowledge on|off: 开关知识库", "💡 /knowledge on|off: Toggle knowledge base"),
-        ])
-        return "\n".join(lines)
+        from core.services.knowledge_facade import call
+        import json
+        return json.dumps(call('list_tree')['stats'], ensure_ascii=False, indent=2)
 
     def _knowledge_tree(self) -> str:
-        from common import state_dir
-        knowledge_dir = str(state_dir.knowledge_dir())
-        if not os.path.isdir(knowledge_dir):
-            return _t("📚 知识库目录不存在\n\n💡 开启知识库: /knowledge on", "📚 Knowledge base directory not found\n\n💡 Enable it: /knowledge on")
-
-        tree = ["knowledge/"]
-
-        subdirs = sorted([
-            d for d in os.listdir(knowledge_dir)
-            if os.path.isdir(os.path.join(knowledge_dir, d)) and not d.startswith(".")
-        ])
-
-        for i, subdir in enumerate(subdirs):
-            is_last_dir = (i == len(subdirs) - 1)
-            branch = "└── " if is_last_dir else "├── "
-            subdir_path = os.path.join(knowledge_dir, subdir)
-            md_files = sorted([
-                f for f in os.listdir(subdir_path)
-                if f.endswith(".md") and not f.startswith(".")
-            ])
-            tree.append(f"{branch}{subdir}/ ({len(md_files)})")
-
-            child_prefix = "    " if is_last_dir else "│   "
-            max_show = 12
-            for j, fname in enumerate(md_files[:max_show]):
-                is_last_file = (j == len(md_files[:max_show]) - 1) and len(md_files) <= max_show
-                fb = "└── " if is_last_file else "├── "
-                name = fname.replace(".md", "")
-                tree.append(f"{child_prefix}{fb}{name}")
-            if len(md_files) > max_show:
-                tree.append(f"{child_prefix}└── ... +{len(md_files) - max_show} more")
-
-        if not subdirs:
-            tree.append(_t("(空)", "(empty)"))
-
-        return "```\n" + "\n".join(tree) + "\n```"
+        from core.services.knowledge_facade import call
+        import json
+        return json.dumps(call('list_tree'), ensure_ascii=False, indent=2)
 
     # ------------------------------------------------------------------
     # Helpers

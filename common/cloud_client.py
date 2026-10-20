@@ -108,7 +108,7 @@ class CloudClient(LinkAIClient):
         """Lazy-init MemoryService."""
         if self._memory_service is None:
             try:
-                from agent.memory.service import MemoryService
+                from core.services.memory_facade import MemoryPort as MemoryService
                 from common.state_dir import state_root_str
                 self._memory_service = MemoryService(state_root_str())
                 logger.debug("[CloudClient] MemoryService initialised")
@@ -121,7 +121,7 @@ class CloudClient(LinkAIClient):
         """Lazy-init KnowledgeService."""
         if self._knowledge_service is None:
             try:
-                from agent.knowledge.service import KnowledgeService
+                from core.services.knowledge_facade import KnowledgePort as KnowledgeService
                 from common.state_dir import state_root_str
                 self._knowledge_service = KnowledgeService(state_root_str())
                 logger.debug("[CloudClient] KnowledgeService initialised")

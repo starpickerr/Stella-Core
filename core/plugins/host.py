@@ -474,6 +474,16 @@ class PluginSession:
         if data_handle is not None:
             invoke_params = dict(invoke_params)
             invoke_params["_hostDataHandle"] = dict(data_handle)
+            if managed and self.manifest['contributes'].get('settings'):
+                from core.plugins.settings import PluginSettingsService
+                settings = PluginSettingsService(default_store())
+                values = {}
+                for descriptor in settings.descriptors(self.plugin_id):
+                    for category in descriptor['categories']:
+                        snapshot = settings.read(self.plugin_id, self.user_id, descriptor['id'], category['id'])
+                        values.update(snapshot['values'])
+                invoke_params['_hostDataHandle']['settings'] = values
+
             if resource_refs is not None:
                 invoke_params["_hostDataHandle"]["authorizedResources"] = resource_refs
         if managed and method in CONFIG_METHODS:
@@ -688,6 +698,10 @@ def _conversation_permission_denial(
         "scheduler": {"create_task": "create", "update_task": "create", "delete_task": "delete",
                       "set_enabled": "enable"},
     }
+    if domain in {'memory', 'knowledge'}:
+        tool = domain + ('_search' if method == 'search' else '_get' if effect == 'query' else '_write')
+        return permission_denial(tool, dict(input_payload or {}), agent_id=agent_id,
+            session_id=session_id, noninteractive=noninteractive)
     action = actions.get(domain, {}).get(method)
     if domain == "email":
         # Email sources historically enter through the briefing tool. Keep its

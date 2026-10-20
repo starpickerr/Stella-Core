@@ -26,13 +26,13 @@ def _backups_root(workspace_dir: Path) -> Path:
     return Path(workspace_dir) / "memory" / _BACKUP_DIRNAME
 
 
-def create_backup(workspace_dir: Path, files: List[Path], user_id: Optional[str] = None) -> Optional[str]:
+def create_backup(workspace_dir: Path, files: List[Path], user_id: Optional[str] = None, plugin_snapshots=None) -> Optional[str]:
     """Snapshot ``files`` (those that exist) under a new backup id.
 
     Returns the backup_id, or None when there is nothing to back up.
     """
     existing = [Path(f) for f in files if Path(f).exists()]
-    if not existing:
+    if not existing and not plugin_snapshots:
         return None
 
     backup_id = datetime.now().strftime("%Y%m%d-%H%M%S-") + str(int(time.time() * 1000) % 1000)
@@ -44,7 +44,7 @@ def create_backup(workspace_dir: Path, files: List[Path], user_id: Optional[str]
         from common.state_dir import user_root_for_workspace
 
         user_root = user_root_for_workspace(ws, user_id)
-        manifest = []
+        manifest = [{"plugin": ref} for ref in plugin_snapshots or []]
         for idx, src in enumerate(existing):
             # Store under a flat index plus the relative path so restore knows
             # where it came from, even for nested skill files.
@@ -84,7 +84,18 @@ def restore_backup(workspace_dir: Path, backup_id: str) -> bool:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         ws = Path(workspace_dir)
+        from core.plugins.core_invoke import _domain_invoke
+        import uuid
         for entry in manifest:
+            if 'plugin' in entry:
+                ref = entry['plugin']
+                result = _domain_invoke(ref['pluginId'], 'restore_snapshot', {
+                    'snapshotId': ref['snapshotId'], 'idempotencyKey': uuid.uuid4().hex})
+                if result['status'] != 'succeeded':
+                    raise RuntimeError('plugin snapshot restore refused; later changes preserved')
+        for entry in manifest:
+            if 'plugin' in entry:
+                continue
             bak = target / entry["bak"]
             if entry.get("scope") == "user":
                 from common.state_dir import user_root_for_workspace

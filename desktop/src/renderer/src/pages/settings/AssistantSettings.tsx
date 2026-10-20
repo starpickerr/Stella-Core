@@ -116,7 +116,7 @@ const AssistantSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
 
   return (
     <div className="space-y-8">
-      <Group title={t('settings_group_memory')} description={t('settings_group_memory_desc')}>
+      <Group title={t('settings_group_context')} description={t('settings_group_context_desc')}>
         <Row
           label={t('config_max_tokens')}
           hint={t('config_max_tokens_hint')}

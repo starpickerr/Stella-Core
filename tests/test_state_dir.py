@@ -133,31 +133,23 @@ def test_offline_migration_copies_business_data_and_switches_local_user_path(reg
         assert state_dir.user_root() == canonical
     with identity_scope(agent_id="beta"):
         assert state_dir.user_root() == canonical
-        from agent.memory.config import MemoryConfig
-        assert MemoryConfig(workspace_root=str(tmp_path / "beta")).get_memory_dir() == canonical / "memory"
+        assert state_dir.memory_dir() == canonical / "memory"
 
 
-def test_memory_entrypoints_use_migrated_user_path(registry, tmp_path):
-    from agent.memory.service import MemoryService
-    from agent.memory.summarizer import MemoryFlushManager, ensure_daily_memory_file
+def test_context_loader_does_not_bypass_optional_memory_plugin(registry, tmp_path):
     from agent.prompt.workspace import ensure_workspace, load_context_files
     from common.user_data_migration import migrate_local_default
-
-    root = tmp_path / "alpha"
+    root = tmp_path / 'alpha'
     root.mkdir()
-    (root / "MEMORY.md").write_text("shared fact", encoding="utf-8")
+    (root / 'MEMORY.md').write_text('shared fact', encoding='utf-8')
     canonical = migrate_local_default(root)
-    beta = tmp_path / "beta"
-    with identity_scope(agent_id="beta"):
+    beta = tmp_path / 'beta'
+    with identity_scope(agent_id='beta'):
         paths = ensure_workspace(str(beta))
-        assert paths.memory_path == str(canonical / "MEMORY.md")
-        assert paths.user_path == str(canonical / "USER.md")
-        assert not (beta / "MEMORY.md").exists()
-        assert any(item.path == "MEMORY.md" and item.content == "shared fact"
-                   for item in load_context_files(str(beta)))
-        assert MemoryService(str(beta)).get_content("MEMORY.md")["content"] == "shared fact"
-        assert MemoryFlushManager(beta).get_main_memory_file() == canonical / "MEMORY.md"
-        assert ensure_daily_memory_file(beta).parent == canonical / "memory"
+        assert paths.user_path == str(canonical / 'USER.md')
+        assert not (beta / 'MEMORY.md').exists()
+        assert all(item.path != 'MEMORY.md' for item in load_context_files(str(beta)))
+        assert (canonical / 'MEMORY.md').read_text() == 'shared fact'
 
 
 def test_prompt_scaffolding_blocks_second_agent_before_migration(registry, tmp_path):
@@ -223,7 +215,7 @@ def test_scaffolding_a_second_agent_does_not_opt_it_out(registry, tmp_path):
     migrate_local_default(tmp_path / "alpha")
     ensure_workspace(str(tmp_path / "beta"), create_templates=False)
 
-    for name in ("skills", "knowledge", "websites"):
+    for name in ("skills", "websites"):
         assert (tmp_path / "alpha" / name).is_dir(), name
         assert not (tmp_path / "beta" / name).exists(), name
 
@@ -307,14 +299,13 @@ def test_ambient_identity_is_empty_by_default():
 def test_consumers_follow_the_routed_agent(registry, tmp_path):
     """The point of the whole exercise: leaf code that never heard of an
     agent id still lands in the right workspace."""
-    from agent.memory.config import MemoryConfig
     from agent.protocol.artifact import get_workspace_root
     from common.tmp_dir import TmpDir
 
     with identity_scope(agent_id="beta", user_id="u1"):
         assert TmpDir().path().startswith(str(tmp_path / "beta"))
         assert get_workspace_root() == os.path.realpath(str(tmp_path / "alpha" / "users" / "u1" / "work"))
-        assert MemoryConfig().workspace_root == str(tmp_path / "beta")
+        assert state_dir.state_root_str() == str(tmp_path / "beta")
 
 
 def test_base_override_reuses_the_layout_without_an_identity(tmp_path):

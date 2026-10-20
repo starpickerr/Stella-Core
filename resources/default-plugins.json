@@ -73,6 +73,24 @@
       "requiredFor": [
         "agent-hub"
       ]
+    },
+    {
+      "pluginId": "stella.knowledge",
+      "catalogRef": "official/stella.knowledge",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "knowledge"
+      ]
+    },
+    {
+      "pluginId": "stella.memory",
+      "catalogRef": "official/stella.memory",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "memory"
+      ]
     }
   ]
 }

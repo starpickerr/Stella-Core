@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from agent.memory.conversation_store import ConversationStore
-from agent.memory.storage import MemoryChunk, MemoryStorage
+from memory_domain.storage import MemoryChunk, MemoryStorage
 
 
 class TestSharedDbRecovery(unittest.TestCase):

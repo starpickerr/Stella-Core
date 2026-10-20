@@ -72,7 +72,7 @@ them. When their signal is clear, act; do not be shy here.
    reply/decision, do NOTHING and stay [SILENT] — do not nag or ping the user.
    You only ever notify the user as a side effect of having actually done work.
 
-3. MEMORY — RARE, last resort. Default to writing NOTHING here. The main
+3. MEMORY — use memory_get / memory_search to read and memory_write to change memory; never general file tools. RARE, last resort. Default to writing NOTHING here. The main
    assistant already writes memory during the chat, and a nightly pass plus
    context-overflow saves are dedicated safety nets — so memory is almost always
    already covered without you. Skip unless the main assistant clearly missed a

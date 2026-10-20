@@ -35,6 +35,7 @@ import EmailPage from './pages/EmailPage'
 import ElearningPage from './pages/ElearningPage'
 import SecurityPage from './pages/SecurityPage'
 import PluginPageHost from './pages/plugins/PluginPageHost'
+import PluginContributionPage from './pages/plugins/PluginContributionPage'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -248,8 +249,8 @@ const App: React.FC = () => {
             <Route path="/elearning" element={<ElearningPage baseUrl={backend.baseUrl} />} />
             {/* Automation product UI is the mature scheduler page (侧栏「定时」). */}
             <Route path="/automation" element={<Navigate to="/tasks" replace />} />
-            <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
-            <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
+            <Route path="/knowledge" element={<PluginContributionPage baseUrl={backend.baseUrl} pluginId="stella.knowledge" pageId="knowledge.main" title="知识"><KnowledgePage baseUrl={backend.baseUrl} /></PluginContributionPage>} />
+            <Route path="/memory" element={<PluginContributionPage baseUrl={backend.baseUrl} pluginId="stella.memory" pageId="memory.main" title="记忆"><MemoryPage baseUrl={backend.baseUrl} /></PluginContributionPage>} />
             <Route path="/skills/*" element={<Navigate to="/skills" replace />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />

@@ -20,9 +20,7 @@ from typing import Optional, Iterable
 from urllib.parse import quote, unquote
 
 from common.log import logger
-from config import conf
-from agent.memory.config import MemoryConfig
-from agent.memory.manager import MemoryManager
+from knowledge_domain.index import KnowledgeIndex
 
 
 class KnowledgeService:
@@ -38,10 +36,9 @@ class KnowledgeService:
     MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
     MAX_IMPORT_TOTAL_SIZE = 200 * 1024 * 1024
 
-    def __init__(self, workspace_root: str, memory_manager=None):
-        self.workspace_root = os.path.abspath(workspace_root)
-        self.knowledge_dir = os.path.join(self.workspace_root, "knowledge")
-        self._memory_manager = memory_manager
+    def __init__(self, knowledge_dir: str, index=None):
+        self.knowledge_dir = os.path.abspath(knowledge_dir)
+        self._index = index
 
     def _resolve_path(self, rel_path: str, *, kind: Optional[str] = None,
                       allow_missing: bool = True) -> tuple:
@@ -79,16 +76,9 @@ class KnowledgeService:
             raise ValueError(f"protected knowledge file: {rel_path}")
 
     def _manager(self):
-        if self._memory_manager is None:
-            # Reuse the shared embedding provider selection so knowledge index
-            # sync gets vectors too, instead of degrading to keyword-only.
-            from agent.memory.embedding import create_default_embedding_provider
-            embedding_provider = create_default_embedding_provider()
-            self._memory_manager = MemoryManager(
-                MemoryConfig(workspace_root=self.workspace_root),
-                embedding_provider=embedding_provider,
-            )
-        return self._memory_manager
+        if self._index is None:
+            self._index = KnowledgeIndex(Path(self.knowledge_dir))
+        return self._index
 
     @staticmethod
     def _run_sync(coro):
@@ -119,7 +109,6 @@ class KnowledgeService:
         manager = self._manager()
         for rel_path in old_paths:
             manager.storage.delete_by_path(f"knowledge/{rel_path}")
-        manager.mark_dirty()
         self._run_sync(manager.sync())
 
     @staticmethod
@@ -451,7 +440,7 @@ class KnowledgeService:
             }
         """
         if not os.path.isdir(self.knowledge_dir):
-            return {"tree": [], "stats": {"pages": 0, "size": 0}, "enabled": conf().get("knowledge", True)}
+            return {"tree": [], "stats": {"pages": 0, "size": 0}, "enabled": True}
 
         stats = {"pages": 0, "size": 0}
         root_files, tree = self._scan_dir(self.knowledge_dir, stats, is_root=True)
@@ -460,7 +449,7 @@ class KnowledgeService:
             "root_files": root_files,
             "tree": tree,
             "stats": stats,
-            "enabled": conf().get("knowledge", True),
+            "enabled": True,
         }
 
     def _scan_dir(self, dir_path: str, stats: dict, is_root: bool = False) -> tuple:
@@ -476,6 +465,8 @@ class KnowledgeService:
             if name.startswith("."):
                 continue
             full = os.path.join(dir_path, name)
+            if Path(full).is_symlink() or not Path(full).resolve().is_relative_to(Path(self.knowledge_dir).resolve()):
+                continue
             if os.path.isdir(full):
                 sub_files, sub_children = self._scan_dir(full, stats)
                 children.append({"dir": name, "files": sub_files, "children": sub_children})

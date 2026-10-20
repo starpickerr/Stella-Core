@@ -20,7 +20,6 @@ remember_scheduled_output, channel_factory) rather than introducing a fork.
 from __future__ import annotations
 
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -39,7 +38,7 @@ from agent.evolution.record import append_session_evolution
 # Tools the isolated evolution agent is allowed to use. Everything else is
 # withheld so an unattended review can only read context and edit approved
 # workspace artifacts. Skill files are created directly with the write tool.
-_ALLOWED_TOOLS = {"read", "write", "edit", "ls", "memory_search", "memory_get"}
+_ALLOWED_TOOLS = {"read", "write", "edit", "ls", "memory_search", "memory_get", "memory_write"}
 
 # Cap concurrent evolution passes so a burst of idle sessions can't spawn many
 # background model runs at once. Extra sessions simply wait for the next scan.
@@ -138,6 +137,7 @@ class _EvolutionWriteTransaction:
         self._before: dict[Path, object] = {}
         self._missing_parents: set[Path] = set()
         self._committed = False
+        self._plugin_snapshots = []
 
     def record(self, path: Path) -> None:
         path = path.resolve()
@@ -158,11 +158,18 @@ class _EvolutionWriteTransaction:
         except OSError as e:
             raise PermissionError(f"cannot snapshot '{path}' before evolution write: {e}")
 
+    def attach_snapshot(self, port):
+        reference = port._call('begin_snapshot')
+        self._plugin_snapshots.append((port, reference))
+        return reference
+
     def commit(self) -> None:
         self._committed = True
 
     def has_changes(self) -> bool:
         """Return whether a guarded write changed or created a file."""
+        if any(port._call('snapshot_status', **ref)['changed'] for port, ref in self._plugin_snapshots):
+            return True
         for path, before in self._before.items():
             try:
                 after = path.read_bytes() if path.is_file() else self._MISSING
@@ -178,6 +185,11 @@ class _EvolutionWriteTransaction:
     def rollback(self) -> None:
         if self._committed:
             return
+        for port, ref in self._plugin_snapshots:
+            try:
+                port._call('restore_snapshot', **ref)
+            except Exception as exc:
+                logger.error('[Evolution] plugin rollback refused: %s', exc)
         for path, before in reversed(list(self._before.items())):
             try:
                 if before is self._MISSING:
@@ -292,6 +304,21 @@ class _WorkspaceWriteGuard:
         return self._inner.execute(args)
 
 
+class _PluginMemoryWriteGuard:
+    def __init__(self, inner, snapshot):
+        self._inner = inner
+        self._snapshot = snapshot
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def execute_tool(self, args):
+        return self.execute(args)
+
+    def execute(self, args):
+        return self._inner.execute({**args, **self._snapshot})
+
+
 def _guard_tools(
     tools: list, workspace_dir: str, protected_skills: set,
     transaction: _EvolutionWriteTransaction, user_id: Optional[str] = None,
@@ -300,7 +327,9 @@ def _guard_tools(
     guarded = []
     for t in tools:
         name = getattr(t, "name", None)
-        if name in _WRITE_TOOLS:
+        if name == 'memory_write' and transaction._plugin_snapshots:
+            guarded.append(_PluginMemoryWriteGuard(t, transaction._plugin_snapshots[0][1]))
+        elif name in _WRITE_TOOLS:
             guarded.append(_WorkspaceWriteGuard(
                 t, workspace_dir, protected_skills, transaction, user_id
             ))
@@ -475,35 +504,20 @@ def run_evolution_for_session(
         )
 
         # Resolve workspace + files to snapshot for undo.
-        mem_cfg = getattr(getattr(agent, "memory_manager", None), "config", None)
-        if mem_cfg is None:
-            from agent.memory.config import get_default_memory_config
-            mem_cfg = get_default_memory_config()
-        workspace_dir = mem_cfg.get_workspace()
+        from common.state_dir import state_root, skills_dir as resolve_skills_dir
+        workspace_dir = Path(getattr(agent, 'workspace_dir', None) or state_root())
         workspace_lock = _get_workspace_lock(Path(workspace_dir))
         workspace_lock.acquire()
-        from common.state_dir import user_root_for_workspace
-
-        user_root = user_root_for_workspace(workspace_dir, user_id)
-        memory_file = user_root / "MEMORY.md"
-        skills_dir = mem_cfg.get_skills_dir()
-
-        # Snapshot MEMORY.md + every NON-protected skill's SKILL.md. Protected
-        # built-in skills are excluded from backup because they must never be
-        # edited in the first place.
+        skills_dir = resolve_skills_dir(base=workspace_dir)
         protected_names = _builtin_skill_names()
         transaction = _EvolutionWriteTransaction(Path(workspace_dir))
-        # Back up both MEMORY.md and today's daily file: evolution now writes to
-        # the daily file, but MEMORY.md is cheap to snapshot and keeps undo safe
-        # if the model ever edits it.
-        today_daily = user_root / "memory" / (
-            datetime.now().strftime("%Y-%m-%d") + ".md"
-        )
-        # AGENT.md (persona) is backed up too so a rare persona edit is undoable.
-        # Persona is workspace-global (not per-user): it always lives at the
-        # workspace root, regardless of user_id.
-        agent_file = Path(workspace_dir) / "AGENT.md"
-        backup_files = [Path(memory_file), today_daily, agent_file]
+        plugin_snapshots = []
+        memory_port = getattr(agent, 'memory_manager', None)
+        if memory_port is not None and hasattr(memory_port, '_call'):
+            ref = transaction.attach_snapshot(memory_port)
+            plugin_snapshots.append({'pluginId': 'stella.memory', **ref})
+        agent_file = Path(workspace_dir) / 'AGENT.md'
+        backup_files = [agent_file]
         if skills_dir.exists():
             for skill_md in skills_dir.rglob("SKILL.md"):
                 # The skill dir is the SKILL.md's parent (or an ancestor for
@@ -515,7 +529,7 @@ def run_evolution_for_session(
                 if top in protected_names:
                     continue
                 backup_files.append(skill_md)
-        backup_id = create_backup(workspace_dir, backup_files, user_id=user_id)
+        backup_id = create_backup(workspace_dir, backup_files, user_id=user_id, plugin_snapshots=plugin_snapshots)
         _backup_n = sum(1 for f in backup_files if Path(f).exists())
 
         # Snapshot the whole workspace (path -> mtime/size) so we can reliably

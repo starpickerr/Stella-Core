@@ -1560,19 +1560,9 @@ _store_lock = threading.RLock()
 
 
 def _resolve_store_path(workspace_root=None) -> Path:
-    if workspace_root is None:
-        try:
-            from agent.memory.config import get_default_memory_config
-            return get_default_memory_config().get_db_path().resolve()
-        except Exception:
-            from common.utils import expand_path
-            return (
-                Path(expand_path("~/stella")) / "memory" / "long-term" / "index.db"
-            ).resolve()
-    from agent.memory.config import MemoryConfig
-    from common.utils import expand_path
-    workspace = Path(expand_path(str(workspace_root))).resolve()
-    return MemoryConfig(workspace_root=str(workspace)).get_db_path().resolve()
+    # Existing conversation tables stay at their original Core-owned path.
+    from common.state_dir import memory_index_db
+    return memory_index_db(base=workspace_root).resolve()
 
 
 def get_conversation_store(workspace_root=None) -> ConversationStore:

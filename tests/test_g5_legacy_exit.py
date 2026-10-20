@@ -19,7 +19,7 @@ BACKEND_SPEC = REPO / "desktop" / "build" / "stella-backend.spec"
 RUNNER_SPEC = REPO / "desktop" / "build" / "stella-plugin-runner.spec"
 DEFAULT_PLUGINS = REPO / "resources" / "default-plugins.json"
 
-DOMAINS = ("bills", "tasks", "calendar", "email", "elearning", "briefing", "automation", "agent-hub")
+DOMAINS = ("bills", "tasks", "calendar", "email", "elearning", "briefing", "automation", "agent-hub", "knowledge", "memory")
 FORBIDDEN_TOP_LEVEL = {"agent", "application", "channel", "app"}
 
 
@@ -73,7 +73,7 @@ def test_default_domain_package_exists(root, domain):
     assert (package / entry).is_file()
 
 
-def test_default_plugins_json_lists_all_seven_domains():
+def test_default_plugins_json_lists_all_domains():
     data = json.loads(DEFAULT_PLUGINS.read_text(encoding="utf-8"))
     ids = {item["pluginId"] for item in data["plugins"]}
     assert ids == {f"stella.{d}" for d in DOMAINS}
@@ -176,6 +176,8 @@ def test_calendar_public_surface_refuses_legacy_fallback_when_plugin_off(monkeyp
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
+    from common import state_dir
+    monkeypatch.setattr(state_dir, 'bills_db', lambda **kwargs: tmp_path / 'bills' / 'bills.db')
     monkeypatch.delenv("STELLA_CALENDAR_PLUGIN", raising=False)
     with pytest.raises(RuntimeError, match="stella.calendar"):
         calendar_public.default_service()

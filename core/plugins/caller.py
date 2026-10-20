@@ -28,6 +28,10 @@ def invocation_purpose_scope(purpose):
         _INVOCATION_PURPOSE.reset(token)
 
 
+def current_invocation_purpose():
+    return _INVOCATION_PURPOSE.get()
+
+
 def current_invocation_deadline():
     candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline')]
     return min((value for value in candidates if value is not None), default=None)

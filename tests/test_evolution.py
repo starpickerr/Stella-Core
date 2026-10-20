@@ -82,8 +82,7 @@ class FakeAgentBridge:
         self.injected = []
 
     def create_agent(self, **kwargs):
-        from agent.memory.config import get_default_memory_config
-        ws = get_default_memory_config().get_workspace()
+        ws = Path(kwargs['workspace_dir'])
         return FakeReviewAgent(self._scripted, ws, on_edit=self._on_edit)
 
     def remember_scheduled_output(self, session_id, content, channel_type="", task_description=""):
@@ -164,8 +163,8 @@ def _setup_workspace():
 
 def _point_config_at(ws):
     """Force the global memory config to use the temp workspace."""
-    from agent.memory.config import MemoryConfig, set_global_memory_config
-    set_global_memory_config(MemoryConfig(workspace_root=str(ws)))
+    from config import conf
+    conf()['agent_workspace'] = str(ws)
 
 
 def _make_messages(turns):
@@ -721,10 +720,7 @@ def run_real():
     exactly what the model decides and writes for each conversation.
     """
     from bridge.bridge import Bridge
-    from agent.memory.config import (
-        MemoryConfig,
-        set_global_memory_config,
-    )
+    from memory_domain.config import MemoryConfig
     from config import conf, load_config
 
     # Load config.json so real API keys are available to the bots.
@@ -739,7 +735,7 @@ def run_real():
     print(f"[test] model: {override_model} (bot_type={conf().get('bot_type')}, "
           f"key={'set' if conf().get('deepseek_api_key') else 'MISSING'})")
 
-    from agent.memory.manager import MemoryManager
+    from memory_domain.manager import MemoryManager
     import agent.evolution.executor as ex
 
     bridge = Bridge()
@@ -762,7 +758,7 @@ def run_real():
             captured["reply"] = None
             try:
                 mem_cfg = MemoryConfig(workspace_root=str(ws))
-                set_global_memory_config(mem_cfg)
+                conf()["agent_workspace"] = str(ws)
 
                 sid = "session_evo_real"
                 # Fully isolated agent: tool cwd + memory_manager -> temp ws.

@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.memory.storage import MemoryChunk, MemoryStorage
-from agent.knowledge.service import KnowledgeService
+from memory_domain.storage import MemoryChunk, MemoryStorage
+from knowledge_domain.service import KnowledgeService
 
 
 class FakeStorage:
@@ -15,14 +15,10 @@ class FakeStorage:
         self.deleted.append(path)
 
 
-class FakeMemoryManager:
+class FakeKnowledgeIndex:
     def __init__(self):
         self.storage = FakeStorage()
-        self.dirty = 0
         self.synced = 0
-
-    def mark_dirty(self):
-        self.dirty += 1
 
     async def sync(self):
         self.synced += 1
@@ -30,8 +26,8 @@ class FakeMemoryManager:
 
 def service(tmp_path):
     (tmp_path / "knowledge").mkdir()
-    manager = FakeMemoryManager()
-    return KnowledgeService(str(tmp_path), manager), manager
+    manager = FakeKnowledgeIndex()
+    return KnowledgeService(str(tmp_path / "knowledge"), manager), manager
 
 
 def test_category_lifecycle_and_confirmation(tmp_path):
@@ -145,7 +141,6 @@ def test_missing_document_still_cleans_stale_index(tmp_path):
     assert result["code"] == 200
     assert result["payload"]["results"][0]["reason"] == "not_found"
     assert manager.storage.deleted == ["knowledge/removed-by-agent.md"]
-    assert manager.dirty == 1
     assert manager.synced == 1
 
 
@@ -178,7 +173,7 @@ def test_category_delete_handles_concurrent_disappearance(tmp_path):
         category.rmdir()
         raise FileNotFoundError(path)
 
-    with patch("agent.knowledge.service.shutil.rmtree", side_effect=disappear_then_delete):
+    with patch("knowledge_domain.service.shutil.rmtree", side_effect=disappear_then_delete):
         result = svc.dispatch("delete_category", {"path": "source", "confirm": True})
 
     assert result["code"] == 200
@@ -199,7 +194,7 @@ def test_move_does_not_overwrite_target_created_concurrently(tmp_path):
         target.write_text("concurrent", encoding="utf-8")
         return real_link(src, dst)
 
-    with patch("agent.knowledge.service.os.link", side_effect=create_target_then_link):
+    with patch("knowledge_domain.service.os.link", side_effect=create_target_then_link):
         result = svc.dispatch("move_documents", {
             "paths": ["source/a.md"], "target_category": "target",
         })
@@ -220,7 +215,6 @@ def test_create_document_writes_and_syncs(tmp_path):
 
     assert result["code"] == 200
     assert (tmp_path / "knowledge/notes/new.md").read_text(encoding="utf-8") == "# New\nBody"
-    assert manager.dirty == 1
     assert manager.synced == 1
 
 

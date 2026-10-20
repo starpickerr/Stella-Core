@@ -2,9 +2,10 @@
 from datetime import datetime, timezone
 import importlib
 
-from core.plugins.caller import delegation_scope, plugin_user_id, current_delegation, user_grant_ref, managed_plugin
+from core.plugins.caller import (delegation_scope, plugin_user_id, current_delegation, user_grant_ref, managed_plugin, current_consumer_plugin, current_invocation_purpose)
 from core.plugins.contract import validate_operation_result
 from core.plugins.lifecycle import DOMAINS, domain_data_handle
+from models.plugin_service import invoke as invoke_model_service
 
 
 def _domain_invoke(plugin_id, method, payload):
@@ -27,6 +28,9 @@ def _domain_invoke(plugin_id, method, payload):
 
 PUBLIC_SERVICES = {plugin_id + '@1': (lambda method, payload, pid=plugin_id: _domain_invoke(pid, method, payload))
                    for plugin_id in DOMAINS}
+
+
+PUBLIC_SERVICES['stella.models@1'] = invoke_model_service
 
 
 def dispatch(session, params: dict, parent: dict) -> dict:
@@ -53,6 +57,22 @@ def dispatch(session, params: dict, parent: dict) -> dict:
     if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
         raise PermissionError('callback deadline expired')
     session.registry.require_generation(session.plugin_id, session.generation)
+    if contract == 'stella.models@1':
+        capability = 'models.chat' if params['method'] == 'complete' else 'models.embedding'
+        parent_method = parent.get('method')
+        declared = session._method_permissions.get((parent.get('contract'), parent_method), ())
+        if capability not in declared:
+            raise PermissionError('model capability not declared by invoking method')
+        if managed_plugin(session.plugin_id, session.user_id):
+            session.authz.check_scoped(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
+                user_id=session.user_id, consumer_plugin_id=current_consumer_plugin() or session.plugin_id, method=parent_method,
+                required_capabilities=[capability], resources=[{'kind': 'user', 'id': session.user_id}],
+                purpose='background' if context.get('origin') == 'job' or current_invocation_purpose() == 'background' else 'interactive')
+        else:
+            session.authz.check(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
+                user_id=session.user_id, required_capabilities=[capability], purpose='interactive',
+                generation=session.generation, context_generation=session.generation)
+
     payload = dict(params['input'])
     if params.get('idempotencyKey'):
         payload['idempotencyKey'] = params['idempotencyKey']

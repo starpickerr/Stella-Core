@@ -31,14 +31,12 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
 
         # Drop cached configs and stores so earlier tests/imports in the same
         # run can't leave a stale ~/stella-pointed one behind.
-        from agent.memory import clear_conversation_store_cache, reset_memory_configs
-        reset_memory_configs()
+        from agent.memory import clear_conversation_store_cache
         clear_conversation_store_cache()
 
     def tearDown(self):
-        from agent.memory import clear_conversation_store_cache, reset_memory_configs
+        from agent.memory import clear_conversation_store_cache
         from agent.registry import set_agent_registry
-        reset_memory_configs()
         clear_conversation_store_cache()
 
         if self._orig_agent_workspace is None:
@@ -53,20 +51,15 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
             os.environ["HOME"] = self._real_home
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_setup_memory_system_syncs_global_config(self):
+    def test_setup_without_optional_plugins_does_not_initialize_domain_implementations(self):
         from bridge.agent_initializer import AgentInitializer
-        from agent.memory.config import get_default_memory_config
-
+        from unittest.mock import patch
         initializer = AgentInitializer(bridge=None, agent_bridge=None)
-        initializer._setup_memory_system(self.workspace, session_id=None)
-
-        global_workspace = str(get_default_memory_config().get_workspace())
-        self.assertEqual(
-            global_workspace,
-            self.workspace,
-            "get_default_memory_config() should reflect the configured "
-            "agent_workspace after agent init, not the hardcoded ~/stella default",
-        )
+        with patch('core.services.memory_facade.plugin_available', return_value=False):
+            memory, tools = initializer._setup_memory_system(self.workspace)
+        self.assertFalse(memory.is_available())
+        self.assertFalse(any(tool.is_available() for tool in tools))
+        self.assertFalse(os.path.exists(os.path.join(self.workspace, 'MEMORY.md')))
 
     def test_conversation_store_shares_the_configured_workspace(self):
         from bridge.agent_initializer import AgentInitializer
@@ -108,7 +101,7 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         Resolving from config must not change the default for anyone who
         never set agent_workspace.
         """
-        from agent.memory.config import MemoryConfig
+        from common.state_dir import state_root_str
         from agent.registry import set_agent_registry
         from common.utils import expand_path
 
@@ -117,7 +110,7 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         # after changing the config in this test to exercise the unset case.
         set_agent_registry(None)
         self.assertEqual(
-            os.path.realpath(MemoryConfig().workspace_root),
+            os.path.realpath(state_root_str()),
             os.path.realpath(expand_path("~/stella")),
             "an unset agent_workspace should still resolve to the ~/stella default",
         )

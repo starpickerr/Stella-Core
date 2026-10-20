@@ -4,54 +4,53 @@ Memory manager for AgentMesh
 Provides high-level interface for memory operations
 """
 
-import os
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import hashlib
+import json
 from datetime import datetime
 
-from agent.memory.config import MemoryConfig, get_default_memory_config
-from agent.memory.storage import MemoryStorage, MemoryChunk, SearchResult
-from agent.memory.chunker import TextChunker
-from agent.memory.embedding import EmbeddingProvider, EmbeddingCache
-from agent.memory.summarizer import MemoryFlushManager, create_memory_files_if_needed
+from memory_domain.config import MemoryConfig
+from memory_domain.storage import MemoryStorage, MemoryChunk, SearchResult
+from memory_domain.chunker import TextChunker
+from memory_domain.embedding import EmbeddingProvider, EmbeddingCache
+from memory_domain.summarizer import MemoryFlushManager
 
 
 class MemoryManager:
     """
     Memory manager with hybrid search capabilities
-    
+
     Provides long-term memory for agents with vector and keyword search
     """
-    
+
     def __init__(
         self,
-        config: Optional[MemoryConfig] = None,
+        config: MemoryConfig,
         embedding_provider: Optional[EmbeddingProvider] = None,
         llm_model: Optional[Any] = None
     ):
         """
         Initialize memory manager
-        
+
         Args:
-            config: Memory configuration (uses global config if not provided)
+            config: Explicit configuration for the host-bound namespace
             embedding_provider: Custom embedding provider (optional)
             llm_model: LLM model for summarization (optional)
         """
-        self.config = config or get_default_memory_config()
-        
+        self.config = config
+
         # Initialize storage
         db_path = self.config.get_db_path()
-        self.storage = MemoryStorage(db_path)
-        
+        self.storage = MemoryStorage(db_path, integrity_check=False)
+
         # Initialize chunker
         self.chunker = TextChunker(
             max_tokens=self.config.chunk_max_tokens,
             overlap_tokens=self.config.chunk_overlap_tokens
         )
-        
-        # Embedding provider is owned by the caller (agent_initializer is the
-        # canonical entry point and handles legacy/explicit + state validation).
+
+        # Embedding provider is supplied through the approved host model service.
         # When None is passed, memory degrades to keyword-only search instead
         # of silently re-initializing a vendor here, which would bypass the
         # caller's state checks and risk corrupting the index.
@@ -72,21 +71,20 @@ class MemoryManager:
             workspace_dir=workspace_dir,
             llm_model=llm_model
         )
-        
+
         # Ensure workspace directories exist
         self._init_workspace()
-        
+
         self._dirty = False
-    
+
     def _init_workspace(self):
         """Initialize workspace directories"""
         memory_dir = self.config.get_memory_dir()
         memory_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create default memory files
-        workspace_dir = self.config.get_workspace()
-        create_memory_files_if_needed(workspace_dir)
-    
+
+        # Query initialization creates derived storage only. Authoritative
+        # Markdown is written exclusively by approved mutation methods.
+
     async def search(
         self,
         query: str,
@@ -97,34 +95,34 @@ class MemoryManager:
     ) -> List[SearchResult]:
         """
         Search memory with hybrid search (vector + keyword)
-        
+
         Args:
             query: Search query
             user_id: User ID for scoped search
             max_results: Maximum results to return
             min_score: Minimum score threshold
             include_shared: Include shared memories
-            
+
         Returns:
             List of search results sorted by relevance
         """
         max_results = max_results or self.config.max_results
         min_score = min_score or self.config.min_score
-        
+
         # Determine scopes
         scopes = []
         if include_shared:
             scopes.append("shared")
         if user_id:
             scopes.append("user")
-        
+
         if not scopes:
             return []
-        
+
         # Sync if needed
         if self.config.sync_on_search and self._dirty:
             await self.sync()
-        
+
         from common.log import logger
 
         # Perform vector search (if embedding provider available).
@@ -166,88 +164,13 @@ class MemoryManager:
             vector_results,
             keyword_results,
             self.config.vector_weight,
-            self.config.keyword_weight
+            self.config.keyword_weight if vector_results else 1.0
         )
 
         # Filter by min score and limit
         filtered = [r for r in merged if r.score >= min_score]
         return filtered[:max_results]
-    
-    async def add_memory(
-        self,
-        content: str,
-        user_id: Optional[str] = None,
-        scope: str = "shared",
-        source: str = "memory",
-        path: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Add new memory content
-        
-        Args:
-            content: Memory content
-            user_id: User ID for user-scoped memory
-            scope: Memory scope ("shared", "user", "session")
-            source: Memory source ("memory" or "session")
-            path: File path (auto-generated if not provided)
-            metadata: Additional metadata
-        """
-        if not content.strip():
-            return
-        
-        # Generate path if not provided
-        if not path:
-            content_hash = hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
-            if user_id and scope == "user":
-                path = f"memory/users/{user_id}/memory_{content_hash}.md"
-            else:
-                path = f"memory/shared/memory_{content_hash}.md"
-        
-        # Chunk content
-        chunks = self.chunker.chunk_text(content)
-        
-        # Generate embeddings (if provider available)
-        texts = [chunk.text for chunk in chunks]
-        if self.embedding_provider:
-            embeddings = self.embedding_provider.embed_batch(texts)
-        else:
-            # No embeddings, just use None
-            embeddings = [None] * len(texts)
-        
-        # Create memory chunks
-        memory_chunks = []
-        for chunk, embedding in zip(chunks, embeddings):
-            chunk_id = self._generate_chunk_id(path, chunk.start_line, chunk.end_line)
-            chunk_hash = MemoryStorage.compute_hash(chunk.text)
-            
-            memory_chunks.append(MemoryChunk(
-                id=chunk_id,
-                user_id=user_id,
-                scope=scope,
-                source=source,
-                path=path,
-                start_line=chunk.start_line,
-                end_line=chunk.end_line,
-                text=chunk.text,
-                embedding=embedding,
-                hash=chunk_hash,
-                metadata=metadata
-            ))
-        
-        # Save to storage
-        self.storage.save_chunks_batch(memory_chunks)
-        
-        # Update file metadata
-        file_hash = MemoryStorage.compute_hash(content)
-        self.storage.update_file_metadata(
-            path=path,
-            source=source,
-            file_hash=file_hash,
-            mtime=int(os.path.getmtime(__file__)),  # Use current time
-            size=len(content)
-        )
-    
+
     async def sync(self, force: bool = False):
         """
         Synchronize memory from files.
@@ -266,6 +189,15 @@ class MemoryManager:
         """
         memory_dir = self.config.get_memory_dir()
         workspace_dir = self.config.get_workspace()
+        # A content cache is valid only for the model that produced its
+        # embeddings. This also upgrades a keyword-only index once a model
+        # becomes available, without reusing vectors from a different model.
+        provider = self.embedding_provider
+        fingerprint = json.dumps({
+            'provider': getattr(provider, 'provider', type(provider).__name__),
+            'model': getattr(provider, 'model', ''),
+            'dimensions': getattr(provider, 'dimensions', None),
+        }, sort_keys=True)
 
         files_to_scan: List[tuple] = []  # (file_path, source, scope, user_id)
 
@@ -301,30 +233,28 @@ class MemoryManager:
                     scope = "shared"
                 files_to_scan.append((file_path, "memory", scope, user_id))
 
-        from config import conf
-        if conf().get("knowledge", True):
-            knowledge_dir = Path(workspace_dir) / "knowledge"
-            if knowledge_dir.exists():
-                for file_path in knowledge_dir.rglob("*.md"):
-                    files_to_scan.append((file_path, "knowledge", "shared", None))
-
         # Pass 1: inline chunking + change detection. Inlined (instead of
         # calling self._prepare_file_for_sync) so this method does not depend
         # on any sibling helpers — keeps it robust against partial reloads
         # where the class object is older than the method's source.
         pending: List[Dict[str, Any]] = []
+        live_paths = set()
         workspace_dir_path = self.config.get_workspace()
         for file_path, source, scope, user_id in files_to_scan:
+            if file_path.is_symlink() or not file_path.resolve().is_relative_to(workspace_dir_path.resolve()):
+                continue
+            rel_path = str(file_path.relative_to(workspace_dir_path))
+            live_paths.add(rel_path)
             try:
                 content = file_path.read_text(encoding='utf-8')
             except Exception:
                 continue
-            file_hash = MemoryStorage.compute_hash(content)
-            rel_path = str(file_path.relative_to(workspace_dir_path))
-            if self.storage.get_file_hash(rel_path) == file_hash:
+            file_hash = MemoryStorage.compute_hash(fingerprint + '\0' + content)
+            if not force and self.storage.get_file_hash(rel_path) == file_hash:
                 continue
             chunks = self.chunker.chunk_text(content)
             if not chunks:
+                self.storage.delete_by_path(rel_path)
                 continue
             pending.append({
                 "file_path": file_path,
@@ -336,6 +266,11 @@ class MemoryManager:
                 "chunks": chunks,
                 "texts": [c.text for c in chunks],
             })
+
+        # Deleted or no-longer-authorized source files must never remain
+        # retrievable, even when an embedding service is unavailable.
+        for stale_path in self.storage.indexed_paths() - live_paths:
+            self.storage.delete_by_path(stale_path)
 
         if not pending:
             self._dirty = False
@@ -439,7 +374,7 @@ class MemoryManager:
         if success:
             self._dirty = True
         return success
-    
+
     def get_status(self) -> Dict[str, Any]:
         """Get memory status"""
         stats = self.storage.get_stats()
@@ -453,40 +388,36 @@ class MemoryManager:
             'embedding_model': self.config.embedding_model if self.embedding_provider else 'N/A',
             'search_mode': 'hybrid (vector + keyword)' if self.embedding_provider else 'keyword only (FTS5)'
         }
-    
-    def mark_dirty(self):
-        """Mark memory as dirty (needs sync)"""
-        self._dirty = True
-    
+
     def close(self):
         """Close memory manager and release resources"""
         self.storage.close()
-    
+
     # Helper methods
-    
+
     def _generate_chunk_id(self, path: str, start_line: int, end_line: int) -> str:
         """Generate unique chunk ID"""
         content = f"{path}:{start_line}:{end_line}"
         return hashlib.md5(content.encode('utf-8')).hexdigest()
-    
+
     @staticmethod
     def _compute_temporal_decay(path: str, half_life_days: float = 30.0) -> float:
         """
         Compute temporal decay multiplier for dated memory files.
-        
+
         Inspired by OpenClaw's temporal-decay: exponential decay based on file date.
         MEMORY.md and non-dated files are "evergreen" (no decay, multiplier=1.0).
         Daily files like memory/2025-03-01.md decay based on age.
-        
+
         Formula: multiplier = exp(-ln2/half_life * age_in_days)
         """
         import re
         import math
-        
+
         match = re.search(r'(\d{4})-(\d{2})-(\d{2})\.md$', path)
         if not match:
             return 1.0  # evergreen: MEMORY.md, non-dated files
-        
+
         try:
             file_date = datetime(
                 int(match.group(1)), int(match.group(2)), int(match.group(3))
@@ -494,12 +425,12 @@ class MemoryManager:
             age_days = (datetime.now() - file_date).days
             if age_days <= 0:
                 return 1.0
-            
+
             decay_lambda = math.log(2) / half_life_days
             return math.exp(-decay_lambda * age_days)
         except (ValueError, OverflowError):
             return 1.0
-    
+
     def _merge_results(
         self,
         vector_results: List[SearchResult],
@@ -509,7 +440,7 @@ class MemoryManager:
     ) -> List[SearchResult]:
         """Merge vector and keyword search results with temporal decay for dated files"""
         merged_map = {}
-        
+
         for result in vector_results:
             key = (result.path, result.start_line, result.end_line)
             merged_map[key] = {
@@ -517,7 +448,7 @@ class MemoryManager:
                 'vector_score': result.score,
                 'keyword_score': 0.0
             }
-        
+
         for result in keyword_results:
             key = (result.path, result.start_line, result.end_line)
             if key in merged_map:
@@ -528,19 +459,19 @@ class MemoryManager:
                     'vector_score': 0.0,
                     'keyword_score': result.score
                 }
-        
+
         merged_results = []
         for entry in merged_map.values():
             combined_score = (
                 vector_weight * entry['vector_score'] +
                 keyword_weight * entry['keyword_score']
             )
-            
+
             # Apply temporal decay for dated memory files
             result = entry['result']
             decay = self._compute_temporal_decay(result.path)
             combined_score *= decay
-            
+
             merged_results.append(SearchResult(
                 path=result.path,
                 start_line=result.start_line,
@@ -550,6 +481,6 @@ class MemoryManager:
                 source=result.source,
                 user_id=result.user_id
             ))
-        
+
         merged_results.sort(key=lambda r: r.score, reverse=True)
         return merged_results

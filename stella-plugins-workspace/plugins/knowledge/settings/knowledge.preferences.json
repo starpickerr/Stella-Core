@@ -1,0 +1,35 @@
+{
+  "id": "knowledge.preferences",
+  "pluginId": "stella.knowledge",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "search",
+      "title": "检索"
+    }
+  ],
+  "fields": [
+    {
+      "key": "max_results",
+      "title": "默认结果数量",
+      "category": "search",
+      "type": "integer",
+      "default": 10,
+      "validation": {
+        "min": 1,
+        "max": 100
+      }
+    },
+    {
+      "key": "min_score",
+      "title": "最低相关度",
+      "category": "search",
+      "type": "number",
+      "default": 0.1,
+      "validation": {
+        "min": 0,
+        "max": 1
+      }
+    }
+  ]
+}

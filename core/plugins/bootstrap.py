@@ -13,6 +13,8 @@ from core.plugins.manifest import load_manifest
 from core.plugins.package_ops import PackageStore
 
 DOMAIN_ENV = {
+    "stella.memory": "STELLA_MEMORY_PLUGIN",
+    "stella.knowledge": "STELLA_KNOWLEDGE_PLUGIN",
     "stella.bills": "STELLA_BILLS_PLUGIN",
     "stella.calendar": "STELLA_CALENDAR_PLUGIN",
     "stella.tasks": "STELLA_TODOS_PLUGIN",
@@ -131,6 +133,10 @@ def run_desktop_bootstrap(
     for plugin_id in wanted:
         if not management.has_instance(plugin_id, user):
             intent = legacy_intents.get(plugin_id, 'enabled')
+            if plugin_id == 'stella.knowledge':
+                from config import conf
+                if conf().get('knowledge', True) is False:
+                    intent = 'disabled'
             explicit = os.environ.get(DOMAIN_ENV.get(plugin_id, ''), '').strip().lower()
             if explicit in {'0', 'false', 'no'}:
                 intent = 'disabled'
@@ -149,6 +155,14 @@ def run_desktop_bootstrap(
                 manager.adopt_current(plugin_id, user_id=user)
             else:
                 manager.install(plugin_id, user_id=user)
+            if plugin_id == 'stella.memory':
+                from config import conf
+                from core.plugins.settings import PluginSettingsService
+                settings = PluginSettingsService(management)
+                previous = management.settings(plugin_id, user, 'memory.preferences', 'curation')
+                if 'deep_dream_enabled' not in previous['values'] and conf().get('deep_dream_enabled', True) is False:
+                    settings.save(plugin_id, user, 'memory.preferences', 'curation',
+                                  {'deep_dream_enabled': False}, expected_revision=previous['revision'])
             installed.append(plugin_id)
         except Exception as exc:
             management.set_runtime(plugin_id, user, 'maintenance', error=str(exc))

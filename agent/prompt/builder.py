@@ -102,12 +102,11 @@ def build_agent_system_prompt(
     Section order (by importance and logical flow):
     1. Tooling - core capabilities, introduced first
     2. Skills - right after tools, since skills are read via the read tool
-    3. Memory - memory recall and writing guidance
-    3.5 Knowledge - structured knowledge base (injects knowledge/index.md)
+    3. Plugin context contributions from available services
     4. Workspace - working environment description
     4.5 Permissions - effective rules and resource grants for this session
     5. User identity - user info (optional)
-    6. Project context - AGENT.md, USER.md, RULE.md, MEMORY.md, BOOTSTRAP.md
+    6. Project context - AGENT.md, USER.md, RULE.md, BOOTSTRAP.md
     7. Runtime info - meta info (time, model, etc.)
 
     Args:
@@ -135,15 +134,9 @@ def build_agent_system_prompt(
     if skill_manager:
         sections.extend(_build_skills_section(skill_manager, tools, language))
 
-    # 3. Memory (standalone memory capability)
-    if memory_manager:
-        sections.extend(
-            _build_memory_section(memory_manager, tools, language, workspace_dir, project_dir)
-        )
-
-    # 3.5 Knowledge (structured knowledge base)
-    if conf().get("knowledge", True):
-        sections.extend(_build_knowledge_section(workspace_dir, language, project_dir))
+    # Optional domain context is owned by the contributing plugin.
+    from core.services.context_contributions import context_sections
+    sections.extend(context_sections(language))
 
     # 4. Workspace (working environment description). Two of its blocks only
     # hold when the context files were actually loaded, which sub agents skip.
@@ -457,217 +450,6 @@ def _build_skills_section(skill_manager: Any, tools: Optional[List[Any]], langua
     return lines
 
 
-def _state_path_prefix(workspace_dir: str, project_dir: Optional[str]) -> str:
-    """Absolute prefix for state files (memory/knowledge) under ``workspace_dir``.
-
-    In project mode the cwd is the project, so a bare ``MEMORY.md`` would resolve
-    into the project. Memory and knowledge must stay in ``workspace_dir``, so we
-    prefix them with its absolute path. Default mode returns "" (paths unchanged).
-    """
-    if not project_dir:
-        return ""
-    import os as _os
-    if _os.path.realpath(_os.path.expanduser(project_dir)) == _os.path.realpath(
-        _os.path.expanduser(workspace_dir)
-    ):
-        return ""
-    return workspace_dir.rstrip("/") + "/"
-
-
-def _build_memory_section(
-    memory_manager: Any,
-    tools: Optional[List[Any]],
-    language: str,
-    workspace_dir: str = "",
-    project_dir: Optional[str] = None,
-) -> List[str]:
-    """Build the memory section.
-
-    ``workspace_dir``/``project_dir`` let project-mode sessions keep memory paths
-    anchored to ``workspace_dir`` (absolute) instead of the project cwd.
-    """
-    if not memory_manager:
-        return []
-
-    # In project mode, memory files must be addressed absolutely under ~/stella.
-    p = _state_path_prefix(workspace_dir, project_dir)
-    mem_md = f"{p}MEMORY.md"
-    mem_dir = f"{p}memory"
-    kb_dir = f"{p}knowledge"
-
-    has_memory_tools = False
-    if tools:
-        tool_names = [tool.name if hasattr(tool, 'name') else str(tool) for tool in tools]
-        has_memory_tools = any(name in ['memory_search', 'memory_get'] for name in tool_names)
-
-    if not has_memory_tools:
-        return []
-
-    from datetime import datetime
-    today_file = datetime.now().strftime("%Y-%m-%d") + ".md"
-
-    if language == "en":
-        lines = [
-            "## 🧠 Memory",
-            "",
-            "### Memory Recall (mandatory)",
-            "",
-            "When the user asks about past events, references an earlier decision, mentions relationships, preferences or to-dos, or when you are unsure about something, **you must search memory before answering**.",
-            "No need to re-search if the info is already in MEMORY.md. Full content and daily memory must be retrieved via tools.",
-            "",
-            "1. Location unknown → `memory_search` (keyword / semantic search)",
-            "2. Location known → `memory_get` to read the exact lines",
-            "3. Search returns nothing → `memory_get` to read the last two days of memory",
-            "",
-        "**Memory file structure**:",
-        f"- `{mem_md}`: long-term memory index (already auto-loaded into context: core info, preferences, decisions, etc.)",
-        f"- `{mem_dir}/YYYY-MM-DD.md`: daily memory; today is `{mem_dir}/{today_file}`",
-        f"- `{kb_dir}/`: structured knowledge base (see the knowledge system below)",
-            "",
-            "### Writing memory",
-            "",
-            "In the following cases, **proactively** write info to memory files (no need to tell the user):",
-            "",
-            "- The user explicitly asks you to remember an enduring rule, or states a durable preference; a one-off exclusion for the current request is not a long-term memory",
-            "- The user shares important personal preferences, habits or decisions",
-            "- The conversation produces an important conclusion, plan or agreement",
-            "- A complex task is completed and the key steps and results are worth recording",
-            "",
-        "**Storage rules**:",
-        f"- Long-term core info → `{mem_md}`",
-        f"- Today's events/progress → `{mem_dir}/{today_file}`",
-        f"- Structured knowledge → `{kb_dir}/` (see the knowledge system)",
-            "- Append → `edit` tool with empty oldText",
-            "- Modify → `edit` tool with oldText set to the text to replace",
-            "- **Never write sensitive info** (API keys, tokens, etc.)",
-            "",
-            "**Principle**: use memory naturally, as if you simply knew it; don't bring it up unless asked.",
-            "",
-        ]
-    else:
-        lines = [
-            "## 🧠 记忆系统",
-            "",
-            "### Memory Recall（mandatory）",
-            "",
-            "当用户询问过往事件、引用之前的决定、提到人物关系、偏好、待办、或你对某事不确定时，**必须先检索记忆再回答**。",
-            "如果 MEMORY.md 中已有相关信息则无需重复检索。完整内容和每日记忆需要通过工具检索。",
-            "",
-            "1. 不确定位置 → `memory_search` 关键词/语义检索",
-            "2. 已知位置 → `memory_get` 直接读取对应行",
-            "3. search 无结果 → `memory_get` 读最近两天记忆",
-            "",
-            "**记忆文件结构**:",
-            f"- `{mem_md}`: 长期记忆索引（已自动加载到上下文，核心信息、偏好、决策等）",
-            f"- `{mem_dir}/YYYY-MM-DD.md`: 每日记忆，今天是 `{mem_dir}/{today_file}`",
-            f"- `{kb_dir}/`: 结构化知识库（见下方知识系统）",
-            "",
-            "### 写入记忆",
-            "",
-            "遇到以下情况时，**主动**将信息写入记忆文件（无需告知用户）：",
-            "",
-            "- 用户明确要求长期记住某项规则，或表达了稳定偏好；仅适用于当前请求的排除条件不构成长期记忆",
-            "- 用户分享了重要的个人偏好、习惯、决策",
-            "- 对话中产生了重要的结论、方案、约定",
-            "- 完成了复杂任务，值得记录关键步骤和结果",
-            "",
-            "**存储规则**:",
-            f"- 长期核心信息 → `{mem_md}`",
-            f"- 当天事件/进展 → `{mem_dir}/{today_file}`",
-            f"- 结构化知识 → `{kb_dir}/`（见知识系统）",
-            "- 追加 → `edit` 工具，oldText 留空",
-            "- 修改 → `edit` 工具，oldText 填写要替换的文本",
-            "- **禁止写入敏感信息**（API密钥、令牌等）",
-            "",
-            "**使用原则**: 自然使用记忆，就像你本来就知道；不用刻意提起，除非用户问起。",
-            "",
-        ]
-
-    return lines
-
-
-def _build_knowledge_section(
-    workspace_dir: str, language: str, project_dir: Optional[str] = None
-) -> List[str]:
-    """Build knowledge wiki section. Injects knowledge/index.md when present.
-
-    In project mode ``project_dir`` anchors knowledge paths to ``workspace_dir``
-    (absolute) so writes don't leak into the project cwd.
-    """
-    index_path = os.path.join(workspace_dir, "knowledge", "index.md")
-    if not os.path.exists(index_path):
-        return []
-
-    try:
-        with open(index_path, 'r', encoding='utf-8') as f:
-            index_content = f.read().strip()
-    except Exception:
-        return []
-
-    # Anchor knowledge paths to ~/stella when a project cwd is active.
-    kb = f"{_state_path_prefix(workspace_dir, project_dir)}knowledge"
-
-    if language == "en":
-        lines = [
-            "## 📚 Knowledge",
-            "",
-            f"You have a continuously growing personal knowledge base `{kb}/` — your long-term structured knowledge store.",
-            "",
-            "### Auto-write rules (mandatory)",
-            "",
-            "In the following cases you **must** write to the knowledge base alongside your reply, **directly, without asking the user**:",
-            "",
-            f"1. **User shares an article / link / document** → after reading and understanding, write the key points to `{kb}/sources/<slug>.md` in the same turn",
-            f"2. **An in-depth discussion produces a conclusion / plan** → organize it into `{kb}/analysis/<slug>.md`",
-            f"3. **The conversation involves an important entity** (person / company / project) → create or update `{kb}/entities/<name>.md`",
-            f"4. **A technical concept / methodology is discussed** → organize it into `{kb}/concepts/<topic>.md`",
-            "",
-            f"After writing any knowledge page, you **must update** `{kb}/index.md` with a new index line in sync.",
-            "For detailed page format and conventions, read the SKILL.md of the `knowledge-wiki` skill.",
-            "",
-            "⚠️ Don't ask \"should I save this to the knowledge base?\" — if a case above matches, just write it. This is instinctive.",
-            "",
-        ]
-    else:
-        lines = [
-            "## 📚 知识系统",
-            "",
-            f"你拥有一个持续积累的个人知识库 `{kb}/`，这是你的长期结构化知识存储。",
-            "",
-            "### 自动写入规则（mandatory）",
-            "",
-            "以下场景**必须**在回复的同时写入知识库，**直接写入，不要询问用户是否需要**：",
-            "",
-            f"1. **用户分享了文章/链接/文档** → 阅读理解后，在同一轮回复中将要点写入 `{kb}/sources/<slug>.md`",
-            f"2. **深度讨论产生了结论/方案** → 整理为 `{kb}/analysis/<slug>.md`",
-            f"3. **对话涉及重要实体**（人物/公司/项目）→ 创建或更新 `{kb}/entities/<name>.md`",
-            f"4. **讨论了技术概念/方法论** → 整理为 `{kb}/concepts/<topic>.md`",
-            "",
-            f"每次写入知识页面后，**必须同步更新** `{kb}/index.md` 添加一行索引。",
-            "详细的页面格式和操作规范，请读取技能 `knowledge-wiki` 的 SKILL.md。",
-            "",
-            "⚠️ 不要问「要不要存到知识库」——符合上述场景就直接写入，这是你的本能行为。",
-            "",
-        ]
-
-    if index_content:
-        lines.extend([
-            ("### Current knowledge index" if language == "en" else "### 当前知识索引"),
-            "",
-            index_content,
-            "",
-        ])
-
-    lines.extend([
-        ("**How to query**: use `read` to open a knowledge page, or `memory_search` (knowledge is in the vector index)."
-         if language == "en" else
-         "**查询方式**：用 `read` 读取知识页面，或用 `memory_search` 检索（知识已纳入向量索引）。"),
-        "",
-    ])
-
-    return lines
-
-
 def _build_user_identity_section(user_identity: Dict[str, str], language: str) -> List[str]:
     """Build the user identity section."""
     if not user_identity:
@@ -714,7 +496,7 @@ def _build_workspace_section(
     ``project_dir`` switches the section to the dual-directory layout used when
     the user has pointed the session at a project: the *project* is the working
     directory (relative paths, artifacts) while the Agent's workspace stays the
-    *system* directory (memory/skills), reached with absolute paths.
+    *system* directory (identity/skills), reached with absolute paths.
     """
     normalized_project = None
     if project_dir:
@@ -732,10 +514,10 @@ def _build_workspace_section(
     if work_dir and os.path.realpath(work_dir) != os.path.realpath(workspace_dir):
         if language == "en":
             return ["## 📂 Workspace", "", f"Current working directory: `{work_dir}`",
-                    f"System directory (memory and skills): `{workspace_dir}`",
+                    f"System directory (identity and skills): `{workspace_dir}`",
                     "Relative file paths use the current working directory."]
         return ["## 📂 工作空间", "", f"当前工作目录：`{work_dir}`",
-                f"系统目录（记忆与技能）：`{workspace_dir}`", "相对文件路径以当前工作目录为基准。"]
+                f"系统目录（身份与技能）：`{workspace_dir}`", "相对文件路径以当前工作目录为基准。"]
 
     if language == "en":
         lines = [
@@ -754,7 +536,7 @@ def _build_workspace_section(
             "   - ❌ Wrong: assuming a relative path points to another directory",
             "",
             "3. **Path resolution examples**:",
-            f"   - relative `memory/` → actual `{workspace_dir}/memory/`",
+            f"   - relative `output/` → actual `{workspace_dir}/output/`",
             "   - absolute `~/chatgpt-on-wechat/docs/` → actual `~/chatgpt-on-wechat/docs/`",
             "",
             "4. **When unsure**: run `bash pwd` to confirm the current directory, or `ls .` to see where you are",
@@ -769,11 +551,9 @@ def _build_workspace_section(
                 "- ✅ `AGENT.md`: loaded - your persona and soul; follow it strictly. Proactively `edit` it when the user establishes an enduring change to your name, personality or style; a one-task request is not a persona change",
                 "- ✅ `USER.md`: loaded - the user's identity info. When the user changes how they're addressed, their name, etc., `edit` this file",
                 "- ✅ `RULE.md`: loaded - workspace guide and rules; follow them strictly",
-                "- ✅ `MEMORY.md`: loaded - long-term memory index",
                 "",
                 "**💬 Communication norms**:",
                 "",
-                "- No need to expose file names for memory operations; use natural language. Say \"I'll remember that\" rather than \"updated MEMORY.md\"",
                 "- Tell the user about key decisions and steps during a task, so they know what you're doing and why",
                 "- Be genuinely helpful rather than performatively polite; solve the problem as much as you can",
                 "- Keep replies well-structured and focused. Use **bold**, lists and sections to make info clear at a glance",
@@ -797,7 +577,7 @@ def _build_workspace_section(
             "   - ❌ 错误: 假设相对路径会指向其他目录",
             "",
             "3. **路径解析示例**:",
-            f"   - 相对路径 `memory/` → 实际路径 `{workspace_dir}/memory/`",
+            f"   - 相对路径 `output/` → 实际路径 `{workspace_dir}/output/`",
             "   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
             "",
             "4. **不确定时**: 先用 `bash pwd` 确认当前目录，或用 `ls .` 查看当前位置",
@@ -812,11 +592,9 @@ def _build_workspace_section(
                 "- ✅ `AGENT.md`: 已加载 - 你的人格和灵魂设定，请严格遵循。当用户明确对你的名字、性格或交流风格提出长期变更时，主动用 `edit` 更新此文件；单次任务要求不构成人格变更",
                 "- ✅ `USER.md`: 已加载 - 用户的身份信息。当用户修改称呼、姓名等身份信息时，用 `edit` 更新此文件",
                 "- ✅ `RULE.md`: 已加载 - 工作空间使用指南和规则，请严格遵循",
-                "- ✅ `MEMORY.md`: 已加载 - 长期记忆索引",
                 "",
                 "**💬 交流规范**:",
                 "",
-                "- 记忆相关操作无需暴露文件名，用自然语言表达即可。例如说「我已记住」而非「已更新 MEMORY.md」",
                 "- 任务执行过程中的关键决策和步骤应该告知用户，让用户了解你在做什么、为什么这么做",
                 "- 做真正有帮助的助手，而不是表演式的客套，尽可能帮忙解决问题",
                 "- 回复应结构清晰、重点突出。善用 **加粗**、列表、分段等格式让信息一目了然",
@@ -840,7 +618,7 @@ def _build_project_workspace_section(
     Two directories are in play and the model must not confuse them:
     - Project directory (the current working dir): relative paths and work
       products (documents, code, generated files, etc.) live here.
-    - System directory (``workspace_dir``, e.g. ``~/stella``): memory and skills
+    - System directory (``workspace_dir``, e.g. ``~/stella``): identity and skills
       live here and are reached with absolute paths, never relative ones.
     """
     if language == "en":
@@ -850,16 +628,14 @@ def _build_project_workspace_section(
             "The user has opened a **project directory**. You are working inside the current project directory.",
             "",
             f"- **Project directory (current working dir)**: `{project_dir}`",
-            f"- **System directory (memory & skills)**: `{workspace_dir}`",
+            f"- **System directory (identity & skills)**: `{workspace_dir}`",
             "",
             "**Path rules** (very important):",
             "",
             f"1. **Relative paths are based on the project directory** `{project_dir}`. Put your work products here (documents, code, generated files, etc.).",
             f"   - ✅ relative `output/report.html` → `{project_dir}/output/report.html`",
             "",
-            f"2. **Memory and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Use memory tools for memory and the `skill` tool to create or update skills; generic file and shell writes to the skill store are blocked.",
-            f"   - ✅ absolute `{workspace_dir}/MEMORY.md`",
-            "   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
+            f"2. **Identity files and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Use the `skill` tool to create or update skills; generic file and shell writes to the skill store are blocked.",
             "",
             "3. **Accessing any other directory**: use absolute paths.",
             "",
@@ -873,16 +649,14 @@ def _build_project_workspace_section(
             "用户已打开一个**项目目录**，你正在当前项目目录中工作。",
             "",
             f"- **项目目录（当前工作目录）**: `{project_dir}`",
-            f"- **系统目录（记忆与技能）**: `{workspace_dir}`",
+            f"- **系统目录（身份与技能）**: `{workspace_dir}`",
             "",
             "**路径使用规则** (非常重要):",
             "",
             f"1. **相对路径基于项目目录** `{project_dir}`。你的工作产物（文档、代码、生成的文件等）都放在这里。",
             f"   - ✅ 相对路径 `output/report.html` → `{project_dir}/output/report.html`",
             "",
-            f"2. **记忆和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。记忆使用记忆工具，创建或更新技能使用 `skill` 工具；普通文件工具和终端不能写入技能库。",
-            f"   - ✅ 绝对路径 `{workspace_dir}/MEMORY.md`",
-            "   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
+            f"2. **身份文件和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。创建或更新技能使用 `skill` 工具；普通文件工具和终端不能写入技能库。",
             "",
             "3. **访问其他任意目录**：使用绝对路径。",
             "",
@@ -893,12 +667,12 @@ def _build_project_workspace_section(
     if context_files_loaded:
         if language == "en":
             lines += [
-                "**Files already auto-loaded** (no need to `read` again): `AGENT.md`, `USER.md`, `RULE.md`, `MEMORY.md` (from the system directory).",
+                "Files already loaded: `AGENT.md`, `USER.md`, `RULE.md`.",
                 "",
             ]
         else:
             lines += [
-                "**已自动加载的文件**（无需再次 `read`）：`AGENT.md`、`USER.md`、`RULE.md`、`MEMORY.md`（来自系统目录）。",
+                "已加载身份与规则文件：`AGENT.md`、`USER.md`、`RULE.md`。",
                 "",
             ]
 

@@ -19,7 +19,7 @@ from core.plugins.package_ops import PackageStore, _sha256_tree
 from core.plugins.registry import PluginRegistry
 from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
-DOMAINS = {'stella.bills': 'bills', 'stella.tasks': 'todos', 'stella.calendar': 'calendar',
+DOMAINS = {'stella.memory': 'memory', 'stella.knowledge': 'knowledge', 'stella.bills': 'bills', 'stella.tasks': 'todos', 'stella.calendar': 'calendar',
            'stella.briefing': 'briefing', 'stella.email': 'email', 'stella.elearning': 'elearning',
            'stella.automation': 'automation', 'stella.agent-hub': 'agent_hub'}
 
@@ -35,6 +35,12 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
             helper = {'stella.bills': state_dir.bills_db, 'stella.calendar': state_dir.calendar_db,
                       'stella.tasks': state_dir.todos_db, 'stella.briefing': state_dir.briefing_db}[plugin_id]
             return {'namespace': plugin_id, 'dbPath': str(helper(ensure=False).resolve())}
+        if plugin_id == 'stella.memory':
+            return {'namespace': plugin_id, 'dataDir': str((state_dir.user_root() / 'plugins' / 'memory').resolve()),
+                    'legacyMemoryDir': str(state_dir.memory_dir(ensure=False).resolve()),
+                    'legacyMainFile': str(state_dir.memory_file().resolve())}
+        if plugin_id == 'stella.knowledge':
+            return {'namespace': plugin_id, 'dataDir': str(state_dir.knowledge_dir(ensure=False).resolve())}
         if plugin_id == 'stella.email':
             base = state_dir.briefing_db(ensure=False)
             return {'namespace': plugin_id, 'dbPath': str((base.parent.parent / 'email' / 'email.db').resolve()),

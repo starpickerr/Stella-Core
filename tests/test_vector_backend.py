@@ -1,5 +1,5 @@
-from agent.memory.storage import MemoryChunk, MemoryStorage
-from agent.memory.vector_backend import (
+from memory_domain.storage import MemoryChunk, MemoryStorage
+from memory_domain.vector_backend import (
     SQLiteVectorBackend,
     VectorBackend,
     VectorMatch,

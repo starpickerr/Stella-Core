@@ -1,0 +1,46 @@
+{
+  "id": "memory.preferences",
+  "pluginId": "stella.memory",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "search",
+      "title": "检索"
+    },
+    {
+      "id": "curation",
+      "title": "记忆整理"
+    }
+  ],
+  "fields": [
+    {
+      "key": "max_results",
+      "title": "默认结果数量",
+      "category": "search",
+      "type": "integer",
+      "default": 10,
+      "validation": {
+        "min": 1,
+        "max": 100
+      }
+    },
+    {
+      "key": "min_score",
+      "title": "最低相关度",
+      "category": "search",
+      "type": "number",
+      "default": 0.1,
+      "validation": {
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "key": "deep_dream_enabled",
+      "title": "自动整理长期记忆",
+      "category": "curation",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

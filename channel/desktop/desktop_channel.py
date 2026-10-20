@@ -6020,7 +6020,7 @@ class MemoryHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.memory.service import MemoryService
+            from core.services.memory_facade import MemoryPort as MemoryService
             params = web.input(page='1', page_size='20', category='memory')
             workspace_root = _get_state_root()
             service = MemoryService(workspace_root)
@@ -6039,7 +6039,7 @@ class MemoryContentHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.memory.service import MemoryService
+            from core.services.memory_facade import MemoryPort as MemoryService
             params = web.input(filename='', category='memory')
             if not params.filename:
                 return json.dumps({"status": "error", "message": "filename required"})
@@ -8439,7 +8439,7 @@ class KnowledgeListHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             svc = KnowledgeService(_get_state_root())
             result = svc.list_tree()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
@@ -8454,7 +8454,7 @@ class KnowledgeReadHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from pathlib import Path
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             params = web.input(path='')
             svc = KnowledgeService(_get_state_root())
             result = svc.read_file(params.path)
@@ -8476,7 +8476,7 @@ class KnowledgeGraphHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             svc = KnowledgeService(_get_state_root())
             return json.dumps(svc.build_graph(), ensure_ascii=False)
         except Exception as e:
@@ -8492,7 +8492,7 @@ class KnowledgeActionHandler:
             body = json.loads(web.data() or b"{}")
             action = body.get("action", "")
             payload = body.get("payload") or {}
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             result = KnowledgeService(_get_state_root()).dispatch(action, payload)
             return json.dumps({
                 "status": "success" if result["code"] < 300 else "error",
@@ -8508,9 +8508,10 @@ class KnowledgeImportHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
+            from core.services import knowledge_facade as knowledge_limits
             content_length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
-            if content_length > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+            if content_length > knowledge_limits.MAX_IMPORT_TOTAL_SIZE:
                 return json.dumps({
                     "status": "error",
                     "code": 413,
@@ -8526,11 +8527,11 @@ class KnowledgeImportHandler:
                 uploaded.append(single)
             if not uploaded:
                 return json.dumps({"status": "error", "code": 400, "message": "No files uploaded", "payload": None})
-            if len(uploaded) > KnowledgeService.MAX_IMPORT_FILES:
+            if len(uploaded) > knowledge_limits.MAX_IMPORT_FILES:
                 return json.dumps({
                     "status": "error",
                     "code": 400,
-                    "message": f"too many files: max {KnowledgeService.MAX_IMPORT_FILES}",
+                    "message": f"too many files: max {knowledge_limits.MAX_IMPORT_FILES}",
                     "payload": None,
                 })
 
@@ -8540,9 +8541,9 @@ class KnowledgeImportHandler:
                 if file_obj is None:
                     continue
                 filename = getattr(file_obj, "filename", "") or getattr(file_obj, "name", "")
-                content = _read_uploaded_file_bytes_limited(file_obj, KnowledgeService.MAX_IMPORT_FILE_SIZE)
+                content = _read_uploaded_file_bytes_limited(file_obj, knowledge_limits.MAX_IMPORT_FILE_SIZE)
                 total_size += len(content)
-                if total_size > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+                if total_size > knowledge_limits.MAX_IMPORT_TOTAL_SIZE:
                     return json.dumps({
                         "status": "error",
                         "code": 413,

@@ -21,7 +21,7 @@ SECRET_FILE = RESOURCES / "plugin-signing.secret"
 PLUGINS_ROOT = ROOT.parent / "Stella-Plugins" / "plugins"
 OFFICIAL = ROOT.parent / "Stella-Plugins" / "catalog" / "official.json"
 
-DOMAINS = ("bills", "calendar", "tasks", "email", "elearning", "briefing", "automation", "agent-hub")
+DOMAINS = ("bills", "calendar", "tasks", "email", "elearning", "briefing", "automation", "agent-hub", "knowledge", "memory")
 DEFAULT_SECRET = b"stella-first-edition-plugin-catalog"
 
 

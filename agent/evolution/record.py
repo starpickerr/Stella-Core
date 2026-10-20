@@ -33,22 +33,12 @@ def append_session_evolution(
     if not summary or not summary.strip():
         return
     try:
-        evo_dir = _evolution_dir(workspace_dir, user_id)
-        evo_dir.mkdir(parents=True, exist_ok=True)
-        today = datetime.now().strftime("%Y-%m-%d")
-        log_file = evo_dir / f"{today}.md"
-
-        ts = datetime.now().strftime("%H:%M")
-        header = f"## {ts}"
-        body = summary.strip()
+        from core.services.memory_facade import MemoryPort
+        today = datetime.now().strftime('%Y-%m-%d')
+        ts = datetime.now().strftime('%H:%M')
+        body = f"\n## {ts}\n\n{summary.strip()}\n"
         if backup_id:
-            body += f"\n\n_backup_id: {backup_id}_"
-
-        # Create with a title if the file is new, otherwise append a section.
-        if not log_file.exists():
-            log_file.write_text(f"# Self-Evolution: {today}\n\n", encoding="utf-8")
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(f"\n{header}\n\n{body}\n")
-        logger.info(f"[Evolution] Recorded session evolution to {log_file.name}")
+            body += f"\n_backup_id: {backup_id}_\n"
+        MemoryPort()._call('write', path=f'memory/evolution/{today}.md', content=body, append=True)
     except Exception as e:
         logger.warning(f"[Evolution] Failed to record session evolution: {e}")

@@ -1,7 +1,5 @@
 import threading
 import unittest
-import sys
-import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -24,10 +22,7 @@ class ToolResult:
         return ToolResult("error", result)
 
 
-# Keep these focused unit tests independent of optional runtime tool packages.
-_base_tool_stub = types.ModuleType("agent.tools.base_tool")
-_base_tool_stub.ToolResult = ToolResult
-sys.modules.setdefault("agent.tools.base_tool", _base_tool_stub)
+
 
 
 class _FileTool:
@@ -70,7 +65,8 @@ class _Agent:
         self.tools = [tool]
         self.model = object()
         self.skill_manager = None
-        self.memory_manager = SimpleNamespace(config=_MemoryConfig(workspace))
+        self.workspace_dir = str(workspace)
+        self.memory_manager = None
         self.runtime_info = None
         self._evo_turns = 1
 

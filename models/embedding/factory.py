@@ -33,7 +33,7 @@ def create_default_embedding_provider():
 
 def _init_legacy_provider():
     """Legacy auto-init path: OpenAI -> LinkAI."""
-    from agent.memory.embedding.provider import create_embedding_provider
+    from models.embedding.provider import create_embedding_provider
     from config import conf
 
     embedding_provider = None
@@ -79,7 +79,7 @@ def _init_legacy_provider():
 
 def _init_explicit_provider(provider_key: str):
     """Explicit-provider path: build the configured vendor."""
-    from agent.memory.embedding.provider import EMBEDDING_VENDORS, create_embedding_provider
+    from models.embedding.provider import EMBEDDING_VENDORS, create_embedding_provider
     from config import conf
 
     # Custom providers ("custom:<id>") resolve credentials from custom_providers.

@@ -4,7 +4,7 @@ from agent.briefing.generator import SYSTEM_PROMPT as BRIEFING_SYSTEM_PROMPT
 from unittest.mock import Mock, patch
 
 from agent.chat.session_service import generate_session_title
-from agent.memory.summarizer import (
+from memory_domain.summarizer import (
     DREAM_SYSTEM_PROMPT_EN, DREAM_SYSTEM_PROMPT_ZH,
     SUMMARIZE_SYSTEM_PROMPT_EN, SUMMARIZE_SYSTEM_PROMPT_ZH,
 )
@@ -17,10 +17,11 @@ def test_general_prompt_keeps_one_off_exclusions_out_of_answers_and_memory():
         ("zh", "不要仅为证明遵守要求而复述排除条件", "仅适用于当前请求的排除条件不构成长期记忆"),
         ("en", "Do not repeat an exclusion merely to show compliance", "a one-off exclusion for the current request is not a long-term memory"),
     ):
-        prompt = build_agent_system_prompt(
-            workspace_dir="/tmp/stella", language=language,
-            memory_manager=object(), tools=["memory_search"],
-        )
+        with patch('core.services.context_contributions.context_sections', return_value=[memory_rule]):
+            prompt = build_agent_system_prompt(
+                workspace_dir="/tmp/stella", language=language,
+                memory_manager=object(), tools=["memory_search"],
+            )
         assert answer_rule in prompt
         assert memory_rule in prompt
         assert answer_rule in build_agent_system_prompt(
