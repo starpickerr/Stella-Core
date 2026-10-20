@@ -1,0 +1,60 @@
+{
+  "id": "agent-hub.preferences",
+  "pluginId": "stella.agent-hub",
+  "scope": "user",
+  "categories": [
+    {
+      "id": "providers",
+      "title": "外部 Provider",
+      "order": 0
+    }
+  ],
+  "fields": [
+    {
+      "key": "default_provider_local_id",
+      "title": "默认接入配置",
+      "description": "按接入方式选择默认配置（同一 Agent 可有多种接入）。选「自动」则按已启用且探测成功的顺序。Agent 身份不因切换接入方式而改变。",
+      "type": "enum",
+      "category": "providers",
+      "default": "",
+      "validation": {
+        "enum": ["", "codex-app-server", "codex-cli", "cursor-acp", "cursor-cli", "claude-code"]
+      },
+      "enumLabels": {
+        "": "自动（探测可用者）",
+        "codex-app-server": "Codex · App Server",
+        "codex-cli": "Codex · CLI exec",
+        "cursor-acp": "Cursor · ACP",
+        "cursor-cli": "Cursor · CLI print",
+        "claude-code": "Claude Code · CLI"
+      }
+    },
+    {
+      "key": "codex_binary_path",
+      "title": "Codex 可执行路径",
+      "description": "可选。供 Codex 的 App Server 与 CLI 两种接入共用。留空则从 PATH 查找 `codex`。",
+      "type": "string",
+      "category": "providers",
+      "default": "",
+      "placeholder": "/Users/你的用户名/.local/bin/codex"
+    },
+    {
+      "key": "cursor_binary_path",
+      "title": "Cursor 可执行路径",
+      "description": "可选。供 Cursor 的 ACP 与 CLI print 两种接入共用。推荐 `cursor-agent`。留空则从 PATH 查找。",
+      "type": "string",
+      "category": "providers",
+      "default": "",
+      "placeholder": "/Users/你的用户名/.local/bin/cursor-agent"
+    },
+    {
+      "key": "claude_binary_path",
+      "title": "Claude Code 可执行路径",
+      "description": "可选。当前接入为 CLI（`claude -p`）。Agent SDK 为后续 accessMode。留空则从 PATH 查找。",
+      "type": "string",
+      "category": "providers",
+      "default": "",
+      "placeholder": "/Users/你的用户名/.local/bin/claude"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ BACKEND_SPEC = REPO / "desktop" / "build" / "stella-backend.spec"
 RUNNER_SPEC = REPO / "desktop" / "build" / "stella-plugin-runner.spec"
 DEFAULT_PLUGINS = REPO / "resources" / "default-plugins.json"
 
-DOMAINS = ("bills", "tasks", "calendar", "email", "elearning", "briefing", "automation")
+DOMAINS = ("bills", "tasks", "calendar", "email", "elearning", "briefing", "automation", "agent-hub")
 FORBIDDEN_TOP_LEVEL = {"agent", "application", "channel", "app"}
 
 

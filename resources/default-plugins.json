@@ -64,6 +64,15 @@
       "requiredFor": [
         "automation"
       ]
+    },
+    {
+      "pluginId": "stella.agent-hub",
+      "catalogRef": "official/stella.agent-hub",
+      "versionRange": "^1.0.0",
+      "defaultEnabled": true,
+      "requiredFor": [
+        "agent-hub"
+      ]
     }
   ]
 }

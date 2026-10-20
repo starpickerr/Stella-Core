@@ -2,6 +2,7 @@ export type PluginRow = {
   pluginId: string; userId: string; name: string; version: string | null
   intent: 'enabled' | 'disabled' | 'removed'; state: string; error?: string
   sourceLabel: string; generation: number; services: string[]
+  firstParty?: boolean; hideUninstall?: boolean
 }
 export type ResourceRef = { kind: string; id: string }
 export type Grant = {
@@ -11,6 +12,8 @@ export type Grant = {
 export type Method = { name: string; permissions: string[] }
 export type SettingsField = {
   key: string; title: string; category: string; type: string; default?: unknown; secret?: boolean
+  description?: string; placeholder?: string
+  enumLabels?: Record<string, string>
   validation?: { enum?: unknown[]; min?: number; max?: number; minLength?: number; maxLength?: number }
 }
 export type SettingsDescriptor = {

@@ -34,6 +34,7 @@ def test_packaged_catalog_lists_domains_with_signed_package_urls():
         "stella.elearning",
         "stella.briefing",
         "stella.automation",
+        "stella.agent-hub",
     }
     for row in data["plugins"]:
         assert not str(row.get("path") or "").startswith("plugin-seed/")

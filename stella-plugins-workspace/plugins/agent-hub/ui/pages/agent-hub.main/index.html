@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>智能体</title>
+  <style>
+    :root { color-scheme: light; font-family: "SF Pro Text", "PingFang SC", sans-serif; }
+    body { margin: 0; padding: 24px; background: #f6f4ef; color: #1c1917; }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    p { margin: 0 0 16px; color: #57534e; line-height: 1.5; }
+    button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid #1c1917; background: #1c1917; color: #fafaf9; cursor: pointer; margin-right: 8px; }
+    button.secondary { background: #fff; color: #1c1917; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #status { margin-top: 16px; font-size: 0.9rem; white-space: pre-wrap; }
+    #empty { display: none; padding: 20px; border: 1px dashed #a8a29e; border-radius: 12px; background: #fff; margin-bottom: 20px; }
+    #list, #runs { margin-top: 16px; display: grid; gap: 12px; }
+    .agent { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 14px; }
+    .agent > h3 { margin: 0 0 4px; font-size: 1.05rem; }
+    .agent > .meta { margin-bottom: 10px; }
+    .modes { display: grid; gap: 8px; }
+    .mode { border: 1px solid #e7e5e4; border-radius: 10px; padding: 10px 12px; background: #fafaf9; }
+    .mode h4 { margin: 0 0 4px; font-size: 0.95rem; font-weight: 600; }
+    .meta { font-size: 0.8rem; color: #78716c; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e7e5e4; font-size: 0.75rem; margin-left: 6px; }
+    .badge.ready { background: #dcfce7; }
+    .badge.blocked { background: #fee2e2; }
+    .row { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; padding: 12px; }
+    .row h3 { margin: 0 0 4px; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>智能体协作</h1>
+  <p>按 Agent 管理多种接入方式（CLI / App Server / ACP 等）。同一 Agent 切换接入不改变身份。未配置不影响其他功能。</p>
+  <div id="empty">
+    <strong>尚未配置可用接入</strong>
+    <p style="margin-top:8px">启用并探测至少一个本地接入后，即可委托专业任务。不会自动安装 CLI，也不会使用 --force / --yolo。</p>
+  </div>
+  <button id="defaults" type="button" class="secondary">初始化默认接入</button>
+  <button id="refresh" type="button">刷新</button>
+  <div id="status"></div>
+  <h2 style="font-size:1.05rem;margin-top:24px">Agents 与接入方式</h2>
+  <div id="list"></div>
+  <h2 style="font-size:1.05rem;margin-top:24px">最近委托</h2>
+  <div id="runs"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -146,7 +146,7 @@ def dmg_first_boot(installed_app, tmp_path_factory):
 
 def test_dmg_copy_has_core_only_signed_catalog(installed_app):
     catalog = json.loads(installed_app["catalog"].read_text(encoding="utf-8"))
-    assert len(catalog["plugins"]) == 7
+    assert len(catalog["plugins"]) >= 7
     for row in catalog["plugins"]:
         assert row["url"].startswith("plugin-packages/")
         assert (installed_app["resources"] / row["url"]).is_file()

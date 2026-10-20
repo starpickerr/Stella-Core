@@ -61,9 +61,10 @@ export default function PluginManagerPage({ baseUrl }: Props) {
         {row.intent === 'removed' ? <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy} onClick={() => void manage(row, 'reinstall')}>重新安装</button> : <>
           <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy || row.state === 'maintenance'} onClick={() => void manage(row, row.intent === 'enabled' ? 'disable' : 'enable')}>{row.intent === 'enabled' ? '停用' : '启用'}</button>
           {plan?.updates?.some(item => item.pluginId === row.pluginId) && <button className="rounded-btn bg-accent px-3 py-2 text-white" disabled={!!busy} onClick={() => void manage(row, 'update')}>更新</button>}
-          <button className="rounded-btn px-3 py-2 text-content-secondary" disabled={!!busy} onClick={() => void manage(row, 'remove')}>卸载</button>
-        </>}
-        {busy === row.pluginId && <span role="status" className="self-center text-content-secondary">处理中…</span>}
+          {!row.hideUninstall && !row.firstParty && (
+            <button className="rounded-btn px-3 py-2 text-content-secondary" disabled={!!busy} onClick={() => void manage(row, 'remove')}>卸载</button>
+          )}
+        </>}        {busy === row.pluginId && <span role="status" className="self-center text-content-secondary">处理中…</span>}
       </div>
     </li>)}</ul>
     <p className="text-xs text-content-tertiary">停用和卸载保留业务数据。插件启用后，会在首次获准调用时启动。</p>

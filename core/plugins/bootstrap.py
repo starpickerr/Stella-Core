@@ -20,6 +20,7 @@ DOMAIN_ENV = {
     "stella.elearning": "STELLA_ELEARNING_PLUGIN",
     "stella.briefing": "STELLA_BRIEFING_PLUGIN",
     "stella.automation": "STELLA_AUTOMATION_PLUGIN",
+    "stella.agent-hub": "STELLA_AGENT_HUB_PLUGIN",
 }
 
 

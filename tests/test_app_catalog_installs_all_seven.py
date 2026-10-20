@@ -1,4 +1,4 @@
-"""Packaged Stella.app catalog must install all seven signed plugins."""
+"""Packaged Stella.app catalog must install all signed first-party plugins."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def test_app_catalog_installs_all_seven(tmp_path, monkeypatch):
     results = {}
     for plugin_id in (
         "stella.bills", "stella.calendar", "stella.tasks", "stella.email",
-        "stella.elearning", "stella.briefing", "stella.automation",
+        "stella.elearning", "stella.briefing", "stella.automation", "stella.agent-hub",
     ):
         results[plugin_id] = fetch_and_install_from_catalog(
             catalog_path=APP_CATALOG,

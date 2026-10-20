@@ -2370,6 +2370,14 @@ class PluginSettingsHandler:
             elif action == 'save':
                 result = service.save(body['pluginId'], user, body['settingsId'], body['category'], body['changes'],
                                       expected_revision=body['expectedRevision'])
+                if body.get('pluginId') == 'stella.agent-hub' and body.get('settingsId') == 'agent-hub.preferences':
+                    try:
+                        from core.services import agent_hub_gateway
+
+                        if agent_hub_gateway.agent_hub_plugin_enabled():
+                            agent_hub_gateway.apply_user_preferences(owner_user_id=user)
+                    except Exception as sync_exc:
+                        logger.warning('[PluginSettings] agent-hub preference sync failed: %s', sync_exc)
             else:
                 raise ValueError('unknown settings action')
             return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)

@@ -311,6 +311,17 @@ const App: React.FC = () => {
                 />
               }
             />
+            <Route
+              path="/agent-hub"
+              element={
+                <PluginPageHost
+                  baseUrl={backend.baseUrl}
+                  pluginId="stella.agent-hub"
+                  pageId="agent-hub.main"
+                  title="智能体"
+                />
+              }
+            />
             <Route path="/health" element={<HealthPage />} />
             <Route path="/knowledge" element={<KnowledgePage baseUrl={backend.baseUrl} />} />
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />

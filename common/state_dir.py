@@ -303,6 +303,17 @@ def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     return _ensure(_user_base(identity, base) / "runs", ensure)
 
 
+def executions_dir(identity=None, ensure: bool = False, base=None) -> Path:
+    """H0 ExecutionService database and managed work copies (user-scoped)."""
+    return _ensure(_user_base(identity, base) / "executions", ensure)
+
+
+def agent_hub_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Agent Hub provider configs and external run mappings."""
+    hub_dir = _ensure(_user_base(identity, base) / "agent-hub", ensure)
+    return hub_dir / "agent-hub.db"
+
+
 # --- Compatibility -----------------------------------------------------------
 
 

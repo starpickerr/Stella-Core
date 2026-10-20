@@ -21,7 +21,9 @@ from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
 DOMAINS = {'stella.bills': 'bills', 'stella.tasks': 'todos', 'stella.calendar': 'calendar',
            'stella.briefing': 'briefing', 'stella.email': 'email', 'stella.elearning': 'elearning',
-           'stella.automation': 'automation'}
+           'stella.automation': 'automation', 'stella.agent-hub': 'agent_hub'}
+
+FIRST_PARTY_PLUGIN_IDS = frozenset(DOMAINS) | frozenset({'stella.agent-hub'})
 
 
 def domain_data_handle(plugin_id: str, user_id: str) -> dict:
@@ -43,6 +45,8 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
         if plugin_id == 'stella.automation':
             path = state_dir.scheduler_file().with_name('automation.db')
             return {'namespace': plugin_id, 'dbPath': str(path.resolve())}
+        if plugin_id == 'stella.agent-hub':
+            return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).resolve())}
     raise ValueError('no Core domain data handle for this plugin')
 
 
@@ -222,7 +226,9 @@ class PluginManager:
             except Exception as exc:
                 rows.append({**state, 'name': plugin_id, 'state': 'failed', 'error': str(exc),
                              'version': None, 'digest': None, 'manifest': {}, 'services': [],
-                             'contributes': {}, 'sourceLabel': 'installed', 'generation': 0})
+                             'contributes': {}, 'sourceLabel': 'installed', 'generation': 0,
+                             'firstParty': plugin_id in FIRST_PARTY_PLUGIN_IDS,
+                             'hideUninstall': plugin_id in FIRST_PARTY_PLUGIN_IDS})
                 continue
             snapshot = DEFAULT_REGISTRY.get(plugin_id)
             active = snapshot is not None and snapshot.user_id == user_id and state['intent'] == 'enabled' and state['state'] != 'maintenance'
@@ -231,7 +237,9 @@ class PluginManager:
                          'generation': snapshot.generation if active else 0,
                          'state': 'active' if active else ('stopped' if state['state'] in {'active', 'starting', 'validating', 'draining'} else state['state']),
                          'services': list(snapshot.services) if active else [], 'manifest': manifest,
-                         'contributes': snapshot.contributes if active else {}})
+                         'contributes': snapshot.contributes if active else {},
+                         'firstParty': plugin_id in FIRST_PARTY_PLUGIN_IDS,
+                         'hideUninstall': plugin_id in FIRST_PARTY_PLUGIN_IDS})
         return rows
 
     def update_plan(self, user_id: str) -> dict:

@@ -32,6 +32,7 @@ DOMAINS = (
     "stella.elearning",
     "stella.briefing",
     "stella.automation",
+    "stella.agent-hub",
 )
 
 

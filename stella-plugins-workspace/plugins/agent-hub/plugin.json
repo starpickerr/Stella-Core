@@ -1,0 +1,38 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.agent-hub",
+  "name": "智能体",
+  "version": "1.0.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.agent-hub",
+    "schemaVersion": 1,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": [
+      "stella.agent-hub@1"
+    ],
+    "pages": [
+      "agent-hub.main"
+    ],
+    "settings": [
+      "agent-hub.preferences"
+    ]
+  },
+  "permissions": [
+    {
+      "capability": "agent_hub.read",
+      "required": true
+    },
+    {
+      "capability": "agent_hub.write",
+      "required": true
+    }
+  ]
+}
