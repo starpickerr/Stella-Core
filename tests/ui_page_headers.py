@@ -56,6 +56,12 @@ def backend(route):
         data = {'status': 'error', 'message': 'fixture'}
     elif path.startswith('/api/channels'):
         data.update(channels=[])
+    elif path == '/api/mcp':
+        data['servers'] = []
+    elif path == '/api/plugins/runtime':
+        data['plugins'] = []
+    elif path == '/api/plugins/dual-update-plan':
+        data.update(updates=[], blocked=[])
     elif path.startswith('/api/tools'):
         data.update(tools=[])
     elif path.startswith('/api/skills'):

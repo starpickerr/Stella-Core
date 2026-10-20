@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { SettingsPanel } from '../briefing/SettingsPanel'
 import { apiClient } from '../../api/client'
 import { Grant, Method, PluginRow, SettingsDescriptor, SettingsField, SettingsSnapshot } from '../../plugins/managementTypes'
 import { Dropdown, Group, Row, SaveRow, TextInput, Toggle } from './primitives'
@@ -7,6 +8,7 @@ type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conf
 type Request = { requestId: string; consumerPluginId: string; capability: string; purpose: string; resources: {kind: string; id: string}[]; methods: string[] }
 const input = 'w-full rounded-btn border border-default bg-surface px-3 py-2 text-sm'
 const button = 'rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50'
+const tabButton = (active: boolean) => `${button.replace('bg-surface-2', active ? 'bg-accent-soft' : 'bg-surface-2')} ${active ? 'font-medium text-accent' : 'text-content-secondary'}`
 
 function fieldControl(
   field: SettingsField,
@@ -63,9 +65,9 @@ function fieldControl(
   )
 }
 
-export default function PluginSettings({ baseUrl }: { baseUrl: string }) {
+export default function PluginSettings({ baseUrl, pluginId }: { baseUrl: string; pluginId?: string }) {
   const [rows, setRows] = useState<PluginRow[]>([])
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useState(pluginId || '')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
   const [tab, setTab] = useState('permissions')
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
@@ -97,6 +99,7 @@ export default function PluginSettings({ baseUrl }: { baseUrl: string }) {
     }).catch(err => { if (!cancelled) setError(String(err)) })
     return () => { cancelled = true }
   }, [baseUrl])
+  useEffect(() => { if (pluginId) { setSelected(pluginId); setTab(pluginId === 'stella.briefing' ? 'briefing' : 'permissions') } }, [pluginId])
   useEffect(() => {
     if (!selected) return
     let cancelled = false
@@ -159,7 +162,7 @@ export default function PluginSettings({ baseUrl }: { baseUrl: string }) {
   return <div className="flex flex-col sm:flex-row gap-5 min-h-80 text-content">
     <nav aria-label="选择插件" className="flex sm:flex-col sm:w-36 sm:shrink-0 gap-1 overflow-auto sm:border-r border-default sm:pr-3">
       {!rows.length && <p className="text-sm text-content-secondary">暂无已安装插件</p>}
-      {rows.map(item => <button type="button" disabled={busy} key={item.pluginId} onClick={() => setSelected(item.pluginId)} className={`${button} whitespace-nowrap text-left ${selected === item.pluginId ? 'font-semibold' : 'text-content-secondary'}`}>{item.name}</button>)}
+      {rows.map(item => <button type="button" disabled={busy} key={item.pluginId} onClick={() => { setSelected(item.pluginId); setTab(item.pluginId === 'stella.briefing' ? 'briefing' : 'permissions') }} className={`${button} whitespace-nowrap text-left ${selected === item.pluginId ? 'font-semibold' : 'text-content-secondary'}`}>{item.name}</button>)}
     </nav>
     <section className="min-w-0 flex-1 space-y-4">
       {row && <header><h4 className="font-semibold">{row.name}</h4><p className="text-xs text-content-tertiary mt-1">{row.pluginId} · {row.version || '版本不可读'}</p></header>}
@@ -179,6 +182,7 @@ export default function PluginSettings({ baseUrl }: { baseUrl: string }) {
           <button className={button} disabled={busy || !capability} onClick={() => void propose()}>审阅授权范围</button>
         </fieldset>}
       </div>}
+      {selected === 'stella.briefing' && tab === 'briefing' && <SettingsPanel />}
       {category && (
         <Group title={category.title}>
           {!fields.length && <p className="text-sm text-content-secondary">此类别没有独立配置项。</p>}

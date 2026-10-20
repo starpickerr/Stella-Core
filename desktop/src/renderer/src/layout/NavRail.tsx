@@ -19,7 +19,6 @@ import {
   Shield,
   Heart,
   Bot,
-  Puzzle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import brandLogo from '../assets/logo.png'
@@ -79,7 +78,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
       { path: '/security', labelKey: 'menu_security', icon: Shield },
-      { path: '/plugins', labelKey: 'menu_plugins', icon: Puzzle },
       { path: '/settings', labelKey: 'menu_settings', icon: Settings },
       { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
     ],

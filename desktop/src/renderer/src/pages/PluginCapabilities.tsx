@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Puzzle, RefreshCw } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { RefreshCw } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { currentSettingsOrigin } from './settings/origin'
 import { apiClient } from '../api/client'
+import { Card, Grid } from '../components/CapabilityCards'
 import { PluginRow, pluginStateLabel } from '../plugins/managementTypes'
 
 type Props = { baseUrl: string }
 type Plan = { status: string; core?: { from: string; to: string }; updates?: { pluginId: string; fromVersion: string; toVersion: string }[]; blocked?: { pluginId: string; reason: string }[] }
 
-export default function PluginManagerPage({ baseUrl }: Props) {
+export default function PluginCapabilities({ baseUrl }: Props) {
+  const location = useLocation()
+  const origin = () => currentSettingsOrigin(location.pathname, location.search)
   const [rows, setRows] = useState<PluginRow[]>([])
   const [plan, setPlan] = useState<Plan | null>(null)
   const [loading, setLoading] = useState(false)
@@ -16,9 +20,10 @@ export default function PluginManagerPage({ baseUrl }: Props) {
   const [message, setMessage] = useState('')
   const refresh = useCallback(async () => {
     apiClient.setBaseUrl(baseUrl)
-    setLoading(true)
+    setLoading(true); setError('')
     try {
       const data = await apiClient.pluginRequest<{ plugins: PluginRow[] }>('runtime')
+      if (!Array.isArray(data.plugins)) throw new Error('无法读取插件目录')
       setRows(data.plugins)
       try { setPlan(await apiClient.pluginRequest<Plan>('dual-update-plan')) }
       catch (err) { setPlan(null); setError(String(err)) }
@@ -36,11 +41,10 @@ export default function PluginManagerPage({ baseUrl }: Props) {
     } catch (err) { setError(String(err)) }
     finally { setBusy(null) }
   }
-  return <main className="h-full overflow-auto p-6 space-y-5 text-content">
+  return <div className="space-y-3 text-content">
     <header className="flex flex-wrap items-center gap-3">
-      <Puzzle size={24} className="text-accent" />
-      <div className="flex-1"><h1 className="text-xl font-semibold">插件</h1><p className="text-sm text-content-secondary">管理安装、运行状态和更新</p></div>
-      <Link to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
+      <div className="flex-1"><p className="text-sm text-content-secondary">管理安装、运行状态和更新</p></div>
+      <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
       <button type="button" disabled={loading || !!busy} onClick={() => { setError(''); void refresh() }} className="inline-flex items-center gap-2 rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"><RefreshCw size={14} />刷新</button>
     </header>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
@@ -50,14 +54,15 @@ export default function PluginManagerPage({ baseUrl }: Props) {
       {plan.blocked?.map(item => <p key={item.pluginId} className="text-danger">{item.pluginId}：{item.reason}</p>)}
     </section>}
     {loading && <p role="status" className="text-sm text-content-secondary">正在读取已安装插件…</p>}
-    {!loading && !rows.length && <p className="text-sm text-content-secondary">尚未安装插件。默认插件会在启动时从配置的目录安装；安装失败时可查看诊断日志。</p>}
-    <ul className="divide-y divide-default">{rows.map(row => <li key={row.pluginId} className="py-4 flex flex-wrap items-center gap-4">
-      <div className="flex-1 min-w-40"><h2 className="font-medium">{row.name} <span className="ml-2 text-sm text-content-secondary">{row.version || '版本不可读'}</span></h2>
-        <p className="text-xs text-content-tertiary mt-1">{row.pluginId}</p>
+    {!loading && !error && !rows.length && <p className="text-sm text-content-secondary">尚未安装插件。默认插件会在启动时从配置的目录安装；安装失败时可查看诊断日志。</p>}
+    <Grid>{rows.map(row => <Card key={row.pluginId} label={row.name}>
+      <div className="flex-1 min-w-40"><h3 className="text-sm font-semibold">{row.name} <span className="ml-2 text-sm text-content-secondary">{row.version || '版本不可读'}</span></h3>
+        <p className="text-xs text-content-tertiary mt-1 break-all">{row.pluginId}</p>
         {row.error && <p className="text-sm text-danger mt-2">{row.error}</p>}
       </div>
       <span className="text-sm text-content-secondary">{pluginStateLabel[row.intent === 'enabled' ? row.state : row.intent] || row.state}</span>
-      <div className="flex flex-wrap gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Link state={origin()} className="rounded-btn px-3 py-2 text-accent" to={`/settings?tab=plugins&plugin=${encodeURIComponent(row.pluginId)}`}>设置</Link>
         {row.intent === 'removed' ? <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy} onClick={() => void manage(row, 'reinstall')}>重新安装</button> : <>
           <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy || row.state === 'maintenance'} onClick={() => void manage(row, row.intent === 'enabled' ? 'disable' : 'enable')}>{row.intent === 'enabled' ? '停用' : '启用'}</button>
           {plan?.updates?.some(item => item.pluginId === row.pluginId) && <button className="rounded-btn bg-accent px-3 py-2 text-white" disabled={!!busy} onClick={() => void manage(row, 'update')}>更新</button>}
@@ -66,7 +71,7 @@ export default function PluginManagerPage({ baseUrl }: Props) {
           )}
         </>}        {busy === row.pluginId && <span role="status" className="self-center text-content-secondary">处理中…</span>}
       </div>
-    </li>)}</ul>
+    </Card>)}</Grid>
     <p className="text-xs text-content-tertiary">停用和卸载保留业务数据。插件启用后，会在首次获准调用时启动。</p>
-  </main>
+  </div>
 }

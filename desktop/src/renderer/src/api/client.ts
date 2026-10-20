@@ -1,3 +1,4 @@
+import type { McpServerInfo } from '../types'
 import type {
   ConfigData,
   ChannelInfo,
@@ -664,6 +665,12 @@ class ApiClient {
     const data = await this.request<{ status: string; tools?: ToolInfo[]; message?: string }>('/api/tools')
     if (data.status !== 'success' || !Array.isArray(data.tools)) throw new Error(data.message || 'Could not load tools')
     return data.tools
+  }
+
+  async getMcpServers(): Promise<McpServerInfo[]> {
+    const data = await this.request<{ status: string; servers?: McpServerInfo[]; message?: string }>('/api/mcp')
+    if (data.status !== 'success' || !Array.isArray(data.servers)) throw new Error(data.message || 'Could not load MCP capabilities')
+    return data.servers
   }
 
   async getSkills(): Promise<SkillInfo[]> {

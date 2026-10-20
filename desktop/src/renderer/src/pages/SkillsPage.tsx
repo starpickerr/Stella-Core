@@ -1,10 +1,13 @@
+import { Card, Grid } from '../components/CapabilityCards'
 import React, { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, Loader2, Puzzle } from 'lucide-react'
 import { getLang, t } from '../i18n'
 import apiClient from '../api/client'
-import type { LocalizedCopy, SkillInfo, ToolInfo } from '../types'
+import type { LocalizedCopy, SkillInfo, ToolInfo, McpServerInfo } from '../types'
 import { Toggle } from './settings/primitives'
 import { SKILL_HUB_URL } from './settings/links'
+import { useLocation } from 'react-router-dom'
+import PluginCapabilities from './PluginCapabilities'
 import PageHeader from '../components/PageHeader'
 
 interface SkillsPageProps {
@@ -14,6 +17,10 @@ interface SkillsPageProps {
 const copyOf = (value: LocalizedCopy | null | undefined) => value?.[getLang() === 'en' ? 'en' : 'zh'] || ''
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
+  const location = useLocation()
+  const [servers, setServers] = useState<McpServerInfo[]>([])
+  const [mcpError, setMcpError] = useState('')
+  const [openServer, setOpenServer] = useState('')
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [toolsError, setToolsError] = useState('')
@@ -39,16 +46,25 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     }
   }, [])
 
+  const loadMcp = useCallback(async () => {
+    try { setServers(await apiClient.getMcpServers()); setMcpError('') }
+    catch (err) { setMcpError(err instanceof Error ? err.message : String(err)) }
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
-    await Promise.all([loadTools(), loadSkills()])
+    await Promise.all([loadTools(), loadSkills(), loadMcp()])
     setLoading(false)
-  }, [loadTools, loadSkills])
+  }, [loadTools, loadSkills, loadMcp])
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
     void loadData()
   }, [baseUrl, loadData])
+
+  useEffect(() => {
+    if (!loading && location.hash === '#plugins') document.getElementById('plugins')?.scrollIntoView({ block: 'start' })
+  }, [loading, location.hash])
 
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
     setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled } : item)))
@@ -68,11 +84,11 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
           <p className="text-xs text-content-tertiary mt-1">{t('skills_desc')}</p>
         </div>
         <a href={SKILL_HUB_URL} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium text-accent bg-accent-soft">
+          className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium text-accent bg-accent-soft">
           <Puzzle size={12} />{t('skills_hub_btn')}
         </a>
       </PageHeader>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" data-stella-scroll>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-content-tertiary">
@@ -112,6 +128,39 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                   </Grid>
                 )}
               </Section>
+              <section id="plugins" className="space-y-3 scroll-mt-4">
+                <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
+                <PluginCapabilities baseUrl={baseUrl} />
+              </section>
+              <Section title="MCP" count={servers.length}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-content-tertiary">{t('capability_mcp_desc')}</p>
+                  <button type="button" onClick={() => void loadMcp()} className="text-xs text-accent">{t('capability_refresh')}</button>
+                </div>
+                {mcpError ? <LoadError text={mcpError} onRetry={() => void loadMcp()} /> : !servers.length ? (
+                  <Empty text={t('capability_mcp_empty')} />
+                ) : <Grid>{servers.map(server => <Card key={server.name} label={server.name}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-content break-all">{server.name}</h3>
+                    <span className={`text-xs ${server.state === 'failed' ? 'text-danger' : 'text-content-secondary'}`}>
+                      {t(`capability_mcp_${server.state}`)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-content-tertiary">{server.transport}</p>
+                  <button type="button" aria-expanded={openServer === server.name} aria-controls={`mcp-tools-${server.name}`}
+                    onClick={() => setOpenServer(openServer === server.name ? '' : server.name)}
+                    className="inline-flex items-center gap-1 self-start text-xs text-content-secondary">
+                    {t('capability_mcp_tools')} ({server.tools.length})<ChevronDown size={13} />
+                  </button>
+                  {openServer === server.name && <div id={`mcp-tools-${server.name}`} className="border-t border-default pt-2 space-y-3">
+                    {!server.tools.length && <Empty text={t('capability_mcp_no_tools')} />}
+                    {server.tools.map(tool => <div key={tool.name}>
+                      <h4 className="text-xs font-semibold text-content break-all">{tool.name}</h4>
+                      <p className="text-[13px] text-content-secondary whitespace-pre-wrap break-words">{tool.description}</p>
+                    </div>)}
+                  </div>}
+                </Card>)}</Grid>}
+              </Section>
             </div>
           )}
         </div>
@@ -146,31 +195,6 @@ const ToolCard: React.FC<{ tool: ToolInfo; open: boolean; onToggle: () => void }
     </Card>
   )
 }
-
-/** Two independent columns so a short card does not stretch to its neighbor. */
-const Grid: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const items = React.Children.toArray(children)
-  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 768px)').matches)
-  useEffect(() => {
-    const query = window.matchMedia('(min-width: 768px)')
-    const apply = () => setWide(query.matches)
-    query.addEventListener('change', apply)
-    return () => query.removeEventListener('change', apply)
-  }, [])
-  if (!wide) return <div className="flex flex-col gap-3">{items}</div>
-  return (
-    <div className="grid grid-cols-2 items-start gap-3">
-      <div className="flex flex-col gap-3">{items.filter((_, index) => index % 2 === 0)}</div>
-      <div className="flex flex-col gap-3">{items.filter((_, index) => index % 2 === 1)}</div>
-    </div>
-  )
-}
-
-const Card: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <article aria-label={label} className="flex flex-col gap-2 rounded-card border border-default bg-surface p-4">
-    {children}
-  </article>
-)
 
 const Section: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
   <section className="space-y-3">
