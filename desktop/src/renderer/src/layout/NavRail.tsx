@@ -49,11 +49,11 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'apps',
     labelKey: 'nav_work',
     items: [
+      { path: '/agent-hub', labelKey: 'menu_agent_hub', icon: Bot },
       { path: '/todos', labelKey: 'menu_todos', icon: ListChecks },
       { path: '/calendar', labelKey: 'menu_calendar', icon: CalendarDays },
       { path: '/briefing', labelKey: 'menu_briefing', icon: Sun },
       { path: '/bills', labelKey: 'menu_bills', icon: Receipt },
-      { path: '/agent-hub', labelKey: 'menu_agent_hub', icon: Bot },
       { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
     ],
   },

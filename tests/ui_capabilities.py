@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -21,6 +22,8 @@ plan_requests = []
 updated = [False]
 fail_update = [False]
 fail_plan = [False]
+AGENT_PACKAGE = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace/plugins/agent-hub'
+AGENT_MANIFEST = json.loads((AGENT_PACKAGE / 'plugin.json').read_text())
 INTRO = '检索 Agent 的长期记忆；启用知识库时也可检索知识内容。这份介绍需要完整显示，不能被两行省略号截断。'
 DETAIL = '只在带有记忆能力的对话中可用。它可以查找记忆和已启用的知识内容。'
 
@@ -31,7 +34,16 @@ def backend(route):
     method = route.request.method
     body = route.request.post_data_json if method == 'POST' else {}
     data = {'status': 'success'}
-    if path == '/api/health':
+    if path == '/api/plugins/pages/open':
+        data = {'status':'ok','result':{'contentUrl':'/api/plugins/pages/agent-collaboration/index.html',
+            'pluginId':'stella.agent-hub','pageId':'agent-hub.main','generation':1,'channelNonce':'test-nonce'}}
+    elif path == '/api/plugins/pages/agent-collaboration/index.html':
+        route.fulfill(status=200,content_type='text/html',body=(AGENT_PACKAGE / 'ui/pages/agent-hub.main/index.html').read_text())
+        return
+    elif path == '/api/plugins/pages/agent-collaboration/app.js':
+        route.fulfill(status=200,content_type='application/javascript',body='')
+        return
+    elif path == '/api/health':
         data = {'status': 'ok'}
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
@@ -88,7 +100,10 @@ def backend(route):
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.briefing', 'userId': 'test', 'name': '简报',
                             'version': '1.0.0', 'intent': 'enabled' if plugin_enabled[0] else 'disabled', 'state': 'stopped',
-                            'sourceLabel': 'official', 'generation': 1, 'services': []}]
+                            'sourceLabel': 'official', 'generation': 1, 'services': []},
+                           {'pluginId':'stella.agent-hub','userId':'test','name':AGENT_MANIFEST['name'],
+                            'version':AGENT_MANIFEST['version'],'intent':'enabled','state':'stopped',
+                            'firstParty':True,'hideUninstall':True,'sourceLabel':'official','generation':1,'services':[]}]
     elif path == '/api/plugins/dual-update-plan':
         plan_requests.append(path)
         if fail_plan[0]:
@@ -138,6 +153,11 @@ with sync_playwright() as playwright:
         page.goto(test_url + '/#/skills', wait_until='networkidle')
         nav = page.get_by_role('navigation')
         expect(nav.get_by_role('button', name='能力', exact=True)).to_be_visible()
+        expect(nav.get_by_role('button', name='Agent 协作', exact=True)).to_be_visible()
+        expect(nav.get_by_role('button', name='智能体', exact=True)).to_have_count(0)
+        labels = [text.strip() for text in nav.get_by_role('button').all_text_contents()]
+        assert labels.index('Agent 协作') + 1 == labels.index('事务'), labels
+        expect(page.get_by_role('article', name='Agent 协作', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name='能力', exact=True)).to_be_visible()
         expect(nav.get_by_role('button', name='插件', exact=True)).to_have_count(0)
         expect(page.get_by_role('tab')).to_have_text(['插件', '工具', '技能', 'MCP'])
@@ -278,6 +298,16 @@ with sync_playwright() as playwright:
         page.get_by_role('tab', name='插件', exact=True).click()
         page.screenshot(path='/tmp/stella-capabilities-desktop.png', full_page=True)
         assert plan_requests == [], 'Capabilities must not check for updates'
+        nav.get_by_role('button', name='Agent 协作', exact=True).click()
+        frame = page.frame_locator('iframe[title="Agent 协作"]')
+        expect(frame.get_by_role('heading', name='Agent 协作', exact=True)).to_be_visible()
+        assert page.url.endswith('/#/agent-hub')
+        page.screenshot(path='/tmp/stella-agent-collaboration-desktop.png', full_page=True)
+        page.set_viewport_size({'width':620,'height':900})
+        expect(nav.get_by_role('button', name='Agent 协作', exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.screenshot(path='/tmp/stella-agent-collaboration-narrow.png', full_page=True)
+        page.set_viewport_size({'width':1280,'height':900})
         page.goto(test_url + '/#/settings?tab=about', wait_until='networkidle')
         expect(page.get_by_role('heading', name='Core', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name='Plugins', exact=True)).to_be_visible()

@@ -160,6 +160,6 @@
     }
   });
 
-  setStatus("正在加载智能体协作…");
+  setStatus("正在加载Agent 协作…");
   refresh().then(() => setStatus("")).catch((err) => setStatus(String(err && err.message ? err.message : err)));
 })();

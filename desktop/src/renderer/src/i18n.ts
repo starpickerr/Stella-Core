@@ -177,7 +177,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_briefing: '简报',
     menu_bills: '账单',
     menu_security: '安全',
-    menu_agent_hub: '智能体',
+    menu_agent_hub: 'Agent 协作',
     tasks_retry: '重新加载',
     task_status_completed: '上次已完成',
     task_status_failed: '执行失败',
