@@ -5,6 +5,7 @@ import { useTheme } from '../../hooks/useTheme'
 import { useUpdateStore } from '../../store/updateStore'
 import brandLogo from '../../assets/logo.png'
 import { docsUrl, FEEDBACK_URL, openExternal, websiteUrl } from './links'
+import PluginUpdates from './PluginUpdates'
 import { Group, Row } from './primitives'
 
 const LinkRow: React.FC<{ icon: React.ReactNode; label: string; hint: string; url: string }> = ({ icon, label, hint, url }) => (
@@ -25,7 +26,7 @@ const LinkRow: React.FC<{ icon: React.ReactNode; label: string; hint: string; ur
   </button>
 )
 
-const AboutSettings: React.FC = () => {
+const AboutSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const { appName } = useTheme()
   const { status, version: latest, recheck, download } = useUpdateStore()
   const [version, setVersion] = useState(__APP_VERSION__)
@@ -52,7 +53,7 @@ const AboutSettings: React.FC = () => {
         </div>
       </div>
 
-      <Group title={t('settings_group_updates')}>
+      <Group title="Core">
         <Row
           label={t('settings_version').replace('{v}', version)}
           hint={updateHint}
@@ -70,6 +71,8 @@ const AboutSettings: React.FC = () => {
           )}
         />
       </Group>
+
+      <PluginUpdates baseUrl={baseUrl} />
 
       <Group title={t('settings_group_help')}>
         <LinkRow icon={<BookOpen size={15} />} label={t('menu_docs')} hint={t('settings_docs_hint')} url={docsUrl()} />

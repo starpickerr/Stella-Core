@@ -6,7 +6,7 @@ import apiClient from '../api/client'
 import type { LocalizedCopy, SkillInfo, ToolInfo, McpServerInfo } from '../types'
 import { Toggle } from './settings/primitives'
 import { SKILL_HUB_URL } from './settings/links'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import PluginCapabilities from './PluginCapabilities'
 import PageHeader from '../components/PageHeader'
 
@@ -18,6 +18,19 @@ const copyOf = (value: LocalizedCopy | null | undefined) => value?.[getLang() ==
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const location = useLocation()
+  const navigate = useNavigate()
+  const tabs = [
+    { id: 'plugins', label: t('menu_plugins') },
+    { id: 'tools', label: t('tools_section_title') },
+    { id: 'skills', label: t('skills_section_title') },
+    { id: 'mcp', label: 'MCP' },
+  ]
+  const requestedTab = new URLSearchParams(location.search).get('tab') || location.hash.slice(1)
+  const activeTab = tabs.some(tab => tab.id === requestedTab) ? requestedTab : 'plugins'
+  const selectTab = (id: string) => {
+    navigate(`/skills?tab=${id}`, { replace: true })
+    document.querySelector('[data-stella-scroll]')?.scrollTo(0, 0)
+  }
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [mcpError, setMcpError] = useState('')
   const [openServer, setOpenServer] = useState('')
@@ -25,46 +38,44 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [toolsError, setToolsError] = useState('')
   const [skillsError, setSkillsError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [openTool, setOpenTool] = useState('')
+  const [toolsLoading, setToolsLoading] = useState(true)
+  const [skillsLoading, setSkillsLoading] = useState(true)
+  const [mcpLoading, setMcpLoading] = useState(true)
+  const loading = activeTab === 'tools' ? toolsLoading : activeTab === 'skills' ? skillsLoading : activeTab === 'mcp' ? mcpLoading : false
 
   const loadTools = useCallback(async () => {
+    setToolsLoading(true)
     try {
       setTools(await apiClient.getTools())
       setToolsError('')
     } catch (err) {
       setToolsError(err instanceof Error ? err.message : String(err))
-    }
+    } finally { setToolsLoading(false) }
   }, [])
 
   const loadSkills = useCallback(async () => {
+    setSkillsLoading(true)
     try {
       setSkills(await apiClient.getSkills())
       setSkillsError('')
     } catch (err) {
       setSkillsError(err instanceof Error ? err.message : String(err))
-    }
+    } finally { setSkillsLoading(false) }
   }, [])
 
   const loadMcp = useCallback(async () => {
+    setMcpLoading(true)
     try { setServers(await apiClient.getMcpServers()); setMcpError('') }
     catch (err) { setMcpError(err instanceof Error ? err.message : String(err)) }
+    finally { setMcpLoading(false) }
   }, [])
-
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    await Promise.all([loadTools(), loadSkills(), loadMcp()])
-    setLoading(false)
-  }, [loadTools, loadSkills, loadMcp])
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
-    void loadData()
-  }, [baseUrl, loadData])
-
-  useEffect(() => {
-    if (!loading && location.hash === '#plugins') document.getElementById('plugins')?.scrollIntoView({ block: 'start' })
-  }, [loading, location.hash])
+    void loadTools()
+    void loadSkills()
+    void loadMcp()
+  }, [baseUrl, loadTools, loadSkills, loadMcp])
 
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
     setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled } : item)))
@@ -88,27 +99,48 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
           <Puzzle size={12} />{t('skills_hub_btn')}
         </a>
       </PageHeader>
+      <div className="border-b border-default px-4 sm:px-6">
+        <div role="tablist" aria-label={t('skills_title')} className="max-w-5xl mx-auto flex gap-1 overflow-x-auto">
+          {tabs.map((tab, index) => <button key={tab.id} id={`capability-tab-${tab.id}`} type="button" role="tab"
+            aria-selected={activeTab === tab.id} aria-controls={`capability-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={event => {
+              let next = index
+              if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+              else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length
+              else if (event.key === 'Home') next = 0
+              else if (event.key === 'End') next = tabs.length - 1
+              else return
+              event.preventDefault()
+              selectTab(tabs[next].id)
+              document.getElementById(`capability-tab-${tabs[next].id}`)?.focus()
+            }}
+            className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium ${activeTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-content-secondary hover:text-content'}`}>
+            {tab.label}
+          </button>)}
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto" data-stella-scroll>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+        <div role="tabpanel" id={`capability-panel-${activeTab}`} aria-labelledby={`capability-tab-${activeTab}`} tabIndex={0} className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-content-tertiary">
               <Loader2 size={18} className="animate-spin mr-2" />{t('skills_loading')}
             </div>
           ) : (
             <div className="space-y-10">
-              <Section title={t('tools_section_title')} count={tools.length}>
+              {activeTab === 'tools' && <Section title={t('tools_section_title')} count={tools.length}>
                 {toolsError ? <LoadError text={toolsError || t('capability_tools_error')} onRetry={() => void loadTools()} /> : tools.length === 0 ? (
                   <Empty text={t('tools_empty')} />
                 ) : (
                   <Grid>
                     {tools.map((item) => (
-                      <ToolCard key={item.id} tool={item} open={openTool === item.id}
-                        onToggle={() => setOpenTool(openTool === item.id ? '' : item.id)} />
+                      <ToolCard key={item.id} tool={item} />
                     ))}
                   </Grid>
                 )}
-              </Section>
-              <Section title={t('skills_section_title')} count={skills.length}>
+              </Section>}
+              {activeTab === 'skills' && <Section title={t('skills_section_title')} count={skills.length}>
                 {skillsError ? <LoadError text={skillsError || t('capability_skills_error')} onRetry={() => void loadSkills()} /> : skills.length === 0 ? (
                   <Empty text={t('skills_empty')} />
                 ) : (
@@ -127,12 +159,12 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                     })}
                   </Grid>
                 )}
-              </Section>
-              <section id="plugins" className="space-y-3 scroll-mt-4">
+              </Section>}
+              {activeTab === 'plugins' && <section id="plugins" className="space-y-3 scroll-mt-4">
                 <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
                 <PluginCapabilities baseUrl={baseUrl} />
-              </section>
-              <Section title="MCP" count={servers.length}>
+              </section>}
+              {activeTab === 'mcp' && <Section title="MCP" count={servers.length}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-content-tertiary">{t('capability_mcp_desc')}</p>
                   <button type="button" onClick={() => void loadMcp()} className="text-xs text-accent">{t('capability_refresh')}</button>
@@ -160,7 +192,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                     </div>)}
                   </div>}
                 </Card>)}</Grid>}
-              </Section>
+              </Section>}
             </div>
           )}
         </div>
@@ -169,32 +201,15 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   )
 }
 
-const ToolCard: React.FC<{ tool: ToolInfo; open: boolean; onToggle: () => void }> = ({ tool, open, onToggle }) => {
-  const panelId = `tool-boundary-${tool.id}`
-  return (
-    <Card label={tool.id}>
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-[13px] font-semibold text-content break-all">{tool.id}</h3>
-        {/* Catalog availability is whether the tool loaded, not a preference the switch can change. */}
-        <Toggle label={tool.id} checked={tool.available} onChange={() => undefined} />
-      </div>
-      <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
-      <div className="pt-1">
-        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle}
-          className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-content-secondary cursor-pointer">
-          {t('capability_boundary')}
-          <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
-        {open && (
-          <div id={panelId} className="mt-2 space-y-1.5 border-t border-default pt-2.5 text-xs leading-relaxed text-content-secondary">
-            <p className="whitespace-pre-wrap break-words">{copyOf(tool.detail)}</p>
-            {!tool.available && copyOf(tool.reason) && <p className="text-content-tertiary">{copyOf(tool.reason)}</p>}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
-}
+const ToolCard: React.FC<{ tool: ToolInfo }> = ({ tool }) => (
+  <Card label={tool.id}>
+    <div className="flex items-start justify-between gap-3">
+      <h3 className="font-mono text-[13px] font-semibold text-content break-all">{tool.id}</h3>
+      <span className="text-xs text-content-tertiary shrink-0">{t(tool.available ? 'capability_tool_available' : 'capability_tool_unavailable')}</span>
+    </div>
+    <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
+  </Card>
+)
 
 const Section: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
   <section className="space-y-3">

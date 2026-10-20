@@ -141,7 +141,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
                   onPluginChange={choosePlugin}
                 />
               ) : (
-                <AboutSettings />
+                <AboutSettings baseUrl={baseUrl} />
               )}
             </TabBoundary>
           </div>

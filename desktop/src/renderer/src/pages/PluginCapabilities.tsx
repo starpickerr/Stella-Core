@@ -7,13 +7,11 @@ import { Card, Grid } from '../components/CapabilityCards'
 import { PluginRow, pluginStateLabel } from '../plugins/managementTypes'
 
 type Props = { baseUrl: string }
-type Plan = { status: string; core?: { from: string; to: string }; updates?: { pluginId: string; fromVersion: string; toVersion: string }[]; blocked?: { pluginId: string; reason: string }[] }
 
 export default function PluginCapabilities({ baseUrl }: Props) {
   const location = useLocation()
   const origin = () => currentSettingsOrigin(location.pathname, location.search)
   const [rows, setRows] = useState<PluginRow[]>([])
-  const [plan, setPlan] = useState<Plan | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -25,8 +23,6 @@ export default function PluginCapabilities({ baseUrl }: Props) {
       const data = await apiClient.pluginRequest<{ plugins: PluginRow[] }>('runtime')
       if (!Array.isArray(data.plugins)) throw new Error('无法读取插件目录')
       setRows(data.plugins)
-      try { setPlan(await apiClient.pluginRequest<Plan>('dual-update-plan')) }
-      catch (err) { setPlan(null); setError(String(err)) }
     } catch (err) { setError(String(err)) }
     finally { setLoading(false) }
   }, [baseUrl])
@@ -43,29 +39,24 @@ export default function PluginCapabilities({ baseUrl }: Props) {
   }
   return <div className="space-y-3 text-content">
     <header className="flex flex-wrap items-center gap-3">
-      <div className="flex-1"><p className="text-sm text-content-secondary">管理安装、运行状态和更新</p></div>
+      <div className="flex-1"><p className="text-sm text-content-secondary">查看插件并管理启用状态</p></div>
       <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
       <button type="button" disabled={loading || !!busy} onClick={() => { setError(''); void refresh() }} className="inline-flex items-center gap-2 rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"><RefreshCw size={14} />刷新</button>
     </header>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     {message && <p role="status" className="text-sm text-content-secondary">{message}</p>}
-    {plan && <section className="border-y border-default py-3 text-sm space-y-1">
-      <p>Core {plan.core?.from || '—'} · {plan.updates?.length ? `${plan.updates.length} 个插件可更新` : '插件已是最新版本'}</p>
-      {plan.blocked?.map(item => <p key={item.pluginId} className="text-danger">{item.pluginId}：{item.reason}</p>)}
-    </section>}
     {loading && <p role="status" className="text-sm text-content-secondary">正在读取已安装插件…</p>}
     {!loading && !error && !rows.length && <p className="text-sm text-content-secondary">尚未安装插件。默认插件会在启动时从配置的目录安装；安装失败时可查看诊断日志。</p>}
     <Grid>{rows.map(row => <Card key={row.pluginId} label={row.name}>
-      <div className="flex-1 min-w-40"><h3 className="text-sm font-semibold">{row.name} <span className="ml-2 text-sm text-content-secondary">{row.version || '版本不可读'}</span></h3>
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-sm font-semibold">{row.name} <span className="ml-2 text-sm text-content-secondary">{row.version || '版本不可读'}</span></h3>
         <p className="text-xs text-content-tertiary mt-1 break-all">{row.pluginId}</p>
         {row.error && <p className="text-sm text-danger mt-2">{row.error}</p>}
       </div>
-      <span className="text-sm text-content-secondary">{pluginStateLabel[row.intent === 'enabled' ? row.state : row.intent] || row.state}</span>
+      <span className="shrink-0 text-xs text-content-tertiary">{pluginStateLabel[row.intent === 'enabled' ? row.state : row.intent] || row.state}</span></div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Link state={origin()} className="rounded-btn px-3 py-2 text-accent" to={`/settings?tab=plugins&plugin=${encodeURIComponent(row.pluginId)}`}>设置</Link>
         {row.intent === 'removed' ? <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy} onClick={() => void manage(row, 'reinstall')}>重新安装</button> : <>
           <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={!!busy || row.state === 'maintenance'} onClick={() => void manage(row, row.intent === 'enabled' ? 'disable' : 'enable')}>{row.intent === 'enabled' ? '停用' : '启用'}</button>
-          {plan?.updates?.some(item => item.pluginId === row.pluginId) && <button className="rounded-btn bg-accent px-3 py-2 text-white" disabled={!!busy} onClick={() => void manage(row, 'update')}>更新</button>}
           {!row.hideUninstall && !row.firstParty && (
             <button className="rounded-btn px-3 py-2 text-content-secondary" disabled={!!busy} onClick={() => void manage(row, 'remove')}>卸载</button>
           )}

@@ -1,4 +1,4 @@
-"""Capabilities page: tool grid with agent names, inline boundaries, skill toggle, and load errors."""
+"""Capabilities page: horizontal tabs, concise cards, skill toggle, and load errors."""
 
 import json
 import os
@@ -14,6 +14,10 @@ empty_mcp = [False]
 plugin_enabled = [True]
 plugin_posts = []
 skill_posts = []
+plan_requests = []
+updated = [False]
+fail_update = [False]
+fail_plan = [False]
 INTRO = '检索 Agent 的长期记忆；启用知识库时也可检索知识内容。这份介绍需要完整显示，不能被两行省略号截断。'
 DETAIL = '只在带有记忆能力的对话中可用。它可以查找记忆和已启用的知识内容。'
 
@@ -69,14 +73,27 @@ def backend(route):
                            {'name': 'Offline', 'transport': 'sse', 'state': 'failed', 'tools': []}]
     elif path == '/api/plugins/manage':
         plugin_posts.append(body)
-        plugin_enabled[0] = body['action'] == 'enable'
+        if body['action'] == 'update':
+            if fail_update[0]:
+                data = {'status': 'error', 'message': '更新失败，请重试'}
+            else:
+                updated[0] = True
+        else:
+            plugin_enabled[0] = body['action'] == 'enable'
         data['result'] = {}
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.briefing', 'userId': 'test', 'name': '简报',
                             'version': '1.0.0', 'intent': 'enabled' if plugin_enabled[0] else 'disabled', 'state': 'stopped',
                             'sourceLabel': 'official', 'generation': 1, 'services': []}]
     elif path == '/api/plugins/dual-update-plan':
-        data.update(core={'from': '1.0'}, updates=[], blocked=[])
+        plan_requests.append(path)
+        if fail_plan[0]:
+            data = {'status': 'error', 'message': '更新目录加载失败'}
+        else:
+            data.update(core={'from': '1.0'}, updates=[] if updated[0] else [
+                {'pluginId': 'stella.briefing', 'fromVersion': '1.0.0', 'toVersion': '1.1.0'},
+                {'pluginId': 'stella.blocked', 'fromVersion': '1.0.0', 'toVersion': '2.0.0'}],
+                blocked=[{'pluginId': 'stella.blocked', 'reason': '需要更新 Core'}])
     elif path == '/api/plugins/settings':
         data['result'] = []
     elif path == '/api/plugins/authorization':
@@ -116,22 +133,23 @@ with sync_playwright() as playwright:
         expect(nav.get_by_role('button', name='能力', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name='能力', exact=True)).to_be_visible()
         expect(nav.get_by_role('button', name='插件', exact=True)).to_have_count(0)
-        for title in ['内置能力', '技能', '插件', 'MCP']:
-            expect(page.get_by_role('heading', name=title, exact=True)).to_be_visible()
+        expect(page.get_by_role('tab')).to_have_text(['插件', '工具', '技能', 'MCP'])
+        expect(page.get_by_role('tab', name='插件', exact=True)).to_have_attribute('aria-selected', 'true')
+        expect(page.get_by_role('article', name='read')).to_have_count(0)
         expect(page.get_by_role('article', name='简报')).to_be_visible()
+        page.get_by_role('tab', name='MCP', exact=True).click()
         mcp = page.get_by_role('article', name='Documents')
         expect(mcp.get_by_text('已连接')).to_be_visible()
         mcp.get_by_role('button', name='工具').click()
         expect(mcp.get_by_text('search_docs', exact=True)).to_be_visible()
         expect(mcp.get_by_text('搜索文档内容')).to_be_visible()
+        page.get_by_role('tab', name='工具', exact=True).click()
         memory = page.get_by_role('article', name='memory_search')
         expect(memory.get_by_role('heading', name='memory_search', exact=True)).to_be_visible()
         expect(memory.get_by_text(INTRO)).to_be_visible()
-        expect(memory.get_by_role('switch', name='memory_search')).not_to_be_checked()
-        expect(page.get_by_role('article', name='read').get_by_role('switch', name='read')).to_be_checked()
-        expect(page.get_by_text('当前不可用')).to_have_count(0)
-        memory.get_by_role('switch', name='memory_search').click()
-        expect(memory.get_by_role('switch', name='memory_search')).not_to_be_checked()
+        expect(memory.get_by_text('不可用', exact=True)).to_be_visible()
+        expect(page.get_by_role('article', name='read').get_by_text('可用', exact=True)).to_be_visible()
+        expect(memory.get_by_role('switch')).to_have_count(0)
         expect(page.get_by_text('搜索记忆', exact=True)).to_have_count(0)
         expect(page.get_by_text('读取文件', exact=True)).to_have_count(0)
         expect(page.get_by_text('查看详情')).to_have_count(0)
@@ -141,17 +159,13 @@ with sync_playwright() as playwright:
         assert abs(read_box['y'] - memory_box['y']) < 2 and memory_box['x'] > read_box['x'] + read_box['width'], (read_box, memory_box)
 
         expect(memory.get_by_text(DETAIL)).to_have_count(0)
-        boundary = memory.get_by_role('button', name='适用说明')
-        expect(boundary).to_have_attribute('aria-expanded', 'false')
-        boundary.click()
-        expect(boundary).to_have_attribute('aria-expanded', 'true')
-        expect(memory.get_by_text(DETAIL)).to_be_visible()
-        expect(memory.get_by_text('仅在启用记忆的对话中可用。')).to_be_visible()
+        expect(memory.get_by_role('button', name='适用说明')).to_have_count(0)
         assert skill_posts == []
 
         page.goto(test_url + '/#/skills/tools/memory_search', wait_until='networkidle')
         expect(page).to_have_url(test_url + '/#/skills')
 
+        page.get_by_role('tab', name='技能', exact=True).click()
         demo = page.get_by_role('article', name='演示技能')
         short = page.get_by_role('article', name='短技能', exact=True)
         mid = page.get_by_role('article', name='中技能', exact=True)
@@ -169,12 +183,14 @@ with sync_playwright() as playwright:
         assert skill_posts and skill_posts[-1]['action'] == 'close'
         assert skill_posts[-1]['name'] == 'demo-skill'
 
+        page.get_by_role('tab', name='插件', exact=True).click()
         plugin = page.get_by_role('article', name='简报')
         plugin.get_by_role('button', name='停用', exact=True).click()
         expect(plugin.get_by_role('button', name='启用', exact=True)).to_be_visible()
         assert plugin_posts[-1] == {'action': 'disable', 'pluginId': 'stella.briefing'}
         plugin.get_by_role('button', name='启用', exact=True).click()
         expect(plugin.get_by_role('button', name='停用', exact=True)).to_be_visible()
+        page.get_by_role('tab', name='MCP', exact=True).click()
         mcp_section = page.locator('section').filter(has=page.get_by_role('heading', name='MCP', exact=True))
         fail_mcp[0] = True
         mcp_section.get_by_role('button', name='刷新', exact=True).click()
@@ -193,6 +209,7 @@ with sync_playwright() as playwright:
         fail_tools[0] = True
         page.get_by_role('button', name='能力').click()
         page.reload(wait_until='networkidle')
+        page.get_by_role('tab', name='工具', exact=True).click()
         expect(page.get_by_text('工具目录加载失败')).to_be_visible()
         expect(page.get_by_text('暂无内置工具')).to_have_count(0)
         expect(page.get_by_role('button', name='重试')).to_be_visible()
@@ -209,12 +226,40 @@ with sync_playwright() as playwright:
         fail_tools[0] = False
         page.reload(wait_until='networkidle')
         page.set_viewport_size({'width': 620, 'height': 900})
+        expect(page.get_by_role('tab', name='插件', exact=True)).to_have_attribute('aria-selected', 'true')
+        page.get_by_role('tab', name='插件', exact=True).focus()
+        page.keyboard.press('ArrowRight')
+        expect(page.get_by_role('tab', name='工具', exact=True)).to_be_focused()
+        page.keyboard.press('End')
         expect(page.get_by_role('heading', name='MCP', exact=True)).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         page.screenshot(path='/tmp/stella-capabilities-narrow.png', full_page=True)
         page.set_viewport_size({'width': 1280, 'height': 900})
+        page.get_by_role('tab', name='插件', exact=True).click()
         page.screenshot(path='/tmp/stella-capabilities-desktop.png', full_page=True)
+        assert plan_requests == [], 'Capabilities must not check for updates'
+        page.goto(test_url + '/#/settings?tab=about', wait_until='networkidle')
+        expect(page.get_by_role('heading', name='Core', exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name='Plugins', exact=True)).to_be_visible()
+        expect(page.get_by_text('1.0.0 → 1.1.0', exact=True)).to_be_visible()
+        expect(page.get_by_text('需要更新 Core', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='更新 stella.blocked')).to_be_disabled()
+        fail_update[0] = True
+        page.get_by_role('button', name='更新 stella.briefing').click()
+        expect(page.get_by_role('alert')).to_contain_text('更新失败，请重试')
+        fail_update[0] = False
+        page.get_by_role('button', name='更新 stella.briefing').click()
+        expect(page.get_by_role('button', name='更新 stella.briefing')).to_have_count(0)
+        expect(page.get_by_role('status').filter(has_text='更新完成')).to_be_visible()
+        fail_plan[0] = True
+        page.get_by_role('button', name='检查插件更新', exact=True).click()
+        expect(page.get_by_role('alert')).to_contain_text('更新目录加载失败')
+        expect(page.get_by_text('插件已是最新版本')).to_have_count(0)
+        fail_plan[0] = False
+        page.get_by_role('button', name='检查插件更新', exact=True).click()
+        expect(page.get_by_text('需要更新 Core', exact=True)).to_be_visible()
+        page.screenshot(path='/tmp/stella-about-updates.png', full_page=True)
         assert errors == [], errors
-        print('PASS: four capability sections, plugin actions, MCP tools/error/retry/empty, legacy routes, nested briefing settings, desktop/narrow layouts')
+        print('PASS: horizontal capability tabs, plugin actions, MCP tools/error/retry/empty, legacy routes, nested briefing settings, desktop/narrow layouts')
     finally:
         browser.close()
