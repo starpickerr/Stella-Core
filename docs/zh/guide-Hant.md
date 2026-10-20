@@ -8,10 +8,13 @@
 
 複製倉庫後，在倉庫根目錄執行：
 
+本機開發統一使用 Conda 的 `Stella` 環境（Python 3.12）；已有環境時略過建立命令。
+
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
@@ -19,14 +22,15 @@ npm --prefix desktop run dev
 Windows 使用：
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip setuptools
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
 
-瀏覽器自動化需要可用的瀏覽器。安裝開發檢查使用的 Chromium：`.venv/bin/python -m playwright install chromium`；Windows 使用 `.venv\Scripts\python.exe -m playwright install chromium`。
+瀏覽器自動化需要可用的瀏覽器。安裝開發檢查使用的 Chromium：`python -m playwright install chromium`；Windows 使用 `python -m playwright install chromium`。
 
 Electron 啟動本機 `127.0.0.1` 專用後端，並將實際連接埠交給介面。設定透過桌面客戶端完成。開發時介面熱更新使用 `npm --prefix desktop run dev:hot`。
 

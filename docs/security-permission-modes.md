@@ -33,4 +33,4 @@ The browser gate separately checks navigation, local files, and interactions. A 
 
 ## Verification
 
-Run `.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md` from the repository root. Checks run with temporary HOME and STELLA_DATA_DIR. The process sandbox tests execute a real project write and a blocked outside write when the platform backend is available.
+Run `conda run --no-capture-output -n Stella python scripts/quality_check.py full --report /tmp/stella-quality-report.md` from the repository root. Checks run with temporary HOME and STELLA_DATA_DIR. The process sandbox tests execute a real project write and a blocked outside write when the platform backend is available.

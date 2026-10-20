@@ -59,12 +59,15 @@ WeChat、Feishu、Telegram などの外部メッセージ基盤を接続・管�
 
 以下は macOS 向けのコマンドです。Windows のコマンドは[利用ガイド](guide.md)を参照してください。
 
+ローカル開発には Conda の `Stella` 環境（Python 3.12）を使用します。既存の環境がある場合、作成コマンドは省略してください。
+
 ```bash
 git clone https://github.com/starpickerr/Stella.git
 cd Stella
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```

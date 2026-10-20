@@ -8,10 +8,13 @@
 
 克隆仓库后，在仓库根目录运行：
 
+本地开发统一使用 Conda 的 `Stella` 环境（Python 3.12）；已有环境时跳过创建命令。
+
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
@@ -19,14 +22,15 @@ npm --prefix desktop run dev
 Windows 使用：
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip setuptools
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+conda create -n Stella python=3.12
+conda activate Stella
+python -m pip install --upgrade pip setuptools
+python -m pip install -r requirements.txt
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
 
-浏览器自动化需要可用的浏览器。安装开发检查使用的 Chromium：`.venv/bin/python -m playwright install chromium`；Windows 使用 `.venv\Scripts\python.exe -m playwright install chromium`。
+浏览器自动化需要可用的浏览器。安装开发检查使用的 Chromium：`python -m playwright install chromium`；Windows 使用 `python -m playwright install chromium`。
 
 Electron 启动本机 `127.0.0.1` 专用后端，并将实际端口交给界面。配置通过桌面客户端完成。开发时界面热更新使用 `npm --prefix desktop run dev:hot`。
 

@@ -79,9 +79,11 @@ def affected_checks(files):
             tests.update(["tests/test_web_sse_replay.py", "tests/test_security_center.py"])
         if path.startswith("agent/memory/") and ("store" in path or "storage" in path):
             tests.add("tests/test_shared_db_recovery.py")
-    if (changed & {"AGENTS.md", "scripts/quality_check.py"}
+    if (changed & {"AGENTS.md", "scripts/quality_check.py", "scripts/check_runtime.py", "Makefile"}
             or any(path.startswith(".agents/skills/") for path in changed)):
         tests.add("tests/test_quality_check.py")
+    if changed & {"scripts/check_runtime.py", "Makefile"}:
+        tests.add("tests/test_python_environment.py")
     if (changed & {"AGENTS.md", ".agents/AGENTS.md", ".codex/config.toml", "scripts/check_dev_policy.py"}
             or any(path.startswith((".agents/rules/", ".agents/workflows/", ".cursor/rules/")) for path in changed)):
         tests.add("tests/test_dev_policy.py")
@@ -108,6 +110,7 @@ def affected_checks(files):
             "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs",
             "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs",
             "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs",
+            "tests/pythonRuntime.test.mjs", "scripts/check_runtime.py", "desktop/src/main/python-runtime.ts",
         }),
         "ui": renderer,
         "eslint": desktop,
@@ -141,6 +144,7 @@ def isolated_env(root):
         "XDG_CACHE_HOME": str(root / "cache"),
         "XDG_CONFIG_HOME": str(root / "config"),
         "PYTHONDONTWRITEBYTECODE": "1",
+        "STELLA_PYTHON": str(PYTHON),
     })
     if browser_cache.is_dir():
         # Browser binaries are immutable test tooling, not application state;
@@ -228,10 +232,7 @@ def main():
     parser.add_argument("--report", type=Path, default=ROOT / ".agents/audits/code-review" / f"Full-Audit-{date.today().isoformat()}.md")
     args = parser.parse_args()
     if not PYTHON.is_file():
-        parser.error(
-            "Stella Python not found; activate conda env Stella "
-            "(or set STELLA_PYTHON). CI may use .venv/bin/python."
-        )
+        parser.error("Conda Stella Python is required; check STELLA_PYTHON or the Conda environment")
     selected = affected_checks(args.files if args.files is not None else changed_files()) if args.mode == "incremental" else None
     commands = []
     if args.mode == "full":
@@ -241,7 +242,7 @@ def main():
             ("eslint", ["npm", "--prefix", "desktop", "run", "lint"], 180),
             ("build", ["npm", "--prefix", "desktop", "run", "build"], 180),
             ("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180),
-            ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs", "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs", "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs"], 60),
+            ("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs", "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs", "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs", "tests/pythonRuntime.test.mjs"], 60),
             ("ui", [str(PYTHON), "scripts/ui_check.py"], 120),
         ]
         if (ROOT / "AGENTS.md").is_file():
@@ -258,7 +259,7 @@ def main():
         if selected["typecheck"]:
             commands.append(("typecheck", ["npm", "--prefix", "desktop", "run", "typecheck"], 180))
         if selected["node"]:
-            commands.append(("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs", "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs", "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs"], 60))
+            commands.append(("node", ["node", "--experimental-strip-types", "--test", "tests/todoFocus.test.mjs", "tests/todoViews.test.mjs", "tests/briefingSort.test.mjs", "tests/renderSafety.test.mjs", "tests/knowledgeLinks.test.mjs", "tests/taskChannel.test.mjs", "tests/pythonRuntime.test.mjs"], 60))
         if selected["ui"]:
             commands.append(("ui", [str(PYTHON), "scripts/ui_check.py"], 120))
         if selected["policy"]:

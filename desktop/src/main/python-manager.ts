@@ -7,6 +7,7 @@ import fs from 'fs'
 import http from 'http'
 import net from 'net'
 import { randomBytes } from 'crypto'
+import { findDevelopmentPython } from './python-runtime'
 
 // The installed app and source checkout use the same writable state.
 const STELLA_DATA_DIR = path.join(os.homedir(), '.stella')
@@ -435,20 +436,7 @@ export class PythonBackend extends EventEmitter {
   }
 
   private findPython(): string {
-    const venvPaths = [
-      path.join(this.backendPath, '.venv', 'bin', 'python'),
-      path.join(this.backendPath, '.venv', 'Scripts', 'python.exe'),
-      path.join(this.backendPath, 'venv', 'bin', 'python'),
-      path.join(this.backendPath, 'venv', 'Scripts', 'python.exe'),
-    ]
-
-    for (const p of venvPaths) {
-      if (fs.existsSync(p)) {
-        return p
-      }
-    }
-
-    return process.platform === 'win32' ? 'python' : 'python3'
+    return findDevelopmentPython(this.backendPath)
   }
 
   /** Read an optional desktop-only backend port override. */
@@ -705,7 +693,13 @@ export class PythonBackend extends EventEmitter {
       cwd = STELLA_DATA_DIR
       this.emit('log', `Starting bundled backend: ${bundled} (cwd=${cwd})`)
     } else {
-      const pythonPath = this.findPython()
+      let pythonPath: string
+      try {
+        pythonPath = this.findPython()
+      } catch (error) {
+        this.fail('backend_missing', `Cannot start the development backend: ${String(error)}`)
+        return
+      }
       const appPath = path.join(this.backendPath, 'app.py')
       if (!fs.existsSync(appPath)) {
         this.fail('backend_missing', 'app.py not found — this is a source checkout with no backend', appPath)

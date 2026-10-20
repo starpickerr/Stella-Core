@@ -11,6 +11,8 @@ jobs:
   full-quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      STELLA_PYTHON: python
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,10 +33,9 @@ jobs:
           sudo install -m 644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
           sudo apparmor_parser --replace /etc/apparmor.d/bwrap-userns-restrict
           bwrap --die-with-parent --ro-bind / / --proc /proc --dev-bind /dev /dev -- /bin/true
-          python -m venv .venv
-          .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install -r requirements.txt -r requirements-dev.txt
           npm --prefix desktop ci
-          .venv/bin/python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps chromium
       - name: Select the changed-file baseline
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
@@ -50,7 +51,7 @@ jobs:
       - name: Run the shared quality gate
         run: |
           if [[ "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
-            .venv/bin/python scripts/quality_check.py full
+            python scripts/quality_check.py full
           else
             make check
           fi
