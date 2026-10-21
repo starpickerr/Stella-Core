@@ -142,7 +142,10 @@ def _managed_boundary(function):
                 if kwargs.get('data_handle') is None and self.manifest.get('data'):
                     from core.plugins.lifecycle import domain_data_handle
                     kwargs['data_handle'] = domain_data_handle(self.plugin_id, self.user_id)
-                return admit(self, **kwargs)
+                result = admit(self, **kwargs)
+                from core.security.service import SecurityService
+                SecurityService.check_execution()
+                return result
     return call
 
 
@@ -389,6 +392,12 @@ class PluginSession:
                                          current_invocation_deadline, remaining_invocation_seconds,
                                          invocation_purpose_scope)
 
+        from core.execution.context import current_execution_context
+        active = current_execution_context()
+        if active:
+            origin = active.origin
+            if active.purpose == 'background':
+                purpose = 'background'
         if origin == "system":
             origin = current_caller_origin() or ("job" if identity.task_id else
                                                  "tool" if identity.session_id else "system")

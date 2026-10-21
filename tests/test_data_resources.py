@@ -205,3 +205,41 @@ def handle_invoke(params):
             session.invoke('run')
     finally:
         session.dispose()
+
+
+def test_workspace_discovery_does_not_withdraw_another_live_execution_scope(tmp_path, monkeypatch):
+    from core.data.workspace_provider import WorkspaceProvider
+    from agent.workspace import project_store
+    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: tmp_path / 'work')
+    monkeypatch.setattr(project_store, '_store_file', lambda: str(tmp_path / 'projects.json'))
+    registry = ProviderRegistry()
+    registry.register('workspace', WorkspaceProvider())
+    with identity_scope(agent_id='alpha', user_id='alice', session_id='first'):
+        service = DataService(tmp_path / 'data.db', registry)
+        first = service.discover()['sources'][0]['id']
+    with identity_scope(agent_id='alpha', user_id='alice', session_id='second'):
+        second = service.discover()['sources'][0]['id']
+        assert first != second
+    with identity_scope(agent_id='alpha', user_id='alice', session_id=None):
+        service.discover()
+    assert service.store.source(first)['present'] is True
+    assert service.store.source(second)['present'] is True
+
+
+def test_workspace_rebinding_withdraws_only_old_source_for_same_session(tmp_path, monkeypatch):
+    from core.data.workspace_provider import WorkspaceProvider
+    from agent.workspace import project_store
+    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: tmp_path / 'work')
+    monkeypatch.setattr(project_store, '_store_file', lambda: str(tmp_path / 'projects.json'))
+    registry = ProviderRegistry()
+    registry.register('workspace', WorkspaceProvider())
+    with identity_scope(agent_id='alpha', user_id='alice', session_id='first'):
+        service = DataService(tmp_path / 'data.db', registry)
+        first = service.discover()['sources'][0]['id']
+        project = tmp_path / 'project'
+        project.mkdir()
+        project_store.set_project_dir('first', str(project), 'alpha')
+        current = service.discover()['sources'][0]['id']
+        assert current != first
+        assert service.store.source(first)['present'] is False
+        assert service.store.source(current)['present'] is True

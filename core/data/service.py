@@ -114,7 +114,11 @@ class DataService:
                     raise ValueError('Reference provider does not support collection operations')
             if len({spec['id'] for spec in specs}) != len(specs):
                 raise ValueError('Duplicate source identity')
-            self.store.discover_batch(provider_id, specs)
+            partition = getattr(provider, 'discovery_partition', lambda: None)()
+            if partition is not None and (not isinstance(partition, str) or not partition
+                    or any(spec.get('discovery_partition') != partition for spec in specs)):
+                raise ValueError('Invalid provider discovery partition')
+            self.store.discover_batch(provider_id, specs, partition)
         return {"sources": self.list_sources(), "errors": errors}
 
     def list_sources(self):

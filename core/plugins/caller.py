@@ -33,13 +33,20 @@ def current_invocation_purpose():
 
 
 def current_invocation_deadline():
-    candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline')]
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline'),
+                  active.deadline if active else None]
     return min((value for value in candidates if value is not None), default=None)
 
 
 def remaining_invocation_seconds():
     from core.plugins.cancellation import check_cancelled
     check_cancelled()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    if active:
+        active.check_active()
     deadline = current_invocation_deadline()
     if deadline is None:
         return None

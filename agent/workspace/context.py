@@ -94,6 +94,12 @@ def resolve_context(session_id: str | None, agent_id: str | None = None,
     work_root = personal_work_dir(identity=identity, ensure=False)
     private_root = (work_root / "automations" / agent_id / task_segment if task_segment else
                     work_root / "sessions" / agent_id / session_segment if session_segment else None)
+    if private_root is not None:
+        current = work_root
+        for segment in private_root.relative_to(work_root).parts:
+            current = current / segment
+            if current.is_symlink():
+                raise PermissionError('private Work directories cannot use symlinks')
     binding = project_store.get_project_binding(session_id, agent_id) if session_id else None
     if binding:
         project = Path(os.path.realpath(os.path.expanduser(binding)))

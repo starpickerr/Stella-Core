@@ -233,7 +233,8 @@ def connections(policy: dict | None = None) -> list[dict]:
         grant = dict(policy.get("connections", {}).get(key, {}))
         if key in {'mcp:email','mcp:elearning'}:
             legacy=policy.get('connections',{}).get(key.removeprefix('mcp:'),{})
-            if legacy.get('allowed') is False:grant['allowed']=False
+            if legacy.get('allowed') is False:
+                grant['allowed'] = False
             old_scopes=legacy.get('scopes')
             if old_scopes and '*' not in old_scopes:
                 current=grant.get('scopes')

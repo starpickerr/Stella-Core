@@ -142,23 +142,25 @@ class DataStore:
             (spec['id'], provider, encode(spec)))
         db.execute('INSERT OR IGNORE INTO sync_state(source_id) VALUES(?)', (spec['id'],))
 
-    def reconcile_presence(self, provider, identifiers, db=None):
+    def reconcile_presence(self, provider, identifiers, db=None, partition=None):
         if db is None:
             with self.connection() as db:
                 db.execute('BEGIN IMMEDIATE')
-                return self.reconcile_presence(provider, identifiers, db)
+                return self.reconcile_presence(provider, identifiers, db, partition)
         for row in db.execute('SELECT id,present FROM sources WHERE provider=?', (provider,)).fetchall():
+            if partition is not None and self.source(row['id'], db).get('discovery_partition') != partition:
+                continue
             present = row['id'] in identifiers
             if present != bool(row['present']):
                 db.execute('UPDATE sources SET present=?,revision=revision+1 WHERE id=?', (present, row['id']))
 
-    def discover_batch(self, provider, specs):
+    def discover_batch(self, provider, specs, partition=None):
         """A failed provider discovery cannot partially register or withdraw sources."""
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             for spec in specs:
                 self.discover(provider, spec, db)
-            self.reconcile_presence(provider, {spec['id'] for spec in specs}, db)
+            self.reconcile_presence(provider, {spec['id'] for spec in specs}, db, partition)
 
     def put_resources(self, source, resources):
         with self.connection() as db:

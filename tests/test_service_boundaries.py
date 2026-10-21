@@ -107,3 +107,94 @@ def test_callback_rejects_naive_deadline_as_permission_error(work, monkeypatch):
         dispatch(session, {'contract': 'stella.models@1', 'method': 'complete', 'input': {},
                            'invocationRef': 'ref', 'deadline': '2099-01-01T00:00:00'},
                  {'context': {'invocationRef': 'ref', 'userId': 'alice'}, 'deadline': '2099-01-01T00:00:00Z'})
+
+
+def test_tool_context_cannot_claim_native_user_action(work, monkeypatch):
+    from core.execution.context import execution_scope
+    from core.security.service import SecurityService
+    calls = []
+    monkeypatch.setattr('agent.runtime.tool_invocation._permission_denial', lambda *args, **kwargs: calls.append(kwargs))
+    with identity_scope(agent_id='alpha', session_id='chat'):
+        with execution_scope(origin='tool'):
+            SecurityService.authorize_tool('read', {'path': 'note.txt'}, user_action=True)
+    assert calls[-1]['user_action'] is False
+
+
+def test_execution_deadline_is_the_actual_plugin_budget(work):
+    from core.execution.context import execution_scope
+    from core.plugins.caller import invocation_budget, current_invocation_deadline, remaining_invocation_seconds
+    from datetime import datetime, timedelta, timezone
+    with identity_scope(agent_id='alpha', session_id='chat'):
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=1)
+        with invocation_budget(30_000), execution_scope(deadline=deadline):
+            assert current_invocation_deadline() == deadline
+            assert 0 < remaining_invocation_seconds() <= 1
+
+
+def test_plugin_ui_origin_cannot_hide_background_scope(work, monkeypatch):
+    from pathlib import Path
+    from core.execution.context import execution_scope
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+    authz = PluginAuthorizationStore()
+    session = PluginSession(Path('samples/plugins/alpha'), source_label='test', registry=PluginRegistry(), authz=authz)
+    authz.issue(grant_ref='interactive-only', plugin_id=session.plugin_id, user_id=session.user_id,
+                capabilities=['sample.ping'], purposes=['interactive'])
+    monkeypatch.setattr('core.plugins.host._conversation_permission_denial', lambda **_: 'background denied')
+    try:
+        session.start()
+        with identity_scope(agent_id='alpha', session_id='output', task_id='daily'), execution_scope():
+            with pytest.raises(PermissionError, match='purpose|background'):
+                session.invoke_contract(contract='stella.sample.alpha@1', method='ping', input_payload={},
+                                        origin='ui', grant_ref='interactive-only')
+    finally:
+        session.dispose()
+
+
+def test_plugin_storage_rejects_symlink_in_user_root_parent(work, monkeypatch):
+    from core.plugins.storage import private_data_handle
+    shared = work / 'shared'
+    shared.mkdir()
+    outside = work / 'outside'
+    outside.mkdir()
+    (shared / 'users').symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr('common.state_dir.shared_root', lambda: shared)
+    monkeypatch.setattr('common.state_dir.user_root', lambda *args, **_: shared / 'users/alice')
+    with pytest.raises(PermissionError, match='symlink'):
+        private_data_handle('org.example.plugin', 'alice', ensure=True)
+    assert not (outside / 'alice').exists()
+
+
+def test_full_access_cannot_read_legacy_briefing_or_automation_databases(work, monkeypatch):
+    from agent.permission.gateway import SecurityGateway, Scope
+    monkeypatch.setattr('common.state_dir.briefing_db', lambda **_: work / 'user/briefing/briefing.db')
+    monkeypatch.setattr('common.state_dir.scheduler_file', lambda **_: work / 'state/scheduler/tasks.json')
+    monkeypatch.setattr('common.state_dir.state_root', lambda *args, **_: work / 'state')
+    monkeypatch.setattr('common.state_dir.shared_root', lambda: work / 'state')
+    for db in (work / 'user/briefing/briefing.db', work / 'state/scheduler/automation.db'):
+        for suffix in ('', '-wal', '-shm', '-journal'):
+            path = str(db) + suffix
+            decision = SecurityGateway.check('full-access', 'read', {'path': path}, cwd=str(work),
+                                             scope=Scope(write_roots=(str(work),)))
+            assert not decision.allowed, path
+
+
+def test_task_private_root_cannot_alias_source_conversation(work):
+    from core.workspace.service import WorkspaceService
+    from agent.workspace.context import resolve_context
+    source = resolve_context('source', 'alpha', ensure=True)
+    (source.root / 'secret.txt').write_text('source private')
+    task = work / 'work/automations/alpha/daily'
+    task.parent.mkdir(parents=True)
+    task.symlink_to(source.root, target_is_directory=True)
+    with identity_scope(agent_id='alpha', session_id='source', task_id='daily'):
+        with pytest.raises(PermissionError, match='symlink'):
+            WorkspaceService.context()
+
+
+def test_native_adapter_observes_host_execution_origin(work):
+    from core.execution.context import execution_scope
+    from core.mcp.managed import native_user_action
+    with identity_scope(agent_id='alpha', session_id='chat'), execution_scope(origin='tool'):
+        assert native_user_action(True, 'list_courses', 'interactive') is False

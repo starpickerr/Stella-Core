@@ -25,6 +25,8 @@ class SecurityService:
                 expected = getattr(context.identity, key)
                 if kwargs.get(key) is not None and kwargs[key] != expected:
                     raise PermissionError('tool cannot replace execution identity')
+            if context.origin != 'ui':
+                kwargs['user_action'] = False
             if context.purpose == 'background':
                 kwargs.update(noninteractive=True, user_action=False, wait_for_approval=False)
         reason = _permission_denial(tool_name, arguments, **kwargs)

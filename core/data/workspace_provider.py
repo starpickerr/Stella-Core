@@ -19,6 +19,10 @@ class WorkspaceProvider:
         return {'root': str(context.root), 'agent': context.agent_id,
                 'session': identity.execution_session_id or identity.session_id, 'task': identity.task_id}
 
+    def discovery_partition(self):
+        scope = self._scope()
+        return stable_id(scope['agent'], scope['session'], scope['task'])
+
     def discover(self):
         scope = self._scope()
         # A background host with no conversation/task does not implicitly
@@ -26,7 +30,7 @@ class WorkspaceProvider:
         if not scope['session'] and not scope['task']:
             return []
         return [{'id': 'workspace:' + stable_id(scope), 'name': Path(scope['root']).name,
-                 'kind': 'workspace', 'config': scope,
+                 'kind': 'workspace', 'config': scope, 'discovery_partition': self.discovery_partition(),
                  'operations': ['metadata', 'configure', 'resources', 'read']}]
 
     def visible(self, source):

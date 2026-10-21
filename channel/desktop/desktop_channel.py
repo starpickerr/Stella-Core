@@ -8726,7 +8726,8 @@ def _data_response(operation):
     _require_auth()
     web.header('Content-Type','application/json; charset=utf-8')
     web.header('Cache-Control','no-store')
-    try:return json.dumps({'status':'success',**operation()},ensure_ascii=False)
+    try:
+        return json.dumps({'status':'success',**operation()},ensure_ascii=False)
     except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
         return _api_reject('Data',error)
 
