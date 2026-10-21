@@ -82,6 +82,7 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
       { path: '/security', labelKey: 'menu_security', icon: Shield },
       { path: '/general', labelKey: 'settings_tab_general', icon: Settings },
+      { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
     ],
   },
 ]
@@ -202,7 +203,6 @@ const NavRail: React.FC = () => {
           <p className={`min-w-0 text-[11px] text-content-tertiary truncate ${collapsed ? 'px-0.5 text-center' : 'flex-1 px-2'}`}>
             {version ? `v${version}` : ''}
           </p>
-          <FooterBtn collapsed={collapsed} onClick={() => navigate('/logs')} title={t('menu_logs')}><ScrollText size={17} /></FooterBtn>
           <FooterBtn collapsed={collapsed} onClick={toggleNav} title={collapsed ? t('nav_expand') : t('nav_collapse')}>
             {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
           </FooterBtn>
