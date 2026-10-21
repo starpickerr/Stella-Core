@@ -2051,6 +2051,10 @@ class DesktopChannel(ChatChannel):
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/security/privacy', 'SecurityPrivacyHandler',
+            '/api/security/mcp-access', 'SecurityMcpAccessHandler',
+            '/api/data', 'DataManagementHandler',
+            '/api/data/records', 'DataRecordsHandler',
+            '/api/data/command', 'DataCommandHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -6192,6 +6196,10 @@ class SecurityConnectionsHandler:
             stored = dict(conf().get("security_policy") or default_policy())
             stored.setdefault("connections", {})[connection_id] = {"allowed": allowed,
                 "scopes": [str(item) for item in body.get("scopes", [])] if isinstance(body.get("scopes", []), list) else []}
+            if connection_id in {'mcp:email','mcp:elearning'}:
+                # An explicit edit replaces the compatibility alias. Merely
+                # displaying the new connection must never erase a denial.
+                stored['connections'].pop(connection_id.removeprefix('mcp:'),None)
             legacy = stored.get("preset") == "custom" or stored.get("preset") in LEGACY_PRESETS
             if legacy:
                 clean = validate_patch(stored, global_policy=False)
@@ -6232,6 +6240,18 @@ class SecuritySecretsHandler:
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
         except ValueError as error:
             return _api_reject("Security", error)
+
+
+class SecurityMcpAccessHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from agent.permission.mcp_access import update
+        try:
+            return json.dumps({'status': 'success', 'grants': update(json.loads(web.data() or b'{}'))}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Security', error)
 
 
 class SecurityPrivacyHandler:
@@ -8697,3 +8717,38 @@ class BriefingPreferencesHandler:
 
     def POST(self):
         return _briefing_response(lambda: {"preferences": _briefing_service().update_preferences(_briefing_body())})
+
+
+
+def _data_response(operation):
+    _require_auth()
+    web.header('Content-Type','application/json; charset=utf-8')
+    web.header('Cache-Control','no-store')
+    try:return json.dumps({'status':'success',**operation()},ensure_ascii=False)
+    except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
+        return _api_reject('Data',error)
+
+
+class DataManagementHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            return current_controller().snapshot(web.input(refresh='0').refresh=='1')
+        return _data_response(operation)
+
+
+class DataRecordsHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params=web.input(source_id='',q='',limit='50',offset='0')
+            return current_controller().records(params.source_id,params.q,int(params.limit),int(params.offset))
+        return _data_response(operation)
+
+
+class DataCommandHandler:
+    def POST(self):
+        def operation():
+            from core.data.api import current_controller
+            return current_controller().command(json.loads(web.data() or b'{}'))
+        return _data_response(operation)

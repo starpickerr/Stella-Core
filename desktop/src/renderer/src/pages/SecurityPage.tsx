@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck, RefreshCw, ChevronRight, SlidersHorizontal, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
-import type { SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
+import type { InheritedMcpGrant, SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
@@ -61,6 +61,38 @@ const input =
 const action =
   'min-h-10 shrink-0 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
 const faded = 'text-sm leading-relaxed text-content-secondary'
+
+const McpGrantEditor: React.FC<{ grant: InheritedMcpGrant; busy: boolean; onSave: (value: Parameters<typeof apiClient.updateMcpAccess>[0]) => void }> = ({ grant, busy, onSave }) => {
+  const en = getLang() === 'en'
+  const [allowed, setAllowed] = useState(!grant.revoked)
+  const [purposes, setPurposes] = useState(grant.purposes.join(', '))
+  const [resources, setResources] = useState(JSON.stringify(grant.resources, null, 2))
+  const [expiry, setExpiry] = useState(grant.valid_until || '')
+  const [error, setError] = useState('')
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    try {
+      const parsed: unknown = JSON.parse(resources)
+      if (!Array.isArray(parsed) || parsed.some(row => !row || typeof row.kind !== 'string' || typeof row.id !== 'string')) throw new Error(en ? 'Invalid resource list' : '资源列表格式错误')
+      if (!window.confirm(en ? 'Apply these authorization changes?' : '确认应用此授权范围？')) return
+      setError('')
+      onSave({ id: grant.id, revision: grant.revision, revoked: !allowed, purposes: purposes.split(',').map(value => value.trim()).filter(Boolean), resources: parsed, valid_until: expiry || null })
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+  }
+  const state = grant.revoked ? (en ? 'Revoked' : '已撤销') : grant.valid_until && Date.parse(grant.valid_until) <= Date.now() ? (en ? 'Expired' : '已过期') : (en ? 'Active' : '有效')
+  return <form onSubmit={submit} data-testid={'mcp-grant-' + grant.id} className="space-y-3 border-t border-default py-4 text-sm">
+    <div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{grant.server} · {grant.consumer || (en ? 'Parent authorization' : '父级授权')}</span><span>{state}</span></div>
+    <p className="break-all text-content-secondary">{[...grant.capabilities, ...grant.methods].join(' · ')}</p>
+    <label className="flex items-center gap-2"><input type="checkbox" checked={allowed} disabled={busy} onChange={event => setAllowed(event.target.checked)} />{en ? 'Allow this authorization' : '允许使用此授权'}</label>
+    <details><summary className="cursor-pointer text-accent">{en ? 'Scope and validity' : '使用范围与有效期'}</summary><div className="mt-3 grid gap-3">
+      <label className="grid gap-1">{en ? 'Purposes (comma separated)' : '用途（英文逗号分隔）'}<input className={input} value={purposes} disabled={busy} onChange={event => setPurposes(event.target.value)} /></label>
+      {grant.scoped && <><label className="grid gap-1">{en ? 'Resource references (JSON)' : '资源引用（JSON）'}<textarea className={input} rows={3} value={resources} disabled={busy} onChange={event => setResources(event.target.value)} /></label>
+      <label className="grid gap-1">{en ? 'Expiry (ISO date with timezone; empty for no expiry)' : '到期时间（含时区的 ISO 日期，留空为不限时）'}<input className={input} placeholder="2026-12-31T23:59:59+08:00" value={expiry} disabled={busy} onChange={event => setExpiry(event.target.value)} /></label></>}
+    </div></details>
+    {error && <p role="alert" className="text-danger">{error}</p>}
+    <button className={action} disabled={busy} type="submit">{en ? 'Save authorization' : '保存授权'}</button>
+  </form>
+}
 
 const SectionTitle: React.FC<{ icon: LucideIcon; to?: string; children: React.ReactNode }> = ({ icon: Icon, to, children }) => {
   const title = <>
@@ -481,14 +513,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         ) : (
           <>
             {tab === 'overview' && (() => {
-              const lang = getLang() === 'en' ? 'en' : 'zh'
               const globalMode = center.global_policy?.preset || 'workspace-write'
               const taskSummary = center.summary.background_tasks
               const connectionPreview = center.connections.slice(0, 3)
               const secretPreview = center.secrets.slice(0, 4)
-              const privacyCats = center.privacy?.available === false
-                ? null
-                : (center.privacy?.categories || []).slice(0, 4)
+              const dataResources = center.data_access?.resources || []
               return (
               <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
                 <section className={`${overviewCard} lg:col-span-2 flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8`}>
@@ -600,18 +629,10 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </section>
                 <section className={`${overviewCard} lg:col-span-2`}>
                   <SectionTitle icon={Database} to="/security?tab=privacy">{copy.overviewPrivacyTitle}</SectionTitle>
-                  {!privacyCats ? (
-                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
-                  ) : (
-                    <div className="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
-                      {privacyCats.map((item) => (
-                        <div key={item.id} className="rounded-btn bg-surface-2 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium">{item.name[lang]}</span>
-                          <span className="tabular-nums text-content-secondary">{copy.privacyBytes(item.bytes)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="mt-4 space-y-2 text-sm">
+                    {dataResources.slice(0, 4).map(item => <p key={item.id}>{item.name} <span className="text-content-secondary">{item.provider}</span></p>)}
+                    <Link className="text-accent" to="/settings?tab=data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
+                  </div>
                 </section>
               </div>
               )
@@ -1157,6 +1178,9 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     />
                   </label>
                 </div>
+                <div className="mb-3 flex justify-end"><button type="button" disabled={busy} className={`${input} text-danger`} onClick={() => {
+                  if (window.confirm(copy.privacyConfirmClear)) void mutate(() => apiClient.cleanupPrivacy('clear_security_activity'), copy.saved)
+                }}>{copy.privacyClearActivity}</button></div>
                 {eventList(records)}
               </section>
             )}
@@ -1165,91 +1189,32 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 <section className={card}>
                   <h2 className={heading}>{copy.privacyTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
-                  {center.privacy?.available === false ? (
-                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
-                  ) : (
-                    <div className="mt-4 divide-y divide-default">
-                      {(center.privacy?.categories || []).map((item) => {
-                        const lang = getLang() === 'en' ? 'en' : 'zh'
-                        return (
-                          <div key={item.id} className="py-4 text-sm space-y-2">
-                            <p className="font-medium">{item.name[lang]}</p>
-                            <p className="text-content-secondary break-all">
-                              {copy.privacyPath}
-                              {copy.fieldSeparator}
-                              {item.path}
-                            </p>
-                            <p className="text-content-secondary">
-                              {copy.privacySize}
-                              {copy.fieldSeparator}
-                              {copy.privacyBytes(item.bytes)}
-                            </p>
-                            <p className="text-content-secondary">
-                              {copy.privacyRetention}
-                              {copy.fieldSeparator}
-                              {item.retention[lang]}
-                            </p>
-                            {item.id === 'conversations' && (
-                              <p className="text-xs text-content-secondary">{copy.privacyManageSessions}</p>
-                            )}
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {item.actions.includes('clear_temporary') && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  className={action}
-                                  onClick={() => {
-                                    if (!window.confirm(copy.privacyConfirmClear)) return
-                                    void mutate(() => apiClient.cleanupPrivacy('clear_temporary'), copy.saved)
-                                  }}
-                                >
-                                  {copy.privacyClearTemp}
-                                </button>
-                              )}
-                              {item.actions.includes('clear_security_activity') && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  className={`${input} text-danger`}
-                                  onClick={() => {
-                                    if (!window.confirm(copy.privacyConfirmClear)) return
-                                    void mutate(() => apiClient.cleanupPrivacy('clear_security_activity'), copy.saved)
-                                  }}
-                                >
-                                  {copy.privacyClearActivity}
-                                </button>
-                              )}
-                              {item.actions.includes('clear_runs') && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  className={`${input} text-danger`}
-                                  onClick={() => {
-                                    if (!window.confirm(copy.privacyConfirmClear)) return
-                                    void mutate(() => apiClient.cleanupPrivacy('clear_runs'), copy.saved)
-                                  }}
-                                >
-                                  {copy.privacyClearRuns}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  <div className="mt-4 flex flex-wrap gap-4 text-sm text-accent">
+                    <Link to="/settings?tab=data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
+                    <Link to="/security?tab=connections">{getLang() === 'zh' ? '管理连接授权' : 'Manage connection access'}</Link>
+                    <Link to="/security?tab=permissions">{getLang() === 'zh' ? '权限策略' : 'Permission policies'}</Link>
+                  </div>
+                  <div className="mt-4 divide-y divide-default">
+                    {(center.data_access?.resources || []).map(item => {
+                      const connection = center.connections.find(row => row.id === item.connection)
+                      return <div key={item.id} className="py-3 space-y-1 text-sm">
+                        <p className="font-medium">{item.name}</p>
+                        <p className="text-content-secondary break-all">{item.provider} · {item.account_id}</p>
+                        <p className="text-content-secondary">{getLang() === 'zh' ? '连接策略：' : 'Connection policy: '}{connection?.allowed === false ? (getLang() === 'zh' ? '已拒绝' : 'Denied') : (getLang() === 'zh' ? '依照当前权限检查' : 'Checked against current permissions')}</p>
+                        <details className="text-xs text-content-secondary"><summary>{getLang() === 'zh' ? '资源标识' : 'Resource ID'}</summary><p className="mt-1 break-all">{item.id}</p></details>
+                      </div>
+                    })}
+                  </div>
                 </section>
+                {(center.data_access?.inherited_grants || []).length > 0 && <section className={card}>
+                  <h2 className={heading}>{getLang() === 'en' ? 'Inherited MCP authorizations' : 'MCP 迁移授权'}</h2>
+                  <p className={`${faded} mt-1`}>{getLang() === 'en' ? 'Existing scopes are preserved. Connection and permission policies still apply.' : '保留迁移前的授权范围；连接开关和统一权限策略仍然生效。'}</p>
+                  {center.data_access?.inherited_grants?.map(grant => <McpGrantEditor key={grant.id + ':' + grant.revision} grant={grant} busy={busy} onSave={value => { void mutate(() => apiClient.updateMcpAccess(value), copy.saved) }} />)}
+                </section>}
                 <section className={card}>
                   <h2 className={heading}>{copy.privacyExternalTitle}</h2>
                   <div className="mt-3 space-y-3 text-sm">
-                    {(center.privacy?.external_transfers || []).map((item) => (
-                      <div key={item.id}>
-                        <p className="font-medium">{item.name}</p>
-                        <p className="text-content-secondary mt-1">
-                          {item.note[getLang() === 'en' ? 'en' : 'zh']}
-                        </p>
-                      </div>
-                    ))}
+                    {(center.data_access?.external_transfers || center.privacy?.external_transfers || []).map(item => <div key={item.id}><p className="font-medium">{item.name}</p><p className="mt-1 text-content-secondary">{item.note[getLang() === 'en' ? 'en' : 'zh']}</p></div>)}
                   </div>
                 </section>
               </div>

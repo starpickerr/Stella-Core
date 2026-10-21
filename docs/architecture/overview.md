@@ -38,3 +38,7 @@ flowchart LR
 迁移不抹除旧连接拒绝、插件授权撤销、后台用途或课程/文件夹范围。既有 scoped grants 由 Core 兼容检查，并通过 MCP 请求元数据向 Server 传递实际资源约束；该元数据不属于 Agent 可写工具参数。原生设置点击仅确认需要确认的操作，不能覆盖拒绝或为 Agent/后台调用确认。eLearning 下载仍需 Core 文件写权限，Server 限定配置根目录并保护本地文件。独立 eLearning 客户端用跨进程锁保护共享游标、审计和下载 manifest。
 
 开发启动发现兄弟 MCP 仓库的环境；独立部署可安装 console script。桌面构建调用各仓库 `build_mcp.py`，将独立冻结 Server 产物放在 backend 同级目录；缺失环境会明确构建失败，不回退旧插件或把冻结 backend 当作 Python。测试：`tests/test_managed_mcp_domains.py`、`tests/test_mcp_bound_resources.py`。
+
+## 数据服务
+
+`core/data` 提供用户级通用来源、采集检查点、去重记录与可靠变更通知。邮箱提供者集中映射一次 MCP，简报通过通用 DataSource 或受信消费者读取，权限继续由现有 Security/MCP/Tool Runtime 决定。设置「数据管理」负责数据生命周期，安全中心「数据访问」负责访问策略。契约、事件语义与阶段范围见 [数据服务](data-service.md)。

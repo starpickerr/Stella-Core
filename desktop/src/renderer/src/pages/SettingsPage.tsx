@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bot, Cpu, Info, Link2, Puzzle, SlidersHorizontal, type LucideIcon } from 'lucide-react'
-import { t } from '../i18n'
+import { Bot, Cpu, Database, ShieldCheck, Info, Link2, Puzzle, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+import { getLang, t } from '../i18n'
 import { product } from '@product'
 import GeneralSettings from './settings/GeneralSettings'
 import AssistantSettings from './settings/AssistantSettings'
@@ -12,6 +12,7 @@ import AppleIntegrations from './settings/AppleIntegrations'
 import PluginSettings from './settings/PluginSettings'
 import type { SettingsOrigin } from './settings/origin'
 import PageHeader from '../components/PageHeader'
+import DataManagement from './settings/DataManagement'
 
 interface SettingsPageProps {
   baseUrl: string
@@ -19,13 +20,14 @@ interface SettingsPageProps {
 }
 
 /** Core shell tabs only. Domain/plugin product settings live under「插件」. */
-type Tab = 'general' | 'models' | 'assistant' | 'connections' | 'plugins' | 'about'
+type Tab = 'general' | 'models' | 'assistant' | 'connections' | 'data' | 'plugins' | 'about'
 
 const TABS: { key: Tab; icon: LucideIcon }[] = [
   { key: 'general', icon: SlidersHorizontal },
   { key: 'models', icon: Cpu },
   { key: 'assistant', icon: Bot },
   { key: 'connections', icon: Link2 },
+  { key: 'data', icon: Database },
   { key: 'plugins', icon: Puzzle },
   { key: 'about', icon: Info },
 ]
@@ -118,9 +120,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
               </button>
             )
           })}
+          <button type="button" title={getLang() === 'zh' ? '安全中心' : 'Security Center'} onClick={() => navigate('/security')}
+            className="w-full flex items-center gap-2.5 h-9 px-3 rounded-btn text-sm text-content-secondary hover:bg-surface-2 max-[960px]:justify-center max-[960px]:px-0">
+            <ShieldCheck size={16} className="text-content-tertiary" />
+            <span className="max-[960px]:sr-only">{getLang() === 'zh' ? '安全中心' : 'Security Center'}</span>
+          </button>
         </nav>
         <main data-stella-scroll className="flex-1 min-w-0 overflow-y-auto">
-          <div data-settings-content className="max-w-2xl mx-auto px-6 py-6">
+          <div data-settings-content className={`${tab === 'data' ? 'max-w-4xl' : 'max-w-2xl'} mx-auto px-6 py-6`}>
             <div className="mb-6 px-1">
               <h3 className="text-lg font-semibold text-content">{t(`settings_tab_${tab}`)}</h3>
               <p className="text-sm text-content-tertiary mt-0.5">{t(`settings_desc_${tab}`)}</p>
@@ -134,6 +141,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
                 <AssistantSettings baseUrl={baseUrl} />
               ) : tab === 'connections' ? (
                 <AppleIntegrations section={params.get('section')} />
+              ) : tab === 'data' ? (
+                <DataManagement />
               ) : tab === 'plugins' ? (
                 <PluginSettings
                   baseUrl={baseUrl}

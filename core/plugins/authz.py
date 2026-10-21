@@ -107,6 +107,16 @@ class PluginAuthorizationStore:
                 return
             grants[grant_ref] = replace(grant, revoked=True, policy_revision=grant.policy_revision + 1)
 
+    def update_owned(self, grant_ref: str, *, user_id: str, revision: int, **changes) -> None:
+        """Native Security edits with optimistic concurrency; identity is immutable."""
+        if set(changes) - {'revoked', 'purposes', 'resources', 'valid_until'}:
+            raise ValueError('immutable grant fields')
+        with self._state() as grants:
+            row = grants.get(grant_ref)
+            if row is None or row.user_id != user_id or row.policy_revision != revision:
+                raise PermissionError('Grant changed or belongs to another user; refresh and retry')
+            grants[grant_ref] = replace(row, **changes, policy_revision=row.policy_revision + 1)
+
     def set_purposes(self, grant_ref: str, purposes: Iterable[str]) -> None:
         """Change an existing grant without restoring revoked capabilities."""
         with self._state() as grants:

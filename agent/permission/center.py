@@ -11,7 +11,6 @@ from pathlib import Path
 from agent.permission import global_mode
 from agent.permission.audit import activity_counts, record, recent
 from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve, validate_patch
-from common.state_dir import mcp_config_file
 
 _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 
@@ -223,26 +222,24 @@ def connections(policy: dict | None = None) -> list[dict]:
         "plugins": _connection_row("plugins", "Plugins", configured=plugins_ready, available=plugins_ready),
         "external_api": _connection_row("external_api", "External API", configured=False, available=False),
     }
-    path = mcp_config_file()
-    if path.is_file():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            from agent.tools.tool_manager import ToolManager, _normalize_mcp_configs
-            servers = _normalize_mcp_configs(raw.get("mcpServers", raw.get("mcp_servers", raw)))
-            statuses = {}
-            for manager in ToolManager.instances():
-                statuses.update(manager.list_mcp_status())
-            for item in servers:
-                name = str(item.get("name") or "")
-                if name:
-                    ready = statuses.get(name) == "ready"
-                    entries[f"mcp:{name}"] = _connection_row(
-                        f"mcp:{name}", name, configured=True, available=ready,
-                    )
-        except (ValueError, OSError, TypeError):
-            pass
+    from agent.tools.tool_manager import ToolManager
+    for item in ToolManager().mcp_catalog():
+        name=item['name']
+        if name in {'email','elearning'}:
+            entries.pop(name,None)
+        entries['mcp:'+name]=_connection_row('mcp:'+name,name,configured=True,
+            available=item.get('enabled',False) and item.get('state')=='ready')
     for key, value in entries.items():
-        grant = policy.get("connections", {}).get(key, {})
+        grant = dict(policy.get("connections", {}).get(key, {}))
+        if key in {'mcp:email','mcp:elearning'}:
+            legacy=policy.get('connections',{}).get(key.removeprefix('mcp:'),{})
+            if legacy.get('allowed') is False:grant['allowed']=False
+            old_scopes=legacy.get('scopes')
+            if old_scopes and '*' not in old_scopes:
+                current=grant.get('scopes')
+                grant['scopes']=sorted(set(old_scopes) & set(current)) if current and '*' not in current else list(old_scopes)
+                if current and '*' not in current and not grant['scopes']:
+                    grant['allowed']=False
         policy_scopes = grant.get("scopes")
         value.update({
             "allowed": grant.get("allowed", True),
@@ -379,8 +376,11 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     try:
         from agent.permission.privacy import inventory as privacy_inventory
         privacy = privacy_inventory()
+        from agent.permission.privacy import data_access_inventory
+        data_access = data_access_inventory(all_connections)
     except (OSError, ValueError, TypeError):
         privacy = {"available": False, "categories": []}
+        data_access = {"available":False,"resources":[],"external_transfers":[]}
     return {
         "global_policy": global_policy(), "effective_policy": effective,
         "effective_mode": effective_mode(effective), "effective_rules": effective_rules(effective),
@@ -394,7 +394,7 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
         "conversation_policy": conversation_patch,
         "connections": all_connections, "secrets": all_secrets,
         "background_tasks": task_rows,
-        "privacy": privacy,
+        "privacy": privacy, "data_access":data_access,
         "summary": {"status": "attention" if denials or active_pending else "normal",
                     "app_password_set": bool(__import__("config").conf().get("web_password")),
                     "connection_count": sum(1 for item in all_connections if item.get("connected")),

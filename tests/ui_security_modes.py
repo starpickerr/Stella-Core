@@ -138,7 +138,7 @@ with sync_playwright() as playwright:
             ('外部连接', 'connections', '连接与访问'),
             ('凭据', 'secrets', '服务凭据'),
             ('安全活动', 'activity', '安全活动'),
-            ('数据与隐私', 'privacy', '数据与隐私'),
+            ('数据访问', 'privacy', '数据访问'),
         ]
         for title, target, destination in overview_links:
             link = page.get_by_role('heading', name=title, exact=True).get_by_role('link', name=title, exact=True)
@@ -180,7 +180,7 @@ with sync_playwright() as playwright:
         assert not any(item.get('policy', {}).get('preset') == 'custom' for item in saved)
         expect(page.get_by_role('heading', name='项目权限')).to_be_visible()
         for tab, heading in [('后台任务权限', '后台任务权限'), ('外部连接', '连接与访问'),
-                             ('安全活动', '安全活动'), ('数据与隐私', '数据与隐私')]:
+                             ('安全活动', '安全活动'), ('数据访问', '数据访问')]:
             page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
             expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
         page.get_by_role('button', name='凭据', exact=True).click()

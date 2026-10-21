@@ -1,3 +1,4 @@
+import type { DataSnapshot, DataRecords, DataCommandResult } from './dataTypes'
 import type { McpServerInfo } from '../types'
 import type {
   ConfigData,
@@ -67,6 +68,12 @@ export interface SecurityRecord {
   trace: string[]
 }
 
+export interface InheritedMcpGrant {
+  id: string; server: string; consumer: string | null; capabilities: string[]; methods: string[]
+  purposes: string[]; resources: { kind: string; id: string }[]; valid_until: string | null
+  revoked: boolean; revision: number; scoped: boolean
+}
+
 export interface SecurityCenterState extends ApiResult {
   global_policy: SecurityPolicy
   effective_policy: SecurityPolicy
@@ -85,6 +92,7 @@ export interface SecurityCenterState extends ApiResult {
   secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
   background_tasks?: SecurityBackgroundTask[]
   privacy?: SecurityPrivacyInventory
+  data_access?: { inherited_grants?: InheritedMcpGrant[]; available: boolean; resources: { id: string; name: string; provider: string; account_id: string; connection?: string }[]; external_transfers: NonNullable<SecurityPrivacyInventory['external_transfers']> }
   summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
     recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[];
     activity_counts?: SecurityActivityCounts
@@ -527,6 +535,25 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
+  async getDataSnapshot(refresh = false, signal?: AbortSignal): Promise<DataSnapshot> {
+    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Data Service unavailable')
+    return result
+  }
+
+  async getDataRecords(sourceId: string, q = '', offset = 0, signal?: AbortSignal): Promise<DataRecords> {
+    const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
+    const result = await this.request<DataRecords & { message?: string }>(`/api/data/records?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Data access denied')
+    return result
+  }
+
+  async dataCommand(body: Record<string, unknown>): Promise<DataCommandResult> {
+    const result = await this.request<DataCommandResult>('/api/data/command', { method: 'POST', body: JSON.stringify(body) })
+    if (result.status !== 'success') throw new Error(result.message || 'Data operation failed')
+    return result
+  }
+
   async getSecurityCenter(session?: string): Promise<SecurityCenterState> {
     return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
   }
@@ -560,6 +587,10 @@ class ApiClient {
 
   async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
     return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
+  }
+
+  async updateMcpAccess(grant: Pick<InheritedMcpGrant, 'id' | 'revision' | 'revoked' | 'purposes' | 'resources' | 'valid_until'>): Promise<ApiResult> {
+    return this.request('/api/security/mcp-access', { method: 'POST', body: JSON.stringify(grant) })
   }
 
   async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
