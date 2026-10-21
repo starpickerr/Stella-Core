@@ -13,7 +13,7 @@ parser.add_argument("--domain", required=True)
 args, rest = parser.parse_known_args()
 root = Path(__file__).resolve().parents[3]
 repo = (
-    root / "MCP" / ("elearning_crawler" if args.domain == "elearning" else "email_mcp")
+    root / "MCP" / ("fudan-elearning-mcp" if args.domain == "elearning" else "email-mcp")
 )
 pkg = "elearning_mcp" if args.domain == "elearning" else "email_mcp"
 sys.path.insert(0, str(repo))

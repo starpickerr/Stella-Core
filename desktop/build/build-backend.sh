@@ -44,7 +44,7 @@ echo "==> Running PyInstaller (onedir) for stella-plugin-runner"
   --workpath "$BUILD_DIR/build-work-runner"
 
 # Build independently owned MCP deliverables; fail the release if either is missing.
-for spec in "email_mcp:email" "elearning_crawler:elearning"; do
+for spec in "email-mcp:email" "fudan-elearning-mcp:elearning"; do
   MCP_REPO="$ROOT/../MCP/${spec%%:*}"
   MCP_PYTHON="$MCP_REPO/.venv/bin/python"
   if [ ! -x "$MCP_PYTHON" ]; then

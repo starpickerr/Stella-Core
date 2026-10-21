@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def server_config(domain, data):
     repo = (
-        ROOT / "MCP" / ("elearning_crawler" if domain == "elearning" else "email_mcp")
+        ROOT / "MCP" / ("fudan-elearning-mcp" if domain == "elearning" else "email-mcp")
     )
-    python = ROOT / "MCP/elearning_crawler/.venv/bin/python"
+    python = ROOT / "MCP/fudan-elearning-mcp/.venv/bin/python"
     return {
         "name": domain,
         "type": "stdio",

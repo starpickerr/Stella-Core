@@ -26,7 +26,7 @@ def configurations(manager):
         user = manager.identity.user_id or "local-default"
         configs = []
         for domain in PUBLIC_TOOLS:
-            repo_name = "elearning_crawler" if domain == "elearning" else "email_mcp"
+            repo_name = "fudan-elearning-mcp" if domain == "elearning" else "email-mcp"
             repo = Path(
                 os.environ.get(
                     f"STELLA_{domain.upper()}_MCP_ROOT",

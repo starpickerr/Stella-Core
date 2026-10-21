@@ -4,7 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-root = Path(__file__).resolve().parents[2] / 'MCP/email_mcp/email_mcp'
+root = Path(__file__).resolve().parents[2] / 'MCP/email-mcp/email_mcp'
 name = 'stella_email_domain_core_tests'
 spec = importlib.util.spec_from_file_location(name, root / '__init__.py', submodule_search_locations=[str(root)])
 package = importlib.util.module_from_spec(spec)

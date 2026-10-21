@@ -33,7 +33,7 @@ flowchart LR
 
 ## 邮箱与 eLearning MCP
 
-邮箱与学校抓取分别由工作区 `MCP/email_mcp`、`MCP/elearning_crawler` 独立仓库发布本地 stdio Server。Core 的 `core/mcp/managed.py` 注册可信默认连接；设置、简报与 Agent 通过同一 `ToolManager.call_mcp_tool` 使用 MCP Runtime。管理工具不注入 Agent；公开工具保留来源、启停、权限及取消。旧插件不再安装或启动，原有账号、cookies、SQLite、游标及下载文件保持原路径格式，由 Server 接管。
+邮箱与学校抓取分别由工作区 `MCP/email-mcp`、`MCP/fudan-elearning-mcp` 独立仓库发布本地 stdio Server。Core 的 `core/mcp/managed.py` 注册可信默认连接；设置、简报与 Agent 通过同一 `ToolManager.call_mcp_tool` 使用 MCP Runtime。管理工具不注入 Agent；公开工具保留来源、启停、权限及取消。旧插件不再安装或启动，原有账号、cookies、SQLite、游标及下载文件保持原路径格式，由 Server 接管。
 
 迁移不抹除旧连接拒绝、插件授权撤销、后台用途或课程/文件夹范围。既有 scoped grants 由 Core 兼容检查，并通过 MCP 请求元数据向 Server 传递实际资源约束；该元数据不属于 Agent 可写工具参数。原生设置点击仅确认需要确认的操作，不能覆盖拒绝或为 Agent/后台调用确认。eLearning 下载仍需 Core 文件写权限，Server 限定配置根目录并保护本地文件。独立 eLearning 客户端用跨进程锁保护共享游标、审计和下载 manifest。
 
