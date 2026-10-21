@@ -332,6 +332,18 @@ class ToolManager:
         return (mtime, digest, self.capability_settings.revision('mcp'))
 
     def _load_mcp_configs(self) -> list:
+        from core.mcp.managed import configurations
+        managed = configurations(self)
+        reserved = {row['name'] for row in managed}
+        user = self._load_user_mcp_configs()
+        if any(row.get('name') in reserved for row in user):
+            raise ValueError('Managed MCP server names are reserved; configure their installation paths instead')
+        # Internal metadata cannot be asserted by a user-supplied server.
+        for row in user:
+            row.pop('settingsUrl', None)
+        return user + managed
+
+    def _load_user_mcp_configs(self) -> list:
         """
         Load MCP server configs with priority:
           1. ~/stella/mcp.json  (supports both mcpServers and mcp_servers keys)
@@ -430,10 +442,128 @@ class ToolManager:
                 self._teardown_mcp_server(name)
         return enabled
 
+    def call_mcp_tool(
+        self, server_name, method, arguments, *, host=False, cancel_event=None, purpose=None
+    ):
+        import time
+        from common.runtime_identity import current_identity
+
+        current = current_identity()
+        if (current.user_id or "local-default") != (
+            self.identity.user_id or "local-default"
+        ):
+            raise PermissionError("MCP manager belongs to another user")
+        configs = {c["name"]: c for c in self._load_mcp_configs()}
+        cfg = configs.get(server_name)
+        if cfg is None or not self._mcp_enabled(cfg):
+            raise PermissionError("MCP server is disabled or not configured")
+        public = cfg.get("agentTools")
+        if not host and public is not None and method not in public:
+            raise PermissionError("MCP management tool is not available to agents")
+        with self._mcp_lock:
+            self._queue_mcp_servers([cfg])
+        deadline = time.monotonic() + 30
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                from agent.protocol.cancel import AgentCancelledError
+
+                raise AgentCancelledError("MCP call cancelled")
+            with self._mcp_lock:
+                if (
+                    not self._mcp_enabled(cfg)
+                    or server_name not in self._mcp_active_configs
+                ):
+                    raise PermissionError("MCP server was disabled")
+                status = self._mcp_status.get(server_name)
+                if status == "ready":
+                    client = self._mcp_registry._clients[server_name]
+                    generation = self._mcp_generations[server_name]
+                    schema = (
+                        getattr(self, "_mcp_schemas", {}).get(server_name, {}).get(method)
+                    )
+                    break
+                if status in ("failed", "needs_auth") or time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "MCP server is unavailable; check its installation and connection"
+                    )
+            threading.Event().wait(0.02)
+        if schema is None:
+            raise ValueError("MCP tool is not provided by this server")
+        tool = next(
+            (
+                t
+                for t in self._mcp_tool_instances.values()
+                if t.server_name == server_name and t.remote_name == method
+            ),
+            None,
+        )
+        if tool is None:
+            from agent.tools.mcp.mcp_tool import McpTool
+            from agent.permission.gateway import Capability, register_tool
+
+            tool = McpTool(client, schema, server_name)
+            tool._capability_settings = self.capability_settings
+            from core.mcp.managed import LOCAL_READS
+            local_read = cfg.get("settingsUrl") == "/" + server_name and method in LOCAL_READS
+            register_tool(
+                tool.name,
+                Capability.READ if local_read else Capability.EXTERNAL,
+                connection=f"mcp:{server_name}",
+                read_only=tool.read_only,
+            )
+        from agent.runtime.tool_invocation import permission_denial
+        from core.mcp.managed import native_user_action
+
+        denial = permission_denial(
+            tool.name,
+            arguments,
+            tool=tool,
+            noninteractive=True,
+            user_action=native_user_action(host,method,purpose),
+        )
+        if denial:
+            raise PermissionError(denial)
+        if not self._mcp_admitted(server_name, generation):
+            raise PermissionError("MCP connection was replaced")
+        meta = None
+        if cfg.get("settingsUrl") == "/" + server_name:
+            from core.mcp.authorization import check
+
+            def metadata(name, values):
+                reply = client.call_tool_result(name, values, cancel_event=cancel_event)
+                return reply["structuredContent"]["value"]
+
+            meta = check(
+                server_name,
+                method,
+                arguments,
+                current.user_id or "local-default",
+                metadata,
+                purpose,
+            )
+        if not self._mcp_admitted(server_name, generation):
+            raise PermissionError("MCP connection was replaced")
+        result = client.call_tool_result(
+            method, arguments, cancel_event=cancel_event, meta=meta
+        )
+        import json
+
+        structured = result.get("structuredContent")
+        if structured is None:
+            structured = json.loads(
+                "".join(
+                    row.get("text", "")
+                    for row in result.get("content", [])
+                    if row.get("type") == "text"
+                )
+            )
+        return structured["value"]
+
     def _teardown_mcp_server(self, server_name):
         with self._mcp_lock:
             self._mcp_generations[server_name] = self._mcp_generations.get(server_name, 0) + 1
             self._mcp_active_configs.pop(server_name, None)
+            getattr(self,'_mcp_schemas',{}).pop(server_name,None)
             client = None
             if self._mcp_registry is not None:
                 with self._mcp_registry._registry_lock:
@@ -490,16 +620,23 @@ class ToolManager:
                             self._mcp_status[name] = 'needs_auth' if getattr(client, 'needs_auth', False) else 'failed'
                     continue
                 schemas = client.list_tools()
+                agent_tools = cfg.get('agentTools')
                 tools = []
                 from agent.permission.gateway import Capability, register_tool
                 for schema in schemas:
-                    if not schema.get('name'):
+                    if not schema.get('name') or (agent_tools is not None and schema['name'] not in agent_tools):
                         continue
                     tool = McpTool(client, schema, name)
                     tool._capability_settings = self.capability_settings
                     tool._admission_check = lambda n=name, g=generation: self._mcp_admitted(n, g)
+                    if cfg.get('settingsUrl') == '/' + name:
+                        tool._managed_invoke = lambda method, arguments, cancel, n=name: self.call_mcp_tool(
+                            n, method, arguments, cancel_event=cancel)
                     try:
-                        register_tool(tool.name, Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only)
+                        from core.mcp.managed import LOCAL_READS
+                        local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS
+                        register_tool(tool.name, Capability.READ if local_read else Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only,
+                                      filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning')
                     except ValueError:
                         continue
                     tools.append(tool)
@@ -510,6 +647,9 @@ class ToolManager:
                         self._mcp_tool_instances[tool.name] = tool
                     with registry._registry_lock:
                         registry._clients[name] = client
+                    if not hasattr(self, '_mcp_schemas'):
+                        self._mcp_schemas = {}
+                    self._mcp_schemas[name] = {row['name']:row for row in schemas}
                     self._mcp_status[name] = 'ready'
                     published = True
             except Exception:
@@ -552,7 +692,7 @@ class ToolManager:
                 enabled = self._mcp_enabled(config)
                 state = statuses.get(name, 'not_started') if enabled else 'disabled'
                 result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
-                    'enabled': enabled, 'state': state, 'tools': sorted([
+                    'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
                         {'name': tool.remote_name, 'description': tool.description}
                         for tool in tools if tool.server_name == name and state == 'ready'
                     ], key=lambda tool: tool['name'])})

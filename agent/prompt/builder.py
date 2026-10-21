@@ -158,7 +158,7 @@ def build_agent_system_prompt(
                              agent_id=identity.agent_id)
             available_names = {getattr(tool, "name", "") for tool in (tools or [])}
             elearning_sync = None
-            if "elearning" in available_names:
+            if any(getattr(tool, 'server_name', None)=='elearning' for tool in (tools or [])):
                 try:
                     from application import Application
                     settings = Application.port('elearning').get_settings()

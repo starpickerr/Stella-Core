@@ -20,7 +20,7 @@ from core.plugins.registry import PluginRegistry
 from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
 DOMAINS = {'stella.memory': 'memory', 'stella.knowledge': 'knowledge', 'stella.bills': 'bills', 'stella.tasks': 'todos', 'stella.calendar': 'calendar',
-           'stella.briefing': 'briefing', 'stella.email': 'email', 'stella.elearning': 'elearning',
+           'stella.briefing': 'briefing',
            'stella.automation': 'automation', 'stella.agent-hub': 'agent_hub'}
 
 FIRST_PARTY_PLUGIN_IDS = frozenset(DOMAINS) | frozenset({'stella.agent-hub'})
@@ -41,13 +41,6 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
                     'legacyMainFile': str(state_dir.memory_file().resolve())}
         if plugin_id == 'stella.knowledge':
             return {'namespace': plugin_id, 'dataDir': str(state_dir.knowledge_dir(ensure=False).resolve())}
-        if plugin_id == 'stella.email':
-            base = state_dir.briefing_db(ensure=False)
-            return {'namespace': plugin_id, 'dbPath': str((base.parent.parent / 'email' / 'email.db').resolve()),
-                    'legacyMailboxPath': str(base.with_name('mailbox.json').resolve())}
-        if plugin_id == 'stella.elearning':
-            base = state_dir.briefing_db(ensure=False).parent
-            return {'namespace': plugin_id, 'dataDir': str((base.parent / 'elearning').resolve()), 'legacyDir': str(base.resolve())}
         if plugin_id == 'stella.automation':
             path = state_dir.scheduler_file().with_name('automation.db')
             return {'namespace': plugin_id, 'dbPath': str(path.resolve())}
@@ -220,6 +213,9 @@ class PluginManager:
         rows = []
         for pointer in sorted(self.packages.packages.glob('*/current.json')):
             plugin_id = pointer.parent.name
+            from core.mcp.retired import RETIRED_PLUGIN_IDS
+            if plugin_id in RETIRED_PLUGIN_IDS:
+                continue  # Keep installed bytes/data for recovery; never offer or run them.
             state = self.management.instance(plugin_id, user_id)
             if not self.management.has_instance(plugin_id, user_id):
                 state = {**state, 'intent': 'disabled', 'state': 'stopped'}

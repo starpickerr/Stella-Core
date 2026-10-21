@@ -49,3 +49,8 @@ def worker_cancellation_handle():
         finally:
             done.set()
             watcher.join(timeout=1)
+
+
+def current_cancellation_events():
+    """Return active cooperative signals for other Core runtimes."""
+    return _EVENTS.get()

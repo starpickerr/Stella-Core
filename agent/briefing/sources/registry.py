@@ -8,24 +8,16 @@ def source_key(source):
 
 
 def _email_sources():
-    from core.plugins.caller import plugin_user_id
-    from core.plugins.management import default_store
-    if default_store().instance('stella.email', plugin_user_id())['intent'] in {'disabled', 'removed'}:
-        return []
-    from core.services.email_gateway import email_plugin_enabled
-    if email_plugin_enabled():
+    from core.services.email_gateway import email_mcp_enabled
+    if email_mcp_enabled():
         from core.services.email_facade import email_sources
         return email_sources()
     return []
 
 
 def _elearning_sources():
-    from core.plugins.caller import plugin_user_id
-    from core.plugins.management import default_store
-    if default_store().instance('stella.elearning', plugin_user_id())['intent'] in {'disabled', 'removed'}:
-        return []
-    from core.services.elearning_gateway import elearning_plugin_enabled
-    if elearning_plugin_enabled():
+    from core.services.elearning_gateway import elearning_mcp_enabled
+    if elearning_mcp_enabled():
         from core.services.elearning_facade import elearning_sources
         return elearning_sources()
     return []

@@ -26,7 +26,7 @@ def fixed_briefing_clock(monkeypatch):
 
 
 @pytest.fixture
-def api(tmp_path, email_plugin_env, elearning_plugin_env):
+def api(tmp_path, email_mcp_env, elearning_mcp_env):
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     source = StaticSource([FetchedItem(
         source="email", source_id="<hello@x>", title="请确认合同", sender="Ada",
@@ -154,14 +154,14 @@ def test_source_selection_is_passed_to_pipeline_and_source_discovery_is_authenti
 
 
 def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test(api, tmp_path):
-    from core.services.elearning_facade import ElearningPluginFacade
+    from core.services.elearning_facade import ElearningMcpFacade
     created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
         "username": "student", "password": "campus-secret", "courses": ["42"]})
     assert created["status"] == "success" and created["settings"]["configured"]
     assert "campus-secret" not in json.dumps(created)
     updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
     assert updated["settings"]["enabled"] is False
-    with patch.object(ElearningPluginFacade, "test_connection", create=True, return_value=[{"id": "42", "name": "课程"}]) as check:
+    with patch.object(ElearningMcpFacade, "test_connection", create=True, return_value=[{"id": "42", "name": "课程"}]) as check:
         tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
         assert tested["connected"] and tested["courses"][0]["id"] == "42"
         check.assert_called_once_with({"username": "student"})
@@ -171,7 +171,7 @@ def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test
 
 
 def test_elearning_directory_configuration_has_no_extra_write_switch(api, tmp_path):
-    from core.services.elearning_facade import ElearningPluginFacade
+    from core.services.elearning_facade import ElearningMcpFacade
     root = tmp_path / "course-files"
     root.mkdir()
     created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
@@ -185,14 +185,14 @@ def test_elearning_directory_configuration_has_no_extra_write_switch(api, tmp_pa
     assert "file_sync_enabled" not in saved["settings"]
     for changes in ({"enabled": False}, {"courses": ["43"]}):
         call(web_channel.BriefingElearningHandler, body=changes)
-        assert ElearningPluginFacade().get_settings()["file_sync_root"] == str(root)
+        assert ElearningMcpFacade().get_settings()["file_sync_root"] == str(root)
     missing = call(web_channel.ElearningFileSyncSettingsHandler,
         body={"file_sync_root": str(root / "not-present")})
     assert missing["status"] == "error"
-    assert ElearningPluginFacade().get_settings()["file_sync_root"] == str(root)
+    assert ElearningMcpFacade().get_settings()["file_sync_root"] == str(root)
     cleared = call(web_channel.ElearningFileSyncSettingsHandler, body={"file_sync_root": ""})
     assert cleared["settings"]["file_sync_root"] == ""
-    assert ElearningPluginFacade().get_settings()["username"] == "student"
+    assert ElearningMcpFacade().get_settings()["username"] == "student"
 
 
 @pytest.mark.parametrize("handler,body", [
@@ -251,8 +251,8 @@ def test_settings_do_not_expose_credentials(api, monkeypatch):
     assert result["settings"]["mailboxes"][0]["password_set"] is True
     assert result["settings"]["mailboxes"][0]["password_masked"] == "********"
     monkeypatch.delenv("IMAP_PASSWORD")
-    from core.services.email_gateway import shutdown_email_session
-    shutdown_email_session()  # environment changes take effect in a fresh isolated worker
+    from agent.tools.tool_manager import ToolManager
+    ToolManager()._teardown_mcp_server('email')  # Environment changes take effect in a fresh isolated server.
     assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]["missing"] == ["IMAP_PASSWORD"]
 
 
@@ -302,8 +302,8 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
 
 def test_connection_endpoint_reports_success_and_configuration_errors(api):
     _, auth = api
-    from core.services.email_facade import EmailPluginFacade
-    with patch.object(EmailPluginFacade, 'test_connection', create=True) as check:
+    from core.services.email_facade import EmailMcpFacade
+    with patch.object(EmailMcpFacade, 'test_connection', create=True) as check:
         check.return_value = {"connected": True, "folder_accessible": False,
                               "folders": [{"name": "INBOX", "label": "INBOX"}], "message": "select denied"}
         result = call(web_channel.BriefingSettingsTestHandler, body={"host": "imap.gmail.com", "password": ""})

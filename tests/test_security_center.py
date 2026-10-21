@@ -613,8 +613,8 @@ def test_connections_use_real_service_status(tmp_path, monkeypatch, calendar_plu
         "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {"email": {"allowed": False}}},
         "github_token": "ghp_test",
     })
-    monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "1")
-    monkeypatch.setattr("core.services.email_facade.EmailPluginFacade.list_accounts", lambda self: {
+    monkeypatch.setattr('core.services.email_gateway.email_mcp_enabled',lambda:True)
+    monkeypatch.setattr("core.services.email_facade.EmailMcpFacade.list_accounts", lambda self: {
         "mailboxes": [{"id": "1", "configured": True, "enabled": True}],
         "configured": True, "missing": [],
     }, raising=False)
@@ -820,8 +820,8 @@ def test_overview_exposes_activity_counts(tmp_path, monkeypatch, security_audit_
     monkeypatch.setattr(config_module, "conf", lambda: {
         "security_policy": {"preset": "workspace-write", "rules": {}, "connections": {}},
     })
-    monkeypatch.setenv("STELLA_EMAIL_PLUGIN", "1")
-    monkeypatch.setattr("core.services.email_facade.EmailPluginFacade.list_accounts", lambda self: {
+    monkeypatch.setattr('core.services.email_gateway.email_mcp_enabled',lambda:True)
+    monkeypatch.setattr("core.services.email_facade.EmailMcpFacade.list_accounts", lambda self: {
         "mailboxes": [], "configured": False, "missing": [],
     }, raising=False)
     monkeypatch.setattr(

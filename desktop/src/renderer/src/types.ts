@@ -1159,6 +1159,7 @@ export interface ElearningSettings {
 export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
 
 export interface McpServerInfo {
+  settings_url?: string | null
   name: string
   enabled: boolean
   transport: string

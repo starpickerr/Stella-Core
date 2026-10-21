@@ -120,16 +120,18 @@ def test_elearning_connector_uses_session_without_exposing_cookie_file(tmp_path,
     session = config.parent / "elearning-sessions" / "account.json"
     scope = Scope(write_roots=(str(tmp_path / "workspace"),))
 
-    connector = SecurityGateway.check("workspace-write", "elearning", {"action": "fetch"}, scope=scope)
+    from agent.permission.gateway import register_tool,Capability
+    register_tool("mcp_elearning_fetch",Capability.EXTERNAL,connection="mcp:elearning",read_only=True)
+    connector = SecurityGateway.check("workspace-write", "mcp_elearning_fetch", {}, scope=scope)
     assert connector.kind is DecisionKind.ALLOW
 
     raw = SecurityGateway.check("full-access", "read", {"path": str(session)}, scope=scope)
     assert raw.kind is DecisionKind.DENY
     assert "workspace_outside" in raw.reason
-    assert "elearning tool" in raw.reason
+    assert "eLearning MCP" in raw.reason
     assert "eLearning settings" in raw.reason
 
     shell = SecurityGateway.check("full-access", "bash", {"command": f"cat {session}"}, scope=scope)
     assert shell.kind is DecisionKind.DENY
     assert "workspace_outside" in shell.reason
-    assert "elearning tool" in shell.reason
+    assert "eLearning MCP" in shell.reason

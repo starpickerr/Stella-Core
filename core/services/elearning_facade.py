@@ -1,8 +1,8 @@
-"""Facade over the stella.elearning plugin for desktop settings, tools and briefing.
+"""Facade over the stella.elearning MCP for desktop settings, tools and briefing.
 
 Exposes the contract surface plus drop-in names for the legacy
 the public settings API. Policy audit events queued by
-the plugin worker (it cannot reach the host audit log) are recorded here.
+the MCP worker (it cannot reach the host audit log) are recorded here.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _unwrap(result: dict[str, Any]) -> Any:
     status = result.get("status")
     if status == "failed":
         err = result.get("error") or {}
-        message = err.get("message") or "elearning plugin call failed"
+        message = err.get("message") or "elearning MCP call failed"
         if err.get('code') == 'cancelled':
             from agent.protocol.cancel import AgentCancelledError
             raise AgentCancelledError(message)
@@ -36,12 +36,12 @@ def _unwrap(result: dict[str, Any]) -> Any:
             raise KeyError(message)
         raise ValueError(message)
     if status != "succeeded":
-        raise RuntimeError(f"elearning plugin returned {status}")
+        raise RuntimeError(f"elearning MCP returned {status}")
     return result.get("value")
 
 
-class ElearningPluginFacade:
-    """Drop-in for Application._Port when STELLA_ELEARNING_PLUGIN is enabled."""
+class ElearningMcpFacade:
+    """Drop-in for Application._Port over the managed elearning MCP connection."""
 
     def __init__(self, *, purpose: str | None = None):
         self._purpose = purpose
@@ -67,10 +67,7 @@ class ElearningPluginFacade:
         return call
 
     def _invoke(self, method: str, params: dict[str, Any], purpose: str | None = None) -> Any:
-        data_dir, legacy_dir = _paths()
-        return _unwrap(elearning_gateway.invoke_elearning(
-            method, params, data_dir=data_dir, legacy_dir=legacy_dir,
-            purpose=purpose or self._purpose))
+        return _unwrap(elearning_gateway.invoke_elearning(method, params, purpose=purpose or self._purpose))
 
     def _value(self, method: str, params: dict[str, Any]) -> Any:
         try:
@@ -80,7 +77,7 @@ class ElearningPluginFacade:
                 self._record_audit()
 
     def _record_audit(self) -> None:
-        """Move plugin-queued audit events into the host permission audit log."""
+        """Move MCP-queued audit events into the host permission audit log."""
         try:
             events = self._invoke("drain_audit_events", {}, purpose="interactive")
             if not events:
@@ -101,17 +98,17 @@ class ElearningPluginFacade:
         return self.test_connection(payload)
 
 
-class ElearningPluginSource:
-    """Briefing ``Source`` backed by the plugin; credentials never leave it."""
+class ElearningMcpSource:
+    """Briefing ``Source`` backed by the MCP; credentials never leave it."""
 
     name = "elearning"
 
     def __init__(self, *, account_id: str, username: str = "", purpose: str = "background",
-                 facade: ElearningPluginFacade | None = None):
+                 facade: ElearningMcpFacade | None = None):
         self.account_id = account_id
         self.cancel_event = None
         self.display_name = "eLearning · " + username
-        self._facade = facade or ElearningPluginFacade(purpose=purpose)
+        self._facade = facade or ElearningMcpFacade(purpose=purpose)
 
     def fetch(self, cursors: Dict[str, str]):
         from core.services.source_types import FetchedItem, FetchResult
@@ -125,10 +122,10 @@ class ElearningPluginSource:
                            cursors=result["cursors"], errors=result["errors"])
 
 
-def elearning_sources(purpose: str = "background") -> list[ElearningPluginSource]:
-    facade = ElearningPluginFacade(purpose=purpose)
-    settings = ElearningPluginFacade(purpose="interactive").get_settings()
+def elearning_sources(purpose: str = "background") -> list[ElearningMcpSource]:
+    facade = ElearningMcpFacade(purpose=purpose)
+    settings = ElearningMcpFacade(purpose="interactive").get_settings()
     if not settings["enabled"]:
         return []
-    return [ElearningPluginSource(account_id=settings["account_id"], username=settings["username"],
+    return [ElearningMcpSource(account_id=settings["account_id"], username=settings["username"],
                                   purpose=purpose, facade=facade)]

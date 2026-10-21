@@ -138,6 +138,7 @@ def permission_denial(
     noninteractive: bool = False,
     cancel_event=None,
     tool=None,
+    user_action: bool = False,
 ) -> Optional[str]:
     """Return a refusal reason, resolving the current mode at call time.
 
@@ -209,7 +210,12 @@ def permission_denial(
                 raise AgentCancelledError("cancelled while waiting for approval")
             else:
                 raise ApprovalRejectedError(f"{tool_name} 审批已过期，本轮已停止；操作未执行。")
-        if decision.allowed:
+        # A native settings action is explicit confirmation by the authenticated
+        # owner, but it cannot override DENY or authorize Agent/background work.
+        owner_confirmed = (user_action and not any((identity.agent_id, identity.session_id,
+                            identity.task_id, identity.run_id)) and
+                           decision.kind is DecisionKind.CONFIRM)
+        if decision.allowed or owner_confirmed:
             if not tool_enabled(tool_name, **capability_scope):
                 return f'Tool {tool_name} is disabled.'
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:

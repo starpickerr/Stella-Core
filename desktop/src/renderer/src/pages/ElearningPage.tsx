@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader'
 import { ElearningSettings } from './briefing/ElearningSettings'
 import ElearningFileSettings from './settings/ElearningFileSettings'
 
-/** Mature host shell for stella.elearning (settings cards from develop). */
+/** Mature host shell for eLearning MCP (settings cards from develop). */
 const ElearningPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   void baseUrl
   return (

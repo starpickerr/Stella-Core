@@ -56,7 +56,7 @@ def test_missing_capability_denied():
         )
 
 
-@pytest.mark.parametrize("domain", ["bills", "todos", "calendar", "briefing", "automation", "email", "elearning"])
+@pytest.mark.parametrize("domain", ["bills", "todos", "calendar", "briefing", "automation"])
 def test_gateway_worker_restart_does_not_restore_revoked_grant(domain, monkeypatch):
     import importlib
 
@@ -83,31 +83,6 @@ def test_gateway_worker_restart_does_not_restore_revoked_grant(domain, monkeypat
         shutdown()
 
 
-@pytest.mark.parametrize("domain", ["email", "elearning"])
-def test_stopped_gateway_applies_purpose_changes_without_restoring_revocation(domain, monkeypatch):
-    import importlib
-
-    gateway = importlib.import_module(f"core.services.{domain}_gateway")
-    shutdown = getattr(gateway, f"shutdown_{domain}_session")
-    ensure = getattr(gateway, f"ensure_{domain}_session")
-    set_purposes = getattr(gateway, f"set_{domain}_purposes")
-    shutdown()
-    authz = PluginAuthorizationStore()
-    monkeypatch.setattr(gateway, "DEFAULT_AUTHZ", authz)
-    monkeypatch.setattr(gateway, "DEFAULT_REGISTRY", PluginRegistry())
-    monkeypatch.setattr(gateway, "_PURPOSES", {"interactive", "read", "background"})
-    try:
-        ensure()
-        shutdown()
-        set_purposes({"interactive", "read"})
-        session = ensure()
-        grant = session.authz.get(gateway._GRANT_REF)
-        assert grant.purposes == frozenset({"interactive", "read"})
-        session.authz.revoke(gateway._GRANT_REF)
-        set_purposes({"interactive"})
-        assert session.authz.get(gateway._GRANT_REF).revoked is True
-    finally:
-        shutdown()
 
 
 def test_grants_survive_application_restart_without_restoring_revocation(tmp_path):
@@ -250,22 +225,6 @@ def test_gateway_switches_users_without_sharing_grants(monkeypatch):
         gateway.shutdown_bills_session()
 
 
-@pytest.mark.parametrize("domain", ["email", "elearning"])
-def test_purpose_change_before_worker_start_is_user_scoped(domain, monkeypatch):
-    import importlib
-    from common.runtime_identity import identity_scope
-    from core.plugins.caller import user_grant_ref
-
-    gateway = importlib.import_module(f"core.services.{domain}_gateway")
-    authz = PluginAuthorizationStore()
-    monkeypatch.setattr(gateway, "DEFAULT_AUTHZ", authz)
-    monkeypatch.setattr(gateway, "_PURPOSES", {"interactive", "read", "background"})
-    with identity_scope(user_id="alice"):
-        getattr(gateway, f"set_{domain}_purposes")({"interactive"})
-        assert authz.get(user_grant_ref(gateway._GRANT_REF)).purposes == frozenset({"interactive"})
-    with identity_scope(user_id="bob"):
-        gateway._issue_grant(replace_existing=False)
-        assert "background" in authz.get(user_grant_ref(gateway._GRANT_REF)).purposes
 
 
 def test_application_port_keeps_scheduled_identity(monkeypatch):
@@ -325,7 +284,7 @@ def test_unmapped_plugin_mutations_cannot_be_classified_as_reads(monkeypatch, tm
                                            effect="domainWrite")
 
 
-@pytest.mark.parametrize("domain", ["bills", "todos", "calendar", "briefing", "automation", "email", "elearning"])
+@pytest.mark.parametrize("domain", ["bills", "todos", "calendar", "briefing", "automation"])
 def test_gateway_replaces_dead_worker_without_regranting_or_replaying(domain, monkeypatch):
     import importlib
 
@@ -390,23 +349,3 @@ def test_default_port_context_does_not_erase_ambient_task_origin(monkeypatch):
                         lambda: SimpleNamespace(get_ledger=lambda *args: current_caller_origin()))
     with identity_scope(task_id="job-1"):
         assert Application.port("bills").get_ledger("ledger-1") == "job"
-
-
-def test_email_source_reads_reuse_briefing_conversation_policy(monkeypatch, tmp_path):
-    from agent.permission.gateway import SecurityGateway, Scope
-    from core.plugins.host import _conversation_permission_denial
-
-    checked = []
-
-    def actual_policy(name, arguments, **kwargs):
-        checked.append(name)
-        result = SecurityGateway.check("read-only", name, arguments, cwd=str(tmp_path),
-                                       scope=Scope(write_roots=(str(tmp_path),)), create_pending=False)
-        return None if result.allowed else result.reason
-
-    monkeypatch.setattr("agent.runtime.tool_invocation.permission_denial", actual_policy)
-    assert _conversation_permission_denial(contract="stella.email@1", method="list_sources", effect="query",
-                                           agent_id=None, session_id=None) is None
-    assert checked == ["briefing"]
-    assert _conversation_permission_denial(contract="stella.email@1", method="set_cursors", effect="domainWrite",
-                                           agent_id=None, session_id=None)

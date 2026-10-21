@@ -1,6 +1,6 @@
-"""Facade over the stella.email plugin for desktop settings and the briefing pipeline.
+"""Facade over the stella.email MCP for desktop settings and the briefing pipeline.
 
-``EmailPluginFacade`` exposes the public contract and mailbox method aliases. ``EmailPluginSource``
+``EmailMcpFacade`` exposes the public contract and mailbox method aliases. ``EmailMcpSource``
 implements the briefing ``Source`` protocol so the pipeline can fetch without
 ever holding IMAP credentials.
 """
@@ -24,17 +24,17 @@ def _unwrap(result: dict[str, Any]) -> Any:
     status = result.get("status")
     if status == "failed":
         err = result.get("error") or {}
-        message = err.get("message") or "email plugin call failed"
+        message = err.get("message") or "email MCP call failed"
         if err.get("code") == "not_found":
             raise KeyError(message)
         raise ValueError(message)
     if status != "succeeded":
-        raise RuntimeError(f"email plugin returned {status}")
+        raise RuntimeError(f"email MCP returned {status}")
     return result.get("value")
 
 
-class EmailPluginFacade:
-    """Drop-in for Application._Port when STELLA_EMAIL_PLUGIN is enabled."""
+class EmailMcpFacade:
+    """Drop-in for Application._Port over the managed email MCP connection."""
 
     def __init__(self, *, purpose: str | None = None):
         self._purpose = purpose
@@ -60,9 +60,7 @@ class EmailPluginFacade:
         return call
 
     def _value(self, method: str, params: dict[str, Any]) -> Any:
-        db_path, legacy = _paths()
-        return _unwrap(email_gateway.invoke_email(
-            method, params, db_path=db_path, legacy_mailbox_path=legacy, purpose=self._purpose))
+        return _unwrap(email_gateway.invoke_email(method, params, purpose=self._purpose))
 
     # ---- mailbox method aliases ------------------------
     def public_mailboxes(self) -> dict:
@@ -78,17 +76,17 @@ class EmailPluginFacade:
         return self.test_connection(payload)
 
 
-class EmailPluginSource:
-    """Briefing ``Source`` backed by one plugin-owned mailbox (no secrets held)."""
+class EmailMcpSource:
+    """Briefing ``Source`` backed by one MCP-owned mailbox (no secrets held)."""
 
     name = "email"
 
     def __init__(self, *, mailbox_id: str, account_id: str, display_name: str = "email",
-                 purpose: str = "background", facade: EmailPluginFacade | None = None):
+                 purpose: str = "background", facade: EmailMcpFacade | None = None):
         self.mailbox_id = mailbox_id
         self.account_id = account_id
         self.display_name = display_name
-        self._facade = facade or EmailPluginFacade(purpose=purpose)
+        self._facade = facade or EmailMcpFacade(purpose=purpose)
 
     def fetch(self, cursors: Dict[str, str]):
         from core.services.source_types import FetchedItem, FetchResult
@@ -102,10 +100,10 @@ class EmailPluginSource:
         return FetchResult(items=items, cursors=result["cursors"], errors=result["errors"])
 
 
-def email_sources(purpose: str = "background") -> list[EmailPluginSource]:
-    facade = EmailPluginFacade(purpose=purpose)
+def email_sources(purpose: str = "background") -> list[EmailMcpSource]:
+    facade = EmailMcpFacade(purpose=purpose)
     return [
-        EmailPluginSource(mailbox_id=row["mailbox_id"], account_id=row["account_id"],
+        EmailMcpSource(mailbox_id=row["mailbox_id"], account_id=row["account_id"],
                           display_name=row["name"], purpose=purpose, facade=facade)
         for row in facade.list_sources()
     ]

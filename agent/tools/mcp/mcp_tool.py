@@ -43,7 +43,11 @@ class McpTool(BaseTool):
             return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
-            if self.cancel_event is None:
+            managed = getattr(self, '_managed_invoke', None)
+            if managed is not None:
+                import json
+                result = json.dumps({'value':managed(self.remote_name,params,self.cancel_event)},ensure_ascii=False)
+            elif self.cancel_event is None:
                 result = self.client.call_tool(self.remote_name, params)
             else:
                 result = self.client.call_tool(self.remote_name, params, cancel_event=self.cancel_event)

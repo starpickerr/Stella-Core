@@ -79,6 +79,14 @@
         "to": "backend/stella-plugin-runner"
       },
       {
+        "from": "build/dist/email-mcp",
+        "to": "backend/email-mcp"
+      },
+      {
+        "from": "build/dist/elearning-mcp",
+        "to": "backend/elearning-mcp"
+      },
+      {
         "from": "resources",
         "to": ".",
         "filter": [

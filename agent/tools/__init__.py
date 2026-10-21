@@ -29,7 +29,6 @@ from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.apple.apple_tool import AppleTool
 from agent.tools.todos.todos_tool import TodosTool
-from agent.tools.elearning.elearning_tool import ElearningTool
 from agent.tools.skill.skill_tool import SkillTool
 from agent.tools.agent_hub.agent_hub_tool import AgentHubTool
 
@@ -156,7 +155,6 @@ __all__ = [
     'CalendarTool',
     'AppleTool',
     'TodosTool',
-    'ElearningTool',
     'SkillTool',
     'AgentHubTool',
     'EnvConfig',    'SchedulerTool',

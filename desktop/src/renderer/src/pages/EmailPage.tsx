@@ -4,7 +4,7 @@ import { t } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { MailboxSettings } from './briefing/MailboxSettings'
 
-/** Mature host shell for stella.email (same design language as briefing settings). */
+/** Mature host shell for Email MCP (same design language as briefing settings). */
 const EmailPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   void baseUrl
   return (

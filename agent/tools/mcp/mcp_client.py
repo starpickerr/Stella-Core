@@ -161,18 +161,22 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] list_tools failed: {e}")
             return []
 
-    def call_tool(self, name: str, arguments: dict, cancel_event=None) -> str:
-        """Call a tool and return the result as a string."""
-        try:
-            params = {"name": name, "arguments": arguments}
-            resp = (self._send_request("tools/call", params) if cancel_event is None else
+    def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        params = {"name": name, "arguments": arguments}
+        if meta is not None:
+            params["_meta"] = meta
+        response = (self._send_request("tools/call", params) if cancel_event is None else
                     self._send_request("tools/call", params, cancel_event=cancel_event))
-            content = resp.get("result", {}).get("content", [])
-            parts = [item.get("text", "") for item in content if item.get("type") == "text"]
-            return "\n".join(parts)
-        except Exception as e:
-            logger.warning(f"[MCP:{self.name}] call_tool({name}) failed: {e}")
-            return f"Error: {e}"
+        if response.get('error'):
+            raise RuntimeError((response['error'] or {}).get('message','MCP request failed'))
+        result=response.get('result',{})
+        if result.get('isError'):
+            raise RuntimeError('\n'.join(item.get('text','') for item in result.get('content',[]) if item.get('type')=='text') or 'MCP tool failed')
+        return result
+
+    def call_tool(self, name: str, arguments: dict, cancel_event=None) -> str:
+        result=self.call_tool_result(name,arguments,cancel_event=cancel_event)
+        return "\n".join(item.get('text','') for item in result.get('content',[]) if item.get('type')=='text')
 
     def shutdown(self):
         """A closed generation cannot reconnect or spawn another process."""

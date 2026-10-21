@@ -185,6 +185,9 @@ class PluginSession:
                     snapshot is not None and snapshot.generation == self.generation)
 
     def start(self) -> dict[str, Any]:
+        from core.mcp.retired import RETIRED_PLUGIN_IDS
+        if self.plugin_id in RETIRED_PLUGIN_IDS:
+            raise PluginHostError('This capability has migrated to MCP; the old plugin cannot start')
         from core.plugins.caller import invocation_budget, invocation_lock
 
         with invocation_budget(), invocation_lock(self._lock):
@@ -207,8 +210,6 @@ class PluginSession:
                 "LANG", "LC_ALL", "LC_CTYPE", "TEMP", "TMP", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
                 "STELLA_DATA_DIR", "STELLA_DESKTOP", "PYTHONDONTWRITEBYTECODE", "PLAYWRIGHT_BROWSERS_PATH",
             }
-            if self.plugin_id == "stella.email":
-                allowed.update({"IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD", "IMAP_PORT", "IMAP_FOLDER"})
             env = {key: value for key, value in os.environ.items() if key in allowed}
             if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
                 env["STELLA_ALLOW_REPO_IMPORT"] = "1"
@@ -703,20 +704,10 @@ def _conversation_permission_denial(
         return permission_denial(tool, dict(input_payload or {}), agent_id=agent_id,
             session_id=session_id, noninteractive=noninteractive)
     action = actions.get(domain, {}).get(method)
-    if domain == "email":
-        # Email sources historically enter through the briefing tool. Keep its
-        # conversation policy while the plugin grant checks account capability.
-        email_actions = {"list_accounts": "sources", "get_account": "sources", "list_sources": "sources",
-                         "get_cursors": "sources", "fetch_messages": "mail",
-                         "set_cursors": "run", "reset_cursors": "run"}
-        action = email_actions.get(method)
-        if action is None:
-            return "Email connection management is not exposed as an Agent tool"
-        domain = "briefing"
     if action is None and effect not in {None, "query"}:
         # Unknown mutations must never fall through the gateway's read default.
         action = {"todos": "update", "calendar": "update", "bills": "update",
-                  "briefing": "run", "scheduler": "create", "elearning": "sync_files"}.get(domain)
+                  "briefing": "run", "scheduler": "create"}.get(domain)
         if action is None:
             return "No conversation permission mapping for plugin mutation"
     action = action or method

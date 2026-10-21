@@ -77,7 +77,7 @@ def test_tool_catalog_preserves_actual_implementation_source():
     rows = {row['id']: row for row in build_catalog({'read', 'bills', 'elearning'})}
     assert rows['read']['source'] == {'type': 'builtin', 'plugin_ids': []}
     assert rows['bills']['source'] == {'type': 'plugin', 'plugin_ids': ['stella.bills']}
-    assert rows['elearning']['source'] == {'type': 'plugin', 'plugin_ids': ['stella.elearning']}
+    assert 'elearning' not in rows  # Supplied only through MCP discovery.
     assert rows['memory_search']['source']['plugin_ids'] == ['stella.memory']
     assert rows['apple']['source']['plugin_ids'] == ['stella.calendar', 'stella.tasks']
     from agent.tools.provenance import tool_source
@@ -88,7 +88,7 @@ def test_tool_catalog_preserves_actual_implementation_source():
 @pytest.mark.parametrize('tool_name,plugin_id', [
     ('bills', 'stella.bills'), ('briefing', 'stella.briefing'),
     ('calendar', 'stella.calendar'), ('todos', 'stella.tasks'),
-    ('elearning', 'stella.elearning'), ('agent_hub', 'stella.agent-hub'),
+    ('agent_hub', 'stella.agent-hub'),
     ('scheduler', 'stella.automation'), ('memory_search', 'stella.memory'),
     ('memory_get', 'stella.memory'),
 ])

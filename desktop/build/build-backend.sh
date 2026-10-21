@@ -43,6 +43,17 @@ echo "==> Running PyInstaller (onedir) for stella-plugin-runner"
   --distpath "$BUILD_DIR/dist" \
   --workpath "$BUILD_DIR/build-work-runner"
 
+# Build independently owned MCP deliverables; fail the release if either is missing.
+for spec in "email_mcp:email" "elearning_crawler:elearning"; do
+  MCP_REPO="$ROOT/../MCP/${spec%%:*}"
+  MCP_PYTHON="$MCP_REPO/.venv/bin/python"
+  if [ ! -x "$MCP_PYTHON" ]; then
+    echo "Missing MCP environment: $MCP_REPO (install its build extra first)" >&2
+    exit 1
+  fi
+  "$MCP_PYTHON" "$MCP_REPO/build_mcp.py" --dist-dir "$BUILD_DIR/dist"
+done
+
 echo ""
 echo "==> Done. Bundles at:"
 echo "    $BUILD_DIR/dist/stella-backend/"

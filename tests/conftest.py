@@ -18,6 +18,10 @@ from pathlib import Path
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _managed_mcp_opt_in_for_tests(monkeypatch):
+    monkeypatch.setenv('STELLA_MANAGED_MCP','0')
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 for _domain in ('memory', 'knowledge'):
     _backend = Path(__file__).resolve().parents[2] / 'Stella-Plugins' / 'plugins' / _domain / 'backend'
@@ -189,24 +193,22 @@ def briefing_plugin_env(monkeypatch):
 
 
 @pytest.fixture
-def email_plugin_env(monkeypatch, tmp_path):
-    from core.services import email_gateway, email_facade
-    repo = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv('STELLA_EMAIL_PLUGIN', '1')
-    monkeypatch.setenv('STELLA_EMAIL_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/email'))
-    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+def email_mcp_env(monkeypatch, tmp_path):
+    from core.services import email_facade
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setenv('STELLA_MANAGED_MCP','1')
     monkeypatch.setattr(email_facade, '_paths', lambda: (tmp_path / 'email.db', tmp_path / 'mailbox.json'))
     yield
-    email_gateway.shutdown_email_session()
+    for manager in ToolManager.instances():
+        manager._teardown_mcp_server('email')
 
 
 @pytest.fixture
-def elearning_plugin_env(monkeypatch, tmp_path):
-    from core.services import elearning_gateway, elearning_facade
-    repo = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN', '1')
-    monkeypatch.setenv('STELLA_ELEARNING_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/elearning'))
-    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+def elearning_mcp_env(monkeypatch, tmp_path):
+    from core.services import elearning_facade
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setenv('STELLA_MANAGED_MCP','1')
     monkeypatch.setattr(elearning_facade, '_paths', lambda: (tmp_path / 'elearning', tmp_path / 'briefing'))
     yield
-    elearning_gateway.shutdown_elearning_session()
+    for manager in ToolManager.instances():
+        manager._teardown_mcp_server('elearning')

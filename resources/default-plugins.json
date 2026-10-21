@@ -30,24 +30,6 @@
       ]
     },
     {
-      "pluginId": "stella.email",
-      "catalogRef": "official/stella.email",
-      "versionRange": "^1.0.0",
-      "defaultEnabled": true,
-      "requiredFor": [
-        "email"
-      ]
-    },
-    {
-      "pluginId": "stella.elearning",
-      "catalogRef": "official/stella.elearning",
-      "versionRange": "^1.0.0",
-      "defaultEnabled": true,
-      "requiredFor": [
-        "elearning"
-      ]
-    },
-    {
       "pluginId": "stella.briefing",
       "catalogRef": "official/stella.briefing",
       "versionRange": "^1.0.0",

@@ -1,10 +1,10 @@
-"""Core integration tests use the external plugin's test adapters and real domain."""
+"""Core integration tests use the independent MCP Server's test adapters and real domain."""
 import importlib.util
 import sys
 from pathlib import Path
 from importlib import import_module
 
-root = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace/plugins/elearning/tests'
+root = Path(__file__).resolve().parents[2] / 'MCP/elearning_crawler/tests/domain'
 name = 'stella_elearning_test_support'
 if name not in sys.modules:
     spec = importlib.util.spec_from_file_location(name, root / 'support.py', submodule_search_locations=[str(root)])

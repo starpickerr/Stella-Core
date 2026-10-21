@@ -194,7 +194,7 @@ def test_desktop_source_catalog_installs_all_first_party_plugins(tmp_path, monke
     catalog = resources / 'plugin-catalog.json'
     rows = json.loads(catalog.read_text())['plugins']
     expected = {f'stella.{name}' for name in
-                ['bills', 'calendar', 'tasks', 'email', 'elearning', 'briefing', 'automation', 'agent-hub', 'knowledge', 'memory']}
+                ['bills', 'calendar', 'tasks', 'briefing', 'automation', 'agent-hub', 'knowledge', 'memory']}
     assert {row['pluginId'] for row in rows} == expected
     store = PackageStore(tmp_path / 'installed')
     for row in rows:

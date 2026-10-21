@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timezone
 import pytest
 from tests.elearning_domain import settings, FakeCanvas, config, ElearningSource, DomainServiceCall, SyncError
-from agent.tools.elearning.elearning_tool import ElearningTool
 
 @pytest.fixture(autouse=True)
 def config_path(tmp_path, monkeypatch):
@@ -35,20 +34,13 @@ def test_elearning_tool_fetch_uses_shared_crawler_without_briefing_database(conf
     assert canvas.calls == calls
 
 
-def test_elearning_tool_is_registered_and_read_only():
+def test_elearning_is_discovered_by_mcp_instead_of_builtin_exports():
     import agent.tools as exports
-    from agent.permission.gateway import SecurityGateway
-    check_tool_call = SecurityGateway.check
     from agent.tools.tool_manager import ToolManager
-    assert "ElearningTool" in exports.__all__
-    assert exports.ElearningTool is ElearningTool
-    manager = ToolManager()
+    assert 'ElearningTool' not in exports.__all__
+    manager=ToolManager()
     manager._load_tools_from_init()
-    assert manager.tool_classes["elearning"] is ElearningTool
-    for action in ("courses", "fetch", "list_files"):
-        assert check_tool_call("read-only", "elearning", {"action": action})
-    assert not check_tool_call("read-only", "elearning", {"action": "sync_files"})
-    assert check_tool_call("workspace-write", "elearning", {"action": "sync_files"})
+    assert 'elearning' not in manager.tool_classes
 
 
 def test_elearning_credentials_are_protected_from_file_tools(config_path):

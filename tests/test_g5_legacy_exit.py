@@ -19,7 +19,7 @@ BACKEND_SPEC = REPO / "desktop" / "build" / "stella-backend.spec"
 RUNNER_SPEC = REPO / "desktop" / "build" / "stella-plugin-runner.spec"
 DEFAULT_PLUGINS = REPO / "resources" / "default-plugins.json"
 
-DOMAINS = ("bills", "tasks", "calendar", "email", "elearning", "briefing", "automation", "agent-hub", "knowledge", "memory")
+DOMAINS = ("bills", "tasks", "calendar", "briefing", "automation", "agent-hub", "knowledge", "memory")
 FORBIDDEN_TOP_LEVEL = {"agent", "application", "channel", "app"}
 
 
@@ -145,7 +145,7 @@ def test_legacy_plugin_manager_skips_runtime_packages_and_business_names(tmp_pat
     assert "Plugin Runtime" in legacy_skip_reason("anything", str(package))
     plain = tmp_path / "bills"
     plain.mkdir()
-    for name in ("bills", "Tasks", "stella.calendar", "briefing", "email", "elearning", "automation"):
+    for name in ("bills", "Tasks", "stella.calendar", "briefing", "automation"):
         assert legacy_skip_reason(name, str(plain)), name
     assert legacy_skip_reason("godcmd", str(plain)) is None
 
@@ -238,8 +238,6 @@ PORT_FACADES = {
     "calendar": ("STELLA_CALENDAR_PLUGIN", "CalendarPluginFacade"),
     "todos": ("STELLA_TODOS_PLUGIN", "TodosPluginFacade"),
     "bills": ("STELLA_BILLS_PLUGIN", "BillsPluginFacade"),
-    "email": ("STELLA_EMAIL_PLUGIN", "EmailPluginFacade"),
-    "elearning": ("STELLA_ELEARNING_PLUGIN", "ElearningPluginFacade"),
     "briefing": ("STELLA_BRIEFING_PLUGIN", "BriefingPluginFacade"),
 }
 
@@ -313,13 +311,14 @@ def test_application_port_briefing_has_only_plugin_facade(monkeypatch):
 
 
 @pytest.mark.parametrize("domain", ["email", "elearning"])
-def test_plugin_only_domains_refuse_legacy_fallback(monkeypatch, tmp_path, domain):
+def test_mcp_domains_refuse_legacy_fallback(monkeypatch, tmp_path, domain):
+    monkeypatch.setenv('STELLA_MANAGED_MCP','0')
     from application.api import Application, RequestContext
 
     _clear_domain_env(monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("STELLA_DATA_DIR", str(tmp_path))
-    with pytest.raises(RuntimeError, match="requires the stella"):
+    with pytest.raises(RuntimeError, match="MCP connection"):
         Application.port(domain, RequestContext(user_id="g5-user"))
 
 

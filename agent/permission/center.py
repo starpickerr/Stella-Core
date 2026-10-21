@@ -178,8 +178,8 @@ def connections(policy: dict | None = None) -> list[dict]:
     github_token = bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token"))
     github_verified = bool(github_token and cfg.get("github_verified_at"))
     try:
-        from core.services.email_gateway import email_plugin_enabled
-        if email_plugin_enabled():
+        from core.services.email_gateway import email_mcp_enabled
+        if email_mcp_enabled():
             from application import Application
             accounts = Application.port("email").list_accounts()
             if isinstance(accounts, dict):

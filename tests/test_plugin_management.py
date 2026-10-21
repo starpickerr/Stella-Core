@@ -179,7 +179,7 @@ def test_shared_installed_package_never_gives_new_user_legacy_full_grant(tmp_pat
                 pytest.fail('new user reached installed domain before migration')
 
 
-@pytest.mark.parametrize('domain', ['bills', 'calendar', 'tasks', 'briefing', 'email', 'elearning', 'automation'])
+@pytest.mark.parametrize('domain', ['bills', 'calendar', 'tasks', 'briefing', 'automation'])
 def test_first_party_settings_are_static_contract_valid_resources(tmp_path, domain):
     import json
     from core.plugins.package_ops import PackageStore

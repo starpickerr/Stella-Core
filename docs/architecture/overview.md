@@ -30,3 +30,11 @@ flowchart LR
 知识和记忆默认安装，可独立停用；不可用时不回退到 Core 业务实现。管理页面由插件声明贡献，React 宿主复用现有页面。知识沿用用户的 `knowledge/`，长期记忆首次迁入用户根目录的 `plugins/memory/`，旧 Markdown 保留且不再作为运行时写入目标。Core 会话数据库留在原路径，停用长期记忆不影响对话记录。迁移及安装测试使用隔离数据，已有安装包需重新构建才能包含这两个默认插件。
 
 更详细的数据路径见 [数据流](data-flow.md)。修改跨模块写入时，先定位 `Application` 命令与对应领域服务，检查是否已有幂等与恢复机制。
+
+## 邮箱与 eLearning MCP
+
+邮箱与学校抓取分别由工作区 `MCP/email_mcp`、`MCP/elearning_crawler` 独立仓库发布本地 stdio Server。Core 的 `core/mcp/managed.py` 注册可信默认连接；设置、简报与 Agent 通过同一 `ToolManager.call_mcp_tool` 使用 MCP Runtime。管理工具不注入 Agent；公开工具保留来源、启停、权限及取消。旧插件不再安装或启动，原有账号、cookies、SQLite、游标及下载文件保持原路径格式，由 Server 接管。
+
+迁移不抹除旧连接拒绝、插件授权撤销、后台用途或课程/文件夹范围。既有 scoped grants 由 Core 兼容检查，并通过 MCP 请求元数据向 Server 传递实际资源约束；该元数据不属于 Agent 可写工具参数。原生设置点击仅确认需要确认的操作，不能覆盖拒绝或为 Agent/后台调用确认。eLearning 下载仍需 Core 文件写权限，Server 限定配置根目录并保护本地文件。独立 eLearning 客户端用跨进程锁保护共享游标、审计和下载 manifest。
+
+开发启动发现兄弟 MCP 仓库的环境；独立部署可安装 console script。桌面构建调用各仓库 `build_mcp.py`，将独立冻结 Server 产物放在 backend 同级目录；缺失环境会明确构建失败，不回退旧插件或把冻结 backend 当作 Python。测试：`tests/test_managed_mcp_domains.py`、`tests/test_mcp_bound_resources.py`。

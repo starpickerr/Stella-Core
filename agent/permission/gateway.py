@@ -67,7 +67,7 @@ class PolicyDecision:
         return self.allowed
 
 
-_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "knowledge_search", "knowledge_get", "web_search", "web_fetch", "vision", "elearning"})
+_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "knowledge_search", "knowledge_get", "web_search", "web_fetch", "vision"})
 _WRITE_TOOLS = frozenset({"write", "edit", "bash", "memory_write", "knowledge_write"})
 _EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent", "agent_hub"})
 _ADMIN_TOOLS = frozenset({"evolution_undo", "skill"})
@@ -96,10 +96,11 @@ _claim_assigned: set[str] = set()
 _registered: dict[str, Capability] = {}
 _connections: dict[str, str] = {}
 _mcp_readonly: dict[str, bool] = {}
+_mcp_filesystem_write: dict[str, bool] = {}
 
 
 def register_tool(tool_name: str, capability: Capability, *, connection: str | None = None,
-                  read_only: bool = False) -> None:
+                  read_only: bool = False, filesystem_write: bool = False) -> None:
     if not _SAFE_NAME.fullmatch(tool_name) or not isinstance(capability, Capability):
         raise ValueError("invalid tool declaration")
     with _lock:
@@ -108,6 +109,7 @@ def register_tool(tool_name: str, capability: Capability, *, connection: str | N
             _connections[tool_name] = connection
             if connection.startswith("mcp:"):
                 _mcp_readonly[tool_name] = read_only
+                _mcp_filesystem_write[tool_name] = filesystem_write
 
 
 def declared_capability(tool_name: str) -> Optional[Capability]:
@@ -434,11 +436,6 @@ class SecurityGateway:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]
             risk, policy_key = ("L1", "workspace_write") if mutating else ("L0", "workspace_read")
-        elif tool_name == "elearning" and action == "sync_files":
-            # The tool itself restricts writes to the folder configured in eLearning settings.
-            resource_kind, resource, risk, policy_key = (
-                ResourceKind.USER_WORKSPACE, "eLearning selected course folder", "L1", "workspace_write")
-            event = "file_modify"
         elif tool_name == "subagent":
             resource_kind, resource, risk, policy_key = ResourceKind.AGENT_MANAGED, "Agent subagent", "L1", "managed"
         elif tool_name == "browser":
@@ -484,6 +481,8 @@ class SecurityGateway:
                 risk, policy_key = "L3", "high_risk"
             if _connections.get(tool_name, "").startswith("mcp:") and not _mcp_readonly.get(tool_name, False):
                 risk, policy_key = "L3", "high_risk"
+                if _mcp_filesystem_write.get(tool_name, False):
+                    prerequisites.append('workspace_write')
         elif tool_name in ("web_fetch", "web_search"):
             resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "external_api", "L2", "network"
             event = "external_access"
@@ -497,13 +496,18 @@ class SecurityGateway:
         elif scope.accounts and resource_kind == ResourceKind.EXTERNAL and str(args.get("account_id") or args.get("account") or "") not in scope.accounts:
             hard_reason = "Account is outside the current scope; the tool did not run."
         connection = _connections.get(tool_name, resource if resource in ("github", "external_api") else tool_name if resource_kind == ResourceKind.EXTERNAL else "")
-        grant = policy.get("connections", {}).get(connection, {})
-        if not hard_reason and grant.get("allowed") is False:
-            hard_reason = f"Connection {connection} was revoked."
-        if not hard_reason and grant.get("scopes") and "*" not in grant["scopes"]:
-            requested = str(args.get("scope") or (operation if operation not in ("execute", "read") else "read"))
-            if requested not in grant["scopes"]:
-                hard_reason = f"Connection {connection} does not grant scope {requested}."
+        connections = policy.get('connections', {})
+        grants = [connections.get(connection, {})]
+        # A protocol migration cannot erase the user's existing connection denial/scopes.
+        if connection in {'mcp:email', 'mcp:elearning'}:
+            grants.append(connections.get(connection.removeprefix('mcp:'), {}))
+        for grant in grants:
+            if not hard_reason and grant.get('allowed') is False:
+                hard_reason = f'Connection {connection} was revoked.'
+            if not hard_reason and grant.get('scopes') and '*' not in grant['scopes']:
+                requested = str(args.get('scope') or (operation if operation not in ('execute','read') else 'read'))
+                if requested not in grant['scopes']:
+                    hard_reason = f'Connection {connection} does not grant scope {requested}.'
         if resource_kind == ResourceKind.EXTERNAL and policy_key != "external":
             prerequisites.append("external")
         if risk == "L3" and policy_key != "high_risk":

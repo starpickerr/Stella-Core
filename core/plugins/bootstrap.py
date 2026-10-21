@@ -18,8 +18,6 @@ DOMAIN_ENV = {
     "stella.bills": "STELLA_BILLS_PLUGIN",
     "stella.calendar": "STELLA_CALENDAR_PLUGIN",
     "stella.tasks": "STELLA_TODOS_PLUGIN",
-    "stella.email": "STELLA_EMAIL_PLUGIN",
-    "stella.elearning": "STELLA_ELEARNING_PLUGIN",
     "stella.briefing": "STELLA_BRIEFING_PLUGIN",
     "stella.automation": "STELLA_AUTOMATION_PLUGIN",
     "stella.agent-hub": "STELLA_AGENT_HUB_PLUGIN",

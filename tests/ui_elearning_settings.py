@@ -53,15 +53,7 @@ def backend(route):
             )
         data["settings"] = settings
     elif path == "/api/plugins/runtime":
-        data["plugins"] = [
-            {
-                "pluginId": "stella.elearning",
-                "name": "eLearning",
-                "intent": "enabled",
-                "state": "stopped",
-                "version": "1.0.6",
-            }
-        ]
+        data["plugins"] = []
     elif path == "/api/models":
         data.update(
             providers=[{"id": "test", "configured": True, "label": "Test"}],

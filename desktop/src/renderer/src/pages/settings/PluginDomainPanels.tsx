@@ -2,16 +2,11 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { ExternalLink } from 'lucide-react'
 import { SettingsPanel } from '../briefing/SettingsPanel'
-import { MailboxSettings } from '../briefing/MailboxSettings'
-import { ElearningSettings } from '../briefing/ElearningSettings'
-import ElearningFileSettings from './ElearningFileSettings'
 import { t } from '../../i18n'
 
 /** First-party product settings that used to live as top-level Core tabs. */
 export function hasPluginDomainPanel(pluginId: string): boolean {
   return pluginId === 'stella.briefing'
-    || pluginId === 'stella.email'
-    || pluginId === 'stella.elearning'
     || pluginId === 'stella.automation'
     || pluginId === 'stella.tasks'
     || pluginId === 'stella.calendar'
@@ -39,23 +34,6 @@ export function PluginDomainPanel({ pluginId }: { pluginId: string }): React.Rea
         <OpenAppLink to="/briefing" label={t('settings_plugin_open_briefing')} />
         <SettingsPanel />
       </div>
-    )
-  }
-  if (pluginId === 'stella.email') {
-    return (
-      <section className="space-y-4" aria-label="邮箱账号">
-        <OpenAppLink to="/email" label={t('settings_plugin_open_email')} />
-        <MailboxSettings />
-      </section>
-    )
-  }
-  if (pluginId === 'stella.elearning') {
-    return (
-      <section className="space-y-6" aria-label="课程来源">
-        <OpenAppLink to="/elearning" label={t('settings_plugin_open_elearning')} />
-        <ElearningSettings />
-        <ElearningFileSettings />
-      </section>
     )
   }
   if (pluginId === 'stella.automation') {

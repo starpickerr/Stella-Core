@@ -18,8 +18,8 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
                                 "connections": {"browser": {"allowed": False}}}}
     monkeypatch.setattr("config.conf", lambda: live)
     monkeypatch.setattr("agent.prompt.builder.conf", lambda: live)
-    monkeypatch.setenv("STELLA_ELEARNING_PLUGIN", "1")
-    monkeypatch.setattr("core.services.elearning_facade.ElearningPluginFacade.get_settings", lambda self: {
+    monkeypatch.setattr('core.services.elearning_gateway.elearning_mcp_enabled',lambda:True)
+    monkeypatch.setattr("core.services.elearning_facade.ElearningMcpFacade.get_settings", lambda self: {
         "enabled": False, "configured": True, "file_sync_enabled": False,
         "file_sync_root": str(tmp_path / "selected"),
         "password": "TOPSECRET",
@@ -28,7 +28,7 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
     project_store.set_security_policy(str(project), {"extra_roots": [str(tmp_path / "extra")]})
     with identity_scope(session_id="conversation"):
         kwargs = {"workspace_dir": str(state), "project_dir": str(project),
-                  "permission_mode": "workspace-write", "tools": [SimpleNamespace(name="elearning")]}
+                  "permission_mode": "workspace-write", "tools": [SimpleNamespace(name="mcp_elearning_fetch",server_name="elearning")]}
         first = build_agent_system_prompt(**kwargs)
         assert "network=deny" in first
         assert "background=confirm" in first
@@ -56,5 +56,5 @@ def test_security_prompt_explains_disabled_sync_and_hard_boundaries():
     assert "受保护凭据读取和提权仍被禁止" in text
     assert "会话文件读取被拒绝不代表连接器被拒绝" in text
     assert "不要建议开放 workspace_outside" in text
-    assert "elearning list_files" in text
+    assert "eLearning MCP list_files" in text
     assert "不要读取 Cookie、用脚本直连 Canvas" in text

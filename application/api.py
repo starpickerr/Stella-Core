@@ -57,7 +57,7 @@ _METHODS = {
         "update_ledger", "delete_ledger", "list_statements", "get_statement",
         "export_ledger",
     }),
-    # Plugin-only domains: no legacy in-process service exists behind these ports.
+    # Managed MCP domains: no legacy in-process service exists behind these ports.
     "email": frozenset({
         "list_accounts", "get_account", "list_sources", "get_cursors", "test_connection",
         "list_folders", "fetch_messages", "save_account", "delete_account", "set_cursors",
@@ -80,7 +80,7 @@ _METHODS = {
 
 class _Port:
     # G5 routing policy (domain -> service behind the port):
-    # - bills, todos, calendar, briefing, email, elearning: plugin-only (no in-process service); raise unless the
+    # - bills, todos, calendar, briefing, email, elearning: managed MCP (no in-process service); raise unless the
     #   STELLA_<DOMAIN>_PLUGIN flag is on.
     # - automation: STELLA_<DOMAIN>_PLUGIN opt-in
     #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
@@ -111,18 +111,18 @@ class _Port:
                 from core.services.bills_facade import BillsPluginFacade
                 self._service = BillsPluginFacade()
             elif domain == "email":
-                from core.services.email_gateway import email_plugin_enabled
-                if not email_plugin_enabled():
-                    raise RuntimeError("email domain requires the stella.email plugin (STELLA_EMAIL_PLUGIN=1)")
-                from core.services.email_facade import EmailPluginFacade
-                self._service = EmailPluginFacade()
+                from core.services.email_gateway import email_mcp_enabled
+                if not email_mcp_enabled():
+                    raise RuntimeError("email MCP connection is disabled or unavailable")
+                from core.services.email_facade import EmailMcpFacade
+                self._service = EmailMcpFacade()
             elif domain == "elearning":
-                from core.services.elearning_gateway import elearning_plugin_enabled
-                if not elearning_plugin_enabled():
+                from core.services.elearning_gateway import elearning_mcp_enabled
+                if not elearning_mcp_enabled():
                     raise RuntimeError(
-                        "elearning domain requires the stella.elearning plugin (STELLA_ELEARNING_PLUGIN=1)")
-                from core.services.elearning_facade import ElearningPluginFacade
-                self._service = ElearningPluginFacade()
+                        "eLearning MCP connection is disabled or unavailable")
+                from core.services.elearning_facade import ElearningMcpFacade
+                self._service = ElearningMcpFacade()
             else:
                 from core.services.briefing_public import default_service
                 self._service = default_service()

@@ -31,7 +31,7 @@ DENIED_MESSAGE = (
 ELEARNING_DENIED_MESSAGE = (
     "Error: Direct access to eLearning login settings and session cookies is denied; "
     "workspace_outside permission does not grant credential access. Use the built-in "
-    "elearning tool for courses, fetch, or sync_files; it uses the saved session "
+    "eLearning MCP for courses, fetch, or sync_files; it uses the saved session "
     "internally. If login times out, retry login in eLearning settings."
 )
 

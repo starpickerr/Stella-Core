@@ -4,10 +4,11 @@ import json
 import queue
 import threading
 import time
+import pytest
 from unittest.mock import Mock, patch
 
 from agent.tools.browser.browser_service import BrowserCancelledError, BrowserService
-from agent.tools.mcp.mcp_client import McpClient
+from agent.tools.mcp.mcp_client import McpClient, McpCancelledError
 from agent.tools.web_fetch.web_fetch import WebFetch
 from agent.tools.web_search.web_search import WebSearch
 
@@ -50,7 +51,12 @@ def test_mcp_stdio_cancel_sends_notification_and_next_call_uses_new_request_id()
     client._proc = Mock(stdin=output)
     event = threading.Event()
     results = []
-    worker = threading.Thread(target=lambda: results.append(client.call_tool("slow", {}, cancel_event=event)), daemon=True)
+    def cancelled_call():
+        try:
+            client.call_tool("slow", {}, cancel_event=event)
+        except McpCancelledError as exc:
+            results.append(str(exc))
+    worker = threading.Thread(target=cancelled_call, daemon=True)
     worker.start()
     deadline = time.monotonic() + 1
     while not output.getvalue() and time.monotonic() < deadline:
@@ -83,8 +89,8 @@ def test_mcp_http_cancel_uses_bounded_socket_wait_and_closes_response():
 
     response = Response(b'{"jsonrpc":"2.0","id":1,"result":{"content":[]}}')
     with patch("agent.tools.mcp.mcp_client.urllib.request.urlopen", return_value=response) as open_request:
-        result = client.call_tool("slow", {}, cancel_event=event)
-    assert "cancelled" in result
+        with pytest.raises(McpCancelledError, match='cancelled'):
+            client.call_tool("slow", {}, cancel_event=event)
     assert open_request.call_args.kwargs["timeout"] == 5
     assert response.closed
 

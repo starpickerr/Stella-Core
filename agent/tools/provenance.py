@@ -5,7 +5,6 @@ _PLUGIN_TOOLS = {
     'briefing': ('stella.briefing',),
     'calendar': ('stella.calendar',),
     'todos': ('stella.tasks',),
-    'elearning': ('stella.elearning',),
     'agent_hub': ('stella.agent-hub',),
     'scheduler': ('stella.automation',),
     'memory': ('stella.memory',),

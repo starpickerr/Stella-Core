@@ -113,6 +113,8 @@ def backend(route):
     elif path == '/api/email/accounts' or path.startswith('/api/briefings'):
         data.update(rules=[], default_text='', sources=[], items=[], settings={'mailboxes': []},
                     actions={}, authorizations=[])
+    elif path in ('/api/briefings/elearning','/api/elearning/file-sync'):
+        data['settings']={'enabled':False,'configured':False,'base_url':'','username':'','courses':[],'course_options':[],'account_id':'','password_set':False,'password_masked':'','file_sync_root':''}
     elif path == '/api/mcp' and method == 'POST':
         mcp_posts.append(body)
         if fail_mcp_save[0]:
@@ -128,7 +130,7 @@ def backend(route):
     elif path == '/api/mcp' and empty_mcp[0]:
         data['servers'] = []
     elif path == '/api/mcp':
-        data['servers'] = [mcp_row('Documents'), mcp_row('Offline')]
+        data['servers'] = [mcp_row('Documents'), mcp_row('Offline'), {'name':'elearning','transport':'stdio','enabled':True,'state':'ready','tools':[],'settings_url':'/elearning'}]
     elif path == '/api/plugins/manage':
         plugin_posts.append(body)
         if body['action'] == 'update':
@@ -234,6 +236,11 @@ with sync_playwright() as playwright:
             expect(page.get_by_role('tab', name=tab, exact=True)).to_have_attribute('aria-selected', 'true')
         expect(page.get_by_text('已配置的 MCP 服务及其运行时工具。修改连接配置后，服务会在 Agent 加载时更新。', exact=True)).to_have_count(0)
         page.get_by_role('tab', name='MCP', exact=True).click()
+        learning = page.get_by_role('article', name='elearning', exact=True)
+        learning.get_by_role('link', name='设置', exact=True).click()
+        expect(page).to_have_url(test_url + '/#/elearning')
+        expect(page.get_by_role('textbox',name='课件保存目录',exact=True)).to_be_visible()
+        page.go_back(wait_until='networkidle')
         mcp = page.get_by_role('article', name='Documents')
         expect(mcp.get_by_text('已连接')).to_be_visible()
         mcp.get_by_role('button', name='工具').click()

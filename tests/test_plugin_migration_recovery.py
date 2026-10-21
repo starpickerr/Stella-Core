@@ -88,59 +88,48 @@ def test_older_package_cannot_migrate_a_newer_domain_schema(tmp_path):
     assert data.read_bytes() == before
 
 
-def test_email_migration_backup_and_transient_copies_are_private_and_guarded(tmp_path, monkeypatch):
-    import os
+
+def test_mcp_email_adoption_keeps_private_credentials_and_existing_tables(tmp_path, monkeypatch):
+    import json
     from common import state_dir
     from agent.tools.utils.credentials import is_credential_path
-    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
-    monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path / 'shared')
-    data = tmp_path / 'email/email.db'
-    data.parent.mkdir()
-    _legacy(data)
     from tests.email_domain import EmailService
-    EmailService(data).save_account({'action': 'add', 'host': 'imap.example.test',
-                                    'user': 'test@example.test', 'password': 'migration-test-secret'})
+    from tests.test_managed_mcp_domains import server_config
+    from agent.tools.mcp.mcp_client import McpClient
+    data=tmp_path/'email/email.db';data.parent.mkdir();_legacy(data)
+    EmailService(data).save_account({'host':'imap.example.test','user':'test@example.test','password':'migration-test-secret'})
     data.chmod(0o644)
-    state = ManagementStore(tmp_path / 'shared/plugin-packages')
-    seen = []
-    def inspect(stage, operation):
-        if stage in ('backed_up', 'migrated', 'data_selected'):
-            for key in ('backupRef', 'scratchRef', 'retiredRef'):
-                path = Path(operation['facts'][key])
-                if path.is_file():
-                    seen.append(path)
-                    assert is_credential_path(str(path)), (stage, key)
-                    with closing(sqlite3.connect(path)) as db:
-                        assert db.execute('SELECT password FROM email_accounts').fetchone()[0] == 'migration-test-secret'
-                    if os.name == 'posix':
-                        assert path.stat().st_mode & 0o777 == 0o600
-    result = MigrationCoordinator(state).run(Path('stella-plugins-workspace/plugins/email'),
-        user_id='local-default', data_handle={'dbPath': str(data), 'namespace': 'stella.email'}, checkpoint=inspect)
-    assert result['stage'] == 'data_selected' and seen
-    with closing(sqlite3.connect(result['facts']['backupRef'])) as db:
-        assert db.execute('SELECT value FROM user_kept').fetchone()[0] == 'original user data'
+    monkeypatch.setattr(state_dir,'briefing_db',lambda **_:tmp_path/'briefing/briefing.db')
+    client=McpClient(server_config('email',data.parent))
+    try:
+        assert client.initialize()
+        public=json.loads(client.call_tool('list_accounts',{}))['value']
+        assert 'migration-test-secret' not in json.dumps(public)
+        assert is_credential_path(str(data))
+        assert data.stat().st_mode & 0o777==0o600
+        with closing(sqlite3.connect(data)) as db:
+            assert db.execute('SELECT value FROM user_kept').fetchone()[0]=='original user data'
+            assert db.execute('SELECT password FROM email_accounts').fetchone()[0]=='migration-test-secret'
+    finally:
+        client.shutdown()
 
 
-def test_elearning_directory_migration_keeps_every_credential_copy_protected(tmp_path, monkeypatch):
-    from common import state_dir
-    from agent.tools.utils.credentials import is_credential_path
+def test_mcp_elearning_adoption_does_not_rewrite_existing_config_or_records(tmp_path,monkeypatch):
+    import json
     from tests.elearning_domain import settings
-    from core.plugins.management import ManagementStore
-    from core.plugins.migration import MigrationCoordinator
-    data = tmp_path / 'elearning'
-    monkeypatch.setattr(state_dir, 'briefing_db', lambda **_: tmp_path / 'briefing/briefing.db')
-    monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path / 'shared')
-    monkeypatch.setattr(settings, 'settings_path', lambda: data / 'elearning.json')
-    settings.save_settings({'enabled': True, 'username': 'student', 'password': 'migration-fake-secret'})
-    management = ManagementStore(tmp_path / 'shared/plugin-packages')
-    observed = []
-    def inspect(stage, op):
-        if stage in ('backed_up', 'migrated', 'data_selected'):
-            for key in ('backupRef', 'scratchRef', 'retiredRef'):
-                credential = Path(op['facts'][key]) / 'elearning.json'
-                if credential.is_file():
-                    observed.append((stage, key))
-                    assert is_credential_path(str(credential)), (stage, key)
-    result = MigrationCoordinator(management).run(Path('stella-plugins-workspace/plugins/elearning'),
-        user_id='local-default', data_handle={'dataDir': str(data), 'namespace': 'stella.elearning'}, checkpoint=inspect)
-    assert result['stage'] == 'data_selected' and observed
+    from tests.test_managed_mcp_domains import server_config
+    from agent.tools.mcp.mcp_client import McpClient
+    data=tmp_path/'elearning'
+    monkeypatch.setattr(settings,'settings_path',lambda:data/'elearning.json')
+    settings.save_settings({'username':'student','password':'migration-fake-secret','courses':['42']})
+    cfg=settings.settings_path().read_bytes()
+    cursor=data/'elearning-cursors.json';cursor.write_text('{"preserved":"cursor"}')
+    client=McpClient(server_config('elearning',data))
+    try:
+        assert client.initialize()
+        result=json.loads(client.call_tool('get_settings',{}))['value']
+        assert result['username']=='student' and 'migration-fake-secret' not in json.dumps(result)
+        assert settings.settings_path().read_bytes()==cfg
+        assert cursor.read_text()=='{"preserved":"cursor"}'
+    finally:
+        client.shutdown()

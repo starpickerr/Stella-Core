@@ -213,6 +213,9 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                       {t(`capability_mcp_${server.enabled ? server.state : 'disabled'}`)}
                     </span>
                   </div>
+                  {server.settings_url && ['/email', '/elearning'].includes(server.settings_url) && (
+                    <a href={`#${server.settings_url}`} className="text-sm text-accent hover:underline">{t('menu_settings')}</a>
+                  )}
                   <button type="button" aria-expanded={openServer === server.name} aria-controls={`mcp-tools-${server.name}`}
                     onClick={() => setOpenServer(openServer === server.name ? '' : server.name)}
                     className="inline-flex items-center gap-1 self-start text-xs text-content-secondary">
