@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Receipt,
   Shield,
+  Database,
   Bot,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -75,6 +76,7 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: 'nav_system',
     items: [
       { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
+      { path: '/data', labelKey: 'menu_data', icon: Database },
       { path: '/security', labelKey: 'menu_security', icon: Shield },
       { path: '/settings', labelKey: 'menu_settings', icon: Settings },
       { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },

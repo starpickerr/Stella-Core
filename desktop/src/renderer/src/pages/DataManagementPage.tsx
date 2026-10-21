@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
-import apiClient from '../../api/client'
-import type { DataCommandResult, DataRecord, DataSnapshot, DataSourceInfo } from '../../api/dataTypes'
-import { getLang } from '../../i18n'
-import { Toggle } from './primitives'
+import apiClient from '../api/client'
+import type { DataCommandResult, DataRecord, DataSnapshot, DataSourceInfo } from '../api/dataTypes'
+import { getLang, t } from '../i18n'
+import PageHeader from '../components/PageHeader'
+import { Toggle } from './settings/primitives'
 
 const c = (zh: string, en: string) => getLang() === 'zh' ? zh : en
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-default px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed'
@@ -16,7 +17,7 @@ const messageOf = (error: unknown) => error instanceof Error ? error.message : S
 const safeSettings = (source: DataSourceInfo) => ['/email', '/elearning'].includes(source.settings_url || '') ? source.settings_url : undefined
 const bytes = (value: number) => value < 1024 ? `${value} B` : value < 1048576 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`
 
-export default function DataManagement() {
+export default function DataManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const requested = new URLSearchParams(location.search).get('section') as Tab | null
@@ -97,7 +98,7 @@ export default function DataManagement() {
     finally { pending.current = false; if (mounted.current) setBusy(false) }
   }
 
-  const choose = (next: Tab) => navigate(`/settings?tab=data&section=${next}`, { replace: true, state: location.state })
+  const choose = (next: Tab) => navigate(`/data?section=${next}`, { replace: true, state: location.state })
   const sourceSelect = <label className="flex items-center gap-2 text-sm">{c('信息源', 'Source')}
     <select aria-label={c('选择信息源', 'Select source')} className={`${input} flex-1`} value={selectedId} disabled={busy || !state?.sources.length}
       onChange={event => { setSourceId(event.target.value); setOffset(0); setError('') }}>
@@ -114,7 +115,10 @@ export default function DataManagement() {
     })
   }
 
-  return <div className="space-y-4">
+  return <div className="flex-1 flex flex-col min-h-0">
+    <PageHeader><h2 className="text-xl font-bold text-content">{t('menu_data')}</h2></PageHeader>
+    <main data-stella-scroll className="flex-1 min-w-0 overflow-y-auto">
+    <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <nav aria-label={c('数据管理分类', 'Data management sections')} className="flex flex-wrap gap-1">
         {tabs.map((key, index) => <button key={key} type="button" disabled={busy} aria-current={tab === key ? 'page' : undefined}
@@ -189,6 +193,8 @@ export default function DataManagement() {
         </section>)}
       </div>}
     </>}
+    </div>
+    </main>
   </div>
 }
 

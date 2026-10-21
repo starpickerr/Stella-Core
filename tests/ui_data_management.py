@@ -271,12 +271,17 @@ with sync_playwright() as p:
         page.on("dialog", lambda dialog: dialog.accept())
         page.goto(url + "/#/settings", wait_until="networkidle")
         nav = page.get_by_role("navigation", name="设置分类")
-        nav.get_by_role("button", name="数据管理", exact=True).click()
-        expect(page).to_have_url(url + "/#/settings?tab=data")
+        expect(nav.get_by_role("button", name="数据管理", exact=True)).to_have_count(0)
+        expect(nav.get_by_role("button", name="安全中心", exact=True)).to_have_count(0)
+        sidebar = page.locator("aside").first
+        expect(sidebar.get_by_role("button", name="安全", exact=True)).to_have_count(1)
+        sidebar.get_by_role("button", name="数据管理", exact=True).click()
+        expect(page).to_have_url(url + "/#/data")
+        expect(page.get_by_role("heading", name="数据管理", exact=True)).to_be_visible()
+        expect(page.get_by_role("navigation", name="设置分类")).to_have_count(0)
         tabs = page.get_by_role("navigation", name="数据管理分类")
         for label in ["总览", "信息源", "数据记录", "同步与分发", "存储管理"]:
             expect(tabs.get_by_role("button", name=label, exact=True)).to_be_visible()
-        expect(nav.get_by_role("button", name="安全中心", exact=True)).to_be_visible()
         tabs.get_by_role("button", name="信息源", exact=True).click()
         card = page.get_by_test_id("data-source-" + source["id"])
         expect(card.get_by_role("link", name="配置账号")).to_have_attribute(
@@ -331,13 +336,13 @@ with sync_playwright() as p:
             expect(page.get_by_role("button", name="刷新", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
         page.screenshot(path="/tmp/stella-data-management-narrow.png", full_page=True)
-        nav.get_by_role("button", name="安全中心", exact=True).click()
+        sidebar.get_by_role("button", name="安全", exact=True).click()
         page.get_by_role("navigation", name="安全中心").get_by_role(
             "button", name="数据访问", exact=True
         ).click()
         expect(page.get_by_role("heading", name="数据访问", exact=True)).to_be_visible()
         expect(page.get_by_role("link", name="管理数据", exact=True)).to_have_attribute(
-            "href", "#/settings?tab=data"
+            "href", "#/data"
         )
         expect(
             page.get_by_role("button", name="清理临时文件", exact=True)
@@ -348,6 +353,31 @@ with sync_playwright() as p:
         grant.get_by_role("button", name="保存授权", exact=True).click()
         expect(grant.get_by_text("有效", exact=True)).to_be_visible()
         assert grants[0]["revoked"] is False
+        # Old bookmarks redirect to the sole page and preserve their section.
+        page.goto(
+            url + "/#/settings?tab=data&section=storage", wait_until="networkidle"
+        )
+        expect(page).to_have_url(url + "/#/data?section=storage")
+        expect(
+            page.get_by_role("navigation", name="数据管理分类").get_by_role(
+                "button", name="存储管理", exact=True
+            )
+        ).to_have_attribute("aria-current", "page")
+        expect(page.get_by_role("navigation", name="设置分类")).to_have_count(0)
+        page.reload(wait_until="networkidle")
+        expect(
+            page.get_by_role("navigation", name="数据管理分类").get_by_role(
+                "button", name="存储管理", exact=True
+            )
+        ).to_have_attribute("aria-current", "page")
+        sidebar.get_by_role("button", name="设置", exact=True).click()
+        settings_nav = page.get_by_role("navigation", name="设置分类")
+        expect(
+            settings_nav.get_by_role("button", name="数据管理", exact=True)
+        ).to_have_count(0)
+        expect(
+            settings_nav.get_by_role("button", name="安全中心", exact=True)
+        ).to_have_count(0)
         print(
             "PASS: data source intent, sync, records, denial, export, subscriptions/retry, storage, security boundary, desktop/narrow UI"
         )

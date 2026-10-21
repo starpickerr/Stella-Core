@@ -21,6 +21,7 @@ import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
 import SettingsPage from './pages/SettingsPage'
+import DataManagementPage from './pages/DataManagementPage'
 import KnowledgePage from './pages/KnowledgePage'
 import SkillsPage from './pages/SkillsPage'
 import MemoryPage from './pages/MemoryPage'
@@ -254,6 +255,7 @@ const App: React.FC = () => {
             <Route path="/skills/*" element={<Navigate to="/skills" replace />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/data" element={<DataManagementPage />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/plugins" element={<Navigate to="/skills#plugins" replace />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

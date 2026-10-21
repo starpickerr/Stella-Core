@@ -631,7 +631,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <SectionTitle icon={Database} to="/security?tab=privacy">{copy.overviewPrivacyTitle}</SectionTitle>
                   <div className="mt-4 space-y-2 text-sm">
                     {dataResources.slice(0, 4).map(item => <p key={item.id}>{item.name} <span className="text-content-secondary">{item.provider}</span></p>)}
-                    <Link className="text-accent" to="/settings?tab=data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
+                    <Link className="text-accent" to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
                   </div>
                 </section>
               </div>
@@ -1190,7 +1190,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <h2 className={heading}>{copy.privacyTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
                   <div className="mt-4 flex flex-wrap gap-4 text-sm text-accent">
-                    <Link to="/settings?tab=data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
+                    <Link to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
                     <Link to="/security?tab=connections">{getLang() === 'zh' ? '管理连接授权' : 'Manage connection access'}</Link>
                     <Link to="/security?tab=permissions">{getLang() === 'zh' ? '权限策略' : 'Permission policies'}</Link>
                   </div>
