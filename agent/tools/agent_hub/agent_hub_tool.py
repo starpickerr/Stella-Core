@@ -140,7 +140,7 @@ class AgentHubTool(BaseTool):
             return {"executionId": eid, "status": row["status"], "error": {"message": str(exc)}}
 
     def _start_execution(self, svc, created: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, Any]:
-        from core.execution.workspace_lease import allocate_workspace_lease
+        from core.workspace.service import WorkspaceService
         from core.services import agent_hub_gateway
         eid = created["executionId"]
         goal, task_kind = created["goal"], created["taskKind"]
@@ -171,7 +171,7 @@ class AgentHubTool(BaseTool):
                 "error": {"code": "no_provider", "message": str(exc)},
             }
 
-        lease = allocate_workspace_lease(
+        lease = WorkspaceService.allocate_lease(
             work_root=Path(svc.work_root),
             execution_id=eid,
             attempt_id=created["attemptId"],

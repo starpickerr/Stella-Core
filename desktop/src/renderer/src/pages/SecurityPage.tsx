@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { InheritedMcpGrant, SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
+import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
@@ -25,11 +26,11 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy'] as const
+const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy', 'plugins'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
   overview: ShieldCheck, permissions: SlidersHorizontal, background: Clock3,
-  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database,
+  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
 }
 
 const modeLabel = (
@@ -277,6 +278,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
+  const requestedSecret = new URLSearchParams(location.search).get('secret') || ''
+  useEffect(() => { setSecretName(requestedSecret); setSecretValue('') }, [requestedSecret])
+  const credentialOptions = [...new Set([
+    ...commonCredentials.map(([name]) => name),
+    ...(center?.secrets.map(item => item.name) || []),
+    ...(secretName && secretName !== 'other' ? [secretName] : []),
+  ])]
   useEffect(() => {
     setProjectDraft(project ? { ...project.policy, rules: { ...(project.policy.rules || {}) } } : null)
   }, [project?.path, project?.policy])
@@ -930,10 +938,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                           </div>
                         </div>
                         {custom ? (
-                          <Link to="/settings?tab=models" aria-label={`${copy.manageSecret} ${title}`}
+                          <button type="button" aria-label={`${copy.manageSecret} ${title}`}
+                            onClick={() => { setSecretName(item.name); setSecretValue('') }}
                             className={`${input} flex items-center gap-1.5 shrink-0`}>
                             {copy.manageSecret}<ArrowUpRight size={14} aria-hidden="true" />
-                          </Link>
+                          </button>
                         ) : <button
                           type="button"
                           disabled={busy}
@@ -953,17 +962,18 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       className={`${input} block w-full mt-2 font-normal`}
                       aria-label={copy.selectService}
                       value={secretName}
-                      onChange={(event) => setSecretName(event.target.value)}
+                      onChange={(event) => { setSecretName(event.target.value); setSecretValue('') }}
                     >
                       <option value="">{copy.selectService}</option>
-                      {commonCredentials.map(([name]) => (
+                      {credentialOptions.map((name) => (
                         <option key={name} value={name}>
-                          {securitySecretName(copy, name)}
+                          {securitySecretName(copy, name, center.secrets.find(item => item.name === name)?.display_name)}
                         </option>
                       ))}
                       <option value="other">{copy.otherCredential}</option>
                     </select>
                     </label>
+                    <>
                     <label className="min-w-0 text-sm font-medium">
                       {copy.secretValue}
                     <input
@@ -989,6 +999,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     >
                       {copy.saveSecret}
                     </button>
+                    {credentialName && center.secrets.some(item => item.name === credentialName) && <button
+                      disabled={busy} className="text-sm text-danger self-end min-h-10"
+                      onClick={() => void mutate(() => apiClient.deleteSecuritySecret(credentialName))}>{copy.deleteSecret}</button>}
+                    </>
+
                   </div>
                   {secretName === 'other' && (
                     <label className="block text-xs text-content-secondary mt-3">
@@ -1030,10 +1045,14 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     >
                       {copy.changePassword}
                     </button>
+                    {center.summary.app_password_set && <button type="button" disabled={busy} className={`${input} text-danger`} onClick={() => {
+                      if (window.confirm(getLang() === 'zh' ? '清除访问密码？' : 'Clear the access password?')) void mutate(() => apiClient.updateConfig({ web_password: '' }))
+                    }}>{getLang() === 'zh' ? '清除访问密码' : 'Clear access password'}</button>}
                   </div>
                 </section>
               </div>
             )}
+            {tab === 'plugins' && <PluginSettings baseUrl={baseUrl} authorizationOnly pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} />}
             {tab === 'activity' && (
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">

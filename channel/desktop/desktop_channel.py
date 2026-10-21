@@ -345,7 +345,7 @@ def _get_upload_dir() -> str:
 
 def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
     """Resolve the same working root used by the Agent and tool gateway."""
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     return str(resolve_context(session_id, agent_id).root)
 
 
@@ -454,7 +454,8 @@ def _serve_allowed_roots() -> list:
 
 def _is_path_allowed(real_path: str, session_id: str = '', agent_id: str = '') -> bool:
     try:
-        from agent.workspace.context import private_access, resolve_context
+        from agent.workspace.context import private_access
+        from core.workspace.service import resolve_context
         context = resolve_context(session_id or None, agent_id or None)
         access = private_access(real_path, context)
         if access == 'deny':
@@ -2054,7 +2055,9 @@ class DesktopChannel(ChatChannel):
             '/api/security/mcp-access', 'SecurityMcpAccessHandler',
             '/api/data', 'DataManagementHandler',
             '/api/data/records', 'DataRecordsHandler',
+            '/api/data/resources', 'DataResourcesHandler',
             '/api/data/command', 'DataCommandHandler',
+            '/api/data/elearning/sync-files', 'DataElearningSyncFilesHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -8040,7 +8043,7 @@ class LogsDownloadHandler:
 
 
 def _workspace_service(session_id: str = None, agent_id: str = None):
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     return WorkspaceService(_get_workspace_root(session_id, agent_id))
 
 
@@ -8059,7 +8062,7 @@ def _is_system_asset_rel(rel_path: str) -> bool:
 
 
 def _system_workspace_service():
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     from common.state_dir import state_root_str
     return WorkspaceService(state_root_str())
 
@@ -8724,7 +8727,11 @@ def _data_response(operation):
     _require_auth()
     web.header('Content-Type','application/json; charset=utf-8')
     web.header('Cache-Control','no-store')
-    try:return json.dumps({'status':'success',**operation()},ensure_ascii=False)
+    try:
+        from core.data.native import browse_scope
+        params = web.input(agent='', session='')
+        with browse_scope(getattr(params, 'agent', '') or None, getattr(params, 'session', '') or None):
+            return json.dumps({'status':'success',**operation()},ensure_ascii=False)
     except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
         return _api_reject('Data',error)
 
@@ -8733,7 +8740,8 @@ class DataManagementHandler:
     def GET(self):
         def operation():
             from core.data.api import current_controller
-            return current_controller().snapshot(web.input(refresh='0').refresh=='1')
+            from core.data.native import scope_options
+            return {**current_controller().snapshot(web.input(refresh='0').refresh=='1'), **scope_options()}
         return _data_response(operation)
 
 
@@ -8746,9 +8754,36 @@ class DataRecordsHandler:
         return _data_response(operation)
 
 
+class DataResourcesHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params = web.input(source_id='', resource_id='', q='', limit='50', offset='0', kind='')
+            controller = current_controller()
+            if getattr(params, 'resource_id', ''):
+                return controller.read_resource(params.source_id, params.resource_id)
+            return controller.resources(params.source_id, getattr(params, 'q', ''),
+                                        int(getattr(params, 'limit', '50')), int(getattr(params, 'offset', '0')),
+                                        kind=getattr(params, 'kind', '') or None)
+        return _data_response(operation)
+
+
 class DataCommandHandler:
     def POST(self):
         def operation():
             from core.data.api import current_controller
             return current_controller().command(json.loads(web.data() or b'{}'))
+        return _data_response(operation)
+
+
+class DataElearningSyncFilesHandler:
+    def POST(self):
+        def operation():
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) - {
+                'course_ids', 'file_ids', 'file_extensions', 'layout', 'offset', 'limit'
+            }:
+                raise ValueError('Unsupported eLearning file sync parameters')
+            from core.data.api import current_controller
+            return {'sync': current_controller().owner_operation('elearning', 'sync_files', body)}
         return _data_response(operation)

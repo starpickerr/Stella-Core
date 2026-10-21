@@ -37,7 +37,7 @@ export default function PluginContributionPage({ baseUrl, pluginId, pageId, titl
         <p role={error ? 'alert' : 'status'} className="text-sm text-content-secondary">{error || t('plugin_page_unavailable').replace('{name}', title)}</p>
         <div className="flex gap-4 text-sm text-accent">
           <button type="button" onClick={() => void check()}>{t('capability_refresh')}</button>
-          <Link to={`/settings?tab=plugins&plugin=${encodeURIComponent(pluginId)}`}>{t('plugin_page_settings')}</Link>
+          <Link to={`/skills?tab=plugins&view=settings&plugin=${encodeURIComponent(pluginId)}`}>{t('plugin_page_settings')}</Link>
         </div>
       </>}
     </div>

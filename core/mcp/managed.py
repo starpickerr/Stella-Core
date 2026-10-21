@@ -134,6 +134,12 @@ def invoke(domain, method, params, *, purpose=None):
 
 
 def native_user_action(host, method, purpose):
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    if active:
+        active.check_active()
+        if active.origin != 'ui' or active.purpose == 'background':
+            return False
     from core.plugins.caller import (
         current_caller_origin,
         current_delegation,

@@ -891,3 +891,68 @@ def test_mcp_connection_scope_controls_registered_tools(tmp_path, monkeypatch):
     assert SecurityGateway.check("workspace-write", "create_issue", {"title": "Example"}, policy=policy).allowed
     policy["connections"]["mcp:github"]["allowed"] = False
     assert SecurityGateway.check("workspace-write", "create_issue", {"title": "Example"}, policy=policy).kind is DecisionKind.DENY
+
+
+def test_custom_model_secret_updates_only_registered_credentials(tmp_path, monkeypatch):
+    from copy import deepcopy
+    import config as config_module
+    from agent.permission import center
+    providers = [{"id": "Mixed-ID", "name": "Custom", "api_key": "old-test", "api_base": "https://example.invalid/v1", "models": ["one"], "model": "one"}, {"id": "other", "api_key": "other-test"}]
+    saved = {"custom_providers": deepcopy(providers), "bot_type": "custom:Mixed-ID", "model": "one"}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(saved))
+    monkeypatch.setattr(config_module, "conf", lambda: saved)
+    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr(center, "_env_path", lambda: tmp_path / "empty.env")
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path / "state")
+    center.set_secret("CUSTOM:Mixed-ID", "replacement-test")
+    assert saved["custom_providers"][0] == {**providers[0], "api_key": "replacement-test"}
+    assert saved["custom_providers"][1] == providers[1]
+    assert json.loads(path.read_text()) == saved
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert "replacement-test" not in json.dumps(center.secrets())
+    before = path.read_text()
+    for name, value in [("CUSTOM:missing", "nope"), ("CUSTOM:Mixed-ID", "bad\nvalue")]:
+        with pytest.raises(ValueError):
+            center.set_secret(name, value)
+        assert path.read_text() == before
+    center.set_secret("CUSTOM:Mixed-ID", None)
+    assert saved["custom_providers"][0] == {**providers[0], "api_key": ""}
+    assert saved["bot_type"] == "custom:Mixed-ID"
+    assert not (tmp_path / "empty.env").exists()
+
+
+def test_search_secret_preserves_routing_and_replaces_legacy_key(tmp_path, monkeypatch):
+    import config as config_module
+    from agent.permission import center
+    from agent.tools.web_search.web_search import _get_api_key
+    saved = {"tools": {"web_search": {"bocha_api_key": "old-test", "strategy": "fixed", "provider": "bocha"}, "other": {"enabled": True}}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(saved))
+    monkeypatch.setattr(config_module, "conf", lambda: saved)
+    monkeypatch.setattr("agent.tools.web_search.web_search.conf", lambda: saved)
+    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path / "state")
+    monkeypatch.setenv("BOCHA_API_KEY", "stale-test")
+    assert any(row["name"] == "BOCHA_API_KEY" for row in center.secrets())
+    center.set_secret("BOCHA_API_KEY", "replacement-test")
+    assert _get_api_key("bocha") == "replacement-test"
+    center.set_secret("BOCHA_API_KEY", None)
+    assert _get_api_key("bocha") == ""
+    assert saved["tools"]["web_search"] == {"bocha_api_key": "", "strategy": "fixed", "provider": "bocha"}
+    assert saved["tools"]["other"] == {"enabled": True}
+    assert json.loads(path.read_text()) == saved
+
+
+def test_legacy_custom_key_revocation_clears_runtime_environment(tmp_path, monkeypatch):
+    import config as config_module
+    from agent.permission import center
+    saved = {"custom_api_key": "old-test"}
+    (tmp_path / "config.json").write_text(json.dumps(saved))
+    monkeypatch.setattr(config_module, "conf", lambda: saved)
+    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
+    monkeypatch.setattr("common.state_dir.shared_root", lambda: tmp_path / "state")
+    monkeypatch.setenv("CUSTOM_API_KEY", "stale-test")
+    center.set_secret("CUSTOM_API_KEY", None)
+    assert saved["custom_api_key"] == ""
+    assert "CUSTOM_API_KEY" not in config_module.os.environ

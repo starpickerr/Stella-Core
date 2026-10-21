@@ -879,7 +879,7 @@ const TodosPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {appleMenu && <div role="menu" aria-label="Apple 提醒事项操作" onKeyDown={event => { if (event.key === "Escape") setAppleMenu(false) }} className="absolute right-0 top-full z-30 mt-1 min-w-56 rounded-btn border border-default bg-surface p-1 shadow-lg">
               <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可用列表，帮我选择要导入的提醒事项，先预览变更，并在获得我确认后导入 Stella 事务。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">从 Apple 导入（Agent）</button>
               <button type="button" role="menuitem" onClick={() => askAppleAgent("请查看 Apple 提醒事项权限和可写列表，帮我选择要同步至 Apple 的 Stella 事务，先预览变更，并在获得我确认后执行。")} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">同步至 Apple（Agent）</button>
-              <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/settings?tab=connections&section=apple-reminders", { state: currentSettingsOrigin(location.pathname, location.search) }) }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
+              <button type="button" role="menuitem" onClick={() => { setAppleMenu(false); navigate("/todos/settings/apple", { state: currentSettingsOrigin(location.pathname, location.search) }) }} className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2">管理 Apple 提醒事项</button>
             </div>}
           </div>
         } /></div>

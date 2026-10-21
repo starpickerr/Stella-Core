@@ -16,6 +16,12 @@ export const commonCredentials = [
   ['QIANFAN_API_KEY', '千帆'],
   ['MOONSHOT_API_KEY', 'Moonshot'],
   ['DASHSCOPE_API_KEY', 'DashScope'],
+  ['MINIMAX_API_KEY', 'MiniMax'],
+  ['MIMO_API_KEY', 'MiMo'],
+  ['ZHIPU_AI_API_KEY', '智谱'],
+  ['ARK_API_KEY', '火山方舟'],
+  ['CUSTOM_API_KEY', '自定义模型'],
+  ['BOCHA_API_KEY', 'Bocha'],
 ] as const
 
 const locales = {
@@ -35,6 +41,7 @@ const locales = {
       secrets: '凭据',
       activity: '安全活动',
       privacy: '数据访问',
+      plugins: '插件授权',
     },
     overviewDefaultHelp: '新建项目和项目外对话默认采用此权限。',
     overviewBackgroundTitle: '后台任务权限',
@@ -333,6 +340,7 @@ const locales = {
       secrets: 'Credentials',
       activity: 'Activity',
       privacy: 'Data access',
+      plugins: 'Plugin authorization',
     },
     overviewDefaultHelp: 'New projects and standalone chats start with this access.',
     overviewBackgroundTitle: 'Background task access',

@@ -70,14 +70,16 @@ def permission_limit_scope(policy: dict, roots: tuple[str, ...]):
 @contextmanager
 def invocation_scope(tool_call_id):
     token = _tool_call_id.set(tool_call_id)
+    from core.execution.context import execution_scope
     try:
-        yield
+        with execution_scope():
+            yield
     finally:
         _tool_call_id.reset(token)
 
 
 def execution_workspace(session_id=None, agent_id=None, workspace=None):
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     from common.runtime_identity import current_identity
     identity = current_identity()
     context = resolve_context(identity.execution_session_id or session_id, agent_id,
@@ -126,7 +128,7 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     return mode, kwargs, binding
 
 
-def permission_denial(
+def _permission_denial(
     tool_name: str,
     arguments: Dict[str, Any],
     *,
@@ -219,7 +221,7 @@ def permission_denial(
             if not tool_enabled(tool_name, **capability_scope):
                 return f'Tool {tool_name} is disabled.'
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
-                from agent.workspace.context import resolve_context
+                from core.workspace.service import resolve_context
                 context = resolve_context(identity.execution_session_id or session_id, agent_id,
                                           task_id=identity.task_id)
                 if context.kind in ("session", "automation"):
@@ -246,3 +248,9 @@ def permission_denial(
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")
         # A failed policy check is never an authorization to run a tool.
         return f"Permission check failed for {tool_name}; the tool did not run."
+
+
+def permission_denial(tool_name, arguments, **kwargs):
+    """Compatibility entry point into the shared Core Security Service."""
+    from core.security.service import SecurityService
+    return SecurityService.authorize_tool(tool_name, arguments, **kwargs)

@@ -20,6 +20,7 @@ DEFINITIONS = [
 
 
 saved = []
+secret_saves = []
 project_chat = [False]
 project_mode = ["full-access"]
 
@@ -95,6 +96,8 @@ def backend(route):
                                 'policy': {'preset': project_mode[0], 'rules': {}, 'connections': {}},
                                 'project': '/isolated/project', 'authorized_roots': ['/isolated/project'],
                                 'mode_definitions': DEFINITIONS})
+    elif path == '/api/security/secrets' and route.request.method == 'POST':
+        secret_saves.append(route.request.post_data_json)
     elif path == '/api/security/confirmations':
         data['pending'] = []
     elif path == '/api/security/activity':
@@ -166,8 +169,8 @@ with sync_playwright() as playwright:
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-narrow.png', full_page=True, animations='disabled')
         page.set_viewport_size({'width': 1280, 'height': 900})
-        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
-        expect(page.get_by_text('灵算', exact=True)).to_be_visible()
+        expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
+        expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
         default_card = page.get_by_role('heading', name='默认权限').locator('xpath=..')
         expect(default_card).to_be_visible()
@@ -184,16 +187,16 @@ with sync_playwright() as playwright:
             page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
             expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
         page.get_by_role('button', name='凭据', exact=True).click()
-        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
-        expect(page.get_by_text('灵算', exact=True)).to_be_visible()
-        expect(page.get_by_text('自定义厂商', exact=True)).to_be_visible()
+        expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
+        expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
+        expect(page.get_by_text('自定义厂商', exact=True).first).to_be_visible()
         expect(page.get_by_text('CUSTOM:', exact=False)).to_have_count(0)
         expect(page.get_by_role('button', name='删除凭据 CUSTOM:6891955f')).to_have_count(0)
-        expect(page.get_by_role('link', name='管理 packyapi')).to_be_visible()
+        expect(page.get_by_role('button', name='管理 packyapi')).to_be_visible()
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials.png', full_page=True, animations='disabled')
         page.set_viewport_size({'width': 640, 'height': 900})
-        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-narrow.png', full_page=True, animations='disabled')
@@ -209,16 +212,26 @@ with sync_playwright() as playwright:
             mobile_title.evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-mobile.png', full_page=True, animations='disabled')
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='凭据', exact=True).click()
-        expect(page.get_by_text('packyapi', exact=True)).to_be_visible()
+        expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-mobile.png', full_page=True, animations='disabled')
-        manage = page.get_by_role('link', name='管理 packyapi')
+        page.get_by_role('combobox', name='选择服务', exact=True).select_option('OPENAI_API_KEY')
+        expect(page.get_by_label('密钥或密码', exact=True)).to_be_visible()
+        page.get_by_role('combobox', name='选择服务', exact=True).select_option('GITHUB_TOKEN')
+        expect(page.get_by_label('密钥或密码', exact=True)).to_be_visible()
+        manage = page.get_by_role('button', name='管理 packyapi')
         manage.focus()
         expect(manage).to_be_focused()
         manage.press('Enter')
-        expect(page).to_have_url(url + '/#/settings?tab=models')
-        expect(page.get_by_role('heading', name='厂商凭据')).to_be_visible()
+        expect(page.get_by_role('combobox', name='选择服务')).to_have_value('CUSTOM:6891955f')
+        expect(page.get_by_label('密钥或密码', exact=True)).to_be_visible()
+        page.get_by_label('密钥或密码', exact=True).fill('browser-test-key')
+        page.get_by_role('button', name='保存凭据', exact=True).click()
+        expect(page.get_by_label('密钥或密码', exact=True)).to_have_value('')
+        assert secret_saves[-1] == {'name': 'CUSTOM:6891955f', 'value': 'browser-test-key'}
+        page.goto(url + '/#/security?tab=secrets&secret=BOCHA_API_KEY', wait_until='networkidle')
+        expect(page.get_by_role('combobox', name='选择服务')).to_have_value('BOCHA_API_KEY')
         english = browser.new_page(viewport={'width': 1280, 'height': 900})
         english.on('pageerror', lambda error: errors.append(str(error)))
         english.add_init_script("""localStorage.setItem('stella_lang','en');
@@ -232,8 +245,8 @@ with sync_playwright() as playwright:
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-dark-en.png', full_page=True, animations='disabled')
         english.get_by_role('navigation', name='Security Center').get_by_role('button', name='Credentials', exact=True).click()
-        expect(english.get_by_text('packyapi', exact=True)).to_be_visible()
-        expect(english.get_by_text('Custom provider', exact=True)).to_be_visible()
+        expect(english.get_by_text('packyapi', exact=True).first).to_be_visible()
+        expect(english.get_by_text('Custom provider', exact=True).first).to_be_visible()
         expect(english.get_by_text('CUSTOM:', exact=False)).to_have_count(0)
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-credentials-dark-en.png', full_page=True, animations='disabled')

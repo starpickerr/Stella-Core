@@ -39,6 +39,12 @@ flowchart LR
 
 开发启动发现兄弟 MCP 仓库的环境；独立部署可安装 console script。桌面构建调用各仓库 `build_mcp.py`，将独立冻结 Server 产物放在 backend 同级目录；缺失环境会明确构建失败，不回退旧插件或把冻结 backend 当作 Python。测试：`tests/test_managed_mcp_domains.py`、`tests/test_mcp_bound_resources.py`。
 
+## 工作区、执行上下文与安全服务
+
+Core Workspace Service 统一运行目录与文件浏览，Execution Context 绑定不可变执行身份、工作区和调用约束，Security Service 复用现有 Gateway/Grant 进行实时授权。工具、插件 callback、子 Agent 和模型边界及旧数据兼容见[工作区与执行服务](execution-services.md)。
+
 ## 数据服务
 
-`core/data` 提供用户级通用来源、采集检查点、去重记录与可靠变更通知。邮箱提供者集中映射一次 MCP，简报通过通用 DataSource 或受信消费者读取，权限继续由现有 Security/MCP/Tool Runtime 决定。主侧边栏「数据管理」负责数据生命周期，安全中心「数据访问」负责访问策略。契约、事件语义与阶段范围见 [数据服务](data-service.md)。
+`core/data` 提供 Provider / Source / Resource 目录、采集检查点、去重记录与可靠变更通知。邮箱保留采集链路；eLearning、授权工作区及事务、日程、账单、简报、知识、记忆通过原 MCP、Workspace 或插件 RPC 提供资源引用。正文仍由原所有者管理，读取前后复查当前授权与来源状态。契约、事件语义与性能限制见[数据服务](data-service.md)。
+
+Desktop 默认浏览资源，来源、同步分发与存储是辅助视图；模型、能力、安全、通用各自承载对应配置，Agent 配置由 Agent 菜单进入。凭据的唯一编辑器位于安全中心，模型页只显示状态并跳转。旧设置页与来源路由保留兼容跳转。当前入口与表单归属见[信息架构与配置入口](information-architecture.md)。

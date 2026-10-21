@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from common.log import logger
-from common.runtime_identity import identity_scope
+from core.execution.context import child_execution_scope
 
 # Nesting depth of the currently running work. 0 is the main Agent. Lives in a
 # ContextVar rather than on the Agent because sub agents run on worker threads,
@@ -170,7 +170,7 @@ def _run_one(parent, template, task: SubagentTask, index: int, cancel_event,
         # A fresh run_id under the parent's agent and session: state written by
         # the sub agent lands in the right workspace, and its trace is
         # attributable to this spawn rather than to the parent's turn.
-        with identity_scope(run_id=run_id):
+        with child_execution_scope(run_id):
             _depth.set(_depth.get() + 1)
             child = _build_child(parent, template, task)
             from agent.runtime.tool_invocation import permission_limit_scope

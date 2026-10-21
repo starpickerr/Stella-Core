@@ -21,6 +21,7 @@ import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
 import SettingsPage from './pages/SettingsPage'
+import { GeneralPage, ModelsPage, AgentSettingsPage, AppleSettingsPage } from './pages/ConfigurationPages'
 import DataManagementPage from './pages/DataManagementPage'
 import KnowledgePage from './pages/KnowledgePage'
 import SkillsPage from './pages/SkillsPage'
@@ -32,8 +33,7 @@ import TodosPage from './pages/TodosPage'
 import CalendarPage from './pages/CalendarPage'
 import BriefingPage from './pages/BriefingPage'
 import BillsPage from './pages/BillsPage'
-import EmailPage from './pages/EmailPage'
-import ElearningPage from './pages/ElearningPage'
+import SourceSettingsPage from './pages/data/SourceSettingsPage'
 import SecurityPage from './pages/SecurityPage'
 import PluginPageHost from './pages/plugins/PluginPageHost'
 import PluginContributionPage from './pages/plugins/PluginContributionPage'
@@ -143,7 +143,7 @@ const App: React.FC = () => {
         useSessionStore.getState().newSession()
         navigate('/')
       } else if (action === 'open-settings') {
-        navigate('/settings')
+        navigate('/general')
       } else if (action === 'view-logs') {
         navigate('/logs')
       }
@@ -246,8 +246,10 @@ const App: React.FC = () => {
 
             <Route path="/agent-hub" element={<PluginPageHost baseUrl={backend.baseUrl} pluginId="stella.agent-hub" pageId="agent-hub.main" title={t('menu_agent_hub')} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
-            <Route path="/email" element={<EmailPage baseUrl={backend.baseUrl} />} />
-            <Route path="/elearning" element={<ElearningPage baseUrl={backend.baseUrl} />} />
+            <Route path="/email" element={<Navigate to={'/data/sources/email' + location.search} replace state={location.state} />} />
+            <Route path="/elearning" element={<Navigate to={'/data/sources/elearning' + location.search} replace state={location.state} />} />
+            <Route path="/data/sources/email" element={<SourceSettingsPage owner="email" />} />
+            <Route path="/data/sources/elearning" element={<SourceSettingsPage owner="elearning" />} />
             {/* Automation product UI is the mature scheduler page (侧栏「定时」). */}
             <Route path="/automation" element={<Navigate to="/tasks" replace />} />
             <Route path="/knowledge" element={<PluginContributionPage baseUrl={backend.baseUrl} pluginId="stella.knowledge" pageId="knowledge.main" title="知识"><KnowledgePage baseUrl={backend.baseUrl} /></PluginContributionPage>} />
@@ -258,9 +260,12 @@ const App: React.FC = () => {
             <Route path="/data" element={<DataManagementPage />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/plugins" element={<Navigate to="/skills#plugins" replace />} />
-            <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
-            {/* Legacy /models route now lives as a tab inside settings */}
-            <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/general" element={<GeneralPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
+            <Route path="/models" element={<ModelsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/agent-settings" element={<AgentSettingsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/calendar/settings/apple" element={<AppleSettingsPage kind="calendar" />} />
+            <Route path="/todos/settings/apple" element={<AppleSettingsPage kind="todos" />} />
             <Route path="/logs" element={<LogsPage baseUrl={backend.baseUrl} />} />
             {product.routes?.map((r) => (
               <Route key={r.path} path={r.path} element={r.element} />

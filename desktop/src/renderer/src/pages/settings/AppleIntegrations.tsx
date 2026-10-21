@@ -290,10 +290,10 @@ function AppleConnectionSection({ kind, focus }: { kind: Kind; focus: boolean })
   </section>
 }
 
-export default function AppleIntegrations({ section }: { section: string | null }) {
+export default function AppleIntegrations({ section, kind }: { section: string | null; kind?: Kind }) {
   return <div className="space-y-5">
     <p className="flex items-center gap-2 px-1 text-xs text-content-tertiary"><Apple size={14} />日历与提醒事项分别授权和配置。每次连接或传输前先查看数量。</p>
-    <AppleConnectionSection kind="calendar" focus={section === 'apple-calendar'} />
-    <AppleConnectionSection kind="todos" focus={section === 'apple-reminders'} />
+    {(!kind || kind === 'calendar') && <AppleConnectionSection kind="calendar" focus={section === 'apple-calendar'} />}
+    {(!kind || kind === 'todos') && <AppleConnectionSection kind="todos" focus={section === 'apple-reminders'} />}
   </div>
 }

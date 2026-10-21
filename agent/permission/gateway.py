@@ -266,7 +266,7 @@ class SecurityGateway:
         hard_reason = None
         private_context = None
         try:
-            from agent.workspace.context import resolve_context
+            from core.workspace.service import resolve_context
             from common.runtime_identity import current_identity
             identity = current_identity()
             private_context = resolve_context(identity.execution_session_id or session_id, agent_id,

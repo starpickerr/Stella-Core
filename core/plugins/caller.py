@@ -29,17 +29,29 @@ def invocation_purpose_scope(purpose):
 
 
 def current_invocation_purpose():
-    return _INVOCATION_PURPOSE.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    legacy = _INVOCATION_PURPOSE.get()
+    if legacy == 'background' or active is not None and active.purpose == 'background':
+        return 'background'
+    return active.purpose if active is not None else legacy
 
 
 def current_invocation_deadline():
-    candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline')]
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    candidates = [_INVOCATION_DEADLINE.get(), (_DELEGATION.get() or {}).get('deadline'),
+                  active.deadline if active else None]
     return min((value for value in candidates if value is not None), default=None)
 
 
 def remaining_invocation_seconds():
     from core.plugins.cancellation import check_cancelled
     check_cancelled()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    if active:
+        active.check_active()
     deadline = current_invocation_deadline()
     if deadline is None:
         return None
@@ -79,7 +91,9 @@ def caller_origin_scope(source: str):
 
 
 def current_caller_origin() -> str | None:
-    return _CALLER_ORIGIN.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    return active.origin if active is not None else _CALLER_ORIGIN.get()
 
 
 def plugin_user_id() -> str:
@@ -143,6 +157,18 @@ def managed_data_lease(plugin_id: str, *, mechanism: bool = False, user_id: str 
         yield
 
 
+@contextmanager
+def gateway_invocation_scope(module_name):
+    """Share a gateway's worker slot, admission lease and budget across adapters."""
+    with _LOCKS_GUARD:
+        lock = _GATEWAY_LOCKS.setdefault(module_name, RLock())
+    with invocation_budget(), invocation_lock(lock):
+        domain = module_name.rsplit('.', 1)[-1].removesuffix('_gateway')
+        plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
+        with managed_data_lease(plugin_id):
+            yield
+
+
 def serialized_gateway(function):
     with _LOCKS_GUARD:
         lock = _GATEWAY_LOCKS.setdefault(function.__module__, RLock())
@@ -150,24 +176,28 @@ def serialized_gateway(function):
     @wraps(function)
     def call(*args, **kwargs):
         if function.__name__.startswith(("invoke_", "ensure_")):
-            with invocation_budget(), invocation_lock(lock):
-                domain = function.__module__.rsplit('.', 1)[-1].removesuffix('_gateway')
-                plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
-                with managed_data_lease(plugin_id):
-                    return function(*args, **kwargs)
+            with gateway_invocation_scope(function.__module__):
+                return function(*args, **kwargs)
         with invocation_lock(lock, enforce_deadline=False):
             return function(*args, **kwargs)
     return call
 
 
 def current_consumer_plugin() -> str | None:
-    return _CONSUMER_PLUGIN.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    legacy = _CONSUMER_PLUGIN.get()
+    if active is not None and active.consumer_plugin_id:
+        if legacy is not None and legacy != active.consumer_plugin_id:
+            raise PermissionError('delegation consumer cannot replace execution consumer')
+        return active.consumer_plugin_id
+    return legacy
 
 
 @contextmanager
 def consumer_plugin_scope(plugin_id: str):
     """Core-owned delegation scope; never populated from a public request body."""
-    parent = _CONSUMER_PLUGIN.get()
+    parent = current_consumer_plugin()
     if parent is not None and parent != plugin_id:
         raise PermissionError('delegation consumer cannot be replaced')
     token = _CONSUMER_PLUGIN.set(plugin_id)
@@ -195,7 +225,7 @@ def delegation_scope(context: dict, caller_plugin: str, deadline):
                                     (parent or {}).get('purpose') == 'background') else 'interactive',
         'chain': [*(context.get('delegationChain') or []), caller_plugin]})
     origin_token = _CALLER_ORIGIN.set(root_origin)
-    consumer_token = _CONSUMER_PLUGIN.set(_CONSUMER_PLUGIN.get() or caller_plugin)
+    consumer_token = _CONSUMER_PLUGIN.set(current_consumer_plugin() or caller_plugin)
     try:
         yield
     finally:

@@ -58,7 +58,7 @@ def credential_denial_message(absolute_path: str) -> str:
 
 def protected_credential_paths() -> set[str]:
     from config import get_data_root, get_weixin_credentials_path
-    from common.state_dir import mcp_config_file, shared_root, state_root, briefing_db
+    from common.state_dir import mcp_config_file, shared_root, state_root, briefing_db, scheduler_file
     email_db = briefing_db(ensure=False).parent.parent / "email/email.db"
     elearning_config = briefing_db(ensure=False).with_name('elearning.json')
     return {os.path.realpath(path) for path in (
@@ -74,6 +74,8 @@ def protected_credential_paths() -> set[str]:
         str(state_root() / "BOOTSTRAP.md"),
         str(elearning_config),
         str(briefing_db(ensure=False).with_name("mailbox.json")),
+        *(str(db) + suffix for db in (briefing_db(ensure=False), scheduler_file().with_name('automation.db'))
+          for suffix in ('', '-wal', '-shm', '-journal')),
         *(str(email_db) + suffix for suffix in ("", "-wal", "-shm", "-journal")),
     )}
 
@@ -84,7 +86,8 @@ def protected_credential_folders() -> set[str]:
     from common.state_dir import briefing_db, shared_root
     user = briefing_db(ensure=False).parent.parent
     folders = {
-        user / 'email', user / 'elearning', user / 'data', user / 'briefing' / 'elearning-sessions',
+        user / 'email', user / 'elearning', user / 'data', user / 'plugins',
+        user / 'bills', user / 'todos', user / 'calendar', user / 'agent-hub', user / 'briefing' / 'elearning-sessions',
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
     }

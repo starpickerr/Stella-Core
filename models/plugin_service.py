@@ -66,6 +66,8 @@ _MODEL_SLOTS = threading.BoundedSemaphore(4)
 
 def invoke(method, payload):
     from core.plugins.caller import remaining_invocation_seconds
+    from core.security.service import check_model_authorization
+    check_model_authorization()
     remaining_invocation_seconds()
     if not _MODEL_SLOTS.acquire(blocking=False):
         raise RuntimeError('model service busy; retry later')
@@ -85,6 +87,7 @@ def invoke(method, payload):
     while not done.wait(0.025):
         remaining_invocation_seconds()
     remaining_invocation_seconds()
+    check_model_authorization()
     if errors:
         raise errors[0]
     return result[0]

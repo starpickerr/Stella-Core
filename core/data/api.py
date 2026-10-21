@@ -43,7 +43,7 @@ class DataController:
             state = self.service.sync_state(source["id"])
             sources.append(
                 {
-                    key: source[key]
+                    key: source.get(key)
                     for key in [
                         "id",
                         "name",
@@ -66,6 +66,9 @@ class DataController:
             sources[-1].update(
                 {key: state[key] for key in ["running", "last_run", "error"]}
             )
+            sources[-1]["operations"] = sorted(self.service._operations(source))
+            sources[-1]["representation"] = "collection" if callable(getattr(provider, "fetch", None)) else "reference"
+            sources[-1]['resource_kinds'] = source.get('resource_kinds', [source['kind']])
             sources[-1]["available"] = (
                 source["present"] and getattr(provider, "available", lambda: True)()
             )
@@ -79,6 +82,7 @@ class DataController:
             ).fetchone()[0]
         return {
             "sources": sources,
+            "providers": self.service.providers.descriptors(),
             "record_count": count,
             "subscriptions": subscriptions,
             "deliveries": deliveries,
@@ -92,6 +96,19 @@ class DataController:
 
     def records(self, source_id, query="", limit=50, offset=0):
         return self.service.query(source_id, query, limit, offset)
+
+    def resources(self, source_id, query='', limit=50, offset=0, *, kind=None):
+        return self.service.resources(source_id, query, limit, offset, kind=kind)
+
+    def read_resource(self, source_id, resource_id):
+        return self.service.read_resource(source_id, resource_id)
+
+    def owner_operation(self, provider_id, operation, values):
+        sources = self.service.discover()['sources']
+        active = [source for source in sources if source['provider'] == provider_id and source['present']]
+        if len(active) != 1:
+            raise PermissionError('Source owner is unavailable or ambiguous')
+        return self.service.owner_operation(active[0]['id'], operation, values)
 
     def command(self, body):
         if not isinstance(body, dict):
@@ -193,3 +210,14 @@ class DataController:
 
 def current_controller():
     return DataController()
+
+
+def invoke_public(method, payload):
+    """Read-only plugin contract. Identity comes from the host callback scope."""
+    controller = current_controller()
+    allowed = {'resources': {'source_id', 'query', 'limit', 'offset'},
+               'read_resource': {'source_id', 'resource_id'}}
+    if method not in allowed or not isinstance(payload, dict) or set(payload) - allowed[method]:
+        raise PermissionError('Data method or parameters are not public')
+    result = getattr(controller, method)(**payload)
+    return {'status': 'succeeded', 'sideEffects': 'none', 'value': result}

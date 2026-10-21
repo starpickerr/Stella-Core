@@ -177,7 +177,7 @@ const BriefingPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       <div className="flex gap-2">
         <button type="button" disabled={generating || marking} onClick={() => { clearRunError(); void load(); void loadSources(); setRevision((n) => n + 1) }} aria-label={t('briefing_refresh')}
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2 disabled:opacity-50"><RefreshCw size={15} /></button>
-        <button type="button" onClick={() => navigate('/settings?tab=plugins&plugin=stella.briefing', { state: currentSettingsOrigin(location.pathname, location.search) })} aria-label={t('briefing_settings')}
+        <button type="button" onClick={() => navigate('/skills?tab=plugins&view=settings&plugin=stella.briefing', { state: currentSettingsOrigin(location.pathname, location.search) })} aria-label={t('briefing_settings')}
           className="h-8 px-2 rounded-btn border border-default text-content-secondary hover:bg-surface-2"><Settings size={15} /></button>
         <button type="button" disabled={loading || sourcesLoading || generating || marking || !sources.length} onClick={() => void generate()}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-btn bg-accent text-accent-contrast hover:bg-accent-hover text-sm font-medium disabled:opacity-50">

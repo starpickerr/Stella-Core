@@ -82,7 +82,7 @@ def test_settings_retains_drafts_reports_conflict_and_approves_independently(tmp
             dom_url = re.search(r'from "([^"]*/deps/react-dom_client\.js(?:\?[^"]*)?)"', compiled).group(1)
             router_source = urllib.request.urlopen(origin + '/src/App.tsx').read().decode()
             router_url = re.search(r'from "([^"]*/deps/react-router-dom\.js(?:\?[^"]*)?)"', router_source).group(1)
-            html = '''<!doctype html><html><body><div id="root" style="max-width:800px;margin:24px auto"></div>
+            html = '''<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="max-width:800px;margin:24px auto"></div>
 <script type="module">
 import '/@vite/client';
 import RefreshRuntime from '/@react-refresh';
@@ -92,14 +92,20 @@ const ReactDOM = (await import('DOM_URL')).default;
 const Settings = (await import('/src/pages/settings/PluginSettings.tsx')).default;
 const {MemoryRouter} = await import('ROUTER_URL');
 await import('/src/index.css');
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter, null, React.createElement(Settings, {baseUrl: window.location.origin})));
+function Harness() {
+  const [authorizationOnly, setAuthorizationOnly] = React.useState(false);
+  return React.createElement(React.Fragment, null,
+    React.createElement('button', {onClick: () => setAuthorizationOnly(false)}, '配置页面'),
+    React.createElement('button', {onClick: () => setAuthorizationOnly(true)}, '授权页面'),
+    React.createElement(Settings, {baseUrl: window.location.origin, authorizationOnly}));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter, null, React.createElement(Harness)));
 </script></body></html>'''.replace('REACT_URL', react_url).replace('DOM_URL', dom_url).replace('ROUTER_URL', router_url)
             page.route('**/plugin-test', lambda route: route.fulfill(body=html, content_type='text/html'))
             page.goto(origin + '/plugin-test')
             page.wait_for_load_state('networkidle')
             assert not errors, errors
-            page.get_by_role('radio', name='授权', exact=True).click()
-            expect(page.get_by_role('button', name='审阅授权范围')).to_be_visible()
+            expect(page.get_by_role('radio', name='授权', exact=True)).to_have_count(0)
             page.get_by_role('radio', name='常规').click()
             page.get_by_label('名称').fill('保留草稿')
             page.get_by_role('radio', name='其他类别').click()
@@ -112,7 +118,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
             expect(page.get_by_label('名称')).to_have_value('保留草稿')
             page.get_by_role('button', name='保存本类别').click()
             expect(page.get_by_role('status')).to_have_text('本类别已保存')
-            page.get_by_role('radio', name='授权', exact=True).click()
+            page.get_by_role('button', name='授权页面', exact=True).click()
             page.get_by_role('button', name='审阅授权范围').click()
             expect(page.get_by_role('dialog')).to_be_visible()
             expect(page.get_by_role('dialog')).to_contain_text('user: alice')

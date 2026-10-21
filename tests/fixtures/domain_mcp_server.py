@@ -31,7 +31,15 @@ if args.domain == "elearning":
 
         def list(self, path, params=None):
             if path.endswith("/courses"):
-                return [{"id": 42, "name": "课程"}]
+                return ([{"id": 42, "name": "课程"}, {"id": 43, "name": "未授权课程"}]
+                        if (self.service.store.root / 'second-course').exists()
+                        else [{"id": 42, "name": "课程"}])
+            if path.endswith('/discussion_topics'):
+                return [{'id': 1, 'title': '公告', 'message': '<p>Owner announcement</p>',
+                         'posted_at': '2026-09-08T23:00:00Z'}]
+            if path.endswith('/assignments'):
+                return [{'id': 2, 'name': '作业', 'description': '<p>Owner assignment</p>',
+                         'updated_at': '2026-09-08T23:00:00Z'}]
             if path.endswith("/files"):
                 return [
                     {

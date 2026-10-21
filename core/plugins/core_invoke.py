@@ -1,8 +1,9 @@
 """Reverse channel dispatch into a narrow list of existing public services."""
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import importlib
 
-from core.plugins.caller import (delegation_scope, plugin_user_id, current_delegation, user_grant_ref, managed_plugin, current_consumer_plugin, current_invocation_purpose)
+from core.plugins.caller import (delegation_scope, plugin_user_id, current_delegation, user_grant_ref, managed_plugin, current_consumer_plugin)
 from core.plugins.contract import validate_operation_result
 from core.plugins.lifecycle import DOMAINS, domain_data_handle
 from models.plugin_service import invoke as invoke_model_service
@@ -33,6 +34,14 @@ PUBLIC_SERVICES = {plugin_id + '@1': (lambda method, payload, pid=plugin_id: _do
 PUBLIC_SERVICES['stella.models@1'] = invoke_model_service
 
 
+def _data_invoke(method, payload):
+    from core.data.api import invoke_public
+    return invoke_public(method, payload)
+
+
+PUBLIC_SERVICES['stella.data@1'] = _data_invoke
+
+
 def dispatch(session, params: dict, parent: dict) -> dict:
     required = {'contract', 'method', 'input', 'deadline', 'invocationRef'}
     if not isinstance(params, dict) or not required <= set(params) or set(params) - required - {'idempotencyKey'}:
@@ -49,38 +58,46 @@ def dispatch(session, params: dict, parent: dict) -> dict:
         raise PermissionError('cyclic plugin delegation')
     if not isinstance(params['method'], str) or not isinstance(params['input'], dict):
         raise PermissionError('invalid public method input')
-    forbidden = {'userId', 'grantRef', 'context', 'dataHandle', '_hostDataHandle', 'dbPath', 'dataDir', 'origin', 'consumerPluginId'}
+    forbidden = {'userId', 'grantRef', 'context', 'dataHandle', '_hostDataHandle', 'dbPath', 'dataDir', 'origin', 'consumerPluginId',
+                 'executionContext', 'workspaceId', 'agentId', 'sessionId', 'jobId', 'runId', 'purpose', 'permissions'}
     if set(params['input']) & forbidden:
         raise PermissionError('callback cannot supply identity or data paths')
-    deadline = min(datetime.fromisoformat(params['deadline'].replace('Z', '+00:00')),
-                   datetime.fromisoformat(parent['deadline'].replace('Z', '+00:00')))
-    if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
+    try:
+        deadlines = [datetime.fromisoformat(value.replace('Z', '+00:00'))
+                     for value in (params['deadline'], parent['deadline'])]
+        if any(value.tzinfo is None for value in deadlines):
+            raise ValueError('timezone required')
+        deadline = min(deadlines)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise PermissionError('invalid callback deadline') from exc
+    if deadline <= datetime.now(timezone.utc):
         raise PermissionError('callback deadline expired')
     session.registry.require_generation(session.plugin_id, session.generation)
+    from core.security.service import SecurityService, model_authorization_scope
+    if contract == 'stella.data@1':
+        SecurityService.authorize_data(session, parent, params['input'].get('source_id'))
     if contract == 'stella.models@1':
-        capability = 'models.chat' if params['method'] == 'complete' else 'models.embedding'
-        parent_method = parent.get('method')
-        declared = session._method_permissions.get((parent.get('contract'), parent_method), ())
-        if capability not in declared:
-            raise PermissionError('model capability not declared by invoking method')
-        if managed_plugin(session.plugin_id, session.user_id):
-            session.authz.check_scoped(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
-                user_id=session.user_id, consumer_plugin_id=current_consumer_plugin() or session.plugin_id, method=parent_method,
-                required_capabilities=[capability], resources=[{'kind': 'user', 'id': session.user_id}],
-                purpose='background' if context.get('origin') == 'job' or current_invocation_purpose() == 'background' else 'interactive')
-        else:
-            session.authz.check(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
-                user_id=session.user_id, required_capabilities=[capability], purpose='interactive',
-                generation=session.generation, context_generation=session.generation)
+        SecurityService.authorize_model(session, parent, params['method'])
+    model_scope = (model_authorization_scope(lambda: SecurityService.authorize_model(session, parent, params['method']))
+                   if contract == 'stella.models@1' else nullcontext())
 
     payload = dict(params['input'])
     if params.get('idempotencyKey'):
         payload['idempotencyKey'] = params['idempotencyKey']
     from common.runtime_identity import identity_scope, current_identity
 
+    from core.execution.context import current_execution_context, execution_scope
     identity = current_identity()
-    with identity_scope(user_id=session.user_id, agent_id=context.get('agentId') or identity.agent_id,
-                        session_id=context.get('sessionId'), task_id=context.get('jobId') or identity.task_id,
-                        run_id=context.get('runId') or identity.run_id):
-        with delegation_scope(context, session.plugin_id, deadline):
-            return validate_operation_result(PUBLIC_SERVICES[contract](params['method'], payload))
+    # The live Core scope outranks diagnostic worker metadata. Direct legacy
+    # sessions establish identity once here, before constructing a Core scope.
+    identity_context = (nullcontext() if current_execution_context() else
+        identity_scope(user_id=session.user_id, agent_id=context.get('agentId') or identity.agent_id,
+                       session_id=context.get('sessionId'), task_id=context.get('jobId') or identity.task_id,
+                       run_id=context.get('runId') or identity.run_id))
+    with identity_context, delegation_scope(context, session.plugin_id, deadline):
+        with execution_scope(consumer_plugin_id=current_consumer_plugin(), deadline=deadline), model_scope:
+            result = validate_operation_result(PUBLIC_SERVICES[contract](params['method'], payload))
+            SecurityService.check_execution()
+            if contract == 'stella.data@1':
+                SecurityService.authorize_data(session, parent, params['input'].get('source_id'))
+            return result

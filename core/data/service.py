@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 from common.runtime_identity import current_identity
 from core.data.store import DataStore, encode, stable_id, matches
+from core.data.resources import Resource, validate_resource, COLLECTION_OPERATIONS, REFERENCE_OPERATIONS
 
 
 class ProviderRegistry:
@@ -23,9 +24,12 @@ class ProviderRegistry:
             raise ValueError("Provider already registered")
         if not all(
             callable(getattr(provider, method, None))
-            for method in ["discover", "authorize", "fetch"]
+            for method in ["discover", "authorize"]
         ):
-            raise ValueError("Provider must implement discover, authorize and fetch")
+            raise ValueError("Provider must implement discover and authorize")
+        if not callable(getattr(provider, "fetch", None)) and not all(
+                callable(getattr(provider, method, None)) for method in ("resources", "read_resource")):
+            raise ValueError("Provider must implement collection or owner-backed resources")
         self._providers[name] = provider
 
     def get(self, name):
@@ -36,6 +40,11 @@ class ProviderRegistry:
 
     def items(self):
         return self._providers.items()
+
+    def descriptors(self):
+        return [{'id': name, 'representation': 'collection' if callable(getattr(provider, 'fetch', None)) else 'reference',
+                 'operations': sorted(COLLECTION_OPERATIONS if callable(getattr(provider, 'fetch', None)) else REFERENCE_OPERATIONS)}
+                for name, provider in self.items()]
 
 
 class DataService:
@@ -48,8 +57,15 @@ class DataService:
         if (current_identity().user_id or "local-default") != self.user:
             raise PermissionError("Data service belongs to another user")
         from core.plugins.cancellation import check_cancelled
+        from core.security.service import SecurityService
 
         check_cancelled()
+        SecurityService.check_execution()
+
+    def _operations(self, source):
+        provider = self.providers.get(source['provider'])
+        defaults = COLLECTION_OPERATIONS if callable(getattr(provider, 'fetch', None)) else REFERENCE_OPERATIONS
+        return source.get('operations', defaults)
 
     def _guard(self, source_id, operation, *, allow_disabled=False):
         self._identity()
@@ -58,6 +74,8 @@ class DataService:
             raise PermissionError("Data source is disabled")
         if not source["present"] and not allow_disabled:
             raise PermissionError("Data source is unavailable")
+        if operation not in self._operations(source):
+            raise ValueError('Source does not support ' + operation)
         self.providers.get(source["provider"]).authorize(source, operation)
         if self.store.source(source_id)["revision"] != source["revision"]:
             raise PermissionError("Source configuration changed during authorization")
@@ -79,21 +97,48 @@ class DataService:
                     not isinstance(spec, dict)
                     or not all(
                         isinstance(spec.get(key), str) and spec[key]
-                        for key in ["id", "name", "kind", "account_id"]
+                        for key in ["id", "name", "kind"]
                     )
                     or not isinstance(spec.get("config", {}), dict)
                 ):
                     raise ValueError("Provider returned invalid source metadata")
-                self.store.discover(provider_id, spec)
-            self.store.reconcile_presence(provider_id, {spec["id"] for spec in specs})
+                if 'account_id' in spec and not isinstance(spec['account_id'], str):
+                    raise ValueError('Invalid source account metadata')
+                if callable(getattr(provider, 'fetch', None)) and not spec.get('account_id'):
+                    raise ValueError('Collecting sources require an account')
+                operations = spec.get('operations')
+                if operations is not None and (not isinstance(operations, list) or not all(
+                        isinstance(op, str) and op in COLLECTION_OPERATIONS for op in operations)):
+                    raise ValueError('Invalid source operations')
+                if not callable(getattr(provider, 'fetch', None)) and operations is not None and set(operations) - REFERENCE_OPERATIONS:
+                    raise ValueError('Reference provider does not support collection operations')
+            if len({spec['id'] for spec in specs}) != len(specs):
+                raise ValueError('Duplicate source identity')
+            partition = getattr(provider, 'discovery_partition', lambda: None)()
+            if partition is not None and (not isinstance(partition, str) or not partition
+                    or any(spec.get('discovery_partition') != partition for spec in specs)):
+                raise ValueError('Invalid provider discovery partition')
+            self.store.discover_batch(provider_id, specs, partition)
         return {"sources": self.list_sources(), "errors": errors}
 
     def list_sources(self):
         self._identity()
-        return self.store.sources()
+        rows = []
+        for source in self.store.sources():
+            try:
+                provider = self.providers.get(source['provider'])
+                visible = getattr(provider, 'visible', lambda source: True)
+                if visible(source):
+                    rows.append(source)
+            except (PermissionError, RuntimeError):
+                continue
+        return rows
 
     def configure_source(self, source_id, **values):
         self._guard(source_id, "configure", allow_disabled=True)
+        source = self.store.source(source_id)
+        if not callable(getattr(self.providers.get(source['provider']), 'fetch', None)) and set(values) - {'enabled'}:
+            raise ValueError('Reference source does not support collection storage settings')
         if not values or set(values) - {"enabled", "storage", "retention_days"}:
             raise ValueError("Unsupported source setting")
         if "enabled" in values and type(values["enabled"]) is not bool:
@@ -209,6 +254,93 @@ class DataService:
             "offset": offset,
             "limit": limit,
         }
+
+    @staticmethod
+    def _pagination(query, limit, offset):
+        if (not isinstance(query, str) or len(query) > 1000 or type(limit) is not int
+                or not 1 <= limit <= 200 or type(offset) is not int or offset < 0):
+            raise ValueError('Invalid resource query or pagination')
+
+    def resources(self, source_id, query='', limit=50, offset=0, *, kind=None):
+        self._pagination(query, limit, offset)
+        source = self._guard(source_id, 'resources')
+        if kind is not None:
+            if not isinstance(kind, str) or not kind or len(kind) > 80:
+                raise ValueError('Invalid resource type')
+            selected, cursor = [], 0
+            while True:
+                page = self.resources(source_id, query, 200, cursor)
+                selected.extend(row for row in page['resources'] if row['kind'] == kind)
+                cursor += len(page['resources'])
+                if cursor >= page['total']:
+                    break
+                if not page['resources']:
+                    raise ValueError('Provider returned incomplete resource pagination')
+            if self._guard(source_id, 'resources')['revision'] != source['revision']:
+                raise PermissionError('Source configuration changed during filtered query')
+            return {'resources': selected[offset:offset + limit], 'total': len(selected),
+                    'offset': offset, 'limit': limit}
+        provider = self.providers.get(source['provider'])
+        if callable(getattr(provider, 'resources', None)):
+            page = provider.resources(source, query, limit, offset)
+            if (not isinstance(page, dict) or not isinstance(page.get('resources'), list)
+                    or type(page.get('total')) is not int or page['total'] < 0
+                    or len(page['resources']) > limit):
+                raise ValueError('Invalid resource page')
+            resources = [validate_resource(item, source) for item in page['resources']]
+        else:
+            page = self.query(source_id, query, limit, offset)
+            resources = [Resource.from_source(source, row['id'], kind=source['kind'],
+                         name=row['item']['title'] or row['item']['source_id']) for row in page['records']]
+        if len({resource.id for resource in resources}) != len(resources):
+            raise ValueError('Duplicate resource identity')
+        if self._guard(source_id, 'resources')['revision'] != source['revision']:
+            raise PermissionError('Source configuration changed during resource discovery')
+        self.store.put_resources(source, resources)
+        return {'resources': [resource.as_dict() for resource in resources],
+                'total': page['total'], 'offset': offset, 'limit': limit}
+
+    def read_resource(self, source_id, resource_id):
+        source = self._guard(source_id, 'read')
+        resource = validate_resource(self.store.resource(source_id, resource_id), source)
+        if 'read' not in resource.operations:
+            raise ValueError('Resource does not support read')
+        provider = self.providers.get(source['provider'])
+        authorize_resource = getattr(provider, 'authorize_resource', lambda *_: None)
+        authorize_resource(source, resource, 'read')
+        if callable(getattr(provider, 'read_resource', None)):
+            result = provider.read_resource(source, resource)
+            if not isinstance(result, dict) or set(result) != {'resource', 'content'}:
+                raise ValueError('Invalid resource read result')
+            returned = validate_resource(result['resource'], source)
+            if returned.id != resource.id:
+                raise ValueError('Resource identity changed during read')
+            content = result['content']
+        else:
+            row = self.store.record(resource.reference)
+            if row['source_id'] != source_id or not self._visible(source, row):
+                raise PermissionError('Resource is no longer available')
+            returned, content = resource, json.loads(row['content'])
+        if self._guard(source_id, 'read')['revision'] != source['revision']:
+            raise PermissionError('Source configuration changed during resource read')
+        authorize_resource(source, resource, 'read')
+        self._identity()
+        return {'resource': returned.as_dict(), 'content': content}
+
+    def owner_operation(self, source_id, operation, values):
+        """Invoke only a trusted provider's declared, owner-authorized action."""
+        source = self._guard(source_id, 'read')
+        provider = self.providers.get(source['provider'])
+        if (not isinstance(operation, str) or operation not in getattr(provider, 'owner_operations', ())
+                or not isinstance(values, dict)):
+            raise ValueError('Unsupported source owner operation')
+        provider.authorize_owner_operation(source, operation, values)
+        result = provider.perform_owner_operation(source, operation, values)
+        if self._guard(source_id, 'read')['revision'] != source['revision']:
+            raise PermissionError('Source configuration changed during owner operation')
+        provider.authorize_owner_operation(source, operation, values)
+        self._identity()
+        return result
 
     def events(self, source_id, limit=100):
         self._guard(source_id, "read")

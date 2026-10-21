@@ -97,7 +97,7 @@ def test_installed_plugins_migrate_preserve_data_and_disable_independently(tmp_p
     monkeypatch.setattr(state_dir, 'knowledge_dir', lambda **kwargs: user / 'knowledge')
     monkeypatch.setattr(state_dir, 'memory_dir', lambda **kwargs: user / 'memory')
     monkeypatch.setattr(state_dir, 'memory_file', lambda **kwargs: user / 'MEMORY.md')
-    monkeypatch.setattr(state_dir, 'user_root', lambda **kwargs: user)
+    monkeypatch.setattr(state_dir, 'user_root', lambda *args, **kwargs: user)
     store = ManagementStore(tmp_path / 'packages')
     monkeypatch.setattr(management, 'default_store', lambda: store)
     catalog = tmp_path / 'catalog.json'
