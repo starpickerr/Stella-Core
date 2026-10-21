@@ -144,7 +144,11 @@ def _managed_boundary(function):
                     kwargs['data_handle'] = domain_data_handle(self.plugin_id, self.user_id)
                 result = admit(self, **kwargs)
                 from core.security.service import SecurityService
-                SecurityService.check_execution()
+                from agent.protocol.cancel import AgentCancelledError
+                try:
+                    SecurityService.check_execution()
+                except AgentCancelledError:
+                    return {'status': 'cancelled', 'sideEffects': result['sideEffects']}
                 return result
     return call
 

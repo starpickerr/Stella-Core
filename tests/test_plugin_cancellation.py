@@ -47,7 +47,9 @@ def test_cancel_reaches_active_worker_and_next_invocation_is_not_cancelled(tmp_p
             result = session.invoke_contract(contract='stella.sample.cancel@1', method='run',
                 input_payload={'wait': True}, origin='system', grant_ref='test', skip_authz=True,
                 data_handle={'started': str(started)})
-        assert result['value'] == {'cancelled': True}
+        assert result['status'] == 'cancelled'
+        assert result['sideEffects'] == 'none'
+        assert 'value' not in result  # A cancelled call must not release a successful payload.
         assert session.is_running
         result = session.invoke_contract(contract='stella.sample.cancel@1', method='run',
             input_payload={}, origin='system', grant_ref='test', skip_authz=True)
