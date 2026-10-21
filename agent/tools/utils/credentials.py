@@ -84,7 +84,8 @@ def protected_credential_folders() -> set[str]:
     from common.state_dir import briefing_db, shared_root
     user = briefing_db(ensure=False).parent.parent
     folders = {
-        user / 'email', user / 'elearning', user / 'data', user / 'briefing' / 'elearning-sessions',
+        user / 'email', user / 'elearning', user / 'data', user / 'plugins',
+        user / 'bills', user / 'todos', user / 'calendar', user / 'agent-hub', user / 'briefing' / 'elearning-sessions',
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
     }

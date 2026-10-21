@@ -70,8 +70,10 @@ def permission_limit_scope(policy: dict, roots: tuple[str, ...]):
 @contextmanager
 def invocation_scope(tool_call_id):
     token = _tool_call_id.set(tool_call_id)
+    from core.execution.context import execution_scope
     try:
-        yield
+        with execution_scope():
+            yield
     finally:
         _tool_call_id.reset(token)
 
@@ -126,7 +128,7 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     return mode, kwargs, binding
 
 
-def permission_denial(
+def _permission_denial(
     tool_name: str,
     arguments: Dict[str, Any],
     *,
@@ -246,3 +248,9 @@ def permission_denial(
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")
         # A failed policy check is never an authorization to run a tool.
         return f"Permission check failed for {tool_name}; the tool did not run."
+
+
+def permission_denial(tool_name, arguments, **kwargs):
+    """Compatibility entry point into the shared Core Security Service."""
+    from core.security.service import SecurityService
+    return SecurityService.authorize_tool(tool_name, arguments, **kwargs)

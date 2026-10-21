@@ -46,7 +46,8 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
             return {'namespace': plugin_id, 'dbPath': str(path.resolve())}
         if plugin_id == 'stella.agent-hub':
             return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).resolve())}
-    raise ValueError('no Core domain data handle for this plugin')
+    from core.plugins.storage import private_data_handle
+    return private_data_handle(plugin_id, user_id)
 
 
 def stop_session(plugin_id: str):

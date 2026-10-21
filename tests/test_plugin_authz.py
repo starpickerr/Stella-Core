@@ -349,3 +349,10 @@ def test_default_port_context_does_not_erase_ambient_task_origin(monkeypatch):
                         lambda: SimpleNamespace(get_ledger=lambda *args: current_caller_origin()))
     with identity_scope(task_id="job-1"):
         assert Application.port("bills").get_ledger("ledger-1") == "job"
+
+
+@pytest.fixture(autouse=True)
+def isolated_execution_workspace(tmp_path, monkeypatch):
+    # These authorization tests deliberately use synthetic Agent IDs. Keep
+    # their host execution context independent of the real Agent registry.
+    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: tmp_path / 'work')

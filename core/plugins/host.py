@@ -124,8 +124,25 @@ def _managed_boundary(function):
     def call(self, **kwargs):
         from core.plugins.caller import invocation_budget
 
-        with invocation_budget(kwargs.get('timeout_ms', 30_000)):
-            return admit(self, **kwargs)
+        from common.runtime_identity import current_identity, identity_scope
+        from core.execution.context import execution_scope, current_execution_context
+        from core.plugins.caller import current_consumer_plugin, current_invocation_deadline, current_caller_origin
+        identity = current_identity()
+        if identity.user_id and identity.user_id != self.user_id:
+            raise PermissionError('plugin session user identity mismatch')
+        identity_context = (identity_scope(user_id=self.user_id)
+                            if not current_execution_context() and self.user_id != 'local-default' and not identity.user_id
+                            else nullcontext())
+        with identity_context, invocation_budget(kwargs.get('timeout_ms', 30_000)):
+            active = current_execution_context()
+            origin = active.origin if active else current_caller_origin() or kwargs.get('origin')
+            with execution_scope(origin=origin,
+                                 consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
+                                 deadline=current_invocation_deadline()):
+                if kwargs.get('data_handle') is None and self.manifest.get('data'):
+                    from core.plugins.lifecycle import domain_data_handle
+                    kwargs['data_handle'] = domain_data_handle(self.plugin_id, self.user_id)
+                return admit(self, **kwargs)
     return call
 
 

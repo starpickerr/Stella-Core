@@ -60,7 +60,8 @@ def capture_execution_context(*, origin=None, consumer_plugin_id=None, deadline=
                        deadline=min(parent.deadline, deadline) if parent.deadline and deadline else parent.deadline or deadline)
     from core.workspace.service import WorkspaceService
     identity = current_identity()
-    origin = 'job' if identity.task_id else origin or ('tool' if identity.session_id else 'system')
+    origin = ('job' if identity.task_id else
+              'tool' if identity.session_id and origin in (None, 'system') else origin or 'system')
     return ExecutionContext(identity, WorkspaceService.context(), origin,
                             'background' if origin == 'job' else 'interactive', consumer_plugin_id, deadline)
 
