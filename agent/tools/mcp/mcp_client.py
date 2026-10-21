@@ -6,11 +6,13 @@ without any external MCP SDK dependency.
 """
 
 import json
+import contextvars
 import os
 import queue
 import subprocess
 import threading
 import time
+import socket
 import urllib.request
 import urllib.error
 from typing import Optional
@@ -22,6 +24,55 @@ from common.log import logger
 # Aliases accepted for the Streamable HTTP transport type
 _STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
 _CANCEL_SOCKET_TIMEOUT = 5
+_HTTP_REQUEST = contextvars.ContextVar('mcp_http_request', default=None)
+
+
+class _HttpRequest:
+    """Own only this request's responses, including a late-opened response."""
+
+    def __init__(self):
+        self.cancelled = threading.Event()
+        self.lock = threading.Lock()
+        self.responses = set()
+
+    def attach(self, response):
+        with self.lock:
+            if self.cancelled.is_set():
+                try:
+                    response.close()
+                except (OSError, ValueError):
+                    pass
+                raise McpCancelledError('MCP request abandoned')
+            self.responses.add(response)
+
+    def detach(self, response):
+        with self.lock:
+            self.responses.discard(response)
+
+    def cancel(self):
+        self.cancelled.set()
+        with self.lock:
+            responses = tuple(self.responses)
+
+        def interrupt():
+            for response in responses:
+                # Closing a buffered HTTPResponse can wait for its reader's
+                # lock. Interrupt the owned socket first, outside the waiter.
+                stream = getattr(response, 'fp', None)
+                raw = getattr(stream, 'raw', None)
+                connection = getattr(raw, '_sock', None)
+                if connection is not None:
+                    try:
+                        connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                try:
+                    response.close()
+                except (OSError, ValueError):
+                    pass
+
+        if responses:
+            threading.Thread(target=interrupt, name='mcp-http-interrupt', daemon=True).start()
 
 
 class McpCancelledError(Exception):
@@ -37,12 +88,52 @@ def _check_cancelled(cancel_event):
         raise McpCancelledError('MCP call cancelled') from exc
     if cancel_event is not None and cancel_event.is_set():
         raise McpCancelledError("MCP call cancelled")
+    request = _HTTP_REQUEST.get()
+    if request is not None and request.cancelled.is_set():
+        raise McpCancelledError('MCP request abandoned')
 
 
 def _bounded_timeout(timeout):
     from core.plugins.caller import remaining_invocation_seconds
-    remaining = remaining_invocation_seconds()
+    from agent.protocol.cancel import AgentCancelledError
+    try:
+        remaining = remaining_invocation_seconds()
+    except AgentCancelledError as exc:
+        raise McpCancelledError('MCP call cancelled') from exc
     return min(timeout, remaining) if remaining is not None else timeout
+
+
+def _http_wait(operation, cancel_event):
+    """Bound open, headers and streaming reads by the original total budget."""
+    request = _HttpRequest()
+    replies = queue.Queue(maxsize=1)
+    context = contextvars.copy_context()
+
+    def run():
+        token = _HTTP_REQUEST.set(request)
+        try:
+            _check_cancelled(cancel_event)
+            replies.put((True, operation()))
+        except BaseException as exc:
+            replies.put((False, exc))
+        finally:
+            _HTTP_REQUEST.reset(token)
+
+    threading.Thread(target=lambda: context.run(run), name='mcp-http-request', daemon=True).start()
+    try:
+        while True:
+            _check_cancelled(cancel_event)
+            try:
+                succeeded, value = replies.get(timeout=_bounded_timeout(.05))
+            except queue.Empty:
+                continue
+            _check_cancelled(cancel_event)
+            if succeeded:
+                return value
+            raise value
+    except BaseException:
+        request.cancel()
+        raise
 
 
 # System env vars a stdio MCP subprocess legitimately needs to run
@@ -208,6 +299,9 @@ class McpClient:
     def _remote_response(self, request, timeout):
         self._ensure_open()
         response = urllib.request.urlopen(request, timeout=_bounded_timeout(timeout))
+        control = _HTTP_REQUEST.get()
+        if control is not None:
+            control.attach(response)
         with self._lifecycle_lock:
             abandoned = self._closed
             # Capture the session before publishing the response, so shutdown
@@ -226,6 +320,8 @@ class McpClient:
         try:
             yield response
         finally:
+            if control is not None:
+                control.detach(response)
             with self._lifecycle_lock:
                 self._remote_responses.discard(response)
             response.close()
@@ -400,7 +496,7 @@ class McpClient:
             if remaining <= 0:
                 raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {effective}s")
             try:
-                line = self._read_queue.get(timeout=min(remaining, 0.1) if cancel_event is not None else remaining)
+                line = self._read_queue.get(timeout=min(remaining, .05))
                 break
             except queue.Empty:
                 continue
@@ -793,6 +889,15 @@ class McpClient:
             raise RuntimeError(f"[MCP:{self.name}] Client not initialized")
 
         message = self._build_request(method, params)
+
+        from core.plugins.caller import current_invocation_deadline
+        from core.plugins.cancellation import current_cancellation_events
+        controlled_http = (self.transport in {'sse', 'streamable-http'} and _HTTP_REQUEST.get() is None
+                           and (cancel_event is not None or current_invocation_deadline() is not None
+                                or current_cancellation_events()))
+        if controlled_http:
+            send = self._sse_send if self.transport == 'sse' else self._streamable_http_send
+            return _http_wait(lambda: send(message, cancel_event=cancel_event), cancel_event)
 
         # stdio transport uses a single pipe and must be serialized.
         # SSE and streamable-http use independent HTTP requests and

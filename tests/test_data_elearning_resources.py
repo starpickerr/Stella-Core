@@ -115,3 +115,39 @@ def test_mcp_result_rechecks_live_connection_permission(integration, monkeypatch
     with pytest.raises(PermissionError, match='revoked'):
         manager.call_mcp_tool('elearning', 'fetch', {'since': '2026-09-01T00:00:00Z',
             'until': '2026-09-10T00:00:00Z', 'course_ids': ['42']})
+
+
+def test_catalog_keeps_authorized_courses_and_methods_when_other_scopes_denied(integration, tmp_path, monkeypatch):
+    from core.plugins.authz import PluginAuthorizationStore
+    service, _ = integration
+    (tmp_path / 'elearning/second-course').touch()
+    source = service.discover()['sources'][0]
+    authz = PluginAuthorizationStore()
+    monkeypatch.setattr('core.mcp.authorization.DEFAULT_AUTHZ', authz)
+    for name, methods, scopes in [('metadata', ['get_settings', 'list_courses'], [{'kind': 'user', 'id': 'local-default'}]),
+                                  ('course', ['fetch'], [{'kind': 'course', 'id': source['config']['account_id'] + ':42'}])]:
+        authz.issue_scoped(grant_ref=name, parent_ref='elearning-default-grant', plugin_id='stella.elearning',
+            user_id='local-default', consumer_plugin_id='stella.elearning', capability='elearning.read',
+            methods=methods, resources=scopes, purpose='interactive')
+    page = service.resources(source['id'], kind='assignment')
+    assert page['resources'] and all(row['kind'] == 'assignment' for row in page['resources'])
+    assert all('42' in row['reference'] and '43' not in row['reference'] for row in page['resources'])
+    assert service.resources(source['id'], kind='file')['total'] == 0
+    assert service.read_resource(source['id'], page['resources'][0]['id'])['content']['payload']['body']
+
+
+def test_mcp_honors_bound_execution_consumer_and_background_purpose(integration, monkeypatch):
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.execution.context import execution_scope
+    _, manager = integration
+    manager.call_mcp_tool('elearning', 'list_courses', {})
+    authz = PluginAuthorizationStore()
+    monkeypatch.setattr('core.mcp.authorization.DEFAULT_AUTHZ', authz)
+    authz.issue_scoped(grant_ref='owner-only', parent_ref='elearning-default-grant', plugin_id='stella.elearning',
+        user_id='local-default', consumer_plugin_id='stella.elearning', capability='elearning.read',
+        methods=['list_courses'], resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
+    assert manager.call_mcp_tool('elearning', 'list_courses', {})
+    with execution_scope(origin='tool', consumer_plugin_id='third.party'), pytest.raises(PermissionError):
+        manager.call_mcp_tool('elearning', 'list_courses', {})
+    with execution_scope(origin='job'), pytest.raises(PermissionError):
+        manager.call_mcp_tool('elearning', 'list_courses', {})

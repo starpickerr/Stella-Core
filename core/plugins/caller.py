@@ -29,7 +29,12 @@ def invocation_purpose_scope(purpose):
 
 
 def current_invocation_purpose():
-    return _INVOCATION_PURPOSE.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    legacy = _INVOCATION_PURPOSE.get()
+    if legacy == 'background' or active is not None and active.purpose == 'background':
+        return 'background'
+    return active.purpose if active is not None else legacy
 
 
 def current_invocation_deadline():
@@ -86,7 +91,9 @@ def caller_origin_scope(source: str):
 
 
 def current_caller_origin() -> str | None:
-    return _CALLER_ORIGIN.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    return active.origin if active is not None else _CALLER_ORIGIN.get()
 
 
 def plugin_user_id() -> str:
@@ -177,13 +184,20 @@ def serialized_gateway(function):
 
 
 def current_consumer_plugin() -> str | None:
-    return _CONSUMER_PLUGIN.get()
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    legacy = _CONSUMER_PLUGIN.get()
+    if active is not None and active.consumer_plugin_id:
+        if legacy is not None and legacy != active.consumer_plugin_id:
+            raise PermissionError('delegation consumer cannot replace execution consumer')
+        return active.consumer_plugin_id
+    return legacy
 
 
 @contextmanager
 def consumer_plugin_scope(plugin_id: str):
     """Core-owned delegation scope; never populated from a public request body."""
-    parent = _CONSUMER_PLUGIN.get()
+    parent = current_consumer_plugin()
     if parent is not None and parent != plugin_id:
         raise PermissionError('delegation consumer cannot be replaced')
     token = _CONSUMER_PLUGIN.set(plugin_id)
@@ -211,7 +225,7 @@ def delegation_scope(context: dict, caller_plugin: str, deadline):
                                     (parent or {}).get('purpose') == 'background') else 'interactive',
         'chain': [*(context.get('delegationChain') or []), caller_plugin]})
     origin_token = _CALLER_ORIGIN.set(root_origin)
-    consumer_token = _CONSUMER_PLUGIN.set(_CONSUMER_PLUGIN.get() or caller_plugin)
+    consumer_token = _CONSUMER_PLUGIN.set(current_consumer_plugin() or caller_plugin)
     try:
         yield
     finally:

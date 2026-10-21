@@ -82,16 +82,31 @@ class ElearningProvider:
 
     def resources(self, source, query, limit, offset):
         resources = []
-        for course in self._call('list_courses', {}):
+        courses = self._call('list_courses', {})
+        readable = False
+        for course in courses:
             course_id = course['id']
-            self._call('fetch', self._fetch_args(course_id), check_only=True)
-            resources.append(self._resource(source, 'course', course_id, course_id, course['name']))
-            for row in self._pages('fetch', self._fetch_args(course_id), 'source_items'):
-                kind = row['payload']['resource_type']
-                if kind != 'file':
-                    resources.append(self._resource(source, kind, course_id, row['source_id'], row['title']))
-            for row in self._pages('list_files', {'course_ids': [course_id], 'limit': 200}, 'files'):
-                resources.append(self._resource(source, 'file', course_id, row['file_id'], row['filename']))
+            try:
+                self._call('fetch', self._fetch_args(course_id), check_only=True)
+            except PermissionError:
+                pass
+            else:
+                readable = True
+                resources.append(self._resource(source, 'course', course_id, course_id, course['name']))
+                for row in self._pages('fetch', self._fetch_args(course_id), 'source_items'):
+                    kind = row['payload']['resource_type']
+                    if kind != 'file':
+                        resources.append(self._resource(source, kind, course_id, row['source_id'], row['title']))
+            try:
+                self._call('list_files', {'course_ids': [course_id]}, check_only=True)
+            except PermissionError:
+                pass
+            else:
+                readable = True
+                for row in self._pages('list_files', {'course_ids': [course_id], 'limit': 200}, 'files'):
+                    resources.append(self._resource(source, 'file', course_id, row['file_id'], row['filename']))
+        if courses and not readable:
+            raise PermissionError('No authorized eLearning course resources')
         for resource in resources:
             self.authorize_resource(source, resource, 'read')
         filtered = [row for row in resources if query.casefold() in row.name.casefold()]

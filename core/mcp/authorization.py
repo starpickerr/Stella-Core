@@ -70,6 +70,7 @@ def check(domain, method, arguments, user, metadata, purpose=None):
     if (
         identity.task_id
         or current_caller_origin() == "job"
+        or current_invocation_purpose() == 'background'
         or (delegation and delegation["purpose"] == "background")
     ):
         purpose = "background"
