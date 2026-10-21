@@ -599,7 +599,7 @@ const translations: Record<string, Record<string, string>> = {
     settings_github_hint: '源代码和版本发布',
     settings_feedback_hint: '报告问题或提出建议',
     // models tab
-    models_vendors: '厂商凭据',
+    models_vendors: '模型厂商',
     models_vendors_sub: '一处配置，多个模型能力共享',
     models_configured: '已配置',
     models_no_vendor: '尚未配置任何厂商',
@@ -1511,7 +1511,7 @@ const translations: Record<string, Record<string, string>> = {
     settings_github_hint: 'Source code and releases',
     settings_feedback_hint: 'Report a problem or suggest an idea',
     // models tab
-    models_vendors: 'Provider Credentials',
+    models_vendors: 'Model providers',
     models_vendors_sub: 'Configured once, shared by multiple model capabilities',
     models_configured: 'configured',
     models_no_vendor: 'No provider configured yet',

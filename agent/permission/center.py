@@ -104,6 +104,9 @@ def secrets() -> list[dict]:
         if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
             name = MODEL_CONFIG_TO_ENV.get(key, key.upper())
             names[name] = "model configuration" if name not in names else "model configuration + credential store"
+    search = (cfg.get("tools") or {}).get("web_search") or {}
+    if search.get("bocha_api_key"):
+        names["BOCHA_API_KEY"] = "model configuration"
     for entry in cfg.get("custom_providers") or []:
         if not isinstance(entry, dict):
             continue
@@ -124,26 +127,71 @@ def secrets() -> list[dict]:
 
 
 def set_secret(name: str, value: str | None) -> None:
-    if not _KEY.fullmatch(name):
+    if not isinstance(name, str) or (not name.startswith("CUSTOM:") and not _KEY.fullmatch(name)):
         raise ValueError("invalid credential name")
     if value is not None and (not isinstance(value, str) or "\n" in value or "\r" in value):
         raise ValueError("invalid credential value")
     from config import MODEL_CONFIG_TO_ENV, conf, get_data_root, read_config_template, sync_model_config_to_env
-    config_key = next((key for key, env_key in MODEL_CONFIG_TO_ENV.items() if env_key == name), name.lower())
     current = conf()
-    if config_key in current and (config_key.endswith("_api_key") or config_key.endswith("_token")):
+    if name == "BOCHA_API_KEY":
+        from copy import deepcopy
+        path = Path(get_data_root()) / "config.json"
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
+        tools = deepcopy(current.get("tools") or {})
+        tools.setdefault("web_search", {})["bocha_api_key"] = value or ""
+        data["tools"] = tools
+        _write_config(path, data)
+        current["tools"] = tools
+        if name in _env_keys():
+            from agent.tools.env_config.env_config import EnvConfig
+            tool = EnvConfig()
+            entries = tool._read_env_file()
+            entries.pop(name, None)
+            tool._write_env_file(entries)
+        if value:
+            os.environ[name] = value
+        else:
+            os.environ.pop(name, None)
+        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
+               decision="policy_change", reason="Search credential status changed.")
+        return
+    if name.startswith("CUSTOM:"):
+        provider_id = name[len("CUSTOM:"):]
+        providers = current.get("custom_providers") or []
+        if not provider_id or not any(isinstance(p, dict) and p.get("id") == provider_id for p in providers):
+            raise ValueError("unknown custom model provider")
+        updated = [{**p, "api_key": value or ""} if isinstance(p, dict) and p.get("id") == provider_id else p for p in providers]
+        path = Path(get_data_root()) / "config.json"
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
+        data["custom_providers"] = updated
+        _write_config(path, data)
+        current["custom_providers"] = updated
+        from config import sync_image_generation_custom_provider_env
+        sync_image_generation_custom_provider_env(current, overwrite=True)
+        _refresh_model_clients()
+        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
+               decision="policy_change", reason="Custom model credential status changed.")
+        return
+    config_key = next((key for key, env_key in MODEL_CONFIG_TO_ENV.items() if env_key == name), name.lower())
+    if (config_key in current or config_key in MODEL_CONFIG_TO_ENV or config_key == "custom_api_key") and (config_key.endswith("_api_key") or config_key.endswith("_token")):
         if name in _env_keys():
             from agent.tools.env_config.env_config import EnvConfig
             env_tool = EnvConfig()
             entries = env_tool._read_env_file()
             entries.pop(name, None)
             env_tool._write_env_file(entries)
-        current[config_key] = value or ""
         path = Path(get_data_root()) / "config.json"
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
         data[config_key] = value or ""
         _write_config(path, data)
+        current[config_key] = value or ""
         sync_model_config_to_env(current, overwrite=True)
+        if config_key not in MODEL_CONFIG_TO_ENV:
+            if value:
+                os.environ[name] = value
+            else:
+                os.environ.pop(name, None)
+        _refresh_model_clients()
         record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
                decision="policy_change", reason="Model credential status changed.")
         return
@@ -160,6 +208,12 @@ def set_secret(name: str, value: str | None) -> None:
     tool._write_env_file(entries)
     record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
            decision="policy_change", reason="Credential status changed in the credential store.")
+
+
+def _refresh_model_clients() -> None:
+    # Existing clients cache credentials; subsequent calls must rebuild after a change.
+    from bridge.bridge import Bridge
+    Bridge().reset_bot()
 
 
 def _connection_row(entry_id: str, name: str, *, configured: bool, available: bool,

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Cpu, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Cpu, Loader2 } from 'lucide-react'
 import { t, localizedLabel } from '../../i18n'
 import apiClient from '../../api/client'
+import ModelCredentialLink, { modelSecretName } from './ModelCredentialLink'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
-import { Card, Field, Dropdown, TextInput, SaveRow, MASK_RE } from './primitives'
+import { Card, Field, Dropdown, TextInput, SaveRow } from './primitives'
 
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
@@ -21,9 +22,6 @@ const ManagedModelSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [status, setStatus] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [apiKeyDirty, setApiKeyDirty] = useState(false)
-  const [apiKeyVisible, setApiKeyVisible] = useState(false)
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
@@ -45,9 +43,6 @@ const ManagedModelSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       const current = showManagedApiKey ? 'linkai' : data.use_linkai ? 'linkai' : data.bot_type || ids[0] || ''
       setProvider(current)
       const meta = data.providers?.[current] as ProviderMeta | undefined
-      const keyField = meta?.api_key_field
-      setApiKey((keyField && data.api_keys?.[keyField]) || '')
-      setApiKeyDirty(false)
       const presets = meta?.models || []
       if (isCustomProviderId(current)) {
         setCustomModel(data.model || '')
@@ -96,15 +91,8 @@ const ManagedModelSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     const isLinkai = CustomModelPicker ? true : provider === 'linkai'
     try {
       await apiClient.updateConfig({ model: finalModel, use_linkai: isLinkai, bot_type: isLinkai ? '' : provider })
-      // Never save a masked value back as the real key.
-      if (showManagedApiKey && apiKeyDirty && currentKeyField && !MASK_RE.test(apiKey)) {
-        await apiClient.updateConfig({ [currentKeyField]: apiKey })
-        setApiKeyDirty(false)
-      }
       const fresh = await apiClient.getConfig()
       setConfig(fresh)
-      const keyField = (fresh.providers?.[provider] as ProviderMeta | undefined)?.api_key_field
-      if (keyField) setApiKey(fresh.api_keys?.[keyField] || '')
       setStatus(t('config_saved'))
     } catch {
       setStatus(t('config_save_error'))
@@ -181,25 +169,7 @@ const ManagedModelSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         </Field>
         {showManagedApiKey && currentKeyField && (
           <Field label={t('onboarding_apikey')} labelAction={ApiKeyFieldLink ? <ApiKeyFieldLink /> : undefined}>
-            <div className="relative">
-              <TextInput
-                type={apiKeyVisible ? 'text' : 'password'}
-                className="pr-10 font-mono"
-                value={apiKey}
-                placeholder="sk-..."
-                onChange={(e) => {
-                  setApiKey(e.target.value.trim())
-                  setApiKeyDirty(true)
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setApiKeyVisible((v) => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary cursor-pointer p-1"
-              >
-                {apiKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
+            <ModelCredentialLink name={modelSecretName(currentKeyField)} configured={!!config?.api_keys?.[currentKeyField]} />
           </Field>
         )}
         <SaveRow status={status} onSave={save} />

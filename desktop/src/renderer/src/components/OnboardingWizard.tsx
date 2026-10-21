@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Sparkles, KeyRound, Loader2, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react'
+import { Sparkles, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
 import { t, getLang, setLang, type Lang } from '../i18n'
 import apiClient from '../api/client'
 import type { ModelsData } from '../types'
 import { Field, Dropdown, TextInput, type DropdownOption } from '../pages/settings/primitives'
 import { resolveModels, providerLabel } from '../pages/settings/modelsHelpers'
+import { useNavigate } from 'react-router-dom'
+import { credentialRoute, modelSecretName } from '../pages/settings/ModelCredentialLink'
 import { useOnboardingStore } from '../store/onboardingStore'
 
 interface OnboardingWizardProps {
@@ -14,17 +16,10 @@ interface OnboardingWizardProps {
 
 const TOTAL_STEPS = 2
 
-// Optional "where to get an API key" console link, per provider.
-const PROVIDER_KEY_CONSOLE: Record<string, string> = {
-  linkai: 'https://link-ai.tech/console/interface',
-}
-
-// First-run guided setup: language -> chat model (provider + key + model).
-// After saving the model the user goes straight into the chat (no extra
-// confirmation step). Rendered as a full-screen overlay above the main UI;
-// reuses the same models API and primitives as the settings page.
+// First-run language and model selection. Security owns the credential editor.
 const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
   const finish = useOnboardingStore((s) => s.finish)
+  const navigate = useNavigate()
 
   const [step, setStep] = useState(1)
   const [lang, setLangState] = useState<Lang>(getLang())
@@ -32,7 +27,6 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
 
   // Step 2 form state.
   const [provider, setProvider] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
   const [model, setModel] = useState('')
 
@@ -88,8 +82,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
     apiClient.updateConfig({ stella_lang: next }).catch(() => {})
   }
 
-  // Step 1 (language) can always advance; step 2 needs a provider, key, model.
-  const canNext = step === 1 || (!!provider && !!apiKey.trim() && !!model)
+  // Step 2 saves model selection; missing credentials continue in Security.
+  const canNext = step === 1 || (!!provider && !!model)
 
   const goNext = async () => {
     setError('')
@@ -98,22 +92,24 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
       setStep(2)
       return
     }
-    // Step 2 is the last step: persist the provider credentials, point the chat
-    // capability at it, then finish straight into the chat (no extra step).
+    // Save routing first; Security handles any missing credential.
     setSaving(true)
     try {
-      await apiClient.modelsAction({
-        action: 'set_provider',
-        provider_id: provider,
-        api_key: apiKey.trim(),
-        ...(apiBase.trim() ? { api_base: apiBase.trim() } : {}),
-      })
-      await apiClient.modelsAction({
+      if (!providerMeta?.is_custom) {
+        const source = await apiClient.modelsAction({
+          action: 'set_provider',
+          provider_id: provider,
+          ...(apiBase.trim() ? { api_base: apiBase.trim() } : {}),
+        })
+        if (source.status !== 'success') throw new Error(t('onboarding_save_failed'))
+      }
+      const routing = await apiClient.modelsAction({
         action: 'set_capability',
         capability: 'chat',
         provider_id: provider,
         model,
       })
+      if (routing.status !== 'success') throw new Error(t('onboarding_save_failed'))
     } catch {
       setSaving(false)
       setError(t('onboarding_save_failed'))
@@ -121,6 +117,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
     }
     setSaving(false)
     complete()
+    if (!providerMeta?.configured) navigate(credentialRoute(providerMeta?.is_custom ? `CUSTOM:${providerMeta.custom_id}` : modelSecretName(providerMeta?.api_key_field)))
   }
 
   const goBack = () => {
@@ -201,26 +198,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
               </Field>
               {provider && (
                 <>
-                  <Field label={t('onboarding_apikey')}>
-                    <TextInput
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder={t('onboarding_apikey_placeholder')}
-                      className="font-mono"
-                    />
-                    {PROVIDER_KEY_CONSOLE[provider] && (
-                      <a
-                        href={PROVIDER_KEY_CONSOLE[provider]}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                      >
-                        {t('onboarding_key_guide')}
-                        <ExternalLink size={11} />
-                      </a>
-                    )}
-                  </Field>
+                  <p className="text-sm text-content-secondary">{getLang() === 'zh' ? '凭据统一在安全中管理。完成模型选择后，将引导你配置尚未设置的凭据。' : 'Credentials are managed in Security. After selecting your model, continue there to configure any missing credential.'}</p>
                   {providerMeta?.api_base_field && (
                     <Field label={t('onboarding_apibase')}>
                       <TextInput
@@ -241,7 +219,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
                   </Field>
                 </>
               )}
-              {error && <p className="text-sm text-danger">{error}</p>}
+              {error && <p role="alert" className="text-sm text-danger">{error}</p>}
             </div>
           </div>
         )}
@@ -279,7 +257,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onDone }) => {
               {saving
                 ? t('onboarding_saving')
                 : step === TOTAL_STEPS
-                  ? t('onboarding_finish')
+                  ? (!providerMeta?.configured ? (getLang() === 'zh' ? '继续配置凭据' : 'Continue to credentials') : t('onboarding_finish'))
                   : t('onboarding_next')}
               {!saving && <ArrowRight size={15} />}
             </button>

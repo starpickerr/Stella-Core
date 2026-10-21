@@ -278,9 +278,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
-  const modelCredential = commonCredentials.some(([name]) => name === credentialName && name !== 'GITHUB_TOKEN')
-    || center?.secrets.some(item => item.name === credentialName && item.source === 'model configuration')
-    || credentialName.startsWith('CUSTOM:')
+  const requestedSecret = new URLSearchParams(location.search).get('secret') || ''
+  useEffect(() => { setSecretName(requestedSecret); setSecretValue('') }, [requestedSecret])
+  const credentialOptions = [...new Set([
+    ...commonCredentials.map(([name]) => name),
+    ...(center?.secrets.map(item => item.name) || []),
+    ...(secretName && secretName !== 'other' ? [secretName] : []),
+  ])]
   useEffect(() => {
     setProjectDraft(project ? { ...project.policy, rules: { ...(project.policy.rules || {}) } } : null)
   }, [project?.path, project?.policy])
@@ -934,10 +938,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                           </div>
                         </div>
                         {custom ? (
-                          <Link to="/models" aria-label={`${copy.manageSecret} ${title}`}
+                          <button type="button" aria-label={`${copy.manageSecret} ${title}`}
+                            onClick={() => { setSecretName(item.name); setSecretValue('') }}
                             className={`${input} flex items-center gap-1.5 shrink-0`}>
                             {copy.manageSecret}<ArrowUpRight size={14} aria-hidden="true" />
-                          </Link>
+                          </button>
                         ) : <button
                           type="button"
                           disabled={busy}
@@ -957,18 +962,18 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       className={`${input} block w-full mt-2 font-normal`}
                       aria-label={copy.selectService}
                       value={secretName}
-                      onChange={(event) => setSecretName(event.target.value)}
+                      onChange={(event) => { setSecretName(event.target.value); setSecretValue('') }}
                     >
                       <option value="">{copy.selectService}</option>
-                      {commonCredentials.map(([name]) => (
+                      {credentialOptions.map((name) => (
                         <option key={name} value={name}>
-                          {securitySecretName(copy, name)}
+                          {securitySecretName(copy, name, center.secrets.find(item => item.name === name)?.display_name)}
                         </option>
                       ))}
                       <option value="other">{copy.otherCredential}</option>
                     </select>
                     </label>
-                    {modelCredential ? <Link to="/models" className={`${input} flex items-center self-end gap-2`}>{getLang() === 'zh' ? '在模型中配置凭据' : 'Configure credentials in Models'}<ArrowUpRight size={14} /></Link> : <>
+                    <>
                     <label className="min-w-0 text-sm font-medium">
                       {copy.secretValue}
                     <input
@@ -993,7 +998,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       }}
                     >
                       {copy.saveSecret}
-                    </button></>}
+                    </button>
+                    {credentialName && center.secrets.some(item => item.name === credentialName) && <button
+                      disabled={busy} className="text-sm text-danger self-end min-h-10"
+                      onClick={() => void mutate(() => apiClient.deleteSecuritySecret(credentialName))}>{copy.deleteSecret}</button>}
+                    </>
 
                   </div>
                   {secretName === 'other' && (

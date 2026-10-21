@@ -16,6 +16,12 @@ export const commonCredentials = [
   ['QIANFAN_API_KEY', '千帆'],
   ['MOONSHOT_API_KEY', 'Moonshot'],
   ['DASHSCOPE_API_KEY', 'DashScope'],
+  ['MINIMAX_API_KEY', 'MiniMax'],
+  ['MIMO_API_KEY', 'MiMo'],
+  ['ZHIPU_AI_API_KEY', '智谱'],
+  ['ARK_API_KEY', '火山方舟'],
+  ['CUSTOM_API_KEY', '自定义模型'],
+  ['BOCHA_API_KEY', 'Bocha'],
 ] as const
 
 const locales = {

@@ -14,7 +14,7 @@ providers = [
      'models': ['alpha-default', 'alpha-vision', 'alpha-image'], 'api_base': 'https://example.invalid/v1'},
     {'id': 'custom:beta', 'label': 'Beta', 'configured': True, 'is_custom': True,
      'custom_id': 'beta', 'custom_name': 'Beta', 'model': 'beta-default', 'models': ['beta-default']},
-    {'id': 'openai', 'label': 'OpenAI', 'configured': True, 'models': ['chat-only']},
+    {'id': 'openai', 'label': 'OpenAI', 'configured': True, 'models': ['chat-only'], 'api_key_field': 'open_ai_api_key'},
 ]
 capabilities = {
     key: {'current_provider': '', 'current_model': '',
@@ -26,6 +26,7 @@ capabilities['chat'].update(current_provider='custom:alpha', current_model='alph
 capabilities['tts'].update(reply_mode='always', current_voice='', provider_voices={})
 capabilities['search'] = {'strategy': 'auto', 'providers': [], 'current_provider': ''}
 saved = []
+reject_provider_save = [False]
 
 
 def backend(route):
@@ -35,10 +36,14 @@ def backend(route):
         data = {'status': 'ok'}
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
+    elif path == '/api/security/center':
+        data = {'status': 'error', 'message': 'Security contents are tested in ui_security_modes.py'}
     elif path == '/api/models':
         if route.request.method == 'POST':
             body = route.request.post_data_json
             saved.append(body)
+            if body['action'] == 'set_provider' and (reject_provider_save[0] or body['provider_id'].startswith('custom:')):
+                data.update(status='error', message='Provider configuration rejected')
             if body['action'] == 'set_capability':
                 capabilities[body['capability']].update(
                     current_provider=body['provider_id'], current_model=body['model'])
@@ -103,12 +108,15 @@ with sync_playwright() as playwright:
         expect(image.get_by_role('button').nth(1)).to_have_text('image-preset')
 
         # Editing vendor models refreshes downstream menus without reloading.
-        card('厂商凭据').get_by_role('button', name='Alpha').click()
+        card('模型厂商').get_by_role('button', name='Alpha').click()
+        expect(page.get_by_role('dialog').get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=CUSTOM%3Aalpha')
+        expect(page.locator('input[placeholder="sk-..."]')).to_have_count(0)
         dialog = page.get_by_role('dialog')
         dialog.get_by_role('button', name='添加模型', exact=True).click()
         dialog.get_by_role('textbox').last.fill('alpha-new-image')
         dialog.get_by_role('button', name='保存', exact=True).click()
         expect(dialog).to_have_count(0)
+        assert saved[-1]['action'] == 'set_custom_provider' and 'api_key' not in saved[-1]
         image.get_by_role('button').nth(0).click()
         page.get_by_text('Alpha', exact=True).last.click()
         image.get_by_role('button').nth(1).click()
@@ -117,6 +125,42 @@ with sync_playwright() as playwright:
         image.get_by_role('button', name='保存', exact=True).click()
         expect(image.get_by_text('已保存', exact=True)).to_be_visible()
         assert saved[-1]['model'] == 'alpha-new-image', saved
+        # Built-in and search credentials point to the same Security owner.
+        card('模型厂商').get_by_role('button', name='OpenAI').click()
+        dialog = page.get_by_role('dialog')
+        expect(dialog.get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=OPENAI_API_KEY')
+        expect(dialog.locator('input[type="password"]')).to_have_count(0)
+        dialog.get_by_role('button', name='取消', exact=True).click()
+        expect(card('联网搜索').get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=BOCHA_API_KEY')
+        # First-run setup saves model routing, then sends missing credentials to Security.
+        providers[2]['configured'] = False
+        page.evaluate("""async () => {
+          const {useOnboardingStore} = await import('/src/store/onboardingStore.ts')
+          useOnboardingStore.getState().openWizard()
+        }""")
+        page.get_by_role('button', name='下一步', exact=True).click()
+        page.get_by_role('button', name='选择厂商', exact=True).click()
+        page.get_by_text('OpenAI', exact=True).last.click()
+        expect(page.locator('input[type="password"]')).to_have_count(0)
+        reject_provider_save[0] = True
+        page.get_by_role('button', name='继续配置凭据', exact=True).click()
+        expect(page.get_by_text('保存失败，请检查后重试', exact=True)).to_be_visible()
+        reject_provider_save[0] = False
+        page.get_by_role('button', name='继续配置凭据', exact=True).click()
+        expect(page).to_have_url(test_url + '/#/security?tab=secrets&secret=OPENAI_API_KEY')
+        assert saved[-2]['action'] == 'set_provider' and 'api_key' not in saved[-2]
+        assert saved[-1]['action'] == 'set_capability' and saved[-1]['provider_id'] == 'openai'
+        page.evaluate("""async () => {
+          const {useOnboardingStore} = await import('/src/store/onboardingStore.ts')
+          useOnboardingStore.getState().openWizard()
+        }""")
+        page.get_by_role('button', name='下一步', exact=True).click()
+        page.get_by_role('button', name='选择厂商', exact=True).click()
+        page.get_by_text('Alpha', exact=True).last.click()
+        previous = len(saved)
+        page.get_by_role('button', name='开始对话', exact=True).click()
+        expect(page.get_by_role('button', name='开始对话', exact=True)).to_have_count(0)
+        assert len(saved) == previous + 1 and saved[-1]['action'] == 'set_capability'
         assert errors == [], errors
         print('Model selection: configured catalogs, six capabilities, vendor switching, manual models, reload, and vendor editing passed')
     finally:
