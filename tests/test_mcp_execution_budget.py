@@ -65,7 +65,7 @@ def test_http_socket_timeout_is_limited_by_caller_budget():
         status = 200
 
     response = Response(reply(1, 'fresh').encode())
-    with invocation_budget(100), patch('agent.tools.mcp.mcp_client.urllib.request.urlopen', return_value=response) as request:
+    with invocation_budget(100), patch.object(value, '_open_remote', return_value=response) as request:
         assert value.call_tool('read', {}) == 'fresh'
         assert 0 < request.call_args.kwargs['timeout'] <= .1
 
@@ -87,7 +87,8 @@ def test_bound_cancellation_interrupts_stdio_without_explicit_event():
         late.join()
 
 
-def test_progressing_http_body_cannot_extend_total_deadline():
+@pytest.mark.parametrize('phase', ['body', 'headers'])
+def test_progressing_http_response_cannot_extend_deadline_or_leak_worker(phase):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     class Handler(BaseHTTPRequestHandler):
@@ -98,6 +99,15 @@ def test_progressing_http_body_cannot_extend_total_deadline():
             request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             slow = request['params']['name'] == 'slow'
             body = reply(request['id'], 'slow response' if slow else 'fresh').encode()
+            if slow and phase == 'headers':
+                try:
+                    self.wfile.write(b'HTTP/1.1 200 OK\r\nX-Slow: ')
+                    for _ in range(40):
+                        self.wfile.write(b'x')
+                        self.wfile.flush()
+                        time.sleep(.025)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -119,15 +129,19 @@ def test_progressing_http_body_cannot_extend_total_deadline():
     value = McpClient({'name': 'budget', 'type': 'streamable-http'})
     value._initialized = True
     value._http_url = f'http://127.0.0.1:{server.server_port}/mcp'
+    original_workers = {thread.ident for thread in threading.enumerate() if thread.name == 'mcp-http-request'}
     started = time.monotonic()
     try:
         with invocation_budget(60), pytest.raises((PermissionError, TimeoutError)):
             value.call_tool('slow', {})
         assert time.monotonic() - started < .25
         cleanup_deadline = time.monotonic() + .5
-        while value._remote_responses and time.monotonic() < cleanup_deadline:
+        def pending():
+            return [thread for thread in threading.enumerate()
+                    if thread.name == 'mcp-http-request' and thread.ident not in original_workers]
+        while (value._remote_responses or pending()) and time.monotonic() < cleanup_deadline:
             time.sleep(.01)
-        assert not value._remote_responses
+        assert not value._remote_responses and not pending()
         assert value.call_tool('next', {}) == 'fresh'
     finally:
         server.shutdown()

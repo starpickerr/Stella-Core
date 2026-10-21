@@ -88,7 +88,7 @@ def test_mcp_http_cancel_uses_bounded_socket_wait_and_closes_response():
             return super().read(*args)
 
     response = Response(b'{"jsonrpc":"2.0","id":1,"result":{"content":[]}}')
-    with patch("agent.tools.mcp.mcp_client.urllib.request.urlopen", return_value=response) as open_request:
+    with patch.object(client, '_open_remote', return_value=response) as open_request:
         with pytest.raises(McpCancelledError, match='cancelled'):
             client.call_tool("slow", {}, cancel_event=event)
     assert open_request.call_args.kwargs["timeout"] == 5

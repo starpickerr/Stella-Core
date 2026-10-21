@@ -7,6 +7,7 @@ without any external MCP SDK dependency.
 
 import json
 import contextvars
+import http.client
 import os
 import queue
 import subprocess
@@ -34,6 +35,13 @@ class _HttpRequest:
         self.cancelled = threading.Event()
         self.lock = threading.Lock()
         self.responses = set()
+        self.connections = set()
+
+    def attach_connection(self, connection):
+        with self.lock:
+            if self.cancelled.is_set():
+                raise McpCancelledError('MCP request abandoned')
+            self.connections.add(connection)
 
     def attach(self, response):
         with self.lock:
@@ -53,8 +61,17 @@ class _HttpRequest:
         self.cancelled.set()
         with self.lock:
             responses = tuple(self.responses)
+            connections = tuple(self.connections)
 
         def interrupt():
+            for connection in connections:
+                stream = connection.sock
+                if stream is not None:
+                    try:
+                        stream.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                connection.close()
             for response in responses:
                 # Closing a buffered HTTPResponse can wait for its reader's
                 # lock. Interrupt the owned socket first, outside the waiter.
@@ -71,7 +88,7 @@ class _HttpRequest:
                 except (OSError, ValueError):
                     pass
 
-        if responses:
+        if responses or connections:
             threading.Thread(target=interrupt, name='mcp-http-interrupt', daemon=True).start()
 
 
@@ -298,7 +315,7 @@ class McpClient:
     @contextmanager
     def _remote_response(self, request, timeout):
         self._ensure_open()
-        response = urllib.request.urlopen(request, timeout=_bounded_timeout(timeout))
+        response = self._open_remote(request, timeout=_bounded_timeout(timeout))
         control = _HTTP_REQUEST.get()
         if control is not None:
             control.attach(response)
@@ -325,6 +342,39 @@ class McpClient:
             with self._lifecycle_lock:
                 self._remote_responses.discard(response)
             response.close()
+
+    @staticmethod
+    def _open_remote(request, *, timeout):
+        control = _HTTP_REQUEST.get()
+        if control is None:
+            return urllib.request.urlopen(request, timeout=timeout)
+
+        def owned_connection(base):
+            class Connection(base):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    control.attach_connection(self)
+
+                def connect(self):
+                    super().connect()
+                    _check_cancelled(None)
+
+            return Connection
+
+        http_connection = owned_connection(http.client.HTTPConnection)
+        https_connection = owned_connection(http.client.HTTPSConnection)
+
+        class HttpHandler(urllib.request.HTTPHandler):
+            def http_open(self, req):
+                return self.do_open(http_connection, req)
+
+        class HttpsHandler(urllib.request.HTTPSHandler):
+            def https_open(self, req):
+                return self.do_open(https_connection, req, context=self._context)
+
+        # A private opener keeps the standard proxy, TLS and redirect handlers;
+        # its sockets belong to this request even while headers are incomplete.
+        return urllib.request.build_opener(HttpHandler(), HttpsHandler()).open(request, timeout=timeout)
 
     def _shutdown_connection(self):
         if self._proc is not None:
