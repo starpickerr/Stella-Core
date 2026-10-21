@@ -13,3 +13,5 @@
 权限模式与平台边界已有 [详细说明](../security-permission-modes.md)。运行时的可信判定点是 `agent/runtime/tool_invocation.py` 和 `agent/permission/gateway.py`；`Application.command` 对定时业务写入再次校验。Web/API 端还需验证认证，不能把前端隐藏按钮当作授权。涉及外部资源的工具要检查路径、URL、重定向与凭证泄露。权限和事务的失败恢复必须有隔离测试。
 
 Email 连接、凭据与 IMAP 抓取由 `stella.email` 插件拥有；Core 不再保留邮箱设置或收信回退。凭据数据库及 SQLite 临时文件以私有权限创建并在重开时收紧；文件工具与 shell 隔离共用凭据路径清单，保护 Email 数据目录以及 Core 生命周期状态和迁移备份。
+
+Core 服务协调入口新增 `core/workspace/service.py`、`core/execution/context.py` 与 `core/security/service.py`。运行上下文不可变，但不保存授权快照；调用和返回仍复查现有策略及 Grant。通用插件私有数据使用用户级 `plugins/<plugin-id>`，第一方数据句柄保持旧路径；文件/shell 的保护清单覆盖通用私有目录及原账单、事务、日程、Agent Hub 存储。详细协作、兼容及平台边界见[工作区与执行服务](execution-services.md)。

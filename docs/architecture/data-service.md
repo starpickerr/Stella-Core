@@ -40,3 +40,19 @@ Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付
 `tests/test_data_service.py` 验证事务、去重、策略、身份及并发；`test_data_mcp_integration.py` 验证独立 stdio SDK、不同字段/标量游标映射和真实简报 worker；`test_data_api.py` 与 `test_mcp_access_management.py` 验证原生授权边界；`ui_data_management.py` 验证实际浏览器操作。
 
 当前使用手动及既有简报调度触发采集；动态第三方插件注册声明与自动清理调度是后续范围。分页目前扫描来源记录再切片，大邮箱的有界 SQL 查询属于已知性能改进项。
+
+## Provider / Source / Resource
+
+2026-10-21 的扩展在原采集链路旁增加资源目录，不搬迁业务库。`ProviderRegistry` 接受两种可信提供者：`discover/authorize/fetch` 采集型，或 `discover/authorize/resources/read_resource` 引用型；提供者只由宿主注册，公开 callback 不能注册任意代码。`descriptors()` 描述机制和支持的操作。
+
+Source 是稳定来源实例，必须有 `id/name/kind`，可声明 `operations`；仅采集型来源要求已有账号绑定。引用型来源不伪造邮箱账号、时间和正文，只支持自身声明的操作。来源的 enabled、present、revision 与用户存储意图继续分离。一次提供者发现中的身份冲突、重复或无效项使整个批次回滚，成功发现才更新 present，不会留下半个来源目录。
+
+`core/data/resources.py::Resource` 是冻结引用：`id/source_id/provider/reference/kind/name/operations`。ID 由 provider、source 与 reference 稳定派生。新增 SQLite `resources` 表仅缓存这些引用元数据，原 `records/events/sync_state` 格式与稳定 ID 不变。资源目录只表示已发现的引用，不表示已授权读取、已缓存正文或已加入模型上下文。
+
+`DataService.resources(source_id, query='', limit=50, offset=0)` 返回资源页；`read_resource(source_id, resource_id)` 只接受已登记的资源。引用型所有者收到 Core 验证的 Resource 信封，负责实时解析引用和资源级授权，返回 `{resource, content}`。Core 校验所有者返回的来源和资源身份，并在读取前后复查当前权限、来源 revision、启停和取消。旧采集记录自动适配成资源，原记录接口及邮箱→简报订阅继续工作；引用型来源不会出现同步、订阅、导出或缓存清理等未实现动作。
+
+内置 `WorkspaceProvider` 将当前会话/任务的工作文件作为引用来源，使用 Workspace Service 的路径约束和 Security Service 的逐文件权限，不收集其他会话目录、凭据、托管插件私有数据或符号链接。无会话/任务的后台宿主不会默认登记包含所有私有会话的 Work 父目录。工作区扫描有界，超过 20,000 文件会明确拒绝，文本读取上限沿用 Workspace Service；本阶段没有后台全盘索引器。
+
+HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resource_id 执行按需读取；两种请求均要求原生 API 认证。数据页按来源声明展示可执行动作，引用来源按需查看内容；旧采集记录保留原操作。插件通过 `stella.data@1` 的只读方法消费资源，必须声明并获准 `data.read`，授权消费者和用途沿原调用传递。来源注册、存储清理和 Security 管理不在插件公开契约中。
+
+生产注册仍为邮箱采集和当前工作区文件引用。eLearning 和各业务库继续由其原所有者维护，没有声称已全部接入资源目录；新所有者可实现上述引用接口。插件 manifest 动态声明提供者与自动清理调度仍属后续范围，不能把接口扩展测试当作这些来源已接通。
