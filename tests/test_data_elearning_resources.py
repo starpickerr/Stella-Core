@@ -74,7 +74,9 @@ def test_elearning_live_connection_and_course_scope(integration, monkeypatch):
 def test_native_file_sync_uses_real_owner_and_preserves_modified_files(integration, tmp_path, monkeypatch):
     from channel.desktop import desktop_channel as desktop
     from tests.test_data_api import call
-    _, manager = integration
+    service, manager = integration
+    from core.data.api import DataController
+    monkeypatch.setattr('core.data.api.current_controller', lambda: DataController(service))
     monkeypatch.setattr(desktop, '_require_auth', lambda: None)
     monkeypatch.setattr(desktop.web, 'header', lambda *_: None)
     folder = tmp_path / 'downloads'
@@ -94,6 +96,36 @@ def test_native_file_sync_uses_real_owner_and_preserves_modified_files(integrati
     assert rejected['status'] == 'error' and not (tmp_path / 'outside').exists()
     manager.set_mcp_enabled('elearning', False)
     assert call(desktop.DataElearningSyncFilesHandler)['status'] == 'error'
+
+
+def test_native_file_sync_respects_data_source_disable_and_revision(integration, tmp_path, monkeypatch):
+    from core.data.api import DataController
+    from channel.desktop import desktop_channel as desktop
+    from tests.test_data_api import call
+    service, manager = integration
+    monkeypatch.setattr('core.data.api.current_controller', lambda: DataController(service))
+    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
+    monkeypatch.setattr(desktop.web, 'header', lambda *_: None)
+    folder = tmp_path / 'downloads'
+    folder.mkdir()
+    manager.call_mcp_tool('elearning', 'save_file_sync_settings', {'root': str(folder)}, host=True)
+    source = service.discover()['sources'][0]
+    service.configure_source(source['id'], enabled=False)
+    denied = call(desktop.DataElearningSyncFilesHandler)
+    assert denied['status'] == 'error' and not list(folder.rglob('*.pdf'))
+    service.configure_source(source['id'], enabled=True)
+    client = manager._mcp_registry._clients['elearning']
+    original = client.call_tool_result
+
+    def disable_after(method, *args, **kwargs):
+        result = original(method, *args, **kwargs)
+        if method == 'sync_files':
+            service.configure_source(source['id'], enabled=False)
+        return result
+
+    monkeypatch.setattr(client, 'call_tool_result', disable_after)
+    denied_result = call(desktop.DataElearningSyncFilesHandler)
+    assert denied_result['status'] == 'error' and 'sync' not in denied_result
 
 
 def test_mcp_result_rechecks_live_connection_permission(integration, monkeypatch):

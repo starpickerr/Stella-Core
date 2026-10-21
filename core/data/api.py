@@ -103,6 +103,13 @@ class DataController:
     def read_resource(self, source_id, resource_id):
         return self.service.read_resource(source_id, resource_id)
 
+    def owner_operation(self, provider_id, operation, values):
+        sources = self.service.discover()['sources']
+        active = [source for source in sources if source['provider'] == provider_id and source['present']]
+        if len(active) != 1:
+            raise PermissionError('Source owner is unavailable or ambiguous')
+        return self.service.owner_operation(active[0]['id'], operation, values)
+
     def command(self, body):
         if not isinstance(body, dict):
             raise ValueError("Data command must be an object")

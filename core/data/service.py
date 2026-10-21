@@ -327,6 +327,21 @@ class DataService:
         self._identity()
         return {'resource': returned.as_dict(), 'content': content}
 
+    def owner_operation(self, source_id, operation, values):
+        """Invoke only a trusted provider's declared, owner-authorized action."""
+        source = self._guard(source_id, 'read')
+        provider = self.providers.get(source['provider'])
+        if (not isinstance(operation, str) or operation not in getattr(provider, 'owner_operations', ())
+                or not isinstance(values, dict)):
+            raise ValueError('Unsupported source owner operation')
+        provider.authorize_owner_operation(source, operation, values)
+        result = provider.perform_owner_operation(source, operation, values)
+        if self._guard(source_id, 'read')['revision'] != source['revision']:
+            raise PermissionError('Source configuration changed during owner operation')
+        provider.authorize_owner_operation(source, operation, values)
+        self._identity()
+        return result
+
     def events(self, source_id, limit=100):
         self._guard(source_id, "read")
         if type(limit) is not int or not 1 <= limit <= 1000:

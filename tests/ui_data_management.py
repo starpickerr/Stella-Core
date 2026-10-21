@@ -391,7 +391,7 @@ with sync_playwright() as p:
         expect(page.get_by_text('从所有者实时读取的内容', exact=True)).to_have_count(0)
         fail_read[0] = False
         tabs.get_by_role('button', name='同步与分发', exact=True).click()
-        expect(page.get_by_role('button', name='添加订阅', exact=True)).to_be_disabled()
+        expect(page.get_by_role('button', name='添加订阅', exact=True)).to_have_count(0)
         tabs.get_by_role('button', name='存储管理', exact=True).click()
         expect(page.get_by_role('combobox', name='存储策略 文档引用')).to_have_count(0)
         page.screenshot(path='/tmp/stella-data-resources-narrow.png', full_page=True)

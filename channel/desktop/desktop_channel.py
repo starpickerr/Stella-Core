@@ -8784,5 +8784,6 @@ class DataElearningSyncFilesHandler:
                 'course_ids', 'file_ids', 'file_extensions', 'layout', 'offset', 'limit'
             }:
                 raise ValueError('Unsupported eLearning file sync parameters')
-            return {'sync': _elearning_settings().sync_files(**body)}
+            from core.data.api import current_controller
+            return {'sync': current_controller().owner_operation('elearning', 'sync_files', body)}
         return _data_response(operation)

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { FolderDown, Loader2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import { getLang, t } from '../../i18n'
@@ -9,6 +9,7 @@ const ElearningFileSettings: React.FC = () => {
   const [root, setRoot] = useState('')
   const [savedRoot, setSavedRoot] = useState('')
   const [loading, setLoading] = useState(true)
+  const [sourceEnabled, setSourceEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -19,12 +20,17 @@ const ElearningFileSettings: React.FC = () => {
 
   useEffect(() => {
     let active = true
+    const params = new URLSearchParams(location.search)
+    setSourceEnabled(false)
+    apiClient.getDataSnapshot(true, undefined, { agent: params.get('agent') || '', session: params.get('session') || '' })
+      .then(value => { if (active) setSourceEnabled(value.sources.some(source => source.provider === 'elearning' && source.enabled && source.available)) })
+      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     apiClient.getElearningFileSyncSettings()
       .then(value => { if (active) { setRoot(value.file_sync_root); setSavedRoot(value.file_sync_root) } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; syncRequest.current?.abort() }
-  }, [])
+  }, [location.search])
 
   const save = async () => {
     if (busy || loading) return
@@ -38,7 +44,7 @@ const ElearningFileSettings: React.FC = () => {
   }
   const edit = (value: string) => { setRoot(value); setSaved(false); setSyncMessage('') }
   const sync = async () => {
-    if (busy || loading || !savedRoot || savedRoot !== root) return
+    if (busy || loading || !sourceEnabled || !savedRoot || savedRoot !== root) return
     const controller = new AbortController()
     syncRequest.current = controller
     setBusy(true); setError(''); setSaved(false); setSyncMessage('')
@@ -64,7 +70,7 @@ const ElearningFileSettings: React.FC = () => {
   const footer = <div className="flex items-center justify-end gap-3">
     {saved && <span role="status" className="text-xs text-success">{t('elearning_file_saved')}</span>}
     {syncMessage && <span role="status" className="text-xs text-content-secondary">{syncMessage}</span>}
-    <button type="button" disabled={busy || loading || !savedRoot || root !== savedRoot} onClick={() => void sync()}
+    <button type="button" disabled={busy || loading || !sourceEnabled || !savedRoot || root !== savedRoot} onClick={() => void sync()}
       className="rounded-btn border border-default px-3 py-2 text-sm hover:bg-surface-2 disabled:opacity-50">{zh ? '同步课程文件' : 'Sync course files'}</button>
     <button type="button" disabled={busy || loading} onClick={() => void save()}
       className="rounded-btn bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50">
@@ -76,6 +82,7 @@ const ElearningFileSettings: React.FC = () => {
     {loading && <p role="status" className="flex items-center gap-2 px-4 py-3.5 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</p>}
     {error && <p role="alert" className="px-4 py-3.5 text-sm text-danger whitespace-pre-wrap">{error}</p>}
     <p className="px-4 py-3 text-xs text-content-secondary">{zh ? '按需同步所选课程的文件。先保存目录，再开始同步；已修改的本地文件会保留。' : 'Sync files from selected courses on demand. Save the directory first. Locally modified files are preserved.'}</p>
+    {!loading && !sourceEnabled && <p role="status" className="px-4 py-3 text-xs text-content-secondary"><span>{zh ? '信息源已停用，请在数据中启用后同步' : 'The source is unavailable. Enable it in Data before syncing.'}</span> <Link className="text-accent" to={`/data?section=sources&${new URLSearchParams(location.search).toString()}`}>{zh ? '查看信息源' : 'View sources'}</Link></p>}
     <Row label={t('elearning_file_root')} control={<div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <input aria-label={t('elearning_file_root')} value={root} disabled={busy || loading}
         onChange={event => edit(event.target.value)}

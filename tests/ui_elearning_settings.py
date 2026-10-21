@@ -22,6 +22,7 @@ settings = {
 saves = []
 syncs = []
 fail_save = [False]
+source_enabled = [True]
 
 
 def backend(route):
@@ -31,6 +32,8 @@ def backend(route):
         data = {"status": "ok"}
     elif path == "/auth/check":
         data.update(auth_required=False, authenticated=True)
+    elif path == "/api/data":
+        data.update(sources=[{"provider": "elearning", "enabled": source_enabled[0], "available": True}], errors=[])
     elif path == "/api/elearning/file-sync":
         if route.request.method == "POST":
             body = route.request.post_data_json
@@ -122,6 +125,12 @@ with sync_playwright() as p:
         page.get_by_role('button', name='同步课程文件', exact=True).click()
         expect(page.get_by_text('已处理 2 个文件', exact=True)).to_be_visible()
         assert syncs == [{'offset': 0, 'limit': 50}]
+        source_enabled[0] = False
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_role("button", name="同步课程文件", exact=True)).to_be_disabled()
+        expect(page.get_by_text("信息源已停用，请在数据中启用后同步", exact=True)).to_be_visible()
+        source_enabled[0] = True
+        page.reload(wait_until="networkidle")
         fail_save[0] = True
         root.fill("/unavailable")
         expect(page.get_by_role('button', name='同步课程文件', exact=True)).to_be_disabled()

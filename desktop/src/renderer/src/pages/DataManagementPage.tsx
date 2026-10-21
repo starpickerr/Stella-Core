@@ -223,11 +223,12 @@ export default function DataManagementPage() {
       </div>}
       {tab === 'sync' && <div className="space-y-4">
         {sourceSelect}
-        <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (source) void run({ action: 'subscribe', source_id: source.id, consumer_id: consumer, filter: filter ? { q: filter } : {}, include_existing: true }, c('订阅已添加', 'Subscription added')) }}>
+        {supports(source, 'subscribe') && <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (source) void run({ action: 'subscribe', source_id: source.id, consumer_id: consumer, filter: filter ? { q: filter } : {}, include_existing: true }, c('订阅已添加', 'Subscription added')) }}>
           <label className="text-sm">{c('消费者', 'Consumer')}<select aria-label={c('消费者', 'Consumer')} className={`${input} block mt-1`} value={consumer} disabled={busy} onChange={event => setConsumer(event.target.value)}>{state.consumers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="text-sm flex-1">{c('过滤关键词', 'Filter keyword')}<input className={`${input} w-full block mt-1`} value={filter} disabled={busy} onChange={event => setFilter(event.target.value)} /></label>
           <button type="submit" className={button} disabled={busy || !source?.enabled || !source.available || !supports(source, 'subscribe')}>{c('添加订阅', 'Add subscription')}</button>
-        </form>
+        </form>}
+        {!supports(source, 'subscribe') && <p className="text-xs text-content-secondary">{c('此来源按需读取，不支持订阅。', 'This source is read on demand and does not support subscriptions.')}</p>}
         <p className="text-xs text-content-secondary">{c('订阅不会授予读取权限；投递时仍会检查授权。', 'A subscription does not grant read access. Delivery checks current authorization.')}</p>
         {state.subscriptions.map(item => <section key={item.id} className="rounded-card border border-default bg-surface p-4 space-y-3">
           <div className="flex items-center justify-between gap-3"><h4 className="font-medium">{state.sources.find(row => row.id === item.source_id)?.name} → {state.consumers.find(row => row.id === item.consumer)?.name || item.consumer}</h4><Toggle label={c('启用订阅', 'Enable subscription')} checked={item.enabled} disabled={busy} onChange={enabled => void run({ action: 'subscription', subscription_id: item.id, enabled }, c('已保存', 'Saved'))} /></div>

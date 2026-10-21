@@ -8,6 +8,7 @@ from core.data.store import stable_id
 
 
 class ElearningProvider:
+    owner_operations = frozenset({'sync_files'})
     def __init__(self, manager=None):
         self.connection = McpProvider('elearning', {}, manager)
 
@@ -134,3 +135,12 @@ class ElearningProvider:
         if value is None:
             raise FileNotFoundError('eLearning resource no longer exists')
         return {'resource': resource, 'content': value}
+
+    def authorize_owner_operation(self, source, operation, values):
+        self.authorize(source, 'read')
+        self._call(operation, values, check_only=True)
+
+    def perform_owner_operation(self, source, operation, values):
+        from core.services.elearning_facade import ElearningMcpFacade
+        # Keep the owner's audit drain and cancellation/error translation.
+        return getattr(ElearningMcpFacade(), operation)(**values)
