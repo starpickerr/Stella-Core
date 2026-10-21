@@ -84,3 +84,19 @@ def test_workspace_service_keeps_explicit_project_and_automation_private_root(wo
         assert context.root == project
         assert context.private_root == work / 'automations/alpha/daily'
         assert not work.exists()
+
+
+def test_child_agent_run_changes_only_run_identity_and_keeps_parent_constraints(work):
+    from core.execution.context import execution_scope, child_execution_scope, current_execution_context
+    from common.runtime_identity import current_identity
+    with identity_scope(agent_id='alpha', user_id='alice', session_id='chat', run_id='parent'):
+        with execution_scope(consumer_plugin_id='stella.briefing') as parent:
+            with child_execution_scope('child') as child:
+                assert current_identity().run_id == 'child'
+                assert child.identity.derive(run_id='parent') == parent.identity
+                assert child.workspace == parent.workspace
+                assert child.origin == parent.origin and child.purpose == parent.purpose
+                assert child.consumer_plugin_id == parent.consumer_plugin_id
+                assert current_execution_context() == child
+            assert current_identity().run_id == 'parent'
+            assert current_execution_context() == parent

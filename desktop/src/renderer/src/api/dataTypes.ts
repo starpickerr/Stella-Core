@@ -2,7 +2,9 @@ export interface DataSourceInfo {
   id: string
   name: string
   kind: string
-  account_id: string
+  account_id?: string | null
+  operations?: string[]
+  representation?: 'collection' | 'reference'
   provider: string
   enabled: boolean
   available: boolean
@@ -42,3 +44,7 @@ export interface DataCommandResult {
   export?: { format: string; source_id: string; records: DataRecord[] }
   removed?: number
 }
+
+export interface DataResource { id: string; source_id: string; provider: string; reference: string; kind: string; name: string; operations: string[] }
+export interface DataResources { status: string; resources: DataResource[]; total: number; offset: number; limit: number }
+export interface DataResourceContent { status: string; resource: DataResource; content: unknown }

@@ -2055,6 +2055,7 @@ class DesktopChannel(ChatChannel):
             '/api/security/mcp-access', 'SecurityMcpAccessHandler',
             '/api/data', 'DataManagementHandler',
             '/api/data/records', 'DataRecordsHandler',
+            '/api/data/resources', 'DataResourcesHandler',
             '/api/data/command', 'DataCommandHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
@@ -8744,6 +8745,19 @@ class DataRecordsHandler:
             from core.data.api import current_controller
             params=web.input(source_id='',q='',limit='50',offset='0')
             return current_controller().records(params.source_id,params.q,int(params.limit),int(params.offset))
+        return _data_response(operation)
+
+
+class DataResourcesHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params = web.input(source_id='', resource_id='', q='', limit='50', offset='0')
+            controller = current_controller()
+            if getattr(params, 'resource_id', ''):
+                return controller.read_resource(params.source_id, params.resource_id)
+            return controller.resources(params.source_id, getattr(params, 'q', ''),
+                                        int(getattr(params, 'limit', '50')), int(getattr(params, 'offset', '0')))
         return _data_response(operation)
 
 

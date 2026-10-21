@@ -84,3 +84,25 @@ def execution_scope(context=None, **constraints):
         yield context
     finally:
         _CURRENT.reset(token)
+
+
+@contextmanager
+def child_execution_scope(run_id):
+    """Trusted Agent runtime transition: only the child run attribution changes."""
+    from common.runtime_identity import identity_scope, use_identity
+    if not isinstance(run_id, str) or not run_id or len(run_id) > 80:
+        raise ValueError('invalid child run ID')
+    parent = current_execution_context()
+    if parent is None:
+        with identity_scope(run_id=run_id), execution_scope() as child:
+            yield child
+        return
+    parent.check_active()
+    child = replace(parent, identity=parent.identity.derive(run_id=run_id))
+    with use_identity(child.identity):
+        token = _CURRENT.set(child)
+        try:
+            child.check_active()
+            yield child
+        finally:
+            _CURRENT.reset(token)

@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS sources(
  id TEXT PRIMARY KEY,provider TEXT NOT NULL,spec TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,
  storage TEXT NOT NULL DEFAULT 'persistent',retention_days INTEGER NOT NULL DEFAULT 30,revision INTEGER NOT NULL DEFAULT 1,
  present INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS resources(
+ id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES sources(id),spec TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS resources_source ON resources(source_id);
 CREATE TABLE IF NOT EXISTS sync_state(
  source_id TEXT PRIMARY KEY REFERENCES sources(id),cursors TEXT NOT NULL DEFAULT '{}',
  lease TEXT,lease_until REAL NOT NULL DEFAULT 0,last_run REAL,error TEXT NOT NULL DEFAULT '');
@@ -126,36 +129,54 @@ class DataStore:
                 for row in db.execute("SELECT id FROM sources ORDER BY id")
             ]
 
-    def discover(self, provider, spec):
-        with self.connection() as db:
-            previous = db.execute(
-                "SELECT provider,spec FROM sources WHERE id=?", (spec["id"],)
-            ).fetchone()
-            if previous and previous["provider"] != provider:
-                raise ValueError("Source identity belongs to another provider")
-            db.execute(
-                """INSERT INTO sources(id,provider,spec) VALUES(?,?,?)
-                ON CONFLICT(id) DO UPDATE SET spec=excluded.spec,
-                revision=revision+CASE WHEN spec=excluded.spec THEN 0 ELSE 1 END""",
-                (spec["id"], provider, encode(spec)),
-            )
-            db.execute(
-                "INSERT OR IGNORE INTO sync_state(source_id) VALUES(?)", (spec["id"],)
-            )
+    def discover(self, provider, spec, db=None):
+        if db is None:
+            with self.connection() as db:
+                return self.discover(provider, spec, db)
+        previous = db.execute('SELECT provider FROM sources WHERE id=?', (spec['id'],)).fetchone()
+        if previous and previous['provider'] != provider:
+            raise ValueError('Source identity belongs to another provider')
+        db.execute("""INSERT INTO sources(id,provider,spec) VALUES(?,?,?)
+            ON CONFLICT(id) DO UPDATE SET spec=excluded.spec,
+            revision=revision+CASE WHEN spec=excluded.spec THEN 0 ELSE 1 END""",
+            (spec['id'], provider, encode(spec)))
+        db.execute('INSERT OR IGNORE INTO sync_state(source_id) VALUES(?)', (spec['id'],))
 
-    def reconcile_presence(self, provider, identifiers):
-        """Only a complete successful discovery may withdraw an existing source."""
+    def reconcile_presence(self, provider, identifiers, db=None):
+        if db is None:
+            with self.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return self.reconcile_presence(provider, identifiers, db)
+        for row in db.execute('SELECT id,present FROM sources WHERE provider=?', (provider,)).fetchall():
+            present = row['id'] in identifiers
+            if present != bool(row['present']):
+                db.execute('UPDATE sources SET present=?,revision=revision+1 WHERE id=?', (present, row['id']))
+
+    def discover_batch(self, provider, specs):
+        """A failed provider discovery cannot partially register or withdraw sources."""
         with self.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            for row in db.execute(
-                "SELECT id,present FROM sources WHERE provider=?", (provider,)
-            ).fetchall():
-                present = row["id"] in identifiers
-                if present != bool(row["present"]):
-                    db.execute(
-                        "UPDATE sources SET present=?,revision=revision+1 WHERE id=?",
-                        (present, row["id"]),
-                    )
+            db.execute('BEGIN IMMEDIATE')
+            for spec in specs:
+                self.discover(provider, spec, db)
+            self.reconcile_presence(provider, {spec['id'] for spec in specs}, db)
+
+    def put_resources(self, source, resources):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if self.source(source['id'], db)['revision'] != source['revision']:
+                raise PermissionError('Source configuration changed during resource discovery')
+            for resource in resources:
+                db.execute("""INSERT INTO resources VALUES(?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET spec=excluded.spec""",
+                    (resource.id, source['id'], encode(resource.as_dict())))
+
+    def resource(self, source_id, identifier):
+        with self.connection() as db:
+            row = db.execute('SELECT spec FROM resources WHERE id=? AND source_id=?',
+                             (identifier, source_id)).fetchone()
+            if row is None:
+                raise KeyError('Data resource not found; discover resources first')
+            return json.loads(row['spec'])
 
     def configure(self, source_id, values):
         with self.connection() as db:

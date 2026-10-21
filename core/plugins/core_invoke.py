@@ -34,6 +34,14 @@ PUBLIC_SERVICES = {plugin_id + '@1': (lambda method, payload, pid=plugin_id: _do
 PUBLIC_SERVICES['stella.models@1'] = invoke_model_service
 
 
+def _data_invoke(method, payload):
+    from core.data.api import invoke_public
+    return invoke_public(method, payload)
+
+
+PUBLIC_SERVICES['stella.data@1'] = _data_invoke
+
+
 def dispatch(session, params: dict, parent: dict) -> dict:
     required = {'contract', 'method', 'input', 'deadline', 'invocationRef'}
     if not isinstance(params, dict) or not required <= set(params) or set(params) - required - {'idempotencyKey'}:
@@ -66,6 +74,8 @@ def dispatch(session, params: dict, parent: dict) -> dict:
         raise PermissionError('callback deadline expired')
     session.registry.require_generation(session.plugin_id, session.generation)
     from core.security.service import SecurityService, model_authorization_scope
+    if contract == 'stella.data@1':
+        SecurityService.authorize_data(session, parent, params['input'].get('source_id'))
     if contract == 'stella.models@1':
         SecurityService.authorize_model(session, parent, params['method'])
     model_scope = (model_authorization_scope(lambda: SecurityService.authorize_model(session, parent, params['method']))
@@ -88,4 +98,6 @@ def dispatch(session, params: dict, parent: dict) -> dict:
         with execution_scope(consumer_plugin_id=current_consumer_plugin(), deadline=deadline), model_scope:
             result = validate_operation_result(PUBLIC_SERVICES[contract](params['method'], payload))
             SecurityService.check_execution()
+            if contract == 'stella.data@1':
+                SecurityService.authorize_data(session, parent, params['input'].get('source_id'))
             return result

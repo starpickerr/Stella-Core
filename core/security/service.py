@@ -60,6 +60,30 @@ class SecurityService:
                 purpose='background' if background else 'interactive',
                 generation=session.generation, context_generation=session.generation)
 
+    @staticmethod
+    def authorize_data(session, parent, source_id):
+        from core.plugins.caller import current_consumer_plugin, current_invocation_purpose, managed_plugin
+        context = parent.get('context') or {}
+        method = parent.get('method')
+        if 'data.read' not in session._method_permissions.get((parent.get('contract'), method), ()):
+            raise PermissionError('data capability not declared by invoking method')
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError('source_id is required')
+        session.registry.require_generation(session.plugin_id, session.generation)
+        active = SecurityService.check_execution()
+        background = (context.get('origin') == 'job' or current_invocation_purpose() == 'background'
+                      or active is not None and active.purpose == 'background')
+        if managed_plugin(session.plugin_id, session.user_id):
+            session.authz.check_scoped(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
+                user_id=session.user_id, consumer_plugin_id=current_consumer_plugin() or session.plugin_id,
+                method=method, required_capabilities=['data.read'], resources=[{'kind': 'data-source', 'id': source_id}],
+                purpose='background' if background else 'interactive')
+        else:
+            session.authz.check(grant_ref=context['grantRef'], plugin_id=session.plugin_id,
+                user_id=session.user_id, required_capabilities=['data.read'],
+                purpose='background' if background else 'interactive',
+                generation=session.generation, context_generation=session.generation)
+
 
 def check_model_authorization():
     SecurityService.check_execution()

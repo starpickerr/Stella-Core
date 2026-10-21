@@ -1,4 +1,4 @@
-import type { DataSnapshot, DataRecords, DataCommandResult } from './dataTypes'
+import type { DataSnapshot, DataRecords, DataCommandResult, DataResources, DataResourceContent } from './dataTypes'
 import type { McpServerInfo } from '../types'
 import type {
   ConfigData,
@@ -545,6 +545,20 @@ class ApiClient {
     const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
     const result = await this.request<DataRecords & { message?: string }>(`/api/data/records?${params}`, { signal })
     if (result.status !== 'success') throw new Error(result.message || 'Data access denied')
+    return result
+  }
+
+  async getDataResources(sourceId: string, q = '', offset = 0, signal?: AbortSignal): Promise<DataResources> {
+    const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
+    const result = await this.request<DataResources & { message?: string }>(`/api/data/resources?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
+    return result
+  }
+
+  async readDataResource(sourceId: string, resourceId: string, signal?: AbortSignal): Promise<DataResourceContent> {
+    const params = new URLSearchParams({ source_id: sourceId, resource_id: resourceId })
+    const result = await this.request<DataResourceContent & { message?: string }>(`/api/data/resources?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
     return result
   }
 

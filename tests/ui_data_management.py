@@ -2,7 +2,7 @@
 
 import json
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import expect, sync_playwright
 
 url = os.environ.get("STELLA_TEST_URL", "http://127.0.0.1:5184")
@@ -22,6 +22,11 @@ source = {
     "last_run": None,
     "error": "",
 }
+reference_source = {**source, 'id': 'documents:library', 'name': '文档引用', 'kind': 'document',
+                    'provider': 'documents', 'representation': 'reference',
+                    'operations': ['metadata', 'configure', 'resources', 'read'],
+                    'connection': None, 'settings_url': None}
+
 records = [
     {
         "id": "record-1",
@@ -95,7 +100,7 @@ def backend(route):
         data.update(auth_required=False, authenticated=True)
     elif path == "/api/data":
         data.update(
-            sources=[source],
+            sources=[source, reference_source],
             record_count=len(records),
             subscriptions=subscriptions,
             deliveries=deliveries,
@@ -103,6 +108,15 @@ def backend(route):
             consumers=[{"id": "briefing", "name": "简报"}],
             errors=[],
         )
+    elif path == "/api/data/resources":
+        resource = {'id': 'doc-1', 'source_id': reference_source['id'], 'provider': 'documents',
+                    'reference': 'doc:42', 'kind': 'document', 'name': '引用笔记', 'operations': ['read']}
+        if fail_read[0]:
+            data = {'status': 'error', 'message': 'Document access revoked'}
+        elif parse_qs(urlparse(route.request.url).query).get('resource_id'):
+            data.update(resource=resource, content='从所有者实时读取的内容')
+        else:
+            data.update(resources=[resource], total=1, offset=0, limit=50)
     elif path == "/api/data/records":
         if fail_read[0]:
             data = {"status": "error", "message": "Connection mcp:email was revoked."}
@@ -336,6 +350,25 @@ with sync_playwright() as p:
             expect(page.get_by_role("button", name="刷新", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
         page.screenshot(path="/tmp/stella-data-management-narrow.png", full_page=True)
+        tabs.get_by_role('button', name='信息源', exact=True).click()
+        reference_card = page.get_by_test_id('data-source-documents:library')
+        expect(reference_card.get_by_role('button', name='同步', exact=True)).to_have_count(0)
+        tabs.get_by_role('button', name='数据记录', exact=True).click()
+        page.get_by_role('combobox', name='选择信息源').select_option('documents:library')
+        expect(page.get_by_text('引用笔记', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='导出', exact=True)).to_have_count(0)
+        page.get_by_role('button', name='查看内容', exact=True).click()
+        expect(page.get_by_text('从所有者实时读取的内容', exact=True)).to_be_visible()
+        fail_read[0] = True
+        page.get_by_role('button', name='刷新', exact=True).click()
+        expect(page.get_by_role('alert')).to_contain_text('revoked')
+        expect(page.get_by_text('从所有者实时读取的内容', exact=True)).to_have_count(0)
+        fail_read[0] = False
+        tabs.get_by_role('button', name='同步与分发', exact=True).click()
+        expect(page.get_by_role('button', name='添加订阅', exact=True)).to_be_disabled()
+        tabs.get_by_role('button', name='存储管理', exact=True).click()
+        expect(page.get_by_role('combobox', name='存储策略 文档引用')).to_have_count(0)
+        page.screenshot(path='/tmp/stella-data-resources-narrow.png', full_page=True)
         sidebar.get_by_role("button", name="安全", exact=True).click()
         page.get_by_role("navigation", name="安全中心").get_by_role(
             "button", name="数据访问", exact=True
