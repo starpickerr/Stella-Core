@@ -47,4 +47,4 @@ Core Workspace Service 统一运行目录与文件浏览，Execution Context 绑
 
 `core/data` 提供 Provider / Source / Resource 目录、采集检查点、去重记录与可靠变更通知。邮箱保留采集链路；eLearning、授权工作区及事务、日程、账单、简报、知识、记忆通过原 MCP、Workspace 或插件 RPC 提供资源引用。正文仍由原所有者管理，读取前后复查当前授权与来源状态。契约、事件语义与性能限制见[数据服务](data-service.md)。
 
-Desktop 默认浏览资源，来源、同步分发与存储是辅助视图；模型、能力、安全、通用各自承载对应配置，Agent 配置由 Agent 菜单进入。凭据的唯一编辑器位于安全中心，模型页只显示状态并跳转。旧设置页与来源路由保留兼容跳转。当前入口与表单归属见[信息架构与配置入口](information-architecture.md)。
+Desktop 默认浏览资源，来源、同步分发与存储是辅助视图；模型、Agent 配置、能力、安全、通用均位于系统区，各自承载对应配置。凭据的唯一编辑器位于安全中心，模型页只显示状态并跳转。旧设置页与来源路由保留兼容跳转。当前入口与表单归属见[信息架构与配置入口](information-architecture.md)。
