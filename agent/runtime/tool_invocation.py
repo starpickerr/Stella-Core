@@ -77,7 +77,7 @@ def invocation_scope(tool_call_id):
 
 
 def execution_workspace(session_id=None, agent_id=None, workspace=None):
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     from common.runtime_identity import current_identity
     identity = current_identity()
     context = resolve_context(identity.execution_session_id or session_id, agent_id,
@@ -219,7 +219,7 @@ def permission_denial(
             if not tool_enabled(tool_name, **capability_scope):
                 return f'Tool {tool_name} is disabled.'
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
-                from agent.workspace.context import resolve_context
+                from core.workspace.service import resolve_context
                 context = resolve_context(identity.execution_session_id or session_id, agent_id,
                                           task_id=identity.task_id)
                 if context.kind in ("session", "automation"):

@@ -345,7 +345,7 @@ def _get_upload_dir() -> str:
 
 def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
     """Resolve the same working root used by the Agent and tool gateway."""
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     return str(resolve_context(session_id, agent_id).root)
 
 
@@ -454,7 +454,8 @@ def _serve_allowed_roots() -> list:
 
 def _is_path_allowed(real_path: str, session_id: str = '', agent_id: str = '') -> bool:
     try:
-        from agent.workspace.context import private_access, resolve_context
+        from agent.workspace.context import private_access
+        from core.workspace.service import resolve_context
         context = resolve_context(session_id or None, agent_id or None)
         access = private_access(real_path, context)
         if access == 'deny':
@@ -8040,7 +8041,7 @@ class LogsDownloadHandler:
 
 
 def _workspace_service(session_id: str = None, agent_id: str = None):
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     return WorkspaceService(_get_workspace_root(session_id, agent_id))
 
 
@@ -8059,7 +8060,7 @@ def _is_system_asset_rel(rel_path: str) -> bool:
 
 
 def _system_workspace_service():
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     from common.state_dir import state_root_str
     return WorkspaceService(state_root_str())
 

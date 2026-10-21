@@ -348,7 +348,7 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
         source = "session"
     else:
         source = "global"
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     work_root = str(resolve_context(session_id, agent_id).root)
     from agent.permission.gateway import SecurityGateway
     from agent.permission.process_sandbox import capability

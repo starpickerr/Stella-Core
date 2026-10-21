@@ -125,7 +125,7 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         raise SandboxUnavailable(state["reason"])
 
     if context is None:
-        from agent.workspace.context import resolve_context
+        from core.workspace.service import resolve_context
         from common.runtime_identity import current_identity
         identity = current_identity()
         try:

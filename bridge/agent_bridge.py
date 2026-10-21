@@ -584,7 +584,7 @@ class AgentBridge:
         if not (getattr(agent, "apply_work_context", None) or
                 getattr(agent, "apply_project_dir", None)):
             return
-        from agent.workspace.context import resolve_context
+        from core.workspace.service import resolve_context
         from common.runtime_identity import current_identity
         identity = current_identity()
         context = resolve_context(identity.execution_session_id or session_id, agent_id,

@@ -307,7 +307,7 @@ class BrowserTool(BaseTool):
                 if hasattr(service, "set_authorized_roots"):
                     from agent.permission.process_sandbox import current_policy_and_roots
                     from agent.runtime.tool_invocation import approved_browser_file
-                    from agent.workspace.context import resolve_context
+                    from core.workspace.service import resolve_context
                     from common.runtime_identity import current_identity
                     identity = current_identity()
                     private_context = resolve_context(identity.execution_session_id or identity.session_id,

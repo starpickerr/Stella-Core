@@ -134,7 +134,7 @@ class CloudClient(LinkAIClient):
         """Lazy-init WorkspaceService."""
         if self._workspace_service is None:
             try:
-                from agent.workspace.service import WorkspaceService
+                from core.workspace.service import WorkspaceService
                 from common.state_dir import state_root_str
                 self._workspace_service = WorkspaceService(state_root_str())
                 logger.debug("[CloudClient] WorkspaceService initialised")
