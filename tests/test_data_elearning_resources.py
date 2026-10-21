@@ -94,3 +94,24 @@ def test_native_file_sync_uses_real_owner_and_preserves_modified_files(integrati
     assert rejected['status'] == 'error' and not (tmp_path / 'outside').exists()
     manager.set_mcp_enabled('elearning', False)
     assert call(desktop.DataElearningSyncFilesHandler)['status'] == 'error'
+
+
+def test_mcp_result_rechecks_live_connection_permission(integration, monkeypatch):
+    from config import conf
+    _, manager = integration
+    # Initialize the actual stdio worker, then revoke access after it replies.
+    manager.call_mcp_tool('elearning', 'list_courses', {})
+    client = manager._mcp_registry._clients['elearning']
+    original = client.call_tool_result
+
+    def revoke_after(method, *args, **kwargs):
+        result = original(method, *args, **kwargs)
+        if method == 'fetch':
+            monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {},
+                'connections': {'mcp:elearning': {'allowed': False}}})
+        return result
+
+    monkeypatch.setattr(client, 'call_tool_result', revoke_after)
+    with pytest.raises(PermissionError, match='revoked'):
+        manager.call_mcp_tool('elearning', 'fetch', {'since': '2026-09-01T00:00:00Z',
+            'until': '2026-09-10T00:00:00Z', 'course_ids': ['42']})

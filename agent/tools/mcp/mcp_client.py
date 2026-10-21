@@ -29,8 +29,20 @@ class McpCancelledError(Exception):
 
 
 def _check_cancelled(cancel_event):
+    from core.plugins.caller import remaining_invocation_seconds
+    from agent.protocol.cancel import AgentCancelledError
+    try:
+        remaining_invocation_seconds()
+    except AgentCancelledError as exc:
+        raise McpCancelledError('MCP call cancelled') from exc
     if cancel_event is not None and cancel_event.is_set():
         raise McpCancelledError("MCP call cancelled")
+
+
+def _bounded_timeout(timeout):
+    from core.plugins.caller import remaining_invocation_seconds
+    remaining = remaining_invocation_seconds()
+    return min(timeout, remaining) if remaining is not None else timeout
 
 
 # System env vars a stdio MCP subprocess legitimately needs to run
@@ -195,7 +207,7 @@ class McpClient:
     @contextmanager
     def _remote_response(self, request, timeout):
         self._ensure_open()
-        response = urllib.request.urlopen(request, timeout=timeout)
+        response = urllib.request.urlopen(request, timeout=_bounded_timeout(timeout))
         with self._lifecycle_lock:
             abandoned = self._closed
             # Capture the session before publishing the response, so shutdown
@@ -380,7 +392,7 @@ class McpClient:
         Uses the per-server timeout from mcp.json config when no explicit
         timeout is provided.
         """
-        effective = timeout if timeout is not None else self._timeout
+        effective = _bounded_timeout(timeout if timeout is not None else self._timeout)
         deadline = time.monotonic() + effective
         while True:
             _check_cancelled(cancel_event)
@@ -407,7 +419,7 @@ class McpClient:
         while True:
             try:
                 line = self._readline_with_timeout(cancel_event=cancel_event)
-            except McpCancelledError:
+            except (McpCancelledError, PermissionError, TimeoutError):
                 try:
                     self._send_notification("notifications/cancelled", {
                         "requestId": expected_id, "reason": "User cancelled"
@@ -786,23 +798,25 @@ class McpClient:
         # SSE and streamable-http use independent HTTP requests and
         # can safely run concurrently across sessions.
         if self.transport == "stdio":
-            if cancel_event is None:
-                with self._call_lock:
-                    return self._stdio_send(message)
-            while not self._call_lock.acquire(timeout=0.1):
+            while not self._call_lock.acquire(timeout=_bounded_timeout(0.05)):
                 _check_cancelled(cancel_event)
             try:
-                return self._stdio_send(message, cancel_event=cancel_event)
+                _check_cancelled(cancel_event)
+                self._ensure_open()
+                result = (self._stdio_send(message) if cancel_event is None else
+                          self._stdio_send(message, cancel_event=cancel_event))
             finally:
                 self._call_lock.release()
         elif self.transport == "sse":
-            return (self._sse_send(message) if cancel_event is None else
-                    self._sse_send(message, cancel_event=cancel_event))
+            result = (self._sse_send(message) if cancel_event is None else
+                      self._sse_send(message, cancel_event=cancel_event))
         elif self.transport == "streamable-http":
-            return (self._streamable_http_send(message) if cancel_event is None else
-                    self._streamable_http_send(message, cancel_event=cancel_event))
+            result = (self._streamable_http_send(message) if cancel_event is None else
+                      self._streamable_http_send(message, cancel_event=cancel_event))
         else:
             raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
+        _check_cancelled(cancel_event)
+        return result
 
     def _send_notification(self, method: str, params: dict):
         """Fire-and-forget notification (no response expected)."""

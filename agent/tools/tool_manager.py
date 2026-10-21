@@ -447,7 +447,9 @@ class ToolManager:
     ):
         import time
         from common.runtime_identity import current_identity
+        from core.plugins.caller import remaining_invocation_seconds
 
+        remaining_invocation_seconds()
         current = current_identity()
         if (current.user_id or "local-default") != (
             self.identity.user_id or "local-default"
@@ -464,6 +466,7 @@ class ToolManager:
             self._queue_mcp_servers([cfg])
         deadline = time.monotonic() + 30
         while True:
+            remaining_invocation_seconds()
             if cancel_event is not None and cancel_event.is_set():
                 from agent.protocol.cancel import AgentCancelledError
 
@@ -550,6 +553,15 @@ class ToolManager:
         result = client.call_tool_result(
             method, arguments, cancel_event=cancel_event, meta=meta
         )
+        remaining_invocation_seconds()
+        if not self._mcp_admitted(server_name, generation) or not self._mcp_enabled(cfg):
+            raise PermissionError('MCP connection was disabled or replaced during the call')
+        denial = permission_denial(tool.name, arguments, tool=tool, noninteractive=True,
+                                  user_action=native_user_action(host, method, purpose))
+        if denial:
+            raise PermissionError(denial)
+        if cfg.get('settingsUrl') == '/' + server_name:
+            check(server_name, method, arguments, current.user_id or 'local-default', metadata, purpose)
         import json
 
         structured = result.get("structuredContent")
