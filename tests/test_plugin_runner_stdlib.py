@@ -132,7 +132,7 @@ def test_frozen_runner_can_import_sqlite3_for_plugin(frozen_runner, tmp_path, mo
 
 @pytest.mark.parametrize(
     "domain",
-    ["bills", "tasks", "calendar", "email", "elearning", "briefing", "automation"],
+    ["bills", "tasks", "calendar", "briefing", "automation", "agent-hub", "knowledge", "memory"],
 )
 def test_frozen_runner_initializes_default_domain_plugins(frozen_runner, domain, monkeypatch):
     from core.plugins.host import PluginSession
