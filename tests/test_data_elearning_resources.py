@@ -69,3 +69,28 @@ def test_elearning_live_connection_and_course_scope(integration, monkeypatch):
     manager.set_mcp_enabled('elearning', False)
     with pytest.raises(PermissionError):
         service.resources(source['id'])
+
+
+def test_native_file_sync_uses_real_owner_and_preserves_modified_files(integration, tmp_path, monkeypatch):
+    from channel.desktop import desktop_channel as desktop
+    from tests.test_data_api import call
+    _, manager = integration
+    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
+    monkeypatch.setattr(desktop.web, 'header', lambda *_: None)
+    folder = tmp_path / 'downloads'
+    folder.mkdir()
+    manager.call_mcp_tool('elearning', 'save_file_sync_settings', {'root': str(folder)}, host=True)
+    result = call(desktop.DataElearningSyncFilesHandler, body={'offset': 0, 'limit': 50})
+    assert result['status'] == 'success' and result['sync']['processed'] == 1
+    files = list(folder.rglob('*.pdf'))
+    assert len(files) == 1 and files[0].read_bytes() == b'coursepdf'
+    files[0].write_bytes(b'user changes')
+    result = call(desktop.DataElearningSyncFilesHandler, body={'offset': 0, 'limit': 50})
+    # An unchanged remote version is skipped by the existing owner, including
+    # when its local copy was edited. It is not an upstream sync failure.
+    assert result['status'] == 'success' and result['sync']['errors'] == []
+    assert files[0].read_bytes() == b'user changes' and len(list(folder.rglob('*.pdf'))) == 1
+    rejected = call(desktop.DataElearningSyncFilesHandler, body={'root': str(tmp_path / 'outside')})
+    assert rejected['status'] == 'error' and not (tmp_path / 'outside').exists()
+    manager.set_mcp_enabled('elearning', False)
+    assert call(desktop.DataElearningSyncFilesHandler)['status'] == 'error'

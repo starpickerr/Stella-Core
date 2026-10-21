@@ -567,6 +567,14 @@ class ApiClient {
     return result
   }
 
+  async syncElearningFiles(offset: number, signal?: AbortSignal, scope = {}) {
+    const result = await this.request<{ status: string; message?: string; sync: { processed: number; next_offset: number | null; errors: string[] } }>(
+      `/api/data/elearning/sync-files?${this.dataScopeQuery(scope).slice(1)}`,
+      { method: 'POST', body: JSON.stringify({ offset, limit: 50 }), signal })
+    if (result.status !== 'success') throw new Error(result.message || 'File sync failed')
+    return result.sync
+  }
+
   async dataCommand(body: Record<string, unknown>, scope = {}): Promise<DataCommandResult> {
     const result = await this.request<DataCommandResult>(`/api/data/command?${this.dataScopeQuery(scope).slice(1)}`, { method: 'POST', body: JSON.stringify(body) })
     if (result.status !== 'success') throw new Error(result.message || 'Data operation failed')

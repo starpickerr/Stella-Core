@@ -238,7 +238,7 @@ with sync_playwright() as playwright:
         page.get_by_role('tab', name='MCP', exact=True).click()
         learning = page.get_by_role('article', name='elearning', exact=True)
         learning.get_by_role('link', name='设置', exact=True).click()
-        expect(page).to_have_url(test_url + '/#/elearning')
+        expect(page).to_have_url(test_url + '/#/data/sources/elearning')
         expect(page.get_by_role('textbox',name='课件保存目录',exact=True)).to_be_visible()
         page.go_back(wait_until='networkidle')
         mcp = page.get_by_role('article', name='Documents')

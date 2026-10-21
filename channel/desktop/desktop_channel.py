@@ -2057,6 +2057,7 @@ class DesktopChannel(ChatChannel):
             '/api/data/records', 'DataRecordsHandler',
             '/api/data/resources', 'DataResourcesHandler',
             '/api/data/command', 'DataCommandHandler',
+            '/api/data/elearning/sync-files', 'DataElearningSyncFilesHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
@@ -8772,4 +8773,16 @@ class DataCommandHandler:
         def operation():
             from core.data.api import current_controller
             return current_controller().command(json.loads(web.data() or b'{}'))
+        return _data_response(operation)
+
+
+class DataElearningSyncFilesHandler:
+    def POST(self):
+        def operation():
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) - {
+                'course_ids', 'file_ids', 'file_extensions', 'layout', 'offset', 'limit'
+            }:
+                raise ValueError('Unsupported eLearning file sync parameters')
+            return {'sync': _elearning_settings().sync_files(**body)}
         return _data_response(operation)

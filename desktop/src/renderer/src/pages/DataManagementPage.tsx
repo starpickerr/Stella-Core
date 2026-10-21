@@ -16,7 +16,10 @@ type Tab = typeof tabs[number]
 const labels = () => [c('资源浏览', 'Resources'), c('信息源', 'Sources'), c('同步与分发', 'Sync and delivery'), c('存储管理', 'Storage')]
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 const ownerPages = new Set(['/todos', '/calendar', '/bills', '/briefing', '/knowledge', '/memory'])
-const safeSettings = (source: DataSourceInfo) => ['/email', '/elearning'].includes(source.settings_url || '') ? `/data/sources${source.settings_url}` : ownerPages.has(source.settings_url || '') ? source.settings_url : undefined
+const safeSettings = (source: DataSourceInfo, scope?: { agent: string; session: string }) => {
+  const path = ['/email', '/elearning'].includes(source.settings_url || '') ? `/data/sources${source.settings_url}` : ownerPages.has(source.settings_url || '') ? source.settings_url : undefined
+  return path?.startsWith('/data/') && scope ? `${path}?${new URLSearchParams(scope)}` : path
+}
 const supports = (source: DataSourceInfo | undefined, operation: string) => !!source && (!source.operations || source.operations.includes(operation))
 const bytes = (value: number) => value < 1024 ? `${value} B` : value < 1048576 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`
 
@@ -189,13 +192,14 @@ export default function DataManagementPage() {
           <p className="text-xs text-content-secondary break-all">{item.provider} · {item.available ? c('服务已启用', 'Service enabled') : c('来源或服务不可用', 'Source or service unavailable')} · {c('访问：读取时检查授权', 'Access: authorization checked on read')} · {item.representation === 'reference' ? c('按需读取', 'Read on demand') : item.running ? c('同步中', 'Syncing') : item.last_run ? c('已同步', 'Synced') : c('尚未同步', 'Not synced')}</p>
           {item.error && <p className="text-sm text-danger break-words">{item.error}</p>}
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            {safeSettings(item) && <Link className="text-accent" to={safeSettings(item)!}>{['email', 'elearning'].includes(item.provider) ? c('配置账号', 'Configure account') : c('打开来源', 'Open source')}</Link>}
+            {safeSettings(item) && <Link className="text-accent" to={safeSettings(item, scope)!}>{['email', 'elearning'].includes(item.provider) ? c('配置账号', 'Configure account') : c('打开来源', 'Open source')}</Link>}
             <Link className="text-accent" to={item.connection?.startsWith('mcp:') ? '/skills?tab=mcp' : '/skills?tab=plugins'}>{c('管理能力', 'Manage capability')}</Link><Link className="text-accent" to="/security?tab=privacy">{c('授权', 'Access')}</Link>
             {supports(item, 'sync') && <button type="button" className={button} disabled={busy || !item.enabled || !item.available || item.running} onClick={() => void run({ action: 'sync', source_id: item.id }, c('同步完成', 'Sync completed'))}>{c('同步', 'Sync')}</button>}
           </div>
         </section>)}
       </div>}
       {tab === 'resources' && <div className="space-y-3">
+        <p className="text-xs text-content-secondary">{c('资源目录不会自动将内容加入当前模型上下文。', 'The resource directory does not automatically add content to the current model context.')}</p>
         {sourceSelect}
         <label className="flex items-center gap-2 text-sm">{c('资源类型', 'Resource type')}<select aria-label={c('资源类型', 'Resource type')} value={kind} className={`${input} flex-1`} onChange={event => { setKind(event.target.value); setOffset(0) }}>
           <option value="">{c('全部类型', 'All types')}</option>{(source?.resource_kinds || (source ? [source.kind] : [])).map(value => <option key={value} value={value}>{value}</option>)}
@@ -210,7 +214,7 @@ export default function DataManagementPage() {
         {resources.map(row => <article key={row.id} className="rounded-card border border-default bg-surface p-4 space-y-2">
           <h4 className="font-medium break-words">{row.name}</h4>
           <p className="text-xs text-content-secondary break-words">{row.kind} · {source?.name} · {source?.representation === 'reference' ? c('内容由来源管理', 'Content managed by source') : c('本地采集记录', 'Collected local record')}</p>
-          {source && safeSettings(source) && <Link className="inline-block text-sm text-accent" to={safeSettings(source)!}>{c('打开来源', 'Open source')}</Link>}
+          {source && safeSettings(source) && <Link className="inline-block text-sm text-accent" to={safeSettings(source, scope)!}>{c('打开来源', 'Open source')}</Link>}
           {row.operations.includes('read') && <button type="button" className="text-sm text-accent" onClick={() => void readResource(row)}>{c('查看内容', 'View content')}</button>}
           {expanded === row.id && <p className="whitespace-pre-wrap break-words text-sm">{resourceContent ?? c('正在读取', 'Loading content')}</p>}
           {supports(source, 'delete') && <button type="button" className="ml-3 text-sm text-danger" disabled={busy} onClick={() => { if (window.confirm(c('仅删除本地数据记录，保留来源和业务历史？', 'Delete the local record while keeping upstream and business history?'))) void run({ action: 'delete_record', record_id: row.reference }, c('已删除', 'Deleted')) }}>{c('删除本地记录', 'Delete local record')}</button>}

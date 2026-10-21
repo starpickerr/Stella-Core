@@ -246,8 +246,8 @@ const App: React.FC = () => {
 
             <Route path="/agent-hub" element={<PluginPageHost baseUrl={backend.baseUrl} pluginId="stella.agent-hub" pageId="agent-hub.main" title={t('menu_agent_hub')} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
-            <Route path="/email" element={<Navigate to="/data/sources/email" replace state={location.state} />} />
-            <Route path="/elearning" element={<Navigate to="/data/sources/elearning" replace state={location.state} />} />
+            <Route path="/email" element={<Navigate to={'/data/sources/email' + location.search} replace state={location.state} />} />
+            <Route path="/elearning" element={<Navigate to={'/data/sources/elearning' + location.search} replace state={location.state} />} />
             <Route path="/data/sources/email" element={<SourceSettingsPage owner="email" />} />
             <Route path="/data/sources/elearning" element={<SourceSettingsPage owner="elearning" />} />
             {/* Automation product UI is the mature scheduler page (侧栏「定时」). */}

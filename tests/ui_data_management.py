@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import expect, sync_playwright
 
@@ -315,7 +316,7 @@ with sync_playwright() as p:
         tabs.get_by_role("button", name="信息源", exact=True).click()
         card = page.get_by_test_id("data-source-" + source["id"])
         expect(card.get_by_role("link", name="配置账号")).to_have_attribute(
-            "href", "#/data/sources/email"
+            "href", re.compile(r'^#/data/sources/email\?agent=.*&session=')
         )
         toggle = card.get_by_role("switch", name="收件箱", exact=True)
         toggle.click()
