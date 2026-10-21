@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
@@ -20,11 +20,10 @@ import {
   Database,
   Bot,
   Cpu,
-  ChevronDown,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import brandLogo from '../assets/logo.png'
-import { t, getLang } from '../i18n'
+import { t } from '../i18n'
 import { useUIStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
@@ -79,6 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: 'nav_system',
     items: [
       { path: '/models', labelKey: 'settings_tab_models', icon: Cpu },
+      { path: '/agent-settings', labelKey: 'config_agent', icon: Bot },
       { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
       { path: '/security', labelKey: 'menu_security', icon: Shield },
       { path: '/general', labelKey: 'settings_tab_general', icon: Settings },
@@ -108,17 +108,6 @@ const NavRail: React.FC = () => {
   const collapsed = navCollapsed
   const width = collapsed ? 'w-[56px]' : 'w-[208px]'
 
-  const agentMenuRef = useRef<HTMLDivElement>(null)
-  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
-  useEffect(() => {
-    if (!agentMenuOpen) return
-    agentMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
-    const close = (event: PointerEvent) => {
-      if (!agentMenuRef.current?.contains(event.target as Node)) setAgentMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [agentMenuOpen])
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(GROUP_OPEN_DEFAULT)
   const [version, setVersion] = useState(__APP_VERSION__)
 
@@ -156,15 +145,6 @@ const NavRail: React.FC = () => {
 
       {/* Content area carries the right divider, starting below the titlebar */}
       <div className="flex-1 flex flex-col min-h-0 border-r border-default">
-      <div ref={agentMenuRef} className="px-2 pt-2 relative">
-        <button type="button" aria-label={getLang() === 'zh' ? 'Agent 菜单' : 'Agent menu'} aria-haspopup="menu" aria-expanded={agentMenuOpen}
-          onClick={() => setAgentMenuOpen(value => !value)} className="flex w-full items-center gap-2 rounded-btn px-3 py-2 text-sm text-content-secondary hover:bg-surface-2">
-          <Bot size={17} />{!collapsed && <><span className="flex-1 text-left">Agent</span><ChevronDown size={14} /></>}
-        </button>
-        {agentMenuOpen && <div role="menu" className="absolute left-2 right-2 z-30 rounded-btn border border-default bg-surface shadow-lg p-1" onKeyDown={event => { if (event.key === 'Escape') { setAgentMenuOpen(false); agentMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup]')?.focus() } }}>
-          <button type="button" role="menuitem" className="w-full rounded-btn px-3 py-2 text-left text-sm hover:bg-surface-2" onClick={() => { setAgentMenuOpen(false); navigate('/agent-settings') }}>{getLang() === 'zh' ? 'Agent 配置' : 'Agent configuration'}</button>
-        </div>}
-      </div>
       {/* Nav items */}
       <nav className="flex-1 overflow-y-auto px-2 py-2">
         {NAV_GROUPS.map((group, gi) => {
