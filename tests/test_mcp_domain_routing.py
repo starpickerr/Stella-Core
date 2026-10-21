@@ -303,7 +303,7 @@ def test_source_registry_uses_mcp_sources_without_legacy_settings(
 ):
     sentinel = [object()]
     monkeypatch.setattr(
-        "core.services.email_facade.email_sources", lambda *a, **k: list(sentinel)
+        "core.data.runtime.consumer_sources", lambda *a, **k: list(sentinel)
     )
     monkeypatch.setattr(
         "core.services.elearning_facade.elearning_sources", lambda *a, **k: []

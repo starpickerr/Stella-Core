@@ -10,8 +10,8 @@ def source_key(source):
 def _email_sources():
     from core.services.email_gateway import email_mcp_enabled
     if email_mcp_enabled():
-        from core.services.email_facade import email_sources
-        return email_sources()
+        from core.data.runtime import consumer_sources
+        return consumer_sources(provider_ids={'email'})
     return []
 
 

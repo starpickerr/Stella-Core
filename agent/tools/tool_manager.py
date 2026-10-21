@@ -443,7 +443,7 @@ class ToolManager:
         return enabled
 
     def call_mcp_tool(
-        self, server_name, method, arguments, *, host=False, cancel_event=None, purpose=None
+        self, server_name, method, arguments, *, host=False, cancel_event=None, purpose=None, check_only=False
     ):
         import time
         from common.runtime_identity import current_identity
@@ -543,6 +543,10 @@ class ToolManager:
             )
         if not self._mcp_admitted(server_name, generation):
             raise PermissionError("MCP connection was replaced")
+        # Cache consumers need the same current authorization and admission
+        # without issuing a second upstream read. This is a Core-only option.
+        if check_only:
+            return None
         result = client.call_tool_result(
             method, arguments, cancel_event=cancel_event, meta=meta
         )

@@ -30,7 +30,7 @@ DENIED_MESSAGE = (
 )
 ELEARNING_DENIED_MESSAGE = (
     "Error: Direct access to eLearning login settings and session cookies is denied; "
-    "workspace_outside permission does not grant credential access. Use the built-in "
+    "workspace_outside permission does not grant credential access. Use the "
     "eLearning MCP for courses, fetch, or sync_files; it uses the saved session "
     "internally. If login times out, retry login in eLearning settings."
 )
@@ -48,6 +48,11 @@ def is_elearning_credential_path(absolute_path: str) -> bool:
 
 
 def credential_denial_message(absolute_path: str) -> str:
+    from common.state_dir import data_service_db
+    root=os.path.realpath(data_service_db(ensure=False).parent)
+    real=os.path.realpath(absolute_path)
+    if real==root or real.startswith(root+os.sep):
+        return 'Managed data must be accessed through Data Service or Data Management; raw file access is denied.'
     return ELEARNING_DENIED_MESSAGE if is_elearning_credential_path(absolute_path) else DENIED_MESSAGE
 
 
@@ -79,7 +84,7 @@ def protected_credential_folders() -> set[str]:
     from common.state_dir import briefing_db, shared_root
     user = briefing_db(ensure=False).parent.parent
     folders = {
-        user / 'email', user / 'elearning', user / 'briefing' / 'elearning-sessions',
+        user / 'email', user / 'elearning', user / 'data', user / 'briefing' / 'elearning-sessions',
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
     }

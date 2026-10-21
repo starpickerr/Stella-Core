@@ -278,6 +278,11 @@ def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
     return bills_dir / "bills.db"
 
 
+def data_service_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Core Data Service records and collection/delivery state, owned by the user."""
+    return _ensure(_user_base(identity, base) / "data", ensure) / "data.db"
+
+
 def briefing_db(identity=None, ensure: bool = True, base=None) -> Path:
     """Morning briefing history and filter rules. User-scoped: inbox
     preferences are a fact about the person, not about one Agent."""

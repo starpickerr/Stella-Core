@@ -546,3 +546,62 @@ def test_plugin_call_is_not_confirmation_from_native_settings():
         assert not native_user_action(True, "save_account", None)
     with caller_origin_scope("scheduler"):
         assert not native_user_action(True, "save_account", None)
+
+
+def test_mcp_authorization_probe_does_not_execute_the_business_tool(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("STELLA_MANAGED_MCP", "1")
+    from config import conf
+
+    monkeypatch.setitem(conf(), "agent_permission_mode", "full-access")
+    monkeypatch.setitem(
+        conf(),
+        "security_policy",
+        {"preset": "full-access", "rules": {}, "connections": {}},
+    )
+    from core.services import email_facade
+    from agent.tools.tool_manager import ToolManager
+
+    monkeypatch.setattr(
+        email_facade,
+        "_paths",
+        lambda: (tmp_path / "email/email.db", tmp_path / "legacy/mailbox.json"),
+    )
+    manager = ToolManager()
+    try:
+        email_facade.EmailMcpFacade().list_accounts()
+        client = manager._mcp_registry._clients["email"]
+        calls = []
+        original = client.call_tool_result
+
+        def observe(method, *args, **kwargs):
+            calls.append(method)
+            return original(method, *args, **kwargs)
+
+        monkeypatch.setattr(client, "call_tool_result", observe)
+        manager.call_mcp_tool(
+            "email",
+            "fetch_messages",
+            {"account_id": "not-a-real-account"},
+            check_only=True,
+        )
+        assert "fetch_messages" not in calls
+        monkeypatch.setitem(
+            conf(),
+            "security_policy",
+            {
+                "preset": "full-access",
+                "rules": {},
+                "connections": {"mcp:email": {"allowed": False}},
+            },
+        )
+        with pytest.raises(PermissionError, match="revoked"):
+            manager.call_mcp_tool(
+                "email",
+                "fetch_messages",
+                {"account_id": "not-a-real-account"},
+                check_only=True,
+            )
+    finally:
+        manager._teardown_mcp_server("email")
