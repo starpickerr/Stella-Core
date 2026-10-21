@@ -56,6 +56,8 @@ class DataService:
         source = self.store.source(source_id)
         if not source["enabled"] and not allow_disabled:
             raise PermissionError("Data source is disabled")
+        if not source["present"] and not allow_disabled:
+            raise PermissionError("Data source is unavailable")
         self.providers.get(source["provider"]).authorize(source, operation)
         if self.store.source(source_id)["revision"] != source["revision"]:
             raise PermissionError("Source configuration changed during authorization")
@@ -83,6 +85,7 @@ class DataService:
                 ):
                     raise ValueError("Provider returned invalid source metadata")
                 self.store.discover(provider_id, spec)
+            self.store.reconcile_presence(provider_id, {spec["id"] for spec in specs})
         return {"sources": self.list_sources(), "errors": errors}
 
     def list_sources(self):
@@ -248,6 +251,18 @@ class DataService:
                 self.store.tombstone(db, row)
         return {"removed": len(rows)}
 
+    def purge(self, source_id):
+        self._guard(source_id, "delete", allow_disabled=True)
+        with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._guard(source_id, "delete", allow_disabled=True)
+            rows = db.execute(
+                "SELECT * FROM records WHERE source_id=? AND deleted=0", (source_id,)
+            ).fetchall()
+            for row in rows:
+                self.store.tombstone(db, row)
+        return {"removed": len(rows)}
+
     def export(self, source_id):
         source = self._guard(source_id, "export")
         records = []
@@ -292,7 +307,8 @@ class DataService:
             )
             if include_existing:
                 for event in db.execute(
-                    "SELECT * FROM events WHERE source_id=? ORDER BY seq", (source_id,)
+                    "SELECT * FROM events e WHERE source_id=? AND seq=(SELECT max(seq) FROM events newer WHERE newer.record_id=e.record_id) ORDER BY seq",
+                    (source_id,),
                 ).fetchall():
                     row = db.execute(
                         "SELECT content FROM records WHERE id=?", (event["record_id"],)
@@ -309,7 +325,7 @@ class DataService:
             "source_id": source_id,
             "consumer": consumer_id,
             "filter": filter,
-            "enabled": True,
+            "enabled": bool(self._subscription(identifier)["enabled"]),
         }
 
     def subscriptions(self):
@@ -376,12 +392,14 @@ class DataService:
                 if not current["enabled"]:
                     break
                 event = db.execute(
-                    """SELECT e.*,d.state FROM deliveries d JOIN events e ON e.id=d.event_id
-                    WHERE d.subscription_id=? AND (d.state IN ('pending','failed') OR
-                    (d.state='delivering' AND d.lease_until<?)) ORDER BY e.seq LIMIT 1""",
-                    (subscription_id, time.time()),
+                    """SELECT e.*,d.state,d.lease_until FROM deliveries d JOIN events e ON e.id=d.event_id
+                    WHERE d.subscription_id=? AND d.state!='delivered' ORDER BY e.seq LIMIT 1""",
+                    (subscription_id,),
                 ).fetchone()
-                if event is None:
+                if event is None or (
+                    event["state"] == "delivering"
+                    and event["lease_until"] >= time.time()
+                ):
                     break
                 db.execute(
                     "UPDATE deliveries SET state='delivering',attempts=attempts+1,lease=?,lease_until=? WHERE subscription_id=? AND event_id=?",
@@ -390,14 +408,32 @@ class DataService:
             try:
                 source = self._guard(subscription["source_id"], "deliver")
                 record = self.store.record(event["record_id"])
+                if (
+                    self._guard(subscription["source_id"], "deliver")["revision"]
+                    != source["revision"]
+                ):
+                    raise PermissionError(
+                        "Source configuration changed during delivery"
+                    )
+                if not self._subscription(subscription_id)["enabled"]:
+                    raise PermissionError("Subscription is disabled")
+                item = json.loads(record["content"])
                 value = {
                     **dict(event),
-                    "record": json.loads(record["content"])
-                    if self._visible(source, record)
+                    "content_semantics": "current-state",
+                    "record": item
+                    if event["type"] != "deleted" and self._visible(source, record)
                     else None,
                     "record_version": record["digest"],
                 }
-                handler(value)
+                # Events are durable change notifications, not retained body
+                # snapshots. Recheck content filters against the authorized
+                # current state. Deleted notifications never carry new bodies.
+                if event["type"] == "deleted" or (
+                    value["record"] is not None
+                    and matches(json.loads(subscription["filter"]), item, event["type"])
+                ):
+                    handler(value)
                 with self.store.connection() as db:
                     count = db.execute(
                         "UPDATE deliveries SET state='delivered',lease=NULL,lease_until=0,error='',delivered_at=? WHERE subscription_id=? AND event_id=? AND lease=?",

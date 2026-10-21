@@ -356,4 +356,6 @@ class BriefingPipeline:
             old_rows = self.service.store.window_candidates(start, end, [(source.name, source.account_id)])
             if any("body" not in row[0].payload for row in old_rows):
                 cursors["refresh_existing_content"] = "1"
-        return source.fetch(cursors)
+        from core.plugins.caller import consumer_plugin_scope
+        with consumer_plugin_scope("stella.briefing"):
+            return source.fetch(cursors)

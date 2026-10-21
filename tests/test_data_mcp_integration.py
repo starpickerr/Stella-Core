@@ -131,3 +131,102 @@ def test_production_briefing_source_directory_consumes_data_service(
     assert result["mail"] and result["briefing"].status in {"completed", "partial"}
     assert service.query(service.list_sources()[0]["id"])["records"]
     assert all(row["source"] == "email" for row in result["mail"])
+
+
+def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
+    tmp_path, monkeypatch
+):
+    from pathlib import Path
+    from config import conf
+    from agent.tools.tool_manager import ToolManager
+
+    root = Path(__file__).resolve().parents[2]
+    manager = ToolManager()
+    config = {
+        "name": "generic-source",
+        "type": "stdio",
+        "command": str(root / "MCP/email-mcp/.venv/bin/python"),
+        "args": [str(Path(__file__).parent / "fixtures/generic_data_mcp.py")],
+        "timeout": 10,
+    }
+    monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
+    monkeypatch.setitem(conf(), "agent_permission_mode", "full-access")
+    monkeypatch.setitem(
+        conf(),
+        "security_policy",
+        {"preset": "full-access", "rules": {}, "connections": {}},
+    )
+    mapping = {
+        "discover": "accounts",
+        "discovery_rows": "accounts",
+        "kind": "generic-mail",
+        "account_field": "key",
+        "name_field": "label",
+        "source_args": {"account_id": "key"},
+        "fetch": "messages",
+        "options": {"since": "since", "until": "until"},
+        "items": "messages",
+        "cursors": "next",
+        "cursor_argument": "page_token",
+        "cursor_key": "page",
+        "errors": None,
+        "record_fields": {
+            "source_id": "id",
+            "title": "subject",
+            "payload.body": "text",
+            "occurred_at": "timestamp",
+        },
+    }
+    providers = ProviderRegistry()
+    providers.register("generic", McpProvider("generic-source", mapping, manager))
+    service = DataService(tmp_path / "generic.db", providers)
+    try:
+        discovered = service.discover()
+        assert not discovered["errors"] and len(discovered["sources"]) == 1
+        source = discovered["sources"][0]
+        sub = service.subscribe(source["id"], "second-consumer")
+        result = DataSource(service, source).fetch(
+            {"since": "2026-09-08T00:00:00Z", "until": "2026-09-10T00:00:00Z"}
+        )
+        assert (
+            result.items[0].title == "Generic subject"
+            and result.items[0].payload["body"] == "Generic body"
+        )
+        received = []
+        assert service.dispatch(sub["id"], received.append)["delivered"] == 1
+        assert received[0]["record"]["source_id"] == "message-a"
+        assert service.sync(source["id"])["cursors"] == {"page": "next-page"}
+        # A tool without incremental inputs omits the argument entirely.
+        mapping.pop("cursor_argument")
+        assert service.sync(source["id"])["cursors"] == {"page": "next-page"}
+    finally:
+        manager._teardown_mcp_server("generic-source")
+
+
+def test_default_registered_consumer_delivers_sdk_records_to_real_briefing_worker(
+    integration, monkeypatch, tmp_path
+):
+    from core.data.api import DataController
+    from core.services import briefing_facade, briefing_gateway
+    import sqlite3
+
+    service, _, _ = integration
+    source = service.list_sources()[0]
+    sub = service.subscribe(source["id"], "briefing")
+    service.sync(
+        source["id"], {"since": "2026-09-08T00:00:00Z", "until": "2026-09-10T00:00:00Z"}
+    )
+    briefing_gateway.shutdown_briefing_session()
+    path = tmp_path / "briefing-worker.db"
+    monkeypatch.setattr(briefing_facade, "_db_path", lambda: path)
+    try:
+        outcome = DataController(service).command(
+            {"action": "dispatch", "subscription_id": sub["id"]}
+        )
+        assert (
+            outcome["delivery"]["delivered"] > 0 and outcome["delivery"]["failed"] == 0
+        )
+        with sqlite3.connect(path) as db:
+            assert db.execute("SELECT count(*) FROM source_items").fetchone()[0] > 0
+    finally:
+        briefing_gateway.shutdown_briefing_session()

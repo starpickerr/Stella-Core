@@ -47,7 +47,8 @@ def matches(filter, item, event_type):
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
  id TEXT PRIMARY KEY,provider TEXT NOT NULL,spec TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,
- storage TEXT NOT NULL DEFAULT 'persistent',retention_days INTEGER NOT NULL DEFAULT 30,revision INTEGER NOT NULL DEFAULT 1);
+ storage TEXT NOT NULL DEFAULT 'persistent',retention_days INTEGER NOT NULL DEFAULT 30,revision INTEGER NOT NULL DEFAULT 1,
+ present INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS sync_state(
  source_id TEXT PRIMARY KEY REFERENCES sources(id),cursors TEXT NOT NULL DEFAULT '{}',
  lease TEXT,lease_until REAL NOT NULL DEFAULT 0,last_run REAL,error TEXT NOT NULL DEFAULT '');
@@ -86,6 +87,12 @@ class DataStore:
             os.close(descriptor)
         with self.connection() as db:
             db.executescript(SCHEMA)
+            if "present" not in {
+                row["name"] for row in db.execute("PRAGMA table_info(sources)")
+            }:
+                db.execute(
+                    "ALTER TABLE sources ADD COLUMN present INTEGER NOT NULL DEFAULT 1"
+                )
 
     @contextmanager
     def connection(self):
@@ -106,6 +113,7 @@ class DataStore:
             **json.loads(row["spec"]),
             "provider": row["provider"],
             "enabled": bool(row["enabled"]),
+            "present": bool(row["present"]),
             "storage": row["storage"],
             "retention_days": row["retention_days"],
             "revision": row["revision"],
@@ -134,6 +142,20 @@ class DataStore:
             db.execute(
                 "INSERT OR IGNORE INTO sync_state(source_id) VALUES(?)", (spec["id"],)
             )
+
+    def reconcile_presence(self, provider, identifiers):
+        """Only a complete successful discovery may withdraw an existing source."""
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for row in db.execute(
+                "SELECT id,present FROM sources WHERE provider=?", (provider,)
+            ).fetchall():
+                present = row["id"] in identifiers
+                if present != bool(row["present"]):
+                    db.execute(
+                        "UPDATE sources SET present=?,revision=revision+1 WHERE id=?",
+                        (present, row["id"]),
+                    )
 
     def configure(self, source_id, values):
         with self.connection() as db:

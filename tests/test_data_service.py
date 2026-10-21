@@ -339,3 +339,151 @@ def test_data_database_is_private_and_refuses_symlink_targets(tmp_path):
     with pytest.raises(PermissionError, match="symlink"):
         DataStore(link)
     assert target.read_text() == "preserve"
+
+
+def test_resubscribe_does_not_silently_enable_a_disabled_subscription(env):
+    service, _ = env
+    row = service.subscribe("messages:a", "consumer")
+    service.set_subscription_enabled(row["id"], False)
+    assert service.subscribe("messages:a", "consumer")["enabled"] is False
+
+
+def test_owned_cache_can_be_purged_without_deleting_upstream_records(env):
+    service, provider = env
+    service.sync("messages:a")
+    service.configure_source("messages:a", enabled=False)
+    assert service.purge("messages:a")["removed"] == 1
+    service.configure_source("messages:a", enabled=True)
+    assert service.query("messages:a")["records"] == []
+    assert provider.items[0].payload["body"] == "content"
+    assert service.events("messages:a")[-1]["type"] == "deleted"
+
+
+def test_concurrent_dispatch_cannot_overtake_inflight_head(env):
+    from threading import Event
+    from concurrent.futures import ThreadPoolExecutor
+
+    service, provider = env
+    sub = service.subscribe("messages:a", "consumer")
+    service.sync("messages:a")
+    provider.items = [replace(provider.items[0], title="Second version")]
+    service.sync("messages:a")
+    entered, release = Event(), Event()
+    received = []
+
+    def first(event):
+        entered.set()
+        assert release.wait(5)
+        raise RuntimeError("head failed")
+
+    with ThreadPoolExecutor() as pool:
+        future = pool.submit(service.dispatch, sub["id"], first)
+        try:
+            assert entered.wait(5)
+            assert service.dispatch(sub["id"], received.append)["delivered"] == 0
+            assert received == []
+        finally:
+            release.set()
+            future.result()
+    assert [row["state"] for row in service.deliveries(sub["id"])] == [
+        "failed",
+        "pending",
+    ]
+
+
+def test_dispatch_rechecks_after_read_and_subscription_switch(env, monkeypatch):
+    service, provider = env
+    sub = service.subscribe("messages:a", "consumer")
+    service.sync("messages:a")
+    original = service.store.record
+    received = []
+
+    def racing_read(identifier):
+        row = original(identifier)
+        service.configure_source("messages:a", storage="reference")
+        return row
+
+    monkeypatch.setattr(service.store, "record", racing_read)
+    with pytest.raises(PermissionError, match="changed"):
+        service.dispatch(sub["id"], received.append)
+    assert received == []
+    monkeypatch.setattr(service.store, "record", original)
+
+    def stop_subscription(identifier):
+        row = original(identifier)
+        service.set_subscription_enabled(sub["id"], False)
+        return row
+
+    monkeypatch.setattr(service.store, "record", stop_subscription)
+    with pytest.raises(PermissionError, match="disabled"):
+        service.dispatch(sub["id"], received.append)
+    assert received == []
+
+
+def test_successful_discovery_withdraws_source_without_erasing_records_or_intent(
+    env, monkeypatch
+):
+    service, provider = env
+    service.sync("messages:a")
+    monkeypatch.setattr(provider, "discover", lambda: [])
+    service.discover()
+    row = service.list_sources()[0]
+    assert row["present"] is False and row["enabled"] is True
+    with pytest.raises(PermissionError, match="unavailable"):
+        service.query("messages:a")
+    monkeypatch.setattr(
+        provider, "discover", lambda: (_ for _ in ()).throw(PermissionError("revoked"))
+    )
+    assert service.discover()["errors"]
+    assert service.list_sources()[0]["present"] is False
+    monkeypatch.setattr(provider, "discover", Provider.discover.__get__(provider))
+    service.discover()
+    assert service.query("messages:a")["total"] == 1
+
+
+def test_change_notifications_use_current_authorized_state_and_never_revive_deleted_body(
+    env,
+):
+    service, provider = env
+    sub = service.subscribe("messages:a", "all")
+    filtered = service.subscribe("messages:a", "first", {"q": "First"})
+    service.sync("messages:a")
+    provider.items = [replace(provider.items[0], title="Second")]
+    service.sync("messages:a")
+    received = []
+    service.dispatch(filtered["id"], received.append)
+    assert received == []  # old keyword match cannot deliver new nonmatching content
+    service.dispatch(sub["id"], received.append)
+    assert all(event["content_semantics"] == "current-state" for event in received)
+    assert received[0]["record"]["title"] == "Second"
+    record = service.query("messages:a")["records"][0]
+    service.delete_record(record["id"])
+    service.sync("messages:a")
+    received = []
+    service.dispatch(sub["id"], received.append)
+    assert next(row for row in received if row["type"] == "deleted")["record"] is None
+    replay = service.subscribe("messages:a", "replay", include_existing=True)
+    replayed = []
+    service.dispatch(replay["id"], replayed.append)
+    assert len(replayed) == 1 and replayed[0]["record"]["title"] == "Second"
+
+
+def test_briefing_collection_binds_trusted_consumer_without_replacing_caller():
+    from types import SimpleNamespace
+    from core.plugins.caller import current_consumer_plugin, consumer_plugin_scope
+    from common.runtime_identity import current_identity, identity_scope
+    from agent.briefing.pipeline import BriefingPipeline
+
+    def fetch(cursors):
+        assert current_consumer_plugin() == "stella.briefing"
+        assert current_identity().session_id == "original-caller"
+        return FetchResult([], {}, [])
+
+    source = SimpleNamespace(name="message", account_id="a", fetch=fetch)
+    pipeline = BriefingPipeline(
+        service=SimpleNamespace(get_cursor=lambda *_: None), generator=object()
+    )
+    with identity_scope(session_id="original-caller"):
+        pipeline._fetch_source(source, "2026-01-01", "2026-01-02")
+        with consumer_plugin_scope("stella.other"), pytest.raises(PermissionError):
+            pipeline._fetch_source(source, "2026-01-01", "2026-01-02")

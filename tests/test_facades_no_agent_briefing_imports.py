@@ -9,7 +9,12 @@ def test_email_and_elearning_facades_use_core_source_types():
     elearning = Path("core/services/elearning_facade.py").read_text(encoding="utf-8")
     assert "agent.briefing" not in email
     assert "agent.briefing" not in elearning
-    assert "core.services.source_types" in email
+    # Email collection moved to the shared provider; the settings facade
+    # must stay free of the retired consumer-specific adapter.
+    provider = Path("core/data/providers.py").read_text(encoding="utf-8")
+    assert "class EmailMcpSource" not in email
+    assert "agent.briefing" not in provider
+    assert "core.services.source_types" in provider
     assert "core.services.source_types" in elearning
 
 

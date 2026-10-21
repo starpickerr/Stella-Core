@@ -561,7 +561,9 @@ class ToolManager:
                     if row.get("type") == "text"
                 )
             )
-        return structured["value"]
+        if cfg.get("settingsUrl") == "/" + server_name:
+            return structured["value"]
+        return structured
 
     def _teardown_mcp_server(self, server_name):
         with self._mcp_lock:

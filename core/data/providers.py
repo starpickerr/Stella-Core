@@ -21,8 +21,20 @@ EMAIL_MAPPING = {
     },
     "items": "items",
     "cursors": "cursors",
+    "cursor_argument": "cursors",
     "errors": "errors",
+    "boolean_options": ["refresh_existing_content"],
 }
+
+
+def field(value, path, default=None):
+    if path is None:
+        return default
+    for key in path.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return default
+        value = value[key]
+    return value
 
 
 class McpProvider:
@@ -47,6 +59,8 @@ class McpProvider:
 
     def discover(self):
         rows = self.manager.call_mcp_tool(self.server, self.mapping["discover"], {})
+        if self.mapping.get("discovery_rows"):
+            rows = field(rows, self.mapping["discovery_rows"])
         if not isinstance(rows, list):
             raise ValueError("MCP source discovery returned an invalid list")
         result = []
@@ -95,11 +109,20 @@ class McpProvider:
 
     def fetch(self, source, cursors, options):
         values = dict(source["config"])
-        values["cursors"] = dict(cursors)
+        cursor_argument = self.mapping.get("cursor_argument")
+        cursor_key = self.mapping.get("cursor_key")
+        if cursor_argument:
+            if cursor_key:
+                if cursor_key in cursors:
+                    values[cursor_argument] = cursors[cursor_key]
+            else:
+                values[cursor_argument] = dict(cursors)
         for option, argument in self.mapping["options"].items():
             if option in options and options[option] is not None:
                 value = options[option]
-                if option == "refresh_existing_content" and isinstance(value, str):
+                if option in self.mapping.get("boolean_options", []) and isinstance(
+                    value, str
+                ):
                     value = value in {"1", "true"}
                 values[argument] = value
         from core.plugins.cancellation import current_cancellation_events
@@ -116,10 +139,38 @@ class McpProvider:
             values,
             cancel_event=Cancellation() if events else None,
         )
+        rows = field(result, self.mapping["items"])
+        if not isinstance(rows, list):
+            raise ValueError("MCP provider returned an invalid record list")
+        items = []
+        for row in rows:
+            if self.mapping.get("record_fields"):
+                values = {
+                    "source": self.mapping["kind"],
+                    "account_id": source["account_id"],
+                }
+                for target, path in self.mapping["record_fields"].items():
+                    value = field(row, path)
+                    if value is None:
+                        continue
+                    if target.startswith("payload."):
+                        values.setdefault("payload", {})[
+                            target.removeprefix("payload.")
+                        ] = value
+                    else:
+                        values[target] = value
+            else:
+                values = row
+            items.append(FetchedItem(**values))
+        next_cursor = field(result, self.mapping.get("cursors"), {})
+        if cursor_key:
+            if next_cursor is not None and not isinstance(next_cursor, str):
+                raise ValueError("Mapped MCP cursor must be a string")
+            next_cursor = {cursor_key: next_cursor} if next_cursor is not None else {}
         return FetchResult(
-            [FetchedItem(**item) for item in result[self.mapping["items"]]],
-            result.get(self.mapping["cursors"], {}),
-            result.get(self.mapping["errors"], []),
+            items,
+            next_cursor,
+            field(result, self.mapping.get("errors"), []),
         )
 
 

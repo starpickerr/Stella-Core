@@ -18,6 +18,7 @@ def consumer_sources(*, provider_ids=None):
     for source in service.list_sources():
         if (
             not source["enabled"]
+            or not source["present"]
             or provider_ids is not None
             and source["provider"] not in provider_ids
         ):
