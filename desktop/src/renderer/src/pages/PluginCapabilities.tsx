@@ -44,7 +44,7 @@ export default function PluginCapabilities({ baseUrl }: Props) {
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-sm font-semibold text-content">{t('menu_plugins')}</h2>
       <div className="flex flex-wrap items-center gap-3">
-        <Link state={origin()} to="/settings?tab=plugins" className="text-sm text-accent">配置与授权</Link>
+        <Link state={origin()} to="/skills?tab=plugins&view=settings" className="text-sm text-accent">配置与授权</Link>
         <CapabilityRefreshButton loading={loading} disabled={!!busy} onRefresh={() => void refresh()} />
       </div>
     </header>
@@ -65,7 +65,7 @@ export default function PluginCapabilities({ baseUrl }: Props) {
       </div>
       {row.error && <p className="text-sm text-danger">{row.error}</p>}
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Link state={origin()} className="rounded-btn px-3 py-2 text-accent" to={`/settings?tab=plugins&plugin=${encodeURIComponent(row.pluginId)}`}>设置</Link>
+        <Link state={origin()} className="rounded-btn px-3 py-2 text-accent" to={`/skills?tab=plugins&view=settings&plugin=${encodeURIComponent(row.pluginId)}`}>设置</Link>
         {row.intent === 'removed' ? <button className="rounded-btn bg-surface-2 px-3 py-2" disabled={loading || !!busy} onClick={() => void manage(row, 'reinstall')}>重新安装</button> : !row.hideUninstall && !row.firstParty && (
           <button className="rounded-btn px-3 py-2 text-content-secondary" disabled={loading || !!busy} onClick={() => void manage(row, 'remove')}>卸载</button>
         )}

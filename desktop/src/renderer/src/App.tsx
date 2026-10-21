@@ -21,6 +21,7 @@ import apiClient from './api/client'
 import { t } from './i18n'
 import ChatPage from './pages/ChatPage'
 import SettingsPage from './pages/SettingsPage'
+import { GeneralPage, ModelsPage, AgentSettingsPage, AppleSettingsPage } from './pages/ConfigurationPages'
 import DataManagementPage from './pages/DataManagementPage'
 import KnowledgePage from './pages/KnowledgePage'
 import SkillsPage from './pages/SkillsPage'
@@ -143,7 +144,7 @@ const App: React.FC = () => {
         useSessionStore.getState().newSession()
         navigate('/')
       } else if (action === 'open-settings') {
-        navigate('/settings')
+        navigate('/general')
       } else if (action === 'view-logs') {
         navigate('/logs')
       }
@@ -258,9 +259,12 @@ const App: React.FC = () => {
             <Route path="/data" element={<DataManagementPage />} />
             <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/plugins" element={<Navigate to="/skills#plugins" replace />} />
-            <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
-            {/* Legacy /models route now lives as a tab inside settings */}
-            <Route path="/models" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/general" element={<GeneralPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
+            <Route path="/models" element={<ModelsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/agent-settings" element={<AgentSettingsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/calendar/settings/apple" element={<AppleSettingsPage kind="calendar" />} />
+            <Route path="/todos/settings/apple" element={<AppleSettingsPage kind="todos" />} />
             <Route path="/logs" element={<LogsPage baseUrl={backend.baseUrl} />} />
             {product.routes?.map((r) => (
               <Route key={r.path} path={r.path} element={r.element} />

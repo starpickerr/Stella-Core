@@ -162,7 +162,7 @@ with sync_playwright() as playwright:
         assert len(event_reads) > prior_calendar_reads
         calendar_agent.get_by_role('button', name='Apple 日历').click()
         calendar_agent.get_by_role('menuitem', name='管理 Apple 日历').click()
-        expect(page).to_have_url(url + '/#/settings?tab=connections&section=apple-calendar')
+        expect(page).to_have_url(url + '/#/calendar/settings/apple')
         page.goto(url + '/#/todos', wait_until='networkidle')
         expect(page.locator('#todo-quick-title')).to_have_count(0)
         page.get_by_role('button', name='新建事务').click()
@@ -181,7 +181,7 @@ with sync_playwright() as playwright:
         assert len(todo_reads) > prior_todo_reads
         todos_agent.get_by_role('button', name='Apple 提醒事项').click()
         todos_agent.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
-        expect(page).to_have_url(url + '/#/settings?tab=connections&section=apple-reminders')
+        expect(page).to_have_url(url + '/#/todos/settings/apple')
         assert errors == [], errors
         print('Embedded Agent UI: sessions, streams, approval and page actions passed')
     finally:

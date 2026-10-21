@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Check, Eye, EyeOff, Monitor, Moon, Sun } from 'lucide-react'
+import { Check, Monitor, Moon, Sun } from 'lucide-react'
 import { t, getLang, setLang, type Lang } from '../../i18n'
 import apiClient from '../../api/client'
 import { useTheme, type ThemePref } from '../../hooks/useTheme'
 import { useUIStore } from '../../store/uiStore'
-import { Dropdown, Group, MASK_RE, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
+import { Dropdown, Group, Row, Segmented, Toggle } from './primitives'
 
 const GeneralSettings: React.FC<{ baseUrl: string; onLangChange?: () => void }> = ({ baseUrl, onLangChange }) => {
   const { pref, setTheme, themeId, themes, setThemeId } = useTheme()
@@ -19,27 +19,11 @@ const GeneralSettings: React.FC<{ baseUrl: string; onLangChange?: () => void }> 
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   const [launchAtLoginError, setLaunchAtLoginError] = useState('')
 
-  const [maskedPassword, setMaskedPassword] = useState('')
-  const [password, setPassword] = useState('')
-  const [pwDirty, setPwDirty] = useState(false)
-  const [pwVisible, setPwVisible] = useState(false)
-  const [pwStatus, setPwStatus] = useState('')
-
   useEffect(() => {
     if (!supportsLaunchAtLogin) return
     window.electronAPI?.getLoginItemEnabled?.().then((v) => setLaunchAtLogin(!!v)).catch(() => {})
   }, [supportsLaunchAtLogin])
 
-  useEffect(() => {
-    apiClient.setBaseUrl(baseUrl)
-    let active = true
-    apiClient.getConfig().then((data) => {
-      if (!active) return
-      setMaskedPassword(data.web_password_masked ?? '')
-      setPassword(data.web_password_masked ?? '')
-    }).catch(() => {})
-    return () => { active = false }
-  }, [baseUrl])
 
   const toggleLaunchAtLogin = async (v: boolean) => {
     setLaunchAtLogin(v)
@@ -62,6 +46,7 @@ const GeneralSettings: React.FC<{ baseUrl: string; onLangChange?: () => void }> 
   }
 
   const changeLanguage = async (lang: Lang) => {
+    apiClient.setBaseUrl(baseUrl)
     setLang(lang)
     onLangChange?.()
     try {
@@ -69,19 +54,6 @@ const GeneralSettings: React.FC<{ baseUrl: string; onLangChange?: () => void }> 
     } catch {
       /* non-blocking */
     }
-  }
-
-  const savePassword = async () => {
-    // Never save a masked value back as the real password.
-    if (!pwDirty || MASK_RE.test(password)) return
-    try {
-      await apiClient.updateConfig({ web_password: password })
-      setPwStatus(password ? t('config_password_saved') : t('config_password_cleared'))
-      setPwDirty(false)
-    } catch {
-      setPwStatus(t('config_save_error'))
-    }
-    setTimeout(() => setPwStatus(''), 3000)
   }
 
   const modes: { value: ThemePref; label: string; icon: React.ReactNode }[] = [
@@ -180,41 +152,7 @@ const GeneralSettings: React.FC<{ baseUrl: string; onLangChange?: () => void }> 
         </Group>
       )}
 
-      <Group title={t('settings_group_web_access')}>
-        <Row label={t('config_password')} hint={t('settings_password_hint')} htmlFor="settings-web-password">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <TextInput
-                id="settings-web-password"
-                type={pwVisible ? 'text' : 'password'}
-                className="pr-10"
-                value={password}
-                placeholder={t('config_password_placeholder')}
-                onFocus={() => {
-                  // Clear the masked placeholder before entering a new password.
-                  if (!pwDirty && MASK_RE.test(password)) setPassword('')
-                }}
-                onBlur={() => {
-                  if (!pwDirty) setPassword(maskedPassword)
-                }}
-                onChange={(e) => {
-                  setPassword(e.target.value)
-                  setPwDirty(true)
-                }}
-              />
-              <button
-                type="button"
-                aria-label={pwVisible ? 'Hide' : 'Show'}
-                onClick={() => setPwVisible((v) => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary cursor-pointer p-1"
-              >
-                {pwVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-          <SaveRow status={pwStatus} onSave={savePassword} label={t('settings_password_save')} />
-        </Row>
-      </Group>
+
     </div>
   )
 }

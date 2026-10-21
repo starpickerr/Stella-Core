@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { InheritedMcpGrant, SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
+import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
@@ -25,11 +26,11 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy'] as const
+const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy', 'plugins'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
   overview: ShieldCheck, permissions: SlidersHorizontal, background: Clock3,
-  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database,
+  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
 }
 
 const modeLabel = (
@@ -277,6 +278,9 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   }
   const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
+  const modelCredential = commonCredentials.some(([name]) => name === credentialName && name !== 'GITHUB_TOKEN')
+    || center?.secrets.some(item => item.name === credentialName && item.source === 'model configuration')
+    || credentialName.startsWith('CUSTOM:')
   useEffect(() => {
     setProjectDraft(project ? { ...project.policy, rules: { ...(project.policy.rules || {}) } } : null)
   }, [project?.path, project?.policy])
@@ -930,7 +934,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                           </div>
                         </div>
                         {custom ? (
-                          <Link to="/settings?tab=models" aria-label={`${copy.manageSecret} ${title}`}
+                          <Link to="/models" aria-label={`${copy.manageSecret} ${title}`}
                             className={`${input} flex items-center gap-1.5 shrink-0`}>
                             {copy.manageSecret}<ArrowUpRight size={14} aria-hidden="true" />
                           </Link>
@@ -964,6 +968,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       <option value="other">{copy.otherCredential}</option>
                     </select>
                     </label>
+                    {modelCredential ? <Link to="/models" className={`${input} flex items-center self-end gap-2`}>{getLang() === 'zh' ? '在模型中配置凭据' : 'Configure credentials in Models'}<ArrowUpRight size={14} /></Link> : <>
                     <label className="min-w-0 text-sm font-medium">
                       {copy.secretValue}
                     <input
@@ -988,7 +993,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       }}
                     >
                       {copy.saveSecret}
-                    </button>
+                    </button></>}
+
                   </div>
                   {secretName === 'other' && (
                     <label className="block text-xs text-content-secondary mt-3">
@@ -1030,10 +1036,14 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     >
                       {copy.changePassword}
                     </button>
+                    {center.summary.app_password_set && <button type="button" disabled={busy} className={`${input} text-danger`} onClick={() => {
+                      if (window.confirm(getLang() === 'zh' ? '清除访问密码？' : 'Clear the access password?')) void mutate(() => apiClient.updateConfig({ web_password: '' }))
+                    }}>{getLang() === 'zh' ? '清除访问密码' : 'Clear access password'}</button>}
                   </div>
                 </section>
               </div>
             )}
+            {tab === 'plugins' && <PluginSettings baseUrl={baseUrl} authorizationOnly pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} />}
             {tab === 'activity' && (
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">

@@ -403,7 +403,7 @@ with sync_playwright() as p:
                 "button", name="存储管理", exact=True
             )
         ).to_have_attribute("aria-current", "page")
-        sidebar.get_by_role("button", name="设置", exact=True).click()
+        sidebar.get_by_role("button", name="通用", exact=True).click()
         settings_nav = page.get_by_role("navigation", name="设置分类")
         expect(
             settings_nav.get_by_role("button", name="数据", exact=True)

@@ -8,6 +8,9 @@ import { Toggle } from './settings/primitives'
 import { SKILL_HUB_URL } from './settings/links'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PluginCapabilities from './PluginCapabilities'
+import PluginSettings from './settings/PluginSettings'
+import { Link } from 'react-router-dom'
+import type { SettingsOrigin } from './settings/origin'
 import PageHeader from '../components/PageHeader'
 import CapabilityRefreshButton from '../components/CapabilityRefreshButton'
 
@@ -27,6 +30,9 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     { id: 'mcp', label: 'MCP' },
   ]
   const requestedTab = new URLSearchParams(location.search).get('tab') || location.hash.slice(1)
+  const params = new URLSearchParams(location.search)
+  const origin = location.state as SettingsOrigin | null
+  const showPluginSettings = params.get('view') === 'settings'
   const activeTab = tabs.some(tab => tab.id === requestedTab) ? requestedTab : 'plugins'
   const selectTab = (id: string) => {
     navigate(`/skills?tab=${id}`, { replace: true })
@@ -195,7 +201,10 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 )}
               </Section>}
               {activeTab === 'plugins' && <section id="plugins" className="space-y-3 scroll-mt-4">
-                <PluginCapabilities baseUrl={baseUrl} />
+                {showPluginSettings ? <div className="space-y-5">
+                  <Link className="inline-block text-sm text-accent" to={origin?.from || "/skills?tab=plugins"} state={origin ? { restoreScroll: origin.scroll } : undefined}>{origin ? t('settings_return') : getLang() === 'zh' ? '返回插件' : 'Back to plugins'}</Link>
+                  <PluginSettings baseUrl={baseUrl} pluginId={params.get('plugin')} onPluginChange={plugin => navigate(`/skills?tab=plugins&view=settings&plugin=${encodeURIComponent(plugin)}`, { replace: true, state: location.state })} />
+                </div> : <PluginCapabilities baseUrl={baseUrl} />}
               </section>}
               {activeTab === 'mcp' && <Section title="MCP" count={servers.length} loading={mcpLoading} refreshDisabled={!!mcpBusy} onRefresh={() => void loadMcp()}>
                 {mcpSaveError && <p role="alert" className="text-sm text-danger">{mcpSaveError}</p>}

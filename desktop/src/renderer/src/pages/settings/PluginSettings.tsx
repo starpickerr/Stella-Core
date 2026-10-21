@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiClient } from '../../api/client'
-import { t } from '../../i18n'
+import { Link } from 'react-router-dom'
+import { getLang, t } from '../../i18n'
 import { Grant, Method, PluginRow, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
 import { Btn, Dropdown, Group, Modal, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
 import { hasPluginDomainPanel, PluginDomainPanel } from './PluginDomainPanels'
@@ -17,12 +18,13 @@ type Request = {
 
 type Props = {
   baseUrl: string
+  authorizationOnly?: boolean
   pluginId?: string | null
   onPluginChange?: (pluginId: string) => void
 }
 
 /** Same shell as General / Assistant: one column of Group cards, no nested sidebar. */
-export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Props) {
+export default function PluginSettings({ baseUrl, pluginId, onPluginChange, authorizationOnly = false }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
   const [selected, setSelected] = useState('')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
@@ -49,17 +51,17 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
   const draftKey = `${selected}/${section}`
   const draft = drafts[draftKey]
   const fields = category?.descriptor.fields.filter((field) => field.category === category.id) || []
-  const showDomain = !!selected && hasPluginDomainPanel(selected)
+  const showDomain = !authorizationOnly && !!selected && hasPluginDomainPanel(selected)
 
   const sectionOptions = useMemo(() => {
     const options: { value: string; label: string }[] = []
+    if (authorizationOnly) return [{ value: 'permissions', label: t('settings_plugin_grants_tab') }]
     if (showDomain) options.push({ value: 'domain', label: t('settings_plugin_domain_tab') })
-    options.push({ value: 'permissions', label: t('settings_plugin_grants_tab') })
     for (const item of categories) {
       options.push({ value: `${item.descriptor.id}/${item.id}`, label: item.title })
     }
     return options
-  }, [showDomain, categories])
+  }, [showDomain, categories, authorizationOnly])
 
   const selectPlugin = (next: string) => {
     setSelected(next)
@@ -103,8 +105,8 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
     setMessage('')
     setConsumer(selected)
     setResourceKind('user')
-    setSection(hasPluginDomainPanel(selected) ? 'domain' : 'permissions')
-    void apiClient
+    setSection(authorizationOnly ? 'permissions' : hasPluginDomainPanel(selected) ? 'domain' : '')
+    if (!authorizationOnly) void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
         if (!cancelled) setDescriptors(result)
@@ -112,7 +114,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
       .catch((err) => {
         if (!cancelled) setError(String(err))
       })
-    void apiClient
+    if (authorizationOnly) void apiClient
       .pluginRequest<Grant[]>('authorization', { action: 'list', pluginId: selected })
       .then((result) => {
         if (!cancelled) setGrants(result)
@@ -120,7 +122,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
       .catch((err) => {
         if (!cancelled) setError(String(err))
       })
-    if (available) {
+    if (authorizationOnly && available) {
       void apiClient
         .pluginRequest<{ methods: Method[] }[]>('authorization', { action: 'describe', pluginId: selected })
         .then((services) => {
@@ -136,7 +138,11 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
     return () => {
       cancelled = true
     }
-  }, [selected, available])
+  }, [selected, available, authorizationOnly])
+
+  useEffect(() => {
+    if (sectionOptions.length && !sectionOptions.some(option => option.value === section)) setSection(sectionOptions[0].value)
+  }, [sectionOptions, section])
 
   useEffect(() => {
     if (!category || draft) return
@@ -286,7 +292,8 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
 
   return (
     <div className="space-y-8">
-      <Group title={t('settings_plugin_picker_label')} description={t('settings_desc_plugins')}>
+      {!authorizationOnly && selected && <Link className="inline-block text-sm text-accent" to={`/security?tab=plugins&plugin=${encodeURIComponent(selected)}`}>{getLang() === 'zh' ? '管理插件授权' : 'Manage plugin authorization'}</Link>}
+      <Group title={t('settings_plugin_picker_label')} description={authorizationOnly ? t('settings_plugin_grants_hint') : getLang() === 'zh' ? '管理插件功能与配置。访问授权统一在安全中心管理。' : 'Configure plugin behavior. Manage access in Security.'}>
         {!rows.length ? (
           <Row label={t('settings_plugin_empty')} />
         ) : (
@@ -330,7 +337,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
         </div>
       )}
 
-      {section === 'permissions' && row && (
+      {authorizationOnly && section === 'permissions' && row && (
         <>
           <Group title={t('settings_plugin_grants_title')} description={t('settings_plugin_grants_hint')}>
             {!available && (
