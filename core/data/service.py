@@ -261,9 +261,25 @@ class DataService:
                 or not 1 <= limit <= 200 or type(offset) is not int or offset < 0):
             raise ValueError('Invalid resource query or pagination')
 
-    def resources(self, source_id, query='', limit=50, offset=0):
+    def resources(self, source_id, query='', limit=50, offset=0, *, kind=None):
         self._pagination(query, limit, offset)
         source = self._guard(source_id, 'resources')
+        if kind is not None:
+            if not isinstance(kind, str) or not kind or len(kind) > 80:
+                raise ValueError('Invalid resource type')
+            selected, cursor = [], 0
+            while True:
+                page = self.resources(source_id, query, 200, cursor)
+                selected.extend(row for row in page['resources'] if row['kind'] == kind)
+                cursor += len(page['resources'])
+                if cursor >= page['total']:
+                    break
+                if not page['resources']:
+                    raise ValueError('Provider returned incomplete resource pagination')
+            if self._guard(source_id, 'resources')['revision'] != source['revision']:
+                raise PermissionError('Source configuration changed during filtered query')
+            return {'resources': selected[offset:offset + limit], 'total': len(selected),
+                    'offset': offset, 'limit': limit}
         provider = self.providers.get(source['provider'])
         if callable(getattr(provider, 'resources', None)):
             page = provider.resources(source, query, limit, offset)

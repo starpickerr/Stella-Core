@@ -92,7 +92,7 @@ const GROUP_OPEN_DEFAULT: Record<string, boolean> = Object.fromEntries(
 
 function pathActive(pathname: string, itemPath: string): boolean {
   if (itemPath === '/') return pathname === '/'
-  return pathname === itemPath
+  return pathname === itemPath || pathname.startsWith(itemPath + '/')
 }
 
 const NavRail: React.FC = () => {

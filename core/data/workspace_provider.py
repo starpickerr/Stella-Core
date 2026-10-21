@@ -31,6 +31,7 @@ class WorkspaceProvider:
             return []
         return [{'id': 'workspace:' + stable_id(scope), 'name': Path(scope['root']).name,
                  'kind': 'workspace', 'config': scope, 'discovery_partition': self.discovery_partition(),
+                 'resource_kinds': ['file'],
                  'operations': ['metadata', 'configure', 'resources', 'read']}]
 
     def visible(self, source):

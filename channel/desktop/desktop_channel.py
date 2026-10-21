@@ -8727,7 +8727,10 @@ def _data_response(operation):
     web.header('Content-Type','application/json; charset=utf-8')
     web.header('Cache-Control','no-store')
     try:
-        return json.dumps({'status':'success',**operation()},ensure_ascii=False)
+        from core.data.native import browse_scope
+        params = web.input(agent='', session='')
+        with browse_scope(getattr(params, 'agent', '') or None, getattr(params, 'session', '') or None):
+            return json.dumps({'status':'success',**operation()},ensure_ascii=False)
     except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
         return _api_reject('Data',error)
 
@@ -8736,7 +8739,8 @@ class DataManagementHandler:
     def GET(self):
         def operation():
             from core.data.api import current_controller
-            return current_controller().snapshot(web.input(refresh='0').refresh=='1')
+            from core.data.native import scope_options
+            return {**current_controller().snapshot(web.input(refresh='0').refresh=='1'), **scope_options()}
         return _data_response(operation)
 
 
@@ -8753,12 +8757,13 @@ class DataResourcesHandler:
     def GET(self):
         def operation():
             from core.data.api import current_controller
-            params = web.input(source_id='', resource_id='', q='', limit='50', offset='0')
+            params = web.input(source_id='', resource_id='', q='', limit='50', offset='0', kind='')
             controller = current_controller()
             if getattr(params, 'resource_id', ''):
                 return controller.read_resource(params.source_id, params.resource_id)
             return controller.resources(params.source_id, getattr(params, 'q', ''),
-                                        int(getattr(params, 'limit', '50')), int(getattr(params, 'offset', '0')))
+                                        int(getattr(params, 'limit', '50')), int(getattr(params, 'offset', '0')),
+                                        kind=getattr(params, 'kind', '') or None)
         return _data_response(operation)
 
 

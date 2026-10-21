@@ -47,6 +47,7 @@ records = [
 subscriptions = []
 deliveries = []
 commands = []
+queries = []
 grants = [
     {
         "id": "old-mail-grant",
@@ -107,14 +108,25 @@ def backend(route):
             storage=storage,
             consumers=[{"id": "briefing", "name": "简报"}],
             errors=[],
+            scope={'agent': parse_qs(urlparse(route.request.url).query).get('agent', ['alpha'])[0],
+                   'session': 'chat', 'root': '/isolated/work', 'kind': 'session'},
+            agents=[{'id': 'alpha', 'name': 'Alpha'}, {'id': 'beta', 'name': 'Beta'}],
+            workspaces=[{'session': 'chat', 'name': '当前会话'}],
         )
     elif path == "/api/data/resources":
+        params = parse_qs(urlparse(route.request.url).query)
+        queries.append(params)
         resource = {'id': 'doc-1', 'source_id': reference_source['id'], 'provider': 'documents',
                     'reference': 'doc:42', 'kind': 'document', 'name': '引用笔记', 'operations': ['read']}
+        content = '从所有者实时读取的内容'
+        if params.get('source_id') == [source['id']]:
+            resource = {**resource, 'id': 'mail-1', 'source_id': source['id'], 'provider': 'email',
+                        'reference': 'record-1', 'kind': 'email', 'name': '项目会议'}
+            content = '仅在获准读取时显示的邮件正文'
         if fail_read[0]:
             data = {'status': 'error', 'message': 'Document access revoked'}
         elif parse_qs(urlparse(route.request.url).query).get('resource_id'):
-            data.update(resource=resource, content='从所有者实时读取的内容')
+            data.update(resource=resource, content=content)
         else:
             data.update(resources=[resource], total=1, offset=0, limit=50)
     elif path == "/api/data/records":
@@ -294,12 +306,16 @@ with sync_playwright() as p:
         expect(page.get_by_role("heading", name="数据", exact=True)).to_be_visible()
         expect(page.get_by_role("navigation", name="设置分类")).to_have_count(0)
         tabs = page.get_by_role("navigation", name="数据分类")
-        for label in ["总览", "信息源", "数据记录", "同步与分发", "存储管理"]:
+        expect(tabs.get_by_role('button', name='资源浏览', exact=True)).to_have_attribute('aria-current', 'page')
+        expect(page.get_by_role('combobox', name='Agent 范围')).to_be_visible()
+        expect(page.get_by_role('combobox', name='工作区范围')).to_be_visible()
+        expect(page.get_by_role('combobox', name='资源类型')).to_be_visible()
+        for label in ["资源浏览", "信息源", "同步与分发", "存储管理"]:
             expect(tabs.get_by_role("button", name=label, exact=True)).to_be_visible()
         tabs.get_by_role("button", name="信息源", exact=True).click()
         card = page.get_by_test_id("data-source-" + source["id"])
         expect(card.get_by_role("link", name="配置账号")).to_have_attribute(
-            "href", "#/email"
+            "href", "#/data/sources/email"
         )
         toggle = card.get_by_role("switch", name="收件箱", exact=True)
         toggle.click()
@@ -314,7 +330,7 @@ with sync_playwright() as p:
         expect(toggle).to_have_attribute("aria-checked", "true")
         card.get_by_role("button", name="同步", exact=True).click()
         expect(page.get_by_role("status")).to_contain_text("同步完成")
-        tabs.get_by_role("button", name="数据记录", exact=True).click()
+        tabs.get_by_role("button", name="资源浏览", exact=True).click()
         expect(page.get_by_text("项目会议", exact=True)).to_be_visible()
         page.get_by_role("button", name="查看内容", exact=True).click()
         expect(
@@ -345,7 +361,7 @@ with sync_playwright() as p:
         expect(page.get_by_role("status")).to_contain_text("已清理")
         page.screenshot(path="/tmp/stella-data-management-desktop.png", full_page=True)
         page.set_viewport_size({"width": 640, "height": 920})
-        for label in ["总览", "信息源", "数据记录", "同步与分发", "存储管理"]:
+        for label in ["资源浏览", "信息源", "同步与分发", "存储管理"]:
             tabs.get_by_role("button", name=label, exact=True).click()
             expect(page.get_by_role("button", name="刷新", exact=True)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
@@ -353,12 +369,21 @@ with sync_playwright() as p:
         tabs.get_by_role('button', name='信息源', exact=True).click()
         reference_card = page.get_by_test_id('data-source-documents:library')
         expect(reference_card.get_by_role('button', name='同步', exact=True)).to_have_count(0)
-        tabs.get_by_role('button', name='数据记录', exact=True).click()
+        tabs.get_by_role('button', name='资源浏览', exact=True).click()
         page.get_by_role('combobox', name='选择信息源').select_option('documents:library')
         expect(page.get_by_text('引用笔记', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='导出', exact=True)).to_have_count(0)
         page.get_by_role('button', name='查看内容', exact=True).click()
         expect(page.get_by_text('从所有者实时读取的内容', exact=True)).to_be_visible()
+        page.get_by_role('combobox', name='资源类型').select_option('document')
+        expect(page.get_by_text('引用笔记', exact=True)).to_be_visible()
+        assert queries[-1]['kind'] == ['document']
+        page.get_by_role('combobox', name='Agent 范围').select_option('beta')
+        expect(page.get_by_role('combobox', name='Agent 范围')).to_have_value('beta')
+        expect(page.get_by_text('从所有者实时读取的内容', exact=True)).to_have_count(0)
+        page.get_by_role('combobox', name='选择信息源').select_option('documents:library')
+        expect(page.get_by_text('引用笔记', exact=True)).to_be_visible()
+        assert queries[-1]['agent'] == ['beta']
         fail_read[0] = True
         page.get_by_role('button', name='刷新', exact=True).click()
         expect(page.get_by_role('alert')).to_contain_text('revoked')

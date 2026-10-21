@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { ArrowLeft, Loader2, Filter } from 'lucide-react'
 import apiClient from '../../api/client'
-import { t } from '../../i18n'
+import { getLang, t } from '../../i18n'
+import { Link } from 'react-router-dom'
 import type { BriefingRule, BriefingRuleInput } from '../../types'
-import { MailboxSettings } from './MailboxSettings'
-import { ElearningSettings } from './ElearningSettings'
 import { ActionSettings } from './ActionSettings'
 
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
@@ -52,13 +51,9 @@ export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
     </div>}
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
-    <section className="space-y-4" aria-label={t('briefing_source_management')}>
-      <div className="px-1">
-        <h3 className="text-sm font-semibold text-content">{t('briefing_source_management')}</h3>
-        <p className="text-xs text-content-tertiary mt-0.5">{t('briefing_source_management_help')}</p>
-      </div>
-      <MailboxSettings />
-      <ElearningSettings />
+    <section className="space-y-3 text-sm">
+      <p className="text-content-secondary">{getLang() === 'zh' ? '生成简报时选择要消费的信息源；此处配置整理规则和处理方式。' : 'Choose sources when generating a briefing. Configure organization and processing here.'}</p>
+      <Link className="text-accent" to="/data?section=sources">{getLang() === 'zh' ? '管理信息源' : 'Manage sources'}</Link>
     </section>
     <ActionSettings />
     <section className="rounded-card border border-default bg-surface p-5 space-y-4">

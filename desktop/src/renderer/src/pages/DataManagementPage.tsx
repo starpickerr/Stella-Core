@@ -1,20 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
-import type { DataCommandResult, DataRecord, DataResource, DataSnapshot, DataSourceInfo } from '../api/dataTypes'
+import type { DataCommandResult, DataResource, DataSnapshot, DataSourceInfo } from '../api/dataTypes'
 import { getLang, t } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import { Toggle } from './settings/primitives'
+import { useSessionStore } from '../store/sessionStore'
 
 const c = (zh: string, en: string) => getLang() === 'zh' ? zh : en
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-default px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed'
 const input = 'rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content min-w-0'
-const tabs = ['overview', 'sources', 'records', 'sync', 'storage'] as const
+const tabs = ['resources', 'sources', 'sync', 'storage'] as const
 type Tab = typeof tabs[number]
-const labels = () => [c('总览', 'Overview'), c('信息源', 'Sources'), c('数据记录', 'Records'), c('同步与分发', 'Sync and delivery'), c('存储管理', 'Storage')]
+const labels = () => [c('资源浏览', 'Resources'), c('信息源', 'Sources'), c('同步与分发', 'Sync and delivery'), c('存储管理', 'Storage')]
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
-const safeSettings = (source: DataSourceInfo) => ['/email', '/elearning'].includes(source.settings_url || '') ? source.settings_url : undefined
+const ownerPages = new Set(['/todos', '/calendar', '/bills', '/briefing', '/knowledge', '/memory'])
+const safeSettings = (source: DataSourceInfo) => ['/email', '/elearning'].includes(source.settings_url || '') ? `/data/sources${source.settings_url}` : ownerPages.has(source.settings_url || '') ? source.settings_url : undefined
 const supports = (source: DataSourceInfo | undefined, operation: string) => !!source && (!source.operations || source.operations.includes(operation))
 const bytes = (value: number) => value < 1024 ? `${value} B` : value < 1048576 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`
 
@@ -22,20 +24,28 @@ export default function DataManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const requested = new URLSearchParams(location.search).get('section') as Tab | null
-  const tab: Tab = requested && tabs.includes(requested) ? requested : 'overview'
+  const tab: Tab = requested && tabs.includes(requested) ? requested : 'resources'
+  const activeSession = useSessionStore(state => state.activeId)
+  const params = new URLSearchParams(location.search)
+  const agent = params.get('agent') || ''
+  const session = params.has('session') ? params.get('session') || '' : activeSession
+  const scope = useMemo(() => ({ agent, session }), [agent, session])
+  const scopeKey = `${agent}:${session}`
+  const currentScope = useRef(scopeKey)
+  currentScope.current = scopeKey
   const [state, setState] = useState<DataSnapshot | null>(null)
   const [busy, setBusy] = useState(true)
   const pending = useRef(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [sourceId, setSourceId] = useState('')
-  const [records, setRecords] = useState<DataRecord[]>([])
   const [resources, setResources] = useState<DataResource[]>([])
   const [resourceContent, setResourceContent] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [draft, setDraft] = useState('')
   const [query, setQuery] = useState('')
+  const [kind, setKind] = useState('')
   const [expanded, setExpanded] = useState('')
   const [recordLoading, setRecordLoading] = useState(false)
   const [consumer, setConsumer] = useState('briefing')
@@ -44,18 +54,18 @@ export default function DataManagementPage() {
   const recordRequest = useRef<AbortController | null>(null)
   const source = state?.sources.find(item => item.id === sourceId) || state?.sources[0]
   const selectedId = source?.id || ''
-  const referenceSource = source?.representation === 'reference'
 
   const snapshot = useCallback(async (refresh = false, signal?: AbortSignal) => {
-    const result = await apiClient.getDataSnapshot(refresh, signal)
-    if (!signal?.aborted && mounted.current) setState(result)
+    const result = await apiClient.getDataSnapshot(refresh, signal, scope)
+    if (!signal?.aborted && mounted.current && currentScope.current === scopeKey) setState(result)
     return result
-  }, [])
+  }, [scope, scopeKey])
 
   useEffect(() => {
     mounted.current = true
+    setState(null); setResources([]); setResourceContent(null); setExpanded(''); setError(''); setBusy(true)
     const controller = new AbortController()
-    snapshot(false, controller.signal).catch(reason => { if (!controller.signal.aborted) setError(messageOf(reason)) })
+    snapshot(true, controller.signal).catch(reason => { if (!controller.signal.aborted) setError(messageOf(reason)) })
       .finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => { mounted.current = false; controller.abort(); recordRequest.current?.abort() }
   }, [snapshot])
@@ -64,31 +74,33 @@ export default function DataManagementPage() {
     recordRequest.current?.abort()
     const controller = new AbortController()
     recordRequest.current = controller
-    setRecords([]); setResources([]); setResourceContent(null); setExpanded(''); setRecordLoading(true)
+    setResources([]); setResourceContent(null); setExpanded(''); setRecordLoading(true); setError('')
     try {
-      if (referenceSource) {
-        const result = await apiClient.getDataResources(selectedId, query, offset, controller.signal)
-        if (!controller.signal.aborted && mounted.current) { setResources(result.resources); setTotal(result.total) }
-      } else {
-        const result = await apiClient.getDataRecords(selectedId, query, offset, controller.signal)
-        if (!controller.signal.aborted && mounted.current) { setRecords(result.records); setTotal(result.total) }
-      }
+      const result = await apiClient.getDataResources(selectedId, query, offset, controller.signal, scope, kind)
+      if (!controller.signal.aborted && mounted.current) { setResources(result.resources); setTotal(result.total) }
     } catch (reason) {
       if (!controller.signal.aborted && mounted.current) { setError(messageOf(reason)); setTotal(0) }
     } finally { if (!controller.signal.aborted && mounted.current) setRecordLoading(false) }
-  }, [selectedId, referenceSource, query, offset])
+  }, [selectedId, query, offset, scope, kind])
 
   useEffect(() => {
-    if (tab === 'records' && source?.enabled && source.available) void loadRecords()
-    else { recordRequest.current?.abort(); setRecords([]); setResources([]); setExpanded(''); setResourceContent(null); setRecordLoading(false); setTotal(0) }
+    if (tab === 'resources' && source?.enabled && source.available) void loadRecords()
+    else { recordRequest.current?.abort(); setResources([]); setExpanded(''); setResourceContent(null); setRecordLoading(false); setTotal(0) }
     return () => recordRequest.current?.abort()
+  }, [tab, source?.enabled, source?.available, loadRecords])
+
+  useEffect(() => {
+    const recheck = () => { if (tab === 'resources' && source?.enabled && source.available) void loadRecords() }
+    window.addEventListener('focus', recheck)
+    return () => window.removeEventListener('focus', recheck)
   }, [tab, source?.enabled, source?.available, loadRecords])
 
   const refresh = async () => {
     if (pending.current) return
     pending.current = true; setBusy(true); setError(''); setMessage('')
-    try { await snapshot(true); if (tab === 'records' && source?.enabled && source.available) await loadRecords() }
-    catch (reason) { if (mounted.current) { setError(messageOf(reason)); setRecords([]); setResources([]); setResourceContent(null) } }
+    setResourceContent(null); setResources([])
+    try { await snapshot(true); if (tab === 'resources' && source?.enabled && source.available) await loadRecords() }
+    catch (reason) { if (mounted.current) { setError(messageOf(reason)); setResources([]); setResourceContent(null) } }
     finally { pending.current = false; if (mounted.current) setBusy(false) }
   }
 
@@ -96,11 +108,11 @@ export default function DataManagementPage() {
     if (pending.current) return
     pending.current = true; setBusy(true); setError(''); setMessage('')
     try {
-      const result = await apiClient.dataCommand(body)
-      if (!mounted.current) return
+      const result = await apiClient.dataCommand(body, scope)
+      if (!mounted.current || currentScope.current !== scopeKey) return
       after?.(result)
       await snapshot()
-      if (tab === 'records' && source?.enabled && source.available) await loadRecords()
+      if (tab === 'resources' && source?.enabled && source.available) await loadRecords()
       if (result.sync?.errors.length) setError(result.sync.errors.join('\n'))
       setMessage(success)
     } catch (reason) { if (mounted.current) setError(messageOf(reason)) }
@@ -113,17 +125,23 @@ export default function DataManagementPage() {
     recordRequest.current = controller
     setExpanded(row.id); setResourceContent(null); setError('')
     try {
-      const result = await apiClient.readDataResource(selectedId, row.id, controller.signal)
+      const result = await apiClient.readDataResource(selectedId, row.id, controller.signal, scope)
       if (!controller.signal.aborted && mounted.current) setResourceContent(typeof result.content === 'string' ? result.content : JSON.stringify(result.content, null, 2))
     } catch (reason) {
       if (!controller.signal.aborted && mounted.current) { setError(messageOf(reason)); setExpanded('') }
     }
   }
 
-  const choose = (next: Tab) => navigate(`/data?section=${next}`, { replace: true, state: location.state })
+  const choose = (next: Tab) => { setError(''); setMessage(''); params.set('section', next); navigate(`/data?${params}`, { replace: true, state: location.state }) }
+  const chooseScope = (nextAgent: string, nextSession: string) => {
+    recordRequest.current?.abort(); setResources([]); setResourceContent(null); setExpanded(''); setState(null)
+    setSourceId(''); setKind(''); setOffset(0)
+    params.set('agent', nextAgent); params.set('session', nextSession)
+    navigate(`/data?${params}`, { replace: true, state: location.state })
+  }
   const sourceSelect = <label className="flex items-center gap-2 text-sm">{c('信息源', 'Source')}
     <select aria-label={c('选择信息源', 'Select source')} className={`${input} flex-1`} value={selectedId} disabled={busy || !state?.sources.length}
-      onChange={event => { setSourceId(event.target.value); setOffset(0); setError('') }}>
+      onChange={event => { setSourceId(event.target.value); setKind(''); setOffset(0); setError('') }}>
       {state?.sources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select></label>
 
@@ -151,52 +169,53 @@ export default function DataManagementPage() {
     {(error || !!state?.errors.length) && <div role="alert" className="rounded-btn border border-danger/30 p-3 text-sm text-danger whitespace-pre-wrap break-words">{error || state?.errors.map(item => `${item.provider}: ${item.message}`).join('\n')}</div>}
     <p role="status" className="text-sm text-content-secondary" aria-live="polite">{message || (busy ? c('处理中…', 'Working…') : '')}</p>
     {!state ? <p className="text-sm text-content-secondary">{c('正在加载数据服务', 'Loading Data Service')}</p> : <>
-      {tab === 'overview' && <div className="space-y-4">
-        <dl className="grid grid-cols-3 gap-3 rounded-card border border-default bg-surface p-4">
-          {[[c('信息源', 'Sources'), state.sources.length], [c('数据记录', 'Records'), state.record_count], [c('待投递', 'Pending'), state.deliveries.filter(item => item.state !== 'delivered').length]].map(([name, value]) => <div key={String(name)}><dt className="text-sm text-content-secondary">{name}</dt><dd className="mt-1 text-xl font-semibold">{value}</dd></div>)}
-        </dl>
-        <div className="flex flex-wrap gap-4 text-sm text-accent"><Link to="/email">{c('添加邮箱', 'Add mailbox')}</Link><Link to="/skills?tab=mcp">{c('管理 MCP', 'Manage MCP')}</Link><Link to="/security?tab=privacy">{c('数据访问', 'Data access')}</Link></div>
-        {state.sources.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 border-b border-default py-2 text-sm"><span>{item.name}</span><span className="text-content-secondary">{item.representation === 'reference' ? c('按需读取引用', 'Read references on demand') : item.running ? c('同步中', 'Syncing') : item.error ? c('同步异常', 'Sync failed') : item.last_run ? new Date(item.last_run * 1000).toLocaleString() : c('尚未同步', 'Not synced')}</span></div>)}
-      </div>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm">{c('Agent 范围', 'Agent scope')}<select aria-label={c('Agent 范围', 'Agent scope')} className={`${input} block w-full mt-1`} value={agent || state.scope?.agent || ''} onChange={event => chooseScope(event.target.value, '')}>
+          {!state.agents?.length && <option value="">{c('当前 Agent', 'Current Agent')}</option>}
+          {state.agents?.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+        </select></label>
+        <label className="text-sm">{c('工作区范围', 'Workspace scope')}<select aria-label={c('工作区范围', 'Workspace scope')} className={`${input} block w-full mt-1`} value={session} onChange={event => chooseScope(agent || state.scope?.agent || '', event.target.value)}>
+          <option value="">{c('用户信息源', 'User sources')}</option>
+          {session && !state.workspaces?.some(row => row.session === session) && <option value={session}>{c('当前会话工作区', 'Current conversation workspace')}</option>}
+          {state.workspaces?.map(row => <option key={row.session} value={row.session}>{row.name}</option>)}
+        </select></label>
+      </div>
+      {state.scope && session && <p className="text-xs text-content-secondary break-all">{state.scope.root}</p>}
       {tab === 'sources' && <div className="space-y-3">
-        <Link className="inline-block text-sm text-accent" to="/email">{c('添加邮箱', 'Add mailbox')}</Link>
+        <div className="flex flex-wrap gap-4 text-sm text-accent"><Link to="/data/sources/email">{c('添加邮箱', 'Add mailbox')}</Link><Link to="/data/sources/elearning">eLearning</Link></div>
         {!state.sources.length && <p className="text-sm text-content-secondary">{c('尚无已配置的信息源', 'No configured sources')}</p>}
         {state.sources.map(item => <section key={item.id} data-testid={`data-source-${item.id}`} className="rounded-card border border-default bg-surface p-4 space-y-3">
           <div className="flex items-center justify-between gap-3"><h4 className="font-medium break-words">{item.name}</h4><Toggle label={item.name} checked={item.enabled} disabled={busy} onChange={enabled => void run({ action: 'source', source_id: item.id, enabled }, c('已保存', 'Saved'))} /></div>
-          <p className="text-xs text-content-secondary break-all">{item.provider} · {item.available ? c('连接已启用', 'Connection enabled') : c('来源或连接不可用', 'Source or connection unavailable')}</p>
+          <p className="text-xs text-content-secondary break-all">{item.provider} · {item.available ? c('服务已启用', 'Service enabled') : c('来源或服务不可用', 'Source or service unavailable')} · {c('访问：读取时检查授权', 'Access: authorization checked on read')} · {item.representation === 'reference' ? c('按需读取', 'Read on demand') : item.running ? c('同步中', 'Syncing') : item.last_run ? c('已同步', 'Synced') : c('尚未同步', 'Not synced')}</p>
           {item.error && <p className="text-sm text-danger break-words">{item.error}</p>}
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            {safeSettings(item) && <Link className="text-accent" to={safeSettings(item)!}>{c('配置账号', 'Configure account')}</Link>}
-            <Link className="text-accent" to="/skills?tab=mcp">MCP</Link><Link className="text-accent" to="/security?tab=privacy">{c('授权', 'Access')}</Link>
+            {safeSettings(item) && <Link className="text-accent" to={safeSettings(item)!}>{['email', 'elearning'].includes(item.provider) ? c('配置账号', 'Configure account') : c('打开来源', 'Open source')}</Link>}
+            <Link className="text-accent" to={item.connection?.startsWith('mcp:') ? '/skills?tab=mcp' : '/skills?tab=plugins'}>{c('管理能力', 'Manage capability')}</Link><Link className="text-accent" to="/security?tab=privacy">{c('授权', 'Access')}</Link>
             {supports(item, 'sync') && <button type="button" className={button} disabled={busy || !item.enabled || !item.available || item.running} onClick={() => void run({ action: 'sync', source_id: item.id }, c('同步完成', 'Sync completed'))}>{c('同步', 'Sync')}</button>}
           </div>
         </section>)}
       </div>}
-      {tab === 'records' && <div className="space-y-3">
+      {tab === 'resources' && <div className="space-y-3">
         {sourceSelect}
+        <label className="flex items-center gap-2 text-sm">{c('资源类型', 'Resource type')}<select aria-label={c('资源类型', 'Resource type')} value={kind} className={`${input} flex-1`} onChange={event => { setKind(event.target.value); setOffset(0) }}>
+          <option value="">{c('全部类型', 'All types')}</option>{(source?.resource_kinds || (source ? [source.kind] : [])).map(value => <option key={value} value={value}>{value}</option>)}
+        </select></label>
         <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); setOffset(0); if (query === draft && offset === 0) void loadRecords(); else setQuery(draft) }}>
-          <input aria-label={c('搜索记录', 'Search records')} placeholder={c('搜索记录', 'Search records')} className={`${input} flex-1`} value={draft} onChange={event => setDraft(event.target.value)} />
+          <input aria-label={c('搜索资源', 'Search resources')} placeholder={c('搜索资源', 'Search resources')} className={`${input} flex-1`} value={draft} onChange={event => setDraft(event.target.value)} />
           <button type="submit" className={button} disabled={busy || !source?.enabled || !source.available}>{c('搜索', 'Search')}</button>
           {supports(source, 'export') && <button type="button" className={button} disabled={busy || !source?.enabled || !source.available} onClick={exportData}>{c('导出', 'Export')}</button>}
         </form>
-        {recordLoading && <p className="text-sm text-content-secondary">{c('正在读取', 'Loading records')}</p>}
-        {!recordLoading && !records.length && !resources.length && <p className="text-sm text-content-secondary">{source && (!source.enabled || !source.available) ? c('来源或连接不可用', 'The source or connection is unavailable') : c('没有可显示的记录', 'No records to show')}</p>}
+        {recordLoading && <p className="text-sm text-content-secondary">{c('正在读取', 'Loading resources')}</p>}
+        {!recordLoading && !resources.length && <p className="text-sm text-content-secondary">{source && (!source.enabled || !source.available) ? c('来源或连接不可用', 'The source or connection is unavailable') : c('没有可显示的资源', 'No resources to show')}</p>}
         {resources.map(row => <article key={row.id} className="rounded-card border border-default bg-surface p-4 space-y-2">
           <h4 className="font-medium break-words">{row.name}</h4>
-          <p className="text-xs text-content-secondary break-words">{row.kind} · {c('引用；内容由来源管理', 'Reference; content managed by source')}</p>
+          <p className="text-xs text-content-secondary break-words">{row.kind} · {source?.name} · {source?.representation === 'reference' ? c('内容由来源管理', 'Content managed by source') : c('本地采集记录', 'Collected local record')}</p>
+          {source && safeSettings(source) && <Link className="inline-block text-sm text-accent" to={safeSettings(source)!}>{c('打开来源', 'Open source')}</Link>}
           {row.operations.includes('read') && <button type="button" className="text-sm text-accent" onClick={() => void readResource(row)}>{c('查看内容', 'View content')}</button>}
           {expanded === row.id && <p className="whitespace-pre-wrap break-words text-sm">{resourceContent ?? c('正在读取', 'Loading content')}</p>}
+          {supports(source, 'delete') && <button type="button" className="ml-3 text-sm text-danger" disabled={busy} onClick={() => { if (window.confirm(c('仅删除本地数据记录，保留来源和业务历史？', 'Delete the local record while keeping upstream and business history?'))) void run({ action: 'delete_record', record_id: row.reference }, c('已删除', 'Deleted')) }}>{c('删除本地记录', 'Delete local record')}</button>}
         </article>)}
-        {records.map(row => <article key={row.id} className="rounded-card border border-default bg-surface p-4 space-y-2">
-          <h4 className="font-medium break-words">{row.item.title || row.item.source_id}</h4><p className="text-sm text-content-secondary break-words">{row.item.snippet}</p>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-content-secondary"><span>{row.item.occurred_at}</span>
-            <button type="button" className="text-accent" onClick={() => setExpanded(expanded === row.id ? '' : row.id)}>{c('查看内容', 'View content')}</button>
-            {/^(https?:)\/\//i.test(row.item.url || '') && <a href={row.item.url} target="_blank" rel="noopener noreferrer" className="text-accent">{c('打开来源', 'Open source')}</a>}
-            <button type="button" className="text-danger" disabled={busy} onClick={() => { if (window.confirm(c('仅删除本地数据记录，保留来源和业务历史？', 'Delete the local record while keeping upstream and business history?'))) void run({ action: 'delete_record', record_id: row.id }, c('已删除', 'Deleted')) }}>{c('删除记录', 'Delete record')}</button>
-          </div>
-          {expanded === row.id && <p className="whitespace-pre-wrap break-words text-sm">{typeof row.item.payload.body === 'string' ? row.item.payload.body : c('此记录仅保留引用', 'This record retains a reference only')}</p>}
-        </article>)}
-        <div className="flex items-center gap-3 text-sm"><button type="button" className={button} disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{c('上一页', 'Previous')}</button><span>{total}</span><button type="button" className={button} disabled={busy || offset + records.length + resources.length >= total} onClick={() => setOffset(offset + 50)}>{c('下一页', 'Next')}</button></div>
+        <div className="flex items-center gap-3 text-sm"><button type="button" className={button} disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{c('上一页', 'Previous')}</button><span>{total}</span><button type="button" className={button} disabled={busy || offset + resources.length >= total} onClick={() => setOffset(offset + 50)}>{c('下一页', 'Next')}</button></div>
       </div>}
       {tab === 'sync' && <div className="space-y-4">
         {sourceSelect}

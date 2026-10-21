@@ -1,5 +1,6 @@
 """eLearning resource directory over the single managed MCP connection."""
 import json
+from datetime import datetime, timezone
 
 from core.data.providers import McpProvider
 from core.data.resources import Resource, REFERENCE_OPERATIONS
@@ -38,6 +39,7 @@ class ElearningProvider:
         account = settings['account_id']
         return [{'id': 'mcp:elearning:' + stable_id(account), 'name': 'eLearning',
                  'kind': 'elearning', 'config': {'account_id': account},
+                 'resource_kinds': ['course', 'announcement', 'assignment', 'quiz', 'grade', 'file'],
                  'connection': 'mcp:elearning', 'settings_url': '/elearning',
                  'operations': sorted(REFERENCE_OPERATIONS)}]
 
@@ -57,7 +59,7 @@ class ElearningProvider:
         # The resource browser includes history and upcoming course work. It
         # does not advance the background consumer's independent sync cursors.
         return {'course_ids': [course], 'since': '1970-01-01T00:00:00Z',
-                'until': '9998-01-01T00:00:00Z', 'limit': 50}
+                'until': datetime.now(timezone.utc).isoformat(), 'limit': 50}
 
     def _pages(self, method, values, key):
         offset = 0

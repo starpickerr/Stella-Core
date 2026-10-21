@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from urllib.parse import urlparse
 from playwright.sync_api import expect, sync_playwright
 
@@ -95,6 +96,9 @@ with sync_playwright() as p:
             selectDirectory:async()=>'/Users/starpickerr/Desktop/课程资料'};""")
         page.route("http://127.0.0.1:9876/**", backend)
         page.goto(URL + "/#/elearning", wait_until="networkidle")
+        expect(page).to_have_url(URL + '/#/data/sources/elearning')
+        expect(page.get_by_role('link', name='返回数据', exact=True)).to_be_visible()
+        expect(page.locator('aside').get_by_role('button', name='数据', exact=True)).to_have_class(re.compile('bg-accent-soft'))
         root = page.get_by_role("textbox", name="课件保存目录", exact=True)
         expect(root).to_have_value("/initial")
         expect(

@@ -68,6 +68,7 @@ class DataController:
             )
             sources[-1]["operations"] = sorted(self.service._operations(source))
             sources[-1]["representation"] = "collection" if callable(getattr(provider, "fetch", None)) else "reference"
+            sources[-1]['resource_kinds'] = source.get('resource_kinds', [source['kind']])
             sources[-1]["available"] = (
                 source["present"] and getattr(provider, "available", lambda: True)()
             )
@@ -96,8 +97,8 @@ class DataController:
     def records(self, source_id, query="", limit=50, offset=0):
         return self.service.query(source_id, query, limit, offset)
 
-    def resources(self, source_id, query='', limit=50, offset=0):
-        return self.service.resources(source_id, query, limit, offset)
+    def resources(self, source_id, query='', limit=50, offset=0, *, kind=None):
+        return self.service.resources(source_id, query, limit, offset, kind=kind)
 
     def read_resource(self, source_id, resource_id):
         return self.service.read_resource(source_id, resource_id)
