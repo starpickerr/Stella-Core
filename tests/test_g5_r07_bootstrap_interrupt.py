@@ -28,8 +28,8 @@ DOMAINS = (
     "stella.bills",
     "stella.calendar",
     "stella.tasks",
-    "stella.email",
-    "stella.elearning",
+    "stella.knowledge",
+    "stella.memory",
     "stella.briefing",
     "stella.automation",
     "stella.agent-hub",
@@ -94,4 +94,4 @@ def test_bootstrap_survives_kill_with_single_current_pointers(tmp_path, monkeypa
     currents = {p.parent.name for p in packages.glob("stella.*/current.json")}
     assert currents == set(DOMAINS)
     digest_dirs = list(packages.glob("stella.*/*/*"))
-    assert len(digest_dirs) <= 14
+    assert len(digest_dirs) <= 16

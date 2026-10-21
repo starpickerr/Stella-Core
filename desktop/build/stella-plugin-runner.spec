@@ -41,6 +41,7 @@ hiddenimports = [
     'core.plugins.runner.__main__',
     # Plugin entries are loaded from disk via importlib and commonly use these.
     # Keep in sync with stdlib imports under Stella-Plugins/plugins (R01).
+    'asyncio',
     'json',
     'datetime',
     'hashlib',

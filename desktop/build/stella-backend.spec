@@ -18,9 +18,9 @@ into a separate `stella-plugin-runner/` onedir that must ship NEXT TO
 `stella-backend/` (or be pointed at via STELLA_PLUGIN_RUNNER); the host resolves
 it in core.plugins.host.resolve_runner_command. Re-launching this backend as a
 worker would re-enter app init, the legacy PluginManager watcher and scheduler
-recovery (R01). Business packages (bills/tasks/calendar/email/elearning/
-briefing/automation) are NOT embedded here: bytes come from Stella-Plugins via
-resources/default-plugins.json. DMG integration of the runner is still open.
+recovery (R01). Business plugin bytes come from Stella-Plugins via
+resources/default-plugins.json. Email and eLearning ship as independent sibling
+MCP executables, outside this host bundle. Electron ships all sibling runtimes.
 """
 import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files

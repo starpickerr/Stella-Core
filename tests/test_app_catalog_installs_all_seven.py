@@ -21,13 +21,13 @@ SECRET = (
 
 
 @pytest.mark.skipif(not APP_CATALOG.is_file(), reason="Stella.app not built")
-def test_app_catalog_installs_all_seven(tmp_path, monkeypatch):
+def test_app_catalog_installs_all_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("STELLA_PLUGIN_SIGNING_SECRET", SECRET.read_text(encoding="utf-8").strip())
     store = PackageStore(tmp_path / "pkg")
     results = {}
     for plugin_id in (
-        "stella.bills", "stella.calendar", "stella.tasks", "stella.email",
-        "stella.elearning", "stella.briefing", "stella.automation", "stella.agent-hub",
+        "stella.bills", "stella.calendar", "stella.tasks", "stella.knowledge",
+        "stella.memory", "stella.briefing", "stella.automation", "stella.agent-hub",
     ):
         results[plugin_id] = fetch_and_install_from_catalog(
             catalog_path=APP_CATALOG,

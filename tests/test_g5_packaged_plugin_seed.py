@@ -30,8 +30,8 @@ def test_packaged_catalog_lists_domains_with_signed_package_urls():
         "stella.bills",
         "stella.calendar",
         "stella.tasks",
-        "stella.email",
-        "stella.elearning",
+        "stella.knowledge",
+        "stella.memory",
         "stella.briefing",
         "stella.automation",
         "stella.agent-hub",
@@ -92,4 +92,4 @@ def test_frozen_backend_bootstraps_from_signed_package_urls(tmp_path):
         proc.kill()
     assert "Plugin bootstrap status=ok" in text, text[-2000:]
     currents = list((home / "stella" / "plugin-packages" / "packages").glob("stella.*/current.json"))
-    assert len(currents) == 7
+    assert len(currents) == 8

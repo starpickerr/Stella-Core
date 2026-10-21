@@ -143,3 +143,25 @@ def test_frozen_bills_page_open_content_and_bridge(frozen_call):
     })
     assert created["status"] == "ok"
     assert created["value"]["amount_minor"] == 900
+
+
+def test_frozen_managed_mcp_settings_and_persisted_switch(frozen_call):
+    catalog = frozen_call('GET', '/api/mcp')
+    assert catalog['status'] == 'success'
+    assert {'email','elearning'} <= {row['name'] for row in catalog['servers']}
+    # PATH has no Python; these calls must launch the independent sibling
+    # executables, not a source environment or the backend as an interpreter.
+    for path in ['/api/email/accounts', '/api/elearning/file-sync']:
+        result=frozen_call('GET',path)
+        assert result['status']=='success',result
+    disabled=frozen_call('POST','/api/mcp',{'name':'email','enabled':False})
+    assert disabled['status']=='success' and disabled['server']['enabled'] is False
+    denied=frozen_call('GET','/api/email/accounts')
+    assert denied['status']=='error',denied
+    enabled=frozen_call('POST','/api/mcp',{'name':'email','enabled':True})
+    assert enabled['status']=='success'
+    assert frozen_call('GET','/api/email/accounts')['status']=='success'
+    data=frozen_call('GET','/api/data?refresh=1')
+    assert data['status']=='success' and data['sources']==[],data
+    security=frozen_call('GET','/api/security/center')
+    assert security['status']=='success' and security['data_access']['inherited_grants']==[],security
