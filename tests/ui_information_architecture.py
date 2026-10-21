@@ -83,8 +83,17 @@ with sync_playwright() as playwright:
         for text in ('数据', '知识', '记忆'):
             expect(info.get_by_role('button', name=text, exact=True)).to_be_visible()
         system = page.get_by_test_id('nav-group-system')
-        for text in ('模型', 'Agent 配置', '能力', '安全', '通用'):
+        for text in ('模型', 'Agent 配置', '能力', '安全', '通用', '日志'):
             expect(system.get_by_role('button', name=text, exact=True)).to_be_visible()
+        expect(page.get_by_role('complementary').get_by_role('button', name='日志', exact=True)).to_have_count(1)
+        logs = system.get_by_role('button', name='日志', exact=True)
+        logs.focus()
+        expect(logs).to_be_focused()
+        logs.press('Enter')
+        expect(page).to_have_url(test_url + '/#/logs')
+        expect(logs).to_have_class(re.compile('bg-accent-soft'))
+        expect(page.get_by_role('heading', name='日志', exact=True)).to_be_visible()
+        page.screenshot(path='/tmp/stella-logs-system-nav-desktop.png', full_page=True)
         system.get_by_role('button', name='模型', exact=True).click()
         expect(page).to_have_url(test_url + '/#/models')
         expect(page.get_by_role('heading', name='模型', exact=True)).to_be_visible()
@@ -124,6 +133,13 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('button', name='Agent 菜单', exact=True)).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         page.screenshot(path='/tmp/stella-agent-system-nav-narrow.png', full_page=True)
+        compact_logs = system.get_by_role('button', name='日志', exact=True)
+        expect(compact_logs).to_be_visible()
+        compact_logs.click()
+        expect(page).to_have_url(test_url + '/#/logs')
+        expect(compact_logs).to_have_class(re.compile('bg-accent-soft'))
+        expect(page.get_by_role('heading', name='日志', exact=True)).to_be_visible()
+        page.screenshot(path='/tmp/stella-logs-system-nav-narrow.png', full_page=True)
         assert errors == [], errors
         print('PASS: configuration ownership, Agent configuration in System, sidebar groups, legacy redirects, General/About and narrow layout')
     finally:
