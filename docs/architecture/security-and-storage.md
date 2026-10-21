@@ -7,11 +7,13 @@
 | 事务 | 外仓插件 `stella.tasks`（`backend/domain/schema.sql`）中的 `todos`、依赖、提醒和墓碑表 | 旧日程事务迁移、幂等应用、用户编辑保护 |
 | 日程 | `stella.calendar` 插件拥有事件、分类和交接表；Core 仅拥有 Apple 映射库 | 简报来源变更与已有事件冲突 |
 | 账单 | 外仓插件 `stella.bills`（`backend/domain/schema.sql`、`store.py`） | 账本、计划付款、期间报表一致性 |
-| 简报 | `agent/briefing/schema.sql`、`actions.sql`、`store.py` | 候选快照、版本、来源游标、行动回执与 outbox |
+| 简报 | 外仓 `stella.briefing` 插件的领域库与 worker，Core gateway 负责适配 | 候选快照、版本、来源游标、行动回执与 outbox |
 | 会话 | `agent/memory/conversation_store.py` | 旧库迁移、运行准入与消息顺序 |
 
 权限模式与平台边界已有 [详细说明](../security-permission-modes.md)。运行时的可信判定点是 `agent/runtime/tool_invocation.py` 和 `agent/permission/gateway.py`；`Application.command` 对定时业务写入再次校验。Web/API 端还需验证认证，不能把前端隐藏按钮当作授权。涉及外部资源的工具要检查路径、URL、重定向与凭证泄露。权限和事务的失败恢复必须有隔离测试。
 
-Email 连接、凭据与 IMAP 抓取由 `stella.email` 插件拥有；Core 不再保留邮箱设置或收信回退。凭据数据库及 SQLite 临时文件以私有权限创建并在重开时收紧；文件工具与 shell 隔离共用凭据路径清单，保护 Email 数据目录以及 Core 生命周期状态和迁移备份。
+Email 连接、凭据与 IMAP 抓取由独立 `email` MCP Server 拥有；Core 的 `email_gateway/email_facade` 仅经唯一托管连接适配，旧邮箱路由兼容跳转到数据页的所有者表单，不保留收信回退。凭据数据库及 SQLite 临时文件以私有权限创建并在重开时收紧；文件工具与 shell 隔离共用凭据路径清单，保护 Email 数据目录以及 Core 生命周期状态和迁移备份。
 
-Core 服务协调入口新增 `core/workspace/service.py`、`core/execution/context.py` 与 `core/security/service.py`。运行上下文不可变，但不保存授权快照；调用和返回仍复查现有策略及 Grant。通用插件私有数据使用用户级 `plugins/<plugin-id>`，第一方数据句柄保持旧路径；文件/shell 的保护清单覆盖通用私有目录及原账单、事务、日程、Agent Hub 存储。详细协作、兼容及平台边界见[工作区与执行服务](execution-services.md)。
+Core 服务协调入口新增 `core/workspace/service.py`、`core/execution/context.py` 与 `core/security/service.py`。运行上下文不可变，但不保存授权快照；调用和返回仍复查现有策略及 Grant。通用插件私有数据使用用户级 `plugins/<plugin-id>`，第一方数据句柄保持旧路径；文件/shell 的保护清单覆盖通用私有目录及原账单、事务、日程、Agent Hub、简报与自动化数据库及 SQLite 附属文件。详细协作、兼容及平台边界见[工作区与执行服务](execution-services.md)。
+
+模型凭据的唯一编辑入口为安全中心 `/security?tab=secrets`。`agent/permission/center.py::set_secret` 更新原配置字段、`custom_providers[].api_key` 或原搜索命名空间，不创建第二份凭据库；配置文件原子替换并使用 `0600`。自定义厂商凭据的稳定键为 `CUSTOM:<id>`，展示名称可改，清除凭据保留厂商、地址、模型与用途绑定。保存后重建模型客户端并刷新现有进程环境，撤销同时清除兼容环境值。状态接口不返回密钥正文，修改记录 L3 审计。旧受认证模型配置 API 继续兼容；Desktop、精简版模型设置及首次设置不再复制密钥编辑器。

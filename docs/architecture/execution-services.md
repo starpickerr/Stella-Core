@@ -1,6 +1,6 @@
 # 工作区、执行上下文与服务授权
 
-2026-10-21。讨论与决策：本次用户明确要求实施的服务边界已确认；实现：已接入工具、插件、子 Agent 与模型路径。本文描述当前代码；验收证据随本次任务维护，不用历史测试数代替当前验收。
+2026-10-22。讨论与决策：本次用户明确要求实施的服务边界已确认；实现：已接入工具、插件、子 Agent 与模型路径。本文描述当前代码；验收证据随本次任务维护，不用历史测试数代替当前验收。
 
 Stella 的一次工作必须始终能回答：为谁执行、属于哪个 Agent 与会话、在哪里读写、是交互还是后台任务，以及代表哪个插件消费者。工作目录与交付对话不是同一个概念，资源目录也不是授权清单。
 
@@ -28,6 +28,8 @@ flowchart LR
 
 `core/security/service.py::SecurityService` 协调这些上下文与现有授权；它不拥有新 ACL 或第二份 Grant。现有 `permission_denial` 保留兼容入口，转发到服务后仍调用原 SecurityGateway 逻辑，审批、审计、连接、工具启停与旧授权继续有效。工具执行重新核对当前身份与工作区；模型与 Data 回调在返回前重新核对授权，撤销或过期时不释放结果。取消继续使用已有协作信号，不因服务改名而创建第二套取消协议。
 
+兼容调用方的 `current_caller_origin/current_consumer_plugin/current_invocation_purpose` 从已绑定 Execution Context 取得有效约束。旧 ContextVar 不能替换已绑定消费者，后台用途始终取较严格值；因此只有新上下文、没有旧插件 scope 的 MCP 调用也不会退回所有者的交互授权。
+
 ## 工作目录与定时任务
 
 | 场景 | 目录/行为 |
@@ -48,11 +50,13 @@ Model Service 只提供 completion 与 embedding；调用方法必须声明相�
 
 Data 公开契约是 `stella.data@1` 的 `resources` 和 `read_resource`，仅供声明 `data.read` 且获得实际来源范围 Grant 的插件使用。Data 契约的 Grant 与所有者的当前权限都须满足；订阅、来源注册和清理没有因此向插件开放。
 
+MCP 调用在启动等待、授权、实际传输和结果释放处检查同一取消与截止约束。stdio 锁和回复队列采用有界等待，过期时发送取消通知并按请求 ID 排除迟到结果。HTTP 在有预算或取消信号时使用复制当前上下文的受控请求线程；等待方执行总截止时间，请求专属 opener 在建立连接时就登记 HTTP/HTTPS connection，响应头尚未完成也可关闭其 socket；终止时只中断该请求拥有的 connection/socket/response，不关闭其他并发调用的连接。socket 空闲超时不能替代总截止时间。远端已开始的计算或副作用无法由 Core 撤回，但迟到结果不会恢复原调用。
+
 ## 私有数据与兼容
 
 `core/plugins/storage.py::private_data_handle` 为通用插件分配用户根下 `plugins/<plugin-id>`，拒绝不合法 ID 与目录符号链接；创建时收紧目录权限。第三方插件安装和调用均可取得宿主选择的句柄，调用方不能用 callback 替换数据路径。
 
-已有账单、事务、日程、简报、知识、记忆、自动化、Agent Hub 的 `domain_data_handle` 保持原路径与迁移机制；没有全库搬迁，也不重签或扩大旧 Grant。通用插件私有目录、账单/事务/日程/Agent Hub 原始存储加入统一文件与 shell 保护清单，SQL sidecar 受目录保护覆盖。知识目录仍保留用户文档语义。
+已有账单、事务、日程、简报、知识、记忆、自动化、Agent Hub 的 `domain_data_handle` 保持原路径与迁移机制；没有全库搬迁，也不重签或扩大旧 Grant。通用插件私有目录、账单/事务/日程/Agent Hub 原始存储加入统一文件与 shell 保护清单；简报及自动化数据库和 SQLite sidecar 也受保护。插件私有目录的祖先路径与 Work 私有路径均检查符号链接，避免通过目录别名绕过所有权。知识目录仍保留用户文档语义。
 
 这是宿主授权、契约及数据所有权边界。现有 Python worker 与 Core 运行在同一 OS 用户下；本次没有把 worker 改造成抵抗恶意原生代码的 OS 沙箱。签名/包选择/能力启停和原平台隔离限制仍适用。
 
