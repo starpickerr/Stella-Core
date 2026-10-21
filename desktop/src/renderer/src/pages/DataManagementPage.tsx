@@ -120,7 +120,7 @@ export default function DataManagementPage() {
     <main data-stella-scroll className="flex-1 min-w-0 overflow-y-auto">
     <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <nav aria-label={c('数据管理分类', 'Data management sections')} className="flex flex-wrap gap-1">
+      <nav aria-label={c('数据分类', 'Data sections')} className="flex flex-wrap gap-1">
         {tabs.map((key, index) => <button key={key} type="button" disabled={busy} aria-current={tab === key ? 'page' : undefined}
           className={`${button} ${tab === key ? 'bg-accent-soft text-accent border-accent' : 'text-content-secondary'}`} onClick={() => choose(key)}>{labels()[index]}</button>)}
       </nav>

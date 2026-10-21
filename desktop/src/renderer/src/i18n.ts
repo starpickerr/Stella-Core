@@ -216,7 +216,7 @@ const translations: Record<string, Record<string, string>> = {
     menu_plugins: '插件',
     menu_models: '模型',
     menu_knowledge: '知识',
-    menu_data: '数据管理',
+    menu_data: '数据',
     menu_settings: '设置',
     // knowledge
     knowledge_title: '知识库',
@@ -1184,7 +1184,7 @@ const translations: Record<string, Record<string, string>> = {
     knowledge_import_total_too_large: 'Total import size cannot exceed 200MB',
     knowledge_import_result: '{imported} imported · {skipped} skipped · {failed} failed',
     knowledge_drop_hint: 'Drop .md / .txt files here to import',
-    menu_data: 'Data Management',
+    menu_data: 'Data',
     menu_settings: 'Settings',
     nav_expand: 'Expand sidebar',
     nav_collapse: 'Collapse sidebar',

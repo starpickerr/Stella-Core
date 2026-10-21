@@ -41,4 +41,4 @@ flowchart LR
 
 ## 数据服务
 
-`core/data` 提供用户级通用来源、采集检查点、去重记录与可靠变更通知。邮箱提供者集中映射一次 MCP，简报通过通用 DataSource 或受信消费者读取，权限继续由现有 Security/MCP/Tool Runtime 决定。主侧边栏「数据管理」负责数据生命周期，安全中心「数据访问」负责访问策略。契约、事件语义与阶段范围见 [数据服务](data-service.md)。
+`core/data` 提供用户级通用来源、采集检查点、去重记录与可靠变更通知。邮箱提供者集中映射一次 MCP，简报通过通用 DataSource 或受信消费者读取，权限继续由现有 Security/MCP/Tool Runtime 决定。主侧边栏「数据」负责数据生命周期，安全中心「数据访问」负责访问策略。契约、事件语义与阶段范围见 [数据服务](data-service.md)。

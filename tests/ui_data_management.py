@@ -271,15 +271,15 @@ with sync_playwright() as p:
         page.on("dialog", lambda dialog: dialog.accept())
         page.goto(url + "/#/settings", wait_until="networkidle")
         nav = page.get_by_role("navigation", name="设置分类")
-        expect(nav.get_by_role("button", name="数据管理", exact=True)).to_have_count(0)
+        expect(nav.get_by_role("button", name="数据", exact=True)).to_have_count(0)
         expect(nav.get_by_role("button", name="安全中心", exact=True)).to_have_count(0)
         sidebar = page.locator("aside").first
         expect(sidebar.get_by_role("button", name="安全", exact=True)).to_have_count(1)
-        sidebar.get_by_role("button", name="数据管理", exact=True).click()
+        sidebar.get_by_role("button", name="数据", exact=True).click()
         expect(page).to_have_url(url + "/#/data")
-        expect(page.get_by_role("heading", name="数据管理", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="数据", exact=True)).to_be_visible()
         expect(page.get_by_role("navigation", name="设置分类")).to_have_count(0)
-        tabs = page.get_by_role("navigation", name="数据管理分类")
+        tabs = page.get_by_role("navigation", name="数据分类")
         for label in ["总览", "信息源", "数据记录", "同步与分发", "存储管理"]:
             expect(tabs.get_by_role("button", name=label, exact=True)).to_be_visible()
         tabs.get_by_role("button", name="信息源", exact=True).click()
@@ -359,21 +359,21 @@ with sync_playwright() as p:
         )
         expect(page).to_have_url(url + "/#/data?section=storage")
         expect(
-            page.get_by_role("navigation", name="数据管理分类").get_by_role(
+            page.get_by_role("navigation", name="数据分类").get_by_role(
                 "button", name="存储管理", exact=True
             )
         ).to_have_attribute("aria-current", "page")
         expect(page.get_by_role("navigation", name="设置分类")).to_have_count(0)
         page.reload(wait_until="networkidle")
         expect(
-            page.get_by_role("navigation", name="数据管理分类").get_by_role(
+            page.get_by_role("navigation", name="数据分类").get_by_role(
                 "button", name="存储管理", exact=True
             )
         ).to_have_attribute("aria-current", "page")
         sidebar.get_by_role("button", name="设置", exact=True).click()
         settings_nav = page.get_by_role("navigation", name="设置分类")
         expect(
-            settings_nav.get_by_role("button", name="数据管理", exact=True)
+            settings_nav.get_by_role("button", name="数据", exact=True)
         ).to_have_count(0)
         expect(
             settings_nav.get_by_role("button", name="安全中心", exact=True)
