@@ -150,6 +150,18 @@ def managed_data_lease(plugin_id: str, *, mechanism: bool = False, user_id: str 
         yield
 
 
+@contextmanager
+def gateway_invocation_scope(module_name):
+    """Share a gateway's worker slot, admission lease and budget across adapters."""
+    with _LOCKS_GUARD:
+        lock = _GATEWAY_LOCKS.setdefault(module_name, RLock())
+    with invocation_budget(), invocation_lock(lock):
+        domain = module_name.rsplit('.', 1)[-1].removesuffix('_gateway')
+        plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
+        with managed_data_lease(plugin_id):
+            yield
+
+
 def serialized_gateway(function):
     with _LOCKS_GUARD:
         lock = _GATEWAY_LOCKS.setdefault(function.__module__, RLock())
@@ -157,11 +169,8 @@ def serialized_gateway(function):
     @wraps(function)
     def call(*args, **kwargs):
         if function.__name__.startswith(("invoke_", "ensure_")):
-            with invocation_budget(), invocation_lock(lock):
-                domain = function.__module__.rsplit('.', 1)[-1].removesuffix('_gateway')
-                plugin_id = 'stella.' + {'todos': 'tasks'}.get(domain, domain)
-                with managed_data_lease(plugin_id):
-                    return function(*args, **kwargs)
+            with gateway_invocation_scope(function.__module__):
+                return function(*args, **kwargs)
         with invocation_lock(lock, enforce_deadline=False):
             return function(*args, **kwargs)
     return call

@@ -290,6 +290,8 @@ class DataService:
         if 'read' not in resource.operations:
             raise ValueError('Resource does not support read')
         provider = self.providers.get(source['provider'])
+        authorize_resource = getattr(provider, 'authorize_resource', lambda *_: None)
+        authorize_resource(source, resource, 'read')
         if callable(getattr(provider, 'read_resource', None)):
             result = provider.read_resource(source, resource)
             if not isinstance(result, dict) or set(result) != {'resource', 'content'}:
@@ -305,6 +307,7 @@ class DataService:
             returned, content = resource, json.loads(row['content'])
         if self._guard(source_id, 'read')['revision'] != source['revision']:
             raise PermissionError('Source configuration changed during resource read')
+        authorize_resource(source, resource, 'read')
         self._identity()
         return {'resource': returned.as_dict(), 'content': content}
 

@@ -385,6 +385,7 @@ class PluginSession:
         agent_id: str | None = None,
         session_id: str | None = None,
         data_handle: Mapping[str, Any] | None = None,
+        check_only: bool = False,
     ) -> dict[str, Any]:
         from common.runtime_identity import current_identity
 
@@ -478,6 +479,10 @@ class PluginSession:
                 )
                 if denial:
                     raise PermissionError(denial)
+        if check_only:
+            if skip_authz or self._method_effects[(contract, method)] != 'query':
+                raise PermissionError('authorization probes require an authorized query')
+            return {'status': 'succeeded', 'sideEffects': 'none'}
         context = build_host_context(
             user_id=self.user_id,
             instance_id=self.instance_id,
