@@ -230,6 +230,15 @@ with sync_playwright() as playwright:
         expect(checkbox).to_be_checked()
         expect(create).to_be_disabled()
         checkbox.uncheck()
+        previous_business=actions[item['id']]['todo']['business']
+        actions[item['id']]['todo']['business']={'id':'private-target','unresolved':True,'access':'denied'}
+        page.get_by_role('button',name='刷新',exact=True).click()
+        expect(page.get_by_text('已关联事务 · 未授权读取',exact=True)).to_be_visible()
+        actions[item['id']]['todo']['business']={'id':'private-target','unresolved':True}
+        page.get_by_role('button',name='刷新',exact=True).click()
+        expect(page.get_by_text('已关联事务 · 暂不可用',exact=True)).to_be_visible()
+        actions[item['id']]['todo']['business']=previous_business
+        page.get_by_role('button',name='刷新',exact=True).click()
 
         informational = add_item('info', '课程资料通知', category='attention', todo=False)
         informational['section'] = 'fyi'

@@ -38,6 +38,8 @@ const labels: Record<string, [string, string]> = {
   content_unavailable: ['来源未提供具体内容。', 'The source did not provide details.'],
   no_source_link: ['来源没有可打开的链接。', 'No source link is available.'],
   linked_task: ['已关联事务', 'Task linked'],
+  linked_task_denied: ['已关联事务 · 未授权读取', 'Task linked · Read access denied'],
+  linked_task_unavailable: ['已关联事务 · 暂不可用', 'Task linked · Temporarily unavailable'],
   creation_help: ['确认后只创建所选业务对象；截止时间不会创建日程。', 'Confirmation creates only the selected object. A deadline does not create an event.'],
   preference_help: ['仅影响简报展示；授权规则控制业务写入，可随时撤销。', 'Display preferences affect the briefing. Authorization rules control business writes and can be revoked.'],
 }

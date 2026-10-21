@@ -173,3 +173,26 @@ def test_duplicate_cards_roll_back_document_and_snapshot(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         svc.complete_briefing(started.id, {"body": "second", "items": [{"source_item_id": item.id}] * 2})
     assert svc.get_briefing(started.id) == first
+
+
+@pytest.mark.parametrize('kind',['todo','calendar'])
+def test_linked_target_permission_denial_preserves_receipt_without_content(tmp_path,kind):
+    from stella_briefing_domain.actions import BriefingActions
+    class Denied:
+        def get_todo(self,*args):raise PermissionError('scoped grant denied: tasks.read / interactive / get_todo')
+        get_event=get_todo
+    service=_service(tmp_path)
+    actions=BriefingActions(service.store,todos=Denied(),calendar=Denied())
+    target=actions._target({'kind':kind,'target_id':'private-target'})
+    assert target=={'id':'private-target','unresolved':True,'access':'denied'}
+
+
+def test_linked_target_unavailable_and_missing_have_different_meanings(tmp_path):
+    from stella_briefing_domain.actions import BriefingActions,AdapterUnavailable
+    class Unavailable:
+        def get_todo(self,*args):raise AdapterUnavailable('offline')
+    class Missing:
+        def get_todo(self,*args):raise KeyError('deleted')
+    store=_service(tmp_path).store
+    assert BriefingActions(store,todos=Unavailable(),calendar=Unavailable())._target({'kind':'todo','target_id':'a'})=={'id':'a','unresolved':True}
+    assert BriefingActions(store,todos=Missing(),calendar=Missing())._target({'kind':'todo','target_id':'a'}) is None

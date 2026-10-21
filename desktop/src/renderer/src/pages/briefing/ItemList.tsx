@@ -167,7 +167,7 @@ export const ItemList: React.FC<{
             aria-label={`${label('view_item')} ${item.title || item.source}`} onClick={() => { returnFocusId.current = item.id; setFocusedId(item.id) }}
             className="group flex min-w-0 flex-1 items-start justify-between gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             <span className="min-w-0 space-y-1.5">
-              {view?.todo?.business ? <span className="block text-xs font-medium text-accent">{label('linked_task')}</span> : null}
+              {view?.todo?.business ? <span className="block text-xs font-medium text-accent">{label('unresolved' in view.todo.business ? view.todo.business.access === 'denied' ? 'linked_task_denied' : 'linked_task_unavailable' : 'linked_task')}</span> : null}
               <span className="block text-sm font-medium leading-snug text-content break-words group-hover:text-accent">{item.title || item.source}</span>
               <span className="block text-sm text-content-secondary line-clamp-2 break-words">{item.snippet}</span>
               <span className="block text-xs text-content-tertiary">{item.sender} · {new Date(item.occurred_at).toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US')}</span>

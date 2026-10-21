@@ -16,9 +16,18 @@ class PeerService:
         except ImportError:
             raise AdapterUnavailable('Core public service channel unavailable') from None
         key = 'briefing:' + hashlib.sha256(json.dumps([self.contract, method, payload], sort_keys=True).encode()).hexdigest() if write else None
-        result = invoke(self.contract, method, payload, idempotency_key=key)
+        try:
+            result = invoke(self.contract, method, payload, idempotency_key=key)
+        except PermissionError:
+            raise
+        except (RuntimeError, OSError) as exc:
+            if not write:
+                raise AdapterUnavailable('Core public service unavailable') from exc
+            raise
         if result['status'] == 'failed':
             error = result.get('error') or {}
+            if error.get('code') in {'permission_denied','unauthorized','forbidden'}:
+                raise PermissionError(error.get('message') or 'peer access denied')
             if error.get('code') == 'not_found':
                 raise KeyError(error.get('message'))
             raise ValueError(error.get('message') or 'peer operation failed')

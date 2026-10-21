@@ -224,6 +224,10 @@ class BriefingActions:
             return service.get_event(action['target_id']) if action['kind'] == 'calendar' else service.get_todo(action['target_id'])
         except KeyError:
             return None
+        except PermissionError:
+            # A denied enrichment does not delete the existing link or expose
+            # the peer object. Explicit peer reads/writes remain denied.
+            return {'id': action['target_id'], 'unresolved': True, 'access': 'denied'}
         except AdapterUnavailable:
             # Cannot verify the peer object; keep the link rather than report deletion.
             return {'id': action['target_id'], 'unresolved': True}

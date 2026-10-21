@@ -1046,7 +1046,7 @@ export interface BriefingActionReceipt {
   kind: BriefingActionKind
   state: 'pending' | 'succeeded' | 'failed' | 'conflict' | 'deleted' | 'detached' | 'ignored' | 'deferred' | 'briefing_only'
   target_id: string | null
-  business: Todo | CalendarEvent | null
+  business: Todo | CalendarEvent | { id: string; unresolved: true; access?: 'denied' } | null
   error: string
   result: { operation?: string; changes?: Record<string, { current: unknown; source: unknown }>; remind_at?: string }
 }
