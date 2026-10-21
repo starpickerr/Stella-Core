@@ -20,6 +20,7 @@ const ElearningFileSettings: React.FC = () => {
 
   useEffect(() => {
     let active = true
+    setBusy(false); setLoading(true); setError(''); setSyncMessage('')
     const params = new URLSearchParams(location.search)
     setSourceEnabled(false)
     apiClient.getDataSnapshot(true, undefined, { agent: params.get('agent') || '', session: params.get('session') || '' })
