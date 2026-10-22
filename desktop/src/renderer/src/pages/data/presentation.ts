@@ -9,7 +9,6 @@ export const bytes = (value: number) => value < 1024 ? `${value} B` : value < 10
 export const sourceDescription = (source: DataSourceInfo) => ({
   email: c('邮箱中的邮件', 'Messages from your mailbox'),
   elearning: c('课程、公告、作业和文件', 'Courses, announcements, assignments and files'),
-  workspace: c('当前对话或项目中的授权文件', 'Authorized conversation or project files'),
   tasks: c('事务与待办事项', 'Tasks and to-dos'),
   calendar: c('日程与事件', 'Calendars and events'),
   bills: c('账单与收支记录', 'Bills and transactions'),
@@ -19,7 +18,7 @@ export const sourceDescription = (source: DataSourceInfo) => ({
 }[source.provider] || source.kind)
 export const sourceOrigin = (source: DataSourceInfo) => source.connection?.startsWith('mcp:')
   ? `MCP · ${source.connection.slice(4)}`
-  : source.connection?.startsWith('plugin:') ? c('插件', 'Plugin') : source.provider === 'workspace' ? c('本地文件', 'Local files') : source.provider
+  : source.connection?.startsWith('plugin:') ? c('插件', 'Plugin') : source.provider
 export function settingsPath(source: DataSourceInfo): string | undefined {
   if (['/email', '/elearning'].includes(source.settings_url || '')) return `/data/sources${source.settings_url}`
   if (['/todos', '/calendar', '/bills', '/briefing', '/knowledge', '/memory'].includes(source.settings_url || '')) return source.settings_url
@@ -33,6 +32,7 @@ export const sourceName = (source: DataSourceInfo) => source.name.toLowerCase() 
 export function groupSources(sources: DataSourceInfo[]) {
   const groups = new Map<string, DataSourceInfo[]>()
   for (const source of sources) {
+    if (source.provider === 'workspace') continue // Ignore retired entries from older snapshots.
     const group = groups.get(source.provider) || []
     group.push(source)
     groups.set(source.provider, group)
@@ -53,9 +53,8 @@ export const sourceStatus = (group: SourceGroup) => ({
   unavailable: c('暂不可用', 'Unavailable'), disabled: c('已停用', 'Disabled'),
 }[group.status])
 
-export function groupSettingsPath(group: SourceGroup, scope: { agent: string; session: string }) {
+export function groupSettingsPath(group: SourceGroup) {
   const path = settingsPath(group.source)
-    || (group.id === 'workspace' ? '/security?tab=privacy'
-      : group.source.connection?.startsWith('mcp:') ? '/skills?tab=mcp' : '/skills?tab=plugins')
-  return path.startsWith('/data/') ? `${path}?${new URLSearchParams(scope)}` : path
+    || (group.source.connection?.startsWith('mcp:') ? '/skills?tab=mcp' : '/skills?tab=plugins')
+  return path
 }

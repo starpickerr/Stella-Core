@@ -1,8 +1,8 @@
 # 数据服务
 
-2026-10-22。方向与实施范围由用户确认；本文记录当前实现。数据页已接入邮箱、eLearning、授权工作区、事务、日程、账单、简报、知识和记忆，采用采集记录与所有者资源引用两种机制。验证入口见文末。
+2026-10-22。方向与实施范围由用户确认；本文记录当前实现。数据页已接入邮箱、eLearning、事务、日程、账单、简报、知识和记忆，采用采集记录与所有者资源引用两种机制。验证入口见文末。
 
-Data Service 让同一来源被多个获授权消费者复用。登录、IMAP 和学校抓取属于独立 MCP；摘要、评分和事务判断属于业务插件。Core 只管理来源、记录、同步检查点及可靠变更通知。
+Data Service 管理当前用户全局共享的信息源，不以 Agent、对话、项目或任务划分目录。Agent 通过已连接的服务正常读取信息；外部访问限制由安全中心的外部连接及已有授权范围管理，数据页不增加逐 Agent 或逐对话的授权。登录、IMAP 和学校抓取属于独立 MCP；摘要、评分和事务判断属于业务插件。Core 只管理来源、记录、同步检查点及可靠变更通知。
 
 ## 数据流与入口
 
@@ -31,7 +31,7 @@ flowchart LR
 
 ## 权限与界面
 
-Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付通过当前 Security/Tool/MCP 权限；读取缓存也不能绕过连接停用、工具开关、旧 Grant 撤销或资源范围。服务实例绑定用户，仍按当前工作区和真实调用者执行。可信 `Consumer` 注册可以绑定插件消费者身份，订阅标签不能授予权限；已有消费者上下文不能被替换。读取正文后再次检查权限、来源 revision 和订阅状态。
+Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付通过当前 Security/Tool/MCP 权限；读取缓存也不能绕过连接停用、工具开关、旧 Grant 撤销或资源范围。服务实例绑定用户，同一用户的来源在不同 Agent 与对话间保持一致；真实调用者、执行目的、取消、截止时间和现有权限仍沿调用传递。可信 `Consumer` 注册可以绑定插件消费者身份，订阅标签不能授予权限；已有消费者上下文不能被替换。读取正文后再次检查权限、来源 revision 和订阅状态。
 
 主侧边栏「数据」依次提供总览、信息源、数据使用、数据存储，默认进入总览。总览参考安全页的卡片摘要，说明其他三页职责并展示真实数量与状态；信息源按服务聚合实际注册来源、所有者和可用性，多个邮箱共用一个 Email 卡片，点击卡片进入原有配置页。桌面资源预览与独立配置按钮已移除。数据使用编辑功能对象与信息源的消费关系，不展示任务、Agent 或执行过程。原生 API 包括 `/api/data`、`/api/data/resources`、兼容的 `/api/data/records` 和 `/api/data/command`。邮箱及 eLearning 的账号、课程选择与保存目录表单集中于 `/data/sources/email`、`/data/sources/elearning`；旧 `/email`、`/elearning` 兼容跳转。安全中心「数据访问」保留连接、资源及外传策略，显示并编辑迁移前授权（沿用原授权库，原生用户操作、所有权及 revision 校验）。数据页没有独立授权表单，来源启用只表示在数据服务中使用该来源。
 
@@ -59,7 +59,7 @@ Source 是稳定来源实例，必须有 `id/name/kind`，可声明 `operations`
 
 `DataService.resources(source_id, query='', limit=50, offset=0, kind=None)` 返回资源页，类型过滤先于最终分页；`read_resource(source_id, resource_id)` 只接受已登记的资源。引用型所有者收到 Core 验证的 Resource 信封，负责实时解析引用和资源级授权，返回 `{resource, content}`。可选 `authorize_resource` 在读取前后复查具体方法和资源的权限。Core 校验返回的来源、资源身份、当前权限、来源 revision、启停和取消。旧采集记录自动适配成资源，原记录接口及邮箱→简报订阅继续工作；引用型来源不会出现同步、订阅、导出或缓存清理等未实现动作。
 
-内置 `WorkspaceProvider` 将当前会话/任务的工作文件作为引用来源，使用 Workspace Service 的路径约束和 Security Service 的逐文件权限，不收集其他会话目录、凭据、托管插件私有数据或符号链接。无会话/任务的后台宿主不会默认登记包含所有私有会话的 Work 父目录。工作区扫描有界，超过 20,000 文件会明确拒绝，文本读取上限沿用 Workspace Service；本阶段没有后台全盘索引器。
+2026-10-22 根据用户对全局数据目录的修正，移除会话/任务工作区提供者与注册。已有数据库中的旧工作区引用不再列出或解析，不删除实际工作文件。Agent 的文件操作继续由独立 Workspace Service 和原工具权限管理，不作为数据页的信息源。
 
 HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resource_id 执行按需读取；两种请求均要求原生 API 认证。该接口继续为可信原生调用和资源消费者提供按需读取，桌面数据页不再提供资源预览组件。插件通过 `stella.data@1` 的只读方法消费资源，必须声明并获准 `data.read`，授权消费者和用途沿原调用传递。来源注册、存储清理和 Security 管理不在插件公开契约中。
 
@@ -71,7 +71,6 @@ HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resou
 | --- | --- | --- |
 | 邮箱 | `McpProvider` 经同一 ToolManager 调用 `list_sources/fetch_messages` | 原有采集记录、游标、事件和订阅 |
 | eLearning | `ElearningProvider` 经同一托管 MCP 调用 `get_settings/list_courses/fetch/list_files` | 账号绑定的来源及课程、公告、作业、测试、成绩、文件引用 |
-| 工作区 | `WorkspaceProvider` 经 Workspace/Security Service 浏览和读取当前范围文件 | 与 Agent、会话或任务、当前根目录绑定的文件引用 |
 | 事务、日程、账单、简报 | `PluginResourceProvider` 调用各自已有的列表和详情契约 | 原业务 ID 的资源引用 |
 | 知识、记忆 | 同一适配器调用 `list_tree/read_file`、`list_files/get_content` | 文档路径、类别及来源引用；不复制编辑器或索引 |
 
@@ -81,12 +80,12 @@ eLearning 的目录按课程和方法分别检查权限，未授权课程或文�
 
 课程文件同步是来源所有者的真实操作，入口为数据页的 eLearning 配置区。`POST /api/data/elearning/sync-files` 经 `DataController.owner_operation` 选择唯一且仍存在的来源，再由 `DataService.owner_operation` 检查启用状态、账号、操作白名单和调用后的来源 revision；停用或配置变化时拒绝返回成功结果。接口严格转发现有 `sync_files` 参数，拒绝路径和身份注入；目录、课程范围、文件写权限、下载 manifest、防覆盖及重复执行仍由现有 MCP 与 Security 校验。用户必须先保存目录，界面才允许按需同步；修改过的本地文件保留。该操作与 Core 采集记录的同步、缓存清理和上游删除分开，没有新增自动下载任务或授权开关。
 
-## 原生浏览范围与验证
+## 全局原生接口与验证
 
-`core/data/native.py::browse_scope` 从认证后的原生请求选择已登记且启用的 Agent 与会话，不接受任意工作目录。无绑定执行上下文时建立 UI 上下文；已经存在的工具、任务或插件上下文只能保留自身范围，不能借原生接口改变身份或升级来源。范围变化后重新发现工作区来源，旧工作区的引用不能在新范围读取。数据界面沿用当前环境，不再显示 Agent 与工作区选择器；旧链接的显式 Agent、会话参数仍由同一可信边界验证，空会话范围仅浏览用户信息源。
+`core/data/native.py::native_data_access` 为已认证原生请求保留真实调用身份；已有 Execution Context 不能变成 UI 身份，无绑定上下文时按原规则建立 UI 调用。原生数据接口不再选择或枚举 Agent、会话或工作区，也不返回其范围选项；历史链接的 `agent/session` 参数不参与目录选择或替换身份。桌面数据页、来源配置与课程同步不再传递这些参数，也不订阅当前对话状态。用户隔离和现有访问拒绝保持生效。
 
 信息源卡片展示实际聚合状态，不提供正文预览；点击卡片直接进入所有者配置。旧 `section=resources/records` 链接回到信息源列表，旧 `section=sync` 链接转入数据使用。底层资源读取仍实时检查授权，事件订阅 API 保留兼容。这些状态不代表当前模型已获得内容。
 
-新增验收入口为 `tests/test_owned_resource_providers.py`（真实插件 RPC、撤销、消费者和后台范围）、`test_data_elearning_resources.py`（真实独立 MCP、部分课程授权、账号变化、下载与本地编辑保护、旧后台采集启用与消费撤销）、`test_data_usage.py`（关系持久化、独立消费者、权限不升级、失败恢复、存储路径和按需扫描）、`test_data_browse_scope.py`（类型分页和跨工作区 HTTP 拒绝）、`test_mcp_execution_budget.py`（锁、取消、流式 HTTP 总时限）。`ui_data_management.py`、`ui_elearning_settings.py` 验证四页导航、消费关系增删启停及失败恢复、保存中切页、三邮箱聚合、卡片配置、旧预览链接回退和桌面/窄窗口交互。
+新增验收入口为 `tests/test_owned_resource_providers.py`（真实插件 RPC、撤销、消费者和后台范围）、`test_data_elearning_resources.py`（真实独立 MCP、部分课程授权、账号变化、下载与本地编辑保护、旧后台采集启用与消费撤销）、`test_data_usage.py`（关系持久化、独立消费者、权限不升级、失败恢复、存储路径和按需扫描）、`test_data_browse_scope.py`（类型分页）、`test_data_global_catalog.py`（跨对话/Agent 一致、旧工作区引用停用、真实身份与用户隔离）、`test_mcp_execution_budget.py`（锁、取消、流式 HTTP 总时限）。`ui_data_management.py`、`ui_elearning_settings.py` 验证四页导航、消费关系增删启停及失败恢复、保存中切页、三邮箱聚合、卡片配置、旧预览链接回退、旧工作区隐藏和全局请求无会话参数和桌面/窄窗口交互。
 
 插件 manifest 动态声明提供者与自动清理调度仍不在当前实现中；宿主可注册具备上述契约的可信适配器。引用列表与类型过滤仍可能扫描所有者的完整目录，大规模来源的索引和服务端分页属于性能限制，不改变当前授权边界。

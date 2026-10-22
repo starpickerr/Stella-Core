@@ -26,6 +26,10 @@ mailboxes = [dict(id=f'mail-{index}', host='imap.example.test', user=f'account{i
                   password_set=True, password_masked='********') for index in range(1, 4)]
 usages = [dict(consumer_id='stella.briefing', source_id=source, enabled=True, selected=True) for source in ['school', 'mail']]
 commands, queries = [], []
+data_requests = []
+legacy_workspace = dict(id='workspace:legacy', name='session_internal_should_not_appear', provider='workspace',
+    kind='workspace', enabled=True, available=True, representation='reference', storage='reference',
+    retention_days=30, running=False, last_run=None, error='')
 fail_save = [False]
 hold_save = [False]
 deferred = []
@@ -34,6 +38,8 @@ deferred = []
 def backend(route):
     parsed = urlparse(route.request.url)
     path, query = parsed.path, parse_qs(parsed.query)
+    if path.startswith('/api/data'):
+        data_requests.append(query)
     data = {'status': 'success'}
     if path == '/api/health':
         data['status'] = 'ok'
@@ -44,7 +50,7 @@ def backend(route):
     elif path == '/api/email/accounts':
         data['settings'] = {'mailboxes': mailboxes}
     elif path == '/api/data':
-        data.update(sources=sources, usages=usages,
+        data.update(sources=[*sources, legacy_workspace], usages=usages,
             usage_consumers=[{'id': 'stella.briefing', 'name': {'zh': '简报', 'en': 'Briefing'}, 'available': True}],
             providers=[], record_count=1, subscriptions=[], consumers=[], deliveries=[], errors=[],
             storage={'available': True, 'categories': [
@@ -95,6 +101,7 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('heading', name='总览', exact=True)).to_be_visible()
         expect(page.get_by_label('Agent 范围', exact=True)).to_have_count(0)
         expect(page.get_by_label('工作区范围', exact=True)).to_have_count(0)
+        expect(page.get_by_text(legacy_workspace['name'], exact=True)).to_have_count(0)
         overview = page.get_by_test_id('data-overview')
         expect(overview.get_by_test_id('data-source-group-count')).to_have_text('3')
         expect(overview.get_by_role('link', name='信息源', exact=True)).to_be_visible()
@@ -116,7 +123,8 @@ with sync_playwright() as playwright:
         email.focus()
         expect(email).to_be_focused()
         email.press('Enter')
-        expect(page).to_have_url(url + '/#/data/sources/email?agent=default&session=data-test')
+        expect(page).to_have_url(url + '/#/data/sources/email')
+        expect(page.get_by_role('link', name='管理访问授权', exact=True)).to_have_attribute('href', '#/security?tab=connections')
         for mailbox in mailboxes:
             expect(page.get_by_text(mailbox['user'], exact=True)).to_be_visible()
         expect(page.get_by_label('邮箱账号', exact=True)).to_have_value(mailboxes[0]['user'])
@@ -125,7 +133,7 @@ with sync_playwright() as playwright:
         page.get_by_role('link', name='返回数据', exact=True).click()
         expect(email).to_be_visible()
         expect(page.get_by_test_id('data-source-knowledge')).to_have_attribute('href', '#/knowledge')
-        expect(page.get_by_test_id('data-source-elearning')).to_have_attribute('href', '#/data/sources/elearning?agent=default&session=data-test')
+        expect(page.get_by_test_id('data-source-elearning')).to_have_attribute('href', '#/data/sources/elearning')
         page.goto(url + '/#/data?section=sources', wait_until='networkidle')
         tabs.get_by_role('button', name='数据使用', exact=True).click()
         briefing = page.get_by_test_id('data-consumer-stella.briefing')
@@ -217,6 +225,7 @@ with sync_playwright() as playwright:
         tabs.get_by_role('button', name='总览', exact=True).click()
         expect(overview.get_by_test_id('data-source-group-count')).to_have_text('0')
         assert queries == [], queries
+        assert data_requests and all(not {'agent', 'session'} & query.keys() for query in data_requests), data_requests
         assert errors == [], errors
         print(f'PASS: Security-style Data overview, grouped Email with three accounts, card/keyboard configuration, no resource preview, usage/storage regressions and desktop/narrow layouts at {url}/#/data')
     finally:

@@ -49,6 +49,29 @@ def test_real_elearning_resource_catalog_read_and_account_binding(integration):
         service.read_resource(source['id'], page['resources'][0]['id'])
 
 
+def test_agent_reads_global_sources_without_feature_selection_and_connection_can_revoke(integration, monkeypatch):
+    from config import conf
+    from common.runtime_identity import identity_scope
+    from core.execution.context import execution_scope
+    from core.data.usage import UsageService
+    service, manager = integration
+    source = service.discover()['sources'][0]
+    # Feature consumption is separate from normal Agent access.
+    UsageService(service).set('stella.briefing', source['id'], False)
+    for session in ['first', 'second']:
+        with identity_scope(session_id=session), execution_scope(origin='tool'):
+            resources = service.resources(source['id'])['resources']
+            assignment = next(row for row in resources if row['kind'] == 'assignment')
+            assert service.read_resource(source['id'], assignment['id'])['content']
+    monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {},
+        'connections': {'mcp:elearning': {'allowed': False}}})
+    with identity_scope(session_id='second'), execution_scope(origin='tool'):
+        with pytest.raises(PermissionError):
+            service.read_resource(source['id'], assignment['id'])
+        with pytest.raises(PermissionError):
+            manager.call_mcp_tool('elearning', 'list_courses', {})
+
+
 def test_elearning_live_connection_and_course_scope(integration, monkeypatch):
     from core.plugins.authz import PluginAuthorizationStore
     service, manager = integration

@@ -8728,9 +8728,8 @@ def _data_response(operation):
     web.header('Content-Type','application/json; charset=utf-8')
     web.header('Cache-Control','no-store')
     try:
-        from core.data.native import browse_scope
-        params = web.input(agent='', session='')
-        with browse_scope(getattr(params, 'agent', '') or None, getattr(params, 'session', '') or None):
+        from core.data.native import native_data_access
+        with native_data_access():
             return json.dumps({'status':'success',**operation()},ensure_ascii=False)
     except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
         return _api_reject('Data',error)
@@ -8740,12 +8739,11 @@ class DataManagementHandler:
     def GET(self):
         def operation():
             from core.data.api import current_controller
-            from core.data.native import scope_options
             params = web.input(refresh='0', storage='1')
             include_storage = getattr(params, 'storage', '1')
             if include_storage not in {'0', '1'}:
                 raise ValueError('Invalid storage inventory selection')
-            return {**current_controller().snapshot(params.refresh == '1', include_storage=include_storage == '1'), **scope_options()}
+            return current_controller().snapshot(params.refresh == '1', include_storage=include_storage == '1')
         return _data_response(operation)
 
 

@@ -535,12 +535,8 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
-  private dataScopeQuery(scope: { agent?: string; session?: string } = {}) {
-    return '&' + new URLSearchParams({ agent: scope.agent || '', session: scope.session || '' })
-  }
-
-  async getDataSnapshot(refresh = false, signal?: AbortSignal, scope = {}, includeStorage = true): Promise<DataSnapshot> {
-    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}&storage=${includeStorage ? '1' : '0'}${this.dataScopeQuery(scope)}`, { signal })
+  async getDataSnapshot(refresh = false, signal?: AbortSignal, includeStorage = true): Promise<DataSnapshot> {
+    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}&storage=${includeStorage ? '1' : '0'}`, { signal })
     if (result.status !== 'success') throw new Error(result.message || 'Data Service unavailable')
     return result
   }
@@ -552,31 +548,31 @@ class ApiClient {
     return result
   }
 
-  async getDataResources(sourceId: string, q = '', offset = 0, signal?: AbortSignal, scope = {}, kind = ''): Promise<DataResources> {
+  async getDataResources(sourceId: string, q = '', offset = 0, signal?: AbortSignal, kind = ''): Promise<DataResources> {
     const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
     if (kind) params.set('kind', kind)
-    const result = await this.request<DataResources & { message?: string }>(`/api/data/resources?${params}${this.dataScopeQuery(scope)}`, { signal })
+    const result = await this.request<DataResources & { message?: string }>(`/api/data/resources?${params}`, { signal })
     if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
     return result
   }
 
-  async readDataResource(sourceId: string, resourceId: string, signal?: AbortSignal, scope = {}): Promise<DataResourceContent> {
+  async readDataResource(sourceId: string, resourceId: string, signal?: AbortSignal): Promise<DataResourceContent> {
     const params = new URLSearchParams({ source_id: sourceId, resource_id: resourceId })
-    const result = await this.request<DataResourceContent & { message?: string }>(`/api/data/resources?${params}${this.dataScopeQuery(scope)}`, { signal })
+    const result = await this.request<DataResourceContent & { message?: string }>(`/api/data/resources?${params}`, { signal })
     if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
     return result
   }
 
-  async syncElearningFiles(offset: number, signal?: AbortSignal, scope = {}) {
+  async syncElearningFiles(offset: number, signal?: AbortSignal) {
     const result = await this.request<{ status: string; message?: string; sync: { processed: number; next_offset: number | null; errors: string[] } }>(
-      `/api/data/elearning/sync-files?${this.dataScopeQuery(scope).slice(1)}`,
+      '/api/data/elearning/sync-files',
       { method: 'POST', body: JSON.stringify({ offset, limit: 50 }), signal })
     if (result.status !== 'success') throw new Error(result.message || 'File sync failed')
     return result.sync
   }
 
-  async dataCommand(body: Record<string, unknown>, scope = {}): Promise<DataCommandResult> {
-    const result = await this.request<DataCommandResult>(`/api/data/command?${this.dataScopeQuery(scope).slice(1)}`, { method: 'POST', body: JSON.stringify(body) })
+  async dataCommand(body: Record<string, unknown>): Promise<DataCommandResult> {
+    const result = await this.request<DataCommandResult>('/api/data/command', { method: 'POST', body: JSON.stringify(body) })
     if (result.status !== 'success') throw new Error(result.message || 'Data operation failed')
     return result
   }

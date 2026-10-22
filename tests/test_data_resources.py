@@ -2,7 +2,6 @@
 from dataclasses import replace
 import pytest
 
-from common.runtime_identity import identity_scope
 from core.data.service import DataService, ProviderRegistry
 from tests.test_data_service import Provider as CollectingProvider
 
@@ -119,40 +118,7 @@ def test_failed_discovery_is_atomic_and_cannot_claim_another_providers_source(tm
     assert [row['id'] for row in service.list_sources()] == ['messages:a']
 
 
-def test_workspace_resources_follow_scope_and_do_not_expose_private_storage(tmp_path, monkeypatch):
-    from core.data.workspace_provider import WorkspaceProvider
-    from agent.workspace import project_store
-    from agent.registry import AgentRegistry
-    registry = AgentRegistry.from_config({'default_agent_id': 'alpha', 'agents': [
-        {'id': 'alpha', 'name': 'Alpha', 'workspace': str(tmp_path / 'state')}]})
-    monkeypatch.setattr('agent.registry.get_agent_registry', lambda selected=registry: selected)
-    work = tmp_path / 'work'
-    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: work)
-    monkeypatch.setattr(project_store, '_store_file', lambda: str(tmp_path / 'projects.json'))
-    with identity_scope(agent_id='alpha', session_id='chat', user_id='alice'):
-        root = work / 'sessions/alpha/chat'
-        root.mkdir(parents=True)
-        (root / 'notes.txt').write_text('local note')
-        protected = tmp_path / 'user/plugins/private'
-        protected.mkdir(parents=True)
-        (protected / 'secret.txt').write_text('secret')
-        (root / 'private').symlink_to(protected, target_is_directory=True)
-        monkeypatch.setattr('agent.tools.utils.credentials.protected_credential_folders', lambda: {str(protected)})
-        registry = ProviderRegistry()
-        registry.register('workspace', WorkspaceProvider())
-        service = DataService(tmp_path / 'data.db', registry)
-        service.discover()
-        source_id = service.list_sources()[0]['id']
-        page = service.resources(source_id)
-        assert [row['name'] for row in page['resources']] == ['notes.txt']
-        assert service.read_resource(source_id, page['resources'][0]['id'])['content'] == 'local note'
-        with identity_scope(session_id='another'):
-            assert service.list_sources() == []
-            with pytest.raises(PermissionError):
-                service.read_resource(source_id, page['resources'][0]['id'])
-
-
-def test_workspace_and_record_resource_apis_require_auth_and_live_owner(env, monkeypatch):
+def test_resource_apis_require_auth_and_live_owner(env, monkeypatch):
     from tests.test_data_api import call
     from channel.desktop import desktop_channel as desktop
     from core.data.api import DataController
@@ -205,41 +171,3 @@ def handle_invoke(params):
             session.invoke('run')
     finally:
         session.dispose()
-
-
-def test_workspace_discovery_does_not_withdraw_another_live_execution_scope(tmp_path, monkeypatch):
-    from core.data.workspace_provider import WorkspaceProvider
-    from agent.workspace import project_store
-    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: tmp_path / 'work')
-    monkeypatch.setattr(project_store, '_store_file', lambda: str(tmp_path / 'projects.json'))
-    registry = ProviderRegistry()
-    registry.register('workspace', WorkspaceProvider())
-    with identity_scope(agent_id='alpha', user_id='alice', session_id='first'):
-        service = DataService(tmp_path / 'data.db', registry)
-        first = service.discover()['sources'][0]['id']
-    with identity_scope(agent_id='alpha', user_id='alice', session_id='second'):
-        second = service.discover()['sources'][0]['id']
-        assert first != second
-    with identity_scope(agent_id='alpha', user_id='alice', session_id=None):
-        service.discover()
-    assert service.store.source(first)['present'] is True
-    assert service.store.source(second)['present'] is True
-
-
-def test_workspace_rebinding_withdraws_only_old_source_for_same_session(tmp_path, monkeypatch):
-    from core.data.workspace_provider import WorkspaceProvider
-    from agent.workspace import project_store
-    monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **_: tmp_path / 'work')
-    monkeypatch.setattr(project_store, '_store_file', lambda: str(tmp_path / 'projects.json'))
-    registry = ProviderRegistry()
-    registry.register('workspace', WorkspaceProvider())
-    with identity_scope(agent_id='alpha', user_id='alice', session_id='first'):
-        service = DataService(tmp_path / 'data.db', registry)
-        first = service.discover()['sources'][0]['id']
-        project = tmp_path / 'project'
-        project.mkdir()
-        project_store.set_project_dir('first', str(project), 'alpha')
-        current = service.discover()['sources'][0]['id']
-        assert current != first
-        assert service.store.source(first)['present'] is False
-        assert service.store.source(current)['present'] is True

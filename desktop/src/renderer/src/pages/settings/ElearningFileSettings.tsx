@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { FolderDown, Loader2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import { getLang, t } from '../../i18n'
@@ -15,15 +15,13 @@ const ElearningFileSettings: React.FC = () => {
   const [saved, setSaved] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const syncRequest = useRef<AbortController | null>(null)
-  const location = useLocation()
   const zh = getLang() === 'zh'
 
   useEffect(() => {
     let active = true
     setBusy(false); setLoading(true); setError(''); setSyncMessage('')
-    const params = new URLSearchParams(location.search)
     setSourceEnabled(false)
-    apiClient.getDataSnapshot(true, undefined, { agent: params.get('agent') || '', session: params.get('session') || '' })
+    apiClient.getDataSnapshot(true, undefined, false)
       .then(value => { if (active) setSourceEnabled(value.sources.some(source => source.provider === 'elearning' && source.enabled && source.available)) })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     apiClient.getElearningFileSyncSettings()
@@ -31,7 +29,7 @@ const ElearningFileSettings: React.FC = () => {
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; syncRequest.current?.abort() }
-  }, [location.search])
+  }, [])
 
   const save = async () => {
     if (busy || loading) return
@@ -49,13 +47,11 @@ const ElearningFileSettings: React.FC = () => {
     const controller = new AbortController()
     syncRequest.current = controller
     setBusy(true); setError(''); setSaved(false); setSyncMessage('')
-    const params = new URLSearchParams(location.search)
-    const scope = { agent: params.get('agent') || '', session: params.get('session') || '' }
     try {
       let offset = 0
       let processed = 0
       while (!controller.signal.aborted) {
-        const result = await apiClient.syncElearningFiles(offset, controller.signal, scope)
+        const result = await apiClient.syncElearningFiles(offset, controller.signal)
         if (controller.signal.aborted) return
         processed += result.processed
         setSyncMessage(zh ? `已处理 ${processed} 个文件` : `Processed ${processed} files`)
@@ -83,7 +79,7 @@ const ElearningFileSettings: React.FC = () => {
     {loading && <p role="status" className="flex items-center gap-2 px-4 py-3.5 text-sm text-content-tertiary"><Loader2 size={16} className="animate-spin" />{t('briefing_loading')}</p>}
     {error && <p role="alert" className="px-4 py-3.5 text-sm text-danger whitespace-pre-wrap">{error}</p>}
     <p className="px-4 py-3 text-xs text-content-secondary">{zh ? '按需同步所选课程的文件。先保存目录，再开始同步；已修改的本地文件会保留。' : 'Sync files from selected courses on demand. Save the directory first. Locally modified files are preserved.'}</p>
-    {!loading && !sourceEnabled && <p role="status" className="px-4 py-3 text-xs text-content-secondary"><span>{zh ? '信息源已停用，请在数据中启用后同步' : 'The source is unavailable. Enable it in Data before syncing.'}</span> <Link className="text-accent" to={`/data?section=sources&${new URLSearchParams(location.search).toString()}`}>{zh ? '查看信息源' : 'View sources'}</Link></p>}
+    {!loading && !sourceEnabled && <p role="status" className="px-4 py-3 text-xs text-content-secondary"><span>{zh ? '信息源已停用，请在数据中启用后同步' : 'The source is unavailable. Enable it in Data before syncing.'}</span> <Link className="text-accent" to="/data?section=sources">{zh ? '查看信息源' : 'View sources'}</Link></p>}
     <Row label={t('elearning_file_root')} control={<div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <input aria-label={t('elearning_file_root')} value={root} disabled={busy || loading}
         onChange={event => edit(event.target.value)}

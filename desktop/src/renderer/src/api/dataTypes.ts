@@ -40,11 +40,7 @@ export interface DataSnapshot {
   consumers: { id: string; name: string }[]
   storage: { available: boolean; categories: StorageCategory[]; roots?: { name: { zh: string; en: string }; path: string }[] }
   errors: { provider: string; message: string }[]
-  scope?: { agent: string; session: string; kind: string; root: string }
-  agents?: { id: string; name: string }[]
-  workspaces?: { session: string; name: string }[]
 }
-export interface DataBrowseScope { agent?: string; session?: string }
 export interface DataRecords { status: string; records: DataRecord[]; total: number; offset: number; limit: number }
 export interface DataCommandResult {
   status: string
