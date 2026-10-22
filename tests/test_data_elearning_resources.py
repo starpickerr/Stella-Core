@@ -183,3 +183,59 @@ def test_mcp_honors_bound_execution_consumer_and_background_purpose(integration,
         manager.call_mcp_tool('elearning', 'list_courses', {})
     with execution_scope(origin='job'), pytest.raises(PermissionError):
         manager.call_mcp_tool('elearning', 'list_courses', {})
+
+
+@pytest.mark.parametrize('change', ['disable', 'restore', 'source_restore'])
+def test_data_usage_activates_real_legacy_owner_and_controls_briefing(integration, monkeypatch, change):
+    from core.data.usage import UsageService
+    from core.data import runtime
+    from core.services.elearning_facade import elearning_sources
+    service, manager = integration
+    monkeypatch.setattr(runtime, 'current_service', lambda: service)
+    manager.call_mcp_tool('elearning', 'save_settings', {'payload': {'enabled': False}}, host=True)
+    source = service.discover()['sources'][0]
+    assert not elearning_sources()
+    UsageService(service).set('stella.briefing', source['id'], True)
+    sources = elearning_sources()
+    assert len(sources) == 1
+    # The old owner still gates fetch_source with its compatibility flag.
+    assert manager.call_mcp_tool('elearning', 'get_settings', {}, host=True)['enabled']
+    assert sources[0].fetch({}).items
+    original_invoke = sources[0]._facade._invoke
+    def disable_after_fetch(method, params, purpose=None):
+        result = original_invoke(method, params, purpose)
+        if method == 'fetch_source':
+            if change == 'source_restore':
+                service.configure_source(source['id'], enabled=False)
+                service.configure_source(source['id'], enabled=True)
+            else:
+                UsageService(service).set('stella.briefing', source['id'], False)
+                if change == 'restore':
+                    UsageService(service).set('stella.briefing', source['id'], True)
+        return result
+    monkeypatch.setattr(sources[0]._facade, '_invoke', disable_after_fetch)
+    with pytest.raises(PermissionError):
+        sources[0].fetch({})
+    UsageService(service).set('stella.briefing', source['id'], False)
+    assert not elearning_sources()
+    with pytest.raises(PermissionError):
+        sources[0].fetch({})
+    # Disabling one feature must not shut down the source for other consumers.
+    assert service.resources(source['id'])['total'] > 0
+
+
+def test_briefing_rediscovers_restored_elearning_without_data_page(integration, monkeypatch):
+    from core.data import runtime
+    from core.data.usage import UsageService
+    from core.services.elearning_facade import elearning_sources
+    service, _ = integration
+    monkeypatch.setattr(runtime, 'current_service', lambda: service)
+    source = service.discover()['sources'][0]
+    UsageService(service).set('stella.briefing', source['id'], True)
+    # A successful discovery while the owner is offline retires its presence.
+    service.store.reconcile_presence('elearning', [])
+    assert not service.store.source(source['id'])['present']
+    assert elearning_sources()
+    assert service.store.source(source['id'])['present']
+    UsageService(service).set('stella.briefing', source['id'], False)
+    assert not elearning_sources()

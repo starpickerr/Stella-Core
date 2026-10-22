@@ -10,7 +10,7 @@ from agent.permission.audit import record
 
 
 def _path_bytes(path: Path) -> int:
-    if not path.exists():
+    if path.is_symlink() or not path.exists():
         return 0
     if path.is_file():
         try:
@@ -21,7 +21,9 @@ def _path_bytes(path: Path) -> int:
     for root, _dirs, files in os.walk(path):
         for name in files:
             try:
-                total += (Path(root) / name).stat().st_size
+                child = Path(root) / name
+                if not child.is_symlink():
+                    total += child.stat().st_size
             except OSError:
                 continue
     return total
@@ -48,7 +50,7 @@ def _category(
     }
 
 
-def inventory() -> dict:
+def inventory(extra_locations=()) -> dict:
     from common.state_dir import (
         briefing_db,
         memory_index_db,
@@ -132,7 +134,34 @@ def inventory() -> dict:
             actions=["clear_runs"],
         ),
     ]
-    return {"available": True, "categories": categories}
+    from common import state_dir
+    from config import get_data_root
+    user = state_dir.user_root()
+    locations = [
+        ('email', '邮箱数据', 'Email data', user / 'email'),
+        ('elearning', 'eLearning 数据与状态', 'eLearning data and state', user / 'elearning'),
+        ('todos', '事务数据', 'Task data', state_dir.todos_db(ensure=False)),
+        ('calendar', '日程数据', 'Calendar data', state_dir.calendar_db(ensure=False)),
+        ('bills', '账单数据', 'Bill data', state_dir.bills_db(ensure=False)),
+        ('knowledge', '知识文档', 'Knowledge documents', state_dir.knowledge_dir(ensure=False)),
+        ('memory', '长期记忆', 'Long-term memory', user / 'plugins' / 'memory'),
+        ('plugins', '插件私有数据', 'Private plugin data', user / 'plugins'),
+        ('work', '工作文件', 'Working files', state_dir.personal_work_dir(ensure=False)),
+        ('configuration', '应用配置', 'Application configuration', Path(get_data_root()) / 'config.json'),
+        ('logs', '运行日志', 'Runtime logs', Path(get_data_root()) / 'run.log'),
+    ]
+    locations.extend((f'owner:{index}', row['name']['zh'], row['name']['en'], Path(row['path']))
+                     for index, row in enumerate(extra_locations) if row.get('path'))
+    for identifier, zh, en, path in locations:
+        categories.append(_category(identifier, {'zh': zh, 'en': en}, path,
+            retention={'zh': '由对应功能管理；此处仅展示存储位置。',
+                       'en': 'Managed by the owning feature; shown here for location reference.'}, actions=[]))
+    return {"available": True, "categories": categories, 'roots': [
+        {'name': {'zh': '应用数据目录', 'en': 'Application data'}, 'path': str(Path(get_data_root()))},
+        {'name': {'zh': '共享资源目录', 'en': 'Shared resources'}, 'path': str(state_dir.shared_root())},
+        {'name': {'zh': '用户数据目录', 'en': 'User data'}, 'path': str(user)},
+        {'name': {'zh': '当前 Agent 状态目录', 'en': 'Current Agent state'}, 'path': str(state_dir.state_root())},
+    ]}
 
 
 def cleanup(action: str) -> dict:

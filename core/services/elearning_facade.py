@@ -116,8 +116,28 @@ class ElearningMcpSource:
         cursors = dict(cursors)
         window = {key: cursors.pop(key) for key in ("since", "until") if key in cursors}
         from core.plugins.cancellation import cancellation_scope
-        with cancellation_scope(self.cancel_event):
+        from core.plugins.caller import consumer_plugin_scope
+        from core.data.runtime import current_service
+        from core.data.store import stable_id
+        from core.data.usage import UsageService
+        def check_usage():
+            service = current_service()
+            source_id = 'mcp:elearning:' + stable_id(self.account_id)
+            try:
+                source = service.store.source(source_id)
+            except KeyError:
+                return  # Compatibility for owners not yet discovered in Data.
+            binding = UsageService(service).binding('stella.briefing', source_id)
+            if not source['enabled'] or not source['present'] or not binding['selected'] or not binding['enabled']:
+                raise PermissionError('Data source usage is disabled for this consumer')
+            return source['revision'], binding['revision']
+        with consumer_plugin_scope('stella.briefing'), cancellation_scope(self.cancel_event):
+            revision = check_usage()
             result = self._facade.fetch_source(cursors=cursors, **window)
+            if check_usage() != revision:
+                raise PermissionError('Data source or usage changed during fetch')
+            if result.get('account_id') != self.account_id:
+                raise PermissionError('eLearning account changed during fetch')
         return FetchResult(items=[FetchedItem(**row) for row in result["items"]],
                            cursors=result["cursors"], errors=result["errors"])
 
@@ -125,7 +145,19 @@ class ElearningMcpSource:
 def elearning_sources(purpose: str = "background") -> list[ElearningMcpSource]:
     facade = ElearningMcpFacade(purpose=purpose)
     settings = ElearningMcpFacade(purpose="interactive").get_settings()
-    if not settings["enabled"]:
+    from core.data.store import stable_id
+    from core.data.runtime import current_service
+    from core.data.usage import UsageService
+    service = current_service()
+    service.discover(provider_ids={'elearning'})
+    source_id = 'mcp:elearning:' + stable_id(settings['account_id'])
+    try:
+        source = service.store.source(source_id)
+    except KeyError:
+        enabled = settings['enabled']  # Preserve legacy accounts before first Data discovery.
+    else:
+        enabled = source['enabled'] and source['present'] and UsageService(service).enabled('stella.briefing', source_id)
+    if not enabled:
         return []
     return [ElearningMcpSource(account_id=settings["account_id"], username=settings["username"],
                                   purpose=purpose, facade=facade)]

@@ -63,6 +63,10 @@ CREATE INDEX IF NOT EXISTS records_source ON records(source_id,updated_at);
 CREATE TABLE IF NOT EXISTS events(
  seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,source_id TEXT NOT NULL REFERENCES sources(id),
  record_id TEXT NOT NULL,type TEXT NOT NULL,version TEXT NOT NULL,created_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS source_usage(
+ consumer TEXT NOT NULL,source_id TEXT NOT NULL REFERENCES sources(id),
+ enabled INTEGER NOT NULL DEFAULT 1,selected INTEGER NOT NULL DEFAULT 1,revision INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(consumer,source_id));
 CREATE TABLE IF NOT EXISTS subscriptions(
  id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES sources(id),consumer TEXT NOT NULL,
  filter TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1);

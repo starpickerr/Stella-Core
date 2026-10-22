@@ -177,7 +177,8 @@ class McpProvider:
 class DataSource:
     """A consumer uses this Source protocol, without knowing the MCP mapping."""
 
-    def __init__(self, service, source):
+    def __init__(self, service, source, consumer_id=None):
+        self.consumer_id = consumer_id
         self.service = service
         self.source_id = source["id"]
         self.name = source["kind"]
@@ -188,7 +189,11 @@ class DataSource:
     def fetch(self, cursors):
         from core.plugins.cancellation import cancellation_scope
 
-        with cancellation_scope(self.cancel_event):
+        from contextlib import nullcontext
+        from core.plugins.caller import consumer_plugin_scope
+        consumer = consumer_plugin_scope(self.consumer_id) if self.consumer_id else nullcontext()
+        with consumer, cancellation_scope(self.cancel_event):
+            source = self.service._guard(self.source_id, 'read')
             outcome = self.service.sync(self.source_id, dict(cursors))
             items = []
             offset = 0
@@ -217,4 +222,5 @@ class DataSource:
                 offset += len(page["records"])
                 if not page["records"] or offset >= page["total"]:
                     break
+            self.service._recheck(source, 'read')
             return FetchResult(items, outcome["cursors"], outcome["errors"])
