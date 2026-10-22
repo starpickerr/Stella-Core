@@ -16,10 +16,17 @@ sources = [
          representation='reference', operations=['resources', 'read'], resource_kinds=['knowledge'],
          settings_url='/knowledge', connection='plugin:stella.knowledge', storage='reference', retention_days=30, running=False, last_run=None, error=''),
 ]
+sources[1]['account_id'] = 'mail-1'
+sources.extend([
+    {**sources[1], 'id': 'mail-2', 'account_id': 'mail-2', 'name': '第二邮箱', 'available': False},
+    {**sources[1], 'id': 'mail-3', 'account_id': 'mail-3', 'name': '第三邮箱', 'enabled': False},
+])
+mailboxes = [dict(id=f'mail-{index}', host='imap.example.test', user=f'account{index}@example.test',
+                  port=993, folder='INBOX', enabled=True, configured=True,
+                  password_set=True, password_masked='********') for index in range(1, 4)]
 usages = [dict(consumer_id='stella.briefing', source_id=source, enabled=True, selected=True) for source in ['school', 'mail']]
 commands, queries = [], []
 fail_save = [False]
-fail_read = [False]
 hold_save = [False]
 deferred = []
 
@@ -34,6 +41,8 @@ def backend(route):
         data.update(auth_required=False, authenticated=True)
     elif path == '/api/models':
         data.update(providers=[{'id': 'test', 'configured': True}], capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
+    elif path == '/api/email/accounts':
+        data['settings'] = {'mailboxes': mailboxes}
     elif path == '/api/data':
         data.update(sources=sources, usages=usages,
             usage_consumers=[{'id': 'stella.briefing', 'name': {'zh': '简报', 'en': 'Briefing'}, 'available': True}],
@@ -64,13 +73,7 @@ def backend(route):
             next(row for row in sources if row['id'] == body['source_id']).update({key: value for key, value in body.items() if key not in ('action', 'source_id')})
     elif path == '/api/data/resources':
         queries.append(query)
-        resource = {'id': 'ref', 'source_id': query['source_id'][0], 'provider': 'elearning', 'reference': 'upstream', 'kind': 'file', 'name': '课程文件', 'operations': ['read']}
-        if fail_read[0]:
-            data.update(status='error', message='访问已撤销')
-        elif 'resource_id' in query:
-            data.update(resource=resource, content='按需读取的资源正文')
-        else:
-            data.update(resources=[resource], total=1, offset=0, limit=50)
+        data.update(status='error', message='Resource preview has been removed')
     if path == '/api/data/command' and hold_save[0]:
         deferred.append((route, data))
         return
@@ -86,18 +89,44 @@ with sync_playwright() as playwright:
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.add_init_script("""localStorage.setItem('stella_lang','zh');window.electronAPI={platform:'darwin',getBackendPort:async()=>9876,onBackendStatus:()=>()=>{},getBackendError:async()=>null};""")
         page.route('http://127.0.0.1:9876/**', backend)
-        page.goto(url + '/#/data', wait_until='networkidle')
+        page.goto(url + '/#/data?agent=default&session=data-test', wait_until='networkidle')
         tabs = page.get_by_role('navigation', name='数据分类')
         expect(tabs.get_by_role('button')).to_have_text(['总览', '信息源', '数据使用', '数据存储'])
         expect(page.get_by_role('heading', name='总览', exact=True)).to_be_visible()
         expect(page.get_by_label('Agent 范围', exact=True)).to_have_count(0)
         expect(page.get_by_label('工作区范围', exact=True)).to_have_count(0)
+        overview = page.get_by_test_id('data-overview')
+        expect(overview.get_by_test_id('data-source-group-count')).to_have_text('3')
+        expect(overview.get_by_role('link', name='信息源', exact=True)).to_be_visible()
+        expect(overview.get_by_role('link', name='数据使用', exact=True)).to_be_visible()
+        expect(overview.get_by_role('link', name='数据存储', exact=True)).to_be_visible()
         page.screenshot(path='/tmp/stella-data-overview.png', full_page=True)
-        tabs.get_by_role('button', name='信息源', exact=True).click()
-        expect(page.get_by_test_id('data-source-school')).to_contain_text('可用')
-        expect(page.get_by_test_id('data-source-notes')).to_contain_text('暂不可用')
+        overview.get_by_role('link', name='信息源', exact=True).click()
+        expect(page.get_by_test_id('data-source-elearning')).to_contain_text('可用')
+        expect(page.get_by_test_id('data-source-knowledge')).to_contain_text('暂不可用')
+        email = page.get_by_test_id('data-source-email')
+        expect(email.get_by_role('heading', name='Email', exact=True)).to_be_visible()
+        expect(email).to_contain_text('3 个邮箱')
+        expect(email).to_contain_text('部分可用')
         expect(page.locator('[data-testid^="data-source-"]')).to_have_count(3)
+        expect(page.get_by_role('link', name='浏览资源', exact=True)).to_have_count(0)
+        expect(page.get_by_role('link', name='配置', exact=True)).to_have_count(0)
+        expect(page.get_by_role('button', name='配置', exact=True)).to_have_count(0)
         page.screenshot(path='/tmp/stella-data-sources.png', full_page=True)
+        email.focus()
+        expect(email).to_be_focused()
+        email.press('Enter')
+        expect(page).to_have_url(url + '/#/data/sources/email?agent=default&session=data-test')
+        for mailbox in mailboxes:
+            expect(page.get_by_text(mailbox['user'], exact=True)).to_be_visible()
+        expect(page.get_by_label('邮箱账号', exact=True)).to_have_value(mailboxes[0]['user'])
+        page.get_by_role('button', name='编辑', exact=True).nth(1).click()
+        expect(page.get_by_label('邮箱账号', exact=True)).to_have_value(mailboxes[1]['user'])
+        page.get_by_role('link', name='返回数据', exact=True).click()
+        expect(email).to_be_visible()
+        expect(page.get_by_test_id('data-source-knowledge')).to_have_attribute('href', '#/knowledge')
+        expect(page.get_by_test_id('data-source-elearning')).to_have_attribute('href', '#/data/sources/elearning?agent=default&session=data-test')
+        page.goto(url + '/#/data?section=sources', wait_until='networkidle')
         tabs.get_by_role('button', name='数据使用', exact=True).click()
         briefing = page.get_by_test_id('data-consumer-stella.briefing')
         expect(briefing.get_by_role('heading', name='简报', exact=True)).to_be_visible()
@@ -139,19 +168,11 @@ with sync_playwright() as playwright:
         page.on('dialog', lambda dialog: dialog.accept())
         page.get_by_role('button', name='清理临时文件', exact=True).click()
         expect(page.get_by_role('status').filter(has_text='已清理')).to_be_visible()
-        tabs.get_by_role('button', name='信息源', exact=True).click()
-        page.get_by_test_id('data-source-school').get_by_role('link', name='浏览资源', exact=True).click()
-        expect(page.get_by_role('heading', name='eLearning', exact=True)).to_be_visible()
-        page.get_by_label('资源类型', exact=True).select_option('file')
-        expect(page.get_by_text('课程文件', exact=True)).to_be_visible()
-        assert queries[-1]['kind'] == ['file']
-        page.get_by_role('button', name='查看内容', exact=True).click()
-        expect(page.get_by_text('按需读取的资源正文', exact=True)).to_be_visible()
-        fail_read[0] = True
-        page.get_by_role('button', name='刷新资源', exact=True).click()
-        expect(page.get_by_role('alert')).to_contain_text('访问已撤销')
-        expect(page.get_by_text('按需读取的资源正文', exact=True)).to_have_count(0)
-        fail_read[0] = False
+        for section in ['resources', 'records']:
+            page.goto(url + f'/#/data?section={section}&source=school', wait_until='networkidle')
+            expect(tabs.get_by_role('button', name='信息源', exact=True)).to_have_attribute('aria-current', 'page')
+            expect(email).to_be_visible()
+            expect(page.get_by_role('button', name='查看内容', exact=True)).to_have_count(0)
         page.goto(url + '/#/data?section=sync', wait_until='networkidle')
         expect(tabs.get_by_role('button', name='数据使用', exact=True)).to_have_attribute('aria-current', 'page')
         page.goto(url + '/#/data?section=storage', wait_until='networkidle')
@@ -163,7 +184,40 @@ with sync_playwright() as playwright:
         expect(use_school).to_be_focused()
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         page.screenshot(path='/tmp/stella-data-usage-mobile.png', full_page=True)
+        tabs.get_by_role('button', name='总览', exact=True).click()
+        expect(overview.get_by_role('link', name='信息源', exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        page.screenshot(path='/tmp/stella-data-overview-mobile.png', full_page=True)
+        overview.get_by_role('link', name='信息源', exact=True).click()
+        expect(email).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        page.screenshot(path='/tmp/stella-data-sources-mobile.png', full_page=True)
+        sources[1]['available'] = False
+        page.get_by_role('button', name='刷新', exact=True).click()
+        expect(email).to_contain_text('暂不可用')
+        email.click()
+        expect(page.get_by_label('邮箱账号', exact=True)).to_be_visible()
+        page.get_by_role('link', name='返回数据', exact=True).click()
+        dark = browser.new_page(viewport={'width': 1280, 'height': 960}, color_scheme='dark')
+        dark.on('pageerror', lambda error: errors.append(str(error)))
+        dark.add_init_script("""localStorage.setItem('stella_lang','en');localStorage.setItem('cow_theme','dark');window.electronAPI={platform:'darwin',getBackendPort:async()=>9876,onBackendStatus:()=>()=>{},getBackendError:async()=>null};""")
+        dark.route('http://127.0.0.1:9876/**', backend)
+        dark.goto(url + '/#/data', wait_until='networkidle')
+        expect(dark.get_by_test_id('data-overview').get_by_role('link', name='Sources', exact=True)).to_be_visible()
+        assert dark.evaluate("document.documentElement.classList.contains('dark')")
+        dark.screenshot(path='/tmp/stella-data-overview-dark-en.png', full_page=True)
+        dark.get_by_test_id('data-overview').get_by_role('link', name='Sources', exact=True).click()
+        expect(dark.get_by_test_id('data-source-email')).to_contain_text('3 mailboxes')
+        dark.screenshot(path='/tmp/stella-data-sources-dark-en.png', full_page=True)
+        dark.close()
+        sources.clear()
+        page.get_by_role('button', name='刷新', exact=True).click()
+        expect(email).to_have_count(0)
+        expect(page.get_by_text('尚无已注册的信息源。请先在能力中连接服务，或配置来源账号。', exact=True)).to_be_visible()
+        tabs.get_by_role('button', name='总览', exact=True).click()
+        expect(overview.get_by_test_id('data-source-group-count')).to_have_text('0')
+        assert queries == [], queries
         assert errors == [], errors
-        print('PASS: Data overview, registered sources, feature usage persistence/add/remove/failure, storage, resource detail and desktop/narrow layouts')
+        print(f'PASS: Security-style Data overview, grouped Email with three accounts, card/keyboard configuration, no resource preview, usage/storage regressions and desktop/narrow layouts at {url}/#/data')
     finally:
         browser.close()
