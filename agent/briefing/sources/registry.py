@@ -11,7 +11,7 @@ def _email_sources():
     from core.services.email_gateway import email_mcp_enabled
     if email_mcp_enabled():
         from core.data.runtime import consumer_sources
-        return consumer_sources(provider_ids={'email'})
+        return consumer_sources(provider_ids={'email'}, consumer_id='stella.briefing')
     return []
 
 

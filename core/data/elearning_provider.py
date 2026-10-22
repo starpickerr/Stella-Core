@@ -40,6 +40,8 @@ class ElearningProvider:
         account = settings['account_id']
         return [{'id': 'mcp:elearning:' + stable_id(account), 'name': 'eLearning',
                  'kind': 'elearning', 'config': {'account_id': account},
+                 'default_usage': {'stella.briefing': bool(settings.get('enabled'))},
+                 'storage_locations': [{'name': {'zh': '课程文件', 'en': 'Course files'}, 'path': settings.get('file_sync_root', '')}],
                  'resource_kinds': ['course', 'announcement', 'assignment', 'quiz', 'grade', 'file'],
                  'connection': 'mcp:elearning', 'settings_url': '/elearning',
                  'operations': sorted(REFERENCE_OPERATIONS)}]
@@ -144,3 +146,16 @@ class ElearningProvider:
         from core.services.elearning_facade import ElearningMcpFacade
         # Keep the owner's audit drain and cancellation/error translation.
         return getattr(ElearningMcpFacade(), operation)(**values)
+
+    def prepare_usage(self, source, consumer_id):
+        if consumer_id != 'stella.briefing':
+            return
+        from core.services.elearning_facade import ElearningMcpFacade
+        facade = ElearningMcpFacade()
+        settings = facade.get_settings()
+        if settings['account_id'] != source['config']['account_id']:
+            raise PermissionError('eLearning source account changed')
+        if not settings['enabled']:
+            facade.save_settings({'enabled': True})
+        if facade.get_settings()['account_id'] != source['config']['account_id']:
+            raise PermissionError('eLearning source account changed during usage preparation')

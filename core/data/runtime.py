@@ -18,7 +18,7 @@ def current_service():
     return DataService(data_service_db(), providers)
 
 
-def consumer_sources(*, provider_ids=None):
+def consumer_sources(*, provider_ids=None, consumer_id=None):
     service = current_service()
     service.discover()
     sources = []
@@ -30,8 +30,12 @@ def consumer_sources(*, provider_ids=None):
             and source["provider"] not in provider_ids
         ):
             continue
+        if consumer_id:
+            from core.data.usage import UsageService
+            if not UsageService(service).enabled(consumer_id, source['id']):
+                continue
         provider = service.providers.get(source["provider"])
         available = getattr(provider, "available", lambda: True)
         if available() and callable(getattr(provider, "fetch", None)):
-            sources.append(DataSource(service, source))
+            sources.append(DataSource(service, source, consumer_id=consumer_id))
     return sources

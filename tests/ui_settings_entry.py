@@ -76,7 +76,7 @@ with sync_playwright() as playwright:
 
         nav = page.get_by_role('complementary').get_by_role('navigation')
         expect(nav.get_by_role('button', name='通用')).to_be_visible()
-        expect(nav.get_by_role('button', name='配置')).to_have_count(0)
+        expect(nav.get_by_role('button', name='配置', exact=True)).to_have_count(0)
         expect(page.get_by_role('complementary').get_by_role('button', name='日志', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='更多')).to_have_count(0)
         expect(page.get_by_text('v9.9.9')).to_be_visible()

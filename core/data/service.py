@@ -76,15 +76,28 @@ class DataService:
             raise PermissionError("Data source is unavailable")
         if operation not in self._operations(source):
             raise ValueError('Source does not support ' + operation)
+        if operation not in {'metadata', 'configure'}:
+            from core.data.usage import enforce_selection
+            source['usage_revision'] = enforce_selection(self, source)
         self.providers.get(source["provider"]).authorize(source, operation)
         if self.store.source(source_id)["revision"] != source["revision"]:
             raise PermissionError("Source configuration changed during authorization")
+        if operation not in {'metadata', 'configure'} and enforce_selection(self, source) != source['usage_revision']:
+            raise PermissionError('Data source usage changed during authorization')
         return source
 
-    def discover(self):
+    def _recheck(self, source, operation):
+        current = self._guard(source['id'], operation)
+        if any(current.get(key) != source.get(key) for key in ('revision', 'usage_revision')):
+            raise PermissionError('Source configuration changed or consumer usage was revoked during operation')
+        return current
+
+    def discover(self, *, provider_ids=None):
         self._identity()
         errors = []
         for provider_id, provider in self.providers.items():
+            if provider_ids is not None and provider_id not in provider_ids:
+                continue
             try:
                 specs = provider.discover()
             except (PermissionError, RuntimeError, OSError) as error:
@@ -166,13 +179,13 @@ class DataService:
             raise ValueError("Sync options must be an object")
         token, cursors, revision = self.store.claim_sync(source_id)
         try:
-            source = self._guard(source_id, "sync")
+            source = self._recheck(source, "sync")
             if source["revision"] != revision:
                 raise PermissionError("Source configuration changed before collection")
             result = self.providers.get(source["provider"]).fetch(
                 source, cursors, options or {}
             )
-            self._guard(source_id, "sync")
+            self._recheck(source, "sync")
             items = []
             for item in result.items:
                 value = asdict(item)
@@ -193,7 +206,7 @@ class DataService:
                 revision,
                 items,
                 cursors if result.errors else result.cursors,
-                lambda: self._guard(source_id, "sync"),
+                lambda: self._recheck(source, "sync"),
             )
             self.store.finish_sync(source_id, token, "; ".join(result.errors))
             return {
@@ -246,8 +259,7 @@ class DataService:
                             "version": row["digest"],
                         }
                     )
-        if self._guard(source_id, "read")["revision"] != source["revision"]:
-            raise PermissionError("Source configuration changed during query")
+        self._recheck(source, "read")
         return {
             "records": values[offset : offset + limit],
             "total": len(values),
@@ -276,8 +288,7 @@ class DataService:
                     break
                 if not page['resources']:
                     raise ValueError('Provider returned incomplete resource pagination')
-            if self._guard(source_id, 'resources')['revision'] != source['revision']:
-                raise PermissionError('Source configuration changed during filtered query')
+            self._recheck(source, 'resources')
             return {'resources': selected[offset:offset + limit], 'total': len(selected),
                     'offset': offset, 'limit': limit}
         provider = self.providers.get(source['provider'])
@@ -294,8 +305,7 @@ class DataService:
                          name=row['item']['title'] or row['item']['source_id']) for row in page['records']]
         if len({resource.id for resource in resources}) != len(resources):
             raise ValueError('Duplicate resource identity')
-        if self._guard(source_id, 'resources')['revision'] != source['revision']:
-            raise PermissionError('Source configuration changed during resource discovery')
+        self._recheck(source, 'resources')
         self.store.put_resources(source, resources)
         return {'resources': [resource.as_dict() for resource in resources],
                 'total': page['total'], 'offset': offset, 'limit': limit}
@@ -321,8 +331,7 @@ class DataService:
             if row['source_id'] != source_id or not self._visible(source, row):
                 raise PermissionError('Resource is no longer available')
             returned, content = resource, json.loads(row['content'])
-        if self._guard(source_id, 'read')['revision'] != source['revision']:
-            raise PermissionError('Source configuration changed during resource read')
+        self._recheck(source, 'read')
         authorize_resource(source, resource, 'read')
         self._identity()
         return {'resource': returned.as_dict(), 'content': content}
@@ -336,8 +345,7 @@ class DataService:
             raise ValueError('Unsupported source owner operation')
         provider.authorize_owner_operation(source, operation, values)
         result = provider.perform_owner_operation(source, operation, values)
-        if self._guard(source_id, 'read')['revision'] != source['revision']:
-            raise PermissionError('Source configuration changed during owner operation')
+        self._recheck(source, 'read')
         provider.authorize_owner_operation(source, operation, values)
         self._identity()
         return result
@@ -405,8 +413,7 @@ class DataService:
             offset += len(page["records"])
             if not page["records"] or offset >= page["total"]:
                 break
-        if self._guard(source_id, "export")["revision"] != source["revision"]:
-            raise PermissionError("Source configuration changed during export")
+        self._recheck(source, "export")
         return {"format": "stella-data-v1", "source_id": source_id, "records": records}
 
     def subscribe(self, source_id, consumer_id, filter=None, *, include_existing=False):
@@ -540,13 +547,7 @@ class DataService:
             try:
                 source = self._guard(subscription["source_id"], "deliver")
                 record = self.store.record(event["record_id"])
-                if (
-                    self._guard(subscription["source_id"], "deliver")["revision"]
-                    != source["revision"]
-                ):
-                    raise PermissionError(
-                        "Source configuration changed during delivery"
-                    )
+                self._recheck(source, "deliver")
                 if not self._subscription(subscription_id)["enabled"]:
                     raise PermissionError("Subscription is disabled")
                 item = json.loads(record["content"])

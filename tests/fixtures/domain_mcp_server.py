@@ -58,7 +58,16 @@ if args.domain == "elearning":
                     time.sleep(0.01)
             return io.BytesIO(b"coursepdf")
 
-    module.ElearningService._client = lambda self, cfg: Canvas(self)
+    original = module.ElearningService
+
+    class Elearning(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # Both resource browsing and the background fetch_source seam
+            # must use the fake upstream, never a real login request.
+            self.client_factory = lambda cfg: Canvas(self)
+
+    module.ElearningService = Elearning
 else:
     spec = importlib.util.spec_from_file_location(
         "mail_test_fakes", repo / "tests/test_compatibility.py"

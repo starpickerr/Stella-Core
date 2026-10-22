@@ -30,7 +30,9 @@ class DataController:
             else consumers
         )
 
-    def snapshot(self, refresh=False):
+    def snapshot(self, refresh=False, *, include_storage=True):
+        if type(include_storage) is not bool:
+            raise ValueError('include_storage must be a boolean')
         authorize("metadata", "Data Service")
         discovered = (
             self.service.discover()
@@ -59,7 +61,7 @@ class DataController:
             sources[-1].update(
                 {
                     key: source[key]
-                    for key in ["connection", "settings_url"]
+                    for key in ["connection", "settings_url", "storage_locations"]
                     if key in source
                 }
             )
@@ -70,7 +72,8 @@ class DataController:
             sources[-1]["representation"] = "collection" if callable(getattr(provider, "fetch", None)) else "reference"
             sources[-1]['resource_kinds'] = source.get('resource_kinds', [source['kind']])
             sources[-1]["available"] = (
-                source["present"] and getattr(provider, "available", lambda: True)()
+                source["present"] and source["provider"] not in {row["provider"] for row in discovered["errors"]}
+                and getattr(provider, "available", lambda: True)()
             )
         subscriptions = self.service.subscriptions()
         deliveries = []
@@ -80,7 +83,9 @@ class DataController:
             count = db.execute(
                 "SELECT count(*) FROM records WHERE deleted=0"
             ).fetchone()[0]
+        from core.data.usage import UsageService
         return {
+            **UsageService(self.service).snapshot(),
             "sources": sources,
             "providers": self.service.providers.descriptors(),
             "record_count": count,
@@ -90,7 +95,7 @@ class DataController:
                 {"id": name, "name": "简报" if name == "briefing" else name}
                 for name in self.consumers
             ],
-            "storage": storage.inventory(),
+            "storage": storage.inventory([location for source in sources for location in source.get("storage_locations", [])]) if include_storage else {"available": True, "categories": []},
             "errors": discovered["errors"],
         }
 
@@ -116,6 +121,7 @@ class DataController:
         action = body.get("action")
         allowed = {
             "discover": set(),
+            "usage": {"consumer_id", "source_id", "enabled", "selected"},
             "source": {"source_id", "enabled", "storage", "retention_days"},
             "sync": {"source_id", "options"},
             "subscribe": {"source_id", "consumer_id", "filter", "include_existing"},
@@ -139,6 +145,10 @@ class DataController:
                 raise ValueError(key + " is required")
             return value
 
+        if action == 'usage':
+            from core.data.usage import UsageService
+            return {'usage': UsageService(self.service).set(required('consumer_id'), required('source_id'),
+                            body.get('enabled'), body.get('selected', True))}
         if action == "discover":
             return self.service.discover()
         if action == "source":

@@ -8741,7 +8741,11 @@ class DataManagementHandler:
         def operation():
             from core.data.api import current_controller
             from core.data.native import scope_options
-            return {**current_controller().snapshot(web.input(refresh='0').refresh=='1'), **scope_options()}
+            params = web.input(refresh='0', storage='1')
+            include_storage = getattr(params, 'storage', '1')
+            if include_storage not in {'0', '1'}:
+                raise ValueError('Invalid storage inventory selection')
+            return {**current_controller().snapshot(params.refresh == '1', include_storage=include_storage == '1'), **scope_options()}
         return _data_response(operation)
 
 

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { BookOpen, Check, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
-import { t } from '../../i18n'
+import { t, getLang } from '../../i18n'
 import type { ElearningSettings as Config, ElearningSettingsInput } from '../../types'
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
@@ -59,6 +60,7 @@ export const ElearningSettings: React.FC = () => {
         onClick={() => void run(async () => { await apiClient.deleteElearningSource(); open(initial) })}>{t('briefing_delete')}</button>}
     </div>
     <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_elearning_help')}</p>
+    <p className="text-xs text-content-secondary">{getLang() === 'zh' ? '简报等功能使用哪些信息源，在数据使用中设置。' : 'Choose which features use this source in Data usage.'} <Link className="text-accent" to="/data?section=usage">{getLang() === 'zh' ? '数据使用' : 'Data usage'}</Link></p>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload())); setSaved(true) }) }}>
@@ -67,7 +69,6 @@ export const ElearningSettings: React.FC = () => {
       <label className="text-xs text-content-secondary">{t('briefing_elearning_password')}<input type="password" autoComplete="new-password" disabled={busy || loading} value={password} className={`${fieldClass} block w-full mt-1`}
         onFocus={() => { if (password === '********') setPassword('') }} onBlur={() => { if (!password && config.password_set) setPassword('********') }}
         onChange={(e) => { setPassword(e.target.value); setSaved(false); setConnected(false) }} /></label>
-      <label className="inline-flex items-center gap-2 text-sm text-content-secondary self-end h-8"><input type="checkbox" disabled={busy || loading} checked={config.enabled} onChange={(e) => edit({ enabled: e.target.checked })} />{t('briefing_elearning_include_briefing')}</label>
       <fieldset className="sm:col-span-2 rounded-card border border-default p-3 space-y-3">
         <legend className="px-1 text-xs text-content-secondary">{t('briefing_elearning_courses')} · {chosen.length}</legend>
         <p className="text-xs text-content-tertiary">{t('briefing_elearning_courses_help')}</p>
