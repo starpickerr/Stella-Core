@@ -96,7 +96,9 @@ def test_mcp_email_adoption_keeps_private_credentials_and_existing_tables(tmp_pa
     from tests.email_domain import EmailService
     from tests.test_managed_mcp_domains import server_config
     from agent.tools.mcp.mcp_client import McpClient
-    data=tmp_path/'email/email.db';data.parent.mkdir();_legacy(data)
+    data=tmp_path/'email/email.db'
+    data.parent.mkdir()
+    _legacy(data)
     EmailService(data).save_account({'host':'imap.example.test','user':'test@example.test','password':'migration-test-secret'})
     data.chmod(0o644)
     monkeypatch.setattr(state_dir,'briefing_db',lambda **_:tmp_path/'briefing/briefing.db')
@@ -123,7 +125,8 @@ def test_mcp_elearning_adoption_does_not_rewrite_existing_config_or_records(tmp_
     monkeypatch.setattr(settings,'settings_path',lambda:data/'elearning.json')
     settings.save_settings({'username':'student','password':'migration-fake-secret','courses':['42']})
     cfg=settings.settings_path().read_bytes()
-    cursor=data/'elearning-cursors.json';cursor.write_text('{"preserved":"cursor"}')
+    cursor=data/'elearning-cursors.json'
+    cursor.write_text('{"preserved":"cursor"}')
     client=McpClient(server_config('elearning',data))
     try:
         assert client.initialize()

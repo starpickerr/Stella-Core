@@ -11,7 +11,7 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.schema import ensure_schema, missing_tables
+from domain.schema import ensure_schema, missing_tables  # noqa: E402
 
 SCHEMA_VERSION = 1
 

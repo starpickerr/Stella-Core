@@ -4,7 +4,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from tests.mcp_checkout import require_checkout
+
 root = Path(__file__).resolve().parents[2] / 'MCP/email-mcp/email_mcp'
+require_checkout(root / '__init__.py', 'Email MCP package is not in this checkout')
 name = 'stella_email_domain_core_tests'
 spec = importlib.util.spec_from_file_location(name, root / '__init__.py', submodule_search_locations=[str(root)])
 package = importlib.util.module_from_spec(spec)

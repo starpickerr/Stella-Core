@@ -8,7 +8,7 @@ import sys
 _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
-from domain.service import CalendarService
+from domain.service import CalendarService  # noqa: E402
 REQUIRED_TABLES = frozenset(['calendar_categories', 'calendar_events', 'calendar_occurrence_exclusions', 'agenda_handoffs', 'briefing_applied', 'source_tombstones'])
 
 

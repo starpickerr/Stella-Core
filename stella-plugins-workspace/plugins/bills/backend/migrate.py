@@ -8,7 +8,7 @@ import sys
 _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
-from domain.store import BillStore
+from domain.store import BillStore  # noqa: E402
 REQUIRED_TABLES = frozenset(['financial_events', 'planned_payments', 'ledger_entries', 'period_statements', 'period_statement_items', 'plugin_operation_receipts'])
 
 

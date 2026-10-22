@@ -10,7 +10,7 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.service import CalendarService
+from domain.service import CalendarService  # noqa: E402
 
 # (name, effect, permission, idempotent)
 _METHODS = (

@@ -24,14 +24,20 @@ test('an invalid explicit interpreter is rejected instead of silently switching 
 test('desktop can bootstrap registered Conda Stella with no Python command on PATH', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'stella-bootstrap-'))
   try {
-    const expected = findDevelopmentPython(root)
-    const prefix = path.dirname(process.platform === 'win32' ? expected : path.dirname(expected))
+    const real = findDevelopmentPython(root)
+    const prefix = path.join(directory, 'Stella')
+    const executableName = process.platform === 'win32' ? 'python.exe' : 'python'
+    const executableDir = process.platform === 'win32' ? prefix : path.join(prefix, 'bin')
+    mkdirSync(path.join(prefix, 'conda-meta'), { recursive: true })
+    mkdirSync(executableDir, { recursive: true })
+    const executable = path.join(executableDir, executableName)
+    symlinkSync(real, executable, 'file')
     mkdirSync(path.join(directory, '.conda'))
     writeFileSync(path.join(directory, '.conda', 'environments.txt'), `${prefix}\n`)
     const actual = findDevelopmentPython(root, {
       PATH: '', HOME: directory, USERPROFILE: directory, SYSTEMROOT: process.env.SYSTEMROOT,
     })
-    assert.equal(realpathSync(actual), realpathSync(expected))
+    assert.equal(realpathSync(actual), realpathSync(executable))
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
