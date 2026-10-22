@@ -357,5 +357,6 @@ class BriefingPipeline:
             if any("body" not in row[0].payload for row in old_rows):
                 cursors["refresh_existing_content"] = "1"
         from core.plugins.caller import consumer_plugin_scope
-        with consumer_plugin_scope("stella.briefing"):
+        from core.security.source_collection import briefing_source_collection
+        with consumer_plugin_scope("stella.briefing"), briefing_source_collection():
             return source.fetch(cursors)

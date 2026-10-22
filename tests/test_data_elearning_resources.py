@@ -262,3 +262,47 @@ def test_briefing_rediscovers_restored_elearning_without_data_page(integration, 
     assert service.store.source(source['id'])['present']
     UsageService(service).set('stella.briefing', source['id'], False)
     assert not elearning_sources()
+
+
+def test_native_briefing_elearning_keeps_background_course_scope_and_connection_policy(integration, monkeypatch):
+    from types import SimpleNamespace
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.services.elearning_facade import elearning_sources
+    from core.data import runtime
+    from core.data.usage import UsageService
+    from agent.briefing.pipeline import BriefingPipeline
+    from config import conf
+    service, _ = integration
+    monkeypatch.setattr(runtime, 'current_service', lambda: service)
+    adapter = elearning_sources()[0]
+    authz = PluginAuthorizationStore()
+    monkeypatch.setattr('core.mcp.authorization.DEFAULT_AUTHZ', authz)
+    ref = 'elearning-default-grant:background:elearning.read'
+    authz.issue_scoped(grant_ref='elearning-default-grant:interactive:elearning.read',
+        parent_ref='elearning-default-grant', plugin_id='stella.elearning', user_id='local-default',
+        consumer_plugin_id='stella.elearning', capability='elearning.read', methods=['get_settings'],
+        resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
+    authz.issue_scoped(grant_ref=ref, parent_ref='elearning-default-grant', plugin_id='stella.elearning',
+        user_id='local-default', consumer_plugin_id='stella.elearning', capability='elearning.read',
+        methods=['fetch_source'], resources=[{'kind': 'course', 'id': adapter.account_id + ':42'}], purpose='background')
+    pipeline = BriefingPipeline(service=SimpleNamespace(get_cursor=lambda *args: None), generator=object())
+    def collect():
+        return pipeline._fetch_source(adapter, '2026-09-08T00:00:00Z', '2026-09-10T00:00:00Z')
+    result = collect()
+    assert result.items and {item.payload['course_id'] for item in result.items} == {'42'}
+    authz.update_owned(ref, user_id='local-default', revision=1,
+        resources=frozenset({'{"id":"other:43","kind":"course"}'}))
+    with pytest.raises(PermissionError):
+        collect()
+    authz.update_owned(ref, user_id='local-default', revision=2,
+        resources=frozenset({'{"id":"' + adapter.account_id + ':42","kind":"course"}'}))
+    assert collect().items
+    source = service.list_sources()[0]
+    UsageService(service).set('stella.briefing', source['id'], False)
+    with pytest.raises(PermissionError, match='usage'):
+        collect()
+    UsageService(service).set('stella.briefing', source['id'], True)
+    monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {},
+        'connections': {'mcp:elearning': {'allowed': False}}})
+    with pytest.raises(PermissionError):
+        collect()

@@ -33,6 +33,8 @@ flowchart LR
 
 Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付通过当前 Security/Tool/MCP 权限；读取缓存也不能绕过连接停用、工具开关、旧 Grant 撤销或资源范围。服务实例绑定用户，同一用户的来源在不同 Agent 与对话间保持一致；真实调用者、执行目的、取消、截止时间和现有权限仍沿调用传递。可信 `Consumer` 注册可以绑定插件消费者身份，订阅标签不能授予权限；已有消费者上下文不能被替换。读取正文后再次检查权限、来源 revision 和订阅状态。
 
+Core 内置简报采集在 `BriefingPipeline._fetch_source` 内进入短暂的可信采集范围，保持 `stella.briefing` 消费者身份。仅邮箱 `fetch_messages`、eLearning `fetch_source` 和日程 `list_events` 可复用安装/启用时已签发的同用户、同用途的所有者默认读取 Grant；不会创建或改写持久授权。已有任何简报消费者授权时，以其范围、用途、有效期和撤销状态为准，不回退到所有者默认值。所有者默认 Grant 的限制和撤销仍生效；公开插件回调、其他消费者和写操作不能继承该范围。外部连接与功能消费关系继续独立检查。实现位于 `core/security/source_collection.py` 与 `PluginAuthorizationStore.check_scoped`，验收覆盖 `test_briefing_source_authorization.py`、真实邮箱/eLearning MCP 和托管日程插件测试。
+
 主侧边栏「数据」依次提供总览、信息源、数据使用、数据存储，默认进入总览。总览参考安全页的卡片摘要，说明其他三页职责并展示真实数量与状态；信息源按服务聚合实际注册来源、所有者和可用性，多个邮箱共用一个 Email 卡片，点击卡片进入原有配置页。桌面资源预览与独立配置按钮已移除。数据使用编辑功能对象与信息源的消费关系，不展示任务、Agent 或执行过程。原生 API 包括 `/api/data`、`/api/data/resources`、兼容的 `/api/data/records` 和 `/api/data/command`。邮箱及 eLearning 的账号、课程选择与保存目录表单集中于 `/data/sources/email`、`/data/sources/elearning`；旧 `/email`、`/elearning` 兼容跳转。安全中心「数据访问」保留连接、资源及外传策略，显示并编辑迁移前授权（沿用原授权库，原生用户操作、所有权及 revision 校验）。数据页没有独立授权表单，来源启用只表示在数据服务中使用该来源。
 
 ## 功能消费关系与存储位置
