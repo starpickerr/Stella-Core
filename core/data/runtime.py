@@ -3,7 +3,6 @@
 from common.state_dir import data_service_db
 from core.data.providers import McpProvider, EMAIL_MAPPING, DataSource
 from core.data.service import DataService, ProviderRegistry
-from core.data.workspace_provider import WorkspaceProvider
 from core.data.owned_providers import PluginResourceProvider, OWNERS
 from core.data.elearning_provider import ElearningProvider
 
@@ -11,7 +10,6 @@ from core.data.elearning_provider import ElearningProvider
 def current_service():
     providers = ProviderRegistry()
     providers.register("email", McpProvider("email", EMAIL_MAPPING))
-    providers.register("workspace", WorkspaceProvider())
     providers.register('elearning', ElearningProvider())
     for owner in OWNERS:
         providers.register(owner, PluginResourceProvider(owner))

@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Database, HardDrive, LayoutList, RefreshCw, Waypoints } from 'lucide-react'
 import apiClient from '../api/client'
 import type { DataSnapshot } from '../api/dataTypes'
 import { t } from '../i18n'
 import PageHeader from '../components/PageHeader'
-import { useSessionStore } from '../store/sessionStore'
 import DataUsage from './data/DataUsage'
 import DataStorage from './data/DataStorage'
 import DataSources from './data/DataSources'
@@ -22,30 +21,25 @@ const sections = () => [
 export default function DataManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const activeSession = useSessionStore(state => state.activeId)
   const params = new URLSearchParams(location.search)
   const requested = params.get('section') || 'overview'
   const resourceView = requested === 'resources' || requested === 'records'
   const tab = resourceView ? 'sources' : requested === 'sync' ? 'usage' : sections().some(section => section.id === requested) ? requested : 'overview'
-  const agent = params.get('agent') || ''
-  const session = params.has('session') ? params.get('session') || '' : activeSession || ''
-  const scope = useMemo(() => ({ agent, session }), [agent, session])
-  const scopeKey = `${agent}:${session}`
   const includeStorage = tab === 'storage'
-  const requestKey = `${scopeKey}:${includeStorage}`
+  const requestKey = includeStorage ? 'storage' : 'catalog'
   const [state, setState] = useState<DataSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const inFlight = useRef(false)
-  const currentScope = useRef(requestKey)
-  currentScope.current = requestKey
+  const currentView = useRef(requestKey)
+  currentView.current = requestKey
   const mounted = useRef(true)
   const load = useCallback(async (refresh: boolean, signal?: AbortSignal) => {
-    const result = await apiClient.getDataSnapshot(refresh, signal, scope, includeStorage)
-    if (!signal?.aborted && mounted.current && currentScope.current === requestKey) setState(result)
-  }, [scope, requestKey, includeStorage])
+    const result = await apiClient.getDataSnapshot(refresh, signal, includeStorage)
+    if (!signal?.aborted && mounted.current && currentView.current === requestKey) setState(result)
+  }, [requestKey, includeStorage])
   useEffect(() => {
     const request = new AbortController()
     mounted.current = true
@@ -58,14 +52,14 @@ export default function DataManagementPage() {
     if (inFlight.current) return false
     inFlight.current = true; setBusy(true); setError(''); setMessage('')
     try {
-      const result = await apiClient.dataCommand(body, scope)
-      if (!mounted.current || currentScope.current !== requestKey) return false
+      const result = await apiClient.dataCommand(body)
+      if (!mounted.current || currentView.current !== requestKey) return false
       if (result.sync?.errors.length) throw new Error(result.sync.errors.join('\n'))
       await load(false)
-      if (mounted.current && currentScope.current === requestKey) setMessage(body.action === 'cleanup_storage' || body.action === 'cleanup' ? c('已清理', 'Cleared') : c('已保存', 'Saved'))
+      if (mounted.current && currentView.current === requestKey) setMessage(body.action === 'cleanup_storage' || body.action === 'cleanup' ? c('已清理', 'Cleared') : c('已保存', 'Saved'))
       return true
     } catch (cause) {
-      if (mounted.current && currentScope.current === requestKey) setError(cause instanceof Error ? cause.message : String(cause))
+      if (mounted.current && currentView.current === requestKey) setError(cause instanceof Error ? cause.message : String(cause))
       return false
     } finally { inFlight.current = false; if (mounted.current) setBusy(false) }
   }
@@ -77,7 +71,7 @@ export default function DataManagementPage() {
   }
   const sectionPath = (next: string) => {
     const query = new URLSearchParams(location.search)
-    query.set('section', next); query.delete('source')
+    query.set('section', next); query.delete('source'); query.delete('agent'); query.delete('session')
     return `/data?${query}`
   }
   const choose = (next: string) => {
@@ -91,7 +85,7 @@ export default function DataManagementPage() {
         <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-content">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-card bg-accent-soft text-accent"><Database size={23} aria-hidden="true" /></span>{t('menu_data')}
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-content-secondary">{c('管理信息源、功能的数据使用和存储位置。', 'Manage information sources, feature usage and storage locations.')}</p>
+        <p className="mt-2 text-sm leading-relaxed text-content-secondary">{c('管理全局信息源、功能的数据使用和存储位置。', 'Manage global information sources, feature usage and storage locations.')}</p>
       </div>
       <button type="button" className={`${button} min-h-10 shrink-0`} aria-label={c('刷新', 'Refresh')} title={c('刷新', 'Refresh')} disabled={loading || busy} onClick={() => void refresh()}><RefreshCw size={17} aria-hidden="true" className={busy ? 'animate-spin motion-reduce:animate-none' : ''} /></button>
     </PageHeader>
@@ -109,7 +103,7 @@ export default function DataManagementPage() {
         {state && <>
           {!!state.errors?.length && <details className="text-xs text-content-secondary"><summary className="cursor-pointer">{c('部分信息源暂时无法更新', 'Some sources could not be refreshed')}</summary><ul className="mt-2 space-y-1">{state.errors.map(row => <li key={row.provider} className="break-words">{row.provider}: {row.message}</li>)}</ul></details>}
           {tab === 'overview' && <DataOverview state={state} groups={groups} to={sectionPath} />}
-          {tab === 'sources' && <DataSources groups={groups} scope={scope} />}
+          {tab === 'sources' && <DataSources groups={groups} />}
           {tab === 'usage' && <DataUsage state={state} busy={busy} save={save} />}
           {tab === 'storage' && <DataStorage state={state} busy={busy} save={save} />}
         </>}

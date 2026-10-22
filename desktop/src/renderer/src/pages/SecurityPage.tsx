@@ -911,6 +911,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     )}
                   </section>
                 ))}
+                {(center.data_access?.inherited_grants || []).length > 0 && <section className={card}>
+                  <h2 className={heading}>{getLang() === 'en' ? 'Inherited MCP authorizations' : 'MCP 迁移授权'}</h2>
+                  <p className={`${faded} mt-1`}>{getLang() === 'en' ? 'Existing scopes are preserved. Connection and permission policies still apply.' : '保留迁移前的授权范围；连接开关和统一权限策略仍然生效。'}</p>
+                  {center.data_access?.inherited_grants?.map(grant => <McpGrantEditor key={grant.id + ':' + grant.revision} grant={grant} busy={busy} onSave={value => { void mutate(() => apiClient.updateMcpAccess(value), copy.saved) }} />)}
+                </section>}
               </div>
             )}
             {tab === 'secrets' && (
@@ -1225,11 +1230,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     })}
                   </div>
                 </section>
-                {(center.data_access?.inherited_grants || []).length > 0 && <section className={card}>
-                  <h2 className={heading}>{getLang() === 'en' ? 'Inherited MCP authorizations' : 'MCP 迁移授权'}</h2>
-                  <p className={`${faded} mt-1`}>{getLang() === 'en' ? 'Existing scopes are preserved. Connection and permission policies still apply.' : '保留迁移前的授权范围；连接开关和统一权限策略仍然生效。'}</p>
-                  {center.data_access?.inherited_grants?.map(grant => <McpGrantEditor key={grant.id + ':' + grant.revision} grant={grant} busy={busy} onSave={value => { void mutate(() => apiClient.updateMcpAccess(value), copy.saved) }} />)}
-                </section>}
                 <section className={card}>
                   <h2 className={heading}>{copy.privacyExternalTitle}</h2>
                   <div className="mt-3 space-y-3 text-sm">

@@ -83,6 +83,11 @@ def backend(route):
                                                     'full-access': 0, 'custom': 0},
                                           'unknown': 0, 'available': True}},
             project=None, project_policy={}, projects=[], conversation_policy={},
+            data_access={'resources': [], 'external_transfers': [], 'inherited_grants': [
+                {'id': 'legacy-course', 'server': 'elearning', 'consumer': 'stella.briefing',
+                 'revoked': False, 'scoped': True, 'capabilities': ['elearning.read'], 'methods': ['fetch'],
+                 'resources': [{'kind': 'course', 'id': 'account:42'}], 'purposes': ['interactive'],
+                 'valid_until': None, 'revision': 1}]},
         )
     elif path.endswith('/settings') and path.startswith('/api/sessions/'):
         if route.request.method == 'POST':
@@ -152,6 +157,9 @@ with sync_playwright() as playwright:
             expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
             if target == 'connections':
                 assert page.locator('section h3').all_text_contents() == ['邮箱', 'GitHub MCP', 'GitHub']
+                expect(page.get_by_test_id('mcp-grant-legacy-course')).to_be_visible()
+            if target == 'privacy':
+                expect(page.get_by_test_id('mcp-grant-legacy-course')).to_have_count(0)
             if target == 'secrets':
                 page.reload(wait_until='networkidle')
                 expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()

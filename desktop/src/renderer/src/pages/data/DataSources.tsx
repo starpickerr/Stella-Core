@@ -1,17 +1,16 @@
 import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { DataBrowseScope } from '../../api/dataTypes'
 import { SourceIcon } from './DataUsage'
 import { c, groupSettingsPath, panel, sourceDescription, sourceOrigin, sourceStatus, type SourceGroup } from './presentation'
 
-export default function DataSources({ groups, scope }: { groups: SourceGroup[]; scope: Required<DataBrowseScope> }) {
+export default function DataSources({ groups }: { groups: SourceGroup[] }) {
   return <section className="space-y-5">
     <div><h2 className="text-lg font-semibold">{c('信息源', 'Sources')}</h2>
       <p className="mt-1 text-sm leading-relaxed text-content-secondary">{c('查看 Stella 已接入的信息源，点击卡片管理账号与配置。', 'See connected sources. Select a card to manage accounts and settings.')}</p>
     </div>
     {!groups.length && <p className={`${panel} p-5 text-sm text-content-secondary`}>{c('尚无已注册的信息源。请先在能力中连接服务，或配置来源账号。', 'No sources are registered. Connect a service in Capabilities or configure a source account first.')}</p>}
     <div className="grid gap-4 sm:grid-cols-2">{groups.map(group => <Link key={group.id} data-testid={`data-source-${group.id}`}
-      to={groupSettingsPath(group, scope)} className={`${panel} group min-w-0 p-5 sm:p-6 text-content shadow-sm hover:border-strong hover:bg-surface-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}>
+      to={groupSettingsPath(group)} className={`${panel} group min-w-0 p-5 sm:p-6 text-content shadow-sm hover:border-strong hover:bg-surface-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}>
       <div className="flex items-center gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-accent-soft"><SourceIcon source={group.source} size={21} /></span>
         <h3 className="min-w-0 flex-1 break-words text-base font-semibold text-content">{group.name}</h3>
