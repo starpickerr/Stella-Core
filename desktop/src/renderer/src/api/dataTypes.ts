@@ -11,6 +11,7 @@ export interface DataSourceInfo {
   available: boolean
   connection?: string
   settings_url?: string
+  storage_locations?: { name: { zh: string; en: string }; path: string }[]
   storage: 'reference' | 'cache' | 'persistent'
   retention_days: number
   running: boolean
@@ -25,15 +26,19 @@ export interface DataRecord {
 }
 export interface DataSubscription { id: string; source_id: string; consumer: string; filter: { q?: string }; enabled: boolean }
 export interface DataDelivery { subscription_id: string; event_id: string; state: string; attempts: number; error: string; type: string; record_id: string; seq: number }
-export interface StorageCategory { id: string; name: { zh: string; en: string }; path: string; bytes: number; retention: { zh: string; en: string }; actions: string[] }
+export interface StorageCategory { exists?: boolean; id: string; name: { zh: string; en: string }; path: string; bytes: number; retention: { zh: string; en: string }; actions: string[] }
+export interface DataUsage { consumer_id: string; source_id: string; enabled: boolean; selected: boolean }
+export interface DataUsageConsumer { id: string; name: { zh: string; en: string }; available: boolean }
 export interface DataSnapshot {
   status: string
   sources: DataSourceInfo[]
+  usage_consumers?: DataUsageConsumer[]
+  usages?: DataUsage[]
   record_count: number
   subscriptions: DataSubscription[]
   deliveries: DataDelivery[]
   consumers: { id: string; name: string }[]
-  storage: { available: boolean; categories: StorageCategory[] }
+  storage: { available: boolean; categories: StorageCategory[]; roots?: { name: { zh: string; en: string }; path: string }[] }
   errors: { provider: string; message: string }[]
   scope?: { agent: string; session: string; kind: string; root: string }
   agents?: { id: string; name: string }[]
@@ -44,6 +49,7 @@ export interface DataRecords { status: string; records: DataRecord[]; total: num
 export interface DataCommandResult {
   status: string
   message?: string
+  usage?: DataUsage
   sync?: { processed: number; errors: string[] }
   delivery?: { delivered: number; failed: number }
   export?: { format: string; source_id: string; records: DataRecord[] }

@@ -539,8 +539,8 @@ class ApiClient {
     return '&' + new URLSearchParams({ agent: scope.agent || '', session: scope.session || '' })
   }
 
-  async getDataSnapshot(refresh = false, signal?: AbortSignal, scope = {}): Promise<DataSnapshot> {
-    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}${this.dataScopeQuery(scope)}`, { signal })
+  async getDataSnapshot(refresh = false, signal?: AbortSignal, scope = {}, includeStorage = true): Promise<DataSnapshot> {
+    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}&storage=${includeStorage ? '1' : '0'}${this.dataScopeQuery(scope)}`, { signal })
     if (result.status !== 'success') throw new Error(result.message || 'Data Service unavailable')
     return result
   }

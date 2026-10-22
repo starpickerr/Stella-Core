@@ -52,7 +52,8 @@ export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
     {loading && <p className="flex items-center text-content-tertiary text-sm"><Loader2 size={16} className="animate-spin mr-2" />{t('briefing_loading')}</p>}
     <section className="space-y-3 text-sm">
-      <p className="text-content-secondary">{getLang() === 'zh' ? '生成简报时选择要消费的信息源；此处配置整理规则和处理方式。' : 'Choose sources when generating a briefing. Configure organization and processing here.'}</p>
+      <p className="text-content-secondary">{getLang() === 'zh' ? '在数据使用中选择简报使用的信息源；此处配置整理规则和处理方式。' : 'Choose sources in Data usage. Configure organization and processing here.'}</p>
+      <Link className="text-accent mr-4" to="/data?section=usage">{getLang() === 'zh' ? '数据使用' : 'Data usage'}</Link>
       <Link className="text-accent" to="/data?section=sources">{getLang() === 'zh' ? '管理信息源' : 'Manage sources'}</Link>
     </section>
     <ActionSettings />
