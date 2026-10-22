@@ -21,8 +21,8 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.service import AutomationService, TaskNotFound
-from domain.store import TaskRuleStore
+from domain.service import AutomationService, TaskNotFound  # noqa: E402
+from domain.store import TaskRuleStore  # noqa: E402
 
 CONTRACT = "stella.automation@1"
 R, W = "automation.read", "automation.write"

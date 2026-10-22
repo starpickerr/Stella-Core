@@ -16,14 +16,14 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from peers import PeerService
-from domain.actions import AdapterUnavailable, PeerOutcomeUnknown
-from domain.models import EmailMessage, SourceItem
-from domain.outbox import dispatch_pending
-from domain.pipeline import BriefingPipeline
-from domain.service import BriefingService
-from domain.sources import available_sources, select_sources
-from domain.store import get_briefing_store
+from peers import PeerService  # noqa: E402
+from domain.actions import AdapterUnavailable, PeerOutcomeUnknown  # noqa: E402
+from domain.models import EmailMessage, SourceItem  # noqa: E402
+from domain.outbox import dispatch_pending  # noqa: E402
+from domain.pipeline import BriefingPipeline  # noqa: E402
+from domain.service import BriefingService  # noqa: E402
+from domain.sources import available_sources, select_sources  # noqa: E402
+from domain.store import get_briefing_store  # noqa: E402
 
 CONTRACT = "stella.briefing@1"
 R, W = "briefing.read", "briefing.write"

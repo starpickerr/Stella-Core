@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import zipfile
 from pathlib import Path
 
 from core.plugins.distribution import fetch_and_install_from_catalog
 from core.plugins.package_ops import PackageStore
-from core.plugins.signing import sign_bytes, verify_signature, write_signed_zip, unpack_signed_zip
+from core.plugins.signing import sign_bytes, verify_signature, write_signed_zip
 
 
 def test_roundtrip_sign_and_verify():

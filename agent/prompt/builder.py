@@ -156,7 +156,6 @@ def build_agent_system_prompt(
             policy = resolve(permission_mode, project_dir=project_dir,
                              session_id=identity.execution_session_id or identity.session_id,
                              agent_id=identity.agent_id)
-            available_names = {getattr(tool, "name", "") for tool in (tools or [])}
             elearning_sync = None
             if any(getattr(tool, 'server_name', None)=='elearning' for tool in (tools or [])):
                 try:

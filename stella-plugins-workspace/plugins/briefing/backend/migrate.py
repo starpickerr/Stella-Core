@@ -11,7 +11,7 @@ _BACKEND = Path(__file__).resolve().parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from domain.store import BriefingStore
+from domain.store import BriefingStore  # noqa: E402
 
 SCHEMA_VERSION = 1
 
