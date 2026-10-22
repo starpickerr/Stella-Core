@@ -167,13 +167,28 @@ class PluginAuthorizationStore:
 
     def check_scoped(self, *, grant_ref: str, plugin_id: str, user_id: str, consumer_plugin_id: str,
                      method: str, required_capabilities: Iterable[str], resources: Iterable[dict], purpose: str):
+        from core.security.source_collection import inherited_read_ref
+
+        required_capabilities = frozenset(required_capabilities)
+        inherited = inherited_read_ref(grant_ref=grant_ref, plugin_id=plugin_id, user_id=user_id,
+            consumer_plugin_id=consumer_plugin_id, method=method,
+            required_capabilities=required_capabilities, purpose=purpose)
         required = frozenset(_resource_key(row) for row in resources)
         all_user = _resource_key({'kind': 'user', 'id': user_id})
         now = datetime.now(timezone.utc)
         with self._state() as grants:
+            # Any explicit consumer policy (including revoked/expired grants)
+            # takes precedence over the native integration's owner default.
+            if any(row.parent_ref == grant_ref and row.plugin_id == plugin_id and row.user_id == user_id
+                   and row.consumer_plugin_id == consumer_plugin_id for row in grants.values()):
+                inherited = None
+            parent = grants.get(grant_ref)
+            if parent and (parent.revoked or parent.plugin_id != plugin_id or parent.user_id != user_id):
+                inherited = None
             candidates = [grant for grant in grants.values() if grant.parent_ref == grant_ref and
                           grant.plugin_id == plugin_id and grant.user_id == user_id and
-                          grant.consumer_plugin_id == consumer_plugin_id and not grant.revoked and
+                          (grant.consumer_plugin_id == consumer_plugin_id or
+                           (inherited == grant.grant_ref and grant.consumer_plugin_id == plugin_id)) and not grant.revoked and
                           purpose in grant.purposes and method in grant.methods and
                           (grant.valid_until is None or _expiry(grant.valid_until) > now)]
             for capability in required_capabilities:

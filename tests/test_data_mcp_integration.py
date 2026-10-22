@@ -25,6 +25,7 @@ def integration(tmp_path, monkeypatch):
         "agentTools": ["list_accounts", "list_sources", "fetch_messages"],
         "settingsUrl": "/email",
     }
+    config['args'][config['args'].index('--user-id') + 1] = 'local-default'
     monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
     was_enabled = manager._mcp_enabled(config)
     manager.set_mcp_enabled("email", True)
@@ -61,6 +62,47 @@ def test_mcp_data_collection_and_generic_briefing_consumer(integration):
     ]
     assert len(service.query(source["id"])["records"]) == len(result.items)
     assert not any("password" in str(row) for row in service.list_sources())
+
+
+@pytest.mark.parametrize('purpose', ['interactive', 'background'])
+def test_native_briefing_email_inherits_live_owner_reads_only(integration, monkeypatch, purpose):
+    from types import SimpleNamespace
+    from agent.briefing.pipeline import BriefingPipeline
+    from core.execution.context import execution_scope
+    from core.plugins.authz import PluginAuthorizationStore
+    from core.data.usage import UsageService
+    from config import conf
+    service, _, _ = integration
+    source = service.list_sources()[0]
+    adapter = DataSource(service, source, consumer_id='stella.briefing')
+    authz = PluginAuthorizationStore()
+    monkeypatch.setattr('core.mcp.authorization.DEFAULT_AUTHZ', authz)
+    ref = f'email-default-grant:{purpose}:email.fetch'
+    authz.issue_scoped(grant_ref=ref, parent_ref='email-default-grant', plugin_id='stella.email',
+        user_id='local-default', consumer_plugin_id='stella.email', capability='email.fetch',
+        methods=['fetch_messages'], resources=[{'kind': 'user', 'id': 'local-default'}], purpose=purpose)
+    pipeline = BriefingPipeline(service=SimpleNamespace(get_cursor=lambda *args: None,
+        store=SimpleNamespace(window_candidates=lambda *args: [])), generator=object())
+    def collect():
+        with execution_scope(origin='job' if purpose == 'background' else 'ui'):
+            return pipeline._fetch_source(adapter, '2026-09-08T00:00:00Z', '2026-09-10T00:00:00Z')
+    first = collect()
+    assert first.items and first.items[0].payload['body']
+    # Cached content must still go through the same checks.
+    assert collect().items[0].source_id == first.items[0].source_id
+    authz.revoke(ref)
+    with pytest.raises(PermissionError):
+        collect()
+    authz.update_owned(ref, user_id='local-default', revision=2, revoked=False)
+    assert collect().items
+    UsageService(service).set('stella.briefing', source['id'], False)
+    with pytest.raises(PermissionError, match='usage'):
+        collect()
+    UsageService(service).set('stella.briefing', source['id'], True)
+    monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {},
+        'connections': {'mcp:email': {'allowed': False}}})
+    with pytest.raises(PermissionError):
+        collect()
 
 
 def test_runtime_revocation_blocks_cached_body_and_mcp_switch_is_authoritative(
@@ -115,6 +157,13 @@ def test_production_briefing_source_directory_consumes_data_service(
     monkeypatch.setattr(registry, "apple_calendar_connected", lambda: False)
     sources = registry.configured_sources()
     assert len(sources) == 1 and isinstance(sources[0], DataSource)
+    from core.plugins.authz import PluginAuthorizationStore
+    authz = PluginAuthorizationStore()
+    monkeypatch.setattr('core.mcp.authorization.DEFAULT_AUTHZ', authz)
+    authz.issue_scoped(grant_ref='email-default-grant:interactive:email.fetch',
+        parent_ref='email-default-grant', plugin_id='stella.email', user_id='local-default',
+        consumer_plugin_id='stella.email', capability='email.fetch', methods=['fetch_messages'],
+        resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
     from agent.briefing.pipeline import BriefingPipeline
     from tests.briefing_domain import BriefingService, BriefingStore
     from briefing_fakes import DeterministicBriefingModel
@@ -129,6 +178,7 @@ def test_production_briefing_source_directory_consumes_data_service(
         clock=lambda: datetime(2026, 9, 9, 8, tzinfo=timezone.utc),
     ).run()
     assert result["mail"] and result["briefing"].status in {"completed", "partial"}
+    assert result['briefing'].status == 'completed'
     assert service.query(service.list_sources()[0]["id"])["records"]
     assert all(row["source"] == "email" for row in result["mail"])
 
